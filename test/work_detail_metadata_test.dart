@@ -74,6 +74,7 @@ void main() {
             home: Scaffold(
               body: MediaQuery(
                 data: MediaQueryData(
+                  size: tester.view.physicalSize / tester.view.devicePixelRatio,
                   textScaler: TextScaler.linear(scale),
                   disableAnimations: true,
                 ),
@@ -132,10 +133,29 @@ void main() {
             maxScrolls: 200,
           );
           await tester.ensureVisible(last);
+          await tester.pumpAndSettle();
           // A long label can be wider than the viewport at large text scales.
-          await tester.tapAt(
-            tester.getRect(last).intersect(tester.getRect(list)).center,
-          );
+          final position = tester
+              .getRect(last)
+              .intersect(tester.getRect(list))
+              .center;
+          if (defaultTargetPlatform == TargetPlatform.windows) {
+            await tester.tapAt(
+              position,
+              buttons: kSecondaryMouseButton,
+              kind: PointerDeviceKind.mouse,
+            );
+            await tester.pumpAndSettle();
+            final copyAction = find.widgetWithIcon(
+              ListTile,
+              Icons.content_copy_rounded,
+            );
+            await tester.ensureVisible(copyAction);
+            await tester.pumpAndSettle();
+            await tester.tap(copyAction);
+          } else {
+            await tester.tapAt(position);
+          }
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull);
         }
@@ -149,7 +169,7 @@ void main() {
   }
 
   testWidgets(
-    'Metadata copies on tap and opens the action drawer on the platform gesture',
+    'Metadata copies through the platform action and opens the action drawer',
     (tester) async {
       final copied = <String>[];
       await tester.pumpWidget(
@@ -164,6 +184,17 @@ void main() {
         ),
       );
       await tester.tap(find.text('Voice'));
+      if (defaultTargetPlatform == TargetPlatform.windows) {
+        expect(copied, isEmpty);
+        await tester.tap(
+          find.text('Voice'),
+          buttons: kSecondaryMouseButton,
+          kind: PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Copy'));
+        await tester.pumpAndSettle();
+      }
       expect(copied, ['Voice']);
 
       if (defaultTargetPlatform == TargetPlatform.windows) {

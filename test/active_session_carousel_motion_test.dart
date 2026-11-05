@@ -20,13 +20,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/app_runtime_test_fixture.dart';
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-  SharedPreferences.setMockInitialValues({});
+  AppRuntimeTestFixture.initialize();
   final interaction = UiInteractionCoordinator.instance;
   setUp(interaction.resetForTest);
   tearDown(interaction.resetForTest);

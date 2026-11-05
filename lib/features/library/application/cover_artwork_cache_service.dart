@@ -447,6 +447,7 @@ class CoverArtworkCacheService {
     MusicTrack? track, {
     String? trackPath,
   }) {
+    if (_disposed) return SynchronousFuture<String?>(null);
     if (PathMatcher.isRemoteUri(trackPath ?? track?.path ?? '') &&
         track?.remoteCoverUrl != null) {
       return futureForRemoteCover(track!.remoteCoverUrl!);

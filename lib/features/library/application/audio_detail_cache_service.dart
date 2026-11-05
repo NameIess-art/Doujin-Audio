@@ -197,7 +197,9 @@ class AudioDetailCacheService {
                 }
               }
             }
-            await Future<void>.delayed(Duration.zero);
+            if (_pendingReads.isNotEmpty) {
+              await Future<void>.delayed(Duration.zero);
+            }
           }
         } finally {
           _reading = false;

@@ -76,7 +76,9 @@ class WorkDetailMetadata extends StatelessWidget {
           onCopy: () => onCopy(voiceActor),
           child: InkWell(
             key: ValueKey<String>('work_detail_voice_actor_$voiceActor'),
-            onTap: () => onCopy(voiceActor),
+            onTap: Theme.of(context).platform == TargetPlatform.windows
+                ? null
+                : () => onCopy(voiceActor),
             borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
             child: Container(
               padding: _workMetadataCapsulePadding,
@@ -126,7 +128,9 @@ class WorkDetailMetadata extends StatelessWidget {
         onCopy: () => onCopy(value),
         child: InkWell(
           key: ValueKey<String>('work_detail_tag_$displayLabel'),
-          onTap: () => onCopy(value),
+          onTap: Theme.of(context).platform == TargetPlatform.windows
+              ? null
+              : () => onCopy(value),
           borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
           child: Container(
             padding: _workMetadataCapsulePadding,

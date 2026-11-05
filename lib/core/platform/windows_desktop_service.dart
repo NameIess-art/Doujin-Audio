@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-enum WindowsWindowCommand { drag, minimize, toggleMaximized, close }
+import 'platform_channels.dart';
 
 /// Windows shell events enter the existing application runtime through this gateway.
 class WindowsDesktopService {

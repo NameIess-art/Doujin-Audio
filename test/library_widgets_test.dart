@@ -462,8 +462,9 @@ void main() {
         await tester.pump();
         expect(find.byType(TextField), findsOneWidget);
         expect(find.byType(LibraryLoadingSkeleton), findsNothing);
-        expect(find.byKey(const ValueKey('library_search_suggestions')),
-          findsOneWidget,
+        await pumpUntilFound(
+          tester,
+          find.byKey(const ValueKey('library_search_suggestions')),
         );
         expect(find.byType(LibrarySearchAllResults), findsNothing);
         await tester.enterText(find.byType(TextField), 'Instant');
@@ -2920,7 +2921,7 @@ void main() {
     );
     tester.widget<ListView>(list).controller!.jumpTo(500);
     await tester.pump();
-    Navigator.of(tester.element(field)).pop();
+    Navigator.of(tester.element(find.byType(LibrarySearchPage))).pop();
     await pumpAndSettleWithAsync(tester);
     await openSearch();
     expect(tester.widget<TextField>(field).controller!.text, isEmpty);
@@ -3078,6 +3079,8 @@ void main() {
       tester,
       find.byKey(const ValueKey<String>('library_search_results_all')),
     );
+    await tester.tap(find.byKey(const ValueKey('app_search_element_summary')));
+    await tester.pump();
     await tester.enterText(
       find.byKey(const ValueKey<String>('app_search_field')),
       'Recovered',
@@ -3461,7 +3464,11 @@ void main() {
         tester.widget<AppSearchSuggestionSection>(tags).items,
         hasLength(20),
       );
-      final tagsState = tester.state(tags);
+      final tagChips = find.descendant(
+        of: tags,
+        matching: find.byType(AppElementChipSliver),
+      );
+      final tagsState = tester.state(tagChips);
       await tester.tap(sectionText(tags, expandLabel));
       await pumpAndSettleWithAsync(tester);
       expect(sectionText(tags, collapseLabel), findsOneWidget);
@@ -3474,13 +3481,13 @@ void main() {
       await tester.tap(sectionText(voices, 'Voice Actor 0'));
       await pumpAndSettleWithAsync(tester);
       expect(tester.widget<TextField>(field).controller!.text, 'Voice Actor 0');
-      expect(tester.state(tags), same(tagsState));
+      expect(tester.state(tagChips), same(tagsState));
       expect(sectionText(tags, collapseLabel), findsOneWidget);
       expect(find.byType(LibrarySearchAllResults), findsNothing);
 
       await tester.enterText(field, 'Categorized');
       await pumpAndSettleWithAsync(tester);
-      expect(tester.state(tags), same(tagsState));
+      expect(tester.state(tagChips), same(tagsState));
       expect(sectionText(tags, collapseLabel), findsOneWidget);
       expect(sectionText(voices, expandLabel), findsOneWidget);
       await Scrollable.ensureVisible(
@@ -5418,6 +5425,8 @@ void main() {
       );
       expect(find.text('Quiet Chapter', findRichText: true), findsNothing);
 
+      await tester.tap(find.byKey(const ValueKey('app_search_element_summary')));
+      await tester.pump();
       await tester.enterText(
         find.byKey(const ValueKey<String>('app_search_field')),
         '',
@@ -5514,6 +5523,13 @@ void main() {
       expect(find.text('whisper-work', findRichText: true), findsNothing);
 
       // Add a text term to the two metadata terms before confirmation.
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('app_search_element_summary')),
+          matching: find.byIcon(Icons.search_rounded),
+        ),
+      );
+      await tester.pump();
       await tester.enterText(field, 'healing,whisper,work');
       await tester.testTextInput.receiveAction(TextInputAction.search);
       await pumpUntilFound(
@@ -5521,6 +5537,13 @@ void main() {
         find.text('healing-work', findRichText: true),
       );
       expect(find.text('whisper-work', findRichText: true), findsNothing);
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('app_search_element_summary')),
+          matching: find.byIcon(Icons.search_rounded),
+        ),
+      );
+      await tester.pump();
       await tester.enterText(field, 'healing,whisper,ocean');
       await tester.testTextInput.receiveAction(TextInputAction.search);
       await pumpUntilFound(

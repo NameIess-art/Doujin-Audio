@@ -33,7 +33,9 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
   final Widget? subtitleStatus;
 
   // Reuse text and metadata while the sliver only changes cover geometry.
-  late final Widget _title = RepaintBoundary(child: _buildTitle());
+  late final Widget _title = RepaintBoundary(
+    child: Builder(builder: _buildTitle),
+  );
   late final Widget _rjBar = Builder(builder: _buildRjBar);
   late final Widget _coverGradient = DecoratedBox(
     decoration: BoxDecoration(
@@ -50,7 +52,7 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
     ),
   );
 
-  Widget _buildTitle() => Semantics(
+  Widget _buildTitle(BuildContext context) => Semantics(
     button: title.isNotEmpty,
     label: title.isNotEmpty ? title : null,
     child: ElementActionMenu(
@@ -58,7 +60,11 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
       onCopy: () => onCopyMetadata(title),
       child: InkWell(
         key: const ValueKey<String>('work_detail_title_copy'),
-        onTap: title.isEmpty ? null : () => onCopyMetadata(title),
+        onTap:
+            title.isEmpty ||
+                Theme.of(context).platform == TargetPlatform.windows
+            ? null
+            : () => onCopyMetadata(title),
         borderRadius: BorderRadius.circular(8),
         child: WorkPageTranslationText(
           title,
@@ -98,7 +104,9 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
               onCopy: () => onCopyMetadata(rjCode),
               child: InkWell(
                 key: const ValueKey<String>('work_detail_rj_copy'),
-                onTap: () => onCopyMetadata(rjCode),
+                onTap: Theme.of(context).platform == TargetPlatform.windows
+                    ? null
+                    : () => onCopyMetadata(rjCode),
                 borderRadius: BorderRadius.circular(12),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
@@ -143,7 +151,9 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
               onCopy: () => onCopyMetadata(circleName),
               child: InkWell(
                 key: const ValueKey<String>('work_detail_circle_copy'),
-                onTap: circleName.isEmpty
+                onTap:
+                    circleName.isEmpty ||
+                        Theme.of(context).platform == TargetPlatform.windows
                     ? null
                     : () => onCopyMetadata(circleName),
                 borderRadius: BorderRadius.circular(12),

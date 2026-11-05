@@ -583,6 +583,12 @@ final class AppRuntimeTestFixture {
 
   static void initialize() {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
+    setUp(() {
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        notificationsChannel,
+        (_) async => <String, Object?>{'ok': true, 'value': null},
+      );
+    });
     binding.platformDispatcher.localesTestValue = const <Locale>[Locale('zh')];
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     sqfliteFfiInit();

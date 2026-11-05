@@ -703,6 +703,40 @@ void main() {
   );
 
   test(
+    'disposal ends in-flight playback covers without restarting lookup',
+    () async {
+      final started = Completer<void>();
+      final release = Completer<String?>();
+      final gateway = _FakeFileCachePlatformGateway(
+        coversByPath: {},
+        resolveTrackCoverHandler: (_, _) {
+          if (!started.isCompleted) started.complete();
+          return release.future;
+        },
+      );
+      final library = LibraryService();
+      addTearDown(library.dispose);
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        fileCacheGateway: gateway,
+      );
+      addTearDown(cache.dispose);
+      final track = _track(
+        path: '/work/voice.flac',
+        groupKey: '',
+        isSingle: true,
+      );
+      final pending = cache.futureForPlaybackTrack(track);
+      await started.future;
+      await cache.dispose();
+      release.complete('content://covers/disposed');
+      expect(await pending, isNull);
+      expect(await cache.futureForPlaybackTrack(track), isNull);
+      expect(gateway.resolveTrackCoverPaths, [track.path]);
+    },
+  );
+
+  test(
     'manual cached cover survives explicit cache clear and service recreation',
     () async {
       final support = await Directory.systemTemp.createTemp(

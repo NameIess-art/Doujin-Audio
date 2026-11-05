@@ -155,53 +155,6 @@ final class PlaybackFacade {
     if (!_disposed) _resumeBatchChanges.add(++_resumeBatchRevision);
   }
 
-  Future<void> _setResumeBatch(Map<String, String> targets) {
-    _resumeBatch = targets;
-    _notifyResumeBatchChanged();
-    if (!_persistenceEnabled) return Future<void>.value();
-    final persistent = {
-      for (final target in targets.entries)
-        if (_service.sessions[target.key]?.isTemporary == false)
-          target.key: target.value,
-    };
-    return _enqueueSessionPersistence(() async {
-      if (!await AppPreferences.writeJson(_resumeBatchKey, persistent)) {
-        throw StateError('Could not persist playlist resume batch');
-      }
-    });
-  }
-
-  void _rememberPausedBatch(Map<String, String> candidates, {int? sequence}) {
-    final event = sequence ?? ++_pauseSequence;
-    if (event <= _recordedPauseSequence || hasActivePlayback) return;
-    final targets = Map<String, String>.fromEntries(
-      candidates.entries.where(_isResumeTarget),
-    );
-    if (targets.isEmpty) return;
-    _recordedPauseSequence = event;
-    // A partially failed resume can be retried after the successful sessions
-    // are paused again.
-    _scheduleResumeBatch({...targets, ..._resumeRetryTargets});
-  }
-
-  void _scheduleResumeBatch(Map<String, String> targets) {
-    unawaited(
-      _setResumeBatch(targets).catchError((Object _) {
-        // The persistence queue logs write failures.
-      }),
-    );
-  }
-
-  void _pruneResumeBatch() {
-    _resumeRetryTargets.removeWhere(
-      (id, path) => !_isResumeTarget(MapEntry(id, path)),
-    );
-    if (_resumeBatch.entries.every(_isResumeTarget)) return;
-    _scheduleResumeBatch(
-      Map.fromEntries(_resumeBatch.entries.where(_isResumeTarget)),
-    );
-  }
-
   Future<void> saveResumeBatchForExit() async {
     final targets = _captureActivePlayback();
     if (targets.isNotEmpty) {

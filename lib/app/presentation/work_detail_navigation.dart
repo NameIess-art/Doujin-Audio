@@ -498,11 +498,12 @@ class _ContentPaneOutlinePainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
     if (!roundCorners) {
-      canvas.drawRRect(
-        RRect.fromRectAndCorners(
-          Rect.fromLTRB(left, top, right, bottom),
-          topLeft: Radius.circular(radius),
-        ),
+      // Windows content meets the title bar and navigation without an outline.
+      canvas.drawPath(
+        Path()
+          ..moveTo(left, bottom)
+          ..lineTo(right, bottom)
+          ..lineTo(right, top),
         paint,
       );
       if (detailWidth > 0) {

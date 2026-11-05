@@ -2,6 +2,7 @@ import 'package:doujin_audio/core/widgets/page_translation_scope.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_header.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -184,6 +185,34 @@ void main() {
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
         final copied = <String>[];
+        Future<void> copy(Finder target) async {
+          if (defaultTargetPlatform == TargetPlatform.windows) {
+            await tester.tap(
+              target,
+              buttons: kSecondaryMouseButton,
+              kind: PointerDeviceKind.mouse,
+            );
+            await tester.pumpAndSettle();
+            final copyAction = find.widgetWithIcon(
+              ListTile,
+              Icons.content_copy_rounded,
+            );
+            await tester.scrollUntilVisible(
+              copyAction,
+              200,
+              scrollable: find.descendant(
+                of: find.byType(BottomSheet),
+                matching: find.byType(Scrollable),
+              ).last,
+            );
+            await tester.pumpAndSettle();
+            await tester.tap(copyAction);
+            await tester.pumpAndSettle();
+          } else {
+            await tester.tap(target);
+          }
+        }
+
         final title = List.filled(
           12,
           'A long work title 作品名称・作品タイトル',
@@ -376,9 +405,7 @@ void main() {
                 .bottom,
             closeTo(coverRect.bottom - 10, 0.01),
           );
-          await tester.tap(
-            find.byKey(const ValueKey('work_detail_title_copy')),
-          );
+          await copy(find.byKey(const ValueKey('work_detail_title_copy')));
         }
         expect(copied, List.filled(6, title));
         copied.clear();
@@ -390,8 +417,8 @@ void main() {
         );
         debugPrint = previousPrint;
         debugPrintLayouts = previousPrintLayouts;
-        await tester.tap(find.byKey(const ValueKey('work_detail_rj_copy')));
-        await tester.tap(find.byKey(const ValueKey('work_detail_circle_copy')));
+        await copy(find.byKey(const ValueKey('work_detail_rj_copy')));
+        await copy(find.byKey(const ValueKey('work_detail_circle_copy')));
         expect(copied, ['RJ123456', 'Circle']);
         tester.view.physicalSize = Size(
           tester.view.physicalSize.width - 40,

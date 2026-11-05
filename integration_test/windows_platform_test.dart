@@ -15,6 +15,7 @@ import 'package:doujin_audio/core/platform/app_lifecycle_platform_service.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/platform/subtitle_overlay_platform_service.dart';
 import 'package:doujin_audio/core/platform/windows_desktop_service.dart';
+import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:doujin_audio/core/platform/windows_media_tools.dart';
 import 'package:doujin_audio/features/player/application/windows_playback_bridge.dart';
 import 'package:doujin_audio/features/player/domain/audio_effects.dart';

@@ -1,6 +1,56 @@
 part of 'playback_facade.dart';
 
 extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
+  Future<void> _setResumeBatch(Map<String, String> targets) {
+    _resumeBatch = targets;
+    _notifyResumeBatchChanged();
+    if (!_persistenceEnabled) return Future<void>.value();
+    final persistent = {
+      for (final target in targets.entries)
+        if (_service.sessions[target.key]?.isTemporary == false)
+          target.key: target.value,
+    };
+    return _enqueueSessionPersistence(() async {
+      if (!await AppPreferences.writeJson(
+        PlaybackFacade._resumeBatchKey,
+        persistent,
+      )) {
+        throw StateError('Could not persist playlist resume batch');
+      }
+    });
+  }
+
+  void _rememberPausedBatch(Map<String, String> candidates, {int? sequence}) {
+    final event = sequence ?? ++_pauseSequence;
+    if (event <= _recordedPauseSequence || hasActivePlayback) return;
+    final targets = Map<String, String>.fromEntries(
+      candidates.entries.where(_isResumeTarget),
+    );
+    if (targets.isEmpty) return;
+    _recordedPauseSequence = event;
+    // A partially failed resume can be retried after the successful sessions
+    // are paused again.
+    _scheduleResumeBatch({...targets, ..._resumeRetryTargets});
+  }
+
+  void _scheduleResumeBatch(Map<String, String> targets) {
+    unawaited(
+      _setResumeBatch(targets).catchError((Object _) {
+        // The persistence queue logs write failures.
+      }),
+    );
+  }
+
+  void _pruneResumeBatch() {
+    _resumeRetryTargets.removeWhere(
+      (id, path) => !_isResumeTarget(MapEntry(id, path)),
+    );
+    if (_resumeBatch.entries.every(_isResumeTarget)) return;
+    _scheduleResumeBatch(
+      Map.fromEntries(_resumeBatch.entries.where(_isResumeTarget)),
+    );
+  }
+
   int get positionBucketSeconds => _backgroundMode
       ? PlaybackFacade.backgroundPositionBucketSeconds
       : PlaybackFacade.foregroundPositionBucketSeconds;
@@ -158,12 +208,15 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     _service.removeSessions(removedSessions.map((session) => session.id));
     _recordedPauseSequence = ++_pauseSequence;
     _resumeRetryTargets.clear();
-    await _setResumeBatch({}).catchError((Object _) {
-      // The persistence queue logs write failures.
-    });
     _persistedSessions.clear();
     _persistedQueueVersions.clear();
-    await Future.wait(removedSessions.map((session) => session.shutdown()));
+    // Invalidate old preparations before persistence yields to a replacement.
+    await Future.wait<void>([
+      for (final session in removedSessions) session.shutdown(),
+      _setResumeBatch({}).catchError((Object _) {
+        // The persistence queue logs write failures.
+      }),
+    ]);
     try {
       final response = await nativeRepository.clearAll();
       if (response.isOk) _clearNativeRetainedContentUris();

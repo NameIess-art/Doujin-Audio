@@ -12,6 +12,7 @@ import 'package:doujin_audio/features/library/presentation/work_detail_entries.d
 import 'package:doujin_audio/features/library/presentation/work_detail_entry_tile.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -303,9 +304,24 @@ void main() {
         expect(find.text('Voice actor'), findsOneWidget);
         expect(find.text('Original circle'), findsOneWidget);
         expect(find.text('zh-CN:Original circle'), findsNothing);
-        await tester.tap(
-          find.byKey(const ValueKey('work_detail_tag_#Original tag')),
-        );
+        final tag = find.byKey(const ValueKey('work_detail_tag_#Original tag'));
+        if (platform == TargetPlatform.windows) {
+          await tester.tap(
+            tag,
+            buttons: kSecondaryMouseButton,
+            kind: PointerDeviceKind.mouse,
+          );
+          await tester.pumpAndSettle();
+          final copyAction = find.widgetWithIcon(
+            ListTile,
+            Icons.content_copy_rounded,
+          );
+          await tester.ensureVisible(copyAction);
+          await tester.tap(copyAction);
+          await tester.pumpAndSettle();
+        } else {
+          await tester.tap(tag);
+        }
         await tester.pump();
         expect(copied, contains('Original tag'));
         await tester.tap(find.text('zh-CN:Original directory'));

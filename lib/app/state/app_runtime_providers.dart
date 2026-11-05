@@ -264,6 +264,11 @@ final windowsHotkeyStatusProvider = FutureProvider<Map<String, bool>>((ref) {
   return WindowsDesktopService.instance.getHotkeyStatus();
 });
 
+final windowsWindowControlsProvider = Provider((ref) {
+  final desktop = WindowsDesktopService.instance;
+  return (runCommand: desktop.runWindowCommand, maximized: desktop.maximized);
+});
+
 List<Override> createAppRuntimeOverrides({
   required AppPersistenceCoordinator persistence,
   required AppRuntimeLifecycle runtime,

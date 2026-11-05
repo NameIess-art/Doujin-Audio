@@ -4,6 +4,8 @@
 /// Keep them in sync with the Kotlin side (MainActivity.kt and NativePlaybackBridge.kt).
 library;
 
+enum WindowsWindowCommand { drag, minimize, toggleMaximized, close }
+
 abstract final class NetworkChannel {
   static const String name = 'doujin_audio/network';
 }

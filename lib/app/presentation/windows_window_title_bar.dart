@@ -1,19 +1,21 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/logging/app_log_service.dart';
-import '../../core/platform/windows_desktop_service.dart';
+import '../../core/platform/platform_channels.dart';
+import '../state/app_runtime_providers.dart';
 import '../../core/widgets/app_brand_icon.dart';
 import '../localization/app_language_provider.dart';
 import '../theme/app_styles.dart';
 
 Future<void> _runWindowCommand(
-  WindowsDesktopService desktop,
+  Future<void> Function(WindowsWindowCommand) runCommand,
   WindowsWindowCommand command,
 ) async {
   try {
-    await desktop.runWindowCommand(command);
+    await runCommand(command);
   } catch (error, stackTrace) {
     AppLogService.warning(
       'windows_window_command_failed',
@@ -25,49 +27,42 @@ Future<void> _runWindowCommand(
 
 /// Moves the window like the caption when its area is dragged. Place it behind
 /// interactive content so only otherwise unhandled space receives the input.
-class WindowsWindowDragArea extends StatelessWidget {
-  const WindowsWindowDragArea({
-    super.key,
-    required this.desktop,
-    required this.child,
-  });
+class WindowsWindowDragArea extends ConsumerWidget {
+  const WindowsWindowDragArea({super.key, required this.child});
 
-  final WindowsDesktopService desktop;
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final runCommand = ref.watch(windowsWindowControlsProvider).runCommand;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onPanStart: (_) =>
-          unawaited(_runWindowCommand(desktop, WindowsWindowCommand.drag)),
+          unawaited(_runWindowCommand(runCommand, WindowsWindowCommand.drag)),
       onDoubleTap: () => unawaited(
-        _runWindowCommand(desktop, WindowsWindowCommand.toggleMaximized),
+        _runWindowCommand(runCommand, WindowsWindowCommand.toggleMaximized),
       ),
       child: child,
     );
   }
 }
 
-class WindowsWindowTitleBar extends StatelessWidget {
-  const WindowsWindowTitleBar({
-    super.key,
-    required this.desktop,
-    required this.language,
-  });
+class WindowsWindowTitleBar extends ConsumerWidget {
+  const WindowsWindowTitleBar({super.key, required this.language});
 
   static const double height = 30.0;
 
-  final WindowsDesktopService desktop;
   final AppLanguageProvider language;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final controls = ref.watch(windowsWindowControlsProvider);
     final colors = Theme.of(context).colorScheme;
     Widget button(WindowsWindowCommand command, String label, IconData icon) {
       return IconButton(
         tooltip: language.tr(label),
-        onPressed: () => unawaited(_runWindowCommand(desktop, command)),
+        onPressed: () =>
+            unawaited(_runWindowCommand(controls.runCommand, command)),
         icon: Icon(icon, size: 16),
         style: IconButton.styleFrom(
           padding: EdgeInsets.zero,
@@ -89,7 +84,6 @@ class WindowsWindowTitleBar extends StatelessWidget {
           children: [
             Expanded(
               child: WindowsWindowDragArea(
-                desktop: desktop,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: Row(
@@ -102,9 +96,13 @@ class WindowsWindowTitleBar extends StatelessWidget {
                 ),
               ),
             ),
-            button(WindowsWindowCommand.minimize, 'window_minimize', Icons.remove),
+            button(
+              WindowsWindowCommand.minimize,
+              'window_minimize',
+              Icons.remove,
+            ),
             ValueListenableBuilder<bool>(
-              valueListenable: desktop.maximized,
+              valueListenable: controls.maximized,
               builder: (context, maximized, _) => button(
                 WindowsWindowCommand.toggleMaximized,
                 maximized ? 'window_restore' : 'window_maximize',

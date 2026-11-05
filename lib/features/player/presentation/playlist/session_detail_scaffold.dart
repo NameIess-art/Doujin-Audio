@@ -14,12 +14,10 @@ import '../../../../app/presentation/windows_window_title_bar.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/state/subtitle_settings_provider.dart';
 import '../../../../app/theme/app_styles.dart';
-import '../../../../core/platform/windows_desktop_service.dart';
 import '../../../../core/ui/permission_action_controller.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/app_entry_ink_well.dart';
-import '../../../../core/widgets/top_page_header.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../application/playback_subtitle_service.dart';
 import '../../application/subtitle_overlay_controller.dart';
@@ -221,6 +219,18 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
       tooltip: i18n.tr('close'),
       icon: Icons.chevron_left_rounded,
     );
+    final headerActionStyle =
+        AppEntryInkWell.entryButtonStyle(Theme.of(context)).merge(
+          IconButton.styleFrom(
+            fixedSize: const Size.square(38),
+            minimumSize: const Size.square(38),
+            maximumSize: const Size.square(38),
+            visualDensity: VisualDensity.standard,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            backgroundColor: Colors.transparent,
+            shape: const RoundedRectangleBorder(),
+          ),
+        );
 
     final track = paths.trackByPath(session.currentTrackPath);
     final cs = Theme.of(context).colorScheme;
@@ -241,11 +251,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                 library.coverArtworkCacheService.reportArtworkReadFailure,
           ),
           // This route covers the drawn title bar; blank space moves the window.
-          if (isWindows)
-            WindowsWindowDragArea(
-              desktop: WindowsDesktopService.instance,
-              child: const SizedBox.expand(),
-            ),
+          if (isWindows) const WindowsWindowDragArea(child: SizedBox.expand()),
           SafeArea(
             top: false,
             child: AppPageContentTransition(
@@ -488,57 +494,44 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                                   onTap: openTimer,
                                 );
                               }
-                              return HeaderFloatingButton(
-                                child: IconButton(
-                                  key: const ValueKey(
-                                    'session_detail_timer_button',
-                                  ),
-                                  onPressed: openTimer,
-                                  icon: const Icon(Icons.alarm_rounded),
-                                  tooltip: i18n.tr('timer'),
-                                  iconSize: 20,
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints.tightFor(
-                                    width: 38,
-                                    height: 38,
-                                  ),
+                              return IconButton(
+                                key: const ValueKey(
+                                  'session_detail_timer_button',
                                 ),
+                                onPressed: openTimer,
+                                style: headerActionStyle,
+                                icon: const Icon(Icons.alarm_rounded),
+                                tooltip: i18n.tr('timer'),
+                                iconSize: 20,
+                                padding: EdgeInsets.zero,
                               );
                             },
                           ),
                           if (!isWindows) ...[
                             const SizedBox(width: 8),
-                            HeaderFloatingButton(
-                              child: Consumer(
-                                builder: (context, ref, _) {
-                                  final hasPlayingAudio = ref.watch(
-                                    playlistHeaderUiProvider.select(
-                                      (state) => state.hasPlayingAudioSession,
-                                    ),
-                                  );
-                                  return IconButton(
-                                    key: const ValueKey(
-                                      'session_detail_sleep_button',
-                                    ),
-                                    style: AppEntryInkWell.entryButtonStyle(
-                                      Theme.of(context),
-                                    ),
-                                    onPressed: hasPlayingAudio
-                                        ? () => Navigator.of(context).push(
-                                            BedtimeCanvasPage.route(context),
-                                          )
-                                        : null,
-                                    icon: const Icon(Icons.bedtime_outlined),
-                                    tooltip: i18n.tr('sleep_mode'),
-                                    iconSize: 20,
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints.tightFor(
-                                      width: 38,
-                                      height: 38,
-                                    ),
-                                  );
-                                },
-                              ),
+                            Consumer(
+                              builder: (context, ref, _) {
+                                final hasPlayingAudio = ref.watch(
+                                  playlistHeaderUiProvider.select(
+                                    (state) => state.hasPlayingAudioSession,
+                                  ),
+                                );
+                                return IconButton(
+                                  key: const ValueKey(
+                                    'session_detail_sleep_button',
+                                  ),
+                                  style: headerActionStyle,
+                                  onPressed: hasPlayingAudio
+                                      ? () => Navigator.of(
+                                          context,
+                                        ).push(BedtimeCanvasPage.route(context))
+                                      : null,
+                                  icon: const Icon(Icons.bedtime_outlined),
+                                  tooltip: i18n.tr('sleep_mode'),
+                                  iconSize: 20,
+                                  padding: EdgeInsets.zero,
+                                );
+                              },
                             ),
                           ],
                         ],

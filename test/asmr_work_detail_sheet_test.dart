@@ -1088,6 +1088,13 @@ void main() {
       expect(find.byKey(const ValueKey('asmr_search_favorites')), findsNothing);
       expect(controller.ensureLanguages, hasLength(rootLoads));
       Future<void> query(String value) async {
+        final summary = find.byKey(
+          const ValueKey('app_search_element_summary'),
+        );
+        if (summary.evaluate().isNotEmpty) {
+          await tester.tap(summary);
+          await tester.pump();
+        }
         await tester.enterText(find.byType(TextField), value);
         await tester.testTextInput.receiveAction(TextInputAction.search);
         await tester.pump(const Duration(milliseconds: 260));
@@ -1126,7 +1133,7 @@ void main() {
       expect(searchScroll.offset, closeTo(0, 1));
       await query('work');
       expect(searchScroll.offset, closeTo(0, 1));
-      Navigator.of(tester.element(find.byType(TextField))).pop();
+      Navigator.of(tester.element(find.byType(AsmrSearchPage))).pop();
       await tester.pumpAndSettle();
       expect(rootScroll.offset, closeTo(320, 1));
       expect(controller.refreshRequests, isEmpty);
@@ -1196,6 +1203,8 @@ void main() {
       await pumpAndSettleWithAsync(tester);
       final text = find.text('Test circle');
       await tester.ensureVisible(text);
+      await tester.tap(text);
+      expect(copied, isEmpty);
       await tester.longPress(text);
       expect(copied, isEmpty);
       final click = await tester.startGesture(
@@ -1204,6 +1213,9 @@ void main() {
         buttons: kSecondaryMouseButton,
       );
       await click.up();
+      await tester.pumpAndSettle();
+      expect(copied, isEmpty);
+      await tester.tap(find.text(fixture.languageProvider.tr('element_copy')));
       await tester.pumpAndSettle();
       expect(copied, ['Test circle']);
     },

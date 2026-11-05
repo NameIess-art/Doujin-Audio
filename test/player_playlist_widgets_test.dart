@@ -861,6 +861,13 @@ void main() {
               const SizedBox.shrink(key: ValueKey('detail_discovery_host')),
         );
         expect(subtitleLoads, cachedSubtitle ? 1 : 0);
+        // Notification artwork is independent of detail discovery. Finish its
+        // first presentation before counting the detail route's requests.
+        fixture.fixture.notifications.syncPlaybackState(
+          immediateUnifiedSync: true,
+        );
+        await tester.pump();
+        fixture.coverCache.requestedPaths.clear();
         final navigator = Navigator.of(
           tester.element(find.byKey(const ValueKey('detail_discovery_host'))),
         );
@@ -1039,6 +1046,10 @@ void main() {
         TimeSegmentLabel.trackKeyFor(tracks.first),
       ),
     );
+    await tester.runAsync(
+      fixture.library.detailCacheService.waitForPendingOperations,
+    );
+    await tester.pump();
   });
 
   for (final (platform, replaceQueue) in [
@@ -2266,7 +2277,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       find.descendant(
-        of: find.byType(ActiveSessionCarousel),
+        of: find.byKey(const ValueKey('active_session_indicator')),
         matching: find.byType(AnimatedContainer),
       ),
       findsNWidgets(2),
@@ -2577,7 +2588,9 @@ void main() {
               ),
             )
             .borderRadius,
-        BorderRadius.circular(kActiveSessionCarouselDockHeight / 2),
+        BorderRadius.circular(
+          coverProgressInnerDimension(kActiveSessionCarouselDockHeight) / 2,
+        ),
       );
       expect(visibleSessions.last, 'circular_1');
 
@@ -2620,7 +2633,7 @@ void main() {
               ),
             )
             .borderRadius,
-        BorderRadius.circular(24),
+        BorderRadius.circular(coverProgressInnerDimension(48) / 2),
       );
 
       await tester.pumpWidget(
@@ -4917,7 +4930,7 @@ void main() {
         tester.getSize(
           find.byKey(const ValueKey('playlist_cover_single-duration-session')),
         ),
-        const Size.square(52),
+        Size.square(coverProgressInnerDimension(playlistCoverSize)),
       );
       expect(
         tester
@@ -4930,7 +4943,7 @@ void main() {
               ),
             )
             .borderRadius,
-        BorderRadius.circular(playlistCoverSize / 2),
+        BorderRadius.circular(coverProgressInnerDimension(playlistCoverSize) / 2),
       );
       expect(
         tester
@@ -4943,7 +4956,7 @@ void main() {
               ),
             )
             .borderRadius,
-        BorderRadius.circular(playlistCoverSize / 2),
+        BorderRadius.circular(coverProgressInnerDimension(playlistCoverSize) / 2),
       );
 
       workSession.setOptimisticDuration(const Duration(minutes: 2, seconds: 5));
@@ -5634,7 +5647,9 @@ void main() {
       for (var index = 0; index < count; index++) {
         final cell = find.byKey(ValueKey('playback_queue_cover_cell_$index'));
         expect(cell, findsOneWidget);
-        final expectedCenter = gridCenter + centerOffsets[count]![index];
+        final expectedCenter =
+            gridCenter +
+            centerOffsets[count]![index] * (tester.getSize(grid).width / 52);
         final actualCenter = tester.getCenter(cell);
         expect(actualCenter.dx, closeTo(expectedCenter.dx, 0.01));
         expect(actualCenter.dy, closeTo(expectedCenter.dy, 0.01));
@@ -5642,10 +5657,12 @@ void main() {
         final clip = tester.widget<ClipPath>(
           find.ancestor(of: cell, matching: find.byType(ClipPath)).first,
         );
-        final path = clip.clipper!.getClip(const Size.square(52));
+        final path = clip.clipper!.getClip(tester.getSize(grid));
         for (var pointIndex = 0; pointIndex < count; pointIndex++) {
           expect(
-            path.contains(sectorPoints[count]![pointIndex]),
+            path.contains(
+              sectorPoints[count]![pointIndex] * (tester.getSize(grid).width / 52),
+            ),
             pointIndex == index,
           );
         }
@@ -6026,7 +6043,7 @@ void main() {
     expect(queueCoverGrid, findsOneWidget);
     expect(
       tester.widget<CoverArtworkFrame>(queueCoverGrid).borderRadius,
-      BorderRadius.circular(playlistCoverSize / 2),
+      BorderRadius.circular(coverProgressInnerDimension(playlistCoverSize) / 2),
     );
     expect(
       queueCard.closedColor,
@@ -6207,16 +6224,9 @@ void main() {
     );
     await pumpFiniteTransitions(tester);
     expect(
-      find.descendant(
-        of: find.byType(SessionDetailPage),
-        matching: find.byWidgetPredicate(
-          (widget) =>
-              widget is Theme &&
-              widget.child is Material &&
-              widget.data.colorScheme.primary == queueCardColor,
-        ),
-      ),
-      findsOneWidget,
+      Theme.of(tester.element(find.byType(SessionDetailContent)))
+          .colorScheme.primary,
+      queueCardColor,
     );
     Navigator.of(tester.element(find.byType(SessionDetailPage))).pop();
     await pumpFiniteTransitions(tester);
@@ -7613,7 +7623,10 @@ void main() {
         ValueKey<String>('playlist_cover_${sessionNoCover.id}'),
       );
       expect(placeholderCover, findsOneWidget);
-      expect(tester.getSize(placeholderCover), const Size.square(52));
+      expect(
+        tester.getSize(placeholderCover),
+        Size.square(coverProgressInnerDimension(playlistCoverSize)),
+      );
       expect(
         find.descendant(
           of: placeholderCover,
@@ -7723,7 +7736,10 @@ void main() {
       await tester.pumpAndSettle();
       final cover = find.byKey(const ValueKey('playback_queue_cover_grid'));
       expect(cover, findsOneWidget);
-      expect(tester.getSize(cover), const Size.square(52));
+      expect(
+        tester.getSize(cover),
+        Size.square(coverProgressInnerDimension(playlistCoverSize)),
+      );
       final icon = tester.widget<AppBrandIcon>(
         find.descendant(of: cover, matching: find.byType(AppBrandIcon)),
       );
@@ -8181,18 +8197,20 @@ void main() {
       ).push(buildSessionDetailRoute(sessionId: session.id)),
     );
     await tester.pumpAndSettle();
+    final detailArtwork = find.descendant(
+      of: find.byType(SessionHeroArtwork),
+      matching: find.byType(AsyncLocalCoverImage),
+    );
     final detailKey = await imageKey(
-      tester.widget<AsyncLocalCoverImage>(
-        find.byType(AsyncLocalCoverImage).first,
-      ),
+      tester.widget<AsyncLocalCoverImage>(detailArtwork),
     );
     expect(detailKey, isNot(cardKey));
     expect(
-      tester
-          .widget<AsyncLocalCoverImage>(find.byType(AsyncLocalCoverImage).first)
-          .cacheWidth,
+      tester.widget<AsyncLocalCoverImage>(detailArtwork).cacheWidth,
       600,
     );
+    Navigator.of(tester.element(find.byType(SessionDetailPage))).pop();
+    await tester.pumpAndSettle();
     await tester.pumpWidget(
       fixture.build(
         ActiveSessionCarousel(
@@ -8202,14 +8220,22 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(
-      await imageKey(
-        tester.widget<AsyncLocalCoverImage>(
-          find.byType(AsyncLocalCoverImage).first,
-        ),
-      ),
-      detailKey,
+    final carouselCover = tester.widget<AsyncLocalCoverImage>(
+      find.byType(AsyncLocalCoverImage).first,
     );
+    expect(
+      await imageKey(carouselCover),
+      await imageKey(resizedCard),
+    );
+    await tester.runAsync(
+      () => fixture.persistenceRepository.loadTimeSegmentLabels(
+        TimeSegmentLabel.trackKeyFor(track),
+      ),
+    );
+    await tester.runAsync(
+      fixture.library.detailCacheService.waitForPendingOperations,
+    );
+    await tester.pump();
   });
 
   testWidgets(
@@ -11355,9 +11381,14 @@ void main() {
                 of: action,
                 matching: find.byType(HeaderFloatingButton),
               );
-              expect(surface, findsOneWidget);
-              expect(tester.getSize(surface), const Size.square(38));
-              expect(tester.getRect(surface).top, buttonRect.top);
+              expect(surface, findsNothing);
+              expect(tester.getSize(action), const Size.square(38));
+              expect(tester.getRect(action).top, buttonRect.top);
+              expect(
+                tester.widget<IconButton>(action).style!.backgroundColor!
+                    .resolve({}),
+                Colors.transparent,
+              );
               expect(tester.widget<IconButton>(action).iconSize, 20);
             }
             final status = find.byIcon(Icons.speed_rounded);

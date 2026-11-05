@@ -26,7 +26,6 @@ import '../presentation/onboarding_page.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
 import '../../core/cache/app_cache_service.dart';
 import '../../core/logging/app_log_service.dart';
-import '../../core/platform/windows_desktop_service.dart';
 import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../theme/theme_provider.dart';
@@ -95,9 +94,7 @@ Widget createAudioPlayerApp({
       ),
     ],
     child: MusicPlayerApp(
-      windowsDesktop: windowsRuntime == null
-          ? null
-          : WindowsDesktopService.instance,
+      showWindowsTitleBar: windowsRuntime != null,
       shouldShowOnboarding: shouldShowOnboarding,
       startupRestoreOutcome: startupRestoreOutcome,
       onBootstrapSettled: onBootstrapSettled,
@@ -111,7 +108,7 @@ Widget createAudioPlayerApp({
 
 class MusicPlayerApp extends ConsumerStatefulWidget {
   const MusicPlayerApp({
-    this.windowsDesktop,
+    this.showWindowsTitleBar = false,
     this.shouldShowOnboarding,
     this.startupRestoreOutcome,
     this.onBootstrapSettled,
@@ -121,7 +118,7 @@ class MusicPlayerApp extends ConsumerStatefulWidget {
   });
 
   final bool? shouldShowOnboarding;
-  final WindowsDesktopService? windowsDesktop;
+  final bool showWindowsTitleBar;
   final StartupRestoreOutcome? startupRestoreOutcome;
   final VoidCallback? onBootstrapSettled;
   final Future<void> Function()? presentationInitializer;
@@ -492,27 +489,26 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
                   ),
                 );
                 if (defaultTargetPlatform == TargetPlatform.windows) {
-                  final desktop = widget.windowsDesktop;
                   return TooltipVisibility(
                     visible: false,
-                    child: desktop == null
+                    child: !widget.showWindowsTitleBar
                         ? content
                         : AppRootPageFrame(
                             navigatorKey: _navigatorKey,
                             builder: (context, page) => Column(
                               children: [
                                 WindowsWindowTitleBar(
-                                  desktop: desktop,
                                   language: languageProvider,
                                 ),
                                 Expanded(
                                   child: LayoutBuilder(
-                                    builder: (context, constraints) => MediaQuery(
-                                      data: MediaQuery.of(context).copyWith(
-                                        size: constraints.biggest,
-                                      ),
-                                      child: page,
-                                    ),
+                                    builder: (context, constraints) =>
+                                        MediaQuery(
+                                          data: MediaQuery.of(
+                                            context,
+                                          ).copyWith(size: constraints.biggest),
+                                          child: page,
+                                        ),
                                   ),
                                 ),
                               ],

@@ -194,7 +194,7 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
     final cs = Theme.of(context).colorScheme;
     final selectedSpeed = _speeds[_selectedIndex];
 
-    return Column(
+    final controls = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: 8),
@@ -268,7 +268,9 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
                                       FontFeature.tabularFigures(),
                                     ],
                                   )
-                                : Theme.of(context).textTheme.titleMedium!.copyWith(
+                                : Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium!.copyWith(
                                     color: cs.onSurfaceVariant.withValues(
                                       alpha: 0.45,
                                     ),
@@ -330,6 +332,15 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
           child: Text(i18n.tr('speed_reset')),
         ),
       ],
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        child: SizedBox(
+          // Keep a usable wheel and reset action in short landscape panels.
+          height: constraints.maxHeight.clamp(200.0, double.infinity),
+          child: controls,
+        ),
+      ),
     );
   }
 }

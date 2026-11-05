@@ -351,7 +351,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         titleSubtitle,
-                        if (count >= 2) ...[
+                        if (!compact && count >= 2) ...[
                           const SizedBox(height: 2.5),
                           _buildIndicator(activeColor, cs),
                         ],

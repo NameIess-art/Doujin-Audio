@@ -50,7 +50,6 @@ import 'package:doujin_audio/features/player/application/playback_notification_s
 import 'package:doujin_audio/features/player/domain/playback_persistence_repository.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:doujin_audio/core/platform/app_lifecycle_platform_service.dart';
-import 'package:doujin_audio/core/platform/windows_desktop_service.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/cover_image_retention.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
@@ -332,7 +331,7 @@ void main() {
       Future<void> selectPage(int index) async {
         pageIndex.value = index;
         await _pumpMainScreenAnimations(tester);
-        await pumpUntilUiIdle(tester);
+        await _waitForAppShellInteractionIdle(tester);
       }
 
       await selectPage(2);
@@ -356,7 +355,7 @@ void main() {
         await _tapSettingsDestination(tester);
         await harness.language.setLanguage(language);
         await _pumpMainScreenAnimations(tester);
-        await pumpUntilUiIdle(tester);
+        await _waitForAppShellInteractionIdle(tester);
         expect(
           tester.widget<MaterialApp>(find.byType(MaterialApp)).locale,
           harness.language.locale,
@@ -721,7 +720,7 @@ void main() {
     });
     addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
     _setLogicalTestViewSize(tester, const Size(1280, 800));
-    await _pumpAppShell(tester, windowsDesktop: WindowsDesktopService.instance);
+    await _pumpAppShell(tester, showWindowsTitleBar: true);
     final main = find.byType(MainScreen, skipOffstage: false);
     final titleBar = find.byType(WindowsWindowTitleBar, skipOffstage: false);
     final mainState = tester.state(main);
@@ -742,6 +741,23 @@ void main() {
       ),
     );
     expect(titleSurface.color, (sidebar.decoration! as BoxDecoration).color);
+    final outline = tester.widget<CustomPaint>(
+      find.byKey(const ValueKey('content_pane_outline')),
+    );
+    await tester.runAsync(() async {
+      final recorder = ui.PictureRecorder();
+      outline.painter!.paint(Canvas(recorder), const Size(1280, 770));
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(1280, 770);
+      final pixels = (await image.toByteData())!;
+      int alphaAt(int x, int y) => pixels.getUint8((y * 1280 + x) * 4 + 3);
+      // No outline separates the content from the title bar or navigation.
+      expect(alphaAt(600, 0), 0);
+      expect(alphaAt(260, 100), 0);
+      expect(alphaAt(1279, 100), greaterThan(0));
+      image.dispose();
+      picture.dispose();
+    });
     final navigator = Navigator.of(
       tester.element(find.byType(MainScreen)),
       rootNavigator: true,
@@ -1169,13 +1185,13 @@ void main() {
     expect(
       tester.getCenter(playbackCard),
       Offset(
-        tester.getRect(menuSurface).right - 28,
+        tester.getRect(menuSurface).left + 28,
         tester.getRect(menuSurface).center.dy,
       ),
     );
     final collapsedSurfaceRect = tester.getRect(menuSurface);
     final collapsedCoverRect = tester.getRect(playbackCover);
-    expect(collapsedCoverRect.right, collapsedSurfaceRect.right - 4);
+    expect(collapsedCoverRect.left, collapsedSurfaceRect.left + 4);
     expect(collapsedCoverRect.top, collapsedSurfaceRect.top + 4);
     expect(collapsedCoverRect.bottom, collapsedSurfaceRect.bottom - 4);
     expect(tester.getSize(navigation).width, greaterThan(200));
@@ -1239,7 +1255,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
     expect(
       tester.getCenter(anchorDestination).dx,
-      closeTo(expandedAnchorX, 0.01),
+      inInclusiveRange(expandedAnchorX, tester.getRect(menuSurface).right - 28),
     );
     expect(
       tester.getCenter(focusedDestination).dx,
@@ -1252,7 +1268,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(tester.getSize(selectedIndicator).height, 44);
     expect(tester.getSize(selectedIndicator).width,
-        inExclusiveRange(44, expandedIndicatorWidth));
+        inInclusiveRange(44, expandedIndicatorWidth));
     expect(
       find.byKey(
         const ValueKey<String>(
@@ -1270,14 +1286,14 @@ void main() {
       findsOneWidget,
     );
     final transitioningCoverCenter = tester.getCenter(playbackCover);
-    expect(transitioningCoverCenter.dx, lessThan(collapsedCoverCenter.dx));
+    expect(transitioningCoverCenter.dx, closeTo(collapsedCoverCenter.dx, 0.1));
     expect(
       tester.getCenter(trailingDestination).dx,
-      lessThan(expandedTrailingX),
+      greaterThan(expandedTrailingX),
     );
     expect(
       transitioningCoverCenter.dx,
-      greaterThan(tester.getRect(menuSurface).left + 72),
+      closeTo(tester.getRect(menuSurface).left + 28, 0.1),
     );
     await tester.pump(const Duration(milliseconds: 210));
     expect(tester.getSize(selectedIndicator), const Size.square(44));
@@ -1290,7 +1306,7 @@ void main() {
     );
     expect(
       tester.getRect(playbackCard).right,
-      tester.getRect(menuSurface).right,
+      tester.getRect(menuSurface).right - 56,
     );
     expect(
       tester
@@ -1307,7 +1323,7 @@ void main() {
         ),
       ),
       Offset(
-        tester.getRect(menuSurface).left + 28,
+        tester.getRect(menuSurface).right - 28,
         tester.getRect(menuSurface).center.dy,
       ),
     );
@@ -1330,7 +1346,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
     expect(
       tester.getCenter(focusedDestination).dx,
-      closeTo(tester.getRect(menuSurface).left + 28, 0.1),
+      closeTo(tester.getRect(menuSurface).right - 28, 0.1),
     );
     expect(trailingDestination, findsOneWidget);
     await tester.pump(const Duration(milliseconds: 90));
@@ -1544,20 +1560,21 @@ void main() {
         final coverRect = tester.getRect(cover);
         final playbackRect = tester.getRect(playback);
         expect(tester.getSize(playback), const Size.square(56));
-        expect(coverRect.size, const Size.square(48));
+        expect(coverRect.width, closeTo(48, 0.001));
+        expect(coverRect.height, closeTo(48, 0.001));
         expect(coverRect.left, closeTo(playbackRect.left + 4, 0.1));
-        expect(coverRect.center.dx, lessThanOrEqualTo(previousCoverX + 0.1));
+        expect(coverRect.center.dx, greaterThanOrEqualTo(previousCoverX - 0.1));
         previousCoverX = coverRect.center.dx;
         if (frame == 8) {
           final midNavWidth = tester.getSize(navigation).width;
           expect(midNavWidth, greaterThan(initialNavWidth - 56));
           expect(midNavWidth, lessThan(initialNavWidth));
           expect(
-            playbackRect.left,
-            closeTo(tester.getRect(navigation).right, 0.5),
+            playbackRect.right,
+            closeTo(tester.getRect(navigation).left, 0.5),
           );
-          expect(playbackRect.right, greaterThan(initialNavRect.right));
-          expect(playbackRect.right, lessThan(initialNavRect.right + 56));
+          expect(playbackRect.left, lessThan(initialNavRect.left));
+          expect(playbackRect.left, greaterThan(initialNavRect.left - 56));
           expect(playbackRect.center.dy, initialNavRect.center.dy);
         }
       }
@@ -1569,8 +1586,8 @@ void main() {
 
       expect(tester.getSize(playback).width, closeTo(56, 0.1));
       expect(
-        tester.getRect(playback).right,
-        closeTo(initialNavRect.right, 0.5),
+        tester.getRect(playback).left,
+        closeTo(initialNavRect.left, 0.5),
       );
       expect(
         tester.getSize(navigation).width,
@@ -1597,13 +1614,14 @@ void main() {
         final coverRect = tester.getRect(cover);
         final playbackRect = tester.getRect(playback);
         expect(tester.getSize(playback), const Size.square(56));
-        expect(coverRect.size, const Size.square(48));
+        expect(coverRect.width, closeTo(48, 0.001));
+        expect(coverRect.height, closeTo(48, 0.001));
         expect(coverRect.left, closeTo(playbackRect.left + 4, 0.1));
-        expect(coverRect.center.dx, greaterThanOrEqualTo(previousCoverX - 0.1));
+        expect(coverRect.center.dx, lessThanOrEqualTo(previousCoverX + 0.1));
         previousCoverX = coverRect.center.dx;
         expect(
-          playbackRect.left,
-          closeTo(tester.getRect(navigation).right, 0.5),
+          playbackRect.right,
+          closeTo(tester.getRect(navigation).left, 0.5),
         );
         expect(playbackRect.center.dy, initialNavRect.center.dy);
       }
@@ -3106,7 +3124,7 @@ void main() {
       findsNothing,
     );
     expect(
-      find.byKey(const ValueKey<String>('app_search_field')),
+      find.byKey(const ValueKey<String>('app_search_element_summary')),
       findsOneWidget,
     );
   });
@@ -3877,6 +3895,8 @@ void main() {
         expect(controller.refreshRequests, [
           (AsmrCategoryType.collected, 'old'),
         ]);
+        await tester.tap(find.byKey(const ValueKey('app_search_element_summary')));
+        await tester.pumpAndSettle();
         await tester.enterText(field, 'new');
         await tester.pump(const Duration(milliseconds: 100));
         await tester.enterText(field, 'newest');
@@ -3947,6 +3967,8 @@ void main() {
         if (leavePage) {
           await tester.pumpWidget(const SizedBox.shrink());
         } else {
+          await tester.tap(find.byKey(const ValueKey('app_search_element_summary')));
+          await tester.pump();
           await tester.enterText(field, 'new');
           await tester.testTextInput.receiveAction(TextInputAction.search);
           await tester.pump(const Duration(milliseconds: 250));
@@ -3965,7 +3987,7 @@ void main() {
   testWidgets('ASMR search loading and manual refresh keep expected content', (
     tester,
   ) async {
-    _setLogicalTestViewSize(tester, const Size(400, 320));
+    _setLogicalTestViewSize(tester, const Size(400, 240));
     final controller = _QueuedEmptyAsmrLibraryController(
       services: createTestAsmrServices(),
       delayCollectedSearch: true,
@@ -3990,6 +4012,7 @@ void main() {
     await _waitForAsmrContent(tester);
     expect(controller.collectedSearchRefreshCount, 1);
     controller.completeCollectedSearchRefresh();
+    await pumpUntilFound(tester, find.text('Loaded work', findRichText: true));
     await _waitForAsmrContent(tester);
 
     final searchPage = find.byKey(
@@ -4005,12 +4028,15 @@ void main() {
     await tester.pump();
     expect(scrollController.offset, greaterThan(0));
 
+    await tester.tap(find.byKey(const ValueKey('app_search_element_summary')));
+    await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey<String>('app_search_field')),
       'sleep',
     );
     await tester.pump();
     await tester.pump(kAppFadeDuration);
+    await pumpUntilNotFound(tester, searchPage);
     expect(searchPage, findsNothing);
     expect(
       find.byKey(const ValueKey('asmr_search_suggestions')),
@@ -5647,7 +5673,7 @@ void main() {
   });
 
   testWidgets(
-    'playback detail keeps system bars visible across portrait and landscape rotations',
+    'playback detail keeps immersive mode across rotations and restores system bars on close',
     (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       _setLogicalTestViewSize(tester, const Size(800, 1400));
@@ -5674,12 +5700,12 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(
-        platformCalls.where(
-          (call) => call.method.startsWith('SystemChrome.setEnabledSystemUI'),
-        ),
-        isEmpty,
+        platformCalls
+            .where((call) => call.method == 'SystemChrome.setEnabledSystemUIMode')
+            .map((call) => call.arguments),
+        ['SystemUiMode.immersiveSticky'],
       );
-      expect(tester.getRect(find.byType(SessionDetailContent)).top, 40);
+      expect(tester.getRect(find.byType(SessionDetailContent)).top, 94);
       tester.view.physicalSize = const Size(1400, 800);
       tester.view.padding = const FakeViewPadding(top: 24);
       tester.view.viewPadding = const FakeViewPadding(top: 24);
@@ -5688,7 +5714,7 @@ void main() {
         const ValueKey('session_detail_close_button'),
       );
       final closeRect = tester.getRect(closeButton);
-      expect(closeRect.topLeft, const Offset(16, 30));
+      expect(closeRect.topLeft, const Offset(16, 48));
       expect(tester.getRect(find.byType(SessionDetailContent)).top, 0);
       final rightColumnRect = tester.getRect(
         find.byKey(const ValueKey('session_detail_right_column')),
@@ -5705,12 +5731,12 @@ void main() {
       tester.view.padding = const FakeViewPadding(top: 32);
       tester.view.viewPadding = const FakeViewPadding(top: 32);
       await tester.pumpAndSettle();
-      expect(tester.getRect(find.byType(SessionDetailContent)).top, 40);
+      expect(tester.getRect(find.byType(SessionDetailContent)).top, 94);
       expect(
-        platformCalls.where(
-          (call) => call.method.startsWith('SystemChrome.setEnabledSystemUI'),
-        ),
-        isEmpty,
+        platformCalls
+            .where((call) => call.method == 'SystemChrome.setEnabledSystemUIMode')
+            .map((call) => call.arguments),
+        ['SystemUiMode.immersiveSticky'],
       );
       tester.view.physicalSize = const Size(1400, 800);
       tester.view.padding = const FakeViewPadding(top: 24);
@@ -5718,6 +5744,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(closeButton);
       await tester.pumpAndSettle();
+      expect(platformCalls.lastWhere((call) => call.method == 'SystemChrome.setEnabledSystemUIMode').arguments, 'SystemUiMode.edgeToEdge');
       unawaited(
         navigator.push<void>(
           buildAppPageRoute<void>(
@@ -5729,7 +5756,9 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(tester.getRect(find.byType(HeaderFloatingButton)), closeRect);
+      final standardBackRect = tester.getRect(find.byType(HeaderFloatingButton));
+      expect(standardBackRect.topLeft, const Offset(16, 30));
+      expect(standardBackRect.size, closeRect.size);
       navigator.pop();
       await tester.pumpAndSettle();
       await tester.pump(const Duration(milliseconds: 200));
@@ -5740,7 +5769,7 @@ void main() {
 
   for (final hideBeforeOpen in [false, true]) {
     testWidgets(
-      'landscape playback close aligns with page back after status bar hides '
+      'landscape playback shortcut header stays stable after status bar hides '
       'before open $hideBeforeOpen',
       (tester) async {
         debugDefaultTargetPlatformOverride = TargetPlatform.android;
@@ -5804,7 +5833,8 @@ void main() {
         final closeRect = tester.getRect(
           find.byKey(const ValueKey('session_detail_close_button')),
         );
-        expect(closeRect, referenceRect);
+        expect(closeRect.topLeft, const Offset(16, 48));
+        expect(closeRect.size, referenceRect.size);
         expect(tester.getRect(find.byType(SessionDetailContent)), contentRect);
         expect(tester.getRect(title), titleRect);
         await tester.tap(
@@ -6302,7 +6332,7 @@ void main() {
             ),
           )
           .borderRadius,
-      BorderRadius.circular(24),
+      BorderRadius.circular(21.5),
     );
 
     expect(
@@ -6670,7 +6700,10 @@ void main() {
 
     final detail = find.byType(SessionDetailPage);
     expect(
-      find.descendant(of: detail, matching: find.byType(AsyncLocalCoverImage)),
+      find.descendant(
+        of: find.byKey(const ValueKey('artwork_orientation_session')),
+        matching: find.byType(AsyncLocalCoverImage),
+      ),
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('segments_pinned_artwork')), findsNothing);
@@ -6737,7 +6770,7 @@ void main() {
     debugDefaultTargetPlatformOverride = previousPlatform;
   });
 
-  testWidgets('light session detail uses layered foreground colors', (
+  testWidgets('light session detail uses white artwork titles and layered controls', (
     tester,
   ) async {
     final previousPlatform = debugDefaultTargetPlatformOverride;
@@ -6775,22 +6808,13 @@ void main() {
         .singleWhere((widget) => widget.text == 'Color hierarchy track')
         .style!
         .color!;
-    final closeColor = tester
-        .widget<Icon>(
-          find.descendant(
-            of: detail,
-            matching: find.byIcon(Icons.chevron_left_rounded),
-          ),
-        )
-        .color!;
-    final forwardColor = tester
-        .widget<Icon>(
-          find.descendant(
-            of: detail,
-            matching: find.byIcon(Icons.forward_5_rounded),
-          ),
-        )
-        .color!;
+    Color iconColor(IconData icon) {
+      final finder = find.descendant(of: detail, matching: find.byIcon(icon));
+      return tester.widget<Icon>(finder).color ??
+          IconTheme.of(tester.element(finder)).color!;
+    }
+    final closeColor = iconColor(Icons.chevron_left_rounded);
+    final forwardColor = iconColor(Icons.forward_5_rounded);
     final timeColor = tester
         .widgetList<Text>(
           find.descendant(of: detail, matching: find.byType(Text)),
@@ -6800,7 +6824,7 @@ void main() {
         .color!;
     expect(
       find.descendant(of: detail, matching: find.byIcon(Icons.alarm_rounded)),
-      findsNothing,
+      findsOneWidget,
     );
     final secondaryButton = tester.widget<IconButton>(
       find
@@ -6816,11 +6840,11 @@ void main() {
     final secondaryColor = secondaryButton.style!.foregroundColor!.resolve({})!;
 
     expect(titleColor, isNot(Colors.black));
-    expect(titleColor.a, lessThan(1.0));
+    expect(titleColor, Colors.white);
     expect(forwardColor, isNot(closeColor));
-    expect(closeColor.a, lessThan(1.0));
-    expect(timeColor, closeColor);
-    expect(secondaryColor, closeColor);
+    expect(closeColor, Colors.white);
+    expect(timeColor.a, closeTo(0.72, 0.001));
+    expect(secondaryColor, timeColor);
 
     await _settleSessionDetailAsyncWork(tester);
     await tester.pumpWidget(const SizedBox.shrink());
@@ -8215,7 +8239,7 @@ Future<_AppShellHarness> _pumpAppShell(
   VoidCallback? onBootstrapSettled,
   List<Override> additionalOverrides = const [],
   AppOrientationController? orientationController,
-  WindowsDesktopService? windowsDesktop,
+  bool showWindowsTitleBar = false,
 }) async {
   AppCacheService.scheduledEnforceEnabled = false;
   addTearDown(AppCacheService.resetForTest);
@@ -8293,7 +8317,7 @@ Future<_AppShellHarness> _pumpAppShell(
       ...additionalOverrides,
     ],
     child: MusicPlayerApp(
-      windowsDesktop: windowsDesktop,
+      showWindowsTitleBar: showWindowsTitleBar,
       shouldShowOnboarding: shouldShowOnboarding,
       presentationInitializer: presentationInitializer,
       runtimeInitializer: runtimeInitializer,
@@ -8346,6 +8370,19 @@ Future<void> _pumpMainScreenAnimations(
     await tester.pump(kAppMotionSlow);
   }
   await tester.pump();
+}
+
+Future<void> _waitForAppShellInteractionIdle(WidgetTester tester) async {
+  // Offstage retained pages keep commits queued until they become visible.
+  // Wait for navigation to finish, then let the visible page adopt its state.
+  for (var frame = 0; frame < 625; frame++) {
+    await tester.pump(const Duration(milliseconds: 16));
+    if (!UiInteractionCoordinator.instance.isInteracting) {
+      await tester.pump();
+      return;
+    }
+  }
+  fail('App shell interaction did not become idle');
 }
 
 Future<void> _waitForSearchRoute(WidgetTester tester) async {

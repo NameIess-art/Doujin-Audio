@@ -1,8 +1,36 @@
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 
 void main() {
+  for (final field in ['voiceActors', 'vas']) {
+    test('AsmrWork reads $field from frozen track metadata', () {
+      final track = MusicTrack(
+        path: 'https://example.test/audio.mp3',
+        displayName: 'Track',
+        groupKey: 'asmr-123',
+        groupTitle: 'Work',
+        groupSubtitle: '',
+        isSingle: false,
+        remoteMetadataKind: MusicTrack.remoteMetadataKindAsmrOne,
+        remoteMetadata: {
+          'id': 123,
+          'title': 'Work',
+          field: [
+            {'name': 'Actor one'},
+            'Actor two',
+            {'id': 3},
+          ],
+        },
+      );
+
+      final work = AsmrWork.fromJson(track.remoteMetadata!);
+
+      expect(work.voiceActors, ['Actor one', 'Actor two']);
+    });
+  }
+
   test('AsmrWork serialization/deserialization', () {
     final works = [
       AsmrWork(

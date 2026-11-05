@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import '../media/search_query_utils.dart';
 
 /// A sliver section that folds by rendered rows, independently of item count.
-class AppSearchSuggestionSection extends StatefulWidget {
+class AppSearchSuggestionSection extends StatelessWidget {
   const AppSearchSuggestionSection({
     super.key,
     required this.title,
@@ -44,17 +44,167 @@ class AppSearchSuggestionSection extends StatefulWidget {
   final String clearLabel;
 
   @override
-  State<AppSearchSuggestionSection> createState() =>
-      _AppSearchSuggestionSectionState();
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final accent = accentColor ?? cs.primary;
+    return SliverPadding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+      sliver: AppElementChipSliver(
+        items: items,
+        isSelected: isSelected,
+        onToggle: onToggle,
+        accentColor: accent,
+        maxItems: maxExpandedItems,
+        collapsedRows: 3,
+        headerBuilder: (context, canExpand, expanded, toggle) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 32),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    if (onClear != null) ...[
+                      _headerButton(
+                        Icons.delete_outline_rounded,
+                        clearLabel,
+                        items.isEmpty ? null : onClear,
+                        accent,
+                      ),
+                      if (canExpand) const SizedBox(width: 4),
+                    ],
+                    if (canExpand)
+                      _headerButton(
+                        expanded
+                            ? Icons.expand_less_rounded
+                            : Icons.expand_more_rounded,
+                        expanded ? collapseLabel : expandLabel,
+                        toggle,
+                        accent,
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            if (isLoading || errorText != null || items.isEmpty)
+              Padding(
+                padding: EdgeInsets.only(bottom: items.isEmpty ? 0 : 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (isLoading) LinearProgressIndicator(color: accent),
+                    if (errorText != null)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              errorText!,
+                              style: theme.textTheme.bodySmall,
+                            ),
+                          ),
+                          if (onRetry != null)
+                            TextButton(
+                              onPressed: onRetry,
+                              child: Text(retryLabel),
+                            ),
+                        ],
+                      )
+                    else if (!isLoading && items.isEmpty)
+                      Text(
+                        emptyText,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _headerButton(
+    IconData icon,
+    String tooltip,
+    VoidCallback? onPressed,
+    Color accent,
+  ) => SizedBox.square(
+    // Keep the header compact while giving touch a usable target.
+    dimension: 32,
+    child: IconButton(
+      onPressed: onPressed,
+      tooltip: tooltip,
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.compact,
+      style: IconButton.styleFrom(
+        foregroundColor: accent,
+        minimumSize: const Size.square(32),
+        maximumSize: const Size.square(32),
+        padding: EdgeInsets.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      icon: Icon(icon, size: 20),
+    ),
+  );
 }
 
-class _AppSearchSuggestionSectionState
-    extends State<AppSearchSuggestionSection> {
+/// Builds compact element rows only as they enter the viewport.
+/// Item values are stable keys; labels may differ or be duplicated.
+class AppElementChipSliver extends StatefulWidget {
+  const AppElementChipSliver({
+    super.key,
+    required this.items,
+    required this.isSelected,
+    required this.onToggle,
+    this.labels,
+    this.isEnabled,
+    this.disabledHint,
+    this.readOnly = false,
+    this.accentColor,
+    this.maxItems,
+    this.collapsedRows,
+    this.headerBuilder,
+  }) : assert(maxItems == null || maxItems > 0),
+       assert(collapsedRows == null || collapsedRows > 0);
+
+  /// Replace lists/maps when contents change to invalidate row layout.
+  final List<String> items;
+  final Map<String, String>? labels;
+  final bool Function(String) isSelected;
+  final bool Function(String)? isEnabled;
+  final ValueChanged<String> onToggle;
+  final String? disabledHint;
+  final bool readOnly;
+  final Color? accentColor;
+  final int? maxItems;
+  final int? collapsedRows;
+  final Widget Function(BuildContext, bool, bool, VoidCallback)? headerBuilder;
+
+  @override
+  State<AppElementChipSliver> createState() => _AppElementChipSliverState();
+}
+
+class _AppElementChipSliverState extends State<AppElementChipSliver> {
   static const _gap = 8.0;
   static const _rowGap = 8.0;
-  static const _chipPadding = EdgeInsets.symmetric(horizontal: 4, vertical: 8);
-  static const _labelPadding = EdgeInsets.symmetric(horizontal: 4);
   bool _expanded = false;
+  Map<String, String>? _layoutLabels;
+  final _widths = <String, double>{};
   List<String>? _layoutItems;
   final List<List<String>> _rows = [];
   int _itemCount = 0;
@@ -77,7 +227,7 @@ class _AppSearchSuggestionSectionState
   ) {
     // Source identity avoids copying or comparing entire local directories when
     // only the selection changes. The limit is applied before any item access.
-    final limit = widget.maxExpandedItems;
+    final limit = widget.maxItems;
     final itemCount = math.min(
       limit ?? widget.items.length,
       widget.items.length,
@@ -88,10 +238,19 @@ class _AppSearchSuggestionSectionState
         _layoutDirection == direction &&
         _layoutLocale == locale &&
         identical(_layoutItems, widget.items) &&
+        identical(_layoutLabels, widget.labels) &&
         _layoutLimit == limit &&
         _itemCount == itemCount) {
       return false;
     }
+    if (_layoutStyle != style ||
+        _layoutScaler != scaler ||
+        _layoutDirection != direction ||
+        _layoutLocale != locale ||
+        !identical(_layoutLabels, widget.labels)) {
+      _widths.clear();
+    }
+    _layoutLabels = widget.labels;
     _layoutWidth = width;
     _layoutStyle = style;
     _layoutScaler = scaler;
@@ -104,7 +263,7 @@ class _AppSearchSuggestionSectionState
     _pendingItem = null;
     _rows.clear();
     _layoutComplete = itemCount == 0;
-    _ensureRows(3);
+    _ensureRows(widget.collapsedRows ?? 1);
     return true;
   }
 
@@ -114,8 +273,7 @@ class _AppSearchSuggestionSectionState
     final style = _layoutStyle!;
     final scaler = _layoutScaler!;
     // Match the rendered chip padding, with 2px reserved for its border.
-    final horizontalPadding =
-        _chipPadding.horizontal + _labelPadding.horizontal + 2;
+    const horizontalPadding = AppElementChip._paddingWidth + 2;
     final painter = TextPainter(
       textDirection: _layoutDirection!,
       textScaler: scaler,
@@ -133,12 +291,15 @@ class _AppSearchSuggestionSectionState
           _pendingItem = null;
         } else {
           item = _layoutItems![_nextItemIndex++];
-          painter.text = TextSpan(text: item, style: style);
-          painter.layout();
-          itemWidth = math.min(
-            width,
-            painter.width.ceilToDouble() + horizontalPadding,
-          );
+          final measured = _widths.putIfAbsent(item, () {
+            painter.text = TextSpan(
+              text: widget.labels?[item] ?? item,
+              style: style,
+            );
+            painter.layout();
+            return painter.width.ceilToDouble() + horizontalPadding;
+          });
+          itemWidth = math.min(width, measured);
         }
         if (row.isNotEmpty && used + _gap + itemWidth > width) {
           // Keep the lookahead so expansion and scrolling measure each item
@@ -167,173 +328,157 @@ class _AppSearchSuggestionSectionState
     final direction = Directionality.of(context);
     final locale = Localizations.maybeLocaleOf(context);
     Widget? content;
-    return SliverPadding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-      sliver: SliverLayoutBuilder(
-        builder: (context, constraints) {
-          final width = constraints.crossAxisExtent;
-          if (_layout(width, style, scaler, direction, locale)) content = null;
-          final canExpand = !_layoutComplete || _rows.length > 3;
-          final count = _expanded ? _rows.length : math.min(3, _rows.length);
-          // Scroll offsets change sliver constraints every frame, but not the
-          // rows. Keep their delegate so only newly visible chips are built.
-          return content ??= SliverMainAxisGroup(
-            slivers: [
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(minHeight: 32),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            widget.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                        if (widget.onClear != null) ...[
-                          _headerButton(
-                            Icons.delete_outline_rounded,
-                            widget.clearLabel,
-                            widget.items.isEmpty ? null : widget.onClear,
-                            accent,
-                          ),
-                          if (canExpand) const SizedBox(width: 4),
-                        ],
-                        if (canExpand)
-                          _headerButton(
-                            _expanded
-                                ? Icons.expand_less_rounded
-                                : Icons.expand_more_rounded,
-                            _expanded
-                                ? widget.collapseLabel
-                                : widget.expandLabel,
-                            () => setState(() => _expanded = !_expanded),
-                            accent,
-                          ),
-                      ],
+    return SliverLayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.crossAxisExtent;
+        if (_layout(width, style, scaler, direction, locale)) content = null;
+        final collapsedRows = widget.collapsedRows;
+        final expanded = collapsedRows == null || _expanded;
+        final canExpand =
+            collapsedRows != null &&
+            (!_layoutComplete || _rows.length > collapsedRows);
+        final count = expanded
+            ? _rows.length
+            : math.min(collapsedRows, _rows.length);
+        // Scroll constraints change every frame. Reuse the delegate until inputs
+        // change, so scrolling builds only newly visible chips.
+        if (content != null) return content!;
+        final rows = SliverList.builder(
+          itemCount: expanded ? (_layoutComplete ? _rows.length : null) : count,
+          itemBuilder: (context, index) {
+            _ensureRows(index + 1);
+            if (index >= _rows.length) return null;
+            final hasNext = expanded
+                ? !_layoutComplete || index + 1 < _rows.length
+                : index + 1 < count;
+            return Padding(
+              padding: EdgeInsets.only(bottom: hasNext ? _rowGap : 0),
+              child: Row(
+                children: [
+                  for (var i = 0; i < _rows[index].length; i++) ...[
+                    if (i > 0) const SizedBox(width: _gap),
+                    _chip(_rows[index][i], width, accent),
+                  ],
+                ],
+              ),
+            );
+          },
+        );
+        final header = widget.headerBuilder;
+        return content = header == null
+            ? rows
+            : SliverMainAxisGroup(
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: header(
+                      context,
+                      canExpand,
+                      expanded,
+                      () => setState(() => _expanded = !_expanded),
                     ),
                   ),
-                ),
-              ),
-              if (widget.isLoading || widget.errorText != null || count == 0)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.only(bottom: count == 0 ? 0 : 4),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (widget.isLoading)
-                          LinearProgressIndicator(color: accent),
-                        if (widget.errorText != null)
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  widget.errorText!,
-                                  style: theme.textTheme.bodySmall,
-                                ),
-                              ),
-                              if (widget.onRetry != null)
-                                TextButton(
-                                  onPressed: widget.onRetry,
-                                  child: Text(widget.retryLabel),
-                                ),
-                            ],
-                          )
-                        else if (!widget.isLoading && count == 0)
-                          Text(
-                            widget.emptyText,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: cs.onSurfaceVariant,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              SliverList.builder(
-                itemCount: _expanded
-                    ? (_layoutComplete ? _rows.length : null)
-                    : count,
-                itemBuilder: (context, index) {
-                  _ensureRows(index + 1);
-                  if (index >= _rows.length) return null;
-                  return Padding(
-                    padding: EdgeInsets.only(
-                      bottom:
-                          (_expanded
-                              ? !_layoutComplete || index + 1 < _rows.length
-                              : index + 1 < count)
-                          ? _rowGap
-                          : 0,
-                    ),
-                    child: Row(
-                      children: [
-                        for (var i = 0; i < _rows[index].length; i++) ...[
-                          if (i > 0) const SizedBox(width: _gap),
-                          _chip(_rows[index][i], width, cs, accent),
-                        ],
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ],
-          );
-        },
-      ),
+                  rows,
+                ],
+              );
+      },
     );
   }
 
-  Widget _headerButton(
-    IconData icon,
-    String tooltip,
-    VoidCallback? onPressed,
-    Color accent,
-  ) => SizedBox.square(
-    // Keep the header compact while giving touch a usable target.
-    dimension: 32,
-    child: IconButton(
-      onPressed: onPressed,
-      tooltip: tooltip,
-      padding: EdgeInsets.zero,
-      visualDensity: VisualDensity.compact,
-      style: IconButton.styleFrom(
-        foregroundColor: accent,
-        minimumSize: const Size.square(32),
-        maximumSize: const Size.square(32),
-        padding: EdgeInsets.zero,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
-      icon: Icon(icon, size: 20),
-    ),
-  );
+  Widget _chip(String item, double maxWidth, Color accent) {
+    final enabled = widget.isEnabled?.call(item) ?? true;
+    return AppElementChip(
+      key: ValueKey(item),
+      label: widget.labels?[item] ?? item,
+      maxWidth: maxWidth,
+      accentColor: accent,
+      selected: widget.isSelected(item),
+      disabledHint: enabled ? null : widget.disabledHint,
+      muted: !enabled,
+      onPressed: !enabled || widget.readOnly
+          ? null
+          : () => widget.onToggle(item),
+    );
+  }
+}
 
-  Widget _chip(String text, double maxWidth, ColorScheme cs, Color accent) {
-    final selected = widget.isSelected(text);
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxWidth: maxWidth),
-      child: InputChip(
-        padding: _chipPadding,
-        labelPadding: _labelPadding,
-        visualDensity: VisualDensity.compact,
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        showCheckmark: false,
+/// The directories only need a label and a tap target. A full Material
+/// InputChip allocates selection, avatar, delete and enable animations per item.
+class AppElementChip extends StatelessWidget {
+  const AppElementChip({
+    super.key,
+    required this.label,
+    required this.maxWidth,
+    required this.accentColor,
+    required this.selected,
+    required this.onPressed,
+    this.muted = false,
+    this.disabledHint,
+  });
+
+  static const _paddingWidth = 16.0;
+  static const _radius = BorderRadius.all(Radius.circular(8));
+  final String label;
+  final double maxWidth;
+  final Color accentColor;
+  final bool selected;
+  final VoidCallback? onPressed;
+  final bool muted;
+  final String? disabledHint;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final highlighted = selected && !muted;
+    final shape = RoundedRectangleBorder(
+      borderRadius: _radius,
+      side: BorderSide(color: highlighted ? accentColor : cs.outlineVariant),
+    );
+    final chip = ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth, minHeight: 28),
+      child: Semantics(
+        button: true,
         selected: selected,
-        selectedColor: accent.withValues(alpha: 0.16),
-        side: BorderSide(color: selected ? accent : cs.outlineVariant),
-        labelStyle: selected ? TextStyle(color: accent) : null,
-        label: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
-        onPressed: () => widget.onToggle(text),
+        enabled: onPressed != null,
+        child: Material(
+          color: muted
+              ? cs.surfaceContainerHighest
+              : highlighted
+              ? accentColor.withValues(alpha: .16)
+              : Colors.transparent,
+          shape: shape,
+          child: InkWell(
+            onTap: onPressed,
+            customBorder: shape,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: _paddingWidth / 2,
+                vertical: 6,
+              ),
+              child: Align(
+                widthFactor: 1,
+                heightFactor: 1,
+                child: Text(
+                  label,
+                  style:
+                      (ChipTheme.of(context).labelStyle ??
+                              theme.textTheme.labelLarge)
+                          ?.copyWith(
+                            color: highlighted
+                                ? accentColor
+                                : cs.onSurfaceVariant,
+                          ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
+    final hint = disabledHint;
+    return hint == null ? chip : Tooltip(message: hint, child: chip);
   }
 }
 

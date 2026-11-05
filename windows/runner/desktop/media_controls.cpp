@@ -1,9 +1,11 @@
 #include "media_controls.h"
 #include "desktop_integration.h"
 #include <SystemMediaTransportControlsInterop.h>
+#include <dwmapi.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Storage.Streams.h>
 #include <wrl/implements.h>
+#include <algorithm>
 #include <mutex>
 
 using namespace winrt::Windows::Media;
@@ -13,7 +15,33 @@ const UINT kTaskbarButtonCreated = RegisterWindowMessageW(L"TaskbarButtonCreated
 constexpr UINT kHotkeyKeys[] = {VK_SPACE, VK_LEFT, VK_RIGHT, VK_UP};
 constexpr const char* kHotkeyActions[] = {"toggle", "previous", "next", "showWindow"};
 
-HICON ButtonIcon(int button, bool playing) {
+// The notification gateway supplies opaque RGBA pixels at this size.
+constexpr int kCoverWidth = 320;
+constexpr int kCoverHeight = 240;
+
+BITMAPINFO ThumbnailBitmapInfo(int width, int height) {
+  BITMAPINFO info{};
+  info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+  info.bmiHeader.biWidth = width;
+  info.bmiHeader.biHeight = -height;
+  info.bmiHeader.biPlanes = 1;
+  info.bmiHeader.biBitCount = 32;
+  info.bmiHeader.biCompression = BI_RGB;
+  return info;
+}
+
+bool TaskbarUsesDarkTheme() {
+  DWORD light = 1;
+  DWORD size = sizeof(light);
+  return RegGetValueW(
+             HKEY_CURRENT_USER,
+             L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+             L"SystemUsesLightTheme", RRF_RT_REG_DWORD, nullptr, &light,
+             &size) == ERROR_SUCCESS &&
+         light == 0;
+}
+
+HICON ButtonIcon(int button, bool playing, bool dark) {
   // A 32-bit alpha icon remains transparent on both light and dark taskbars.
   constexpr int size = 32;
   std::array<DWORD, size * size> pixels{};
@@ -27,7 +55,7 @@ HICON ButtonIcon(int button, bool playing) {
         filled = oriented >= 9 && oriented <= 23 - abs(y - 16) * 3 / 2;
         if (button != 1) filled = filled || (oriented >= 24 && oriented < 27);
       }
-      if (filled) pixels[y * size + x] = 0xff777777;
+      if (filled) pixels[y * size + x] = dark ? 0xffffffff : 0xff000000;
     }
   }
   const auto color = CreateBitmap(size, size, 1, 32, pixels.data());
@@ -103,6 +131,7 @@ MediaControls::~MediaControls() {
   if (controls_) { controls_.ButtonPressed(button_token_); controls_.IsEnabled(false); }
 }
 void MediaControls::Clear() {
+  SetThumbnailCover(nullptr);
   if (!controls_.IsEnabled() && !metadata_ready_) return;
   controls_.IsEnabled(false);
   controls_.DisplayUpdater().ClearAll();
@@ -118,16 +147,29 @@ flutter::EncodableMap MediaControls::HotkeyStatus() const {
   }
   return status;
 }
-std::optional<std::string> MediaControls::HandleMessage(UINT message, WPARAM wp) {
+std::optional<std::string> MediaControls::HandleMessage(UINT message, WPARAM wp,
+                                                        LPARAM lp) {
   if (message == kTaskbarButtonCreated) {
     // Explorer creates a new toolbar after restart or restoring from the tray.
     thumbnail_added_ = false;
+    taskbar_dark_ = TaskbarUsesDarkTheme();
     taskbar_.Reset();
     if (SUCCEEDED(CoCreateInstance(CLSID_TaskbarList, nullptr,
         CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&taskbar_)))) {
       if (FAILED(taskbar_->HrInit())) taskbar_.Reset();
     }
     UpdateThumbnailButtons();
+    return std::string();
+  }
+  if (message == WM_SETTINGCHANGE || message == WM_THEMECHANGED) {
+    const bool dark = TaskbarUsesDarkTheme();
+    if (dark != taskbar_dark_) {
+      taskbar_dark_ = dark;
+      UpdateThumbnailButtons();
+    }
+  }
+  if (message == WM_DWMSENDICONICTHUMBNAIL && !thumbnail_cover_.empty()) {
+    SupplyThumbnail(HIWORD(lp), LOWORD(lp));
     return std::string();
   }
   int action = -1;
@@ -153,7 +195,8 @@ void MediaControls::UpdateThumbnailButtons() {
   const bool playing = enabled && thumbnail_playing_;
   const bool available[] = {enabled && controls_.IsPreviousEnabled(), enabled,
       enabled && controls_.IsNextEnabled()};
-  const std::array<bool, 4> next_state{playing, available[0], available[1], available[2]};
+  const std::array<bool, 5> next_state{
+      playing, available[0], available[1], available[2], taskbar_dark_};
   if (thumbnail_added_ && thumbnail_state_ == next_state) return;
   const wchar_t* tips[] = {L"Previous / 上一曲", playing ? L"Pause / 暂停" : L"Play / 播放", L"Next / 下一曲"};
   const UINT ids[] = {kControlId + 1, kControlId, kControlId + 2};
@@ -161,9 +204,10 @@ void MediaControls::UpdateThumbnailButtons() {
   for (int i = 0; i < 3; ++i) {
     buttons[i].dwMask = THB_ICON | THB_TOOLTIP | THB_FLAGS;
     buttons[i].iId = ids[i];
-    buttons[i].hIcon = ButtonIcon(i, playing);
+    buttons[i].hIcon = ButtonIcon(i, playing, taskbar_dark_);
     wcscpy_s(buttons[i].szTip, tips[i]);
-    buttons[i].dwFlags = available[i] ? THBF_ENABLED : THBF_DISABLED;
+    // Keep the requested glyph color even when there is no adjacent track.
+    buttons[i].dwFlags = available[i] ? THBF_ENABLED : THBF_NONINTERACTIVE;
   }
   const auto result = thumbnail_added_
       ? taskbar_->ThumbBarUpdateButtons(window_, 3, buttons)
@@ -171,6 +215,64 @@ void MediaControls::UpdateThumbnailButtons() {
   if (SUCCEEDED(result)) { thumbnail_added_ = true; thumbnail_state_ = next_state; }
   for (const auto& button : buttons) if (button.hIcon) DestroyIcon(button.hIcon);
 }
+
+void MediaControls::SetThumbnailCover(const flutter::EncodableValue* cover) {
+  const bool had_cover = !thumbnail_cover_.empty();
+  const auto bytes = cover ? std::get_if<std::vector<uint8_t>>(cover) : nullptr;
+  if (bytes && bytes->size() == kCoverWidth * kCoverHeight * 4) {
+    thumbnail_cover_.resize(kCoverWidth * kCoverHeight);
+    for (size_t i = 0; i < thumbnail_cover_.size(); ++i) {
+      const auto pixel = bytes->data() + 4 * i;
+      thumbnail_cover_[i] = 0xff000000 | (DWORD{pixel[0]} << 16) |
+                            (DWORD{pixel[1]} << 8) | DWORD{pixel[2]};
+    }
+  } else {
+    thumbnail_cover_.clear();
+  }
+  const BOOL has_cover = !thumbnail_cover_.empty();
+  if (had_cover != (has_cover != FALSE)) {
+    DwmSetWindowAttribute(window_, DWMWA_HAS_ICONIC_BITMAP, &has_cover,
+                          sizeof(has_cover));
+    DwmSetWindowAttribute(window_, DWMWA_FORCE_ICONIC_REPRESENTATION, &has_cover,
+                          sizeof(has_cover));
+  }
+  if (had_cover || has_cover) DwmInvalidateIconicBitmaps(window_);
+}
+
+void MediaControls::SupplyThumbnail(int max_width, int max_height) {
+  const int scale = std::min({max_width / 4, max_height / 3, kCoverWidth / 4});
+  if (scale < 1) return;
+  const int width = scale * 4;
+  const int height = scale * 3;
+  const auto info = ThumbnailBitmapInfo(width, height);
+  const auto source = ThumbnailBitmapInfo(kCoverWidth, kCoverHeight);
+  const auto dc = CreateCompatibleDC(nullptr);
+  if (!dc) return;
+  void* pixels = nullptr;
+  const auto bitmap = CreateDIBSection(dc, &info, DIB_RGB_COLORS, &pixels,
+                                       nullptr, 0);
+  if (bitmap) {
+    const auto previous = SelectObject(dc, bitmap);
+    if (previous && previous != HGDI_ERROR) {
+      SetStretchBltMode(dc, HALFTONE);
+      SetBrushOrgEx(dc, 0, 0, nullptr);
+      const int lines = StretchDIBits(
+          dc, 0, 0, width, height, 0, 0, kCoverWidth, kCoverHeight,
+          thumbnail_cover_.data(), &source, DIB_RGB_COLORS, SRCCOPY);
+      SelectObject(dc, previous);
+      if (lines > 0) {
+        GdiFlush();
+        auto colors = static_cast<DWORD*>(pixels);
+        // GDI scaling can clear the high byte. DWM expects opaque pixels.
+        for (int i = 0; i < width * height; ++i) colors[i] |= 0xff000000;
+        DwmSetIconicThumbnail(window_, bitmap, 0);
+      }
+    }
+    DeleteObject(bitmap);
+  }
+  DeleteDC(dc);
+}
+
 void MediaControls::Update(const flutter::EncodableMap& payload) {
   auto raw = Find(payload,"items");
   auto items = raw ? std::get_if<flutter::EncodableList>(raw) : nullptr;
@@ -184,6 +286,7 @@ void MediaControls::Update(const flutter::EncodableMap& payload) {
     if (Text(*map,"id") == main_id) break;
   }
   if (!selected) { Clear(); return; }
+  if (const auto cover = Find(payload, "taskbarCover")) SetThumbnailCover(cover);
   thumbnail_playing_ = false;
   for (const auto& item : *items) {
     const auto map = std::get_if<flutter::EncodableMap>(&item);

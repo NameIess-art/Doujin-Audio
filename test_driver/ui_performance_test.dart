@@ -20,6 +20,8 @@ Future<void> main() => integrationDriver(
       data,
       testOutputFilename: report is Map && report['scenario'] == 'playback'
           ? 'playback_profile_${report['runtime'] == 'Media3' ? 'android' : 'windows'}'
+          : report is Map && report['scenario'] == 'session-cover-transitions'
+          ? 'session_cover_transitions_${report['platform']}'
           : report is Map &&
                 '${report['scenario']}'.startsWith('page-transitions')
           ? 'page_transitions_${report['platform']}_${report['scenario'] == 'page-transitions-startup'

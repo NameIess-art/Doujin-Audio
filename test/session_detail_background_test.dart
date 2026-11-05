@@ -12,15 +12,17 @@ import 'package:doujin_audio/features/library/application/cover_artwork_cache_se
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
+import 'package:doujin_audio/features/player/presentation/active_session_carousel.dart';
 import 'package:doujin_audio/features/player/presentation/playback_providers.dart';
+import 'package:doujin_audio/features/player/presentation/playlist/session_cover_transition.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_detail_scaffold.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_detail_theme.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_subtitle_menu_sheet.dart';
 import 'package:doujin_audio/features/player/domain/playback_queue.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
-import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/app_runtime_test_fixture.dart';
@@ -29,7 +31,7 @@ class _ResolvedCoverCache extends CoverArtworkCacheService {
   _ResolvedCoverCache([this.path = '/covers/detail.png'])
     : super(libraryService: LibraryService());
 
-  final String? path;
+  String? path;
 
   @override
   String? resolvedForPlaybackTrack(MusicTrack? track, {String? trackPath}) =>
@@ -64,6 +66,266 @@ class _SubtitlePresenceService extends PlaybackSubtitleService {
 }
 
 void main() {
+  for (final (entry, exitToDock) in [
+    for (final entry in ['list', 'queue', 'dock', 'routed dock']) (entry, true),
+    for (final entry in ['list', 'queue', 'dock']) (entry, false),
+  ]) {
+    testWidgets(
+      'detail cover moves from the $entry and returns to the '
+      '${exitToDock ? 'matching dock' : 'matching playlist row'}',
+      (tester) async {
+        tester.view.physicalSize =
+            defaultTargetPlatform == TargetPlatform.android
+            ? const Size(390, 820)
+            : const Size(1280, 800);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        final cover = (await tester.runAsync(() async {
+          final directory = await Directory.systemTemp.createTemp(
+            'cover-flight-',
+          );
+          addTearDown(() => directory.delete(recursive: true));
+          final recorder = ui.PictureRecorder();
+          ui.Canvas(recorder).drawColor(Colors.red, ui.BlendMode.src);
+          final picture = recorder.endRecording();
+          final image = await picture.toImage(16, 16);
+          final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+          image.dispose();
+          picture.dispose();
+          return File('${directory.path}/cover.png')
+            ..writeAsBytesSync(bytes!.buffer.asUint8List());
+        }))!;
+        final cache = _ResolvedCoverCache(cover.path);
+        final coldDetail =
+            entry == 'list' && defaultTargetPlatform == TargetPlatform.android;
+        final fixture = AppRuntimeWidgetTestFixture(
+          coverArtworkCacheService: cache,
+          configureSettingsRepository: (settings) {
+            settings.coverImageResolution = CoverImageResolution.original;
+            settings.syncSlice();
+          },
+        );
+        addTearDown(fixture.dispose);
+        final tracks = [
+          for (final name in ['First', 'Current'])
+            testMusicTrack(
+              name: name,
+              path: '/music/$name.mp3',
+              groupKey: '/music/$name',
+              groupTitle: name,
+            ),
+        ];
+        fixture.library.addTracks(tracks, persist: false);
+        final sessions = [
+          for (final track in tracks)
+            fixture.playback.createTrackSession(track),
+        ];
+        final session = sessions.last;
+        for (final item in sessions) {
+          addTearDown(item.shutdown);
+        }
+        if (entry == 'queue') {
+          session.playbackQueue = PlaybackQueueDefinition(
+            name: 'Two covers',
+            entries: [
+              for (final track in tracks)
+                PlaybackQueueEntry(
+                  id: track.path,
+                  kind: PlaybackQueueEntryKind.track,
+                  title: track.displayName,
+                  tracks: [track],
+                ),
+            ],
+          );
+        }
+        fixture.playbackService.syncSlice(
+          activeSessions: sessions,
+          playingSessionCount: 0,
+          focusedSessionId: sessions.first.id,
+          coverGeneration: 0,
+          isInitialized: true,
+        );
+        final fromDock = entry.endsWith('dock');
+        final showDock = ValueNotifier(exitToDock || fromDock);
+        addTearDown(showDock.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            Column(
+              children: [
+                const Expanded(child: PlaylistTab()),
+                ValueListenableBuilder<bool>(
+                  valueListenable: showDock,
+                  builder: (_, visible, child) =>
+                      visible ? child! : const SizedBox.shrink(),
+                  child: SizedBox(
+                    width: 300,
+                    child: ActiveSessionCarousel(
+                      sessions: [
+                        for (final item in fromDock ? [session] : sessions)
+                          fixture.playback.sessionSnapshotById(item.id)!,
+                      ],
+                      viewportFraction: 1,
+                      presentation: ActiveSessionCarouselPresentation.embedded,
+                      isRoutedDock: entry == 'routed dock',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+        await tester.runAsync(() async {
+          final context = tester.element(find.byType(PlaylistTab));
+          await precacheImage(FileImage(cover), context);
+          await precacheImage(
+            resizeFileImageIfNeeded(path: cover.path, cacheWidth: 64),
+            context,
+          );
+        });
+        await pumpAndSettleWithAsync(tester);
+        final source = find.byWidgetPredicate(
+          (widget) =>
+              widget is SessionCoverAnchor &&
+              widget.sessionId == session.id &&
+              widget.isDock == fromDock,
+        );
+        expect(source, findsOneWidget);
+        if (entry == 'queue') {
+          expect(
+            tester.widget<SessionCoverAnchor>(source).imageKey,
+            const ValueKey('playback_queue_cover_cell_1'),
+          );
+        }
+        final sourceRect = tester.getRect(source);
+        // The source has a decoded image, but the detail's independent artwork
+        // request has no result yet.
+        if (coldDetail) cache.path = null;
+        await tester.tap(source);
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        final flightFinder = find.byKey(
+          const ValueKey('session_detail_cover_flight'),
+        );
+        final enter =
+            tester.widget<CustomPaint>(flightFinder).painter!
+                as SessionCoverFlight;
+        double overlayOpacity(String name) => tester
+            .widget<FadeTransition>(
+              find.descendant(
+                of: find.byKey(ValueKey('session_detail_${name}_fade')),
+                matching: find.byType(FadeTransition),
+              ).first,
+            )
+            .opacity
+            .value;
+        for (final name in ['close', 'title']) {
+          expect(overlayOpacity(name), 0, reason: name);
+        }
+        expect(enter.from, sourceRect);
+        expect(enter.to.width, greaterThan(enter.from.width));
+        expect(enter.fromRadius, greaterThan(enter.toRadius));
+        expect(enter.progress.value, inExclusiveRange(0, 1));
+        expect(enter.reverse, isFalse);
+        // Android can report window metrics after an orientation-policy change
+        // even when the physical view and cover geometry have not changed.
+        tester.binding.handleMetricsChanged();
+        await tester.pump();
+        expect(flightFinder, findsOneWidget);
+        final detailImages = find.descendant(
+          of: find.byKey(ValueKey('session_detail_cover_${session.id}')),
+          matching: find.byType(RawImage),
+        );
+        final detailImage = detailImages.first;
+        expect(enter.to, tester.getRect(detailImage));
+        if (coldDetail) {
+          final preview = tester.widget<RawImage>(
+            find.byKey(const ValueKey('session_detail_cover_preview')).first,
+          );
+          expect(preview.image!.isCloneOf(enter.image), isTrue);
+        }
+        if (entry == 'routed dock') {
+          tester.view.physicalSize =
+              defaultTargetPlatform == TargetPlatform.android
+              ? const Size(400, 840)
+              : const Size(1200, 780);
+          await tester.pump();
+          expect(flightFinder, findsNothing);
+        }
+        await tester.pump(const Duration(milliseconds: 200));
+        await tester.pump();
+        expect(flightFinder, findsNothing);
+        for (final name in ['close', 'title']) {
+          expect(overlayOpacity(name), 0);
+        }
+        await tester.pump(const Duration(milliseconds: 150));
+        for (final name in ['close', 'title']) {
+          expect(overlayOpacity(name), inExclusiveRange(0, 1));
+        }
+        await tester.pumpAndSettle();
+        for (final name in ['close', 'title']) {
+          expect(overlayOpacity(name), 1);
+        }
+        expect(flightFinder, findsNothing);
+        if (entry != 'routed dock') {
+          expect(tester.getRect(detailImage), enter.to);
+        }
+        if (coldDetail) {
+          expect(
+            find.byKey(const ValueKey('session_detail_cover_preview')),
+            findsOneWidget,
+          );
+          cache.path = cover.path;
+        }
+
+        if (!exitToDock) {
+          showDock.value = false;
+          await tester.pump();
+        }
+        if (defaultTargetPlatform == TargetPlatform.android) {
+          await tester.binding.handlePopRoute();
+        } else {
+          await tester.tap(
+            find.byKey(const ValueKey('session_detail_close_button')),
+          );
+        }
+        await tester.pump();
+        await tester.pump();
+        await tester.pump();
+        tester.binding.handleMetricsChanged();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        final exit =
+            tester.widget<CustomPaint>(flightFinder).painter!
+                as SessionCoverFlight;
+        final target = find.byWidgetPredicate(
+          (widget) =>
+              widget is SessionCoverAnchor &&
+              widget.sessionId == session.id &&
+              (exitToDock
+                  ? widget.isDock
+                  : widget.location == SessionCoverLocation.playlist),
+        );
+        expect(exit.to, tester.getRect(target));
+        expect(exit.reverse, isTrue);
+        expect(exit.progress.value, inExclusiveRange(0, 1));
+        for (final name in ['close', 'title']) {
+          expect(overlayOpacity(name), 1);
+        }
+        await tester.pumpAndSettle();
+        expect(flightFinder, findsNothing);
+        expect(find.byType(SessionDetailPage), findsNothing);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(seconds: 6));
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   testWidgets(
     'detail retains its cover request when another cover scope changes',
     (tester) async {
@@ -90,15 +352,8 @@ void main() {
         coverGeneration: cache.generation,
         isInitialized: true,
       );
-      final revealBehind = ValueNotifier(false);
-      addTearDown(revealBehind.dispose);
       await tester.pumpWidget(
-        fixture.build(
-          SessionDetailPage(
-            sessionId: session.id,
-            revealBehindNotifier: revealBehind,
-          ),
-        ),
+        fixture.build(SessionDetailPage(sessionId: session.id)),
       );
       await tester.pumpAndSettle();
       final original = tester.widget<SessionDetailTheme>(
@@ -250,6 +505,30 @@ void main() {
         }
         await tester.pumpAndSettle();
         expect(Theme.of(tester.element(detail)).colorScheme, expected);
+        final overlay = find.byKey(
+          ValueKey(
+            kind == 'fullscreen'
+                ? 'fullscreen_video_exit'
+                : 'session_detail_close_button',
+          ),
+        );
+        final stroke = tester.widget<RichText>(
+          find.descendant(
+            of: overlay,
+            matching: find.byWidgetPredicate(
+              (widget) => widget is RichText &&
+                  widget.text.style?.foreground?.style == ui.PaintingStyle.stroke,
+            ),
+          ),
+        ).text.style!.foreground!.color;
+        expect(
+          stroke.toARGB32(),
+          anyOf(
+            expected.primaryContainer.toARGB32(),
+            expected.onPrimaryContainer.toARGB32(),
+          ),
+        );
+        expect(stroke, isNot(anyOf(Colors.black, Colors.white)));
         final slider = kind == 'fullscreen'
             ? find.byKey(const ValueKey('fullscreen_video_progress'))
             : find.descendant(
@@ -307,45 +586,8 @@ void main() {
           Navigator.of(tester.element(find.byType(SubtitleMenuSheet))).pop();
           await tester.pumpAndSettle();
           if (defaultTargetPlatform == TargetPlatform.android) {
-            final dismiss = tester.widget<GestureDetector>(
-              find.byKey(const ValueKey('session_detail_dismiss_gesture')),
-            );
-            dismiss.onVerticalDragStart!(DragStartDetails());
-            void move(double delta) => dismiss.onVerticalDragUpdate!(
-              DragUpdateDetails(
-                globalPosition: Offset.zero,
-                delta: Offset(0, delta),
-                primaryDelta: delta,
-              ),
-            );
-            move(24);
-            await tester.pump();
-            final content = tester.widget<SessionDetailContent>(
-              find.byType(SessionDetailContent),
-            );
-            final theme = Theme.of(tester.element(detail));
-            for (var frame = 0; frame < 8; frame++) {
-              move(8);
-              await tester.pump(const Duration(milliseconds: 16));
-              expect(
-                tester.widget<SessionDetailContent>(
-                  find.byType(SessionDetailContent),
-                ),
-                same(content),
-              );
-              expect(Theme.of(tester.element(detail)), same(theme));
-            }
-            // A short drag returns to the same page; a long drag closes it.
-            dismiss.onVerticalDragEnd!(DragEndDetails(primaryVelocity: 0));
-            await tester.pumpAndSettle();
-            expect(find.byType(SessionDetailContent), findsOneWidget);
-            dismiss.onVerticalDragStart!(DragStartDetails());
-            move(400);
-            dismiss.onVerticalDragEnd!(
-              DragEndDetails(
-                primaryVelocity: 600,
-                velocity: const Velocity(pixelsPerSecond: Offset(0, 600)),
-              ),
+            await tester.tap(
+              find.byKey(const ValueKey('session_detail_close_button')),
             );
             await tester.pumpAndSettle();
             expect(find.byType(SessionDetailContent), findsNothing);
@@ -414,7 +656,6 @@ void main() {
           transitionActive: transitioning,
           session: fixture.playback.sessionSnapshotById(session.id)!,
           coverPathFuture: SynchronousFuture<String?>(null),
-          dismissAnimation: const AlwaysStoppedAnimation<double>(0),
           onClose: () {},
           segmentPanelExpandedNotifier: expanded,
         ),
@@ -463,6 +704,73 @@ void main() {
       TargetPlatform.windows,
     }),
   );
+
+  testWidgets('Windows detail blank space drags the window', (tester) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final expanded = ValueNotifier<bool>(false);
+    addTearDown(expanded.dispose);
+    final commands = <Object?>[];
+    const channel = MethodChannel('doujin_audio/windows_desktop');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      if (call.method == 'windowCommand') commands.add(call.arguments);
+      return null;
+    });
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      ),
+    );
+    final track = MusicTrack(
+      path: '/library/drag.mp3',
+      displayName: 'Drag',
+      groupKey: '__single_files__',
+      groupTitle: 'Imported files',
+      groupSubtitle: '',
+      isSingle: true,
+    );
+    fixture.library.addTracks([track], persist: false);
+    final session = fixture.playback.createTrackSession(track);
+    addTearDown(session.shutdown);
+    await tester.pumpWidget(
+      fixture.build(
+        SessionDetailScaffold(
+          transitionActive: ValueNotifier<bool>(false),
+          session: fixture.playback.sessionSnapshotById(session.id)!,
+          coverPathFuture: SynchronousFuture<String?>(null),
+          onClose: () {},
+          segmentPanelExpandedNotifier: expanded,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final closeRect = tester.getRect(
+      find.byKey(const ValueKey('session_detail_close_button')),
+    );
+    expect(closeRect.top, 36.0);
+    expect(closeRect.left, 24.0);
+
+    await tester.drag(
+      find.byKey(const ValueKey('session_detail_close_button')),
+      const Offset(40, 0),
+    );
+    expect(commands, isEmpty);
+
+    final detail = tester.getRect(find.byType(SessionDetailScaffold));
+    await tester.dragFrom(
+      Offset(detail.center.dx, detail.top + 16),
+      const Offset(40, 0),
+    );
+    expect(commands, [
+      {'command': 'drag'},
+    ]);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 6));
+  }, variant: const TargetPlatformVariant({TargetPlatform.windows}));
 
   testWidgets(
     'detail renders blurred cover background and preserves original foreground size',
@@ -549,10 +857,6 @@ void main() {
       expect(backgroundCover.fit, BoxFit.cover);
       expect(backgroundCover.cacheWidth, 200);
       expect(find.byType(BackdropFilter), findsNothing);
-      final backdropGate = find.byKey(
-        const ValueKey<String>('session_detail_backdrop_paint_gate'),
-      );
-      expect(tester.widget<Opacity>(backdropGate).opacity, 0);
       final artwork = find.byKey(ValueKey<String>('artwork_${session.id}'));
       final foregroundImage = tester.widget<AsyncLocalCoverImage>(
         find.descendant(
@@ -605,26 +909,6 @@ void main() {
         findsOneWidget,
       );
 
-      final dismissGesture = tester.widget<GestureDetector>(
-        find.byKey(const ValueKey('session_detail_dismiss_gesture')),
-      );
-      if (defaultTargetPlatform == TargetPlatform.android) {
-        dismissGesture.onVerticalDragStart!(DragStartDetails());
-        dismissGesture.onVerticalDragUpdate!(
-          DragUpdateDetails(
-            globalPosition: Offset.zero,
-            delta: const Offset(0, 80),
-            primaryDelta: 80,
-          ),
-        );
-        await tester.pump();
-        expect(tester.widget<Opacity>(backdropGate).opacity, 1);
-        dismissGesture.onVerticalDragEnd!(DragEndDetails(primaryVelocity: 0));
-        await tester.pumpAndSettle();
-      } else {
-        expect(dismissGesture.onVerticalDragUpdate, isNull);
-      }
-      expect(tester.widget<Opacity>(backdropGate).opacity, 0);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 6));
     },
@@ -661,18 +945,18 @@ void main() {
         isInitialized: true,
       );
 
-      final themeProvider = ThemeProvider()..setThemeMode(ThemeMode.light);
-      addTearDown(themeProvider.dispose);
+      // Light mode verification:
+      tester.platformDispatcher.platformBrightnessTestValue = Brightness.light;
+      addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
       await tester.pumpWidget(
-        fixture.build(const PlaylistTab(), themeProvider: themeProvider),
+        fixture.build(SessionDetailPage(sessionId: session.id)),
       );
-      unawaited(
-        Navigator.of(
-          tester.element(find.byType(PlaylistTab)),
-        ).push(buildSessionDetailRoute(sessionId: session.id)),
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 230));
+
+      final lightFiltered = tester.widget<ImageFiltered>(
+        find.byType(ImageFiltered),
       );
-      await tester.pumpAndSettle();
-      final lightFiltered = tester.widget<ImageFiltered>(find.byType(ImageFiltered));
       expect(
         lightFiltered.imageFilter,
         ui.ImageFilter.blur(
@@ -683,9 +967,16 @@ void main() {
       );
 
       // Dark mode verification:
-      await themeProvider.setThemeMode(ThemeMode.dark);
-      await tester.pumpAndSettle();
-      final darkFiltered = tester.widget<ImageFiltered>(find.byType(ImageFiltered));
+      tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+      await tester.pumpWidget(
+        fixture.build(SessionDetailPage(sessionId: session.id)),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 230));
+
+      final darkFiltered = tester.widget<ImageFiltered>(
+        find.byType(ImageFiltered),
+      );
       expect(
         darkFiltered.imageFilter,
         ui.ImageFilter.blur(

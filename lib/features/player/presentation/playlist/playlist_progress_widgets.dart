@@ -23,13 +23,21 @@ typedef _ProgressSliderValue = ({
   bool canSeek,
 });
 
-typedef _ProgressTimecodeValue = ({String elapsedText, String remainingText});
+typedef _ProgressTimecodeValue = ({
+  String elapsedText,
+  String remainingText,
+  String widthText,
+});
+
+double _progressTrackWidth(double sliderWidth) =>
+    max(1.0, sliderWidth - 2 * sessionDetailProgressTrackInset);
 
 class SessionProgressBar extends StatelessWidget {
   const SessionProgressBar({
     super.key,
     required this.session,
     required this.playback,
+    this.inlineTimecodes = false,
     this.timeSegmentLabels = const <TimeSegmentLabel>[],
     this.selectedSegmentId,
     this.onManualSeek,
@@ -37,6 +45,7 @@ class SessionProgressBar extends StatelessWidget {
 
   final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
+  final bool inlineTimecodes;
   final List<TimeSegmentLabel> timeSegmentLabels;
   final String? selectedSegmentId;
   final ValueChanged<Duration>? onManualSeek;
@@ -59,6 +68,7 @@ class SessionProgressBar extends StatelessWidget {
       timeSegmentLabels: timeSegmentLabels,
       selectedSegmentId: selectedSegmentId,
       onManualSeek: onManualSeek,
+      inlineTimecodes: inlineTimecodes,
     );
   }
 }
@@ -72,6 +82,7 @@ class _ProgressSliderAndTimecodes extends StatefulWidget {
     required this.timeSegmentLabels,
     required this.selectedSegmentId,
     required this.onManualSeek,
+    required this.inlineTimecodes,
   });
 
   final PlaybackSessionSnapshot session;
@@ -81,6 +92,7 @@ class _ProgressSliderAndTimecodes extends StatefulWidget {
   final List<TimeSegmentLabel> timeSegmentLabels;
   final String? selectedSegmentId;
   final ValueChanged<Duration>? onManualSeek;
+  final bool inlineTimecodes;
 
   @override
   State<_ProgressSliderAndTimecodes> createState() =>
@@ -95,7 +107,9 @@ class _ProgressSliderAndTimecodesState
   late final ValueNotifier<_ProgressTooltipState?> _tooltipValue;
   bool _isDragging = false;
   double? _dragValueMs;
+  double? _hoverValueMs;
   bool _tickerModeEnabled = true;
+  final _sliderKey = GlobalKey();
 
   @override
   void initState() {
@@ -118,6 +132,9 @@ class _ProgressSliderAndTimecodesState
       final sessionChanged =
           oldWidget.session.id != widget.session.id ||
           oldWidget.session.currentTrackPath != widget.session.currentTrackPath;
+      if (sessionChanged) {
+        _hoverValueMs = null;
+      }
       _positionGate.updateSession(widget.session);
       _publishProgressValue(force: sessionChanged);
     } else if (oldWidget.timeSegmentLabels != widget.timeSegmentLabels ||
@@ -162,11 +179,15 @@ class _ProgressSliderAndTimecodesState
         tooltipValue: _tooltipValue,
         staticLayer: widget.staticLayer,
         primaryColor: widget.primaryColor,
+        onHover: _handleSliderHover,
+        onHoverExit: _handleSliderHoverExit,
         onLongPressMove: _handleLongPressPosition,
         onLongPressEnd: _clearTooltip,
         onChangeStart: _handleSliderChangeStart,
         onChanged: _handleSliderChanged,
         onChangeEnd: _handleSliderChangeEnd,
+        inlineTimecodes: widget.inlineTimecodes,
+        sliderKey: _sliderKey,
       ),
     );
   }
@@ -176,7 +197,10 @@ class _ProgressSliderAndTimecodesState
     if (force || _sliderValue.value != nextSlider) {
       _sliderValue.value = nextSlider;
     }
-    final nextTimecode = _buildTimecodeValue(nextSlider);
+    final nextTimecode = _buildTimecodeValue(
+      nextSlider,
+      overridePositionMs: _isDragging ? null : _hoverValueMs,
+    );
     if (force || _timecodeValue.value != nextTimecode) {
       _timecodeValue.value = nextTimecode;
     }
@@ -219,10 +243,14 @@ class _ProgressSliderAndTimecodesState
     );
   }
 
-  _ProgressTimecodeValue _buildTimecodeValue(_ProgressSliderValue value) {
+  _ProgressTimecodeValue _buildTimecodeValue(
+    _ProgressSliderValue value, {
+    double? overridePositionMs,
+  }) {
+    final effectiveMillis = (overridePositionMs ?? value.sliderValue).round();
     final shownSeconds = value.hasKnownDuration
-        ? (value.sliderValue ~/ 1000).clamp(0, value.duration.inSeconds)
-        : (value.sliderValue ~/ 1000);
+        ? (effectiveMillis ~/ 1000).clamp(0, value.duration.inSeconds)
+        : (effectiveMillis ~/ 1000);
     final remainingSeconds = value.hasKnownDuration
         ? (value.duration.inSeconds - shownSeconds).clamp(
             0,
@@ -231,41 +259,47 @@ class _ProgressSliderAndTimecodesState
         : 0;
     return (
       elapsedText: formatDurationCompact(Duration(seconds: shownSeconds)),
+      widthText: value.hasKnownDuration
+          ? formatDurationCompact(value.duration)
+          : '00:00:00',
       remainingText: value.hasKnownDuration
           ? '-${formatDurationCompact(Duration(seconds: remainingSeconds))}'
           : '--:--',
     );
   }
 
-  void _handleLongPressPosition(Offset localPosition) {
-    final value = _sliderValue.value;
-    if (!value.canSeek) return;
-    _showLongPressLabels(localPosition, value.maxMillis, _overlayLabels);
+  void _handleSliderHover(Offset localPosition) {
+    if (_isDragging) return;
+    final hoverMs = _sliderValueAt(localPosition);
+    if (hoverMs == null) return;
+    _hoverValueMs = hoverMs;
+    _publishProgressValue();
+    _showLabelsAtSliderValue(hoverMs);
   }
 
-  void _showLongPressLabels(
-    Offset localPosition,
-    double maxMillis,
-    List<TimeSegmentLabel> labels,
-  ) {
-    if (labels.isEmpty) {
-      _clearTooltip();
-      return;
-    }
-    final box = context.findRenderObject() as RenderBox?;
+  void _handleSliderHoverExit() {
+    if (_isDragging) return;
+    if (_hoverValueMs == null) return;
+    _hoverValueMs = null;
+    _clearTooltip();
+    _publishProgressValue();
+  }
+
+  void _handleLongPressPosition(Offset localPosition) {
+    final valueMs = _sliderValueAt(localPosition);
+    if (valueMs != null) _showLabelsAtSliderValue(valueMs);
+  }
+
+  double? _sliderValueAt(Offset localPosition) {
+    final value = _sliderValue.value;
+    if (!value.canSeek) return null;
+    final box = _sliderKey.currentContext?.findRenderObject() as RenderBox?;
     final width = box?.size.width ?? 0;
-    if (width <= 0) return;
-    const horizontalPadding = 24.0;
-    final trackWidth = max(1.0, width - horizontalPadding * 2);
-    final dx = localPosition.dx.clamp(
-      horizontalPadding,
-      width - horizontalPadding,
-    );
-    final ratio = ((dx - horizontalPadding) / trackWidth).clamp(0.0, 1.0);
-    final position = Duration(milliseconds: (maxMillis * ratio).round());
-    _showLabelsAtPosition(
-      _tooltipStateForPosition(position, dx, width, labels),
-    );
+    if (width <= 0) return null;
+    final fraction =
+        (localPosition.dx - sessionDetailProgressTrackInset) /
+        _progressTrackWidth(width);
+    return value.maxMillis * fraction.clamp(0.0, 1.0);
   }
 
   void _handleSliderChangeStart(double value) {
@@ -273,6 +307,7 @@ class _ProgressSliderAndTimecodesState
     _positionGate.tickerModeEnabled = false;
     _isDragging = true;
     _dragValueMs = value;
+    _hoverValueMs = null;
     _publishProgressValue();
     _showLabelsAtSliderValue(value);
   }
@@ -280,6 +315,7 @@ class _ProgressSliderAndTimecodesState
   void _handleSliderChanged(double value) {
     _isDragging = true;
     _dragValueMs = value;
+    _hoverValueMs = null;
     _publishProgressValue();
     _showLabelsAtSliderValue(value);
   }
@@ -291,6 +327,7 @@ class _ProgressSliderAndTimecodesState
     widget.playback.seekSession(widget.session.id, position);
     _isDragging = false;
     _dragValueMs = null;
+    _hoverValueMs = null;
     _clearTooltip();
     _publishProgressValue();
     _positionGate.tickerModeEnabled = _tickerModeEnabled;
@@ -322,13 +359,12 @@ class _ProgressSliderAndTimecodesState
     List<TimeSegmentLabel> labels,
   ) {
     if (labels.isEmpty) return null;
-    final box = context.findRenderObject() as RenderBox?;
+    final box = _sliderKey.currentContext?.findRenderObject() as RenderBox?;
     final width = box?.size.width ?? 0;
     if (width <= 0) return null;
-    const horizontalPadding = 24.0;
-    final trackWidth = max(1.0, width - horizontalPadding * 2);
+    final trackWidth = _progressTrackWidth(width);
     final ratio = (valueMs / maxMillis).clamp(0.0, 1.0);
-    final dx = horizontalPadding + trackWidth * ratio;
+    final dx = sessionDetailProgressTrackInset + trackWidth * ratio;
     final position = Duration(milliseconds: valueMs.round());
     return _tooltipStateForPosition(position, dx, width, labels);
   }
@@ -369,11 +405,15 @@ class _ProgressSliderFrame extends StatefulWidget {
     required this.tooltipValue,
     required this.staticLayer,
     required this.primaryColor,
+    required this.onHover,
+    required this.onHoverExit,
     required this.onLongPressMove,
     required this.onLongPressEnd,
     required this.onChangeStart,
     required this.onChanged,
     required this.onChangeEnd,
+    required this.inlineTimecodes,
+    required this.sliderKey,
   });
 
   final ValueListenable<_ProgressSliderValue> sliderValue;
@@ -381,11 +421,15 @@ class _ProgressSliderFrame extends StatefulWidget {
   final ValueListenable<_ProgressTooltipState?> tooltipValue;
   final Widget staticLayer;
   final Color primaryColor;
+  final ValueChanged<Offset> onHover;
+  final VoidCallback onHoverExit;
   final ValueChanged<Offset> onLongPressMove;
   final VoidCallback onLongPressEnd;
   final ValueChanged<double> onChangeStart;
   final ValueChanged<double> onChanged;
   final ValueChanged<double> onChangeEnd;
+  final bool inlineTimecodes;
+  final GlobalKey sliderKey;
 
   @override
   State<_ProgressSliderFrame> createState() => _ProgressSliderFrameState();
@@ -494,96 +538,122 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
 
   @override
   Widget build(BuildContext context) {
-    return CompositedTransformTarget(
+    final slider = CompositedTransformTarget(
+      key: widget.sliderKey,
       link: _layerLink,
-      child: OverlayPortal(
-        controller: _tooltipPortalController,
-        overlayChildBuilder: (context) {
-          return ValueListenableBuilder<_ProgressTooltipState?>(
-            valueListenable: widget.tooltipValue,
-            builder: (context, currentValue, child) {
-              final value = currentValue ?? _lastTooltip;
-              if (value == null || value.labels.isEmpty) {
-                return const SizedBox.shrink();
-              }
-              return Align(
-                alignment: Alignment.topLeft,
-                child: CompositedTransformFollower(
-                  link: _layerLink,
-                  showWhenUnlinked: false,
-                  followerAnchor: Alignment.bottomLeft,
-                  offset: Offset(value.left, -8),
-                  child: FadeTransition(
-                    opacity: _tooltipOpacity,
-                    child: _TimeSegmentDragTooltip(labels: value.labels),
+      child: MouseRegion(
+        hitTestBehavior: HitTestBehavior.translucent,
+        onEnter: (event) => widget.onHover(event.localPosition),
+        onHover: (event) => widget.onHover(event.localPosition),
+        onExit: (_) => widget.onHoverExit(),
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onLongPressStart: (details) =>
+              widget.onLongPressMove(details.localPosition),
+          onLongPressMoveUpdate: (details) =>
+              widget.onLongPressMove(details.localPosition),
+          onLongPressEnd: (_) => widget.onLongPressEnd(),
+          onLongPressCancel: widget.onLongPressEnd,
+          child: SizedBox(
+            height: 20,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned.fill(child: widget.staticLayer),
+                SliderTheme(
+                  data: sessionDetailProgressSliderTheme(
+                    context,
+                    widget.primaryColor,
+                  ),
+                  child: ValueListenableBuilder<_ProgressSliderValue>(
+                    valueListenable: widget.sliderValue,
+                    builder: (context, value, child) {
+                      return Slider(
+                        max: value.maxMillis,
+                        value: value.sliderValue,
+                        secondaryTrackValue: value.bufferedValue,
+                        onChangeStart: value.canSeek
+                            ? widget.onChangeStart
+                            : null,
+                        onChanged: value.canSeek ? widget.onChanged : null,
+                        onChangeEnd: value.canSeek ? widget.onChangeEnd : null,
+                        semanticFormatterCallback: (rawValue) {
+                          final position = Duration(
+                            milliseconds: rawValue.round(),
+                          );
+                          return '${formatDurationCompact(position)} / '
+                              '${formatDurationCompact(value.duration)}';
+                        },
+                      );
+                    },
                   ),
                 ),
-              );
-            },
-          );
-        },
-        child: Column(
-          children: [
-            GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onLongPressStart: (details) =>
-                  widget.onLongPressMove(details.localPosition),
-              onLongPressMoveUpdate: (details) =>
-                  widget.onLongPressMove(details.localPosition),
-              onLongPressEnd: (_) => widget.onLongPressEnd(),
-              onLongPressCancel: widget.onLongPressEnd,
-              child: SizedBox(
-                height: 20,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Positioned.fill(child: widget.staticLayer),
-                    SliderTheme(
-                      data: sessionDetailProgressSliderTheme(
-                        context,
-                        widget.primaryColor,
-                      ),
-                      child: ValueListenableBuilder<_ProgressSliderValue>(
-                        valueListenable: widget.sliderValue,
-                        builder: (context, value, child) {
-                          return Slider(
-                            max: value.maxMillis,
-                            value: value.sliderValue,
-                            secondaryTrackValue: value.bufferedValue,
-                            onChangeStart: value.canSeek
-                                ? widget.onChangeStart
-                                : null,
-                            onChanged: value.canSeek ? widget.onChanged : null,
-                            onChangeEnd: value.canSeek
-                                ? widget.onChangeEnd
-                                : null,
-                            semanticFormatterCallback: (rawValue) {
-                              final position = Duration(
-                                milliseconds: rawValue.round(),
-                              );
-                              return '${formatDurationCompact(position)} / '
-                                  '${formatDurationCompact(value.duration)}';
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              ],
             ),
-            Transform.translate(
-              offset: const Offset(0, -3),
-              child: ValueListenableBuilder<_ProgressTimecodeValue>(
-                valueListenable: widget.timecodeValue,
-                builder: (context, value, child) {
-                  return _ProgressTimecodeRow(value: value);
-                },
-              ),
-            ),
-          ],
+          ),
         ),
       ),
+    );
+    return OverlayPortal(
+      controller: _tooltipPortalController,
+      overlayChildBuilder: (context) {
+        return ValueListenableBuilder<_ProgressTooltipState?>(
+          valueListenable: widget.tooltipValue,
+          builder: (context, currentValue, child) {
+            final value = currentValue ?? _lastTooltip;
+            if (value == null || value.labels.isEmpty) {
+              return const SizedBox.shrink();
+            }
+            return Align(
+              alignment: Alignment.topLeft,
+              child: CompositedTransformFollower(
+                link: _layerLink,
+                showWhenUnlinked: false,
+                followerAnchor: Alignment.bottomLeft,
+                offset: Offset(value.left, -8),
+                child: FadeTransition(
+                  opacity: _tooltipOpacity,
+                  child: _TimeSegmentDragTooltip(labels: value.labels),
+                ),
+              ),
+            );
+          },
+        );
+      },
+      child: widget.inlineTimecodes
+          ? ValueListenableBuilder<_ProgressTimecodeValue>(
+              valueListenable: widget.timecodeValue,
+              child: slider,
+              builder: (context, value, child) => Row(
+                children: [
+                  TimecodeLabel(
+                    text: value.elapsedText,
+                    reserveText: value.widthText,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(child: child!),
+                  const SizedBox(width: 8),
+                  TimecodeLabel(
+                    text: value.remainingText,
+                    reserveText: '-${value.widthText}',
+                    alignEnd: true,
+                  ),
+                ],
+              ),
+            )
+          : Column(
+              children: [
+                slider,
+                Transform.translate(
+                  offset: const Offset(0, -3),
+                  child: ValueListenableBuilder<_ProgressTimecodeValue>(
+                    valueListenable: widget.timecodeValue,
+                    builder: (context, value, child) =>
+                        _ProgressTimecodeRow(value: value),
+                  ),
+                ),
+              ],
+            ),
     );
   }
 }
@@ -749,9 +819,8 @@ class _TimeSegmentProgressPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (labels.isEmpty || duration.inMilliseconds <= 0) return;
-    const horizontalPadding = 24.0;
-    const trackStart = horizontalPadding;
-    final trackWidth = max(1.0, size.width - horizontalPadding * 2);
+    const trackStart = sessionDetailProgressTrackInset;
+    final trackWidth = _progressTrackWidth(size.width);
     final trackY = size.height / 2.0;
     final trackRect = Rect.fromLTWH(trackStart, trackY - 2.5, trackWidth, 5);
 

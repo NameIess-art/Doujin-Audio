@@ -6,9 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/widgets/app_search_page.dart';
 
 void main() {
-  testWidgets('all three search sections have no background', (
-    tester,
-  ) async {
+  testWidgets('all three search sections have no background', (tester) async {
     for (final brightness in Brightness.values) {
       final theme = ThemeData(brightness: brightness);
       await tester.pumpWidget(
@@ -35,7 +33,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(DecoratedSliver), findsNothing);
       expect(find.byType(AppSearchSuggestionSection), findsNWidgets(3));
-      expect(find.byType(InputChip), findsNWidgets(3));
+      expect(find.byType(AppElementChip), findsNWidgets(3));
       expect(tester.takeException(), isNull);
     }
   });
@@ -68,15 +66,7 @@ void main() {
       expect(find.byIcon(Icons.expand_more_rounded), findsNWidgets(2));
       expect(tester.getSize(expandButtons.first), const Size(32, 32));
       expect(tester.getTopRight(expandButtons.first).dx, 320 - 16);
-      final firstChip = tester.widget<InputChip>(find.byType(InputChip).first);
-      expect(
-        firstChip.padding,
-        const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-      );
-      expect(firstChip.labelPadding, const EdgeInsets.symmetric(horizontal: 4));
-      expect(firstChip.visualDensity, VisualDensity.compact);
-      expect(firstChip.backgroundColor, isNull);
-      for (final chip in find.byType(InputChip).evaluate()) {
+      for (final chip in find.byType(AppElementChip).evaluate()) {
         final paragraph = tester.renderObject<RenderParagraph>(
           find.descendant(
             of: find.byWidget(chip.widget),
@@ -300,7 +290,10 @@ void main() {
       await tester.tap(find.byTooltip('Expand'));
       await tester.pumpAndSettle();
       expect(find.text('suggestion 0003'), findsOneWidget);
-      expect(find.byType(InputChip).evaluate().length, lessThanOrEqualTo(30));
+      expect(
+        find.byType(AppElementChip).evaluate().length,
+        lessThanOrEqualTo(30),
+      );
       await tester.scrollUntilVisible(
         find.text('suggestion 0029'),
         600,
@@ -373,7 +366,7 @@ void main() {
     expect(expansionReads, lessThan(100));
     expect(find.text('suggestion 4999'), findsNothing);
     expect(
-      tester.widget<InputChip>(find.byType(InputChip).first).selected,
+      tester.widget<AppElementChip>(find.byType(AppElementChip).first).selected,
       isTrue,
     );
 
@@ -447,7 +440,9 @@ void main() {
       await tester.pumpWidget(buildPage());
       await tester.pumpAndSettle();
       expect(
-        tester.widget<InputChip>(find.byType(InputChip).first).selected,
+        tester
+            .widget<AppElementChip>(find.byType(AppElementChip).first)
+            .selected,
         isTrue,
       );
       expect(tester.takeException(), isNull);
@@ -517,6 +512,90 @@ void main() {
     expect(find.text('suggestion 0000'), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'standalone element rows track labels, scale, width and read-only state',
+    (tester) async {
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      const items = ['automatic', 'manual', 'other'];
+      var labels = {
+        'automatic': 'Automatic',
+        'manual': 'Manual',
+        'other': 'Other',
+      };
+      var scale = 1.0;
+      var readOnly = false;
+      var toggles = 0;
+      Widget buildPage() => MaterialApp(
+        home: MediaQuery(
+          data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+          child: Scaffold(
+            body: CustomScrollView(
+              slivers: [
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  sliver: AppElementChipSliver(
+                    items: items,
+                    labels: labels,
+                    isSelected: (key) => key != 'other',
+                    isEnabled: (key) => key != 'automatic',
+                    disabledHint: 'Already listened',
+                    readOnly: readOnly,
+                    onToggle: (_) => toggles++,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.binding.setSurfaceSize(const Size(320, 600));
+      await tester.pumpWidget(buildPage());
+      await tester.pumpAndSettle();
+      final automatic = find.byKey(const ValueKey('automatic'));
+      final manual = find.byKey(const ValueKey('manual'));
+      expect(tester.widget<AppElementChip>(automatic).onPressed, isNull);
+      expect(find.byTooltip('Already listened'), findsOneWidget);
+      await tester.tap(manual);
+      expect(toggles, 1);
+      for (final width in [320.0, 960.0, 390.0]) {
+        scale = width == 960 ? 1.0 : 1.6;
+        labels = {
+          'automatic': 'Automatic element with a very long display name',
+          'manual': '另一个具有较长名称的手动选择元素 with English text',
+          'other': 'Other',
+        };
+        await tester.binding.setSurfaceSize(Size(width, 600));
+        await tester.pumpWidget(buildPage());
+        await tester.pumpAndSettle();
+        for (final item in items) {
+          final rect = tester.getRect(find.byKey(ValueKey(item)));
+          expect(rect.left, greaterThanOrEqualTo(16));
+          expect(rect.right, lessThanOrEqualTo(width - 16));
+        }
+        expect(find.text('Manual'), findsNothing);
+        expect(tester.takeException(), isNull);
+      }
+      readOnly = true;
+      await tester.pumpWidget(buildPage());
+      await tester.pumpAndSettle();
+      expect(tester.widget<AppElementChip>(manual).onPressed, isNull);
+      final cs = Theme.of(tester.element(manual)).colorScheme;
+      Color? background(Finder chip) => tester
+          .widget<Material>(
+            find.descendant(of: chip, matching: find.byType(Material)),
+          )
+          .color;
+      expect(background(manual), cs.primary.withValues(alpha: .16));
+      expect(background(automatic), cs.surfaceContainerHighest);
+      expect(find.byType(IconButton), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets('confirmation remains above keyboard without category header', (
     tester,

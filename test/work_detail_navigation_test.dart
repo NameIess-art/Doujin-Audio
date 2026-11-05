@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
+import 'package:doujin_audio/app/presentation/app_orientation_controller.dart';
 import 'package:doujin_audio/app/presentation/desktop_main_navigation.dart';
 import 'package:doujin_audio/app/presentation/element_action_menu.dart';
 import 'package:doujin_audio/app/presentation/global_shortcuts.dart';
@@ -25,6 +26,7 @@ import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_work_detail_sheet.dart';
 import 'package:doujin_audio/features/library/presentation/audio_detail_sheet.dart';
+import 'package:doujin_audio/features/library/presentation/library_tab.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/presentation/active_session_carousel.dart';
@@ -65,12 +67,14 @@ Future<WorkDetailNavigation> _pumpApp(
   WidgetTester tester, {
   Size size = const Size(1280, 800),
   bool withSession = false,
+  MusicTrack? playbackTrack,
   bool withNavigationLock = false,
   bool showAsmrOne = false,
   bool withDownloadTasks = false,
   int libraryWorkCount = 0,
   Widget? home,
   ThemeData? theme,
+  AppOrientationController? orientationController,
   NotificationListenerCallback<NavigationNotification>? onNavigationNotification,
 }) async {
   tester.view.devicePixelRatio = 1;
@@ -145,9 +149,12 @@ Future<WorkDetailNavigation> _pumpApp(
   }
   final sessions = <PlaybackSessionSnapshot>[];
   if (withSession) {
+    if (playbackTrack != null) {
+      fixture.library.addTracks([playbackTrack], persist: false);
+    }
     final session = PlaybackSession(
       id: 'pane_session',
-      currentTrackPath: '/audio/pane.mp3',
+      currentTrackPath: playbackTrack?.path ?? '/audio/pane.mp3',
       loopMode: SessionLoopMode.single,
       nonSingleLoopMode: SessionLoopMode.single,
       volume: 1,
@@ -193,6 +200,10 @@ Future<WorkDetailNavigation> _pumpApp(
         ),
       ),
       overrides: [
+        if (orientationController != null)
+          appOrientationControllerProvider.overrideWithValue(
+            orientationController,
+          ),
         if (downloads != null) ...[
           asmrDownloadManagerProvider.overrideWithValue(downloads),
           asmrLibraryControllerProvider.overrideWithValue(null),
@@ -305,6 +316,70 @@ class _DetailState extends State<_Detail> {
 }
 
 void main() {
+  testWidgets(
+    'Android landscape playback exit retains the loaded main page and scroll position',
+    (tester) async {
+      tester.view.display.devicePixelRatio = 1;
+      tester.view.display.size = const Size(390, 820);
+      addTearDown(tester.view.display.reset);
+      final calls = <List<DeviceOrientation>>[];
+      final orientation = AppOrientationController(
+        setPreferredOrientations: (orientations) async => calls.add(orientations),
+        setSystemUiMode: (_) async {},
+      );
+      await orientation.updateDisplay(390);
+      await orientation.setPlaybackDetailVisible(true);
+      final navigation = await _pumpApp(
+        tester,
+        size: const Size(820, 390),
+        withSession: true,
+        libraryWorkCount: 80,
+        orientationController: orientation,
+      );
+      final library = find.byType(LibraryTab, skipOffstage: false);
+      final libraryState = tester.state(library);
+      final scroll = find
+          .descendant(
+            of: library,
+            matching: find.byWidgetPredicate(
+              (widget) =>
+                  widget is Scrollable &&
+                  widget.axisDirection == AxisDirection.down,
+            ),
+            skipOffstage: false,
+          )
+          .first;
+      final scrollState = tester.state<ScrollableState>(scroll);
+      scrollState.position.jumpTo(200);
+      await _settle(tester);
+      final offset = scrollState.position.pixels;
+      expect(offset, greaterThan(0));
+
+      unawaited(
+        navigation.rootNavigatorKey.currentState!.push(
+          buildSessionDetailRoute(sessionId: 'pane_session'),
+        ),
+      );
+      await _settle(tester);
+      expect(tester.state(library), same(libraryState));
+      calls.clear();
+      await tester.tap(
+        find.byKey(const ValueKey('session_detail_close_button')),
+      );
+      await tester.pump();
+      expect(calls, [AppOrientationPolicy.portrait.allowedOrientations]);
+      tester.view.physicalSize = const Size(390, 820);
+      await _finishRouteAnimation(tester);
+
+      expect(find.byType(SessionDetailPage), findsNothing);
+      expect(tester.state(library), same(libraryState));
+      expect(tester.state<ScrollableState>(scroll), same(scrollState));
+      expect(scrollState.position.pixels, closeTo(offset, 0.01));
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
+
   for (final action in ['Search online', 'Search locally']) {
     testWidgets(
       '$action from the work detail replaces subpages above the main page',
@@ -354,6 +429,13 @@ void main() {
         await tester.tap(find.text(action));
         await _finishRouteAnimation(tester);
 
+        await tester.tap(
+          find.descendant(
+            of: _main,
+            matching: find.byKey(const ValueKey('app_search_element_summary')),
+          ),
+        );
+        await _finishRouteAnimation(tester);
         final search = find.descendant(
           of: _main,
           matching: find.byType(EditableText),
@@ -786,7 +868,8 @@ void main() {
           );
           await tester.tap(find.byWidget(rail.destinations[1].label));
           await _settle(tester);
-          tester.widget<SessionListCard>(find.byType(SessionListCard)).onOpen();
+          final row = find.byType(SessionListCard);
+          tester.widget<SessionListCard>(row).onOpen(tester.element(row));
           await expectFullscreenAndClose();
           expect(content.canPop(), isFalse);
 
@@ -1066,6 +1149,90 @@ void main() {
       );
     }
 
+    for (final remote in [false, true]) {
+      testWidgets(
+        'landscape playback opens work in the main right pane on $platform, remote=$remote',
+        (tester) async {
+          tester.view.display.devicePixelRatio = 1;
+          tester.view.display.size = const Size(1280, 800);
+          addTearDown(tester.view.display.reset);
+          final track =
+              testMusicTrack(
+                name: 'Pane work track',
+                path: remote
+                    ? 'https://audio.test/pane.mp3'
+                    : '/library/pane/track.mp3',
+                groupKey: '/library/pane',
+                groupTitle: 'Pane work',
+              ).copyWith(
+                remoteMetadataKind: remote
+                    ? MusicTrack.remoteMetadataKindAsmrOne
+                    : null,
+                remoteMetadata: remote
+                    ? {'id': 42, 'title': 'Online pane work'}
+                    : null,
+              );
+          final navigation = await _pumpApp(
+            tester,
+            withSession: true,
+            playbackTrack: track,
+          );
+          await _open(tester, navigation, 'Previous work');
+          final content = navigation.contentNavigatorKey.currentState!;
+          unawaited(
+            content.push(
+              MaterialPageRoute<void>(
+                builder: (_) => const Scaffold(body: Text('Previous content')),
+              ),
+            ),
+          );
+          await _settle(tester);
+          final root = navigation.rootNavigatorKey.currentState!;
+          unawaited(
+            root.push(buildSessionDetailRoute(sessionId: 'pane_session')),
+          );
+          await _settle(tester, withAsync: true);
+          expect(find.byType(SessionDetailPage), findsOneWidget);
+
+          await tester.tap(
+            find.byKey(const ValueKey('session_work_detail_button')),
+          );
+          await tester.pump();
+          expect(find.byType(WorkDetailPage), findsNothing);
+          await _finishRouteAnimation(tester);
+          await _settle(tester, withAsync: true);
+
+          final work = find.byType(WorkDetailPage);
+          expect(work, findsOneWidget);
+          expect(
+            find.byType(SessionDetailPage, skipOffstage: false),
+            findsNothing,
+          );
+          expect(root.canPop(), isFalse);
+          expect(navigation.rootNavigatorKey.currentState!.canPop(), isFalse);
+          expect(content.canPop(), isFalse);
+          expect(navigation.isOpen, isTrue);
+          expect(
+            ModalRoute.of(tester.element(work))!.navigator,
+            same(navigation.navigatorKey.currentState),
+          );
+          expect(find.ancestor(of: work, matching: _pane), findsOneWidget);
+          expect(tester.getRect(work).left, greaterThan(640));
+          expect(tester.widget<WorkDetailPage>(work).asmrWork != null, remote);
+
+          navigation.navigatorKey.currentState!.pop();
+          await _settle(tester, withAsync: true);
+          expect(navigation.isOpen, isFalse);
+          expect(
+            find.byType(SessionDetailPage, skipOffstage: false),
+            findsNothing,
+          );
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
+
     testWidgets(
       'local and ASMR public entrypoints share the detail pane on $platform',
       (tester) async {
@@ -1215,8 +1382,27 @@ void main() {
           return colors;
         });
         final cornerBackground = cornerColors!.removeLast();
-        expect(cornerColors.take(corners.length), everyElement(cornerBackground));
         final scheme = Theme.of(tester.element(_main)).colorScheme;
+        final paneCorners = cornerColors.take(corners.length - 2);
+        final dividerEnds = cornerColors.skip(corners.length - 2).take(2);
+        final isWindows = platform == TargetPlatform.windows;
+        expect(paneCorners.first, cornerBackground);
+        expect(
+          paneCorners.skip(1),
+          everyElement(isWindows ? scheme.surface : cornerBackground),
+        );
+        if (isWindows) {
+          expect(
+            dividerEnds.map(
+              (color) =>
+                  (color.r - scheme.surface.r) /
+                  (scheme.outlineVariant.r - scheme.surface.r),
+            ),
+            everyElement(greaterThan(0.65)),
+          );
+        } else {
+          expect(dividerEnds, everyElement(cornerBackground));
+        }
         // A fractional vertical origin blends the top stroke into two rows.
         expect(
           cornerColors.skip(corners.length).take(edges.length).map(

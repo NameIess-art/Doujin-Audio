@@ -22,6 +22,7 @@ import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/app_entry_ink_well.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
@@ -130,6 +131,7 @@ void main() {
         'interaction-overlap',
         'backup',
         'detail-compare',
+        'session-cover-transitions',
         'playback',
         'page-transitions',
         'page-transitions-playing',
@@ -232,6 +234,7 @@ void main() {
 
     await fixture.library.loadLibraryTree();
     debugPrint('PERF_STAGE tree_ready');
+    final routeObserver = _PerformanceRouteObserver();
     await tester.pumpWidget(
       fixture.build(
         const ExcludeSemantics(
@@ -240,13 +243,15 @@ void main() {
         ),
         navigatorObservers: <NavigatorObserver>[
           UiInteractionNavigatorObserver.instance,
-          _PerformanceRouteObserver(),
+          routeObserver,
         ],
         overrides: <Override>[
           asmrLibraryControllerProvider.overrideWithValue(asmrController),
           mainOverlayUiProvider.overrideWithValue(
-            const MainOverlayUiState(
-              overlaySessions: <PlaybackSessionSnapshot>[],
+            MainOverlayUiState(
+              overlaySessions: _scenario == 'session-cover-transitions'
+                  ? [fixture.playback.sessionSnapshotById(sessions.first.id)!]
+                  : const <PlaybackSessionSnapshot>[],
               playingSessionCount: 0,
               hasPlayingAudioSession: false,
               activeSessionCount: 0,
@@ -260,6 +265,26 @@ void main() {
     debugPrint('PERF_STAGE first_frame_ready');
     await tester.pumpAndSettle();
     debugPrint('PERF_STAGE fixture_ready');
+
+    if (_scenario == 'session-cover-transitions') {
+      final samples = await _measureSessionCoverTransitions(
+        tester,
+        sessions.first.id,
+        routeObserver,
+      );
+      final report = _pageTransitionReport(samples, playing: false);
+      binding.reportData = {'uiPerformance': report};
+      debugPrint('UI_PERFORMANCE ${jsonEncode(report)}');
+      for (final sample in samples.rounds.skip(2)) {
+        expect(
+          sample['coverFlight'],
+          isTrue,
+          reason: '${sample['transition']} should move warm artwork',
+        );
+      }
+      _expectFrameBudgets(samples.rounds);
+      return;
+    }
 
     if (_scenario == 'page-transitions') {
       final samples = await _measurePageTransitions(tester);
@@ -1628,6 +1653,47 @@ Future<void> _waitForHostTimeline(WidgetTester tester) async {
       }
     });
   }
+}
+
+Future<_TransitionSamples> _measureSessionCoverTransitions(
+  WidgetTester tester,
+  String sessionId,
+  _PerformanceRouteObserver routeObserver,
+) async {
+  await _switchMainPage(tester, MainDestinationType.playlist);
+  final navigator = tester.state<NavigatorState>(find.byType(Navigator).first);
+  final source = find.byKey(ValueKey('playlist_cover_$sessionId'));
+  final close = find.byKey(const ValueKey('session_detail_close_button'));
+  final coverFlight = find.byKey(const ValueKey('session_detail_cover_flight'));
+  final rounds = <Map<String, Object>>[];
+  for (var opening = 1; opening <= _openings; opening++) {
+    routeObserver.lastPushed = null;
+    final ink = find
+        .ancestor(of: source, matching: find.byType(AppEntryInkWell))
+        .first;
+    for (final direction in ['open', 'close']) {
+      final openingDetail = direction == 'open';
+      var sawFlight = false;
+      final sample = await _measureTransitionAction(
+        tester,
+        'session-cover-$direction',
+        opening,
+        openingDetail
+            ? tester.widget<AppEntryInkWell>(ink).onTap!
+            : tester.widget<IconButton>(close).onPressed!,
+        () {
+          final visible = _routeTransitionVisible(routeObserver.lastPushed);
+          if (visible && !sawFlight) {
+            sawFlight = coverFlight.evaluate().isNotEmpty;
+          }
+          return visible;
+        },
+      );
+      rounds.add({...sample, 'coverFlight': sawFlight});
+    }
+    expect(navigator.canPop(), isFalse);
+  }
+  return (rounds: rounds, conditions: <Map<String, Object>>[]);
 }
 
 Future<Map<String, Object>> _measureTransitionAction(

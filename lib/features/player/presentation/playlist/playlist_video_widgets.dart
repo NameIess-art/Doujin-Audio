@@ -19,7 +19,6 @@ import '../../../../core/media/path_matcher.dart';
 import '../../../../core/media/time_text_formatters.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_feedback.dart';
-import '../../../../core/widgets/app_glass_surface.dart';
 import '../../../../core/widgets/async_cover_image.dart';
 import '../../../settings/application/settings_state.dart';
 import '../../application/playback_facade.dart';
@@ -64,6 +63,7 @@ Future<void> showSessionVideoFullscreen(
     final route = buildAppPageRoute<void>(
       context: context,
       fullscreenDialog: true,
+      slide: false,
       child: SessionVideoFullscreenPage(
         sessionId: sessionId,
         trackPath: trackPath,
@@ -890,20 +890,12 @@ class _SessionVideoFullscreenPageState
                     ),
                     child: Align(
                       alignment: Alignment.topLeft,
-                      child: AppGlassSurface(
-                        backgroundColor: Colors.black,
-                        borderRadius: BorderRadius.circular(exitButtonSize / 2),
-                        child: IconButton(
-                          key: const ValueKey<String>('fullscreen_video_exit'),
-                          tooltip: i18n.tr('exit_fullscreen'),
-                          onPressed: _requestExit,
-                          color: Colors.white,
-                          constraints: const BoxConstraints.tightFor(
-                            width: exitButtonSize,
-                            height: exitButtonSize,
-                          ),
-                          icon: const Icon(Icons.arrow_back_rounded),
-                        ),
+                      child: SessionOverlayIconButton(
+                        key: const ValueKey<String>('fullscreen_video_exit'),
+                        tooltip: i18n.tr('exit_fullscreen'),
+                        onPressed: _requestExit,
+                        buttonSize: exitButtonSize,
+                        icon: Icons.fullscreen_exit_rounded,
                       ),
                     ),
                   ),

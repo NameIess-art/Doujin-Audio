@@ -24,7 +24,7 @@ List<DropdownMenuItem<T>> _alignItems<T>(
   }).toList();
 }
 
-class UnifiedDropdownButton<T> extends StatelessWidget {
+class UnifiedDropdownButton<T> extends StatefulWidget {
   const UnifiedDropdownButton({
     super.key,
     required this.value,
@@ -32,7 +32,7 @@ class UnifiedDropdownButton<T> extends StatelessWidget {
     required this.onChanged,
     this.isExpanded = false,
     this.isDense = false,
-    this.alignment = AlignmentDirectional.centerEnd,
+    this.alignment = AlignmentDirectional.centerStart,
     this.menuMaxHeight,
     this.multilineItems = false,
   });
@@ -47,24 +47,63 @@ class UnifiedDropdownButton<T> extends StatelessWidget {
   final bool multilineItems;
 
   @override
+  State<UnifiedDropdownButton<T>> createState() =>
+      _UnifiedDropdownButtonState<T>();
+}
+
+class _UnifiedDropdownButtonState<T> extends State<UnifiedDropdownButton<T>> {
+  final _focusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return DropdownButtonHideUnderline(
-      child: DropdownButton<T>(
-        value: value,
-        items: _alignItems(items, alignment, multilineItems),
-        selectedItemBuilder: multilineItems
-            ? (context) => items
-                  .map((item) => Align(alignment: alignment, child: item.child))
-                  .toList(growable: false)
-            : null,
-        onChanged: onChanged,
-        isExpanded: isExpanded,
-        isDense: isDense,
-        alignment: alignment,
-        menuMaxHeight: menuMaxHeight,
-        itemHeight: multilineItems ? null : kMinInteractiveDimension,
-        dropdownColor: Theme.of(context).colorScheme.surfaceContainerHigh,
-        borderRadius: AppRadius.borderMedium,
+    final onChanged = widget.onChanged;
+    return Theme(
+      data: Theme.of(context).copyWith(hoverColor: Colors.transparent),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 44),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<T>(
+            focusColor: Colors.transparent,
+            focusNode: _focusNode,
+            value: widget.value,
+            items: _alignItems(
+              widget.items,
+              widget.alignment,
+              widget.multilineItems,
+            ),
+            selectedItemBuilder: widget.multilineItems
+                ? (context) => widget.items
+                      .map(
+                        (item) => Align(
+                          alignment: widget.alignment,
+                          child: item.child,
+                        ),
+                      )
+                      .toList(growable: false)
+                : null,
+            onChanged: onChanged == null
+                ? null
+                : (value) {
+                    _focusNode.unfocus(
+                      disposition: UnfocusDisposition.previouslyFocusedChild,
+                    );
+                    onChanged(value);
+                  },
+            isExpanded: widget.isExpanded,
+            isDense: widget.isDense,
+            alignment: widget.alignment,
+            menuMaxHeight: widget.menuMaxHeight,
+            itemHeight: widget.multilineItems ? null : kMinInteractiveDimension,
+            dropdownColor: Theme.of(context).colorScheme.surfaceContainerHigh,
+            borderRadius: AppRadius.borderMedium,
+          ),
+        ),
       ),
     );
   }
@@ -77,7 +116,7 @@ class UnifiedDropdownButtonFormField<T> extends StatelessWidget {
     required this.items,
     required this.onChanged,
     required this.decoration,
-    this.alignment = AlignmentDirectional.centerEnd,
+    this.alignment = AlignmentDirectional.centerStart,
     this.menuMaxHeight,
     this.multilineItems = false,
   });

@@ -6,10 +6,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/app_entry_ink_well.dart';
+import '../../../../core/widgets/app_glass_surface.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/windows_horizontal_wheel_scroll.dart';
 import '../../application/playback_facade.dart';
@@ -18,10 +21,11 @@ import 'playlist_loop_widgets.dart';
 import 'playlist_shared_helpers.dart';
 import 'session_detail_theme.dart';
 
-// Seven 50px controls plus the scroll view's 8px horizontal insets.
-const double _kPlaybackSecondaryControlsWidth = 366;
+const double _kPlaybackPrimaryControlsWidth = 366;
+// Six 44px buttons, five 4px gaps, and the scroll view's 8px horizontal insets.
+const double _kPlaybackSecondaryControlsWidth = 292;
 
-class TransportPlaybackControlPanel extends ConsumerWidget {
+class TransportPlaybackControlPanel extends StatelessWidget {
   const TransportPlaybackControlPanel({
     super.key,
     required this.session,
@@ -38,6 +42,7 @@ class TransportPlaybackControlPanel extends ConsumerWidget {
     this.onShowSubtitleMenu,
     this.onShowWorkDetail,
     this.isLandscape = false,
+    this.showPrimaryControls = true,
   });
 
   final PlaybackSessionSnapshot session;
@@ -54,90 +59,18 @@ class TransportPlaybackControlPanel extends ConsumerWidget {
   final VoidCallback? onShowSubtitleMenu;
   final VoidCallback? onShowWorkDetail;
   final bool isLandscape;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final transport = ref.watch(
-      sessionDetailTransportProvider(session.id).select(
-        (state) => (
-          state?.showPauseIcon,
-          state == null
-              ? null
-              : state.isPlaybackLoading || state.playbackError != null,
-        ),
-      ),
-    );
-    return _PlaybackControlPanel(
-      session: session,
-      playback: playback,
-      showPauseIcon: transport.$1 ?? session.playbackRequested,
-      isLoading:
-          transport.$2 ??
-          (session.isPlaybackLoading || session.playbackError != null),
-      hasSiblings: hasSiblings,
-      segmentPanelExpanded: segmentPanelExpanded,
-      hasSubtitle: hasSubtitle,
-      subtitleEnabled: subtitleEnabled,
-      subtitleGlobalEnabled: subtitleGlobalEnabled,
-      onShowTrackSwitcher: onShowTrackSwitcher,
-      onToggleSegments: onToggleSegments,
-      onToggleSubtitle: onToggleSubtitle,
-      onToggleGlobalSubtitle: onToggleGlobalSubtitle,
-      onShowSubtitleMenu: onShowSubtitleMenu,
-      onShowWorkDetail: onShowWorkDetail,
-      isLandscape: isLandscape,
-    );
-  }
-}
-
-class _PlaybackControlPanel extends StatelessWidget {
-  const _PlaybackControlPanel({
-    required this.session,
-    required this.playback,
-    required this.showPauseIcon,
-    required this.isLoading,
-    required this.hasSiblings,
-    required this.segmentPanelExpanded,
-    required this.hasSubtitle,
-    required this.subtitleEnabled,
-    required this.subtitleGlobalEnabled,
-    required this.onShowTrackSwitcher,
-    required this.onToggleSegments,
-    this.onToggleSubtitle,
-    this.onToggleGlobalSubtitle,
-    this.onShowSubtitleMenu,
-    this.onShowWorkDetail,
-    this.isLandscape = false,
-  });
-
-  final PlaybackSessionSnapshot session;
-  final PlaybackFacade playback;
-  final bool showPauseIcon;
-  final bool isLoading;
-  final bool hasSiblings;
-  final bool segmentPanelExpanded;
-  final bool hasSubtitle;
-  final bool subtitleEnabled;
-  final bool subtitleGlobalEnabled;
-  final VoidCallback onShowTrackSwitcher;
-  final VoidCallback onToggleSegments;
-  final VoidCallback? onToggleSubtitle;
-  final VoidCallback? onToggleGlobalSubtitle;
-  final VoidCallback? onShowSubtitleMenu;
-  final VoidCallback? onShowWorkDetail;
-  final bool isLandscape;
+  final bool showPrimaryControls;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        _PlaybackPrimaryControls(
-          session: session,
-          playback: playback,
-          showPauseIcon: showPauseIcon,
-          isLoading: isLoading,
-          isLandscape: isLandscape,
-        ),
+        if (showPrimaryControls)
+          PrimaryPlaybackControls(
+            session: session,
+            playback: playback,
+            isLandscape: isLandscape,
+          ),
         if (isLandscape || !segmentPanelExpanded)
           AnimatedSwitcher(
             duration: MediaQuery.disableAnimationsOf(context)
@@ -172,23 +105,34 @@ class _PlaybackControlPanel extends StatelessWidget {
   }
 }
 
-class _PlaybackPrimaryControls extends StatelessWidget {
-  const _PlaybackPrimaryControls({
+class PrimaryPlaybackControls extends ConsumerWidget {
+  const PrimaryPlaybackControls({
+    super.key,
     required this.session,
     required this.playback,
-    required this.showPauseIcon,
-    required this.isLoading,
     this.isLandscape = false,
   });
 
   final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
-  final bool showPauseIcon;
-  final bool isLoading;
   final bool isLandscape;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final transport = ref.watch(
+      sessionDetailTransportProvider(session.id).select(
+        (state) => (
+          state?.showPauseIcon,
+          state == null
+              ? null
+              : state.isPlaybackLoading || state.playbackError != null,
+        ),
+      ),
+    );
+    final showPauseIcon = transport.$1 ?? session.playbackRequested;
+    final isLoading =
+        transport.$2 ??
+        (session.isPlaybackLoading || session.playbackError != null);
     final cs = Theme.of(context).colorScheme;
     final i18n = ProviderScope.containerOf(
       context,
@@ -207,16 +151,24 @@ class _PlaybackPrimaryControls extends StatelessWidget {
     final canNext = enabled && hasNext;
 
     final primaryRow = SizedBox(
-      height: 92,
+      height: isLandscape ? 48 : 92,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 400;
+
           final skipIconSize = compact ? 28.0 : 32.0;
-          final playIconSize = compact ? 50.0 : 58.0;
-          final playButtonSize = compact ? 72.0 : 80.0;
+          final sideButtonSize = compact ? 48.0 : 54.0;
+          final portraitPlayIconSize = compact ? 50.0 : 58.0;
+          final portraitPlayButtonSize = compact ? 72.0 : 80.0;
+          final playIconSize = isLandscape
+              ? skipIconSize / 0.75
+              : portraitPlayIconSize;
+          final playButtonSize = isLandscape
+              ? sideButtonSize
+              : portraitPlayButtonSize;
           final sideBox = BoxConstraints.tightFor(
-            width: compact ? 48 : 54,
-            height: compact ? 48 : 54,
+            width: sideButtonSize,
+            height: sideButtonSize,
           );
 
           return Row(
@@ -263,6 +215,9 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                     height: playButtonSize,
                   ),
                   padding: EdgeInsets.zero,
+                  style: IconButton.styleFrom(
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
                   onPressed: enabled
                       ? () {
                           AppInteractionFeedback.trigger(
@@ -278,7 +233,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                           width: playIconSize * 0.48,
                           height: playIconSize * 0.48,
                           child: CircularProgressIndicator(
-                            strokeWidth: 3.0,
+                            strokeWidth: 3,
                             color: enabled
                                 ? onPrimaryColor
                                 : cs.onSurface.withValues(alpha: 0.35),
@@ -333,10 +288,10 @@ class _PlaybackPrimaryControls extends StatelessWidget {
     if (isLandscape) {
       return ConstrainedBox(
         constraints: const BoxConstraints(
-          maxWidth: _kPlaybackSecondaryControlsWidth,
+          maxWidth: _kPlaybackPrimaryControlsWidth,
         ),
         child: SizedBox(
-          width: _kPlaybackSecondaryControlsWidth,
+          width: _kPlaybackPrimaryControlsWidth,
           child: primaryRow,
         ),
       );
@@ -628,7 +583,7 @@ class _PlaybackSecondaryControlsState
                 minWidth: max(0.0, constraints.maxWidth - 8),
               ),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                spacing: 4,
                 children: [
                   SessionLoopModeButton(
                     session: widget.session,
@@ -678,12 +633,12 @@ class _PlaybackSecondaryControlsState
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final background = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
+    final glassEnabled = AppDesignTokens.of(context).barGlassEnabled;
     const double capsuleHeight = 52;
     final borderRadius = BorderRadius.circular(capsuleHeight / 2);
 
     final capsuleSurface = DecoratedBox(
       decoration: BoxDecoration(
-        color: background,
         borderRadius: borderRadius,
         border: Border.all(
           color: cs.outlineVariant.withValues(alpha: isDark ? 0.35 : 0.55),
@@ -706,7 +661,14 @@ class _PlaybackSecondaryControlsState
         key: const ValueKey('playback_secondary_controls'),
         width: _kPlaybackSecondaryControlsWidth,
         height: capsuleHeight,
-        child: ClipRRect(borderRadius: borderRadius, child: capsuleSurface),
+        child: AppGlassSurface(
+          enabled: glassEnabled,
+          backgroundColor: glassEnabled
+              ? background.withValues(alpha: background.a * 0.9)
+              : background,
+          borderRadius: borderRadius,
+          child: capsuleSurface,
+        ),
       ),
     );
   }
@@ -749,6 +711,9 @@ class PrimaryTransportButton extends StatelessWidget {
         tooltip: tooltip,
         constraints: constraints,
         padding: EdgeInsets.zero,
+        style: IconButton.styleFrom(
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
         onPressed: enabled ? onPressed : null,
         icon: Icon(
           icon,
@@ -782,17 +747,31 @@ class _SecondaryControlButton extends StatelessWidget {
       constraints: const BoxConstraints.tightFor(width: 44, height: 44),
       padding: EdgeInsets.zero,
       tooltip: tooltip,
-      style: IconButton.styleFrom(
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        shape: const CircleBorder(),
-        backgroundColor: active
-            ? cs.primaryContainer.withValues(alpha: 0.65)
-            : Colors.transparent,
-        foregroundColor: active
-            ? cs.onPrimaryContainer
-            : sessionDetailForeground(cs, SessionDetailForegroundLevel.muted),
-        disabledForegroundColor: cs.onSurface.withValues(alpha: 0.35),
-      ),
+      style:
+          AppEntryInkWell.entryButtonStyle(
+            Theme.of(context),
+            foregroundColor: active
+                ? cs.onPrimaryContainer
+                : sessionDetailForeground(
+                    cs,
+                    SessionDetailForegroundLevel.muted,
+                  ),
+          ).merge(
+            IconButton.styleFrom(
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              shape: const CircleBorder(),
+              backgroundColor: active
+                  ? cs.primaryContainer.withValues(alpha: 0.65)
+                  : Colors.transparent,
+              foregroundColor: active
+                  ? cs.onPrimaryContainer
+                  : sessionDetailForeground(
+                      cs,
+                      SessionDetailForegroundLevel.muted,
+                    ),
+              disabledForegroundColor: cs.onSurface.withValues(alpha: 0.35),
+            ),
+          ),
       onPressed: onPressed != null
           ? () {
               AppInteractionFeedback.trigger(

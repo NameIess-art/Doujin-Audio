@@ -4,6 +4,7 @@ import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/app_entry_ink_well.dart';
 
 Future<void> openLocalContainingFolder(
   BuildContext context,
@@ -50,13 +51,14 @@ class WorkDetailActions extends StatelessWidget {
     required String label,
     bool isPrimary = false,
     bool favorite = false,
+    bool navigationEntry = true,
   }) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final onAccentColor =
         ThemeData.estimateBrightnessForColor(accentColor) == Brightness.dark
-            ? Colors.white
-            : const Color(0xFF0F172A);
+        ? Colors.white
+        : const Color(0xFF0F172A);
 
     final Color backgroundColor;
     final Color foregroundColor;
@@ -69,9 +71,7 @@ class WorkDetailActions extends StatelessWidget {
     } else if (favorite) {
       backgroundColor = accentColor.withValues(alpha: isDark ? 0.22 : 0.16);
       foregroundColor = accentColor;
-      borderSide = BorderSide(
-        color: accentColor.withValues(alpha: 0.40),
-      );
+      borderSide = BorderSide(color: accentColor.withValues(alpha: 0.40));
     } else {
       backgroundColor = isDark
           ? cs.surfaceContainerHighest.withValues(alpha: 0.45)
@@ -83,24 +83,30 @@ class WorkDetailActions extends StatelessWidget {
       );
     }
 
+    final buttonStyle = FilledButton.styleFrom(
+      minimumSize: const Size.fromHeight(46),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      shape: const StadiumBorder(),
+      side: borderSide,
+      elevation: isPrimary ? 1.5 : 0,
+      shadowColor: isPrimary
+          ? accentColor.withValues(alpha: isDark ? 0.35 : 0.25)
+          : Colors.transparent,
+      visualDensity: VisualDensity.standard,
+      textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+      backgroundColor: backgroundColor,
+      foregroundColor: foregroundColor,
+    );
     return Expanded(
       child: FilledButton.tonalIcon(
         key: ValueKey<String>(keyName),
         onPressed: onPressed,
-        style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(46),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          shape: const StadiumBorder(),
-          side: borderSide,
-          elevation: isPrimary ? 1.5 : 0,
-          shadowColor: isPrimary
-              ? accentColor.withValues(alpha: isDark ? 0.35 : 0.25)
-              : Colors.transparent,
-          visualDensity: VisualDensity.standard,
-          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-          backgroundColor: backgroundColor,
-          foregroundColor: foregroundColor,
-        ),
+        style: navigationEntry
+            ? AppEntryInkWell.entryButtonStyle(
+                Theme.of(context),
+                foregroundColor: foregroundColor,
+              ).merge(buttonStyle)
+            : buttonStyle,
         icon: Icon(icon, size: 18, color: foregroundColor),
         label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
       ),
@@ -132,6 +138,7 @@ class WorkDetailActions extends StatelessWidget {
         _button(
           context,
           keyName: 'asmr_work_detail_favorite',
+          navigationEntry: false,
           onPressed: onToggleFavorite,
           icon: isFavorite
               ? Icons.favorite_rounded

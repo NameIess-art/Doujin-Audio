@@ -95,16 +95,22 @@ class TimerCountdownCapsule extends StatelessWidget {
 }
 
 class TimecodeLabel extends StatelessWidget {
-  const TimecodeLabel({super.key, required this.text, this.alignEnd = false});
+  const TimecodeLabel({
+    super.key,
+    required this.text,
+    this.alignEnd = false,
+    this.reserveText,
+  });
 
   final String text;
   final bool alignEnd;
+  final String? reserveText;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
-    return Text(
+    final label = Text(
       text,
       textAlign: alignEnd ? TextAlign.end : TextAlign.start,
       style: Theme.of(context).textTheme.labelMedium?.copyWith(
@@ -117,8 +123,23 @@ class TimecodeLabel extends StatelessWidget {
         letterSpacing: 0.5,
         fontSize: 13,
         height: 1.1,
+        // Inline labels reserve space by digit count. Outfit has tabular digits.
+        fontFamily: reserveText == null ? null : 'Outfit',
         fontFeatures: const [FontFeature.tabularFigures()],
       ),
+    );
+    final reserved = reserveText;
+    if (reserved == null) return label;
+    return Stack(
+      children: [
+        // Keep a stable layout while the visible time changes its hour fields.
+        // The zero-opacity template neither paints nor contributes semantics.
+        Opacity(
+          opacity: 0,
+          child: Text(reserved, style: label.style, maxLines: 1),
+        ),
+        Positioned.fill(child: label),
+      ],
     );
   }
 }

@@ -150,7 +150,9 @@ final class NotificationFacade {
   String? get focusedSessionId => _stateService.notificationFocusSessionId;
 
   void setFocusedSession(String? sessionId) {
+    if (_stateService.notificationFocusSessionId == sessionId) return;
     _stateService.notificationFocusSessionId = sessionId;
+    _syncNotificationState();
   }
 
   void clearFocusIfMatches(String sessionId) {

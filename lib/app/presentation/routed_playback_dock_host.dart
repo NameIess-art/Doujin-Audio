@@ -175,6 +175,15 @@ class _RoutedPlaybackDockHostState
               workDetailRouteName,
             );
             final routeDeparting = _routeObserver.isWorkDetailDeparting;
+            final workDetail = _routedPlaybackDockRoute;
+            final openedFromPlayback =
+                workDetail != null &&
+                identical(workDetail, _routeObserver.workDetailFromPlayback);
+            final fixedDockVisible = openedFromPlayback
+                ? !routeDeparting &&
+                      !workDetail.offstage &&
+                      workDetail.animation?.status == AnimationStatus.completed
+                : null;
             return Consumer(
               builder: (context, ref, _) => _RoutedPlaybackDock(
                 active:
@@ -190,7 +199,8 @@ class _RoutedPlaybackDockHostState
                 navigatorKey:
                     widget.playbackNavigatorKey ?? widget.navigatorKey,
                 currentRoute: _routeObserver.topRoute,
-                workDetailAnimation: _routedPlaybackDockRoute?.animation,
+                workDetailAnimation: workDetail?.animation,
+                fixedDockVisible: fixedDockVisible,
                 geometry: _playbackDockGeometry,
               ),
             );
@@ -263,6 +273,7 @@ class _RootPageRouteObserver extends NavigatorObserver {
   _routeAnimationListeners = {};
   final Set<PageRoute<dynamic>> _departingRoutes = {};
   final Set<PageRoute<dynamic>> _departingWorkDetailRoutes = {};
+  PageRoute<dynamic>? workDetailFromPlayback;
   bool get hasPopups => _routes.any((route) => route is PopupRoute<dynamic>);
   bool _syncScheduled = false;
   bool _disposed = false;
@@ -359,6 +370,9 @@ class _RootPageRouteObserver extends NavigatorObserver {
   void _untrackAnimation(TransitionRoute<dynamic> route) {
     final listener = _routeAnimationListeners.remove(route);
     listener?.$1.removeStatusListener(listener.$2);
+    if (identical(route, workDetailFromPlayback)) {
+      workDetailFromPlayback = null;
+    }
   }
 
   @override
@@ -377,6 +391,11 @@ class _RootPageRouteObserver extends NavigatorObserver {
       );
     }
     if (route case final PageRoute<dynamic> pageRoute) {
+      // A stack reset can already exclude playback from previousRoute.
+      if (pageRoute.settings.name == workDetailRouteName &&
+          topRoute is SessionDetailRoute) {
+        workDetailFromPlayback = pageRoute;
+      }
       _routes.add(pageRoute);
       _trackAnimation(pageRoute);
       _sync();
@@ -462,6 +481,7 @@ class _RoutedPlaybackDock extends ConsumerStatefulWidget {
     required this.navigatorKey,
     required this.currentRoute,
     required this.workDetailAnimation,
+    required this.fixedDockVisible,
     required this.geometry,
     this.departing = false,
   });
@@ -472,6 +492,8 @@ class _RoutedPlaybackDock extends ConsumerStatefulWidget {
   final GlobalKey<NavigatorState> navigatorKey;
   final Route<dynamic>? currentRoute;
   final Animation<double>? workDetailAnimation;
+  // Other entrances retain the motion from the main playback dock.
+  final bool? fixedDockVisible;
   final PlaybackDockGeometryController geometry;
 
   @override
@@ -485,6 +507,8 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
   late bool _visible = widget.active;
   bool _expanded = false;
   bool _raisedDockEntered = false;
+  late bool _fixedDockShown = widget.active && widget.fixedDockVisible == true;
+  (Size, Rect)? _returnGeometry;
 
   @override
   void initState() {
@@ -508,8 +532,14 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
       oldWidget.geometry.removeListener(_handleGeometryChanged);
       widget.geometry.addListener(_handleGeometryChanged);
     }
-    if (widget.departing != oldWidget.departing && widget.departing) {
-      _expanded = false;
+    if (widget.departing != oldWidget.departing) {
+      _returnGeometry = null;
+      if (widget.departing) _expanded = false;
+    }
+    if (!widget.active || widget.fixedDockVisible == null) {
+      _fixedDockShown = false;
+    } else if (widget.fixedDockVisible == true) {
+      _fixedDockShown = true;
     }
     if (widget.active == oldWidget.active) return;
     _hideTimer?.cancel();
@@ -524,9 +554,20 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
   }
 
   void _scheduleExpansion() {
+    if (widget.fixedDockVisible != null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && widget.active) setState(() => _expanded = true);
     });
+  }
+
+  Rect _returnTarget(Rect target, Size viewport) {
+    if (!widget.departing) return target;
+    // Main-page layout reports can arrive while it is being revealed. Keep
+    // one landing point for this exit instead of extending/restarting motion.
+    if (_returnGeometry?.$1 != viewport) {
+      _returnGeometry = (viewport, target);
+    }
+    return _returnGeometry!.$2;
   }
 
   @override
@@ -553,6 +594,20 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
         : _duration;
+    final hasFixedEntrance = widget.fixedDockVisible != null;
+    final fixedAtBottom = hasFixedEntrance && !widget.departing;
+    Widget reveal(Widget dock) => !hasFixedEntrance
+        ? dock
+        : AppDeferredFade(
+            visible: _fixedDockShown,
+            fadeInDuration: widget.departing ? Duration.zero : _duration,
+            child: dock,
+          );
+
+    final padding = MediaQuery.paddingOf(context);
+    final bottom = padding.bottom > kMobileDockBottomMargin
+        ? padding.bottom
+        : kMobileDockBottomMargin;
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
 
@@ -573,10 +628,14 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
       isPlaybackRaised: isRaised,
       viewportFraction: 1,
       presentation: ActiveSessionCarouselPresentation.embedded,
-      onOpenSession: (sessionId) {
+      isRoutedDock: true,
+      onOpenSession: (sessionId, coverOrigin) {
         if (widget.currentRoute is SessionDetailRoute) return;
         widget.navigatorKey.currentState?.push(
-          buildSessionDetailRoute(sessionId: sessionId),
+          buildSessionDetailRoute(
+            sessionId: sessionId,
+            coverOrigin: coverOrigin,
+          ),
         );
       },
     );
@@ -604,11 +663,20 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
             fallbackWidth,
             kActiveSessionCarouselDockHeight,
           );
-      final dockRect =
-          (_expanded && !widget.departing) || !widget.geometry.mainDockCollapsed
-          ? expandedRect
-          : sourceRect;
-      return SizedBox(
+      final Rect dockRect;
+      if (fixedAtBottom) {
+        dockRect = expandedRect.shift(
+          Offset(0, size.height - bottom - expandedRect.bottom),
+        );
+      } else {
+        dockRect =
+            (_expanded && !widget.departing) ||
+                !widget.geometry.mainDockCollapsed
+            ? expandedRect
+            : sourceRect;
+      }
+      final bounds = _returnTarget(dockRect, size);
+      final dock = SizedBox(
         width: size.width,
         height: size.height,
         child: IgnorePointer(
@@ -618,12 +686,12 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
             fit: StackFit.expand,
             children: [
               AnimatedPositioned(
-                duration: duration,
+                duration: fixedAtBottom ? Duration.zero : duration,
                 curve: Curves.easeOutCubic,
-                left: dockRect.left,
-                top: dockRect.top,
-                width: dockRect.width,
-                height: dockRect.height,
+                left: bounds.left,
+                top: bounds.top,
+                width: bounds.width,
+                height: bounds.height,
                 child: SizedBox.expand(
                   key: const ValueKey<String>('routed_playback_dock_width'),
                   child: Listener(
@@ -651,12 +719,9 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
           ),
         ),
       );
+      return reveal(dock);
     }
 
-    final padding = MediaQuery.paddingOf(context);
-    final bottom = padding.bottom > kMobileDockBottomMargin
-        ? padding.bottom
-        : kMobileDockBottomMargin;
     final usableWidth = size.width - padding.horizontal - AppSpacing.sm * 2;
     final width = usableWidth.clamp(0.0, 430.0) * 0.96;
     final target = Rect.fromLTWH(
@@ -665,23 +730,26 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
       width,
       kActiveSessionCarouselDockHeight,
     );
-    final source =
-        widget.geometry.mainDockRect ??
-        Rect.fromLTWH(
-          target.left,
-          target.top,
-          kActiveSessionCarouselDockHeight,
-          target.height,
-        );
-    final animation =
-        widget.workDetailAnimation ??
-        (widget.departing
-            ? kAlwaysDismissedAnimation
-            : kAlwaysCompleteAnimation);
+    final source = _returnTarget(
+      widget.geometry.mainDockRect ??
+          Rect.fromLTWH(
+            target.left,
+            target.top,
+            kActiveSessionCarouselDockHeight,
+            target.height,
+          ),
+      size,
+    );
+    final animation = fixedAtBottom
+        ? kAlwaysCompleteAnimation
+        : widget.workDetailAnimation ??
+              (widget.departing
+                  ? kAlwaysDismissedAnimation
+                  : kAlwaysCompleteAnimation);
     final portraitContentWidth = widget.geometry.mainDockCollapsed
         ? null
         : width;
-    return IgnorePointer(
+    final dock = IgnorePointer(
       key: const ValueKey<String>('routed_playback_dock_interaction'),
       ignoring: !widget.active || widget.covered,
       child: AnimatedBuilder(
@@ -699,14 +767,18 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
           final progress = MediaQuery.disableAnimationsOf(context)
               ? 1.0
               : curve.transform(animation.value);
-          if (isRaised &&
+          if (!fixedAtBottom &&
+              isRaised &&
               !widget.departing &&
               animation.status != AnimationStatus.reverse) {
             _raisedDockEntered = progress == 1;
           }
           // A completed detail page returns with the upward motion. An
           // interrupted entry retraces the fold from its current frame.
-          final folding = isRaised && !(widget.departing && _raisedDockEntered);
+          final folding =
+              !fixedAtBottom &&
+              isRaised &&
+              !(widget.departing && (_raisedDockEntered || _fixedDockShown));
           final bounds = Rect.lerp(source, target, progress)!;
           // Narrow the visible height around the row boundary while keeping
           // the cover and controls laid out at their normal size.
@@ -793,5 +865,6 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
         },
       ),
     );
+    return reveal(dock);
   }
 }

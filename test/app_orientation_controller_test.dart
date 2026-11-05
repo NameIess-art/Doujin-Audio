@@ -7,7 +7,7 @@ import 'package:doujin_audio/core/platform/video_display_platform_gateway.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   testWidgets(
-    'Windows fullscreen uses in-window fullscreen without Android or window fullscreen calls',
+    'Windows playback detail and video fullscreen leave the window frame alone',
     (tester) async {
       final calls = <MethodCall>[];
       const channel = MethodChannel('doujin_audio/windows_desktop');
@@ -39,6 +39,7 @@ void main() {
       expect(controller.isVideoFullscreen, isTrue);
       await second.release();
       expect(controller.isVideoFullscreen, isFalse);
+      await controller.setPlaybackDetailVisible(false);
       expect(calls, isEmpty);
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
@@ -70,6 +71,13 @@ void main() {
       expect(
         orientationCalls.last,
         AppOrientationPolicy.rotatable.allowedOrientations,
+      );
+      expect(uiModeCalls.last, SystemUiMode.immersiveSticky);
+
+      await controller.setPlaybackDetailVisible(false);
+      expect(
+        orientationCalls.last,
+        AppOrientationPolicy.portrait.allowedOrientations,
       );
       expect(uiModeCalls.last, SystemUiMode.edgeToEdge);
     },
@@ -104,6 +112,26 @@ void main() {
       );
     }
   });
+
+  test(
+    'playback detail hides status bar on Android and restores edgeToEdge on dismiss',
+    () async {
+      final uiModeCalls = <SystemUiMode>[];
+      final controller = AppOrientationController(
+        setPreferredOrientations: (_) async {},
+        setSystemUiMode: (mode) async => uiModeCalls.add(mode),
+      );
+
+      await controller.setPlaybackDetailVisible(true);
+      expect(uiModeCalls, <SystemUiMode>[SystemUiMode.immersiveSticky]);
+
+      await controller.setPlaybackDetailVisible(false);
+      expect(uiModeCalls, <SystemUiMode>[
+        SystemUiMode.immersiveSticky,
+        SystemUiMode.edgeToEdge,
+      ]);
+    },
+  );
 
   test(
     'phone rotation is scoped to the visible playback detail page',

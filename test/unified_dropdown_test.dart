@@ -38,9 +38,26 @@ void main() {
           tester.element(find.text('Alpha').first),
         ).colorScheme.surfaceContainerHigh,
       );
-      expect(dropdown.alignment, AlignmentDirectional.centerEnd);
+      expect(dropdown.alignment, AlignmentDirectional.centerStart);
       expect(dropdown.itemHeight, kMinInteractiveDimension);
-      await tester.tap(find.byType(DropdownButton<String>));
+      final button = find.byType(DropdownButton<String>);
+      final bounds = tester.getRect(button);
+      expect(bounds.height, greaterThanOrEqualTo(44));
+      await tester.tapAt(Offset(bounds.center.dx, bounds.top + 2));
+      await tester.pumpAndSettle();
+      expect(find.text('Charlie'), findsOneWidget);
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+      expect(find.text('Charlie'), findsNothing);
+      final trigger = find.descendant(
+        of: button,
+        matching: find.byType(InkWell),
+      );
+      expect(tester.widget<InkWell>(trigger).focusColor, Colors.transparent);
+      expect(Theme.of(tester.element(trigger)).hoverColor, Colors.transparent);
+      expect(selected, isNull);
+
+      await tester.tapAt(Offset(bounds.center.dx, bounds.bottom - 2));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Disabled').last);
       await tester.pumpAndSettle();
@@ -48,6 +65,7 @@ void main() {
       await tester.tap(find.text('Charlie').last);
       await tester.pumpAndSettle();
       expect(selected, 'c');
+      expect(tester.widget<InkWell>(trigger).focusNode!.hasFocus, isFalse);
       expect(tester.takeException(), isNull);
     },
     variant: const TargetPlatformVariant({
@@ -56,7 +74,7 @@ void main() {
     }),
   );
 
-  testWidgets('dropdown preserves v0.29 option typography and alignment', (
+  testWidgets('dropdown preserves option typography and aligns options left', (
     tester,
   ) async {
     const style = TextStyle(fontWeight: FontWeight.w700, fontSize: 18);
@@ -85,7 +103,11 @@ void main() {
     final entry = tester.widget<DropdownMenuItem<String>>(
       find.ancestor(of: label, matching: find.byType(DropdownMenuItem<String>)),
     );
-    expect(entry.alignment, AlignmentDirectional.centerEnd);
+    expect(entry.alignment, AlignmentDirectional.centerStart);
+    expect(
+      tester.getRect(label).left,
+      tester.getRect(find.text('Alpha').last).left,
+    );
     expect(find.byIcon(Icons.check), findsNothing);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
@@ -163,6 +185,10 @@ void main() {
       final field = find.byType(DropdownButtonFormField<String>);
       await tester.tap(find.text('Alpha').first);
       await tester.pumpAndSettle();
+      expect(
+        tester.getRect(find.text('Alpha').last).left,
+        tester.getRect(find.text('Charlie').last).left,
+      );
       await tester.tap(find.text('Charlie').last);
       await tester.pumpAndSettle();
       expect(tester.state<FormFieldState<String>>(field).value, 'c');

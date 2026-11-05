@@ -24,7 +24,7 @@ class _CountingSessionCard extends SessionListCard {
 
   final VoidCallback onBuild;
 
-  static void _noop() {}
+  static void _noop(BuildContext _) {}
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

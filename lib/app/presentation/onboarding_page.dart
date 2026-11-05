@@ -9,6 +9,7 @@ import '../theme/app_styles.dart';
 import '../../core/persistence/app_preferences.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/app_feedback.dart';
+import '../../core/widgets/app_entry_ink_well.dart';
 import '../../core/widgets/page_header_inset.dart';
 import '../../core/widgets/top_page_header.dart';
 
@@ -181,6 +182,9 @@ class OnboardingPage extends ConsumerWidget {
                           ),
                           const SizedBox(height: 8),
                           TextButton(
+                            style: AppEntryInkWell.entryButtonStyle(
+                              Theme.of(context),
+                            ),
                             onPressed: () => Navigator.of(context).push(
                               buildAppPageRoute<void>(
                                 context: context,

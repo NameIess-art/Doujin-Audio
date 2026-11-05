@@ -197,7 +197,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
       if (box == null || !box.hasSize) return;
       const inset = 4.0;
       final origin = box.localToGlobal(Offset.zero);
-      final collapsedLeadingInset = dockCollapsed
+      final landscape =
+          defaultTargetPlatform == TargetPlatform.windows ||
+          MediaQuery.orientationOf(context) == Orientation.landscape;
+      final collapsedLeadingInset = dockCollapsed && !landscape
           ? (dockAreaWidth - box.size.width) / 2
           : 0.0;
       final expandedOrigin = dockCollapsed
@@ -927,13 +930,18 @@ class _MainScreenState extends ConsumerState<MainScreen>
     final viewPadding = MediaQuery.viewPaddingOf(context);
     final orientation = MediaQuery.orientationOf(context);
     final rawTop = padding.top;
+    final isWindows = defaultTargetPlatform == TargetPlatform.windows;
     final isDesktop =
-        defaultTargetPlatform == TargetPlatform.windows ||
+        isWindows ||
         orientation == Orientation.landscape ||
         width >= _desktopBreakpoint;
-    final isLandscape =
-        defaultTargetPlatform == TargetPlatform.windows ||
-        orientation == Orientation.landscape;
+    final isLandscape = isWindows || orientation == Orientation.landscape;
+    const sectionCorner = Radius.circular(AppRadius.section);
+    final contentRadius = !isLandscape
+        ? BorderRadius.zero
+        : isWindows
+        ? const BorderRadius.only(topLeft: sectionCorner)
+        : const BorderRadius.all(sectionCorner);
     final navigationLayout = (isDesktop, isLandscape);
     var navigationLayoutChanged = _previousNavigationLayout != navigationLayout;
     _previousNavigationLayout = navigationLayout;
@@ -1101,11 +1109,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
                                               key: const ValueKey(
                                                 'main_content_clip',
                                               ),
-                                              borderRadius: isLandscape
-                                                  ? BorderRadius.circular(
-                                                      AppRadius.section,
-                                                    )
-                                                  : BorderRadius.zero,
+                                              borderRadius: contentRadius,
                                               child: navigatorContent,
                                             ),
                                           ),

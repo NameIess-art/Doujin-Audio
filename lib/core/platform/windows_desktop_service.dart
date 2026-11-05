@@ -1,6 +1,9 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+
+enum WindowsWindowCommand { drag, minimize, toggleMaximized, close }
 
 /// Windows shell events enter the existing application runtime through this gateway.
 class WindowsDesktopService {
@@ -9,11 +12,15 @@ class WindowsDesktopService {
 
   static final instance = WindowsDesktopService();
   final MethodChannel _channel;
+  final _maximized = ValueNotifier(false);
+  ValueListenable<bool> get maximized => _maximized;
 
   Future<void> attach(Future<void> Function(String action) onAction) async {
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'action' && call.arguments is String) {
         await onAction(call.arguments as String);
+      } else if (call.method == 'windowMaximized' && call.arguments is bool) {
+        _maximized.value = call.arguments as bool;
       }
     });
     await _channel.invokeMethod<void>('ready');
@@ -21,6 +28,9 @@ class WindowsDesktopService {
 
   Future<void> setFullscreen(bool enabled) =>
       _channel.invokeMethod<void>('setFullscreen', {'enabled': enabled});
+
+  Future<void> runWindowCommand(WindowsWindowCommand command) =>
+      _channel.invokeMethod<void>('windowCommand', {'command': command.name});
 
   Future<Map<String, bool>> getHotkeyStatus() async {
     final status = await _channel.invokeMapMethod<String, bool>(

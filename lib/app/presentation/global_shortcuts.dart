@@ -199,56 +199,172 @@ class GlobalShortcuts extends ConsumerWidget {
     try {
       await showAppDialog<void>(
         context: context,
-        builder: (context) => AppAlertDialog(
-        title: Text(i18n.tr('keyboard_shortcuts_title')),
-        content: SizedBox(
-          width: 560,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+        maxWidth: 680,
+        builder: (context) {
+          final theme = Theme.of(context);
+          void closeHelp() {
+            if (readAppRoute(context)?.isCurrent == true) {
+              Navigator.of(context).pop();
+            }
+          }
+
+          TableRow row(String keys, String action, {String? status}) {
+            return TableRow(
               children: [
-                Text(i18n.tr('keyboard_shortcuts_local')),
-                const SizedBox(height: 16),
-                Text(i18n.tr('keyboard_shortcuts_global')),
-                Consumer(
-                  builder: (context, ref, _) {
-                    final statusAsync = ref.watch(windowsHotkeyStatusProvider);
-                    return statusAsync.when(
-                      loading: () => const LinearProgressIndicator(),
-                      error: (_, _) =>
-                          Text(i18n.tr('keyboard_shortcuts_status_error')),
-                      data: (status) => Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          for (final entry in const {
-                            'toggle': 'Ctrl + Alt + Space',
-                            'previous': 'Ctrl + Alt + ←',
-                            'next': 'Ctrl + Alt + →',
-                            'showWindow': 'Ctrl + Alt + ↑',
-                          }.entries)
-                            Text(
-                              '${entry.value}: ${i18n.tr(status[entry.key] == true ? 'keyboard_shortcuts_registered' : 'keyboard_shortcuts_unavailable')}',
-                            ),
-                        ],
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(0, 4, 12, 4),
+                  child: Text(
+                    keys,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(action, style: theme.textTheme.bodyMedium),
+                      if (status != null)
+                        Text(
+                          status,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          }
+
+          Widget table(List<TableRow> rows) => Table(
+            columnWidths: const {
+              0: FractionColumnWidth(0.4),
+              1: FlexColumnWidth(),
+            },
+            children: [
+              row(
+                i18n.tr('keyboard_shortcuts_key'),
+                i18n.tr('keyboard_shortcuts_action'),
+              ),
+              ...rows,
+            ],
+          );
+
+          return CallbackShortcuts(
+            bindings: {
+              const SingleActivator(
+                LogicalKeyboardKey.f1,
+                includeRepeats: false,
+              ): closeHelp,
+            },
+            child: AppAlertDialog(
+              title: Text(i18n.tr('keyboard_shortcuts_title')),
+              content: SizedBox(
+                width: 620,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        i18n.tr('keyboard_shortcuts_local'),
+                        style: theme.textTheme.titleSmall,
                       ),
-                    );
-                  },
+                      const SizedBox(height: 4),
+                      table([
+                        for (final (keys, action) in [
+                          ('Space / Ctrl + Space', 'toggle'),
+                          ('Ctrl + ← / →', 'skip'),
+                          ('← / →', 'seek'),
+                          ('↑ / ↓', 'volume'),
+                          ('Ctrl + 1–4', 'tabs'),
+                          ('Tab / Shift + Tab', 'focus'),
+                          ('Enter / Space', 'activate'),
+                          (i18n.tr('keyboard_shortcuts_arrows'), 'adjust'),
+                          ('Esc', 'back'),
+                          ('F1', 'help'),
+                        ])
+                          row(keys, i18n.tr('keyboard_shortcuts_$action')),
+                      ]),
+                      const SizedBox(height: 4),
+                      Text(
+                        i18n.tr('keyboard_shortcuts_editing'),
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        i18n.tr('keyboard_shortcuts_global'),
+                        style: theme.textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 4),
+                      Consumer(
+                        builder: (context, ref, _) {
+                          final status = ref.watch(windowsHotkeyStatusProvider);
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              table([
+                                for (final (id, keys, action) in const [
+                                  (
+                                    'toggle',
+                                    'Ctrl + Alt + Space',
+                                    'keyboard_shortcuts_toggle',
+                                  ),
+                                  (
+                                    'previous',
+                                    'Ctrl + Alt + ←',
+                                    'previous_track',
+                                  ),
+                                  ('next', 'Ctrl + Alt + →', 'next_track'),
+                                  (
+                                    'showWindow',
+                                    'Ctrl + Alt + ↑',
+                                    'keyboard_shortcuts_show_window',
+                                  ),
+                                ])
+                                  row(
+                                    keys,
+                                    i18n.tr(action),
+                                    status: status.value == null
+                                        ? null
+                                        : i18n.tr(
+                                            status.value![id] == true
+                                                ? 'keyboard_shortcuts_registered'
+                                                : 'keyboard_shortcuts_unavailable',
+                                          ),
+                                  ),
+                              ]),
+                              if (status.isLoading)
+                                const LinearProgressIndicator()
+                              else if (status.hasError)
+                                Text(
+                                  i18n.tr('keyboard_shortcuts_status_error'),
+                                ),
+                            ],
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  autofocus: true,
+                  onPressed: closeHelp,
+                  child: Text(i18n.tr('close')),
                 ),
               ],
             ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(i18n.tr('close')),
-          ),
-        ],
-      ),
-    );
-  } finally {
-    _isHelpOpen = false;
-  }
+          );
+        },
+      );
+    } finally {
+      _isHelpOpen = false;
+    }
   }
 }

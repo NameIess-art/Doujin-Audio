@@ -459,10 +459,15 @@ class WindowsPlaybackBridge
         if (generation != session.generation) {
           throw ArgumentError('Playback preparation was superseded');
         }
+        final index = (queueStartIndex ?? 0).clamp(0, items.length - 1);
+        final sameTrack =
+            session.queue.isNotEmpty &&
+            _WindowsPlaybackSession._queueKey(session.queue[session.index]) ==
+                _WindowsPlaybackSession._queueKey(items[index]);
         session.queue = items
             .map((item) => Map<String, Object?>.from(item))
             .toList();
-        session.index = (queueStartIndex ?? 0).clamp(0, items.length - 1);
+        session.index = index;
         session.volume = _finite(volume, 0, 3);
         session.speed = _finite(speed, 0.25, 3);
         session.effects =
@@ -485,9 +490,11 @@ class WindowsPlaybackBridge
         session.retainedCurrentIndex = null;
         session.externalQueueRevision = 0;
         if (session.wantsPlay || session.videoController != null) {
+          if (!sameTrack) session.duration = null;
           await _open(session);
         } else {
           await session.releasePlayer();
+          if (!sameTrack) session.duration = null;
         }
       });
     } on ArgumentError catch (error) {
@@ -625,6 +632,7 @@ class WindowsPlaybackBridge
             if (index == null || index == session.index) return;
             session.index = index;
             session.position = Duration.zero;
+            session.duration = session.relativeDuration(player.state.duration);
             session.retryAttempt = 0;
             session.error = null;
             if (session.retainedCurrentIndex != null &&
@@ -699,7 +707,9 @@ class WindowsPlaybackBridge
       player.stream.buffering.listen((_) => _emit(session)),
       player.stream.duration.listen((duration) {
         if (!_isCurrent(session) || !identical(session.player, player)) return;
-        session.duration = session.relativeDuration(duration);
+        // media_kit resets duration to zero when reopening a paused source.
+        session.duration =
+            session.relativeDuration(duration) ?? session.duration;
         if (duration > Duration.zero && session.pendingStart != null) {
           final generation = session.generation;
           unawaited(
@@ -709,14 +719,10 @@ class WindowsPlaybackBridge
                   current.pendingStart == null) {
                 return;
               }
-              final position = current.pendingStart!;
-              current.pendingStart = null;
-              await player.seek(current.absolutePosition(position));
-              if (_isCurrent(current) &&
-                  generation == current.generation &&
-                  current.wantsPlay) {
-                await player.play();
-              }
+              await current.restorePendingPosition(
+                player,
+                isCurrent: () => _isCurrent(current),
+              );
             }),
           );
         }
@@ -747,7 +753,7 @@ class WindowsPlaybackBridge
               sessionId: session.id,
               position: position,
               bufferedPosition: session.relativePosition(player.state.buffer),
-              duration: session.relativeDuration(player.state.duration),
+              duration: session.currentDuration,
               nativeElapsedRealtimeMs: _elapsed.inMilliseconds,
             ),
           );

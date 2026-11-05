@@ -18,6 +18,7 @@ import '../../../app/theme/app_styles.dart';
 import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/animated_reorder.dart';
 import '../../../core/widgets/async_cover_image.dart';
@@ -302,7 +303,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     Navigator.of(
       context,
       rootNavigator: true,
-    ).push(buildSessionDetailRoute(sessionId: sessionId));
+    ).push(buildSessionDetailRoute(sessionId: sessionId, coverOrigin: context));
   }
 
   Future<void> _openQueueEditor(BuildContext context, String sessionId) {
@@ -605,6 +606,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                 key: const ValueKey<String>(
                                   'playlist_sleep_canvas_button',
                                 ),
+                                style: AppEntryInkWell.entryButtonStyle(
+                                  Theme.of(context),
+                                ),
                                 onPressed: headerState.hasPlayingAudioSession
                                     ? () {
                                         if (!ref
@@ -749,14 +753,14 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                             .read(settingsRepositoryProvider)
                             .togglePlaylistSessionPinned(session.id),
                       ),
-                onOpen: () => session.currentTrackPath.isEmpty
+                onOpen: (coverOrigin) => session.currentTrackPath.isEmpty
                     ? showAppSnackBar(
                         context,
                         i18n.tr('queue_add_audio_first'),
                         tone: AppFeedbackTone.warning,
                         icon: Icons.featured_play_list_rounded,
                       )
-                    : _openSessionDetail(context, session.id),
+                    : _openSessionDetail(coverOrigin, session.id),
                 onEdit: () => _openQueueEditor(context, session.id),
               )
             : SessionListCard(
@@ -784,7 +788,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                             .read(settingsRepositoryProvider)
                             .togglePlaylistSessionPinned(session.id),
                       ),
-                onOpen: () => _openSessionDetail(context, session.id),
+                onOpen: (coverOrigin) =>
+                    _openSessionDetail(coverOrigin, session.id),
               ),
       );
       return AnimatedReorderItem(

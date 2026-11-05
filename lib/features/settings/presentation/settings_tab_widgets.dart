@@ -36,13 +36,12 @@ class _SettingsTitleBlock extends StatelessWidget {
 Widget _settingsDropdownText(
   String text, {
   TextStyle? style,
-  TextAlign textAlign = TextAlign.end,
 }) {
   return Text(
     text,
     softWrap: true,
     overflow: TextOverflow.visible,
-    textAlign: textAlign,
+    textAlign: TextAlign.right,
     style: style ?? const TextStyle(fontWeight: FontWeight.w700),
   );
 }
@@ -89,6 +88,7 @@ Widget _settingsDropdown<T>(
       items: items,
       onChanged: onChanged,
       isExpanded: true,
+      alignment: Alignment.centerRight,
       multilineItems: true,
     ),
   );

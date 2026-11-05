@@ -6,7 +6,10 @@ import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
 import 'support/asmr_controller_test_fixture.dart';
 import 'dart:async';
+import 'dart:io';
+import 'dart:ui' as ui;
 import 'dart:ui' show PointerDeviceKind;
+import 'package:doujin_audio/features/player/presentation/playlist/session_cover_transition.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -21,6 +24,7 @@ import 'package:doujin_audio/main.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/presentation/main_screen.dart';
+import 'package:doujin_audio/app/presentation/windows_window_title_bar.dart';
 import 'package:doujin_audio/app/presentation/work_detail_navigation.dart';
 import 'package:doujin_audio/app/presentation/mobile_dock_capsule_content.dart';
 import 'package:doujin_audio/app/presentation/app_orientation_controller.dart';
@@ -46,6 +50,7 @@ import 'package:doujin_audio/features/player/application/playback_notification_s
 import 'package:doujin_audio/features/player/domain/playback_persistence_repository.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:doujin_audio/core/platform/app_lifecycle_platform_service.dart';
+import 'package:doujin_audio/core/platform/windows_desktop_service.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/core/ui/warmup_scheduler.dart';
@@ -668,6 +673,66 @@ void main() {
     expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 3);
     debugDefaultTargetPlatformOverride = null;
   });
+
+  testWidgets('Windows playback detail covers the title bar without moving the previous page', (
+    tester,
+  ) async {
+    final windowCalls = <MethodCall>[];
+    const channel = MethodChannel('doujin_audio/windows_desktop');
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      windowCalls.add(call);
+      return null;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    _setLogicalTestViewSize(tester, const Size(1280, 800));
+    await _pumpAppShell(tester, windowsDesktop: WindowsDesktopService.instance);
+    final main = find.byType(MainScreen, skipOffstage: false);
+    final titleBar = find.byType(WindowsWindowTitleBar, skipOffstage: false);
+    final mainState = tester.state(main);
+    final mainRect = tester.getRect(main);
+    final titleRect = tester.getRect(titleBar);
+    expect(titleRect.top, 0);
+    expect(mainRect.top, titleRect.bottom);
+    final titleSurface = tester.widget<Material>(
+      find.descendant(of: titleBar, matching: find.byType(Material)).first,
+    );
+    final sidebar = tester.widget<AnimatedContainer>(
+      find.ancestor(
+        of: find.byType(NavigationRail),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is AnimatedContainer && widget.key == const ValueKey(true),
+        ),
+      ),
+    );
+    expect(titleSurface.color, (sidebar.decoration! as BoxDecoration).color);
+    final navigator = Navigator.of(
+      tester.element(find.byType(MainScreen)),
+      rootNavigator: true,
+    );
+
+    final detailRoute = buildSessionDetailRoute(sessionId: 'orientation_session');
+    unawaited(navigator.push(detailRoute));
+    await tester.pumpAndSettle();
+    final detail = find.byType(SessionDetailPage);
+    expect(tester.getRect(detail), const Rect.fromLTWH(0, 0, 1280, 800));
+    expect(titleBar, findsOneWidget);
+    expect(titleBar.hitTestable(), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('session_detail_close_button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(detailRoute.animation?.status, AnimationStatus.reverse);
+    expect(tester.getRect(main), mainRect);
+    await tester.pumpAndSettle();
+    expect(tester.state(main), same(mainState));
+    expect(tester.getRect(main), mainRect);
+    expect(tester.getRect(titleBar), titleRect);
+    expect(windowCalls, isEmpty);
+    UiInteractionCoordinator.instance.finishInteractionsForTest();
+    await tester.pump(const Duration(milliseconds: 200));
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('Windows foreground restore keeps subtitle overlay enabled', (
     tester,
@@ -1842,23 +1907,17 @@ void main() {
     await tester.pump();
     final playbackDetail = find.byType(SessionDetailPage, skipOffstage: false);
     expect(playbackDetail, findsOneWidget);
-    final backdrop = find.byKey(
-      const ValueKey<String>('session_detail_backdrop_surface'),
+    final detailContent = find.byKey(
+      const ValueKey('session_detail_content_cache'),
       skipOffstage: false,
     );
-    // The prepared route can measure its first page offstage before the
-    // enter animation starts. Its hidden backdrop must not paint over the dock.
-    expect(
-      tester
-          .widget<Opacity>(
-            find.byKey(
-              const ValueKey<String>('session_detail_backdrop_paint_gate'),
-              skipOffstage: false,
-            ),
-          )
-          .opacity,
-      0,
-    );
+    final detailFade = find
+        .ancestor(
+          of: detailContent,
+          matching: find.byType(FadeTransition, skipOffstage: false),
+        )
+        .first;
+    expect(tester.widget<FadeTransition>(detailFade).opacity.value, 0);
     final firstFramePaintOrder = find
         .byWidgetPredicate((_) => true, skipOffstage: false)
         .evaluate()
@@ -1870,12 +1929,12 @@ void main() {
       reason: 'The dock must stay behind playback detail from its first frame.',
     );
     await tester.pump();
-    final backdropSurface = tester.widget<DecoratedBox>(
-      find.byKey(const ValueKey<String>('session_detail_backdrop_surface')),
-    );
-    expect((backdropSurface.decoration as BoxDecoration).color?.a, 1);
     await tester.pump(const Duration(milliseconds: 110));
-    expect(tester.getRect(backdrop).top, greaterThan(0));
+    expect(
+      tester.widget<FadeTransition>(detailFade).opacity.value,
+      inExclusiveRange(0, 1),
+    );
+    expect(tester.getTopLeft(detailContent).dy, 0);
     expect(tester.widget<MobileOverlayInset>(rootOverlayInset).bottomInset, 0);
     expect(tester.getRect(detailRoute), detailRectBeforePlayback);
     expect(routeDock, findsOneWidget);
@@ -2086,7 +2145,86 @@ void main() {
     },
   );
 
-  testWidgets('system back slides playback detail over its previous page', (
+  testWidgets('Android main dock preserves cover flights across metrics events', (
+    tester,
+  ) async {
+    _setLogicalTestViewSize(tester, const Size(390, 820));
+    final cover = (await tester.runAsync(() async {
+      final folder = await Directory.systemTemp.createTemp('dock-cover-');
+      addTearDown(() => folder.delete(recursive: true));
+      final recorder = ui.PictureRecorder();
+      ui.Canvas(recorder).drawColor(Colors.red, ui.BlendMode.src);
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(32, 32);
+      final bytes = (await image.toByteData(format: ui.ImageByteFormat.png))!;
+      image.dispose();
+      picture.dispose();
+      return File('${folder.path}/cover.png')
+        ..writeAsBytesSync(bytes.buffer.asUint8List());
+    }))!;
+    await _pumpAppShell(
+      tester,
+      playbackTrack: MusicTrack(
+        path: '/audio/cover-flight.mp3',
+        displayName: 'Cover flight',
+        manualCoverPath: cover.path,
+        groupKey: '/audio',
+        groupTitle: 'Audio',
+        groupSubtitle: '',
+        isSingle: false,
+      ),
+    );
+    final source = find.byWidgetPredicate(
+      (widget) => widget is SessionCoverAnchor && widget.isDock,
+    );
+    await tester.tap(source);
+    await _pumpMainScreenAnimations(tester);
+    final anchor = tester.state<SessionCoverAnchorState>(source);
+    for (
+      var attempt = 0;
+      attempt < 30 && anchor.decodedImage == null;
+      attempt++
+    ) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(anchor.bounds(), isNotNull);
+    expect(anchor.decodedImage, isNotNull);
+    final sourceRect = anchor.bounds()!;
+    await tester.tap(source);
+    await tester.pump();
+    await tester.pump();
+    tester.binding.handleMetricsChanged();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    final flight = find.byKey(const ValueKey('session_detail_cover_flight'));
+    expect(flight, findsOneWidget);
+    final entering =
+        tester.widget<CustomPaint>(flight).painter! as SessionCoverFlight;
+    expect(entering.from, sourceRect);
+    await tester.pumpAndSettle();
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    tester.binding.handleMetricsChanged();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(flight, findsOneWidget);
+    final leaving =
+        tester.widget<CustomPaint>(flight).painter! as SessionCoverFlight;
+    expect(leaving.reverse, isTrue);
+    expect(leaving.to, anchor.bounds());
+    await _pumpMainScreenAnimations(tester);
+    expect(find.byType(SessionDetailPage), findsNothing);
+    await _settleSessionDetailAsyncWork(tester);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+  testWidgets('closing playback detail fades over its previous page', (
     tester,
   ) async {
     final platformCalls = <MethodCall>[];
@@ -2127,27 +2265,28 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-
-    platformCalls.clear();
-    navigator.pop();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 60));
-    final backdrop = find.byKey(
-      const ValueKey<String>('session_detail_backdrop_surface'),
-      skipOffstage: false,
-    );
-    expect(backdrop, findsOneWidget);
-    expect(tester.getRect(backdrop).top, greaterThan(0));
-    expect(tester.getRect(backdrop).top, lessThan(800));
-    expect(
-      find.byKey(const ValueKey<String>('under_playback_detail')),
-      findsOneWidget,
-    );
     expect(
       platformCalls.where(
         (call) => call.method == 'SystemChrome.setEnabledSystemUIMode',
-      ),
-      isEmpty,
+      ).map((c) => c.arguments),
+      contains('SystemUiMode.immersiveSticky'),
+    );
+
+    platformCalls.clear();
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    final detail = find.byKey(const ValueKey('session_detail_content_cache'));
+    final fade = tester.widget<FadeTransition>(
+      find.ancestor(of: detail, matching: find.byType(FadeTransition)).first,
+    );
+    expect(fade.opacity.value, inExclusiveRange(0, 1));
+    expect(tester.getTopLeft(detail).dy, 0);
+    expect(
+      find.byKey(const ValueKey<String>('under_playback_detail')),
+      findsOneWidget,
     );
 
     await tester.pumpAndSettle();
@@ -2155,8 +2294,8 @@ void main() {
     expect(
       platformCalls.where(
         (call) => call.method == 'SystemChrome.setEnabledSystemUIMode',
-      ),
-      isEmpty,
+      ).map((c) => c.arguments),
+      ['SystemUiMode.edgeToEdge'],
     );
     navigator.pop();
     await tester.pump();
@@ -5439,19 +5578,11 @@ void main() {
       final closeButton = find.byKey(
         const ValueKey('session_detail_close_button'),
       );
-      final closeRect = tester.getRect(
-        find.ancestor(
-          of: closeButton,
-          matching: find.byType(HeaderFloatingButton),
-        ),
-      );
+      final closeRect = tester.getRect(closeButton);
       expect(closeRect.topLeft, const Offset(16, 30));
       expect(tester.getRect(find.byType(SessionDetailContent)).top, 0);
-      final coverRect = tester.getRect(
-        find.descendant(
-          of: find.byType(SessionDetailContent),
-          matching: find.byType(AspectRatio),
-        ),
+      final rightColumnRect = tester.getRect(
+        find.byKey(const ValueKey('session_detail_right_column')),
       );
       expect(
         tester
@@ -5459,7 +5590,7 @@ void main() {
               find.byKey(const ValueKey('title_marquee_orientation_session')),
             )
             .top,
-        closeTo(coverRect.top, 0.5),
+        closeTo(rightColumnRect.top, 0.5),
       );
       tester.view.physicalSize = const Size(800, 1400);
       tester.view.padding = const FakeViewPadding(top: 32);
@@ -5549,26 +5680,20 @@ void main() {
         await tester.pumpAndSettle();
         final contentRect = tester.getRect(find.byType(SessionDetailContent));
         expect(contentRect.top, 0);
-        final coverRect = tester.getRect(
-          find.descendant(
-            of: find.byType(SessionDetailContent),
-            matching: find.byType(AspectRatio),
-          ),
+        final rightColumnRect = tester.getRect(
+          find.byKey(const ValueKey('session_detail_right_column')),
         );
         final title = find.byKey(
           const ValueKey('title_marquee_orientation_session'),
         );
         final titleRect = tester.getRect(title);
-        expect(titleRect.top, closeTo(coverRect.top, 0.5));
+        expect(titleRect.top, closeTo(rightColumnRect.top, 0.5));
         tester.view.padding = FakeViewPadding.zero;
         tester.view.viewPadding = FakeViewPadding.zero;
         await tester.pumpAndSettle();
 
         final closeRect = tester.getRect(
-          find.ancestor(
-            of: find.byKey(const ValueKey('session_detail_close_button')),
-            matching: find.byType(HeaderFloatingButton),
-          ),
+          find.byKey(const ValueKey('session_detail_close_button')),
         );
         expect(closeRect, referenceRect);
         expect(tester.getRect(find.byType(SessionDetailContent)), contentRect);
@@ -5714,7 +5839,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 210));
     final expandedRect = tester.getRect(routeDock);
     expect(expandedRect.width, greaterThan(200));
-    expect(expandedRect.left, lessThan(collapsedRect.left));
+    expect(expandedRect.left, closeTo(collapsedRect.left, 0.01));
 
     navigator.pop();
     await tester.pump();
@@ -6003,7 +6128,7 @@ void main() {
             body: Center(
               child: ActiveSessionCarousel(
                 sessions: [PlaybackSessionSnapshot.fromRuntime(session)],
-                onOpenSession: (_) {},
+                onOpenSession: (_, _) {},
               ),
             ),
           ),
@@ -6270,7 +6395,7 @@ void main() {
                   PlaybackSessionSnapshot.fromRuntime(firstSession),
                   PlaybackSessionSnapshot.fromRuntime(secondSession),
                 ],
-                onOpenSession: (_) {},
+                onOpenSession: (_, _) {},
               ),
             ),
           ),
@@ -6492,7 +6617,7 @@ void main() {
     );
     final artworkCover = tester.widget<AsyncLocalCoverImage>(
       find.descendant(
-        of: find.byType(SessionDetailPage),
+        of: find.byKey(const ValueKey('artwork_orientation_session')),
         matching: find.byType(AsyncLocalCoverImage),
       ),
     );
@@ -6545,7 +6670,7 @@ void main() {
         .widget<Icon>(
           find.descendant(
             of: detail,
-            matching: find.byIcon(Icons.keyboard_arrow_down_rounded),
+            matching: find.byIcon(Icons.chevron_left_rounded),
           ),
         )
         .color!;
@@ -6594,85 +6719,6 @@ void main() {
   });
 
   testWidgets(
-    'session detail keeps route revealed through a rapid drag reversal',
-    (tester) async {
-      final previousPlatform = debugDefaultTargetPlatformOverride;
-      debugDefaultTargetPlatformOverride = TargetPlatform.android;
-      addTearDown(() {
-        debugDefaultTargetPlatformOverride = previousPlatform;
-      });
-      expect(defaultTargetPlatform, TargetPlatform.android);
-      _setLogicalTestViewSize(tester, const Size(1080, 2400));
-      await _pumpAppShell(tester);
-      unawaited(
-        tester
-            .state<NavigatorState>(find.byType(Navigator).first)
-            .push(buildSessionDetailRoute(sessionId: 'orientation_session')),
-      );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
-
-      final detailFinder = find.byType(SessionDetailPage);
-      expect(detailFinder, findsOne);
-      final detailContext = tester.element(detailFinder);
-      final detailRoute = ModalRoute.of(detailContext)!;
-      expect(detailRoute.opaque, isTrue);
-
-      final dismissGestureFinder = find.byWidgetPredicate(
-        (widget) =>
-            widget is GestureDetector && widget.onVerticalDragUpdate != null,
-      );
-      expect(dismissGestureFinder, findsOne);
-      final dismissGesture = tester.widget<GestureDetector>(
-        dismissGestureFinder,
-      );
-      dismissGesture.onVerticalDragStart!(DragStartDetails());
-      dismissGesture.onVerticalDragUpdate!(
-        DragUpdateDetails(
-          globalPosition: Offset.zero,
-          delta: const Offset(0, 48),
-          primaryDelta: 48,
-        ),
-      );
-      await tester.pump();
-
-      expect(detailRoute.opaque, isFalse);
-      expect(
-        tester
-            .widgetList<TickerMode>(
-              find.descendant(
-                of: detailFinder,
-                matching: find.byType(TickerMode),
-              ),
-            )
-            .any((tickerMode) => tickerMode.enabled),
-        isTrue,
-      );
-
-      dismissGesture.onVerticalDragUpdate!(
-        DragUpdateDetails(
-          globalPosition: Offset.zero,
-          delta: const Offset(0, -48),
-          primaryDelta: -48,
-        ),
-      );
-      await tester.pump();
-
-      expect(detailRoute.opaque, isFalse);
-
-      dismissGesture.onVerticalDragEnd!(DragEndDetails(primaryVelocity: 0));
-      await tester.pumpAndSettle();
-      debugDefaultTargetPlatformOverride = previousPlatform;
-
-      expect(detailFinder, findsOne);
-      expect(detailRoute.opaque, isTrue);
-      expect(tester.takeException(), isNull);
-      await _settleSessionDetailAsyncWork(tester);
-      await tester.pumpWidget(const SizedBox.shrink());
-    },
-  );
-
-  testWidgets(
     'playback detail prepares its full entrance and retains the final return frame',
     (tester) async {
       _setLogicalTestViewSize(
@@ -6697,24 +6743,15 @@ void main() {
       final content = find.byKey(
         const ValueKey('session_detail_content_cache'),
       );
-      final height = MediaQuery.sizeOf(tester.element(content)).height;
-      expect(tester.getTopLeft(content).dy, closeTo(height, 0.1));
+      final fade = tester.widget<FadeTransition>(
+        find.ancestor(of: content, matching: find.byType(FadeTransition)).first,
+      );
+      expect(tester.getTopLeft(content).dy, closeTo(0, 0.1));
+      expect(fade.opacity.value, 0);
       await tester.pump(const Duration(milliseconds: 75));
       expect(route.animation!.value, closeTo(0.25, 0.001));
-      expect(
-        tester.getTopLeft(content).dy,
-        closeTo(height * (1 - Curves.easeOutCubic.transform(0.25)), 0.1),
-      );
-      for (final fade in tester.widgetList<FadeTransition>(
-        find.ancestor(of: content, matching: find.byType(FadeTransition)),
-      )) {
-        expect(fade.opacity.value, 1);
-      }
-      for (final opacity in tester.widgetList<Opacity>(
-        find.ancestor(of: content, matching: find.byType(Opacity)),
-      )) {
-        expect(opacity.opacity, 1);
-      }
+      expect(tester.getTopLeft(content).dy, closeTo(0, 0.1));
+      expect(fade.opacity.value, closeTo(kAppFadeCurve.transform(0.25), 0.001));
       await tester.pump(const Duration(milliseconds: 226));
       expect(route.animation!.status, AnimationStatus.completed);
       expect(tester.getTopLeft(content).dy, closeTo(0, 0.1));
@@ -6775,6 +6812,15 @@ void main() {
       expect(route.transitionDuration, Duration.zero);
       expect(route.reverseTransitionDuration, Duration.zero);
       expect(route.animation!.status, AnimationStatus.completed);
+      for (final name in ['close', 'title']) {
+        final fade = tester.widget<FadeTransition>(
+          find.descendant(
+            of: find.byKey(ValueKey('session_detail_${name}_fade')),
+            matching: find.byType(FadeTransition),
+          ).first,
+        );
+        expect(fade.opacity.value, 1);
+      }
       final content = find.byKey(
         const ValueKey('session_detail_content_cache'),
       );
@@ -6792,95 +6838,6 @@ void main() {
       TargetPlatform.windows,
     }),
   );
-
-  testWidgets('rotation interrupts a landscape detail swipe safely', (
-    tester,
-  ) async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.android;
-    addTearDown(() => debugDefaultTargetPlatformOverride = null);
-    _setLogicalTestViewSize(tester, const Size(1400, 800));
-    await _pumpAppShell(tester);
-    final navigator = Navigator.of(tester.element(find.byType(MainScreen)));
-    unawaited(
-      navigator.push(buildSessionDetailRoute(sessionId: 'orientation_session')),
-    );
-    await tester.pumpAndSettle();
-
-    final detail = find.byType(SessionDetailPage);
-    final route = ModalRoute.of(tester.element(detail))!;
-    final gesture = tester.widget<GestureDetector>(
-      find
-          .descendant(
-            of: detail,
-            matching: find.byWidgetPredicate(
-              (widget) =>
-                  widget is GestureDetector &&
-                  widget.onVerticalDragUpdate != null,
-            ),
-          )
-          .first,
-    );
-    gesture.onVerticalDragStart!(DragStartDetails());
-    gesture.onVerticalDragUpdate!(
-      DragUpdateDetails(
-        globalPosition: Offset.zero,
-        delta: const Offset(0, 80),
-        primaryDelta: 80,
-      ),
-    );
-    await tester.pump();
-    expect(route.opaque, isFalse);
-    expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
-
-    tester.view.physicalSize = const Size(800, 1400);
-    await tester.pump();
-    expect(route.opaque, isTrue);
-    await tester.pump(
-      UiInteractionCoordinator.instance.idleDelay +
-          const Duration(milliseconds: 20),
-    );
-    expect(UiInteractionCoordinator.instance.isInteracting, isFalse);
-
-    final resumedGesture = tester.widget<GestureDetector>(
-      find
-          .descendant(
-            of: detail,
-            matching: find.byWidgetPredicate(
-              (widget) =>
-                  widget is GestureDetector &&
-                  widget.onVerticalDragUpdate != null,
-            ),
-          )
-          .first,
-    );
-    resumedGesture.onVerticalDragStart!(DragStartDetails());
-    resumedGesture.onVerticalDragUpdate!(
-      DragUpdateDetails(
-        globalPosition: Offset.zero,
-        delta: const Offset(0, 80),
-        primaryDelta: 80,
-      ),
-    );
-    await tester.pump();
-    expect(route.opaque, isFalse);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-    await tester.pump();
-    expect(route.opaque, isTrue);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-    await tester.pump();
-    await tester.pump(
-      UiInteractionCoordinator.instance.idleDelay +
-          const Duration(milliseconds: 20),
-    );
-    expect(UiInteractionCoordinator.instance.isInteracting, isFalse);
-    await tester.tap(find.byIcon(Icons.keyboard_arrow_down_rounded).first);
-    await tester.pumpAndSettle();
-    expect(detail, findsNothing);
-    await _settleSessionDetailAsyncWork(tester);
-    await tester.pumpWidget(const SizedBox.shrink());
-    UiInteractionCoordinator.instance.finishInteractionsForTest();
-    debugDefaultTargetPlatformOverride = null;
-  });
 
   testWidgets(
     'session loop and volume controls open corresponding modes and allow configuration',
@@ -7233,56 +7190,51 @@ void main() {
     debugDefaultTargetPlatformOverride = previousPlatform;
   });
 
-  testWidgets('session detail dismisses after dragging past one third', (
-    tester,
-  ) async {
-    final previousPlatform = debugDefaultTargetPlatformOverride;
-    debugDefaultTargetPlatformOverride = TargetPlatform.android;
-    addTearDown(() {
-      debugDefaultTargetPlatformOverride = previousPlatform;
-    });
-    _setLogicalTestViewSize(tester, const Size(1080, 2400));
-    await _pumpAppShell(tester);
-    unawaited(
-      tester
-          .state<NavigatorState>(find.byType(Navigator).first)
-          .push(buildSessionDetailRoute(sessionId: 'orientation_session')),
-    );
-    await tester.pumpAndSettle();
+  testWidgets(
+    'playback detail ignores swipe and handles back on Android only',
+    (tester) async {
+      _setLogicalTestViewSize(tester, const Size(1080, 2400));
+      await _pumpAppShell(tester);
+      final navigator = tester.state<NavigatorState>(
+        find.byType(Navigator).first,
+      );
+      unawaited(
+        navigator.push(
+          buildSessionDetailRoute(sessionId: 'orientation_session'),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    final detailFinder = find.byType(SessionDetailPage);
-    expect(detailFinder, findsOne);
-    final dismissGesture = tester.widget<GestureDetector>(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is GestureDetector && widget.onVerticalDragUpdate != null,
-      ),
-    );
-    final logicalHeight =
-        tester.view.physicalSize.height / tester.view.devicePixelRatio;
-    final dismissDelta = logicalHeight / 3 + 1;
-    dismissGesture.onVerticalDragStart!(DragStartDetails());
-    dismissGesture.onVerticalDragUpdate!(
-      DragUpdateDetails(
-        globalPosition: Offset.zero,
-        delta: Offset(0, dismissDelta),
-        primaryDelta: dismissDelta,
-      ),
-    );
-    dismissGesture.onVerticalDragEnd!(DragEndDetails(primaryVelocity: 0));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.pump(const Duration(milliseconds: 500));
+      final detail = find.byType(SessionDetailPage);
+      await tester.dragFrom(
+        tester.getTopLeft(detail) + const Offset(48, 72),
+        const Offset(0, 420),
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(detail, findsOneWidget);
 
-    await tester.pumpAndSettle();
-    expect(detailFinder, findsNothing);
-    expect(tester.takeException(), isNull);
-    await _settleSessionDetailAsyncWork(tester);
-    await tester.pump(const Duration(milliseconds: 220));
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump(const Duration(milliseconds: 200));
-    debugDefaultTargetPlatformOverride = previousPlatform;
-  });
+      await tester.binding.handlePopRoute();
+      if (defaultTargetPlatform == TargetPlatform.windows) {
+        await tester.pumpAndSettle();
+        expect(detail, findsOneWidget);
+        final close = find.byKey(const ValueKey('session_detail_close_button'));
+        await tester.tap(close);
+        await tester.tap(close);
+      }
+      await tester.pumpAndSettle();
+      expect(detail, findsNothing);
+      expect(navigator.canPop(), isFalse);
+      expect(tester.takeException(), isNull);
+      await _settleSessionDetailAsyncWork(tester);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 6));
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   for (final systemSetting in [false, true]) {
     final motionSource = systemSetting ? 'system' : 'application';
@@ -7548,6 +7500,39 @@ void main() {
       );
     }
   }
+
+  testWidgets('Windows tray labels follow the app language', (tester) async {
+    final labels = <Object?>[];
+    const channel = MethodChannel(AppLifecycleChannel.name);
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      if (call.method == AppLifecycleMethod.syncTrayMenu) {
+        labels.add(call.arguments);
+      }
+      return <String, Object?>{'ok': true, 'value': null};
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    await AppPreferences.init();
+    await AppPreferences.setString('app_language', 'ja');
+    final harness = await _pumpAppShell(tester, includePlaybackSession: false);
+    expect(labels.last, {
+      'open': '開く',
+      'toggle': '再生 / 一時停止',
+      'previous': '前の曲',
+      'next': '次の曲',
+      'exit': '終了',
+    });
+    await harness.language.setLanguage(AppLanguage.zh);
+    await tester.pumpAndSettle();
+    expect(labels.last, {
+      'open': '打开',
+      'toggle': '播放或暂停',
+      'previous': '上一首',
+      'next': '下一首',
+      'exit': '退出',
+    });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('main screen background follows the active theme surface', (
     tester,
@@ -8121,6 +8106,7 @@ Future<_AppShellHarness> _pumpAppShell(
   VoidCallback? onBootstrapSettled,
   List<Override> additionalOverrides = const [],
   AppOrientationController? orientationController,
+  WindowsDesktopService? windowsDesktop,
 }) async {
   AppCacheService.scheduledEnforceEnabled = false;
   addTearDown(AppCacheService.resetForTest);
@@ -8198,6 +8184,7 @@ Future<_AppShellHarness> _pumpAppShell(
       ...additionalOverrides,
     ],
     child: MusicPlayerApp(
+      windowsDesktop: windowsDesktop,
       shouldShowOnboarding: shouldShowOnboarding,
       presentationInitializer: presentationInitializer,
       runtimeInitializer: runtimeInitializer,

@@ -404,6 +404,9 @@ ThemeData _applyDetailColorScheme(ThemeData base, ColorScheme scheme) {
   );
 }
 
+// Flutter insets the track by the larger of the thumb and overlay radii.
+const sessionDetailProgressTrackInset = 12.0;
+
 SliderThemeData sessionDetailProgressSliderTheme(
   BuildContext context,
   Color primaryColor,
@@ -414,7 +417,9 @@ SliderThemeData sessionDetailProgressSliderTheme(
     elevation: 2,
     pressedElevation: 5,
   ),
-  overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+  overlayShape: const RoundSliderOverlayShape(
+    overlayRadius: sessionDetailProgressTrackInset,
+  ),
   activeTrackColor: primaryColor,
   inactiveTrackColor: primaryColor.withValues(alpha: 0.22),
   thumbColor: primaryColor,

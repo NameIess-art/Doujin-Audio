@@ -370,7 +370,7 @@ void main() {
                               library: fixture.runtimeGraph.library,
                               playback: fixture.runtimeGraph.playback,
                               coverCacheWidth: 96,
-                              onOpen: () {},
+                              onOpen: (_) {},
                               onEdit: () {},
                             )
                           : SessionListCard(
@@ -382,7 +382,7 @@ void main() {
                               library: fixture.runtimeGraph.library,
                               playback: fixture.runtimeGraph.playback,
                               isTemporary: false,
-                              onOpen: () {},
+                              onOpen: (_) {},
                             ),
                     ),
                   ),

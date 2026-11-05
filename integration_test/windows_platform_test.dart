@@ -11,6 +11,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:doujin_audio/core/platform/update_platform_service.dart';
+import 'package:doujin_audio/core/platform/app_lifecycle_platform_service.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/platform/subtitle_overlay_platform_service.dart';
 import 'package:doujin_audio/core/platform/windows_desktop_service.dart';
@@ -24,6 +25,43 @@ import 'windows_chapter_playback_test.dart';
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  testWidgets('Windows caption command maximizes and restores the window', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+    await tester.pumpAndSettle();
+    final desktop = WindowsDesktopService.instance;
+    await desktop.attach((_) async {});
+    await tester.pumpAndSettle();
+    final initial = desktop.maximized.value;
+
+    Future<void> toggleMaximized() async {
+      final changed = Completer<void>();
+      final before = desktop.maximized.value;
+      void onChange() {
+        if (desktop.maximized.value != before && !changed.isCompleted) {
+          changed.complete();
+        }
+      }
+
+      desktop.maximized.addListener(onChange);
+      try {
+        await desktop.runWindowCommand(WindowsWindowCommand.toggleMaximized);
+        await changed.future.timeout(const Duration(seconds: 5));
+      } finally {
+        desktop.maximized.removeListener(onChange);
+      }
+    }
+
+    try {
+      await toggleMaximized();
+      expect(desktop.maximized.value, !initial);
+    } finally {
+      if (desktop.maximized.value != initial) await toggleMaximized();
+    }
+    expect(desktop.maximized.value, initial);
+  });
+
   testWidgets(
     'Windows native channels and real multi-session playback',
     (tester) async {
@@ -78,6 +116,16 @@ void main() {
         await overlay.stopOverlay();
         await WindowsDesktopService.instance.setFullscreen(true);
         await WindowsDesktopService.instance.setFullscreen(false);
+        expect(
+          await AppLifecyclePlatformService().syncTrayMenu(
+            open: '開く',
+            toggle: '再生 / 一時停止',
+            previous: '前の曲',
+            next: '次の曲',
+            exit: '終了',
+          ),
+          isTrue,
+        );
         const desktop = MethodChannel('doujin_audio/windows_desktop');
         final hotkeys = await desktop.invokeMapMethod<String, bool>(
           'getHotkeyStatus',
@@ -448,8 +496,37 @@ void main() {
           );
           expect(bridge.playerForSession('one'), isNull);
           expect(bridge.playerForSession('two'), isNull);
-          final resumed = await bridge.play('one');
-          expect(resumed.isOk, true, reason: resumed.errorOrNull);
+          const resumePosition = Duration(seconds: 4);
+          expect((await bridge.seek('one', resumePosition)).isOk, true);
+          final resumeSamples = <({Duration position, Duration? duration})>[];
+          final resumeProgressSub = bridge.progressUpdates
+              .where((sample) => sample.sessionId == 'one')
+              .listen((sample) {
+                resumeSamples.add((
+                  position: sample.position,
+                  duration: sample.duration,
+                ));
+              });
+          try {
+            final resumed = await bridge.play('one');
+            expect(resumed.isOk, true, reason: resumed.errorOrNull);
+            expect(resumed.valueOrNull!.position, resumePosition);
+            expect(resumed.valueOrNull!.duration, const Duration(seconds: 10));
+            await bridge.progressUpdates
+                .firstWhere(
+                  (sample) =>
+                      sample.sessionId == 'one' &&
+                      sample.position > resumePosition,
+                )
+                .timeout(const Duration(seconds: 5));
+            expect(resumeSamples, isNotEmpty);
+            for (final sample in resumeSamples) {
+              expect(sample.position, greaterThanOrEqualTo(resumePosition));
+              expect(sample.duration, const Duration(seconds: 10));
+            }
+          } finally {
+            await resumeProgressSub.cancel();
+          }
           expect(bridge.playerForSession('one'), isNot(same(player)));
           expect(players, hasLength(3));
           await bridge.pause('one');

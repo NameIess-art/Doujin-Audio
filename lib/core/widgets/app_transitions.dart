@@ -82,6 +82,9 @@ class _AppDeferredFadeState extends State<AppDeferredFade>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.fadeInDuration != widget.fadeInDuration) {
       _controller.duration = widget.fadeInDuration;
+      if (_visible && widget.fadeInDuration == Duration.zero) {
+        _controller.value = 1;
+      }
     }
     if (oldWidget.waitFor != widget.waitFor) {
       oldWidget.waitFor?.removeStatusListener(_handleMotionStatus);
@@ -1001,7 +1004,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
   Widget build(BuildContext context) {
     // Route builders run on every tick. Reuse the region tree and animations;
     // only its transform/opacity render objects need animation updates.
-    return _transition ??= _buildTransition();
+    return AppRootPageFrame.wrap(context, _transition ??= _buildTransition());
   }
 }
 
@@ -1187,6 +1190,7 @@ class PlaceholderContentTransition extends StatefulWidget {
     required this.content,
     this.duration = kPlaceholderContentTransitionDuration,
     this.fit = StackFit.expand,
+    this.alignment = AlignmentDirectional.topStart,
     this.protectInteraction = true,
   });
 
@@ -1195,6 +1199,7 @@ class PlaceholderContentTransition extends StatefulWidget {
   final Widget content;
   final Duration duration;
   final StackFit fit;
+  final AlignmentGeometry alignment;
 
   /// Keep page changes protected; decorative fades can leave idle work running.
   final bool protectInteraction;
@@ -1320,6 +1325,7 @@ class _PlaceholderContentTransitionState
     final content = _departingContent ?? widget.content;
     return Stack(
       fit: widget.fit,
+      alignment: widget.alignment,
       children: [
         if (widget.showPlaceholder || _fading)
           IgnorePointer(
@@ -2271,6 +2277,33 @@ class AppPageTransitionsBuilder extends PageTransitionsBuilder {
       child: _AppRouteReference(route: route, child: child),
     );
   }
+}
+
+/// Frames ordinary root routes without changing the root Navigator's bounds.
+/// Routes with their own transition can paint over the entire window.
+class AppRootPageFrame extends InheritedWidget {
+  const AppRootPageFrame({
+    super.key,
+    required this.navigatorKey,
+    required this.builder,
+    required super.child,
+  });
+
+  final GlobalKey<NavigatorState> navigatorKey;
+  final Widget Function(BuildContext, Widget) builder;
+
+  static Widget wrap(BuildContext context, Widget page) {
+    final frame = context.dependOnInheritedWidgetOfExactType<AppRootPageFrame>();
+    if (frame == null ||
+        !identical(Navigator.maybeOf(context), frame.navigatorKey.currentState)) {
+      return page;
+    }
+    return frame.builder(context, page);
+  }
+
+  @override
+  bool updateShouldNotify(AppRootPageFrame oldWidget) =>
+      navigatorKey != oldWidget.navigatorKey || builder != oldWidget.builder;
 }
 
 PageRouteBuilder<T> buildAppPageRoute<T>({

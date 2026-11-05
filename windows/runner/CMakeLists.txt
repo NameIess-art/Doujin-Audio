@@ -42,7 +42,7 @@ target_compile_options(${BINARY_NAME} PRIVATE /utf-8)
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE windowsapp shell32 taskschd comsuppw advapi32)
-target_link_libraries(${BINARY_NAME} PRIVATE winhttp shlwapi)
+target_link_libraries(${BINARY_NAME} PRIVATE winhttp shlwapi comctl32)
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 
 # Run the Flutter tool portions of the build. This must not be removed.

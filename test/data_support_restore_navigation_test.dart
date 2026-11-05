@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:doujin_audio/app/application/app_runtime_lifecycle.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
+import 'package:doujin_audio/core/widgets/app_dialog.dart';
+import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/features/data_support/application/data_backup_service.dart';
 import 'package:doujin_audio/features/data_support/application/data_support_file_service.dart';
 import 'package:doujin_audio/features/data_support/presentation/data_support_settings_controls.dart';
@@ -18,7 +20,7 @@ void main() {
 
   for (final outcome in ['success', 'cancel', 'failure', 'incompatible']) {
     testWidgets(
-      'restore staging protects navigation and handles $outcome',
+      'restore uses menu-bar progress and protects navigation on $outcome',
       (tester) async {
         SharedPreferences.setMockInitialValues(const <String, Object>{});
         final files = _DeferredRestoreFileService();
@@ -63,14 +65,29 @@ void main() {
           await tester.pump(const Duration(milliseconds: 100));
         }
         expect(files.calls, 1);
-        expect(find.byType(CircularProgressIndicator), findsWidgets);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        final progress = find.widgetWithText(
+          AppFeedbackSurface,
+          i18n.tr('loading_dot'),
+        );
+        expect(progress, findsOneWidget);
+        expect(
+          find.descendant(
+            of: progress,
+            matching: find.byType(CircularProgressIndicator),
+          ),
+          findsOneWidget,
+        );
+        expect(find.byType(AppDialog), findsNothing);
         final navigator = Navigator.of(
-          tester.element(find.byType(CircularProgressIndicator).last),
+          tester.element(find.byType(DataSupportSettingsControls)),
         );
         await navigator.maybePop();
-        await tester.pump(const Duration(milliseconds: 250));
+        await tester.pump(const Duration(seconds: 6));
         expect(files.calls, 1);
-        expect(find.byType(CircularProgressIndicator), findsWidgets);
+        expect(progress, findsOneWidget);
+        expect(find.byType(DataSupportSettingsControls), findsOneWidget);
 
         if (outcome == 'failure') {
           files.pending.completeError(StateError('invalid backup'));
@@ -121,13 +138,17 @@ void main() {
           expect(find.text(i18n.tr('backup_ready_to_restore')), findsNothing);
           expect(playback.clearCalls, 0);
           if (outcome == 'incompatible') {
-            expect(find.textContaining(i18n.tr('backup_incompatible')), findsOneWidget);
+            expect(
+              find.textContaining(i18n.tr('backup_incompatible')),
+              findsOneWidget,
+            );
             expect(find.text(i18n.tr('retry')), findsNothing);
           }
           if (outcome == 'failure') {
             expect(find.text(i18n.tr('operation_failed')), findsOneWidget);
           }
         }
+        expect(progress, findsNothing);
         await navigator.maybePop();
         await tester.pumpAndSettle();
         expect(find.text('Open data settings'), findsOneWidget);

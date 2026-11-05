@@ -1,19 +1,21 @@
 import '../playback_providers.dart';
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' show ImageFilter;
+import 'dart:ui' as ui show Image, ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/presentation/app_presentation_providers.dart';
+import '../../../../app/presentation/windows_window_title_bar.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/state/subtitle_settings_provider.dart';
+import '../../../../app/theme/app_styles.dart';
+import '../../../../core/platform/windows_desktop_service.dart';
 import '../../../../core/ui/permission_action_controller.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_transitions.dart';
-import '../../../../core/widgets/top_page_header.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../application/playback_subtitle_service.dart';
 import '../../application/subtitle_overlay_controller.dart';
@@ -24,16 +26,16 @@ import '../../../library/presentation/library_providers.dart';
 import '../../../../core/widgets/async_cover_image.dart';
 import 'playlist_shared_helpers.dart';
 import 'session_detail_content.dart';
+import 'session_cover_transition.dart';
 
 class SessionDetailScaffold extends ConsumerStatefulWidget {
   final ValueListenable<bool> transitionActive;
   final PlaybackSessionSnapshot session;
   final Future<String?> coverPathFuture;
-  final Animation<double> dismissAnimation;
+  final GlobalKey<SessionCoverAnchorState>? detailCoverKey;
+  final ui.Image? coverPreview;
+  final bool deferCoverOverlays;
   final VoidCallback onClose;
-  final ValueChanged<double>? onVerticalDragUpdate;
-  final void Function(DragEndDetails)? onVerticalDragEnd;
-  final VoidCallback? onVerticalDragCancel;
   final ValueNotifier<bool> segmentPanelExpandedNotifier;
 
   const SessionDetailScaffold({
@@ -42,10 +44,9 @@ class SessionDetailScaffold extends ConsumerStatefulWidget {
     required this.session,
     required this.coverPathFuture,
     required this.onClose,
-    this.onVerticalDragUpdate,
-    this.onVerticalDragEnd,
-    this.onVerticalDragCancel,
-    required this.dismissAnimation,
+    this.detailCoverKey,
+    this.coverPreview,
+    this.deferCoverOverlays = false,
     required this.segmentPanelExpandedNotifier,
   });
 
@@ -56,12 +57,11 @@ class SessionDetailScaffold extends ConsumerStatefulWidget {
 
 class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
     with WidgetsBindingObserver {
-  final _detailContentKey = GlobalKey<SessionDetailContentState>();
   final PermissionActionController _permissionActionController =
       PermissionActionController();
-  bool _isDismissGesture = false;
   late final PlaybackSubtitleService _subtitles;
   late bool _hasSubtitle;
+  late bool _coverOverlaysVisible;
   late final String _subtitlePresenceCommitKey =
       'detail_subtitle_presence_${identityHashCode(this)}';
 
@@ -72,19 +72,30 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
     _subtitles = ref.read(playbackSubtitleServiceProvider)
       ..addListener(_handleSubtitlePresenceChanged);
     _hasSubtitle = _subtitles.hasKnownSubtitle(widget.session.currentTrackPath);
-    widget.transitionActive.addListener(_handleSubtitlePresenceChanged);
+    // Offstage route measurement temporarily reports a completed animation.
+    _coverOverlaysVisible = !widget.deferCoverOverlays;
+    widget.transitionActive.addListener(_handleTransitionChanged);
   }
 
   @override
   void didUpdateWidget(covariant SessionDetailScaffold oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.transitionActive != widget.transitionActive) {
-      oldWidget.transitionActive.removeListener(_handleSubtitlePresenceChanged);
-      widget.transitionActive.addListener(_handleSubtitlePresenceChanged);
-      _handleSubtitlePresenceChanged();
+      oldWidget.transitionActive.removeListener(_handleTransitionChanged);
+      widget.transitionActive.addListener(_handleTransitionChanged);
+      _handleTransitionChanged();
     }
     // Metadata can add a remote subtitle URL without changing the track path.
     _hasSubtitle = _subtitles.hasKnownSubtitle(widget.session.currentTrackPath);
+  }
+
+  void _handleTransitionChanged() {
+    // The flying cover paints above these overlays. Reveal them after landing,
+    // then retain them so the route owns their fade on exit.
+    if (!_coverOverlaysVisible && !widget.transitionActive.value) {
+      setState(() => _coverOverlaysVisible = true);
+    }
+    _handleSubtitlePresenceChanged();
   }
 
   void _handleSubtitlePresenceChanged() {
@@ -112,7 +123,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _subtitles.removeListener(_handleSubtitlePresenceChanged);
-    widget.transitionActive.removeListener(_handleSubtitlePresenceChanged);
+    widget.transitionActive.removeListener(_handleTransitionChanged);
     UiInteractionCoordinator.instance.cancelCommit(_subtitlePresenceCommitKey);
     _permissionActionController.dispose();
     super.dispose();
@@ -170,9 +181,6 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final coverPathFuture = widget.coverPathFuture;
     final onClose = widget.onClose;
-    final onVerticalDragUpdate = widget.onVerticalDragUpdate;
-    final onVerticalDragEnd = widget.onVerticalDragEnd;
-    final onVerticalDragCancel = widget.onVerticalDragCancel;
     final isWindows = defaultTargetPlatform == TargetPlatform.windows;
 
     final track = paths.trackByPath(session.currentTrackPath);
@@ -182,222 +190,44 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
     return Material(
       color: cs.surface,
       animationDuration: Duration.zero,
-      child: GestureDetector(
-        key: const ValueKey('session_detail_dismiss_gesture'),
-        behavior: HitTestBehavior.translucent,
-        onVerticalDragStart: isWindows
-            ? null
-            : (details) {
-                final detailState = _detailContentKey.currentState;
-                final panelExpanded =
-                    detailState?.isSegmentPanelExpanded ?? false;
-                _isDismissGesture =
-                    !panelExpanded && widget.dismissAnimation.value > 0.01;
-              },
-        onVerticalDragUpdate: isWindows
-            ? null
-            : (details) {
-                final detailState = _detailContentKey.currentState;
-                final panelExpanded =
-                    detailState?.isSegmentPanelExpanded ?? false;
-                if (panelExpanded) return;
-
-                final delta = details.primaryDelta ?? 0;
-                final detailFullyOpen = widget.dismissAnimation.value <= 0.01;
-
-                if (!_isDismissGesture && delta > 0 && detailFullyOpen) {
-                  _isDismissGesture = true;
-                  onVerticalDragUpdate?.call(delta);
-                  return;
-                }
-
-                if (_isDismissGesture) {
-                  onVerticalDragUpdate?.call(delta);
-                  return;
-                }
-              },
-        onVerticalDragEnd: isWindows
-            ? null
-            : (details) {
-                final detailState = _detailContentKey.currentState;
-                final panelExpanded =
-                    detailState?.isSegmentPanelExpanded ?? false;
-                if (panelExpanded) return;
-
-                if (_isDismissGesture) {
-                  _isDismissGesture = false;
-                  onVerticalDragEnd?.call(details);
-                  return;
-                }
-              },
-        onVerticalDragCancel: isWindows
-            ? null
-            : () {
-                _isDismissGesture = false;
-                onVerticalDragCancel?.call();
-              },
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            _SessionDetailBlurredCoverBackground(
-              session: session,
-              track: track,
-              coverPathFuture: coverPathFuture,
-              initialCoverPath: initialCoverPath,
-              onImageError:
-                  library.coverArtworkCacheService.reportArtworkReadFailure,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          _SessionDetailBlurredCoverBackground(
+            session: session,
+            track: track,
+            coverPathFuture: coverPathFuture,
+            initialCoverPath: initialCoverPath,
+            onImageError:
+                library.coverArtworkCacheService.reportArtworkReadFailure,
+          ),
+          // This route covers the drawn title bar; blank space moves the window.
+          if (isWindows)
+            WindowsWindowDragArea(
+              desktop: WindowsDesktopService.instance,
+              child: const SizedBox.expand(),
             ),
-            SafeArea(
-              top: false,
-              child: AppPageContentTransition(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isLandscape =
-                        isWindows ||
-                        MediaQuery.orientationOf(context) ==
-                            Orientation.landscape;
-                    final topBarHeight = isWindows ? 48.0 : 40.0;
+          SafeArea(
+            top: false,
+            child: AppPageContentTransition(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final isLandscape =
+                      isWindows ||
+                      MediaQuery.orientationOf(context) ==
+                          Orientation.landscape;
+                  final topBarHeight = isWindows ? 48.0 : 40.0;
 
-                    return Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        Align(
-                          alignment: Alignment.topCenter,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: Consumer(
-                              builder: (context, ref, child) {
-                                final settings = ref.watch(
-                                  subtitleSettingsProvider.select(
-                                    (state) => (
-                                      state.isShowEnabled(session.id),
-                                      state.isGlobalEnabled(session.id),
-                                    ),
-                                  ),
-                                );
-
-                                return Row(
-                                  children: [
-                                    Expanded(
-                                      child: SizedBox(height: topBarHeight),
-                                    ),
-                                    if (_hasSubtitle &&
-                                        settings.$1 &&
-                                        settings.$2) ...[
-                                      Icon(
-                                        Icons.subtitles_rounded,
-                                        color: sessionDetailForeground(
-                                          cs,
-                                          SessionDetailForegroundLevel.muted,
-                                        ),
-                                        size: isLandscape ? 20 : 18,
-                                      ),
-                                      SizedBox(width: isLandscape ? 8 : 6),
-                                    ],
-                                    Consumer(
-                                      builder: (context, ref, child) {
-                                        final transport = ref.watch(
-                                          sessionDetailTransportProvider(
-                                            session.id,
-                                          ),
-                                        );
-                                        final featureIcons =
-                                            sessionFeatureBadgeIcons(
-                                              showSubtitles: false,
-                                              channelSwapEnabled:
-                                                  transport
-                                                      ?.channelSwapEnabled ??
-                                                  session.channelSwapEnabled,
-                                              audioEffects:
-                                                  transport?.audioEffects ??
-                                                  session.audioEffects,
-                                              speed:
-                                                  transport?.speed ??
-                                                  session.speed,
-                                            );
-                                        if (featureIcons.isEmpty) {
-                                          return const SizedBox.shrink();
-                                        }
-                                        return Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            SessionFeatureIconRow(
-                                              featureIcons: featureIcons,
-                                              color: sessionDetailForeground(
-                                                cs,
-                                                SessionDetailForegroundLevel
-                                                    .muted,
-                                              ),
-                                              iconSize: isLandscape ? 20 : 18,
-                                              spacing: isLandscape ? 8 : 6,
-                                              alignment: WrapAlignment.end,
-                                            ),
-                                            SizedBox(
-                                              width: isLandscape ? 8 : 6,
-                                            ),
-                                          ],
-                                        );
-                                      },
-                                    ),
-                                  ],
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-                        Positioned.fill(
-                          top: isLandscape ? 0 : topBarHeight,
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Align(
+                        alignment: Alignment.topCenter,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
                           child: Consumer(
                             builder: (context, ref, child) {
-                              Widget artworkWidget = AnimatedSwitcher(
-                                duration:
-                                    MediaQuery.disableAnimationsOf(context)
-                                    ? Duration.zero
-                                    : kAppFadeDuration,
-                                reverseDuration:
-                                    MediaQuery.disableAnimationsOf(context)
-                                    ? Duration.zero
-                                    : kAppFadeDuration,
-                                switchInCurve: kAppFadeCurve,
-                                switchOutCurve: kAppFadeCurve,
-                                transitionBuilder: (child, animation) =>
-                                    MediaQuery.disableAnimationsOf(context)
-                                    ? child
-                                    : FadeTransition(
-                                        opacity: animation,
-                                        child: child,
-                                      ),
-                                layoutBuilder:
-                                    (currentChild, previousChildren) {
-                                      return Stack(
-                                        alignment: Alignment.center,
-                                        fit: StackFit.expand,
-                                        children: [
-                                          ...previousChildren,
-                                          ?currentChild,
-                                        ],
-                                      );
-                                    },
-                                child: KeyedSubtree(
-                                  key: ValueKey('artwork_${session.id}'),
-                                  child: SessionHeroArtwork(
-                                    session: session,
-                                    height: constraints.maxHeight,
-                                    track: track,
-                                    coverPathFuture: coverPathFuture,
-                                  ),
-                                ),
-                              );
-
-                              final artwork = artworkWidget;
-
-                              final detailPadding = EdgeInsets.fromLTRB(
-                                isLandscape ? 8 : 28,
-                                isLandscape ? topBarHeight : 0,
-                                isLandscape ? 8 : 28,
-                                isLandscape ? 8 : 8,
-                              );
-                              final subtitleSettings = ref.watch(
+                              final settings = ref.watch(
                                 subtitleSettingsProvider.select(
                                   (state) => (
                                     state.isShowEnabled(session.id),
@@ -405,75 +235,203 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                                   ),
                                 ),
                               );
-                              return SessionDetailContent(
-                                transitionActive: widget.transitionActive,
-                                key: _detailContentKey,
-                                session: session,
-                                segmentPanelExpandedNotifier:
-                                    widget.segmentPanelExpandedNotifier,
-                                isLandscape: isLandscape,
-                                artworkWidget: artwork,
-                                detailPadding: detailPadding,
-                                hasSubtitle: _hasSubtitle,
-                                subtitleEnabled: subtitleSettings.$1,
-                                subtitleGlobalEnabled: subtitleSettings.$2,
-                                onToggleSubtitle: _hasSubtitle
-                                    ? () {
-                                        ref
-                                            .read(
-                                              subtitleSettingsProvider.notifier,
-                                            )
-                                            .toggleShowSubtitles(session.id);
-                                      }
-                                    : null,
-                                onToggleGlobalSubtitle: () {
-                                  final notifier = ref.read(
-                                    subtitleSettingsProvider.notifier,
-                                  );
-                                  unawaited(
-                                    _toggleGlobalSubtitleDisplay(
-                                      notifier,
-                                      ref.read(subtitleSettingsProvider),
-                                      session.id,
+
+                              return Row(
+                                children: [
+                                  Expanded(
+                                    child: SizedBox(height: topBarHeight),
+                                  ),
+                                  if (_hasSubtitle &&
+                                      settings.$1 &&
+                                      settings.$2) ...[
+                                    Icon(
+                                      Icons.subtitles_rounded,
+                                      color: sessionDetailForeground(
+                                        cs,
+                                        SessionDetailForegroundLevel.muted,
+                                      ),
+                                      size: isLandscape ? 20 : 18,
                                     ),
-                                  );
-                                },
+                                    SizedBox(width: isLandscape ? 8 : 6),
+                                  ],
+                                  Consumer(
+                                    builder: (context, ref, child) {
+                                      final transport = ref.watch(
+                                        sessionDetailTransportProvider(
+                                          session.id,
+                                        ),
+                                      );
+                                      final featureIcons =
+                                          sessionFeatureBadgeIcons(
+                                            showSubtitles: false,
+                                            channelSwapEnabled:
+                                                transport?.channelSwapEnabled ??
+                                                session.channelSwapEnabled,
+                                            audioEffects:
+                                                transport?.audioEffects ??
+                                                session.audioEffects,
+                                            speed:
+                                                transport?.speed ??
+                                                session.speed,
+                                          );
+                                      if (featureIcons.isEmpty) {
+                                        return const SizedBox.shrink();
+                                      }
+                                      return Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          SessionFeatureIconRow(
+                                            featureIcons: featureIcons,
+                                            color: sessionDetailForeground(
+                                              cs,
+                                              SessionDetailForegroundLevel
+                                                  .muted,
+                                            ),
+                                            iconSize: isLandscape ? 20 : 18,
+                                            spacing: isLandscape ? 8 : 6,
+                                            alignment: WrapAlignment.end,
+                                          ),
+                                          SizedBox(width: isLandscape ? 8 : 6),
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                ],
                               );
                             },
                           ),
                         ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ),
-            Positioned(
-              top: MediaQuery.paddingOf(context).top + 6,
-              left: 16,
-              child: ValueListenableBuilder<bool>(
-                valueListenable: widget.segmentPanelExpandedNotifier,
-                builder: (context, expanded, child) =>
-                    expanded ? const SizedBox.shrink() : child!,
-                child: HeaderFloatingButton(
-                  backgroundOpacity: 0.5,
-                  child: IconButton(
-                    key: const ValueKey('session_detail_close_button'),
-                    onPressed: onClose,
-                    tooltip: i18n.tr('close'),
-                    icon: Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      color: sessionDetailForeground(
-                        cs,
-                        SessionDetailForegroundLevel.muted,
                       ),
-                    ),
-                  ),
+                      Positioned.fill(
+                        top: isLandscape ? 0 : topBarHeight,
+                        child: Consumer(
+                          builder: (context, ref, child) {
+                            Widget artworkWidget = AnimatedSwitcher(
+                              duration: MediaQuery.disableAnimationsOf(context)
+                                  ? Duration.zero
+                                  : kAppFadeDuration,
+                              reverseDuration:
+                                  MediaQuery.disableAnimationsOf(context)
+                                  ? Duration.zero
+                                  : kAppFadeDuration,
+                              switchInCurve: kAppFadeCurve,
+                              switchOutCurve: kAppFadeCurve,
+                              transitionBuilder: (child, animation) =>
+                                  MediaQuery.disableAnimationsOf(context)
+                                  ? child
+                                  : FadeTransition(
+                                      opacity: animation,
+                                      child: child,
+                                    ),
+                              layoutBuilder: (currentChild, previousChildren) {
+                                return Stack(
+                                  alignment: Alignment.center,
+                                  fit: StackFit.expand,
+                                  children: [
+                                    ...previousChildren,
+                                    ?currentChild,
+                                  ],
+                                );
+                              },
+                              child: KeyedSubtree(
+                                key: ValueKey('artwork_${session.id}'),
+                                child: SessionHeroArtwork(
+                                  session: session,
+                                  height: constraints.maxHeight,
+                                  track: track,
+                                  coverPathFuture: coverPathFuture,
+                                  coverAnchorKey: widget.detailCoverKey,
+                                  coverPreview: widget.coverPreview,
+                                ),
+                              ),
+                            );
+
+                            final artwork = artworkWidget;
+
+                            final detailPadding = EdgeInsets.fromLTRB(
+                              isLandscape ? 8 : 28,
+                              isLandscape ? topBarHeight : 0,
+                              isLandscape ? 8 : 28,
+                              isLandscape ? 16 : 8,
+                            );
+                            final subtitleSettings = ref.watch(
+                              subtitleSettingsProvider.select(
+                                (state) => (
+                                  state.isShowEnabled(session.id),
+                                  state.isGlobalEnabled(session.id),
+                                ),
+                              ),
+                            );
+                            return SessionDetailContent(
+                              transitionActive: widget.transitionActive,
+                              showCoverOverlays: _coverOverlaysVisible,
+                              session: session,
+                              segmentPanelExpandedNotifier:
+                                  widget.segmentPanelExpandedNotifier,
+                              isLandscape: isLandscape,
+                              artworkWidget: artwork,
+                              detailPadding: detailPadding,
+                              hasSubtitle: _hasSubtitle,
+                              subtitleEnabled: subtitleSettings.$1,
+                              subtitleGlobalEnabled: subtitleSettings.$2,
+                              onToggleSubtitle: _hasSubtitle
+                                  ? () {
+                                      ref
+                                          .read(
+                                            subtitleSettingsProvider.notifier,
+                                          )
+                                          .toggleShowSubtitles(session.id);
+                                    }
+                                  : null,
+                              onToggleGlobalSubtitle: () {
+                                final notifier = ref.read(
+                                  subtitleSettingsProvider.notifier,
+                                );
+                                unawaited(
+                                  _toggleGlobalSubtitleDisplay(
+                                    notifier,
+                                    ref.read(subtitleSettingsProvider),
+                                    session.id,
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+          Positioned(
+            top: (isWindows
+                    ? WindowsWindowTitleBar.height
+                    : MediaQuery.paddingOf(context).top) +
+                AppPageHeaderMetrics.padding.top,
+            left: isWindows ? AppSpacing.xl : AppPageHeaderMetrics.padding.left,
+            child: ValueListenableBuilder<bool>(
+              valueListenable: widget.segmentPanelExpandedNotifier,
+              builder: (context, expanded, child) =>
+                  expanded ? const SizedBox.shrink() : child!,
+              child: AnimatedOpacity(
+                key: const ValueKey('session_detail_close_fade'),
+                opacity: _coverOverlaysVisible ? 1 : 0,
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : kAppFadeDuration,
+                curve: kAppFadeCurve,
+                child: SessionOverlayIconButton(
+                  key: const ValueKey('session_detail_close_button'),
+                  onPressed: onClose,
+                  tooltip: i18n.tr('close'),
+                  icon: Icons.chevron_left_rounded,
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -510,7 +468,7 @@ class _SessionDetailBlurredCoverBackground extends StatelessWidget {
                 Transform.scale(
                   scale: isDark ? 1.12 : 1.08,
                   child: ImageFiltered(
-                    imageFilter: ImageFilter.blur(
+                    imageFilter: ui.ImageFilter.blur(
                       sigmaX: blurSigma,
                       sigmaY: blurSigma,
                       tileMode: TileMode.clamp,
@@ -533,9 +491,7 @@ class _SessionDetailBlurredCoverBackground extends StatelessWidget {
                 ),
                 DecoratedBox(
                   decoration: BoxDecoration(
-                    color: cs.surface.withValues(
-                      alpha: isDark ? 0.70 : 0.80,
-                    ),
+                    color: cs.surface.withValues(alpha: isDark ? 0.70 : 0.80),
                   ),
                 ),
                 DecoratedBox(

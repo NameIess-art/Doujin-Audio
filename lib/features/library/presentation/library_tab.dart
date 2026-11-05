@@ -21,6 +21,7 @@ import '../application/library_catalog.dart';
 import '../application/library_scan_coordinator.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
@@ -915,6 +916,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                                 key: const ValueKey<String>(
                                   'library_search_button',
                                 ),
+                                style: AppEntryInkWell.entryButtonStyle(
+                                  Theme.of(context),
+                                ),
                                 onPressed: _openSearchPage,
                                 icon: const Icon(Icons.search_rounded),
                                 tooltip: i18n.tr('search'),
@@ -1053,6 +1057,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         ),
         IconButton(
           key: const ValueKey<String>('library_edit_button'),
+          style: AppEntryInkWell.entryButtonStyle(Theme.of(context)),
           onPressed: libraryRefreshBusy ? null : _openLibraryManagementPage,
           icon: const Icon(Icons.edit_note_rounded),
           tooltip: i18n.tr('edit_library'),
@@ -1062,6 +1067,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         ),
         IconButton(
           key: const ValueKey<String>('library_batch_metadata_button'),
+          style: AppEntryInkWell.entryButtonStyle(Theme.of(context)),
           onPressed: libraryRefreshBusy ? null : _openBatchMetadataPage,
           icon: const Icon(Icons.library_add_check_rounded),
           tooltip: i18n.tr('batch_metadata'),

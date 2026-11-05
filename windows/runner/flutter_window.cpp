@@ -27,6 +27,7 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   desktop_ = std::make_unique<DesktopIntegration>(GetHandle(), flutter_controller_->engine()->messenger());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+  desktop_->AttachContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     if (std::wstring(GetCommandLineW()).find(L"--background") == std::wstring::npos) desktop_->ShowInitial();

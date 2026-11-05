@@ -1,9 +1,12 @@
 import 'package:doujin_audio/app/presentation/global_shortcuts.dart';
+import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
+import 'package:doujin_audio/core/widgets/app_glass_surface.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/presentation/playback_providers.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_transport_controls.dart';
+import 'package:doujin_audio/features/player/presentation/playlist/session_detail_route.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -198,5 +201,106 @@ void main() {
         }),
       );
     }
+  }
+
+  for (final brightness in Brightness.values) {
+    testWidgets(
+      'playback detail function bar follows bar glass preference in $brightness',
+      (tester) async {
+        tester.view.physicalSize =
+            defaultTargetPlatform == TargetPlatform.android
+            ? const Size(390, 820)
+            : const Size(1280, 800);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(
+          notificationsChannel,
+          (_) async => <String, Object?>{'ok': true, 'value': null},
+        );
+        addTearDown(
+          () => messenger.setMockMethodCallHandler(notificationsChannel, null),
+        );
+        final themeProvider = ThemeProvider();
+        await themeProvider.setThemeMode(
+          brightness == Brightness.dark ? ThemeMode.dark : ThemeMode.light,
+        );
+        final track = testMusicTrack(
+          name: 'Glass test',
+          path: '/music/glass.mp3',
+          groupKey: '/music',
+          groupTitle: 'Music',
+        );
+        fixture.library.addTracks([track], persist: false);
+        final session = fixture.playback.createTrackSession(track)
+          ..loadedPath = track.path;
+        fixture.playbackService.syncSlice(
+          activeSessions: [session],
+          playingSessionCount: 0,
+          focusedSessionId: session.id,
+          coverGeneration: 0,
+          isInitialized: true,
+        );
+        await tester.pumpWidget(
+          fixture.build(
+            Builder(
+              builder: (context) => TextButton(
+                onPressed: () => Navigator.of(
+                  context,
+                ).push(buildSessionDetailRoute(sessionId: session.id)),
+                child: const Text('Open playback details'),
+              ),
+            ),
+            themeProvider: themeProvider,
+          ),
+        );
+        await tester.tap(find.text('Open playback details'));
+        await tester.pumpAndSettle();
+
+        final capsuleFinder = find.byKey(
+          const ValueKey('playback_secondary_controls'),
+        );
+        final glassFinder = find.descendant(
+          of: capsuleFinder,
+          matching: find.byType(AppGlassSurface),
+        );
+        final filterFinder = find.descendant(
+          of: capsuleFinder,
+          matching: find.byType(BackdropFilter),
+        );
+
+        for (final enabled in [false, true, false]) {
+          await themeProvider.setBarGlassEnabled(enabled);
+          await tester.pumpAndSettle();
+
+          expect(glassFinder, findsOneWidget);
+          final glass = tester.widget<AppGlassSurface>(glassFinder);
+          expect(glass.enabled, enabled);
+          expect(glass.borderRadius, BorderRadius.circular(26));
+          expect(filterFinder, enabled ? findsOneWidget : findsNothing);
+          if (enabled) {
+            expect(tester.widget<BackdropFilter>(filterFinder).enabled, isTrue);
+            expect(tester.getRect(filterFinder), tester.getRect(capsuleFinder));
+          }
+          final cs = Theme.of(tester.element(capsuleFinder)).colorScheme;
+          final baseColor = brightness == Brightness.dark
+              ? cs.surfaceBright
+              : cs.surfaceContainerHigh;
+          expect(
+            glass.backgroundColor,
+            enabled
+                ? baseColor.withValues(alpha: baseColor.a * 0.9)
+                : baseColor,
+          );
+        }
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
   }
 }

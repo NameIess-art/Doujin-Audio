@@ -1076,6 +1076,9 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                                       key: const ValueKey<String>(
                                         'asmr_search_button',
                                       ),
+                                      style: AppEntryInkWell.entryButtonStyle(
+                                        Theme.of(context),
+                                      ),
                                       onPressed: _openSearchPage,
                                       icon: const Icon(Icons.search_rounded),
                                       tooltip: i18n.tr('search'),

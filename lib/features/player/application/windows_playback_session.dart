@@ -109,8 +109,13 @@ class _WindowsPlaybackSession {
   Duration? relativeDuration(Duration? absolute) {
     final chapterDuration = reference.durationMs;
     if (chapterDuration != null) return Duration(milliseconds: chapterDuration);
-    return absolute == null ? null : relativePosition(absolute);
+    return absolute == null || absolute <= Duration.zero
+        ? null
+        : relativePosition(absolute);
   }
+
+  Duration? get currentDuration =>
+      relativeDuration(player?.state.duration) ?? duration;
 
   void cancelRetry() {
     retryGeneration++;
@@ -142,7 +147,7 @@ class _WindowsPlaybackSession {
           : 'ready',
       position: position,
       bufferedPosition: relativePosition(state?.buffer ?? Duration.zero),
-      duration: relativeDuration(state?.duration) ?? duration,
+      duration: currentDuration,
       volume: volume,
       speed: speed,
       boostGain: volume > 1 ? volume : 1,
@@ -386,13 +391,27 @@ class _WindowsPlaybackSession {
     if (player != null &&
         pendingStart != null &&
         player.state.duration > Duration.zero) {
-      final position = pendingStart!;
-      final generation = this.generation;
+      await restorePendingPosition(player, isCurrent: isCurrent);
+    }
+  }
+
+  Future<void> restorePendingPosition(
+    Player player, {
+    required bool Function() isCurrent,
+  }) async {
+    final target = pendingStart!;
+    final generation = this.generation;
+    // Ignore decoder positions from the start of the file until the seek lands.
+    try {
+      await player.seek(absolutePosition(target));
+    } finally {
       pendingStart = null;
-      await player.seek(absolutePosition(position));
-      if (isCurrent() && generation == this.generation && wantsPlay) {
-        await player.play();
-      }
+    }
+    if (isCurrent() &&
+        generation == this.generation &&
+        identical(this.player, player) &&
+        wantsPlay) {
+      await player.play();
     }
   }
 

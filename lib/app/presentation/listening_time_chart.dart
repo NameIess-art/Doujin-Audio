@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import '../../features/player/domain/listening_activity.dart';
 import '../../features/settings/application/settings_state.dart';
 import '../../core/widgets/app_transitions.dart';
-import '../../core/widgets/drag_only_scrollbar.dart';
 import '../../core/widgets/windows_horizontal_wheel_scroll.dart';
 import '../../core/widgets/shimmer_loading.dart';
 import '../localization/app_language_provider.dart';
@@ -503,7 +502,7 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
                           (periods.length + _heatmapRows - 1) ~/ _heatmapRows,
                         );
                       }
-                      final list = ListView.builder(
+                      return ListView.builder(
                         key: ValueKey('listening-chart-${chartStyle.name}'),
                         controller: controller,
                         reverse: true,
@@ -569,14 +568,6 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
                           );
                         },
                       );
-                      return Theme.of(context).platform ==
-                              TargetPlatform.windows
-                          ? DragOnlyScrollbar(
-                              controller: controller,
-                              padding: EdgeInsets.zero,
-                              child: list,
-                            )
-                          : list;
                     },
                   ),
                 );

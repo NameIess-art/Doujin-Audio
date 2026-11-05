@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../state/app_runtime_providers.dart';
 import '../theme/app_styles.dart';
 import '../../core/widgets/app_feedback.dart';
+import '../../core/widgets/app_search_suggestions.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/mobile_overlay_inset.dart';
 import '../../core/widgets/page_header_inset.dart';
@@ -66,6 +67,15 @@ typedef _InterestCatalogInputs = ({
   List<AsmrTag> tags,
   List<AsmrTagInterest> listened,
   Set<String> selected,
+  Set<String> excluded,
+});
+
+typedef _InterestCatalogView = ({
+  List<String> items,
+  Map<String, String> labels,
+  Map<String, AsmrTag> tags,
+  Set<String> automatic,
+  Set<String> selected,
 });
 
 /// All interest editors share the searchable catalog and draft confirmation.
@@ -89,18 +99,29 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
   bool _saving = false;
   AsmrLibraryController? _catalogController;
   _InterestCatalogInputs? _catalogInputs;
-  ({List<AsmrTag> tags, Map<String, double> listened, Set<String> selected})?
-  _catalogView;
+  _InterestCatalogView? _catalogView;
+  String? _matchedQuery;
+  List<String>? _matchingItems;
+
+  void _invalidateCatalogView() {
+    _catalogView = null;
+    _matchedQuery = null;
+    _matchingItems = null;
+  }
 
   void _refreshCatalog() {
+    // Saving can publish preferences before its recommendation refresh
+    // completes. Keep the outgoing editor in its current order.
+    if (_saving) return;
     final next = _readCatalogInputs(_catalogController!);
     final previous = _catalogInputs;
     _catalogInputs = next;
     if (previous == null ||
         !identical(previous.tags, next.tags) ||
         !identical(previous.listened, next.listened) ||
-        !setEquals(previous.selected, next.selected)) {
-      _catalogView = null;
+        !setEquals(previous.selected, next.selected) ||
+        !setEquals(previous.excluded, next.excluded)) {
+      _invalidateCatalogView();
     }
   }
 
@@ -110,7 +131,7 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
     _catalogController = controller;
     controller?.addListener(_refreshCatalog);
     _catalogInputs = null;
-    _catalogView = null;
+    _invalidateCatalogView();
   }
 
   @override
@@ -119,7 +140,7 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
     if (oldWidget.type != widget.type ||
         oldWidget.excluded != widget.excluded) {
       _catalogInputs = null;
-      _catalogView = null;
+      _invalidateCatalogView();
     }
   }
 
@@ -165,34 +186,66 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
       };
       if (mounted) Navigator.of(context).pop();
     } catch (error) {
-      if (mounted) showAppSnackBar(context, error.toString());
-    } finally {
-      if (mounted) setState(() => _saving = false);
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _refreshCatalog();
+      });
+      showAppSnackBar(context, error.toString());
     }
   }
 
-  ({List<AsmrTag> tags, Map<String, double> listened, Set<String> selected})
-  _buildCatalogView(AsmrLibraryController controller) {
+  _InterestCatalogView _buildCatalogView(AsmrLibraryController controller) {
     final inputs = _catalogInputs ??= _readCatalogInputs(controller);
-    final listened = {
-      for (final interest in inputs.listened) interest.tag.key: interest.weight,
-    };
-    final selected = widget.excluded
-        ? inputs.selected
-        : {...inputs.selected, ...listened.keys};
-    final tags = inputs.tags.toList();
+    final weights = widget.excluded
+        ? <String, double>{}
+        : {
+            for (final interest in inputs.listened)
+              interest.tag.key: interest.weight,
+          };
+    final tags = inputs.tags
+        .where((tag) => widget.excluded || !inputs.excluded.contains(tag.key))
+        .toList();
     tags.sort((a, b) {
-      if (!widget.excluded) {
-        final weight = (listened[b.key] ?? 0).compareTo(listened[a.key] ?? 0);
-        if (weight != 0) return weight;
-        final selection = (selected.contains(b.key) ? 1 : 0).compareTo(
-          selected.contains(a.key) ? 1 : 0,
-        );
-        if (selection != 0) return selection;
-      }
-      return a.name.compareTo(b.name);
+      final automatic = (weights.containsKey(b.key) ? 1 : 0).compareTo(
+        weights.containsKey(a.key) ? 1 : 0,
+      );
+      if (automatic != 0) return automatic;
+      final weight = (weights[b.key] ?? 0).compareTo(weights[a.key] ?? 0);
+      if (weight != 0) return weight;
+      // The saved selection sets the order for this editor. Drafts only
+      // affect the highlight, so a tap never moves the target.
+      final selected = (inputs.selected.contains(b.key) ? 1 : 0).compareTo(
+        inputs.selected.contains(a.key) ? 1 : 0,
+      );
+      if (!weights.containsKey(a.key) && selected != 0) return selected;
+      final name = a.name.compareTo(b.name);
+      return name != 0 ? name : a.key.compareTo(b.key);
     });
-    return (tags: tags, listened: listened, selected: selected);
+    return (
+      items: [for (final tag in tags) tag.key],
+      labels: {for (final tag in tags) tag.key: tag.name},
+      tags: {for (final tag in tags) tag.key: tag},
+      automatic: weights.keys.toSet(),
+      selected: inputs.selected,
+    );
+  }
+
+  List<String> _visibleItems(_InterestCatalogView view) {
+    final query = _search.text.trim().toLowerCase();
+    if (_matchingItems == null || _matchedQuery != query) {
+      _matchedQuery = query;
+      _matchingItems = query.isEmpty
+          ? view.items
+          : view.items
+                .where(
+                  (key) => view.tags[key]!.aliases.any(
+                    (name) => name.toLowerCase().contains(query),
+                  ),
+                )
+                .toList(growable: false);
+    }
+    return _matchingItems!;
   }
 
   _InterestCatalogInputs _readCatalogInputs(AsmrLibraryController controller) =>
@@ -207,6 +260,11 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
           MyInterestType.voiceActors => controller.listenedVoiceActorInterests,
           MyInterestType.circles => controller.listenedCircleInterests,
         },
+        excluded: Set.of(switch (widget.type) {
+          MyInterestType.tags => controller.excludedTagKeys,
+          MyInterestType.voiceActors => controller.excludedVoiceActorKeys,
+          MyInterestType.circles => controller.excludedCircleKeys,
+        }),
         selected: Set.of(
           widget.excluded
               ? switch (widget.type) {
@@ -243,12 +301,8 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
         : ListenableBuilder(
             listenable: controller,
             builder: (context, _) {
-              // Search and draft checkbox changes do not change the persisted
-              // interest ranking. Keep its order until the controller changes.
               final view = _catalogView ??= _buildCatalogView(controller);
-              final listened = view.listened;
-              final selected = view.selected;
-              final query = _search.text.trim().toLowerCase();
+              final items = _visibleItems(view);
               final (loading, complete, error) = switch (widget.type) {
                 MyInterestType.tags => (
                   controller.isLoadingTagCatalog,
@@ -266,15 +320,6 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                   controller.circleCatalogError,
                 ),
               };
-              final tags = query.isEmpty
-                  ? view.tags
-                  : view.tags
-                        .where(
-                          (tag) => tag.aliases.any(
-                            (name) => name.toLowerCase().contains(query),
-                          ),
-                        )
-                        .toList(growable: false);
               return CustomScrollView(
                 slivers: [
                   SliverToBoxAdapter(child: SizedBox(height: headerTopInset)),
@@ -310,35 +355,24 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                       16,
                       MobileOverlayInset.of(context) + 88,
                     ),
-                    sliver: SliverList.builder(
-                      itemCount: tags.length,
-                      itemBuilder: (context, index) {
-                        final tag = tags[index];
-                        return CheckboxListTile(
-                          key: ValueKey(tag.key),
-                          title: Text(tag.name),
-                          subtitle:
-                              !widget.excluded && listened.containsKey(tag.key)
-                              ? Text(i18n.tr(widget.type.listenedKey))
-                              : null,
-                          value:
-                              (!widget.excluded &&
-                                  listened.containsKey(tag.key)) ||
-                              (_changes[tag.key] ?? selected.contains(tag.key)),
-                          onChanged:
-                              _saving ||
-                                  (!widget.excluded &&
-                                      listened.containsKey(tag.key))
-                              ? null
-                              : (value) => setState(() {
-                                  if (value == selected.contains(tag.key)) {
-                                    _changes.remove(tag.key);
-                                  } else {
-                                    _changes[tag.key] = value!;
-                                  }
-                                }),
-                        );
-                      },
+                    sliver: AppElementChipSliver(
+                      items: items,
+                      labels: view.labels,
+                      isSelected: (key) =>
+                          view.automatic.contains(key) ||
+                          (_changes[key] ?? view.selected.contains(key)),
+                      isEnabled: (key) => !view.automatic.contains(key),
+                      disabledHint: i18n.tr(widget.type.listenedKey),
+                      readOnly: _saving,
+                      onToggle: (key) => setState(() {
+                        final value =
+                            !(_changes[key] ?? view.selected.contains(key));
+                        if (value == view.selected.contains(key)) {
+                          _changes.remove(key);
+                        } else {
+                          _changes[key] = value;
+                        }
+                      }),
                     ),
                   ),
                 ],

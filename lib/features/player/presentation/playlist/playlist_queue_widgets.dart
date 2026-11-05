@@ -27,6 +27,7 @@ import 'playlist_media_widgets.dart';
 import 'playlist_shared_helpers.dart';
 
 import 'playback_queue_cover.dart';
+import 'session_cover_transition.dart';
 export 'playback_queue_edit_page.dart'
     show PlaybackQueueEditPage, showPlaybackQueueEditPanel;
 export 'playback_queue_audio_edit_page.dart' show PlaybackQueueAudioEditPage;
@@ -52,7 +53,7 @@ class PlaybackQueueCard extends ConsumerStatefulWidget {
   final LibraryFacade library;
   final PlaybackFacade playback;
   final int? coverCacheWidth;
-  final VoidCallback onOpen;
+  final ValueChanged<BuildContext> onOpen;
   final FutureOr<void> Function() onEdit;
   final bool isSelectionMode;
   final bool isSelected;
@@ -190,6 +191,19 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
         : ref
               .read(audioPathCoordinatorProvider)
               .sessionTrackForPath(session.id, cardState.trackPath);
+    final currentCoverScope = currentTrack == null
+        ? null
+        : library.coverArtworkCacheService.coverSearchKeyForTrack(currentTrack);
+    final currentCoverIndex = coverItems.indexWhere(
+      (item) =>
+          currentTrack != null &&
+          (PathMatcher.equalsNormalized(item.track.path, currentTrack.path) ||
+              (currentCoverScope != null &&
+                  library.coverArtworkCacheService.coverSearchKeyForTrack(
+                        item.track,
+                      ) ==
+                      currentCoverScope)),
+    );
     final currentTrackName = tracks.isEmpty
         ? i18n.tr('empty_playback_queue')
         : currentTrack?.displayName ??
@@ -236,7 +250,7 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                   AppInteractionFeedback.trigger(
                     AppInteractionFeedbackType.tap,
                   );
-                  onOpen();
+                  onOpen(context);
                 }
               },
               onLongPress: () {
@@ -263,6 +277,8 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                           size: playlistCoverSize,
                           child: _QueueCoverGrid(
                             items: coverItems,
+                            sessionId: session.id,
+                            currentCoverIndex: currentCoverIndex,
                             coverCacheWidth: coverCacheWidth,
                             dimension: coverProgressInnerDimension(
                               playlistCoverSize,
@@ -295,7 +311,9 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                         button: true,
                         selected: isSelectionMode ? isSelected : null,
                         label: i18n.tr('open_playback_details'),
-                        onTap: isSelectionMode ? onToggleSelect : onOpen,
+                        onTap: isSelectionMode
+                            ? onToggleSelect
+                            : () => onOpen(context),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -463,12 +481,16 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
 class _QueueCoverGrid extends StatelessWidget {
   const _QueueCoverGrid({
     required this.items,
+    required this.sessionId,
+    required this.currentCoverIndex,
     required this.coverCacheWidth,
     this.dimension = playlistCoverSize,
   });
 
   final List<({MusicTrack track, String? coverPath, Future<String?> future})>
   items;
+  final String sessionId;
+  final int currentCoverIndex;
   final int? coverCacheWidth;
   final double dimension;
 
@@ -491,10 +513,16 @@ class _QueueCoverGrid extends StatelessWidget {
               ),
             ],
           );
-    return CoverArtworkFrame(
-      key: const ValueKey('playback_queue_cover_grid'),
-      borderRadius: BorderRadius.circular(dimension / 2),
-      child: SizedBox.square(dimension: dimension, child: content),
+    return SessionCoverAnchor(
+      sessionId: sessionId,
+      radius: dimension / 2,
+      location: SessionCoverLocation.playlist,
+      imageKey: ValueKey('playback_queue_cover_cell_$currentCoverIndex'),
+      child: CoverArtworkFrame(
+        key: const ValueKey('playback_queue_cover_grid'),
+        borderRadius: BorderRadius.circular(dimension / 2),
+        child: SizedBox.square(dimension: dimension, child: content),
+      ),
     );
   }
 

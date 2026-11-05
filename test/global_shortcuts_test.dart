@@ -599,8 +599,11 @@ void main() {
   );
 
   testWidgets(
-    'F1 help reports native query errors and closes with Esc',
+    'F1 toggles wide two-column help and Escape also closes it',
     (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1200, 800);
+      addTearDown(tester.view.reset);
       SharedPreferences.setMockInitialValues({});
       final language = AppLanguageProvider();
       await language.initialized;
@@ -634,14 +637,18 @@ void main() {
       expect(find.bySubtype<AlertDialog>(), findsOneWidget);
       expect(find.byType(AppGlassSurface), findsOneWidget);
       expect(find.byType(BackdropFilter), findsOneWidget);
+      expect(
+        tester.getSize(find.byType(AppGlassSurface)).width,
+        closeTo(600, 0.5),
+      );
+      final shortcut = tester.getRect(find.text('Space / Ctrl + Space'));
+      final action = tester.getRect(
+        find.text(language.tr('keyboard_shortcuts_toggle')).first,
+      );
+      expect(shortcut.right, lessThan(action.left));
+      expect(shortcut.top, closeTo(action.top, 0.5));
 
-      // Second F1 key press should not open a duplicate dialog.
       await tester.sendKeyEvent(LogicalKeyboardKey.f1);
-      await tester.pumpAndSettle();
-      expect(find.bySubtype<AlertDialog>(), findsOneWidget);
-
-      // Escape closes the dialog.
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
       expect(find.bySubtype<AlertDialog>(), findsNothing);
 

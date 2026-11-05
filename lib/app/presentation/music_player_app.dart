@@ -26,6 +26,7 @@ import '../presentation/onboarding_page.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
 import '../../core/cache/app_cache_service.dart';
 import '../../core/logging/app_log_service.dart';
+import '../../core/platform/windows_desktop_service.dart';
 import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../theme/theme_provider.dart';
@@ -36,6 +37,7 @@ import '../../features/data_support/application/data_backup_service.dart';
 
 import 'routed_playback_dock_host.dart';
 import 'work_detail_navigation.dart';
+import 'windows_window_title_bar.dart';
 
 Widget createAudioPlayerApp({
   required bool shouldShowOnboarding,
@@ -93,6 +95,9 @@ Widget createAudioPlayerApp({
       ),
     ],
     child: MusicPlayerApp(
+      windowsDesktop: windowsRuntime == null
+          ? null
+          : WindowsDesktopService.instance,
       shouldShowOnboarding: shouldShowOnboarding,
       startupRestoreOutcome: startupRestoreOutcome,
       onBootstrapSettled: onBootstrapSettled,
@@ -106,6 +111,7 @@ Widget createAudioPlayerApp({
 
 class MusicPlayerApp extends ConsumerStatefulWidget {
   const MusicPlayerApp({
+    this.windowsDesktop,
     this.shouldShowOnboarding,
     this.startupRestoreOutcome,
     this.onBootstrapSettled,
@@ -115,6 +121,7 @@ class MusicPlayerApp extends ConsumerStatefulWidget {
   });
 
   final bool? shouldShowOnboarding;
+  final WindowsDesktopService? windowsDesktop;
   final StartupRestoreOutcome? startupRestoreOutcome;
   final VoidCallback? onBootstrapSettled;
   final Future<void> Function()? presentationInitializer;
@@ -145,6 +152,24 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
   @override
   void initState() {
     super.initState();
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      final language = ref.read(appLanguageProviderInstanceProvider);
+      ref.listenManual(
+        appLanguageStateProvider.select(
+          (state) => state.value?.language ?? language.language,
+        ),
+        (_, _) => unawaited(
+          ref.read(appLifecyclePlatformServiceProvider).syncTrayMenu(
+            open: language.tr('open'),
+            toggle: language.tr('keyboard_shortcuts_toggle'),
+            previous: language.tr('previous_track'),
+            next: language.tr('next_track'),
+            exit: language.tr('tray_exit'),
+          ),
+        ),
+        fireImmediately: true,
+      );
+    }
     _runtime = ref.read(audioRuntimeCoordinatorProvider);
     _orientationController = ref.read(appOrientationControllerProvider);
     WidgetsBinding.instance.addObserver(this);
@@ -467,7 +492,34 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
                   ),
                 );
                 if (defaultTargetPlatform == TargetPlatform.windows) {
-                  return TooltipVisibility(visible: false, child: content);
+                  final desktop = widget.windowsDesktop;
+                  return TooltipVisibility(
+                    visible: false,
+                    child: desktop == null
+                        ? content
+                        : AppRootPageFrame(
+                            navigatorKey: _navigatorKey,
+                            builder: (context, page) => Column(
+                              children: [
+                                WindowsWindowTitleBar(
+                                  desktop: desktop,
+                                  language: languageProvider,
+                                ),
+                                Expanded(
+                                  child: LayoutBuilder(
+                                    builder: (context, constraints) => MediaQuery(
+                                      data: MediaQuery.of(context).copyWith(
+                                        size: constraints.biggest,
+                                      ),
+                                      child: page,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            child: content,
+                          ),
+                  );
                 }
                 return content;
               },

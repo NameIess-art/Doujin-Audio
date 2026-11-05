@@ -14,26 +14,27 @@ extension _MainScreenLayout on _MainScreenState {
       isLandscapeLayout: isLandscapeLayout,
     );
     // Secondary routes cover and reveal this same dock with their page motion.
-    final pageContent = isDesktop
-        ? body
-        : Stack(
-            fit: StackFit.expand,
-            children: [
-              body,
-              Consumer(
-                builder: (context, ref, _) => _buildMobileBottomDock(
-                  context,
-                  i18n: ref.read(appLanguageProviderInstanceProvider),
-                  overlaySessions: ref.watch(
-                    mainOverlayUiProvider.select(
-                      (state) => state.overlaySessions,
-                    ),
-                  ),
-                  tinyMode: tinyMode,
+    // Keep the page under the same parent when playback restores portrait.
+    // Replacing this Stack with the body would dispose every loaded tab.
+    final pageContent = Stack(
+      fit: StackFit.expand,
+      children: [
+        body,
+        if (!isDesktop)
+          Consumer(
+            builder: (context, ref, _) => _buildMobileBottomDock(
+              context,
+              i18n: ref.read(appLanguageProviderInstanceProvider),
+              overlaySessions: ref.watch(
+                mainOverlayUiProvider.select(
+                  (state) => state.overlaySessions,
                 ),
               ),
-            ],
-          );
+              tinyMode: tinyMode,
+            ),
+          ),
+      ],
+    );
     // Only the home page ignores IME height. Routes above it still need live
     // insets so search fields and dialogs can move clear of the keyboard.
     final mainPage = Builder(

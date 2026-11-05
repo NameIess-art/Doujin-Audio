@@ -45,8 +45,12 @@ final class PlaylistUiController {
 
   ValueListenable<String?> get carouselSnap => _carouselSnap;
 
-  void requestCarouselSnap(String sessionId) {
+  bool get carouselSnapImmediately => _carouselSnapImmediately;
+  bool _carouselSnapImmediately = false;
+
+  void requestCarouselSnap(String sessionId, {bool immediately = false}) {
     if (sessionId.isEmpty) return;
+    _carouselSnapImmediately = immediately;
     if (_carouselSnap.value == sessionId) _carouselSnap.value = null;
     _carouselSnap.value = sessionId;
   }

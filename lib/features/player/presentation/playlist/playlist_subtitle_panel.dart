@@ -27,11 +27,13 @@ class SessionSubtitlePanel extends ConsumerStatefulWidget {
     super.key,
     required this.session,
     this.subtitleEnabled = true,
+    this.isLandscape = false,
     this.transitionActive,
   });
 
   final PlaybackSessionSnapshot session;
   final bool subtitleEnabled;
+  final bool isLandscape;
   final ValueListenable<bool>? transitionActive;
 
   @override
@@ -291,24 +293,33 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
     final playbackSubtitleIndex =
         _playbackSubtitleIndex ??
         (subtitleTrack != null && subtitleTrack.cues.isNotEmpty ? 0 : null);
-
-    if (!widget.subtitleEnabled) {
-      content = Center(
+    Widget emptySubtitle() {
+      return Align(
         key: const ValueKey('subtitle_empty'),
-        child: Text(
-          i18n.tr('no_subtitle_for_track'),
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: sessionDetailForeground(
-              Theme.of(context).colorScheme,
-              SessionDetailForegroundLevel.muted,
-              darkFallback: Theme.of(
-                context,
-              ).colorScheme.onSurface.withValues(alpha: 0.6),
+        alignment: widget.isLandscape ? Alignment.centerLeft : Alignment.center,
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: widget.isLandscape ? landscapeDetailTextInset : 0,
+          ),
+          child: Text(
+            i18n.tr('no_subtitle_for_track'),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: sessionDetailForeground(
+                Theme.of(context).colorScheme,
+                SessionDetailForegroundLevel.muted,
+                darkFallback: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.6),
+              ),
+              fontSize: 14,
             ),
-            fontSize: 14,
           ),
         ),
       );
+    }
+
+    if (!widget.subtitleEnabled) {
+      content = emptySubtitle();
     } else if (playbackError != null) {
       content = Center(
         key: const ValueKey('subtitle_error'),
@@ -328,16 +339,15 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
           ),
         ),
       );
-    } else if (isSubtitlePending) {
-      content = const SessionSubtitlePlaceholder(
-        key: ValueKey('subtitle_loading'),
-      );
     } else if (subtitleTrack != null &&
         subtitleTrack.cues.isNotEmpty &&
         playbackSubtitleIndex != null) {
+      // Resuming the same audio can prepare its source again while subtitles
+      // are already available.
       content = TimelineSubtitleView(
         key: ValueKey<Object>((widget.session.id, subtitleTrack)),
         cues: subtitleTrack.cues,
+        isLandscape: widget.isLandscape,
         playbackSubtitleIndex: playbackSubtitleIndex,
         onSeek: (position) {
           final target = position + subtitleTrack.offset;
@@ -347,23 +357,12 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
               .seekSession(widget.session.id, clamped);
         },
       );
-    } else {
-      content = Center(
-        key: const ValueKey('subtitle_empty'),
-        child: Text(
-          i18n.tr('no_subtitle_for_track'),
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: sessionDetailForeground(
-              Theme.of(context).colorScheme,
-              SessionDetailForegroundLevel.muted,
-              darkFallback: Theme.of(
-                context,
-              ).colorScheme.onSurface.withValues(alpha: 0.6),
-            ),
-            fontSize: 14,
-          ),
-        ),
+    } else if (isSubtitlePending) {
+      content = const SessionSubtitlePlaceholder(
+        key: ValueKey('subtitle_loading'),
       );
+    } else {
+      content = emptySubtitle();
     }
 
     return LayoutBuilder(
@@ -425,30 +424,33 @@ class SessionSubtitlePlaceholder extends StatelessWidget {
         );
 
         return Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Opacity(
-                opacity: 0.35,
-                child: ShimmerContainer(
-                  width: topWidth,
-                  height: 14,
-                  borderRadius: 4,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Opacity(
+                  opacity: 0.35,
+                  child: ShimmerContainer(
+                    width: topWidth,
+                    height: 14,
+                    borderRadius: 4,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              ShimmerContainer(width: centerWidth, height: 16, borderRadius: 4),
-              const SizedBox(height: 16),
-              Opacity(
-                opacity: 0.35,
-                child: ShimmerContainer(
-                  width: bottomWidth,
-                  height: 14,
-                  borderRadius: 4,
+                const SizedBox(height: 16),
+                ShimmerContainer(width: centerWidth, height: 16, borderRadius: 4),
+                const SizedBox(height: 16),
+                Opacity(
+                  opacity: 0.35,
+                  child: ShimmerContainer(
+                    width: bottomWidth,
+                    height: 14,
+                    borderRadius: 4,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },

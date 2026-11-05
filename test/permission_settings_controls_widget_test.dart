@@ -7,6 +7,7 @@ import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/presentation/app_settings_group_card.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/widgets/app_settings_action_tile.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/core/platform/power_platform_service.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
@@ -243,7 +244,7 @@ void main() {
   );
 
   testWidgets(
-    'shows capsule placeholders of same size and position while loading',
+    'permission capsules fade from their placeholders over 300 ms',
     (tester) async {
       final language = AppLanguageProvider();
       final pending = Completer<PermissionStatusSnapshot>();
@@ -280,11 +281,39 @@ void main() {
           updateInstallsAllowed: false,
         ),
       );
-      await tester.pumpAndSettle();
-
-      expect(find.byType(ShimmerLoader), findsNothing);
+      await tester.pump();
+      await tester.pump();
       final buttons = find.byType(TextButton);
       expect(buttons, findsNWidgets(4));
+      final fades = find.ancestor(
+        of: buttons,
+        matching: find.descendant(
+          of: find.byType(PlaceholderContentTransition),
+          matching: find.byType(FadeTransition),
+        ),
+      );
+      Iterable<double> opacities() => tester
+          .widgetList<FadeTransition>(fades)
+          .map((fade) => fade.opacity.value);
+      expect(opacities(), hasLength(4));
+      expect(opacities(), everyElement(0));
+      expect(shimmerFinders, findsNWidgets(4));
+
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(opacities(), everyElement(inExclusiveRange(0, 1)));
+      expect(shimmerFinders, findsNWidgets(4));
+      expect(
+        tester.getRect(buttons.first).right,
+        closeTo(firstPlaceholderRect.right, 0.5),
+      );
+
+      await tester.pump(const Duration(milliseconds: 149));
+      expect(shimmerFinders, findsNWidgets(4));
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(opacities(), everyElement(1));
+      await tester.pump(const Duration(milliseconds: 1));
+      await tester.pump();
+      expect(shimmerFinders, findsNothing);
 
       final firstButtonRect = tester.getRect(buttons.first);
       expect(firstButtonRect.right, closeTo(firstPlaceholderRect.right, 0.5));

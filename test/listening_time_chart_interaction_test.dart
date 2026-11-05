@@ -554,7 +554,7 @@ void main() {
       );
       final list = find.byKey(const ValueKey('listening-chart-heatmap'));
       final scroll = controller(tester);
-      expect(find.byType(DragOnlyScrollbar), findsOneWidget);
+      expect(find.byType(DragOnlyScrollbar), findsNothing);
       expect(find.byKey(ValueKey(days.last.date)), findsNothing);
       final cell = find.byKey(ValueKey(today));
       final message = tester

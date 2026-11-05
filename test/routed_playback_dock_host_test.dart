@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
+import 'package:doujin_audio/app/presentation/main_screen.dart';
 import 'package:doujin_audio/app/presentation/routed_playback_dock_host.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_bottom_sheet.dart';
@@ -56,6 +57,7 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
   EdgeInsets padding = EdgeInsets.zero,
   Widget? home,
   ValueNotifier<int>? navigatorRevision,
+  PlaybackDockGeometryController? geometryController,
 }) async {
   debugDefaultTargetPlatformOverride = platform;
   tester.view.devicePixelRatio = 1;
@@ -90,6 +92,7 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
     fixture.build(
       RoutedPlaybackDockHost(
         navigatorKey: navigator,
+        geometry: geometryController,
         builder: (context, observer, geometry, wrapNavigator) {
           final right = platform == TargetPlatform.windows ? 556.0 : 374.0;
           final top = size.height - 68;
@@ -326,6 +329,75 @@ void main() {
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
+      'work header fades beneath playback detail and restores on $platform',
+      (tester) async {
+        final navigator = await _pumpHost(tester, platform);
+        const headerKey = ValueKey('covered_work_header');
+        const bodyKey = ValueKey('covered_work_body');
+        unawaited(
+          navigator.currentState!.push(
+            _detailRoute(
+              navigator,
+              child: const Scaffold(
+                body: Column(
+                  children: [
+                    AppPageHeaderTransition(
+                      child: SizedBox(
+                        key: headerKey,
+                        height: 60,
+                        width: double.infinity,
+                        child: ColoredBox(color: Colors.red),
+                      ),
+                    ),
+                    Expanded(
+                      child: AppPageContentTransition(
+                        child: SizedBox.expand(key: bodyKey),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final header = find.byKey(headerKey, skipOffstage: false);
+        final body = find.byKey(bodyKey, skipOffstage: false);
+        final bodyRect = tester.getRect(body);
+        double headerOpacity() => tester
+            .widget<Opacity>(
+              find.ancestor(
+                of: header,
+                matching: find.byType(Opacity, skipOffstage: false),
+              ).first,
+            )
+            .opacity;
+        expect(headerOpacity(), 1);
+        final playback = buildSessionDetailRoute(sessionId: 'dock_session');
+        unawaited(navigator.currentState!.push(playback));
+        await tester.pumpAndSettle();
+        expect(headerOpacity(), 0);
+        expect(tester.getRect(body), bodyRect);
+        await tester.tap(
+          find.byKey(const ValueKey('session_detail_close_button')),
+        );
+        await tester.pump();
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(headerOpacity(), inExclusiveRange(0, 1));
+        expect(tester.getRect(body), bodyRect);
+        await tester.pumpAndSettle();
+        expect(headerOpacity(), 1);
+        navigator.currentState!.pop();
+        await tester.pumpAndSettle();
+        await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+        await tester.pumpWidget(const SizedBox.shrink());
+        debugDefaultTargetPlatformOverride = null;
+      },
+    );
+
+    testWidgets(
       'pages cover the retained dock throughout entry and exit on $platform',
       (tester) async {
         final revision = ValueNotifier(0);
@@ -545,7 +617,7 @@ void main() {
     );
 
     testWidgets(
-      'work detail opened from playback shows dock and returns home on $platform',
+      'work detail opened from playback fades in a stationary dock on $platform',
       (tester) async {
         final navigator = await _pumpHost(tester, platform);
         final playback = buildSessionDetailRoute(sessionId: 'dock_session');
@@ -568,11 +640,27 @@ void main() {
           );
         }
 
-        expectDock();
+        expect(_dock, findsNothing);
         await tester.pump(const Duration(milliseconds: 150));
+        expect(_dock, findsNothing);
+        await tester.pump(const Duration(milliseconds: 160));
+        await tester.pump();
         expectDock();
+        final bounds = tester.getRect(_dock);
+        expect(
+          bounds.bottom,
+          tester.view.physicalSize.height - kMobileDockBottomMargin,
+        );
+        final fade = tester.widget<FadeTransition>(
+          find.ancestor(of: _dock, matching: find.byType(FadeTransition)),
+        );
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(fade.opacity.value, inExclusiveRange(0, 1));
+        expect(tester.getRect(_dock), bounds);
         await tester.pumpAndSettle();
         expectDock();
+        expect(fade.opacity.value, 1);
+        expect(tester.getRect(_dock), bounds);
         expect(playback.isActive, false);
         unawaited(
           navigator.currentState!.push(
@@ -601,13 +689,71 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 150));
         expect(_dock, findsOneWidget);
+        final exitBounds = tester.getRect(_dock);
+        expect(exitBounds.width, lessThan(bounds.width));
+        expect(fade.opacity.value, 1);
         await tester.pumpAndSettle();
         expect(navigator.currentState!.canPop(), false);
         expect(find.text('Home'), findsOneWidget);
         expect(_dock, findsNothing);
+
+        unawaited(navigator.currentState!.push(_detailRoute(navigator)));
+        await tester.pumpAndSettle();
+        navigator.currentState!.pop();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(tester.getRect(_dock), exitBounds);
+        await tester.pumpAndSettle();
         await tester.pump(UiInteractionCoordinator.instance.idleDelay);
         await tester.pumpWidget(const SizedBox.shrink());
         expect(tester.takeException(), isNull);
+        debugDefaultTargetPlatformOverride = null;
+      },
+    );
+
+    testWidgets(
+      'playback work detail return stops at its initial target on $platform',
+      (tester) async {
+        final geometry = PlaybackDockGeometryController();
+        addTearDown(geometry.dispose);
+        final navigator = await _pumpHost(
+          tester,
+          platform,
+          geometryController: geometry,
+        );
+        unawaited(navigator.currentState!.push(_MenuSessionDetailRoute()));
+        await tester.pumpAndSettle();
+        unawaited(
+          navigator.currentState!.pushAndRemoveUntil(
+            _detailRoute(navigator),
+            (route) => route.isFirst,
+          ),
+        );
+        await tester.pumpAndSettle();
+        final destination = geometry.mainDockRect!;
+        navigator.currentState!.pop();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        // A late main-page geometry report must not extend the return motion.
+        UiInteractionCoordinator.instance.finishInteractionsForTest();
+        geometry.updateMainGeometry(
+          coverRect: geometry.mainCoverRect!.translate(0, -80),
+          dockRect: destination.translate(0, -80),
+          expandedDockRect: geometry.mainExpandedDockRect!.translate(0, -80),
+          dockCollapsed: geometry.mainDockCollapsed,
+        );
+        for (var frame = 0; frame < 14; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          if (_dock.evaluate().isEmpty) break;
+          expect(
+            tester.getRect(_dock).top,
+            greaterThanOrEqualTo(destination.top - 0.01),
+          );
+        }
+        await tester.pumpAndSettle();
+        expect(_dock, findsNothing);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(UiInteractionCoordinator.instance.idleDelay);
         debugDefaultTargetPlatformOverride = null;
       },
     );

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -1606,11 +1607,13 @@ void main() {
     );
     expect(dropdown.isExpanded, isTrue);
     expect(dropdown.multilineItems, isTrue);
+    expect(dropdown.alignment, Alignment.centerRight);
 
     final optionText = dropdown.items.first.child as Text;
     expect(optionText.maxLines, isNull);
     expect(optionText.softWrap, isTrue);
     expect(optionText.overflow, TextOverflow.visible);
+    expect(optionText.textAlign, TextAlign.right);
   });
 
   testWidgets('interface language dropdown stays compact', (tester) async {
@@ -1697,6 +1700,10 @@ void main() {
                 i18n.tr('startup_page_playlist'),
               );
               expect(playlistOption, findsWidgets);
+              expect(
+                tester.widget<Text>(playlistOption.last).textAlign,
+                TextAlign.right,
+              );
               await tester.tap(playlistOption.last);
               await tester.pumpAndSettle();
             }
@@ -2048,7 +2055,7 @@ void main() {
     },
   );
 
-  testWidgets('playback settings omit the multi-thread toggle', (tester) async {
+  testWidgets('playback settings right-align the trailing dropdowns', (tester) async {
     final harness = AppRuntimeWidgetTestFixture();
     addTearDown(harness.dispose);
     await tester.pumpWidget(harness.build(const SettingsTab()));
@@ -2058,7 +2065,30 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('多线程播放'), findsNothing);
-  });
+    final keys = [
+      if (defaultTargetPlatform == TargetPlatform.android)
+        'sleep_mode_auto_trigger',
+      'audio_device_disconnect_behavior',
+      if (defaultTargetPlatform == TargetPlatform.android) ...[
+        'audio_focus_strategy',
+        'transient_audio_focus_loss_behavior',
+      ],
+      'interruption_resume_behavior',
+    ];
+    for (final key in keys) {
+      final tile = find.widgetWithText(ListTile, i18n.tr(key));
+      await tester.scrollUntilVisible(tile, 200);
+      final trailing = tester.widget<ListTile>(tile).trailing! as SizedBox;
+      final dropdown = trailing.child! as UnifiedDropdownButton<dynamic>;
+      expect(dropdown.alignment, Alignment.centerRight, reason: key);
+      for (final item in dropdown.items) {
+        expect((item.child as Text).textAlign, TextAlign.right, reason: key);
+      }
+    }
+  }, variant: const TargetPlatformVariant({
+    TargetPlatform.android,
+    TargetPlatform.windows,
+  }));
 
   testWidgets('playback setting reports a rejected save', (tester) async {
     final harness = AppRuntimeWidgetTestFixture(

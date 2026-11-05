@@ -88,10 +88,12 @@ class AppOrientationController {
   }
 
   Future<void> setPlaybackDetailVisible(bool visible) async {
+    if (defaultTargetPlatform == TargetPlatform.windows) return;
     if (_playbackDetailVisible == visible) return;
     _playbackDetailVisible = visible;
     if (isVideoFullscreen) return;
     await _applyPreferredOrientation();
+    await _applySystemUiMode();
   }
 
   Future<AppVideoFullscreenLease> enterVideoFullscreen() async {
@@ -109,10 +111,7 @@ class AppOrientationController {
           AppOrientationPolicy.rotatable.allowedOrientations,
         ),
       );
-      await _runPlatformUpdate(
-        'video_fullscreen_system_ui_enter_failed',
-        () => _setSystemUiMode(SystemUiMode.immersiveSticky),
-      );
+      await _applySystemUiMode();
     }
     return AppVideoFullscreenLease._(
       this,
@@ -127,10 +126,7 @@ class AppOrientationController {
       return;
     }
     await _endBrightnessControl();
-    await _runPlatformUpdate(
-      'video_fullscreen_system_ui_restore_failed',
-      () => _setSystemUiMode(SystemUiMode.edgeToEdge),
-    );
+    await _applySystemUiMode();
     await _applyPreferredOrientation();
   }
 
@@ -201,6 +197,19 @@ class AppOrientationController {
           playbackDetailVisible: _playbackDetailVisible,
         ).allowedOrientations,
       ),
+    );
+  }
+
+  Future<void> _applySystemUiMode() {
+    if (defaultTargetPlatform == TargetPlatform.windows) return Future.value();
+    final mode = (isVideoFullscreen ||
+            (_playbackDetailVisible &&
+                defaultTargetPlatform == TargetPlatform.android))
+        ? SystemUiMode.immersiveSticky
+        : SystemUiMode.edgeToEdge;
+    return _runPlatformUpdate(
+      'system_ui_mode_update_failed',
+      () => _setSystemUiMode(mode),
     );
   }
 

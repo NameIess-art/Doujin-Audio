@@ -136,6 +136,10 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
     final railMinWidth = collapsedWidth - horizontalPadding - horizontalBorder;
     final railMinExtendedWidth =
         expandedWidth - horizontalPadding - horizontalBorder;
+    final dockLeadingInset = isLandscapeLayout
+        ? (railMinWidth - kActiveSessionCarouselDockHeight) / 2
+        : 0.0;
+    final expandedDockWidth = railMinExtendedWidth - dockLeadingInset;
 
     final sidebarColor = isLandscapeLayout
         ? landscapeNavigationBackground(cs)
@@ -535,43 +539,51 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                     onReportPlaybackRect(
                       dockCollapsed: isMenuCollapsed,
                       dockAreaWidth: constraints.maxWidth,
-                      expandedDockWidth: railMinExtendedWidth,
+                      expandedDockWidth: expandedDockWidth,
                     );
                   }
 
                   reportPlaybackRect();
-                  return Align(
-                    alignment: isMenuCollapsed
-                        ? Alignment.center
-                        : Alignment.centerLeft,
-                    child: AnimatedContainer(
-                      key: playbackGeometryKey,
-                      duration: motionDuration,
-                      curve: Curves.easeInOut,
-                      onEnd: reportPlaybackRect,
-                      width: isMenuCollapsed
-                          ? kActiveSessionCarouselDockHeight
-                          : constraints.maxWidth,
-                      height: kActiveSessionCarouselDockHeight,
-                      child: RepaintBoundary(
-                        child: AppDockPanel(
-                          showTopHighlight: false,
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(
-                              kActiveSessionCarouselDockHeight / 2,
-                            ),
-                            child: ActiveSessionCarousel(
-                              sessions: overlaySessions,
-                              i18n: i18n,
-                              viewportFraction: 1,
-                              expandedDockWidth: railMinExtendedWidth,
-                              presentation:
-                                  ActiveSessionCarouselPresentation.embedded,
-                              onOpenSession: (sessionId) {
-                                Navigator.of(context, rootNavigator: true).push(
-                                  buildSessionDetailRoute(sessionId: sessionId),
-                                );
-                              },
+                  return Padding(
+                    padding: EdgeInsets.only(left: dockLeadingInset),
+                    child: Align(
+                      alignment: isMenuCollapsed && !isLandscapeLayout
+                          ? Alignment.center
+                          : Alignment.centerLeft,
+                      child: AnimatedContainer(
+                        key: playbackGeometryKey,
+                        duration: isLandscapeLayout && isMenuCollapsed
+                            ? Duration.zero
+                            : motionDuration,
+                        curve: Curves.easeInOut,
+                        onEnd: reportPlaybackRect,
+                        width: isMenuCollapsed
+                            ? kActiveSessionCarouselDockHeight
+                            : constraints.maxWidth - dockLeadingInset,
+                        height: kActiveSessionCarouselDockHeight,
+                        child: RepaintBoundary(
+                          child: AppDockPanel(
+                            showTopHighlight: false,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(
+                                kActiveSessionCarouselDockHeight / 2,
+                              ),
+                              child: ActiveSessionCarousel(
+                                sessions: overlaySessions,
+                                i18n: i18n,
+                                viewportFraction: 1,
+                                expandedDockWidth: expandedDockWidth,
+                                presentation:
+                                    ActiveSessionCarouselPresentation.embedded,
+                                onOpenSession: (sessionId, coverOrigin) {
+                                  Navigator.of(context, rootNavigator: true).push(
+                                    buildSessionDetailRoute(
+                                      sessionId: sessionId,
+                                      coverOrigin: coverOrigin,
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
                           ),
                         ),

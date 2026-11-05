@@ -1144,7 +1144,9 @@ void main() {
         expect(tags().isSelected('Sleep'), isTrue);
         expect(
           tester
-              .widget<InputChip>(find.widgetWithText(InputChip, 'Sleep'))
+              .widget<AppElementChip>(
+                find.widgetWithText(AppElementChip, 'Sleep'),
+              )
               .selected,
           isTrue,
         );

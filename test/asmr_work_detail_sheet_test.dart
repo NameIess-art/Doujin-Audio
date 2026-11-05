@@ -919,7 +919,7 @@ void main() {
           fixture.build(
             ActiveSessionCarousel(
               sessions: [PlaybackSessionSnapshot.fromRuntime(session)],
-              onOpenSession: (_) {},
+              onOpenSession: (_, _) {},
             ),
             overrides: [
               asmrLibraryControllerProvider.overrideWithValue(controller),

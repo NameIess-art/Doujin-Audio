@@ -28,6 +28,7 @@ import '../../../core/platform/file_cache_platform_gateway.dart'
 import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/drag_only_scrollbar.dart';
@@ -1318,6 +1319,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
             fit: BoxFit.cover,
           );
         }
+
         final requestKey = (remoteUrl, resolved, coverGeneration);
         if (_coverRequestKey != requestKey) {
           _coverRequestKey = requestKey;
@@ -1683,6 +1685,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                       backgroundOpacity: 0.5,
                       child: IconButton(
                         key: const ValueKey<String>('work_detail_edit'),
+                        style: AppEntryInkWell.entryButtonStyle(
+                          Theme.of(context),
+                        ),
                         onPressed: _handleLocalEdit,
                         tooltip: i18n.tr('edit'),
                         icon: const Icon(Icons.edit_rounded),

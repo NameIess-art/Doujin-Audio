@@ -14,6 +14,7 @@ import 'package:path/path.dart' as path;
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
+import '../../../app/presentation/audio_ui_controllers.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/subtitle_parser.dart';
 import '../../../core/ui/visual_settings_providers.dart';
@@ -26,6 +27,7 @@ import '../../../core/widgets/marquee_text.dart';
 import '../application/playback_session_snapshot.dart';
 import '../application/playback_subtitle_service.dart';
 import 'playlist_tab.dart';
+import 'playlist/session_cover_transition.dart';
 import 'playback_position_ui_gate.dart';
 import 'playback_error_text.dart';
 
@@ -53,11 +55,13 @@ class ActiveSessionCarousel extends ConsumerStatefulWidget {
     this.viewportFraction,
     this.expandedDockWidth,
     this.isPlaybackRaised = false,
+    this.isRoutedDock = false,
   });
 
   final List<PlaybackSessionSnapshot>? sessions;
   final AppLanguageProvider? i18n;
-  final ValueChanged<String>? onOpenSession;
+  final void Function(String sessionId, BuildContext coverOrigin)?
+  onOpenSession;
   final ValueChanged<String>? onVisibleSessionChanged;
   final ActiveSessionCarouselPresentation presentation;
   final double? viewportFraction;
@@ -66,6 +70,7 @@ class ActiveSessionCarousel extends ConsumerStatefulWidget {
   final double? expandedDockWidth;
 
   final bool isPlaybackRaised;
+  final bool isRoutedDock;
 
   @override
   ConsumerState<ActiveSessionCarousel> createState() =>
@@ -76,7 +81,12 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   static const int _loopPageSeed = 100000;
 
   late PageController _pageController;
-  late final ValueListenable<String?> _carouselSnapListenable;
+  late final PlaylistUiController _playlistUiController;
+  ValueListenable<String?> get _carouselSnapListenable =>
+      _playlistUiController.carouselSnap;
+  Duration get _snapDuration => _playlistUiController.carouselSnapImmediately
+      ? Duration.zero
+      : const Duration(milliseconds: 350);
   late final ActiveVisibleSessionCardIdNotifier _visibleSessionNotifier;
   final ValueNotifier<double> _pageNotifier = ValueNotifier<double>(
     _loopPageSeed.toDouble(),
@@ -99,9 +109,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       onAttach: (_) => _pageController.jumpToPage(_pageNotifier.value.round()),
     );
     _pageController.addListener(_handlePageTick);
-    _carouselSnapListenable = ref
-        .read(playlistUiControllerProvider)
-        .carouselSnap;
+    _playlistUiController = ref.read(playlistUiControllerProvider);
     _visibleSessionNotifier = ref.read(
       activeVisibleSessionCardIdProvider.notifier,
     );
@@ -171,10 +179,12 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     final targetIndex = sessions.indexWhere((s) => s.id == sessionId);
     if (targetIndex < 0) return;
     _lastCarouselSnapSessionId = sessionId;
-    if (_lastVisibleSessionId == sessionId) return;
+    if (_lastVisibleSessionId == sessionId && _snapDuration != Duration.zero) {
+      return;
+    }
     _moveToPage(
       _pageForSessionIndex(targetIndex, sessions.length),
-      duration: const Duration(milliseconds: 350),
+      duration: _snapDuration,
     );
   }
 
@@ -237,7 +247,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       _notifyVisibleSessionChanged();
       return;
     }
-    if (MediaQuery.disableAnimationsOf(context)) {
+    if (duration == Duration.zero || MediaQuery.disableAnimationsOf(context)) {
       _pageController.jumpToPage(page);
       return;
     }
@@ -255,13 +265,12 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.tap);
     final onOpenSession = widget.onOpenSession;
     if (onOpenSession != null) {
-      onOpenSession(session.id);
+      onOpenSession(session.id, context);
       return;
     }
-    Navigator.of(
-      context,
-      rootNavigator: true,
-    ).push(buildSessionDetailRoute(sessionId: session.id));
+    Navigator.of(context, rootNavigator: true).push(
+      buildSessionDetailRoute(sessionId: session.id, coverOrigin: context),
+    );
   }
 
   double get _viewportFraction => widget.viewportFraction ?? 0.90;
@@ -362,7 +371,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
           if (!mounted) return;
           _moveToPage(
             _pageForSessionIndex(targetIndex, visibleSessions.length),
-            duration: const Duration(milliseconds: 350),
+            duration: _snapDuration,
           );
         });
       }
@@ -390,7 +399,8 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
           circularCover: requestsCircularCover,
           indicatorIndex: _indicatorIndex,
           isPlaybackRaised: widget.isPlaybackRaised,
-          onOpen: () => _openSessionDetail(context, session),
+          isRoutedDock: widget.isRoutedDock,
+          onOpen: (coverOrigin) => _openSessionDetail(coverOrigin, session),
         ),
       );
     }

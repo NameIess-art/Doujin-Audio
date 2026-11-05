@@ -21,6 +21,7 @@ import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
+import 'package:doujin_audio/core/widgets/app_search_suggestions.dart';
 import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
@@ -1188,13 +1189,46 @@ void main() {
           fixture.languageProvider.tr('my_add_voice_interest'),
         );
         await tester.ensureVisible(addVoice);
-        await tester.tap(addVoice);
+        final entry = find.ancestor(
+          of: addVoice,
+          matching: find.byType(OutlinedButton),
+        );
+        final ink = find.descendant(
+          of: entry,
+          matching: find.bySubtype<InkWell>(),
+        );
+        final dynamic inkController = Material.of(tester.element(ink));
+        Iterable<InkSplash> pressedInk() =>
+            (inkController.debugInkFeatures as List<InkFeature>? ?? [])
+                .whereType<InkSplash>();
+        final gesture = await tester.startGesture(tester.getCenter(addVoice));
+        await tester.pump(const Duration(milliseconds: 120));
+        expect(pressedInk(), isNotEmpty);
+        await gesture.up();
+        expect(pressedInk(), isEmpty);
         await pumpAndSettleWithAsync(tester);
         expect(
           tester
               .widget<MyTagManagementPage>(find.byType(MyTagManagementPage))
               .type,
           MyInterestType.voiceActors,
+        );
+        await tester.pageBack();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(pressedInk(), isEmpty);
+        await pumpAndSettleWithAsync(tester);
+        final excluded = find.text(
+          fixture.languageProvider.tr('my_excluded_voice_actors'),
+        );
+        await tester.ensureVisible(excluded);
+        await tester.tap(excluded);
+        await pumpAndSettleWithAsync(tester);
+        expect(
+          tester
+              .widget<MyTagManagementPage>(find.byType(MyTagManagementPage))
+              .excluded,
+          isTrue,
         );
         await tester.pageBack();
         await pumpAndSettleWithAsync(tester);
@@ -1339,18 +1373,18 @@ void main() {
           );
           await tester.tap(find.text('Open voices'));
           await tester.pumpAndSettle();
-          final locked = tester.widget<CheckboxListTile>(
+          final locked = tester.widget<AppElementChip>(
             find.byKey(ValueKey(automatic)),
           );
-          expect(locked.value, isTrue);
-          expect(locked.onChanged, isNull);
+          expect(locked.selected, isTrue);
+          expect(locked.onPressed, isNull);
           expect(
-            find.text(fixture.languageProvider.tr(type.listenedKey)),
+            find.byTooltip(fixture.languageProvider.tr(type.listenedKey)),
             findsOneWidget,
           );
           await tester.enterText(find.byType(TextField), 'Other Voice 24');
           await tester.pump();
-          await tester.tap(find.byType(CheckboxListTile));
+          await tester.tap(find.byType(AppElementChip));
           await tester.pumpAndSettle();
           expect(controller.voiceSaves + controller.circleSaves, 0);
           expect(controller.manualInterestVoiceActorKeys, isEmpty);
@@ -1424,11 +1458,11 @@ void main() {
           await openExcluded();
           expect(
             tester
-                .widget<CheckboxListTile>(find.byType(CheckboxListTile))
-                .onChanged,
+                .widget<AppElementChip>(find.byType(AppElementChip))
+                .onPressed,
             isNotNull,
           );
-          await tester.tap(find.byType(CheckboxListTile));
+          await tester.tap(find.byType(AppElementChip));
           await tester.pump();
           expect(preferences.excluded, isEmpty);
           controller.failCreatorSave = true;
@@ -1436,9 +1470,7 @@ void main() {
           await tester.pumpAndSettle();
           expect(find.byType(MyTagManagementPage), findsOneWidget);
           expect(
-            tester
-                .widget<CheckboxListTile>(find.byType(CheckboxListTile))
-                .value,
+            tester.widget<AppElementChip>(find.byType(AppElementChip)).selected,
             isTrue,
           );
           expect(preferences.excluded, isEmpty);
@@ -1448,23 +1480,136 @@ void main() {
           expect(preferences.excluded, {key});
           await openExcluded();
           expect(
-            tester
-                .widget<CheckboxListTile>(find.byType(CheckboxListTile))
-                .value,
+            tester.widget<AppElementChip>(find.byType(AppElementChip)).selected,
             isTrue,
           );
-          await tester.tap(find.byType(CheckboxListTile));
+          await tester.tap(find.byType(AppElementChip));
           await tester.pageBack();
           await pumpAndSettleWithAsync(tester);
           expect(preferences.excluded, {key});
           await openExcluded();
-          await tester.tap(find.byType(CheckboxListTile));
+          await tester.tap(find.byType(AppElementChip));
           await tester.tap(find.byKey(const ValueKey('my_tags_confirm')));
           await pumpAndSettleWithAsync(tester);
           expect(preferences.excluded, isEmpty);
           expect(tester.takeException(), isNull);
         },
       );
+    }
+    for (final type in MyInterestType.values) {
+      for (final excluded in [false, true]) {
+        testWidgets(
+          '$type chips keep draft positions and filter exclusions: $excluded on $platform',
+          (tester) async {
+            final fixture = AppRuntimeWidgetTestFixture();
+            final controller = _InterestController(createTestAsmrServices());
+            final preferences = switch (type) {
+              MyInterestType.tags => controller.state,
+              MyInterestType.voiceActors => controller.voices,
+              MyInterestType.circles => controller.circles,
+            };
+            preferences.tags.clear();
+            preferences.learned.clear();
+            preferences.manualInterests.clear();
+            final alpha = preferences.resolve('Alpha');
+            final manual = preferences.resolve('Manual');
+            final automatic = preferences.resolve('Z automatic');
+            final secondAutomatic = preferences.resolve('Y automatic');
+            final hidden = preferences.resolve('Excluded');
+            final hiddenAutomatic = preferences.resolve('Excluded automatic');
+            preferences.learned.addAll({
+              automatic: 20,
+              secondAutomatic: 10,
+              hiddenAutomatic: 30,
+            });
+            preferences.manualInterests.addAll({manual, automatic});
+            preferences.excluded.addAll({hidden, hiddenAutomatic});
+            for (final key in ['online:1', 'online:2']) {
+              preferences.tags[key] = AsmrTag(key: key, name: 'Same name');
+            }
+            addTearDown(fixture.dispose);
+            addTearDown(controller.dispose);
+            tester.view.physicalSize = Size(
+              platform == TargetPlatform.android ? 390 : 960,
+              800,
+            );
+            tester.view.devicePixelRatio = 1;
+            addTearDown(tester.view.resetPhysicalSize);
+            addTearDown(tester.view.resetDevicePixelRatio);
+            await tester.pumpWidget(
+              fixture.build(
+                Theme(
+                  data: ThemeData(platform: platform),
+                  child: MyTagManagementPage(excluded: excluded, type: type),
+                ),
+                overrides: [
+                  asmrLibraryControllerProvider.overrideWithValue(controller),
+                ],
+              ),
+            );
+            await tester.pumpAndSettle();
+            AppElementChip chip(String key) =>
+                tester.widget<AppElementChip>(find.byKey(ValueKey(key)));
+            List<String> order() => tester
+                .widgetList<AppElementChip>(find.byType(AppElementChip))
+                .map((chip) => (chip.key! as ValueKey<String>).value)
+                .toList();
+            final initial = order();
+            if (excluded) {
+              expect(initial.take(2), [hidden, hiddenAutomatic]);
+              expect(chip(hidden).selected, isTrue);
+              expect(chip(automatic).onPressed, isNotNull);
+            } else {
+              expect(initial.take(3), [automatic, secondAutomatic, manual]);
+              expect(find.byKey(ValueKey(hidden)), findsNothing);
+              expect(find.byKey(ValueKey(hiddenAutomatic)), findsNothing);
+              expect(chip(automatic).selected, isTrue);
+              expect(chip(automatic).onPressed, isNull);
+              expect(chip(automatic).muted, isTrue);
+              expect(chip(manual).muted, isFalse);
+              expect(chip(secondAutomatic).onPressed, isNull);
+              expect(
+                find.byTooltip(fixture.languageProvider.tr(type.listenedKey)),
+                findsNWidgets(2),
+              );
+              expect(chip(manual).selected, isTrue);
+              expect(chip(manual).onPressed, isNotNull);
+            }
+            await tester.tap(find.byKey(ValueKey(alpha)));
+            await tester.pumpAndSettle();
+            expect(chip(alpha).selected, isTrue);
+            expect(order(), initial);
+            expect(preferences.manualInterests, {manual, automatic});
+            await tester.tap(find.byKey(ValueKey(alpha)));
+            await tester.pumpAndSettle();
+            expect(chip(alpha).selected, isFalse);
+            expect(order(), initial);
+
+            await tester.tap(find.byKey(const ValueKey('online:2')));
+            await tester.pumpAndSettle();
+            expect(chip('online:2').selected, isTrue);
+            expect(chip('online:1').selected, isFalse);
+            expect(order(), initial);
+            if (!excluded) {
+              await tester.enterText(find.byType(TextField), 'Excluded');
+              await tester.pumpAndSettle();
+              expect(find.byType(AppElementChip), findsNothing);
+              preferences.excluded.clear();
+              controller.notifyListeners();
+              await tester.pumpAndSettle();
+              expect(chip(hidden).selected, isFalse);
+              expect(chip(hiddenAutomatic).selected, isTrue);
+              expect(preferences.learned[hiddenAutomatic], 30);
+              await tester.enterText(find.byType(TextField), 'Same name');
+              await tester.pumpAndSettle();
+              expect(chip('online:2').selected, isTrue);
+              expect(chip('online:1').selected, isFalse);
+            }
+            expect(tester.takeException(), isNull);
+            await tester.pumpWidget(const SizedBox.shrink());
+          },
+        );
+      }
     }
     testWidgets(
       'tag catalog uses floating header and retains search on $platform',
@@ -1499,22 +1644,22 @@ void main() {
         );
         await tester.enterText(find.byType(TextField), 'not a known tag');
         await tester.pump();
-        expect(find.byType(CheckboxListTile), findsNothing);
+        expect(find.byType(AppElementChip), findsNothing);
         await tester.enterText(find.byType(TextField), 'sleep');
         await tester.pump();
-        expect(find.byType(CheckboxListTile), findsOneWidget);
-        await tester.tap(find.byType(CheckboxListTile));
+        expect(find.byType(AppElementChip), findsOneWidget);
+        await tester.tap(find.byType(AppElementChip));
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 350));
         expect(
-          tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
+          tester.widget<AppElementChip>(find.byType(AppElementChip)).selected,
           isFalse,
         );
         expect(controller.state.manualInterests, {'local:sleep'});
-        await tester.tap(find.byType(CheckboxListTile));
+        await tester.tap(find.byType(AppElementChip));
         await tester.pumpAndSettle();
         expect(
-          tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
+          tester.widget<AppElementChip>(find.byType(AppElementChip)).selected,
           isTrue,
         );
         expect(controller.removals, 0);
@@ -1601,7 +1746,10 @@ void main() {
         expect(tester.getSize(card), const Size(132, 99));
         expect(tester.widget<CoverArtworkFrame>(card).showShadow, isTrue);
         final nextCard = find.byKey(const ValueKey('my-history-card-remote-0'));
-        expect(tester.getTopLeft(nextCard).dx - tester.getTopRight(card).dx, 12);
+        expect(
+          tester.getTopLeft(nextCard).dx - tester.getTopRight(card).dx,
+          12,
+        );
         final cardClip = find.ancestor(
           of: card,
           matching: find.byWidgetPredicate(
@@ -1901,6 +2049,8 @@ class _InterestController extends AsmrLibraryController {
   List<AsmrTagInterest> get listenedTagInterests => state.listenedInterests;
   @override
   Set<String> get manualInterestTagKeys => state.manualInterests;
+  @override
+  Set<String> get excludedTagKeys => state.excluded;
   @override
   bool get tagCatalogComplete => true;
   @override

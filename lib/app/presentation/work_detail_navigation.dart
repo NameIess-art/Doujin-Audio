@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/app_styles.dart';
@@ -45,9 +46,10 @@ class WorkDetailNavigation extends ChangeNotifier {
   }) async {
     final navigator = Navigator.of(context);
     final origin = readAppRoute(context);
-    if (returnToMain && origin is SessionDetailRoute) {
-      // popUntil retries synchronously when the detail refuses to pop, which
-      // would block the portrait metrics event it needs before it can exit.
+    final openingOverPlayback = returnToMain && origin is SessionDetailRoute;
+    if (openingOverPlayback) {
+      // Restore the phone layout while playback detail still covers the main
+      // page, so the incoming work page can slide in at its final size.
       await origin.prepareForExit();
     }
     await WidgetsBinding.instance.endOfFrame;
@@ -55,13 +57,36 @@ class WorkDetailNavigation extends ChangeNotifier {
       return;
     }
     final navigation = WorkDetailNavigationScope.maybeOf(context);
-    if (navigation != null &&
-        (returnToMain || navigation.canOpenInPane(context))) {
-      await navigation.open(identity, buildRoute, returnToMain: returnToMain);
-      return;
+    if (navigation != null) {
+      if (openingOverPlayback) {
+        // Clear the main page's nested stacks while playback still covers them.
+        final request = ++navigation._request;
+        navigation.resetContent();
+        navigation._removeSubpages(
+          navigation.navigatorKey.currentState,
+          navigation._routes,
+        );
+        if (defaultTargetPlatform == TargetPlatform.windows ||
+            MediaQuery.orientationOf(context) == Orientation.landscape) {
+          navigator.popUntil((route) => route.isFirst);
+          await origin.completed;
+          if (!navigator.mounted ||
+              navigation._disposed ||
+              request != navigation._request) {
+            return;
+          }
+          await navigation.open(identity, buildRoute, returnToMain: true);
+          return;
+        }
+      } else if (returnToMain || navigation.canOpenInPane(context)) {
+        await navigation.open(identity, buildRoute, returnToMain: returnToMain);
+        return;
+      }
     }
     final route = buildRoute(context);
     if (returnToMain) {
+      // The navigator keeps the previous page painted until the incoming
+      // slide completes, then removes it without an exit animation.
       await navigator.pushAndRemoveUntil<void>(route, (route) => route.isFirst);
     } else {
       await navigator.push<void>(route);
@@ -88,7 +113,9 @@ class WorkDetailNavigation extends ChangeNotifier {
     if (_disposed || request != _request) return;
     final navigator = contentNavigatorKey.currentState;
     if (navigator == null) return;
-    await navigator.push<void>(buildRoute(navigator.context));
+    final routeContext = navigator.context;
+    if (!routeContext.mounted) return;
+    await navigator.push<void>(buildRoute(routeContext));
   }
 
   void _removeSubpages(
@@ -332,6 +359,8 @@ class WorkDetailPane extends StatelessWidget {
   Widget build(BuildContext context) {
     final navigation = WorkDetailNavigationScope.maybeOf(context);
     if (navigation == null) return child;
+    final roundCorners =
+        isLandscape && defaultTargetPlatform != TargetPlatform.windows;
     return ListenableBuilder(
       listenable: Listenable.merge([navigation, navigation.menuDismiss]),
       child: child,
@@ -409,7 +438,7 @@ class WorkDetailPane extends StatelessWidget {
                                 : Colors.transparent,
                             child: ClipRRect(
                               key: const ValueKey('work_detail_pane_clip'),
-                              borderRadius: isLandscape
+                              borderRadius: roundCorners
                                   ? BorderRadius.circular(AppRadius.section)
                                   : BorderRadius.zero,
                               child: detailNavigator,
@@ -429,6 +458,7 @@ class WorkDetailPane extends StatelessWidget {
                           color: Theme.of(context).colorScheme.outlineVariant,
                           sidebarWidth: sidebarWidth,
                           detailWidth: navigation.isOpen ? paneWidth : 0,
+                          roundCorners: roundCorners,
                         ),
                       ),
                     ),
@@ -447,11 +477,13 @@ class _ContentPaneOutlinePainter extends CustomPainter {
     required this.color,
     required this.sidebarWidth,
     required this.detailWidth,
+    required this.roundCorners,
   });
 
   final Color color;
   final double sidebarWidth;
   final double detailWidth;
+  final bool roundCorners;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -465,6 +497,21 @@ class _ContentPaneOutlinePainter extends CustomPainter {
       ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
+    if (!roundCorners) {
+      canvas.drawRRect(
+        RRect.fromRectAndCorners(
+          Rect.fromLTRB(left, top, right, bottom),
+          topLeft: Radius.circular(radius),
+        ),
+        paint,
+      );
+      if (detailWidth > 0) {
+        final divider = right - detailWidth;
+        canvas.drawLine(Offset(divider, top), Offset(divider, bottom), paint);
+      }
+      return;
+    }
+
     void drawSide(double x, {required bool leftSide, bool vertical = true}) {
       final endX = x + (leftSide ? radius : -radius);
       final path = Path()
@@ -524,5 +571,6 @@ class _ContentPaneOutlinePainter extends CustomPainter {
   bool shouldRepaint(_ContentPaneOutlinePainter oldDelegate) =>
       color != oldDelegate.color ||
       sidebarWidth != oldDelegate.sidebarWidth ||
-      detailWidth != oldDelegate.detailWidth;
+      detailWidth != oldDelegate.detailWidth ||
+      roundCorners != oldDelegate.roundCorners;
 }

@@ -139,7 +139,7 @@ bool Win32Window::Create(const std::wstring& title,
   double scale_factor = dpi / 96.0;
 
   RECT outer{0,0,Scale(size.width,scale_factor),Scale(size.height,scale_factor)};
-  AdjustWindowRectExForDpi(&outer,WS_OVERLAPPEDWINDOW,FALSE,0,dpi);
+  AdjustFrameRect(outer, dpi);
 
   HWND window = CreateWindow(
       window_class, title.c_str(), WS_OVERLAPPEDWINDOW,

@@ -2,11 +2,13 @@ import '../playback_providers.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
 
 import '../../../../app/application/audio_path_coordinator.dart';
+import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../core/media/path_matcher.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
@@ -38,6 +40,7 @@ class SessionDetailContent extends ConsumerStatefulWidget {
     required this.artworkWidget,
     this.segmentPanelExpandedNotifier,
     this.transitionActive,
+    this.showCoverOverlays = true,
     this.isLandscape = false,
     this.detailPadding = EdgeInsets.zero,
     this.hasSubtitle = false,
@@ -51,6 +54,7 @@ class SessionDetailContent extends ConsumerStatefulWidget {
   final Widget artworkWidget;
   final ValueNotifier<bool>? segmentPanelExpandedNotifier;
   final ValueListenable<bool>? transitionActive;
+  final bool showCoverOverlays;
   final bool isLandscape;
   final EdgeInsetsGeometry detailPadding;
   final bool hasSubtitle;
@@ -101,8 +105,6 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   PlaybackFacade get _playback => ref.read(playbackFacadeProvider);
   AudioPathCoordinator get _paths => ref.read(audioPathCoordinatorProvider);
   late final PlaybackTimeSegmentService _timeSegments;
-
-  bool get isSegmentPanelExpanded => _segmentPanelExpanded;
 
   void expandSegmentPanel() {
     if (_segmentPanelExpanded) return;
@@ -691,6 +693,22 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     final displayName =
         track?.displayName ??
         path.basenameWithoutExtension(session.currentTrackPath);
+    var circleName = '';
+    var voiceActors = const <String>[];
+    if (track?.isRemoteAsmr == true) {
+      circleName = track!.remoteCircleName;
+      if (track.remoteMetadata != null) {
+        voiceActors = AsmrWork.fromJson(track.remoteMetadata!).voiceActors;
+      }
+    } else if (track != null) {
+      final target = paths.library.audioDetailTargetForTrack(track);
+      final detail =
+          ref.watch(libraryDetailForTargetProvider(target)).value ??
+          paths.library.resolvedAudioDetail(target) ??
+          paths.library.categorySnapshot?.detailFor(target);
+      circleName = detail?.circleName ?? '';
+      voiceActors = detail?.voiceActors ?? const <String>[];
+    }
 
     final hasSiblings = session.isPlaybackQueue
         ? session.playbackQueue!.entries.any((entry) => entry.tracks.isNotEmpty)
@@ -706,6 +724,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
         key: ValueKey('progress_${session.id}'),
         session: session,
         playback: playback,
+        inlineTimecodes: widget.isLandscape,
         timeSegmentLabels: visibleSegmentLabels,
         selectedSegmentId: selectedSegmentId,
         onManualSeek: _handleSegmentManualSeek,
@@ -720,6 +739,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
         hasSiblings: hasSiblings,
         segmentPanelExpanded: _segmentPanelExpanded,
         isLandscape: widget.isLandscape,
+        showPrimaryControls: !widget.isLandscape,
         hasSubtitle: widget.hasSubtitle,
         subtitleEnabled: widget.subtitleEnabled,
         subtitleGlobalEnabled: widget.subtitleGlobalEnabled,
@@ -750,18 +770,38 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     );
 
     return SessionDetailLayout(
+      showCoverOverlays: widget.showCoverOverlays,
       isLandscape: widget.isLandscape,
       padding: resolvedDetailPadding,
       segmentPanelExpanded: _segmentPanelExpanded,
       artwork: KeyedSubtree(key: _artworkKey, child: widget.artworkWidget),
       isVideo: track?.isVideo == true,
       title: displayName,
+      circleName: circleName,
+      voiceActors: voiceActors,
+      onCopyCredit: (value) {
+        Clipboard.setData(ClipboardData(text: value));
+        AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+        final i18n = ref.read(appLanguageProviderInstanceProvider);
+        showAppSnackBar(
+          context,
+          i18n.tr('copied_to_clipboard', {'value': value}),
+          icon: Icons.content_copy_rounded,
+        );
+      },
       sessionId: session.id,
       progress: buildProgressBar(),
+      primaryTransport: PrimaryPlaybackControls(
+        key: const ValueKey('session_detail_primary_controls'),
+        session: session,
+        playback: playback,
+        isLandscape: widget.isLandscape,
+      ),
       transport: buildTransportControls(),
       subtitle: SessionSubtitlePanel(
         transitionActive: widget.transitionActive,
         session: session,
+        isLandscape: widget.isLandscape,
         subtitleEnabled: widget.subtitleEnabled,
       ),
       segmentPanelBuilder: (key) => _buildSegmentPanel(

@@ -500,6 +500,32 @@ void main() {
     expect(bodyTaps, 1);
   });
 
+  testWidgets('floating header button only accepts taps inside its circle', (
+    tester,
+  ) async {
+    var taps = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: HeaderFloatingButton(
+              child: IconButton(
+                onPressed: () => taps++,
+                icon: const Icon(Icons.settings_rounded),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final rect = tester.getRect(find.byType(HeaderFloatingButton));
+    await tester.tapAt(rect.topLeft + const Offset(2, 2));
+    await tester.tapAt(rect.bottomRight - const Offset(2, 2));
+    expect(taps, 0);
+    await tester.tapAt(rect.center);
+    expect(taps, 1);
+  });
+
   testWidgets(
     'scrolling rebuilds only changing header geometry',
     (tester) async {

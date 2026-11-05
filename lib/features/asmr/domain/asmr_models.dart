@@ -479,7 +479,7 @@ class AsmrWork {
                 json['vas'] as List<dynamic>? ??
                 const <dynamic>[])
             .map((dynamic item) {
-              if (item is Map<String, dynamic>) {
+              if (item is Map) {
                 return (item['name'] as String?) ?? '';
               }
               return item.toString();

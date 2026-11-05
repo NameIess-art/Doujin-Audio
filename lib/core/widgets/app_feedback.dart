@@ -45,7 +45,7 @@ class _FeedbackData {
   final String? title;
   final IconData icon;
   final Color? iconColor;
-  final Duration duration;
+  final Duration? duration;
   final String? actionLabel;
   final VoidCallback? onAction;
   final bool showCountdown;
@@ -88,7 +88,7 @@ OverlayEntry? _activeFeedbackEntry;
 OverlayState? _activeFeedbackOverlay;
 void Function(AppFeedbackDismissReason reason)? _activeFeedbackRemove;
 void Function(_FeedbackData data)? _activeFeedbackUpdateData;
-void Function([Duration? duration, bool? showCountdown])?
+void Function(Duration? duration, bool showCountdown)?
 _activeFeedbackResetDuration;
 ValueChanged<AppFeedbackDismissReason>? _activeFeedbackOnDismissed;
 Object? _activeFeedbackReplacementGroup;
@@ -209,6 +209,30 @@ void showAppSnackBar(
   );
 }
 
+VoidCallback showAppProgressFeedback(
+  BuildContext context,
+  String message, {
+  String? title,
+  IconData? icon,
+}) {
+  final owner = Object();
+  _showTopFeedback(
+    context,
+    message,
+    tone: AppFeedbackTone.info,
+    title: title,
+    icon: icon,
+    duration: null,
+    replacementOwner: owner,
+    provideHapticFeedback: false,
+  );
+  return () {
+    if (identical(_activeFeedbackReplacementOwner, owner)) {
+      _activeFeedbackRemove?.call(AppFeedbackDismissReason.replaced);
+    }
+  };
+}
+
 Future<bool> showUndoableRemovalFeedback(
   BuildContext context, {
   required UndoableRemovalService service,
@@ -265,7 +289,7 @@ void showPendingUndoableRemovalFeedback(
           (MobileOverlayInset.menuOverlayOf(context) ?? Overlay.of(context)) &&
       _activeFeedbackUpdateMessage != null) {
     _activeFeedbackUpdateMessage!(nextMessage);
-    _activeFeedbackResetDuration?.call();
+    _activeFeedbackResetDuration?.call(kUndoableRemovalFeedbackDuration, true);
     unawaited(
       AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
     );
@@ -308,7 +332,7 @@ void _showTopFeedback(
   String? title,
   IconData? icon,
   Color? iconColor,
-  required Duration duration,
+  required Duration? duration,
   String? actionLabel,
   VoidCallback? onAction,
   Object? replacementGroup,
@@ -571,6 +595,11 @@ void _showTopFeedback(
                               },
                               child: Text(resolvedActionLabel!),
                             )
+                          : currentData.duration == null
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
                           : null,
                     ),
                   ),
@@ -593,8 +622,8 @@ void _showTopFeedback(
       dataNotifier.value = nextData;
     }
   };
-  _activeFeedbackResetDuration = ([dur, cd]) =>
-      animationKey.currentState?.resetDuration(dur, cd);
+  _activeFeedbackResetDuration = (duration, showCountdown) =>
+      animationKey.currentState?.resetDuration(duration, showCountdown);
   entry.addListener(removeWhenUnmounted);
 }
 
@@ -609,7 +638,7 @@ class _FeedbackAnimationWrapper extends StatefulWidget {
   });
 
   final Widget Function(BuildContext context, int? remainingSeconds) builder;
-  final Duration duration;
+  final Duration? duration;
   final Duration transitionDuration;
   final VoidCallback onRemove;
   final bool showCountdown;
@@ -626,7 +655,6 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
   Timer? _expiryTimer;
   Timer? _countdownTimer;
   late int _remainingSeconds;
-  late Duration _currentDuration;
   late bool _currentShowCountdown;
   bool _dismissing = false;
   bool _tickerModeEnabled = true;
@@ -635,7 +663,6 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
   @override
   void initState() {
     super.initState();
-    _currentDuration = widget.duration;
     _currentShowCountdown = widget.showCountdown;
     _controller = AnimationController(
       vsync: this,
@@ -644,7 +671,7 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
     _opacity = CurvedAnimation(parent: _controller, curve: kAppFadeCurve);
 
     _controller.forward();
-    _startDuration(_currentDuration, _currentShowCountdown);
+    _startDuration(widget.duration, _currentShowCountdown);
   }
 
   void _handleAnimationStatus(AnimationStatus status) {
@@ -675,9 +702,10 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
     }
   }
 
-  void _startDuration(Duration duration, bool showCountdown) {
+  void _startDuration(Duration? duration, bool showCountdown) {
     _expiryTimer?.cancel();
     _countdownTimer?.cancel();
+    if (duration == null) return;
     final totalSeconds = (duration.inMilliseconds / 1000).ceil();
     _remainingSeconds = totalSeconds > 0 ? totalSeconds : 1;
 
@@ -698,11 +726,10 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
     });
   }
 
-  void resetDuration([Duration? duration, bool? showCountdown]) {
+  void resetDuration(Duration? duration, bool showCountdown) {
     if (!mounted) return;
-    if (duration != null) _currentDuration = duration;
-    if (showCountdown != null) _currentShowCountdown = showCountdown;
-    _startDuration(_currentDuration, _currentShowCountdown);
+    _currentShowCountdown = showCountdown;
+    _startDuration(duration, showCountdown);
     if (!_controller.isCompleted) {
       _controller.forward();
     }

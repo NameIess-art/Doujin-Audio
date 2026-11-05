@@ -11,6 +11,7 @@ import '../../../../core/media/path_matcher.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/app_entry_ink_well.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../library/application/work_text_service.dart';
 import '../../../library/presentation/library_providers.dart';
@@ -114,19 +115,22 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
       return;
     }
     final requestId = ++_subtitleCountRequestId;
-    _subtitles.availableSubtitleFiles(trackPath).then((files) {
-      if (!mounted || requestId != _subtitleCountRequestId) return;
-      if (widget.session.currentTrackPath != trackPath) return;
-      if (_availableSubtitleCount != files.length) {
-        setState(() => _availableSubtitleCount = files.length);
-      }
-    }).catchError((_) {
-      if (!mounted || requestId != _subtitleCountRequestId) return;
-      if (widget.session.currentTrackPath != trackPath) return;
-      if (_availableSubtitleCount != 0) {
-        setState(() => _availableSubtitleCount = 0);
-      }
-    });
+    _subtitles
+        .availableSubtitleFiles(trackPath)
+        .then((files) {
+          if (!mounted || requestId != _subtitleCountRequestId) return;
+          if (widget.session.currentTrackPath != trackPath) return;
+          if (_availableSubtitleCount != files.length) {
+            setState(() => _availableSubtitleCount = files.length);
+          }
+        })
+        .catchError((_) {
+          if (!mounted || requestId != _subtitleCountRequestId) return;
+          if (widget.session.currentTrackPath != trackPath) return;
+          if (_availableSubtitleCount != 0) {
+            setState(() => _availableSubtitleCount = 0);
+          }
+        });
   }
 
   String _formatOffset(Duration offset) {
@@ -1355,31 +1359,34 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                   ),
                   const SizedBox(height: 12),
 
-                  ListTile(
-                    key: const ValueKey('subtitle_edit_tile'),
-                    enabled: canEditSubtitle,
-                    tileColor: cs.surfaceContainerHighest.withValues(
-                      alpha: 0.45,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    leading: Icon(
-                      Icons.edit_note_rounded,
-                      color: canEditSubtitle
-                          ? cs.primary
-                          : cs.onSurface.withValues(alpha: 0.38),
-                    ),
-                    title: Text(i18n.tr('subtitle_edit')),
-                    trailing: const Icon(Icons.chevron_right_rounded),
-                    onTap: !canEditSubtitle
-                        ? null
-                        : () => Navigator.of(context).push(
-                            buildAppPageRoute<void>(
-                              context: context,
-                              child: SubtitleEditorPage(trackPath: trackPath),
+                  Theme(
+                    data: AppEntryInkWell.entryTheme(Theme.of(context)),
+                    child: ListTile(
+                      key: const ValueKey('subtitle_edit_tile'),
+                      enabled: canEditSubtitle,
+                      tileColor: cs.surfaceContainerHighest.withValues(
+                        alpha: 0.45,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      leading: Icon(
+                        Icons.edit_note_rounded,
+                        color: canEditSubtitle
+                            ? cs.primary
+                            : cs.onSurface.withValues(alpha: 0.38),
+                      ),
+                      title: Text(i18n.tr('subtitle_edit')),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: !canEditSubtitle
+                          ? null
+                          : () => Navigator.of(context).push(
+                              buildAppPageRoute<void>(
+                                context: context,
+                                child: SubtitleEditorPage(trackPath: trackPath),
+                              ),
                             ),
-                          ),
+                    ),
                   ),
                   const SizedBox(height: 12),
 

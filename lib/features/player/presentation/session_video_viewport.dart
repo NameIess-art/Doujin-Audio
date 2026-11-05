@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../../../core/widgets/app_transitions.dart';
+import 'playlist/playlist_shared_helpers.dart' show SessionOverlayIconButton;
 
 typedef SessionVideoSurfaceBuilder = Widget Function(BuildContext context);
 
@@ -261,8 +262,8 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
             ),
           if (widget.videoReady)
             Positioned(
-              right: 12,
-              bottom: 12,
+              left: 12,
+              top: 12,
               child: AnimatedOpacity(
                 curve: kAppFadeCurve,
                 key: const ValueKey<String>('session_video_fullscreen_control'),
@@ -272,19 +273,13 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
                     : kAppFadeDuration,
                 child: IgnorePointer(
                   ignoring: !_isControlVisible,
-                  child: Material(
-                    color: Colors.black.withValues(alpha: 0.58),
-                    shape: const CircleBorder(),
-                    child: IconButton(
-                      tooltip: widget.fullscreenTooltip,
-                      onPressed: _handleFullscreen,
-                      color: Colors.white,
-                      icon: Icon(
-                        widget.isFullscreen
-                            ? Icons.fullscreen_exit_rounded
-                            : Icons.fullscreen_rounded,
-                      ),
-                    ),
+                  child: SessionOverlayIconButton(
+                    tooltip: widget.fullscreenTooltip,
+                    onPressed: _handleFullscreen,
+                    buttonSize: 48,
+                    icon: widget.isFullscreen
+                        ? Icons.fullscreen_exit_rounded
+                        : Icons.fullscreen_rounded,
                   ),
                 ),
               ),

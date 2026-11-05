@@ -23,6 +23,7 @@ const int sessionVolumeDisplayMaximumPercent = 150;
 const double playlistCoverSize = 52;
 const double playlistActionContainerWidth = 48;
 const double playlistRowHeight = 64;
+const double landscapeDetailTextInset = 4;
 const EdgeInsets playlistRowPadding = EdgeInsets.symmetric(
   horizontal: AppSpacing.xs,
   vertical: 6,
@@ -216,6 +217,62 @@ Color sessionDetailForeground(
       colorScheme.onSurfaceVariant,
     ).withValues(alpha: 0.72),
   };
+}
+
+class SessionOverlayIconButton extends StatelessWidget {
+  const SessionOverlayIconButton({
+    super.key,
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+    this.buttonSize = AppPageHeaderMetrics.buttonSize,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+  final double buttonSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final size = Size.square(buttonSize);
+    return IconButton(
+      onPressed: onPressed,
+      tooltip: tooltip,
+      style: IconButton.styleFrom(
+        fixedSize: size,
+        minimumSize: size,
+        maximumSize: size,
+        padding: EdgeInsets.zero,
+        visualDensity: VisualDensity.standard,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        iconSize: 32,
+        backgroundColor: Colors.transparent,
+        overlayColor: Colors.transparent,
+        splashFactory: NoSplash.splashFactory,
+        shape: const RoundedRectangleBorder(),
+      ).copyWith(
+        foregroundColor: WidgetStateProperty.resolveWith(
+          (states) =>
+              states.contains(WidgetState.hovered) ||
+                  states.contains(WidgetState.focused) ||
+                  states.contains(WidgetState.pressed)
+              ? colors.primary
+              : sessionDetailForeground(
+                  colors,
+                  SessionDetailForegroundLevel.muted,
+                ),
+        ),
+      ),
+      icon: Icon(
+        icon,
+        shadows: const [
+          Shadow(color: Color(0xA6000000), offset: Offset(0, 2), blurRadius: 5),
+        ],
+      ),
+    );
+  }
 }
 
 List<IconData> sessionFeatureBadgeIcons({

@@ -4,8 +4,9 @@ import 'package:doujin_audio/app/presentation/app_orientation_controller.dart';
 import 'package:doujin_audio/app/presentation/work_detail_navigation.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
+import 'package:doujin_audio/features/library/presentation/library_search_page.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_detail_page.dart';
-import 'package:doujin_audio/features/player/presentation/playlist/session_detail_scaffold.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,9 +20,10 @@ void main() {
     'back',
     'pop',
     'drag',
-    'cancel',
     'local work',
     'online work',
+    'local search',
+    'online search',
   ]) {
     for (final reducedMotion in [false, true]) {
       testWidgets(
@@ -43,16 +45,21 @@ void main() {
           final fixture = AppRuntimeWidgetTestFixture();
           addTearDown(fixture.dispose);
           final opensWork = action.endsWith(' work');
+          final opensSearch = action.endsWith(' search');
           var track = testMusicTrack(
             name: 'Orientation',
             path: '/music/orientation.mp3',
             groupKey: '/music',
             groupTitle: 'Music',
           );
-          if (action == 'online work') {
+          if (action == 'online work' || opensSearch) {
             track = track.copyWith(
               remoteMetadataKind: 'asmr.one',
-              remoteMetadata: const {'id': 42, 'title': 'Orientation'},
+              remoteMetadata: const {
+                'id': 42,
+                'title': 'Orientation',
+                'circle': {'name': 'Circle'},
+              },
             );
           }
           fixture.library.addTracks([track], persist: false);
@@ -67,6 +74,7 @@ void main() {
           final calls = <List<DeviceOrientation>>[];
           final orientation = AppOrientationController(
             setPreferredOrientations: (value) async => calls.add(value),
+            setSystemUiMode: (_) async {},
           );
           await orientation.updateDisplay(390);
           await orientation.setPlaybackDetailVisible(true);
@@ -114,10 +122,19 @@ void main() {
           homePaintSizes.clear();
           homeRepaint.value++;
           calls.clear();
-          final scaffold = tester.widget<SessionDetailScaffold>(
-            find.byType(SessionDetailScaffold),
-          );
           switch (action) {
+            case 'local search':
+            case 'online search':
+              await tester.longPress(find.text('Circle'));
+              await tester.pumpAndSettle();
+              await tester.tap(
+                find.widgetWithIcon(
+                  ListTile,
+                  action == 'online search'
+                      ? Icons.travel_explore_rounded
+                      : Icons.search_rounded,
+                ),
+              );
             case 'local work':
             case 'online work':
               await tester.tap(
@@ -129,26 +146,16 @@ void main() {
                 find.byKey(const ValueKey('session_detail_close_button')),
               );
             case 'back':
-              unawaited(navigator.maybePop());
+              await tester.binding.handlePopRoute();
+              await tester.binding.handlePopRoute();
             case 'pop':
               navigator.pop();
               navigator.pop(); // Repeated back must not pop the home route.
             case 'drag':
-            case 'cancel':
-              scaffold.onVerticalDragUpdate!(180);
-              await tester.pump();
-              expect(route.opaque, isTrue);
-              expect(homePaintSizes, isEmpty);
-              if (action == 'cancel') {
-                scaffold.onVerticalDragCancel!();
-              } else {
-                scaffold.onVerticalDragEnd!(
-                  DragEndDetails(
-                    primaryVelocity: 600,
-                    velocity: const Velocity(pixelsPerSecond: Offset(0, 600)),
-                  ),
-                );
-              }
+              await tester.dragFrom(
+                const Offset(620, 80),
+                const Offset(0, 250),
+              );
           }
           // The platform call is already complete; resize has not arrived yet.
           await tester.pumpAndSettle();
@@ -156,13 +163,13 @@ void main() {
           expect(route.isCurrent, isTrue);
           expect(route.opaque, isTrue);
           expect(homePaintSizes, isEmpty);
-          if (action == 'cancel') {
+          if (action == 'drag') {
             expect(calls, isEmpty);
             expect(route.preparingForExit, isFalse);
           } else {
             expect(calls, [AppOrientationPolicy.portrait.allowedOrientations]);
             expect(route.preparingForExit, isTrue);
-            if (opensWork) {
+            if (opensWork || opensSearch) {
               expect(route.popAttempts, 0);
               expect(navigation.isOpen, isFalse);
             }
@@ -178,7 +185,62 @@ void main() {
             }
             tester.view.physicalSize = const Size(390, 820);
             if (opensWork) {
+              if (!reducedMotion) {
+                await tester.pump();
+                await tester.pump();
+                await tester.pump();
+                // The prepared route starts its clock on the first ready tick.
+                await tester.pump(const Duration(milliseconds: 100));
+                await tester.pump(const Duration(milliseconds: 100));
+                final work = find.byType(WorkDetailPage);
+                expect(work, findsOneWidget);
+                final workRoute = ModalRoute.of(tester.element(work))!;
+                expect(workRoute.navigator, same(navigator));
+                expect(workRoute.animation!.value, inExclusiveRange(0, 1));
+                final slidingBody = find.descendant(
+                  of: work,
+                  matching: find.byWidgetPredicate(
+                    (widget) =>
+                        widget is SlideTransition &&
+                        widget.position.value.dx > 0 &&
+                        widget.position.value.dx < 1,
+                  ),
+                );
+                expect(slidingBody, findsWidgets);
+                expect(route.animation!.value, 1);
+                expect(find.byType(SessionDetailPage), findsOneWidget);
+                expect(homePaintSizes, isEmpty);
+              }
               await pumpAndSettleWithAsync(tester);
+              expect(
+                find.byType(SessionDetailPage, skipOffstage: false),
+                findsNothing,
+              );
+              expect(navigator.canPop(), isTrue);
+              expect(navigation.isOpen, isFalse);
+              final work = tester.widget<WorkDetailPage>(
+                find.byType(WorkDetailPage),
+              );
+              expect(work.asmrWork != null, action == 'online work');
+              navigator.pop();
+              await tester.pumpAndSettle();
+              await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+            } else if (opensSearch) {
+              // Search can keep its loading spinner active in an offline test.
+              // Finish route entry without waiting for network completion.
+              for (var frame = 0; frame < 8; frame++) {
+                await tester.pump(const Duration(milliseconds: 100));
+              }
+              expect(
+                action == 'online search'
+                    ? find.byType(AsmrSearchPage)
+                    : find.byType(LibrarySearchPage),
+                findsOneWidget,
+              );
+              expect(navigator.canPop(), isTrue);
+              navigator.pop();
+              await tester.pumpAndSettle();
+              await tester.pump(UiInteractionCoordinator.instance.idleDelay);
             } else {
               await tester.pumpAndSettle();
             }
@@ -189,17 +251,6 @@ void main() {
               homePaintSizes.every((size) => size.height > size.width),
               isTrue,
             );
-            if (opensWork) {
-              expect(navigation.isOpen, isTrue);
-              final work = tester.widget<WorkDetailPage>(
-                find.byType(WorkDetailPage),
-              );
-              expect(work.asmrWork != null, action == 'online work');
-              navigation.navigatorKey.currentState!.pop();
-              await tester.pumpAndSettle();
-              await tester.pump(UiInteractionCoordinator.instance.idleDelay);
-              expect(navigation.isOpen, isFalse);
-            }
           }
           expect(tester.takeException(), isNull);
           await tester.pumpWidget(const SizedBox.shrink());

@@ -31,13 +31,15 @@ void main() {
   setUp(interaction.resetForTest);
   tearDown(interaction.resetForTest);
 
-  for (final desktop in [false, true]) {
+  for (final (desktop, platform) in [
+    (false, TargetPlatform.android),
+    (true, TargetPlatform.android),
+    (true, TargetPlatform.windows),
+  ]) {
     testWidgets(
-      '${desktop ? 'desktop' : 'mobile'} dock keeps subtitle layout stable while its progress resizes',
+      '${desktop ? 'desktop' : 'mobile'} dock keeps subtitle layout stable while its progress resizes on $platform',
       (tester) async {
-        debugDefaultTargetPlatformOverride = desktop
-            ? TargetPlatform.windows
-            : TargetPlatform.android;
+        debugDefaultTargetPlatformOverride = platform;
         addTearDown(() => debugDefaultTargetPlatformOverride = null);
         final fixture = AppRuntimeWidgetTestFixture();
         addTearDown(fixture.dispose);
@@ -228,8 +230,25 @@ void main() {
           }
         }
 
+        final cover = find.byKey(
+          const ValueKey('active_session_cover_subtitle-motion'),
+        ).hitTestable().first;
+        final expandedCoverLeft = tester.getRect(cover).left;
+        if (desktop) {
+          expect(
+            expandedCoverLeft -
+                tester.getRect(find.byType(DesktopMainNavigation)).left,
+            16,
+          );
+        }
+
         expanded = false;
         await tester.pumpWidget(shell());
+        if (desktop) {
+          expect(tester.getSize(find.byKey(geometryKey)).width, 56);
+          expect(tester.getRect(cover).left, expandedCoverLeft);
+          expect(paragraph(firstCue), findsNothing);
+        }
         await sampleFrames(4);
         expanded = true;
         await tester.pumpWidget(shell());
@@ -237,6 +256,10 @@ void main() {
         await tester.pumpAndSettle();
         expanded = false;
         await tester.pumpWidget(shell());
+        if (desktop) {
+          expect(tester.getSize(find.byKey(geometryKey)).width, 56);
+          expect(tester.getRect(cover).left, expandedCoverLeft);
+        }
         await sampleFrames(24);
         await tester.pumpAndSettle();
         expect(paragraph(firstCue), findsNothing);
@@ -397,7 +420,7 @@ void main() {
                     .toList(),
                 viewportFraction: 1,
                 presentation: ActiveSessionCarouselPresentation.embedded,
-                onOpenSession: (_) {},
+                onOpenSession: (_, _) {},
               ),
             ),
           ),
@@ -808,7 +831,7 @@ void main() {
                 sessions: shown
                     .map(PlaybackSessionSnapshot.fromRuntime)
                     .toList(),
-                onOpenSession: (_) {},
+                onOpenSession: (_, _) {},
               ),
             ),
           ),

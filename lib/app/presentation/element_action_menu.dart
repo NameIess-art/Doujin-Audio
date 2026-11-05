@@ -4,6 +4,7 @@ import '../../core/widgets/app_bottom_sheet.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../features/asmr/presentation/asmr_tab.dart';
 import '../../features/library/presentation/library_search_page.dart';
+import '../../features/player/presentation/playlist/session_detail_route.dart';
 import '../localization/app_language_en.dart';
 import '../localization/app_language_ja.dart';
 import '../localization/app_language_zh.dart';
@@ -70,6 +71,18 @@ class ElementActionMenu extends StatelessWidget {
       onCopy();
       return;
     }
+    final origin = readAppRoute(context);
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final navigation = WorkDetailNavigationScope.maybeOf(context);
+    final keepDetailPane =
+        !(origin is SessionDetailRoute && origin.requiresPortraitRestore) &&
+        WorkDetailNavigationScope.isLandscapeOf(context);
+    // Rotating back can dispose this inline element while its route stays alive.
+    if (origin is SessionDetailRoute) await origin.prepareForExit();
+    if (!navigator.mounted ||
+        (origin is SessionDetailRoute && !origin.isCurrent)) {
+      return;
+    }
     PageRoute<void> buildSearchRoute(BuildContext routeContext) =>
         buildAppPageRoute<void>(
           context: routeContext,
@@ -77,15 +90,13 @@ class ElementActionMenu extends StatelessWidget {
           separateHeader: true,
         );
 
-    final navigation = WorkDetailNavigationScope.maybeOf(context);
     if (navigation != null) {
       await navigation.openFromMain(
         buildSearchRoute,
-        keepDetailPane: WorkDetailNavigationScope.isLandscapeOf(context),
+        keepDetailPane: keepDetailPane,
       );
       return;
     }
-    final navigator = Navigator.of(context, rootNavigator: true);
     await navigator.pushAndRemoveUntil<void>(
       buildSearchRoute(navigator.context),
       (route) => route.isFirst,

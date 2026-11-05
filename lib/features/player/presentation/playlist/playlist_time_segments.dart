@@ -72,7 +72,6 @@ class TimeSegmentPanel extends StatefulWidget {
 
 class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
   final _pageIndex = ValueNotifier<int>(2);
-  double _pageDragDistance = 0;
 
   @override
   void dispose() {
@@ -84,13 +83,6 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
     if (index < 0 || index >= 5 || _pageIndex.value == index) return;
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     _pageIndex.value = index;
-  }
-
-  void _handlePageDragEnd(DragEndDetails details) {
-    final velocity = details.primaryVelocity ?? 0;
-    if (_pageDragDistance.abs() < 48 && velocity.abs() < 350) return;
-    final direction = velocity.abs() >= 350 ? velocity : _pageDragDistance;
-    _animateToPanelPage(_pageIndex.value + (direction < 0 ? 1 : -1));
   }
 
   @override
@@ -133,54 +125,47 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: ScrollActivityGate(
               maxNotificationDepth: 1,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onHorizontalDragStart: (_) => _pageDragDistance = 0,
-                onHorizontalDragUpdate: (details) =>
-                    _pageDragDistance += details.primaryDelta ?? 0,
-                onHorizontalDragEnd: _handlePageDragEnd,
-                child: AppFadeThroughIndexedStack.lazy(
-                  key: const ValueKey('playback_console_page_stack'),
-                  indexListenable: _pageIndex,
-                  itemCount: 5,
-                  contentRevision: Object(),
-                  itemBuilder: (context, index) => switch (index) {
-                    0 => EqualizerPage(
+              child: AppFadeThroughIndexedStack.lazy(
+                key: const ValueKey('playback_console_page_stack'),
+                indexListenable: _pageIndex,
+                itemCount: 5,
+                contentRevision: Object(),
+                itemBuilder: (context, index) => switch (index) {
+                  0 => EqualizerPage(
+                    session: widget.session,
+                    playback: widget.playback,
+                    topInset: pageTopInset,
+                  ),
+                  1 => AudioFeaturesPage(
+                    session: widget.session,
+                    playback: widget.playback,
+                    topInset: pageTopInset,
+                  ),
+                  2 => Padding(
+                    padding: const EdgeInsets.only(top: pageTopInset),
+                    child: SpeedWheelPage(
+                      key: ValueKey<String>('speed_${widget.session.id}'),
                       session: widget.session,
                       playback: widget.playback,
-                      topInset: pageTopInset,
                     ),
-                    1 => AudioFeaturesPage(
+                  ),
+                  3 => Padding(
+                    padding: const EdgeInsets.only(top: pageTopInset),
+                    child: _buildSegmentPage(
+                      context,
+                      selected: selected,
+                      activeColor: activeColor,
+                      loopActive: loopActive,
+                    ),
+                  ),
+                  _ => Padding(
+                    padding: const EdgeInsets.only(top: pageTopInset),
+                    child: VolumeBalancePage(
                       session: widget.session,
                       playback: widget.playback,
-                      topInset: pageTopInset,
                     ),
-                    2 => Padding(
-                      padding: const EdgeInsets.only(top: pageTopInset),
-                      child: SpeedWheelPage(
-                        key: ValueKey<String>('speed_${widget.session.id}'),
-                        session: widget.session,
-                        playback: widget.playback,
-                      ),
-                    ),
-                    3 => Padding(
-                      padding: const EdgeInsets.only(top: pageTopInset),
-                      child: _buildSegmentPage(
-                        context,
-                        selected: selected,
-                        activeColor: activeColor,
-                        loopActive: loopActive,
-                      ),
-                    ),
-                    _ => Padding(
-                      padding: const EdgeInsets.only(top: pageTopInset),
-                      child: VolumeBalancePage(
-                        session: widget.session,
-                        playback: widget.playback,
-                      ),
-                    ),
-                  },
-                ),
+                  ),
+                },
               ),
             ),
           ),

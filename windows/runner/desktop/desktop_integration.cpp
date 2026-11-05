@@ -4,8 +4,10 @@
 #include "scheduled_tasks.h"
 #include "network_proxy.h"
 #include "../resource.h"
+#include "../win32_window.h"
 #include <flutter/standard_method_codec.h>
 #include <flutter/method_result_functions.h>
+#include <commctrl.h>
 #include <shellapi.h>
 #include <shlobj.h>
 #include <dwmapi.h>
@@ -16,6 +18,7 @@
 #include <stdexcept>
 #include <system_error>
 #include <thread>
+#include <windowsx.h>
 #include <winrt/base.h>
 
 namespace {
@@ -57,6 +60,34 @@ void Launch(const std::wstring& path) {
   const auto result = reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr,L"open",path.c_str(),nullptr,nullptr,SW_SHOWNORMAL));
   if (result <= 32) throw std::runtime_error("Unable to open target: " + std::to_string(result));
 }
+
+thread_local HMENU tray_popup_menu = nullptr;
+
+void CALLBACK RoundTrayPopup(HWINEVENTHOOK, DWORD, HWND popup, LONG, LONG,
+                             DWORD, DWORD) {
+  if (!tray_popup_menu || !popup) return;
+  wchar_t class_name[16]{};
+  GetClassNameW(popup, class_name, ARRAYSIZE(class_name));
+  if (wcscmp(class_name, L"#32768") != 0) return;
+
+  RECT window{}, first{}, last{}, content{};
+  const int count = GetMenuItemCount(tray_popup_menu);
+  if (count <= 0 || !GetWindowRect(popup, &window) ||
+      !GetMenuItemRect(nullptr, tray_popup_menu, 0, &first) ||
+      !GetMenuItemRect(nullptr, tray_popup_menu, count - 1, &last)) {
+    return;
+  }
+  UnionRect(&content, &first, &last);
+  if (!IntersectRect(&content, &content, &window)) return;
+
+  // Clip to the menu rows to remove the system-painted outer frame.
+  OffsetRect(&content, -window.left, -window.top);
+  const int diameter = MulDiv(16, GetDpiForWindow(popup), 96);
+  const HRGN region = CreateRoundRectRgn(
+      content.left, content.top, content.right, content.bottom,
+      diameter, diameter);
+  if (region && !SetWindowRgn(popup, region, TRUE)) DeleteObject(region);
+}
 }
 
 struct DesktopIntegration::FolderOpenState {
@@ -71,6 +102,15 @@ struct DesktopIntegration::FolderOpenState {
   std::vector<std::shared_ptr<Request>> pending;
 };
 
+struct DesktopIntegration::TrayMenuAppearance {
+  std::array<std::wstring, 5> labels;
+  HFONT font;
+  COLORREF background;
+  COLORREF foreground;
+  COLORREF highlight;
+  int padding;
+};
+
 DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* messenger) : window_(window) {
   folder_opens_ = std::make_shared<FolderOpenState>();
   folder_opens_->window = window;
@@ -82,7 +122,7 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
     RegGetValueW(HKEY_CURRENT_USER,kSettingsKey,L"WindowDpi",RRF_RT_REG_DWORD,nullptr,&saved_dpi,&dpi_bytes);
     if (saved_dpi == 0) saved_dpi = dpi;
     RECT minimum{0,0,MulDiv(960,dpi,96),MulDiv(600,dpi,96)};
-    AdjustWindowRectExForDpi(&minimum,WS_OVERLAPPEDWINDOW,FALSE,0,dpi);
+    Win32Window::AdjustFrameRect(minimum, dpi);
     const auto width = std::max<LONG>(minimum.right-minimum.left,MulDiv(saved.rcNormalPosition.right-saved.rcNormalPosition.left,dpi,saved_dpi));
     const auto height = std::max<LONG>(minimum.bottom-minimum.top,MulDiv(saved.rcNormalPosition.bottom-saved.rcNormalPosition.top,dpi,saved_dpi));
     if (saved.showCmd == SW_SHOWMAXIMIZED) initial_show_command_ = SW_SHOWMAXIMIZED;
@@ -105,6 +145,8 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
       if (call.method_name() == "ready") {
         ready_ = true;
         result->Success();
+        window_maximized_.reset();
+        PublishWindowMaximized();
         auto pending = std::move(pending_); pending_.clear();
         for (const auto& action : pending) Action(action);
       } else if (call.method_name() == "exit") {
@@ -112,6 +154,9 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
         if (!ending_session_) { quitting_ = true; PostMessage(window_,WM_CLOSE,0,0); }
       } else if (call.method_name() == "setFullscreen") {
         SetFullscreen(RequiredBool(Arguments(call),"enabled")); result->Success();
+      } else if (call.method_name() == "windowCommand") {
+        RunWindowCommand(RequiredText(Arguments(call), "command"));
+        result->Success();
       } else if (call.method_name() == "getHotkeyStatus") {
         result->Success(Value(media_->HotkeyStatus()));
       } else { result->NotImplemented(); }
@@ -167,6 +212,16 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
       if (mode != "system" && mode != "dark" && mode != "light") throw std::invalid_argument("themeMode");
       theme_mode_ = mode;
       UpdateTheme(); Success(result);
+    } else if (call.method_name() == "syncTrayMenu") {
+      const auto& args = Arguments(call);
+      tray_labels_ = {
+          std::wstring(winrt::to_hstring(RequiredText(args, "open"))),
+          std::wstring(winrt::to_hstring(RequiredText(args, "toggle"))),
+          std::wstring(winrt::to_hstring(RequiredText(args, "previous"))),
+          std::wstring(winrt::to_hstring(RequiredText(args, "next"))),
+          std::wstring(winrt::to_hstring(RequiredText(args, "exit"))),
+      };
+      Success(result);
     } else result.NotImplemented();
   });
   add("doujin_audio/update",[this](const auto& call, Result& result) {
@@ -228,6 +283,7 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
   AddTray();
 }
 DesktopIntegration::~DesktopIntegration() {
+  if (content_) RemoveWindowSubclass(content_, ContentProc, 0);
   std::vector<std::shared_ptr<FolderOpenState::Request>> pending;
   {
     std::lock_guard<std::mutex> lock(folder_opens_->mutex);
@@ -385,20 +441,127 @@ void DesktopIntegration::EndSession() {
   OutputDebugStringA(status);
   std::cerr << status;
 }
+bool DesktopIntegration::UsesDarkTheme() const {
+  if (theme_mode_ != "system") return theme_mode_ == "dark";
+  DWORD value = 1, size = sizeof(value);
+  RegGetValueW(HKEY_CURRENT_USER,L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",L"AppsUseLightTheme",RRF_RT_REG_DWORD,nullptr,&value,&size);
+  return value == 0;
+}
 void DesktopIntegration::UpdateTheme() {
-  BOOL dark = theme_mode_ == "dark";
-  if (theme_mode_ == "system") {
-    DWORD value = 1, size = sizeof(value);
-    RegGetValueW(HKEY_CURRENT_USER,L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",L"AppsUseLightTheme",RRF_RT_REG_DWORD,nullptr,&value,&size);
-    dark = value == 0;
-  }
+  const BOOL dark = UsesDarkTheme();
   DwmSetWindowAttribute(window_,20,&dark,sizeof(dark));
 }
+
+void DesktopIntegration::ShowTrayMenu() {
+  if (active_tray_menu_) return;
+  const HMENU menu = CreatePopupMenu();
+  if (!menu) return;
+
+  const UINT dpi = GetDpiForWindow(window_);
+  HIGHCONTRASTW contrast{sizeof(contrast)};
+  SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0);
+  const bool custom_colors = !(contrast.dwFlags & HCF_HIGHCONTRASTON);
+  const bool dark = UsesDarkTheme();
+  NONCLIENTMETRICSW metrics{sizeof(metrics)};
+  HFONT font = nullptr;
+  if (custom_colors && SystemParametersInfoForDpi(
+      SPI_GETNONCLIENTMETRICS, sizeof(metrics), &metrics, 0, dpi)) {
+    font = CreateFontIndirectW(&metrics.lfMenuFont);
+  }
+  TrayMenuAppearance appearance{
+      tray_labels_,
+      font ? font : static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT)),
+      dark ? RGB(32, 32, 32) : RGB(250, 250, 250),
+      dark ? RGB(245, 245, 245) : RGB(23, 23, 23),
+      dark ? RGB(65, 65, 65) : RGB(222, 234, 250),
+      MulDiv(12, dpi, 96),
+  };
+  const HBRUSH background = custom_colors ? CreateSolidBrush(appearance.background) : nullptr;
+  if (background) {
+    MENUINFO info{sizeof(info)};
+    info.fMask = MIM_BACKGROUND;
+    info.hbrBack = background;
+    SetMenuInfo(menu, &info);
+  }
+
+  for (size_t index = 0; index < appearance.labels.size(); ++index) {
+    if (index == 4) AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    MENUITEMINFOW item{sizeof(item)};
+    item.fMask = MIIM_ID | MIIM_STRING | MIIM_FTYPE | MIIM_DATA;
+    item.wID = static_cast<UINT>(index + 1);
+    item.fType = custom_colors ? MFT_OWNERDRAW : MFT_STRING;
+    item.dwTypeData = appearance.labels[index].data();
+    item.dwItemData = reinterpret_cast<ULONG_PTR>(&appearance);
+    InsertMenuItemW(menu, static_cast<UINT>(GetMenuItemCount(menu)), TRUE, &item);
+  }
+
+  POINT point{};
+  GetCursorPos(&point);
+  SetForegroundWindow(window_);
+  active_tray_menu_ = &appearance;
+  const HWINEVENTHOOK frame_hook = custom_colors
+      ? SetWinEventHook(EVENT_SYSTEM_MENUPOPUPSTART, EVENT_SYSTEM_MENUPOPUPSTART,
+                        nullptr, RoundTrayPopup, GetCurrentProcessId(),
+                        GetCurrentThreadId(), WINEVENT_OUTOFCONTEXT)
+      : nullptr;
+  tray_popup_menu = frame_hook ? menu : nullptr;
+  const auto command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
+                                      point.x, point.y, 0, window_, nullptr);
+  tray_popup_menu = nullptr;
+  if (frame_hook) UnhookWinEvent(frame_hook);
+  active_tray_menu_ = nullptr;
+  DestroyMenu(menu);
+  if (background) DeleteObject(background);
+  if (font) DeleteObject(font);
+  PostMessage(window_, WM_NULL, 0, 0);
+  switch (command) {
+    case 1: Show(); break;
+    case 2: Action("toggle"); break;
+    case 3: Action("previous"); break;
+    case 4: Action("next"); break;
+    case 5: Action("exit"); break;
+  }
+}
+
 void DesktopIntegration::Show() {
   ShowWindow(window_,IsIconic(window_) ? SW_RESTORE : SW_SHOW);
   SetForegroundWindow(window_); Action("resume");
 }
 void DesktopIntegration::ShowInitial() { ShowWindow(window_,initial_show_command_); }
+void DesktopIntegration::AttachContent(HWND content) {
+  content_ = content;
+  if (!SetWindowSubclass(content_, ContentProc, 0, reinterpret_cast<DWORD_PTR>(this))) {
+    winrt::throw_last_error();
+  }
+  // The window was created before this object handled WM_NCCALCSIZE.
+  SetWindowPos(window_, nullptr, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+}
+LRESULT DesktopIntegration::TopResizeHit(POINT screen) const {
+  if (fullscreen_ || IsZoomed(window_)) return HTNOWHERE;
+  RECT client{};
+  GetClientRect(window_, &client);
+  MapWindowPoints(window_, nullptr, reinterpret_cast<POINT*>(&client), 2);
+  const UINT dpi = GetDpiForWindow(window_);
+  const int padding = GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+  const int height = GetSystemMetricsForDpi(SM_CYFRAME, dpi) + padding;
+  if (!PtInRect(&client, screen) || screen.y >= client.top + height) return HTNOWHERE;
+  const int width = GetSystemMetricsForDpi(SM_CXFRAME, dpi) + padding;
+  if (screen.x < client.left + width) return HTTOPLEFT;
+  if (screen.x >= client.right - width) return HTTOPRIGHT;
+  return HTTOP;
+}
+LRESULT CALLBACK DesktopIntegration::ContentProc(HWND content, UINT message, WPARAM wp,
+                                                 LPARAM lp, UINT_PTR, DWORD_PTR data) {
+  // The Flutter view covers the former caption. Let its top strip fall through
+  // to the top-level window so native top-edge resizing keeps working.
+  if (message == WM_NCHITTEST &&
+      reinterpret_cast<const DesktopIntegration*>(data)->TopResizeHit(
+          {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)}) != HTNOWHERE) {
+    return HTTRANSPARENT;
+  }
+  return DefSubclassProc(content, message, wp, lp);
+}
 void DesktopIntegration::RefreshPower() {
   const auto flags = ES_CONTINUOUS | (playback_active_ ? ES_SYSTEM_REQUIRED : 0) | (screen_on_ ? ES_DISPLAY_REQUIRED : 0);
   if (power_flags_ == flags) return;
@@ -428,18 +591,104 @@ void DesktopIntegration::SetFullscreen(bool enabled) {
     SetWindowPos(window_,HWND_TOP,monitor.rcMonitor.left,monitor.rcMonitor.top,
       monitor.rcMonitor.right-monitor.rcMonitor.left,monitor.rcMonitor.bottom-monitor.rcMonitor.top,SWP_FRAMECHANGED);
   } else {
-    SetWindowLongPtr(window_,GWL_STYLE,WS_OVERLAPPEDWINDOW | WS_VISIBLE);
+    SetWindowLongPtr(window_, GWL_STYLE, WS_OVERLAPPEDWINDOW | WS_VISIBLE);
     SetWindowPlacement(window_,&placement_);
     SetWindowPos(window_,nullptr,0,0,0,0,SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
   }
 }
+void DesktopIntegration::RunWindowCommand(const std::string& command) {
+  UINT message = WM_SYSCOMMAND;
+  WPARAM param;
+  LPARAM position = 0;
+  if (command == "drag") {
+    POINT cursor{};
+    if (!GetCursorPos(&cursor)) winrt::throw_last_error();
+    ReleaseCapture();
+    message = WM_NCLBUTTONDOWN;
+    param = HTCAPTION;
+    position = MAKELPARAM(cursor.x, cursor.y);
+  } else if (command == "minimize") {
+    param = SC_MINIMIZE;
+  } else if (command == "toggleMaximized") {
+    param = IsZoomed(window_) ? SC_RESTORE : SC_MAXIMIZE;
+  } else if (command == "close") {
+    param = SC_CLOSE;
+  } else {
+    throw std::invalid_argument("command");
+  }
+  if (!PostMessage(window_, message, param, position)) winrt::throw_last_error();
+}
+
+void DesktopIntegration::PublishWindowMaximized() {
+  if (!ready_ || fullscreen_ || IsIconic(window_)) return;
+  const bool maximized = IsZoomed(window_) != FALSE;
+  if (window_maximized_ == maximized) return;
+  window_maximized_ = maximized;
+  desktop_->InvokeMethod("windowMaximized", std::make_unique<Value>(maximized));
+}
 std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp, LPARAM lp) {
+  if (message == WM_NCCALCSIZE && wp && !fullscreen_) {
+    auto& client = reinterpret_cast<NCCALCSIZE_PARAMS*>(lp)->rgrc[0];
+    const LONG top = client.top;
+    DefWindowProc(window_, message, wp, lp);
+    // Drop the system caption but keep native side and bottom frames. A
+    // maximized window extends past the monitor by its frame on every side.
+    const UINT dpi = GetDpiForWindow(window_);
+    client.top = top + (IsZoomed(window_)
+        ? GetSystemMetricsForDpi(SM_CYFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi)
+        : 0);
+    return 0;
+  }
+  if (message == WM_NCHITTEST) {
+    const LRESULT hit = TopResizeHit({GET_X_LPARAM(lp), GET_Y_LPARAM(lp)});
+    if (hit != HTNOWHERE) return hit;
+  }
+  if (message == WM_SIZE) PublishWindowMaximized();
+  if (active_tray_menu_ && message == WM_MEASUREITEM) {
+    auto& item = *reinterpret_cast<MEASUREITEMSTRUCT*>(lp);
+    const auto& style = *active_tray_menu_;
+    if (item.CtlType == ODT_MENU &&
+        item.itemData == reinterpret_cast<ULONG_PTR>(&style)) {
+      const auto& label = style.labels[item.itemID - 1];
+      const HDC dc = GetDC(window_);
+      const auto previous_font = SelectObject(dc, style.font);
+      SIZE text{};
+      GetTextExtentPoint32W(dc, label.c_str(), static_cast<int>(label.size()), &text);
+      SelectObject(dc, previous_font);
+      ReleaseDC(window_, dc);
+      item.itemWidth = text.cx + 2 * style.padding;
+      item.itemHeight = text.cy + style.padding;
+      return TRUE;
+    }
+  }
+  if (active_tray_menu_ && message == WM_DRAWITEM) {
+    const auto& item = *reinterpret_cast<const DRAWITEMSTRUCT*>(lp);
+    const auto& style = *active_tray_menu_;
+    if (item.CtlType == ODT_MENU &&
+        item.itemData == reinterpret_cast<ULONG_PTR>(&style)) {
+      const int saved = SaveDC(item.hDC);
+      SetDCBrushColor(item.hDC, item.itemState & ODS_SELECTED
+                                  ? style.highlight : style.background);
+      FillRect(item.hDC, &item.rcItem, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+      SelectObject(item.hDC, style.font);
+      SetBkMode(item.hDC, TRANSPARENT);
+      SetTextColor(item.hDC, style.foreground);
+      RECT text = item.rcItem;
+      text.left += style.padding;
+      text.right -= style.padding;
+      const auto& label = style.labels[item.itemID - 1];
+      DrawTextW(item.hDC, label.c_str(), static_cast<int>(label.size()), &text,
+                DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+      RestoreDC(item.hDC, saved);
+      return TRUE;
+    }
+  }
   if (message == WM_DWMCOLORIZATIONCOLORCHANGED) { UpdateTheme(); return 0; }
   if (message == WM_SETTINGCHANGE && theme_mode_ == "system") UpdateTheme();
   if (message == ScheduledTasks::kReply) { scheduled_tasks_->Reply(); return 0; }
   if (message == NetworkProxy::kReply) { network_proxy_->Reply(); return 0; }
   if (message == kFolderOpenReply) { ReplyFolderOpens(); return 0; }
-  if (auto action = media_->HandleMessage(message, wp)) {
+  if (auto action = media_->HandleMessage(message, wp, lp)) {
     if (*action == "showWindow") Show();
     else if (!action->empty()) Action(*action);
     return 0;
@@ -460,7 +709,7 @@ std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp
   if (message == WM_GETMINMAXINFO && !fullscreen_) {
     const auto dpi = GetDpiForWindow(window_);
     RECT rect{0,0,MulDiv(960,dpi,96),MulDiv(600,dpi,96)};
-    AdjustWindowRectExForDpi(&rect,WS_OVERLAPPEDWINDOW,FALSE,0,dpi);
+    Win32Window::AdjustFrameRect(rect, dpi);
     auto info = reinterpret_cast<MINMAXINFO*>(lp);
     info->ptMinTrackSize = {rect.right-rect.left,rect.bottom-rect.top}; return 0;
   }
@@ -477,22 +726,7 @@ std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp
   }
   if (message == kTray) {
     if (LOWORD(lp) == WM_LBUTTONDBLCLK) Show();
-    if (LOWORD(lp) == WM_RBUTTONUP) {
-      auto menu = CreatePopupMenu();
-      AppendMenuW(menu,MF_STRING,1,L"Open / 打开");
-      AppendMenuW(menu,MF_STRING,2,L"Play/pause / 播放暂停");
-      AppendMenuW(menu,MF_STRING,3,L"Previous / 上一曲");
-      AppendMenuW(menu,MF_STRING,4,L"Next / 下一曲");
-      AppendMenuW(menu,MF_SEPARATOR,0,nullptr);
-      AppendMenuW(menu,MF_STRING,5,L"Exit / 退出");
-      POINT pt; GetCursorPos(&pt); SetForegroundWindow(window_);
-      const auto command = TrackPopupMenu(menu,TPM_RETURNCMD | TPM_RIGHTBUTTON,pt.x,pt.y,0,window_,nullptr);
-      DestroyMenu(menu); PostMessage(window_,WM_NULL,0,0);
-      switch (command) {
-        case 1: Show(); break; case 2: Action("toggle"); break;
-        case 3: Action("previous"); break; case 4: Action("next"); break; case 5: Action("exit"); break;
-      }
-    }
+    if (LOWORD(lp) == WM_RBUTTONUP) ShowTrayMenu();
     return 0;
   }
   return std::nullopt;

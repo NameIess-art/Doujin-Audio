@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui show Image;
 
 import '../../../library/presentation/library_providers.dart';
 import '../../../settings/presentation/settings_providers.dart';
@@ -17,6 +18,7 @@ import '../session_video_surface.dart';
 import '../session_video_viewport.dart';
 import 'playlist_shared_helpers.dart';
 import 'playlist_video_widgets.dart';
+import 'session_cover_transition.dart';
 
 class SessionHeroArtwork extends ConsumerWidget {
   const SessionHeroArtwork({
@@ -25,12 +27,16 @@ class SessionHeroArtwork extends ConsumerWidget {
     required this.height,
     required this.track,
     required this.coverPathFuture,
+    this.coverAnchorKey,
+    this.coverPreview,
   });
 
   final PlaybackSessionSnapshot session;
   final double height;
   final MusicTrack? track;
   final Future<String?> coverPathFuture;
+  final GlobalKey<SessionCoverAnchorState>? coverAnchorKey;
+  final ui.Image? coverPreview;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -40,6 +46,8 @@ class SessionHeroArtwork extends ConsumerWidget {
     final allowVideoPlayback = ref.watch(
       settingsStateProvider.select((s) => s.value?.allowVideoPlayback ?? true),
     );
+    final videoReady =
+        allowVideoPlayback && isSessionVideoReady(session, track);
     final coverResolution = ref.watch(coverImageResolutionProvider);
     final initialCoverPath = library.resolvedPlaybackCoverPathForTrack(track);
 
@@ -52,7 +60,7 @@ class SessionHeroArtwork extends ConsumerWidget {
           children: [
             TickerMode(
               // Do not freeze a cover image's loading fade mid-frame while the
-              // detail route is being dragged.
+              // detail route is transitioning.
               enabled: true,
               child: AsyncLocalCoverImage(
                 deferLoadDuringInteraction: true,
@@ -67,6 +75,13 @@ class SessionHeroArtwork extends ConsumerWidget {
                 cacheWidth: coverCacheWidth,
                 useDefaultCacheWidth: false,
                 fit: BoxFit.cover,
+                fallbackBuilder: coverPreview == null
+                    ? null
+                    : (_) => RawImage(
+                        key: const ValueKey('session_detail_cover_preview'),
+                        image: coverPreview,
+                        fit: BoxFit.cover,
+                      ),
               ),
             ),
             Positioned.fill(
@@ -104,27 +119,33 @@ class SessionHeroArtwork extends ConsumerWidget {
               borderRadius: BorderRadius.circular(16),
               clipBehavior: Clip.antiAlias,
               child: RepaintBoundary(
-                child: SessionVideoViewport(
-                  videoReady:
-                      allowVideoPlayback && isSessionVideoReady(session, track),
-                  surfaceBuilder: (_) => NativeSessionVideoSurface(
-                    sessionId: sessionId,
-                    nativeRepository: ref
-                        .read(playbackFacadeProvider)
-                        .nativeRepository,
+                // Match the pixels inside the frame's border padding.
+                child: SessionCoverAnchor(
+                  key: coverAnchorKey,
+                  sessionId: sessionId,
+                  radius: 16,
+                  enabled: !videoReady,
+                  child: SessionVideoViewport(
+                    videoReady: videoReady,
+                    surfaceBuilder: (_) => NativeSessionVideoSurface(
+                      sessionId: sessionId,
+                      nativeRepository: ref
+                          .read(playbackFacadeProvider)
+                          .nativeRepository,
+                    ),
+                    onFullscreen: () => showSessionVideoFullscreen(
+                      context,
+                      ref,
+                      sessionId: sessionId,
+                      trackPath: track!.path,
+                    ),
+                    fullscreenTooltip: ref
+                        .read(appLanguageProviderInstanceProvider)
+                        .tr('fullscreen'),
+                    poster: allowVideoPlayback && track?.isVideo == true
+                        ? SessionVideoBlurredBackdrop(child: coverPoster)
+                        : coverPoster,
                   ),
-                  onFullscreen: () => showSessionVideoFullscreen(
-                    context,
-                    ref,
-                    sessionId: sessionId,
-                    trackPath: track!.path,
-                  ),
-                  fullscreenTooltip: ref
-                      .read(appLanguageProviderInstanceProvider)
-                      .tr('fullscreen'),
-                  poster: allowVideoPlayback && track?.isVideo == true
-                      ? SessionVideoBlurredBackdrop(child: coverPoster)
-                      : coverPoster,
                 ),
               ),
             ),
@@ -198,9 +219,14 @@ class _SessionCoverThumbnailState extends ConsumerState<SessionCoverThumbnail> {
     return SizedBox.square(
       key: ValueKey<String>('playlist_cover_${widget.sessionId}'),
       dimension: widget.dimension,
-      child: CoverArtworkFrame(
-        borderRadius: BorderRadius.circular(widget.dimension / 2),
-        child: cover,
+      child: SessionCoverAnchor(
+        sessionId: widget.sessionId,
+        radius: widget.dimension / 2,
+        location: SessionCoverLocation.playlist,
+        child: CoverArtworkFrame(
+          borderRadius: BorderRadius.circular(widget.dimension / 2),
+          child: cover,
+        ),
       ),
     );
   }

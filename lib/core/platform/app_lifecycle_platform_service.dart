@@ -46,4 +46,26 @@ class AppLifecyclePlatformService {
     );
     return result.isOk;
   }
+
+  Future<bool> syncTrayMenu({
+    required String open,
+    required String toggle,
+    required String previous,
+    required String next,
+    required String exit,
+  }) async {
+    if (!_isWindows) return true;
+    final result = await _client.invoke<void>(
+      AppLifecycleMethod.syncTrayMenu,
+      arguments: <String, String>{
+        'open': open,
+        'toggle': toggle,
+        'previous': previous,
+        'next': next,
+        'exit': exit,
+      },
+      decode: (_) {},
+    );
+    return result.isOk;
+  }
 }

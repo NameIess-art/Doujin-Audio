@@ -703,27 +703,33 @@ class HeaderFloatingButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return HeaderFloatingSurface(
-      width: size,
-      height: size,
-      radius: size / 2,
-      backgroundOpacity: backgroundOpacity,
-      followBarGlass: followBarGlass,
-      child: IconButtonTheme(
-        data: IconButtonThemeData(
-          style: IconButton.styleFrom(
-            minimumSize: Size(size, size),
-            maximumSize: Size(size, size),
-            padding: EdgeInsets.zero,
-            iconSize: 20,
-            visualDensity: VisualDensity.compact,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    // The surface's ClipRRect hit-tests its outer rect; restrict input and
+    // paint to the visible circle.
+    return ClipPath(
+      clipper: const ShapeBorderClipper(shape: CircleBorder()),
+      child: HeaderFloatingSurface(
+        width: size,
+        height: size,
+        radius: size / 2,
+        backgroundOpacity: backgroundOpacity,
+        followBarGlass: followBarGlass,
+        child: IconButtonTheme(
+          data: IconButtonThemeData(
+            style: IconButton.styleFrom(
+              minimumSize: Size(size, size),
+              maximumSize: Size(size, size),
+              padding: EdgeInsets.zero,
+              iconSize: 20,
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              shape: const CircleBorder(),
+            ),
           ),
-        ),
-        child: Center(
-          child: IconTheme.merge(
-            data: const IconThemeData(size: 20),
-            child: child,
+          child: Center(
+            child: IconTheme.merge(
+              data: const IconThemeData(size: 20),
+              child: child,
+            ),
           ),
         ),
       ),

@@ -10,6 +10,7 @@ import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_settings_action_tile.dart';
+import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/shimmer_loading.dart';
 import '../application/permission_status_service.dart';
@@ -277,31 +278,36 @@ class _PermissionStatusButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (enabled == null) {
-      final placeholderLabel = disabledLabel.length >= enabledLabel.length
-          ? disabledLabel
-          : enabledLabel;
-      return _PermissionStatusPlaceholder(label: placeholderLabel);
-    }
+    final placeholderLabel = disabledLabel.length >= enabledLabel.length
+        ? disabledLabel
+        : enabledLabel;
+    final isEnabled = enabled == true;
     final cs = Theme.of(context).colorScheme;
-    final color = enabled! ? AppDesignTokens.of(context).success : cs.error;
-    final label = enabled! ? enabledLabel : disabledLabel;
-    return Semantics(
-      button: true,
-      label: label,
-      child: TextButton(
-        onPressed: onPressed,
-        style: TextButton.styleFrom(
-          foregroundColor: color,
-          backgroundColor: color.withValues(alpha: 0.12),
-          minimumSize: const Size(0, 36),
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          shape: const StadiumBorder(),
-          textStyle: Theme.of(
-            context,
-          ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w800),
+    final color = isEnabled ? AppDesignTokens.of(context).success : cs.error;
+    final label = isEnabled ? enabledLabel : disabledLabel;
+    return PlaceholderContentTransition(
+      showPlaceholder: enabled == null,
+      fit: StackFit.loose,
+      alignment: AlignmentDirectional.centerEnd,
+      protectInteraction: false,
+      placeholder: _PermissionStatusPlaceholder(label: placeholderLabel),
+      content: Semantics(
+        button: true,
+        label: label,
+        child: TextButton(
+          onPressed: onPressed,
+          style: TextButton.styleFrom(
+            foregroundColor: color,
+            backgroundColor: color.withValues(alpha: 0.12),
+            minimumSize: const Size(0, 36),
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            shape: const StadiumBorder(),
+            textStyle: Theme.of(
+              context,
+            ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          child: Text(label),
         ),
-        child: Text(label),
       ),
     );
   }

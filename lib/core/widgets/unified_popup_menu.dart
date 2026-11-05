@@ -9,6 +9,20 @@ import 'app_feedback.dart';
 import 'app_transitions.dart';
 import 'mobile_overlay_inset.dart';
 
+TextAlign _menuTextAlign(
+  BuildContext context,
+  RenderBox overlay,
+  Offset anchor,
+) {
+  final page = readAppRoute(context)?.subtreeContext?.findRenderObject();
+  final pageCenter = page is RenderBox && page.hasSize
+      ? page.localToGlobal(Offset(page.size.width / 2, 0)).dx
+      : overlay.localToGlobal(Offset(overlay.size.width / 2, 0)).dx;
+  return overlay.localToGlobal(anchor).dx > pageCenter
+      ? TextAlign.right
+      : TextAlign.left;
+}
+
 class UnifiedMenuEntry<T> {
   const UnifiedMenuEntry.action({
     required this.value,
@@ -161,6 +175,7 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
 
     final anchorOffset = box.localToGlobal(Offset.zero, ancestor: overlayBox);
     final anchorRect = anchorOffset & box.size;
+    final textAlign = _menuTextAlign(context, overlayBox, anchorRect.center);
     final screenWidth = overlayBox.size.width;
     final availableWidth = (screenWidth - 20).clamp(0.0, double.infinity);
     final menuWidth = widget.menuWidth.clamp(0.0, availableWidth);
@@ -178,6 +193,7 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
           animation: _controller,
           rect: Rect.fromLTWH(left, top, menuWidth, anchorRect.height),
           entries: widget.entries,
+          textAlign: textAlign,
           onDismiss: _removeOverlay,
           onSelected: (value) async {
             if (_closing != null) return;
@@ -274,6 +290,7 @@ class _UnifiedPopupOverlay<T> extends StatefulWidget {
     required this.animation,
     required this.rect,
     required this.entries,
+    required this.textAlign,
     required this.onDismiss,
     required this.onSelected,
     this.onTrailingSelected,
@@ -282,6 +299,7 @@ class _UnifiedPopupOverlay<T> extends StatefulWidget {
   final Animation<double> animation;
   final Rect rect;
   final List<UnifiedMenuEntry<T>> entries;
+  final TextAlign textAlign;
   final Future<void> Function() onDismiss;
   final ValueChanged<T> onSelected;
   final ValueChanged<T>? onTrailingSelected;
@@ -380,6 +398,7 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
                                 AnimationStatus.reverse,
                             child: _UnifiedPopupMenuCard<T>(
                               entries: widget.entries,
+                              textAlign: widget.textAlign,
                               onSelected: widget.onSelected,
                               onTrailingSelected: widget.onTrailingSelected,
                             ),
@@ -401,6 +420,7 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
 class _UnifiedPopupMenuCard<T> extends StatelessWidget {
   const _UnifiedPopupMenuCard({
     required this.entries,
+    required this.textAlign,
     required this.onSelected,
     this.onTrailingSelected,
     this.compact = false,
@@ -412,6 +432,7 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
   final bool primaryIcons;
   final bool autofocusFirstEntry;
   final List<UnifiedMenuEntry<T>> entries;
+  final TextAlign textAlign;
   final ValueChanged<T> onSelected;
   final ValueChanged<T>? onTrailingSelected;
 
@@ -447,6 +468,7 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
                     .map(
                       (entry) => _UnifiedPopupMenuRow<T>(
                         entry: entry,
+                        textAlign: textAlign,
                         compact: compact,
                         primaryIcons: primaryIcons,
                         autofocus:
@@ -469,6 +491,7 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
 class _UnifiedPopupMenuRow<T> extends StatelessWidget {
   const _UnifiedPopupMenuRow({
     required this.entry,
+    required this.textAlign,
     required this.autofocus,
     required this.onSelected,
     this.onTrailingSelected,
@@ -479,6 +502,7 @@ class _UnifiedPopupMenuRow<T> extends StatelessWidget {
   final bool compact;
   final bool primaryIcons;
   final UnifiedMenuEntry<T> entry;
+  final TextAlign textAlign;
   final bool autofocus;
   final ValueChanged<T> onSelected;
   final ValueChanged<T>? onTrailingSelected;
@@ -514,6 +538,7 @@ class _UnifiedPopupMenuRow<T> extends StatelessWidget {
             : null,
         child: _UnifiedPopupMenuContent(
           entry: entry,
+          textAlign: textAlign,
           compact: compact,
           primaryIcons: primaryIcons,
           onTrailingSelected: onTrailingSelected,
@@ -526,12 +551,14 @@ class _UnifiedPopupMenuRow<T> extends StatelessWidget {
 class _UnifiedPopupMenuContent<T> extends StatelessWidget {
   const _UnifiedPopupMenuContent({
     required this.entry,
+    required this.textAlign,
     required this.compact,
     required this.primaryIcons,
     this.onTrailingSelected,
   });
 
   final UnifiedMenuEntry<T> entry;
+  final TextAlign textAlign;
   final bool compact;
   final bool primaryIcons;
   final ValueChanged<T>? onTrailingSelected;
@@ -561,6 +588,9 @@ class _UnifiedPopupMenuContent<T> extends StatelessWidget {
             Expanded(
               child: Text(
                 entry.label,
+                textAlign: entry.trailingValue == null
+                    ? textAlign
+                    : TextAlign.left,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -648,6 +678,12 @@ Future<T?> showDockAwareMenu<T>({
   final overlayState =
       MobileOverlayInset.menuOverlayOf(context) ?? Overlay.maybeOf(context);
   if (overlayState == null) return null;
+  final overlayBox = overlayState.context.findRenderObject()! as RenderBox;
+  final textAlign = _menuTextAlign(
+    context,
+    overlayBox,
+    position.toRect(Offset.zero & overlayBox.size).center,
+  );
   final tickerMode = TickerMode.getValuesNotifier(context);
   if (!tickerMode.value.enabled) return null;
 
@@ -685,6 +721,7 @@ Future<T?> showDockAwareMenu<T>({
       key: menuKey,
       position: position,
       entries: entries,
+      textAlign: textAlign,
       autofocusFirstEntry: autofocusFirstEntry,
       themes: themes,
       reducedMotion: reducedMotion,
@@ -724,6 +761,7 @@ class _DockMenuOverlay<T> extends StatefulWidget {
     super.key,
     required this.position,
     required this.entries,
+    required this.textAlign,
     required this.themes,
     required this.reducedMotion,
     required this.interactionSource,
@@ -734,6 +772,7 @@ class _DockMenuOverlay<T> extends StatefulWidget {
 
   final RelativeRect position;
   final List<UnifiedMenuEntry<T>> entries;
+  final TextAlign textAlign;
   final CapturedThemes themes;
   final bool reducedMotion;
   final Object interactionSource;
@@ -880,6 +919,7 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
                                     ignoring: _dismissed,
                                     child: _UnifiedPopupMenuCard<T>(
                                       entries: widget.entries,
+                                      textAlign: widget.textAlign,
                                       autofocusFirstEntry:
                                           widget.autofocusFirstEntry,
                                       compact: true,

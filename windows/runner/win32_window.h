@@ -12,6 +12,15 @@
 // rendering and input handling
 class Win32Window {
  public:
+  // Keeps the native caption style for snapping and window animations, but
+  // DesktopIntegration removes the caption in WM_NCCALCSIZE and Flutter paints
+  // it. Only the native side and bottom resize frames surround the client.
+  static void AdjustFrameRect(RECT& rect, UINT dpi) {
+    const LONG client_top = rect.top;
+    AdjustWindowRectExForDpi(&rect, WS_OVERLAPPEDWINDOW, FALSE, 0, dpi);
+    rect.top = client_top;
+  }
+
   struct Point {
     unsigned int x;
     unsigned int y;

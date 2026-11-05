@@ -296,7 +296,7 @@ void main() {
             library: fixture.runtimeGraph.library,
             playback: fixture.runtimeGraph.playback,
             isTemporary: false,
-            onOpen: () {},
+            onOpen: (_) {},
           ),
         ),
       );
@@ -365,7 +365,7 @@ void main() {
             library: fixture.runtimeGraph.library,
             playback: fixture.runtimeGraph.playback,
             coverCacheWidth: 64,
-            onOpen: () {},
+            onOpen: (_) {},
             onEdit: () {},
           ),
         ),

@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import '../../player/presentation/playback_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -108,76 +106,62 @@ class _DataSupportSettingsControlsState
       labelKey: 'restore_backup',
       action: () async {
         if (!mounted) return;
-        final ready = ValueNotifier(false);
-        final dialogBuilt = Completer<BuildContext>();
-        final dialogClosed = showAppDialog<void>(
-          context: context,
-          barrierDismissible: false,
-          builder: (dialogContext) {
-            if (!dialogBuilt.isCompleted) dialogBuilt.complete(dialogContext);
-            return PopScope(
-              canPop: false,
-              child: ValueListenableBuilder<bool>(
-                valueListenable: ready,
-                builder: (_, isReady, _) => AppDialog(
-                  title: i18n.tr(
-                    isReady ? 'backup_ready_to_restore' : 'restore_backup',
-                  ),
-                  icon: isReady
-                      ? Icons.restart_alt_rounded
-                      : Icons.restore_rounded,
-                  content: isReady
-                      ? Text(i18n.tr('backup_restart_required'))
-                      : const Center(child: CircularProgressIndicator()),
-                  actions: isReady
-                      ? AppDialogActions(
-                          children: [
-                            AppPrimaryButton(
-                              onPressed: _terminateForPendingRestore,
-                              icon: Icons.close_rounded,
-                              label: i18n.tr('close_app'),
-                            ),
-                          ],
-                        )
-                      : null,
-                ),
-              ),
-            );
-          },
+        final navigator = Navigator.of(context, rootNavigator: true);
+        final playback = ref.read(playbackFacadeProvider).nativeRepository;
+        final lifecycle = ref.read(appLifecyclePlatformServiceProvider);
+        final dismissProgress = showAppProgressFeedback(
+          context,
+          i18n.tr('loading_dot'),
+          title: i18n.tr('restore_backup'),
+          icon: Icons.restore_rounded,
         );
-        final dialogContext = await dialogBuilt.future;
+        var staged = false;
         try {
           final result = await _fileService.pickAndStageBackup(
             dialogTitle: i18n.tr('restore_backup'),
           );
           if (result == null) return;
-          // Staging has committed a pending restore. Keep the restart prompt
-          // even if clearing the old playback snapshot fails.
-          ready.value = true;
-          await ref.read(playbackFacadeProvider).nativeRepository.clearAll();
+          staged = true;
+          await playback.clearAll();
         } finally {
-          if (!ready.value && dialogContext.mounted) {
-            Navigator.of(dialogContext).pop();
+          dismissProgress();
+          // A staged backup requires a restart even if playback cleanup fails.
+          if (staged && navigator.mounted) {
+            await showAppDialog<void>(
+              context: mounted ? context : navigator.context,
+              barrierDismissible: false,
+              builder: (dialogContext) => PopScope(
+                canPop: false,
+                child: AppDialog(
+                  title: i18n.tr('backup_ready_to_restore'),
+                  icon: Icons.restart_alt_rounded,
+                  content: Text(i18n.tr('backup_restart_required')),
+                  actions: AppDialogActions(
+                    children: [
+                      AppPrimaryButton(
+                        onPressed: () async {
+                          final terminated = await lifecycle
+                              .terminateForPendingRestore();
+                          if (terminated || !dialogContext.mounted) return;
+                          showAppSnackBar(
+                            dialogContext,
+                            i18n.tr('operation_failed_retry'),
+                            tone: AppFeedbackTone.destructive,
+                            icon: Icons.error_outline_rounded,
+                          );
+                        },
+                        icon: Icons.close_rounded,
+                        label: i18n.tr('close_app'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
           }
-          await dialogClosed;
-          ready.dispose();
         }
       },
       retry: _restoreBackup,
-    );
-  }
-
-  Future<void> _terminateForPendingRestore() async {
-    final terminated = await ref
-        .read(appLifecyclePlatformServiceProvider)
-        .terminateForPendingRestore();
-    if (terminated || !mounted) return;
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-    showAppSnackBar(
-      context,
-      i18n.tr('operation_failed_retry'),
-      tone: AppFeedbackTone.destructive,
-      icon: Icons.error_outline_rounded,
     );
   }
 
@@ -277,50 +261,55 @@ class _DataSupportSettingsControlsState
         .isBusy;
     final dataOperationBusy =
         diagnosticsBusy || backupExportBusy || backupRestoreBusy;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          height: 4,
-          child: dataOperationBusy ? const LinearProgressIndicator() : null,
-        ),
-        AppSettingsGroupCard(
-          children: [
-            AppSettingsActionTile(
-              key: const ValueKey('data-support-export-backup'),
-              title: i18n.tr('export_backup'),
-              icon: Icons.archive_outlined,
-              busy: backupExportBusy,
-              onTap: dataOperationBusy ? null : _exportBackup,
-            ),
-            AppSettingsActionTile(
-              key: const ValueKey('data-support-restore-backup'),
-              title: i18n.tr('restore_backup'),
-              icon: Icons.settings_backup_restore_rounded,
-              busy: backupRestoreBusy,
-              onTap: dataOperationBusy ? null : _restoreBackup,
-            ),
-            AppSettingsActionTile(
-              key: const ValueKey('data-support-export-diagnostics'),
-              title: i18n.tr('export_diagnostics'),
-              icon: Icons.support_agent_rounded,
-              busy: diagnosticsBusy,
-              onTap: dataOperationBusy ? null : _exportDiagnostics,
-            ),
-            AppSettingsActionTile(
-              key: const ValueKey('data-support-privacy-summary'),
-              title: i18n.tr('privacy_summary_title'),
-              icon: Icons.privacy_tip_outlined,
-              onTap: () => Navigator.of(context).push(
-                buildAppPageRoute<void>(
-                  context: context,
-                  child: const PrivacySummaryPage(),
-                ),
+    return PopScope(
+      canPop: !backupRestoreBusy,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            height: 4,
+            child: dataOperationBusy ? const LinearProgressIndicator() : null,
+          ),
+          AppSettingsGroupCard(
+            children: [
+              AppSettingsActionTile(
+                key: const ValueKey('data-support-export-backup'),
+                title: i18n.tr('export_backup'),
+                icon: Icons.archive_outlined,
+                busy: backupExportBusy,
+                onTap: dataOperationBusy ? null : _exportBackup,
               ),
-            ),
-          ],
-        ),
-      ],
+              AppSettingsActionTile(
+                key: const ValueKey('data-support-restore-backup'),
+                title: i18n.tr('restore_backup'),
+                icon: Icons.settings_backup_restore_rounded,
+                busy: backupRestoreBusy,
+                onTap: dataOperationBusy ? null : _restoreBackup,
+              ),
+              AppSettingsActionTile(
+                key: const ValueKey('data-support-export-diagnostics'),
+                title: i18n.tr('export_diagnostics'),
+                icon: Icons.support_agent_rounded,
+                busy: diagnosticsBusy,
+                onTap: dataOperationBusy ? null : _exportDiagnostics,
+              ),
+              AppSettingsActionTile(
+                key: const ValueKey('data-support-privacy-summary'),
+                title: i18n.tr('privacy_summary_title'),
+                icon: Icons.privacy_tip_outlined,
+                onTap: backupRestoreBusy
+                    ? null
+                    : () => Navigator.of(context).push(
+                        buildAppPageRoute<void>(
+                          context: context,
+                          child: const PrivacySummaryPage(),
+                        ),
+                      ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

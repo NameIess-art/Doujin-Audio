@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,6 +23,73 @@ import 'support/test_persistence_repository.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+    'taskbar thumbnail crops the focused cover and clears without a card',
+    () async {
+      const channel = MethodChannel('test/taskbar_cover');
+      final calls = <MethodCall>[];
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return <String, Object?>{'ok': true, 'value': null};
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+      final temp = await Directory.systemTemp.createTemp('taskbar_cover');
+      addTearDown(() => temp.delete(recursive: true));
+
+      final recorder = ui.PictureRecorder();
+      final canvas = ui.Canvas(recorder);
+      canvas.drawColor(const ui.Color(0xffff0000), ui.BlendMode.src);
+      canvas.drawRect(
+        const ui.Rect.fromLTWH(160, 0, 320, 240),
+        ui.Paint()..color = const ui.Color(0xff0000ff),
+      );
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(640, 240);
+      final png = (await image.toByteData(format: ui.ImageByteFormat.png))!;
+      image.dispose();
+      picture.dispose();
+      final cover = await File(
+        '${temp.path}/封面.png',
+      ).writeAsBytes(png.buffer.asUint8List());
+      final service = NotificationsPlatformService(
+        channel: channel,
+        isWindowsOverride: true,
+      );
+      final items = [
+        {'id': 'first'},
+        {'id': 'focused', 'artPath': cover.path},
+      ];
+      final payload = {'mainSessionId': 'focused', 'items': items};
+      expect(
+        (await service.syncUnifiedPlaybackNotifications(payload)).isOk,
+        true,
+      );
+      final pixels =
+          (calls.single.arguments as Map)['taskbarCover'] as Uint8List;
+      expect(pixels.length, 320 * 240 * 4);
+      expect(pixels.sublist(0, 4), [0, 0, 255, 255]);
+      expect(pixels.sublist(pixels.length - 4), [0, 0, 255, 255]);
+
+      await service.syncUnifiedPlaybackNotifications(payload);
+      expect(
+        (calls.last.arguments as Map).containsKey('taskbarCover'),
+        isFalse,
+      );
+      await service.syncUnifiedPlaybackNotifications({
+        'mainSessionId': 'first',
+        'items': items,
+      });
+      expect(calls.last.arguments, containsPair('taskbarCover', null));
+      await service.syncUnifiedPlaybackNotifications(payload);
+      await service.clearUnifiedPlaybackNotifications();
+      expect(calls.last.method, 'clearUnifiedPlaybackNotifications');
+      await service.syncUnifiedPlaybackNotifications(payload);
+      expect((calls.last.arguments as Map)['taskbarCover'], isA<Uint8List>());
+    },
+  );
 
   test('remote session cover checks and payloads use owned metadata', () async {
     final service = _RecordingPlaybackNotificationService();
@@ -403,8 +472,7 @@ void main() {
       resolvedPaths.clear();
 
       fixture.facade.setFocusedSession(other.id);
-      fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await Future<void>.delayed(const Duration(milliseconds: 120));
       expect(service.syncCount, 3);
       expect(service.payloads.last['mainSessionId'], other.id);
       expect(resolvedPaths, isEmpty);

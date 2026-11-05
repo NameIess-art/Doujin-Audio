@@ -393,7 +393,7 @@ class SessionListCard extends ConsumerWidget {
   final LibraryFacade library;
   final PlaybackFacade playback;
   final bool isTemporary;
-  final VoidCallback onOpen;
+  final ValueChanged<BuildContext> onOpen;
   final bool isSelectionMode;
   final bool isSelected;
   final bool isPinned;
@@ -478,7 +478,7 @@ class SessionListCard extends ConsumerWidget {
                   AppInteractionFeedback.trigger(
                     AppInteractionFeedbackType.tap,
                   );
-                  onOpen();
+                  onOpen(context);
                 }
               },
               onLongPress: () {
@@ -538,7 +538,9 @@ class SessionListCard extends ConsumerWidget {
                         button: true,
                         selected: isSelectionMode ? isSelected : null,
                         label: i18n.tr('open_playback_details'),
-                        onTap: isSelectionMode ? onToggleSelect : onOpen,
+                        onTap: isSelectionMode
+                            ? onToggleSelect
+                            : () => onOpen(context),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisAlignment: MainAxisAlignment.center,

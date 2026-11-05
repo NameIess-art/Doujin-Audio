@@ -979,6 +979,55 @@ void main() {
   );
 
   test(
+    'resuming audio keeps the last duration and position until restore seek finishes',
+    () async {
+      const position = Duration(seconds: 45);
+      const duration = Duration(minutes: 5);
+      await prepare('one');
+      players.single.loaded();
+      await bridge.seek('one', position);
+      await bridge.pause('one');
+
+      final snapshots = <NativePlaybackSnapshot>[];
+      final progress = <NativePlaybackProgressUpdate>[];
+      final snapshotSub = bridge.snapshots.listen(snapshots.add);
+      final progressSub = bridge.progressUpdates.listen(progress.add);
+      addTearDown(snapshotSub.cancel);
+      addTearDown(progressSub.cancel);
+      final resumed = (await bridge.play('one')).valueOrNull!;
+      await Future<void>.delayed(Duration.zero);
+      final player = players.last;
+      final seekGate = player.seekGate = Completer<void>();
+      final seekStarted = player.seekStarted = Completer<void>();
+      player.loaded();
+      await seekStarted.future;
+      try {
+        player.emitPosition(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+      } finally {
+        seekGate.complete();
+      }
+      await bridge.setVolume('one', 1);
+      final nextPosition = position + const Duration(seconds: 1);
+      player.emitPosition(nextPosition);
+      await Future<void>.delayed(Duration.zero);
+      expect(resumed.duration, duration);
+      expect(snapshots, isNotEmpty);
+      expect(
+        snapshots.map((sample) => sample.duration),
+        everyElement(duration),
+      );
+      expect(
+        progress.map((sample) => sample.position),
+        everyElement(greaterThanOrEqualTo(position)),
+      );
+      expect(progress.last.position, nextPosition);
+      expect(player.seeks, [position]);
+      expect(player.state.playing, isTrue);
+    },
+  );
+
+  test(
     'a superseded restore seek cannot autoplay the previous source',
     () async {
       await prepare('one', position: const Duration(seconds: 22));
@@ -2824,6 +2873,10 @@ class _Player extends PlatformPlayer {
     if (seekStarted?.isCompleted == false) seekStarted!.complete();
     await seekGate?.future;
     if (seekError != null) throw seekError!;
+    emitPosition(position);
+  }
+
+  void emitPosition(Duration position) {
     state = state.copyWith(position: position);
     positionController.add(position);
   }

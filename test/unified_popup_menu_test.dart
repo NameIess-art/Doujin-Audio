@@ -7,6 +7,7 @@ import 'package:doujin_audio/app/presentation/work_detail_navigation.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_entries.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_entry_tile.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,6 +18,120 @@ void main() {
   final coordinator = UiInteractionCoordinator.instance;
   setUp(coordinator.resetForTest);
   tearDown(coordinator.resetForTest);
+
+  for (final side in [Alignment.centerLeft, Alignment.centerRight]) {
+    for (final mode in ['button', 'dock', 'context']) {
+      testWidgets(
+        'single-column $mode menu follows the $side entry within its page',
+        (tester) async {
+          const entries = [
+            UnifiedMenuEntry.action(value: 1, label: 'Short'),
+            UnifiedMenuEntry.action(value: 2, label: 'A much longer option'),
+          ];
+          await tester.pumpWidget(
+            MaterialApp(
+              home: Align(
+                alignment: Alignment.centerRight,
+                child: SizedBox(
+                  width: 300,
+                  child: Navigator(
+                    onGenerateRoute: (_) => MaterialPageRoute<void>(
+                      builder: (context) => Scaffold(
+                        body: Align(
+                          alignment: side,
+                          child: Builder(
+                            builder: (context) => mode == 'button'
+                                ? UnifiedPopupMenuButton<int>(
+                                    icon: Icons.more_vert,
+                                    tooltip: 'Open aligned menu',
+                                    entries: entries,
+                                    onSelected: (_) {},
+                                  )
+                                : TextButton(
+                                    onPressed: () {
+                                      final anchor =
+                                          context.findRenderObject()!
+                                              as RenderBox;
+                                      final overlay =
+                                          Overlay.of(
+                                                context,
+                                              ).context.findRenderObject()!
+                                              as RenderBox;
+                                      final rect =
+                                          anchor.localToGlobal(Offset.zero) &
+                                          anchor.size;
+                                      unawaited(
+                                        mode == 'context'
+                                            ? showUnifiedContextMenu<int>(
+                                                context: context,
+                                                globalPosition: rect.center,
+                                                entries: entries,
+                                              )
+                                            : showDockAwareMenu<int>(
+                                                context: context,
+                                                position: RelativeRect.fromRect(
+                                                  rect.shift(
+                                                    -overlay.localToGlobal(
+                                                      Offset.zero,
+                                                    ),
+                                                  ),
+                                                  Offset.zero & overlay.size,
+                                                ),
+                                                entries: entries,
+                                              ),
+                                      );
+                                    },
+                                    child: const Text('Open aligned menu'),
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.tap(
+            find.byTooltip('Open aligned menu').evaluate().isEmpty
+                ? find.text('Open aligned menu')
+                : find.byTooltip('Open aligned menu'),
+          );
+          await tester.pumpAndSettle();
+          Rect glyphBounds(String label) {
+            final paragraph = tester.renderObject<RenderParagraph>(
+              find.descendant(
+                of: find.text(label),
+                matching: find.byType(RichText),
+              ),
+            );
+            final bounds = paragraph
+                .getBoxesForSelection(
+                  TextSelection(baseOffset: 0, extentOffset: label.length),
+                )
+                .map((box) => box.toRect())
+                .reduce((a, b) => a.expandToInclude(b));
+            return bounds.shift(paragraph.localToGlobal(Offset.zero));
+          }
+
+          final short = glyphBounds('Short');
+          final long = glyphBounds('A much longer option');
+          if (side == Alignment.centerLeft) {
+            expect(short.left, closeTo(long.left, 0.01));
+          } else {
+            expect(short.right, closeTo(long.right, 0.01));
+          }
+          await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+          await tester.pumpAndSettle();
+          expect(find.text('Short'), findsNothing);
+        },
+        variant: const TargetPlatformVariant({
+          TargetPlatform.android,
+          TargetPlatform.windows,
+        }),
+      );
+    }
+  }
 
   for (final brightness in Brightness.values) {
     testWidgets(

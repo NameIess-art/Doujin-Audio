@@ -389,15 +389,17 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
       expandedDockWidth: expandedWidth,
       presentation: ActiveSessionCarouselPresentation.embedded,
       isPlaybackRaised: widget.isPlaybackRaised,
-      onOpenSession: (sessionId) {
+      onOpenSession: (sessionId, coverOrigin) {
         if (!widget.isPlaybackExpanded && !widget.isPlaybackRaised) {
           widget.onShowPlayback();
           return;
         }
-        Navigator.of(
-          context,
-          rootNavigator: true,
-        ).push(buildSessionDetailRoute(sessionId: sessionId));
+        Navigator.of(context, rootNavigator: true).push(
+          buildSessionDetailRoute(
+            sessionId: sessionId,
+            coverOrigin: coverOrigin,
+          ),
+        );
       },
     );
   }

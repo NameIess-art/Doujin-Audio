@@ -14,13 +14,14 @@ class _ActiveSessionCard extends ConsumerWidget {
     this.circularCover = false,
     required this.indicatorIndex,
     this.isPlaybackRaised = false,
+    required this.isRoutedDock,
   });
 
   final PlaybackSessionSnapshot session;
   final int position;
   final int count;
 
-  final VoidCallback onOpen;
+  final ValueChanged<BuildContext> onOpen;
   final bool compact;
   final bool embedded;
   final double? expandedDockWidth;
@@ -28,6 +29,7 @@ class _ActiveSessionCard extends ConsumerWidget {
   final bool circularCover;
   final ValueListenable<int> indicatorIndex;
   final bool isPlaybackRaised;
+  final bool isRoutedDock;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
@@ -105,8 +107,9 @@ class _ActiveSessionCard extends ConsumerWidget {
               shape: const CircleBorder(),
               child: AppEntryInkWell(
                 customBorder: const CircleBorder(),
-                onTap: onOpen,
+                onTap: () => onOpen(context),
                 child: _ActiveSessionCover(
+                  isRoutedDock: isRoutedDock,
                   sessionId: session.id,
                   session: session,
                   track: currentTrack,
@@ -151,7 +154,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                   : const StadiumBorder())
             : null,
         borderRadius: embedded ? null : BorderRadius.circular(cardRadius),
-        onTap: onOpen,
+        onTap: () => onOpen(context),
         child: Ink(
           height: cardHeight,
           decoration: BoxDecoration(
@@ -193,6 +196,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: _ActiveSessionCover(
+                      isRoutedDock: isRoutedDock,
                       sessionId: session.id,
                       session: session,
                       track: currentTrack,
@@ -206,6 +210,7 @@ class _ActiveSessionCard extends ConsumerWidget {
               ? (showCover
                     ? Center(
                         child: _ActiveSessionCover(
+                          isRoutedDock: isRoutedDock,
                           sessionId: session.id,
                           session: session,
                           track: currentTrack,
@@ -324,11 +329,12 @@ class _ActiveSessionCard extends ConsumerWidget {
             child: Semantics(
               button: true,
               label: i18n.tr('open_playback_details'),
-              onTap: onOpen,
+              onTap: () => onOpen(context),
               child: Row(
                 children: [
                   if (showCover) ...[
                     _ActiveSessionCover(
+                      isRoutedDock: isRoutedDock,
                       sessionId: session.id,
                       session: session,
                       track: currentTrack,
@@ -720,7 +726,7 @@ class _ActiveSessionCover extends ConsumerWidget {
     required this.sessionId,
     this.session,
     required this.track,
-
+    required this.isRoutedDock,
     this.dimension,
     this.activeColor,
   });
@@ -728,6 +734,7 @@ class _ActiveSessionCover extends ConsumerWidget {
   final String sessionId;
   final PlaybackSessionSnapshot? session;
   final MusicTrack? track;
+  final bool isRoutedDock;
 
   final double? dimension;
   final Color? activeColor;
@@ -756,20 +763,27 @@ class _ActiveSessionCover extends ConsumerWidget {
         sessionId: sessionId,
         activeColor: effectiveColor,
         size: d,
-        child: CoverArtworkFrame(
-          borderRadius: BorderRadius.circular(innerD / 2),
-          child: AsyncLocalCoverImage(
-            onImageError:
-                library.coverArtworkCacheService.reportArtworkReadFailure,
-            future: coverFuture,
-            requestKey: (sessionId, track?.path),
-            initialPath: library.resolvedPlaybackCoverPathForTrack(track),
-            retryFutureBuilder: () =>
-                library.playbackCoverPathFutureForTrack(track),
-            cacheWidth: coverCacheWidth,
-            useDefaultCacheWidth: false,
-            deferLoadDuringInteraction: true,
-            fit: BoxFit.cover,
+        child: SessionCoverAnchor(
+          sessionId: sessionId,
+          radius: innerD / 2,
+          location: isRoutedDock
+              ? SessionCoverLocation.routedDock
+              : SessionCoverLocation.dock,
+          child: CoverArtworkFrame(
+            borderRadius: BorderRadius.circular(innerD / 2),
+            child: AsyncLocalCoverImage(
+              onImageError:
+                  library.coverArtworkCacheService.reportArtworkReadFailure,
+              future: coverFuture,
+              requestKey: (sessionId, track?.path),
+              initialPath: library.resolvedPlaybackCoverPathForTrack(track),
+              retryFutureBuilder: () =>
+                  library.playbackCoverPathFutureForTrack(track),
+              cacheWidth: coverCacheWidth,
+              useDefaultCacheWidth: false,
+              deferLoadDuringInteraction: true,
+              fit: BoxFit.cover,
+            ),
           ),
         ),
       ),

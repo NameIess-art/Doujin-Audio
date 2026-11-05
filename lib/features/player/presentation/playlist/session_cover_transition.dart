@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/widgets/async_cover_image.dart';
+
 final sessionCoverTargetsProvider = Provider(
   (ref) => <SessionCoverAnchorState>{},
 );
@@ -104,29 +106,33 @@ class SessionCoverAnchorState extends ConsumerState<SessionCoverAnchor> {
     final box = _box;
     if (box == null || !widget.enabled) return null;
     final imageKey = widget.imageKey;
-    if (imageKey == null) return _decodedImageBelow(box);
-    RenderObject? imageBox;
+    ui.Image? image;
     void visit(Element element) {
-      if (imageBox != null) return;
-      if (element.widget.key == imageKey) {
-        imageBox = element.findRenderObject();
+      if (image != null) return;
+      // A placeholder's asset is tinted and backed by a themed surface.
+      // Reusing its raw image as artwork loses that styling in the detail page.
+      if (element.widget is CoverFallbackArtwork) return;
+      if (element.widget case RawImage(image: final decoded?)) {
+        for (var child = element.renderObject!; child != box;) {
+          final parent = child.parent;
+          if (parent == null || !parent.paintsChild(child)) return;
+          child = parent;
+        }
+        image = decoded;
         return;
       }
       element.visitChildren(visit);
     }
 
-    context.visitChildElements(visit);
-    return imageBox == null ? null : _decodedImageBelow(imageBox!);
-  }
-
-  ui.Image? _decodedImageBelow(RenderObject root) {
-    if (root is RenderImage) return root.image;
-    ui.Image? image;
-    root.visitChildren((child) {
-      if (image == null && root.paintsChild(child)) {
-        image = _decodedImageBelow(child);
+    void findImage(Element element) {
+      if (imageKey == null || element.widget.key == imageKey) {
+        visit(element);
+      } else {
+        element.visitChildren(findImage);
       }
-    });
+    }
+
+    context.visitChildElements(findImage);
     return image;
   }
 

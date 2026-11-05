@@ -49,16 +49,13 @@ DoujinAudio-windows-x64-<tag>-setup.exe.sha256
 
 <table>
   <tr>
-    <td colspan="2" align="center" valign="top"><strong>本地作品库</strong><br><img src="docs/screenshots/local-library.png" alt="本地作品库页面" width="260"></td>
-    <td colspan="2" align="center" valign="top"><strong>作品详细信息</strong><br><img src="docs/screenshots/work-details.png" alt="作品详细信息页" width="260"></td>
-    <td colspan="2" align="center" valign="top"><strong>播放列表</strong><br><img src="docs/screenshots/playlists.png" alt="播放列表页面" width="260"></td>
+    <td colspan="2" align="center" valign="top"><strong>本地作品库</strong><br><img src="docs/screenshots/local-library.jpg" alt="本地作品库页面" width="260"></td>
+    <td colspan="2" align="center" valign="top"><strong>作品详细信息</strong><br><img src="docs/screenshots/work-details.jpg" alt="作品详细信息页" width="260"></td>
+    <td colspan="2" align="center" valign="top"><strong>播放列表</strong><br><img src="docs/screenshots/playlists.jpg" alt="播放列表页面" width="260"></td>
   </tr>
   <tr>
-    <td colspan="2" rowspan="2" align="center" valign="top"><strong>播放详情（竖屏）</strong><br><img src="docs/screenshots/playback-details.png" alt="竖屏播放详细页" width="260"></td>
-    <td colspan="4" align="center" valign="top"><strong>播放详情（横屏）</strong><br><img src="docs/screenshots/playback-landscape.png" alt="横屏播放详细页" width="540"></td>
-  </tr>
-  <tr>
-    <td colspan="4" align="center" valign="top"><strong>本地作品库与作品详情（横屏）</strong><br><img src="docs/screenshots/library-landscape.png" alt="横屏本地作品库与作品详情" width="540"></td>
+    <td colspan="2" align="center" valign="top"><strong>播放详情（竖屏）</strong><br><img src="docs/screenshots/playback-details.jpg" alt="竖屏播放详细页" width="260"></td>
+    <td colspan="4" align="center" valign="top"><strong>播放详情（横屏）</strong><br><img src="docs/screenshots/playback-landscape.jpg" alt="横屏播放详细页" width="540"></td>
   </tr>
 </table>
 

@@ -27,6 +27,9 @@ import android.os.Process
 import android.view.View
 import android.view.WindowInsetsController
 import android.view.animation.AccelerateDecelerateInterpolator
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.android.RenderMode
 import io.flutter.embedding.engine.FlutterEngine
@@ -56,6 +59,30 @@ open class MainActivity : FlutterFragmentActivity() {
         super.onCreate(savedInstanceState)
         applyStartupWindowTheme()
         setupSplashScreenExitAnimation()
+        if (BuildConfig.SCREENSHOT_MODE) {
+            // Flutter restores edge-to-edge after page transitions and keyboard
+            // dismissal. Reapply the screenshot policy when those insets change.
+            window.decorView.setOnApplyWindowInsetsListener { view, insets ->
+                hideScreenshotStatusBar()
+                view.onApplyWindowInsets(insets)
+            }
+            hideScreenshotStatusBar()
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && BuildConfig.SCREENSHOT_MODE) {
+            hideScreenshotStatusBar()
+        }
+    }
+
+    private fun hideScreenshotStatusBar() {
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.statusBars())
+        }
     }
 
     override fun getRenderMode(): RenderMode = RenderMode.surface

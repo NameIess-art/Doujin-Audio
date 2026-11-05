@@ -52,6 +52,7 @@ import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:doujin_audio/core/platform/app_lifecycle_platform_service.dart';
 import 'package:doujin_audio/core/platform/windows_desktop_service.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/ui/cover_image_retention.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/core/ui/warmup_scheduler.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
@@ -2179,13 +2180,83 @@ void main() {
     },
   );
 
+  testWidgets('playback detail preserves the shared cover placeholder', (
+    tester,
+  ) async {
+    _setLogicalTestViewSize(
+      tester,
+      defaultTargetPlatform == TargetPlatform.windows
+          ? const Size(1280, 800)
+          : const Size(390, 820),
+    );
+    await _pumpAppShell(tester);
+    final source = find.byWidgetPredicate(
+      (widget) => widget is SessionCoverAnchor && widget.isDock,
+    );
+    final placeholder = find.descendant(
+      of: source,
+      matching: find.byType(CoverFallbackArtwork),
+    );
+    final decodedPlaceholder = find.descendant(
+      of: placeholder,
+      matching: find.byWidgetPredicate(
+        (widget) => widget is RawImage && widget.image != null,
+      ),
+    );
+    for (
+      var attempt = 0;
+      attempt < 30 && decodedPlaceholder.evaluate().isEmpty;
+      attempt++
+    ) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(decodedPlaceholder, findsOneWidget);
+    final anchor = tester.state<SessionCoverAnchorState>(source);
+    expect(anchor.decodedImage, isNull);
+    final route = SessionDetailRoute(
+      sessionId: anchor.widget.sessionId,
+      source: anchor,
+      sourceTrackPath: '/audio/uncovered.mp3',
+    );
+    expect(route.coverPreviewFor('/audio/uncovered.mp3'), isNull);
+    unawaited(
+      Navigator.of(tester.element(source), rootNavigator: true).push(route),
+    );
+    await _pumpMainScreenAnimations(tester);
+    final detailCover = find.byKey(
+      ValueKey('session_detail_cover_${anchor.widget.sessionId}'),
+    );
+    expect(detailCover, findsOneWidget);
+    expect(
+      find.descendant(of: detailCover, matching: find.byType(CoverFallbackArtwork)),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('session_detail_cover_preview')),
+      findsNothing,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+  }, variant: const TargetPlatformVariant({
+    TargetPlatform.android,
+    TargetPlatform.windows,
+  }));
+
   testWidgets('Android main dock preserves cover flights across metrics events', (
     tester,
   ) async {
     _setLogicalTestViewSize(tester, const Size(390, 820));
     final cover = (await tester.runAsync(() async {
       final folder = await Directory.systemTemp.createTemp('dock-cover-');
-      addTearDown(() => folder.delete(recursive: true));
+      addTearDown(() async {
+        releaseRetainedCoverImages();
+        PaintingBinding.instance.imageCache.clear();
+        PaintingBinding.instance.imageCache.clearLiveImages();
+        await tester.runAsync(() => folder.delete(recursive: true));
+      });
       final recorder = ui.PictureRecorder();
       ui.Canvas(recorder).drawColor(Colors.red, ui.BlendMode.src);
       final picture = recorder.endRecording();
@@ -2205,7 +2276,7 @@ void main() {
         groupKey: '/audio',
         groupTitle: 'Audio',
         groupSubtitle: '',
-        isSingle: false,
+        isSingle: true,
       ),
     );
     final source = find.byWidgetPredicate(
@@ -2256,6 +2327,10 @@ void main() {
     await _settleSessionDetailAsyncWork(tester);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+    await tester.pump(const Duration(seconds: 6));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
   }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 
   testWidgets('closing playback detail fades over its previous page', (

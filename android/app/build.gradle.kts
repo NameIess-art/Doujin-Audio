@@ -36,6 +36,9 @@ val parallelProfileInstall = providers
     .gradleProperty("parallelProfileInstall")
     .map(String::toBoolean)
     .getOrElse(true)
+val screenshotMode = providers.gradleProperty("screenshotMode")
+    .map(String::toBooleanStrict)
+    .getOrElse(false)
 
 val validateReleaseSigning by tasks.registering {
     group = "verification"
@@ -64,6 +67,10 @@ android {
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "28.2.13676358"
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -80,6 +87,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        buildConfigField("boolean", "SCREENSHOT_MODE", screenshotMode.toString())
     }
 
     lint {

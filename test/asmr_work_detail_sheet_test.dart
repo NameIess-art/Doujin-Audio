@@ -1161,7 +1161,7 @@ void main() {
   );
 
   testWidgets(
-    'Windows metadata copies with right click only',
+    'Windows metadata copies on tap and context menu',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(600, 1000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -1204,9 +1204,7 @@ void main() {
       final text = find.text('Test circle');
       await tester.ensureVisible(text);
       await tester.tap(text);
-      expect(copied, isEmpty);
-      await tester.longPress(text);
-      expect(copied, isEmpty);
+      expect(copied, ['Test circle']);
       final click = await tester.startGesture(
         tester.getCenter(text),
         kind: PointerDeviceKind.mouse,
@@ -1214,10 +1212,10 @@ void main() {
       );
       await click.up();
       await tester.pumpAndSettle();
-      expect(copied, isEmpty);
+      expect(copied, ['Test circle']);
       await tester.tap(find.text(fixture.languageProvider.tr('element_copy')));
       await tester.pumpAndSettle();
-      expect(copied, ['Test circle']);
+      expect(copied, ['Test circle', 'Test circle']);
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );

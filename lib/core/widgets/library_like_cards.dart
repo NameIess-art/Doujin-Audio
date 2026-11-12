@@ -472,13 +472,17 @@ Widget _libraryLikeSecondaryInfo(
   Widget? trailingActions,
 }) {
   final theme = Theme.of(context);
-  final color = theme.colorScheme.onSurfaceVariant;
+  final color = theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6);
   final style = theme.platform == TargetPlatform.windows
-      ? theme.textTheme.bodySmall!.copyWith(color: color)
+      ? theme.textTheme.bodySmall!.copyWith(
+          fontSize: 11,
+          fontWeight: FontWeight.w400,
+          color: color,
+        )
       : TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w400,
-          color: color.withValues(alpha: 0.6),
+          color: color,
         );
   return SizedBox(
     height: _libraryLikeInfoLineHeight,

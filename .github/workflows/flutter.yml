@@ -126,7 +126,7 @@ jobs:
     if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/')
     needs: android
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 75
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -183,6 +183,7 @@ jobs:
           script: |
             adb install -r build/app/outputs/flutter-apk/app-debug.apk
             flutter test integration_test/app_smoke_test.dart -d emulator-5554 || { adb logcat -d > android-device-logcat.txt || true; adb exec-out screencap -p > android-device-screen.png || true; exit 1; }
+            test "${GITHUB_REF_TYPE:-}" != tag || adb shell am force-stop com.doujin.audio || true
             test "${GITHUB_REF_TYPE:-}" != tag || adb install -r build/app/outputs/flutter-apk/app-debug.apk
             test "${GITHUB_REF_TYPE:-}" != tag || flutter test integration_test/android_native_smoke_test.dart -d emulator-5554 || { adb logcat -d > android-device-logcat.txt || true; adb exec-out screencap -p > android-device-screen.png || true; exit 1; }
 

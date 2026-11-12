@@ -198,18 +198,18 @@ void main() {
       NavigationRail rail() =>
           tester.widget<NavigationRail>(find.byType(NavigationRail));
       expect(rail().destinations.length, 5);
-      expect(
-        (rail().destinations[3].label as Text).data,
-        harness.language.tr('nav_my'),
+      final myLabel = find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.text(harness.language.tr('nav_my')),
       );
-      expect(
-        (rail().destinations[4].label as Text).data,
-        harness.language.tr('nav_settings'),
+      final settingsLabel = find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.text(harness.language.tr('nav_settings')),
       );
+      expect(myLabel, findsOneWidget);
+      expect(settingsLabel, findsOneWidget);
       if (size.height < 400) {
-        await tester.ensureVisible(
-          find.text(harness.language.tr('nav_settings')).first,
-        );
+        await tester.ensureVisible(settingsLabel);
         await _pumpMainScreenAnimations(tester);
         await tester.tap(
           find.byKey(const ValueKey('main_destination_nav_settings')),
@@ -4241,8 +4241,7 @@ void main() {
         ],
       ),
     );
-    await tester.pump();
-    await tester.pump();
+    await _waitForAsmrContent(tester);
     expect(find.text('Loaded work', findRichText: true), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey<String>('asmr_search_button')));
@@ -4289,8 +4288,7 @@ void main() {
         ],
       ),
     );
-    await tester.pump();
-    await tester.pump();
+    await _waitForAsmrContent(tester);
 
     final workTitle = find.text('Loaded work', findRichText: true);
     expect(workTitle, findsOneWidget);

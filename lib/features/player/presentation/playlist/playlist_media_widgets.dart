@@ -10,6 +10,7 @@ import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/ui/visual_settings_providers.dart';
+import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/async_cover_image.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../playback_position_ui_gate.dart';
@@ -30,6 +31,7 @@ class SessionHeroArtwork extends ConsumerWidget {
     this.initialCoverPath,
     this.coverAnchorKey,
     this.coverPreview,
+    this.coverLanded = true,
     this.mountVideoSurface = true,
   });
 
@@ -40,6 +42,7 @@ class SessionHeroArtwork extends ConsumerWidget {
   final String? initialCoverPath;
   final GlobalKey<SessionCoverAnchorState>? coverAnchorKey;
   final ui.Image? coverPreview;
+  final bool coverLanded;
   final bool mountVideoSurface;
 
   @override
@@ -53,6 +56,41 @@ class SessionHeroArtwork extends ConsumerWidget {
     final videoReady =
         allowVideoPlayback && isSessionVideoReady(session, track);
     final coverResolution = ref.watch(coverImageResolutionProvider);
+    final preview = coverPreview == null
+        ? null
+        : RawImage(
+            key: const ValueKey('session_detail_cover_preview'),
+            image: coverPreview,
+            fit: BoxFit.cover,
+          );
+    Widget buildCoverFrame(
+      BuildContext context,
+      Widget child,
+      int? frame,
+      bool synchronous,
+    ) {
+      final ready = coverLanded && (synchronous || frame != null);
+      return TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: ready ? 1 : 0),
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : kAppMotionFast,
+        curve: kAppFadeCurve,
+        child: child,
+        builder: (context, opacity, child) => Stack(
+          fit: StackFit.expand,
+          children: [
+            // Keep the thumbnail opaque under the upgrade.
+            if (opacity < 1) preview!,
+            Opacity(
+              key: const ValueKey('session_detail_cover_upgrade'),
+              opacity: opacity,
+              child: child,
+            ),
+          ],
+        ),
+      );
+    }
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -78,13 +116,8 @@ class SessionHeroArtwork extends ConsumerWidget {
                 cacheWidth: coverCacheWidth,
                 useDefaultCacheWidth: false,
                 fit: BoxFit.cover,
-                fallbackBuilder: coverPreview == null
-                    ? null
-                    : (_) => RawImage(
-                        key: const ValueKey('session_detail_cover_preview'),
-                        image: coverPreview,
-                        fit: BoxFit.cover,
-                      ),
+                fallbackBuilder: preview == null ? null : (_) => preview,
+                resolvedFrameBuilder: preview == null ? null : buildCoverFrame,
               ),
             ),
             Positioned.fill(

@@ -13,34 +13,45 @@ List<Widget> _buildSettingsLanguageSection({
       title: i18n.tr('language'),
       children: [
         ListTile(
-          title: _settingsTitle(i18n.tr('interface_language')),
           leading: _settingsIcon(Icons.language_rounded, cs.primary),
-          trailing: _settingsDropdown<AppLanguagePreference>(
-            context,
-            value: i18n.preference,
-            maxWidth: _interfaceLanguageDropdownMaxWidth,
-            onChanged: (value) {
-              if (value != null) {
-                unawaited(
-                  saveSettingsWithFeedback(
-                    context,
-                    () => i18n.setLanguagePreference(value),
+          // ListTile caps trailing controls at 56px, even when the language
+          // labels wrap. Including the dropdown in the title lets the tile grow.
+          title: LayoutBuilder(
+            builder: (context, constraints) => Row(
+              children: [
+                Expanded(child: _settingsTitle(i18n.tr('interface_language'))),
+                const SizedBox(width: 12),
+                _settingsDropdown<AppLanguagePreference>(
+                  context,
+                  value: i18n.preference,
+                  maxWidth: math.min(
+                    _interfaceLanguageDropdownMaxWidth,
+                    constraints.maxWidth * 0.52,
                   ),
-                );
-              }
-            },
-            items: AppLanguagePreference.values
-                .map(
-                  (preference) => DropdownMenuItem<AppLanguagePreference>(
-                    value: preference,
-                    child: _settingsDropdownText(
-                      preference.explicitLanguage == null
-                          ? i18n.tr('follow_system')
-                          : i18n.languageName(preference.explicitLanguage!),
-                    ),
-                  ),
-                )
-                .toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      unawaited(
+                        saveSettingsWithFeedback(
+                          context,
+                          () => i18n.setLanguagePreference(value),
+                        ),
+                      );
+                    }
+                  },
+                  items: AppLanguagePreference.values.map((preference) {
+                    final language = preference.explicitLanguage;
+                    return DropdownMenuItem<AppLanguagePreference>(
+                      value: preference,
+                      child: _settingsDropdownText(
+                        language == null
+                            ? i18n.tr('follow_system')
+                            : i18n.languageName(language),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: 8),
         ),

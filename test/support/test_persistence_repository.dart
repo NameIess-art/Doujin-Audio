@@ -24,7 +24,7 @@ class TestPersistenceRepository extends SqliteLibraryRepository
   final AppDatabase _database;
   final SqliteAsmrRepository _asmr;
   Future<void> Function()? beforeTimeSegmentLabelUpsert;
-  Future<void> Function()? beforeTimeSegmentLabelLoad;
+  Future<List<TimeSegmentLabel>> Function(String)? timeSegmentLabelLoader;
 
   /// Test seeding supplies complete records, unlike production catalog writes.
   Future<void> upsertTracks(List<MusicTrack> tracks) =>
@@ -71,10 +71,9 @@ class TestPersistenceRepository extends SqliteLibraryRepository
   Future<void> upsertSessionPlaybackState(PersistedPlaybackSession session) =>
       _playback.upsertSessionPlaybackState(session);
   @override
-  Future<List<TimeSegmentLabel>> loadTimeSegmentLabels(String trackKey) async {
-    await beforeTimeSegmentLabelLoad?.call();
-    return _playback.loadTimeSegmentLabels(trackKey);
-  }
+  Future<List<TimeSegmentLabel>> loadTimeSegmentLabels(String trackKey) =>
+      timeSegmentLabelLoader?.call(trackKey) ??
+      _playback.loadTimeSegmentLabels(trackKey);
 
   @override
   Future<void> upsertTimeSegmentLabel(TimeSegmentLabel label) async {

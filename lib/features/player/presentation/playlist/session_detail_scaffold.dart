@@ -362,6 +362,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                               initialCoverPath: widget.initialCoverPath,
                               coverAnchorKey: widget.detailCoverKey,
                               coverPreview: widget.coverPreview,
+                              coverLanded: _coverOverlaysVisible,
                               // Creating the Android platform view can contend
                               // with the entrance. Retain it for the exit.
                               mountVideoSurface:

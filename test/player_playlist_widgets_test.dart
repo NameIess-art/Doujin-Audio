@@ -271,7 +271,12 @@ _pumpSubtitleDetail({
   );
   await tester.pump();
   final content = find.byType(SessionDetailContent);
-  if (!track.isRemoteAsmr && content.evaluate().isNotEmpty) {
+  // Credits are only watched after the cover overlays become active.
+  if (content.evaluate().singleOrNull?.widget
+      case final SessionDetailContent detail
+      when !track.isRemoteAsmr &&
+          detail.showCoverOverlays &&
+          detail.transitionActive?.value != true) {
     final target = fixture.runtimeGraph.library.audioDetailTargetForTrack(
       track,
     );
@@ -1393,16 +1398,16 @@ void main() {
         addTearDown(interaction.resetForTest);
         final busy = ValueNotifier(true);
         addTearDown(busy.dispose);
-        final pending = Completer<void>();
+        final pending = Completer<List<TimeSegmentLabel>>();
         var reads = 0;
         await _pumpSubtitleDetail(
           tester: tester,
           subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
           initialPosition: Duration.zero,
           configureFixture: (fixture) {
-            fixture.persistenceRepository.beforeTimeSegmentLabelLoad = () {
+            fixture.persistenceRepository.timeSegmentLabelLoader = (_) async {
               reads++;
-              return reads == 1 ? pending.future : Future.value();
+              return reads == 1 ? await pending.future : [];
             };
           },
           detailBuilder: (session) => SessionDetailContent(
@@ -1468,6 +1473,19 @@ void main() {
                 isSingle: false,
               ),
           ];
+          final labels = {
+            for (final track in tracks)
+              TimeSegmentLabel.trackKeyFor(track): TimeSegmentLabel(
+                id: 'deferred-${track.displayName}',
+                trackKey: TimeSegmentLabel.trackKeyFor(track),
+                name: '${track.displayName} deferred label',
+                start: Duration.zero,
+                end: const Duration(seconds: 5),
+                colorValue: kTimeSegmentLabelPalette.first,
+                createdAt: DateTime(2026),
+                updatedAt: DateTime(2026),
+              ),
+          };
           final harness = await _pumpSubtitleDetail(
             tester: tester,
             subtitleTrack: SubtitleTrack(
@@ -1477,9 +1495,9 @@ void main() {
             initialPosition: Duration.zero,
             queueTracks: tracks,
             configureFixture: (fixture) {
-              fixture.persistenceRepository.beforeTimeSegmentLabelLoad = () {
+              fixture.persistenceRepository.timeSegmentLabelLoader = (key) async {
                 reads++;
-                return Future.value();
+                return [labels[key]!];
               };
             },
             detailBuilder: (snapshot) {
@@ -1496,23 +1514,6 @@ void main() {
           );
           addTearDown(selected.dispose);
           expect(reads, 0);
-          await tester.runAsync(() async {
-            for (final track in tracks) {
-              await harness.fixture.persistenceRepository
-                  .upsertTimeSegmentLabel(
-                    TimeSegmentLabel(
-                      id: 'deferred-${track.displayName}',
-                      trackKey: TimeSegmentLabel.trackKeyFor(track),
-                      name: '${track.displayName} deferred label',
-                      start: Duration.zero,
-                      end: const Duration(seconds: 5),
-                      colorValue: kTimeSegmentLabelPalette.first,
-                      createdAt: DateTime(2026),
-                      updatedAt: DateTime(2026),
-                    ),
-                  );
-            }
-          });
           tester
               .state<SessionDetailContentState>(
                 find.byType(SessionDetailContent),
@@ -1533,9 +1534,6 @@ void main() {
           await tester.pump(interaction.idleDelay);
           await tester.pump();
           expect(reads, closeBeforeIdle ? 0 : 1);
-          await tester.runAsync(
-            () => Future<void>.delayed(const Duration(milliseconds: 100)),
-          );
           await tester.pumpAndSettle();
           expect(reads, closeBeforeIdle ? 0 : 1);
           expect(find.text('old deferred label'), findsNothing);

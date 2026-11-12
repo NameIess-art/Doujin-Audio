@@ -508,6 +508,7 @@ class LocalCoverImage extends StatelessWidget {
     this.colorBlendMode,
     this.filterQuality = FilterQuality.medium,
     this.fallbackBuilder,
+    this.resolvedFrameBuilder,
   });
 
   final String? path;
@@ -522,6 +523,7 @@ class LocalCoverImage extends StatelessWidget {
   final BlendMode? colorBlendMode;
   final FilterQuality filterQuality;
   final WidgetBuilder? fallbackBuilder;
+  final ImageFrameBuilder? resolvedFrameBuilder;
 
   final ValueChanged<String>? onImageError;
 
@@ -547,6 +549,7 @@ class LocalCoverImage extends StatelessWidget {
       colorBlendMode: colorBlendMode,
       filterQuality: filterQuality,
       fallbackBuilder: fallbackBuilder ?? (_) => const CoverFallbackArtwork(),
+      resolvedFrameBuilder: resolvedFrameBuilder,
     );
   }
 }
@@ -572,6 +575,7 @@ class AsyncLocalCoverImage extends StatelessWidget {
     this.duration = kCoverImageTransitionDuration,
     this.fallbackBuilder,
     this.loadingBuilder,
+    this.resolvedFrameBuilder,
   });
 
   final Future<String?> future;
@@ -591,6 +595,7 @@ class AsyncLocalCoverImage extends StatelessWidget {
   final Duration duration;
   final WidgetBuilder? fallbackBuilder;
   final WidgetBuilder? loadingBuilder;
+  final ImageFrameBuilder? resolvedFrameBuilder;
 
   Widget _cover(String? path) {
     return LocalCoverImage(
@@ -607,6 +612,7 @@ class AsyncLocalCoverImage extends StatelessWidget {
       colorBlendMode: colorBlendMode,
       filterQuality: filterQuality,
       fallbackBuilder: fallbackBuilder,
+      resolvedFrameBuilder: resolvedFrameBuilder,
     );
   }
 
@@ -743,6 +749,7 @@ class RetryingFileImage extends ConsumerWidget {
     required this.path,
     required this.fallbackBuilder,
     this.loadingBuilder,
+    this.resolvedFrameBuilder,
     this.fit,
     this.alignment = Alignment.center,
     this.cacheWidth,
@@ -761,6 +768,7 @@ class RetryingFileImage extends ConsumerWidget {
   final String path;
   final WidgetBuilder fallbackBuilder;
   final WidgetBuilder? loadingBuilder;
+  final ImageFrameBuilder? resolvedFrameBuilder;
   final BoxFit? fit;
   final AlignmentGeometry alignment;
   final int? cacheWidth;
@@ -798,6 +806,7 @@ class RetryingFileImage extends ConsumerWidget {
       ),
       fallbackBuilder: fallbackBuilder,
       loadingBuilder: loadingBuilder,
+      resolvedFrameBuilder: resolvedFrameBuilder,
       fit: fit,
       alignment: alignment,
       color: color,
@@ -823,6 +832,7 @@ class RetryingImage extends StatefulWidget {
     required this.imageProviderBuilder,
     required this.fallbackBuilder,
     this.loadingBuilder,
+    this.resolvedFrameBuilder,
     this.fit,
     this.alignment = Alignment.center,
     this.color,
@@ -841,6 +851,10 @@ class RetryingImage extends StatefulWidget {
   final ImageProvider<Object> Function() imageProviderBuilder;
   final WidgetBuilder fallbackBuilder;
   final WidgetBuilder? loadingBuilder;
+
+  /// Replaces the default frame transition. Cached preview frames are reported
+  /// as pending and errors use [fallbackBuilder].
+  final ImageFrameBuilder? resolvedFrameBuilder;
   final BoxFit? fit;
   final AlignmentGeometry alignment;
   final Color? color;
@@ -1147,12 +1161,13 @@ class _RetryingImageState extends State<RetryingImage> {
   @override
   Widget build(BuildContext context) {
     final requested = widget.imageProviderBuilder();
+    final resolvedFrameBuilder = widget.resolvedFrameBuilder;
     if (_decodeError != null) {
       if (_retryAttempt == 0 && _retryTimer?.isActive != true) {
         widget.onImageError?.call();
       }
       _scheduleRetry(requested);
-      final preview = _previewProvider;
+      final preview = resolvedFrameBuilder == null ? _previewProvider : null;
       final content = preview == null
           ? widget.fallbackBuilder(context)
           : _image(
@@ -1189,6 +1204,7 @@ class _RetryingImageState extends State<RetryingImage> {
           : _loadingArtwork(context);
     }
     final imageProvider = provider ?? requested;
+    final isResolvedProvider = _loadEnabled;
     if (widget.retainInImageCache) restoreRetainedCoverImage(imageProvider);
     final image = _image(
       imageProvider,
@@ -1201,6 +1217,14 @@ class _RetryingImageState extends State<RetryingImage> {
               createLocalImageConfiguration(context),
             );
           }
+        }
+        if (resolvedFrameBuilder != null) {
+          return resolvedFrameBuilder(
+            context,
+            child,
+            isResolvedProvider ? frame : null,
+            isResolvedProvider && wasSynchronouslyLoaded,
+          );
         }
         // Image keeps its previous pixels during an upgrade (gaplessPlayback).
         // Do not cover those pixels with a placeholder while the new decode runs.
@@ -1222,7 +1246,7 @@ class _RetryingImageState extends State<RetryingImage> {
           widget.onImageError?.call();
         }
         _scheduleRetry(imageProvider);
-        final preview = _previewProvider;
+        final preview = resolvedFrameBuilder == null ? _previewProvider : null;
         if (preview != null && preview != imageProvider) {
           restoreRetainedCoverImage(preview);
           return _image(

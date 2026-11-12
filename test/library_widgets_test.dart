@@ -2132,6 +2132,7 @@ void main() {
           height: 180,
           track: track,
           coverPathFuture: SynchronousFuture(coverPath),
+          initialCoverPath: coverPath,
         ),
       ];
       final interaction = Object();

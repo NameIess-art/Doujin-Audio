@@ -214,7 +214,7 @@ void main() {
           final recorder = ui.PictureRecorder();
           ui.Canvas(recorder).drawColor(Colors.red, ui.BlendMode.src);
           final picture = recorder.endRecording();
-          final image = await picture.toImage(16, 16);
+          final image = await picture.toImage(192, 192);
           final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
           image.dispose();
           picture.dispose();
@@ -387,14 +387,37 @@ void main() {
         await tester.pump(const Duration(milliseconds: 200));
         await tester.pump();
         expect(flightFinder, findsNothing);
+        final verifyUpgrade = entry == 'dock' && exitToDock;
+        final previewFinder = find.byKey(
+          const ValueKey('session_detail_cover_preview'),
+        );
+        final upgradeFinder = find.byKey(
+          const ValueKey('session_detail_cover_upgrade'),
+        );
+        if (verifyUpgrade) {
+          expect(enter.image.width, lessThan(192));
+          expect(previewFinder, findsOneWidget);
+          expect(tester.widget<Opacity>(upgradeFinder).opacity, 0);
+        }
         for (final name in ['close', 'title']) {
           expect(overlayOpacity(name), 0);
         }
         await tester.pump(const Duration(milliseconds: 150));
+        if (verifyUpgrade) {
+          expect(previewFinder, findsOneWidget);
+          expect(
+            tester.widget<Opacity>(upgradeFinder).opacity,
+            inExclusiveRange(0, 1),
+          );
+        }
         for (final name in ['close', 'title']) {
           expect(overlayOpacity(name), inExclusiveRange(0, 1));
         }
         await tester.pumpAndSettle();
+        if (verifyUpgrade) {
+          expect(previewFinder, findsNothing);
+          expect(tester.widget<RawImage>(detailImage).image!.width, 192);
+        }
         for (final name in ['close', 'title']) {
           expect(overlayOpacity(name), 1);
         }
@@ -408,6 +431,27 @@ void main() {
             findsOneWidget,
           );
           cache.path = cover.path;
+          if (exitToDock) {
+            cache.invalidateFolder(tracks.last.path);
+            await tester.pump();
+            await tester.pump();
+            expect(previewFinder, findsOneWidget);
+            expect(tester.widget<Opacity>(upgradeFinder).opacity, 0);
+            for (
+              var frame = 0;
+              frame < 6 && tester.widget<Opacity>(upgradeFinder).opacity == 0;
+              frame++
+            ) {
+              await tester.pump(const Duration(milliseconds: 16));
+            }
+            expect(
+              tester.widget<Opacity>(upgradeFinder).opacity,
+              inExclusiveRange(0, 1),
+            );
+            await tester.pumpAndSettle();
+            expect(previewFinder, findsNothing);
+            expect(tester.widget<RawImage>(detailImage).image!.width, 192);
+          }
         }
 
         if (!exitToDock) {

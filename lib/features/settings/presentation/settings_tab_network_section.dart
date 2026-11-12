@@ -186,7 +186,6 @@ class _NetworkSettingsControlsState
                   child: UnifiedDropdownButton<String>(
                     value: state.asmrApiDomain,
                     key: ValueKey(state.asmrApiDomain),
-                    isExpanded: true,
                     items: [
                       for (final domain in asmrApiDomains)
                         DropdownMenuItem(

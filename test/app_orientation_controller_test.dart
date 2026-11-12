@@ -134,6 +134,65 @@ void main() {
   );
 
   test(
+    'entering bedtime canvas from playback detail keeps immersiveSticky and returns to playback detail without showing status bar',
+    () async {
+      final uiModeCalls = <SystemUiMode>[];
+      final controller = AppOrientationController(
+        setPreferredOrientations: (_) async {},
+        setSystemUiMode: (mode) async => uiModeCalls.add(mode),
+      );
+
+      // 1. Enter playback detail
+      await controller.updateTopRoute(playbackDetailVisible: true);
+      expect(uiModeCalls, <SystemUiMode>[SystemUiMode.immersiveSticky]);
+
+      // 2. Open bedtime canvas over playback detail
+      await controller.updateTopRoute(
+        playbackDetailVisible: false,
+        bedtimeCanvasVisible: true,
+      );
+      // Mode should NOT switch to edgeToEdge; it stays immersiveSticky
+      expect(uiModeCalls, <SystemUiMode>[SystemUiMode.immersiveSticky]);
+
+      // 3. Exit bedtime canvas back to playback detail
+      await controller.updateTopRoute(
+        playbackDetailVisible: true,
+      );
+      // Mode should STILL be immersiveSticky
+      expect(uiModeCalls, <SystemUiMode>[SystemUiMode.immersiveSticky]);
+
+      // 4. Finally close playback detail
+      await controller.updateTopRoute(
+        playbackDetailVisible: false,
+      );
+      expect(uiModeCalls, <SystemUiMode>[
+        SystemUiMode.immersiveSticky,
+        SystemUiMode.edgeToEdge,
+      ]);
+    },
+  );
+
+  test(
+    'bedtime canvas from normal page hides status bar on Android and restores edgeToEdge on exit',
+    () async {
+      final uiModeCalls = <SystemUiMode>[];
+      final controller = AppOrientationController(
+        setPreferredOrientations: (_) async {},
+        setSystemUiMode: (mode) async => uiModeCalls.add(mode),
+      );
+
+      await controller.setBedtimeCanvasVisible(true);
+      expect(uiModeCalls, <SystemUiMode>[SystemUiMode.immersiveSticky]);
+
+      await controller.setBedtimeCanvasVisible(false);
+      expect(uiModeCalls, <SystemUiMode>[
+        SystemUiMode.immersiveSticky,
+        SystemUiMode.edgeToEdge,
+      ]);
+    },
+  );
+
+  test(
     'phone rotation is scoped to the visible playback detail page',
     () async {
       final calls = <List<DeviceOrientation>>[];

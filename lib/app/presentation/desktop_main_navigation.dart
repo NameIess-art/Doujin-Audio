@@ -56,6 +56,7 @@ class DesktopMainNavigation extends StatefulWidget {
 class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
   final Object _motionInteraction = Object();
   final GlobalKey _menuToggleKey = GlobalKey();
+  final _hoveredDestination = ValueNotifier<MainDestinationType?>(null);
   bool _motionActive = false;
   bool _tickerModeEnabled = true;
   bool _disableAnimations = false;
@@ -100,6 +101,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
   @override
   void dispose() {
     UiInteractionCoordinator.instance.cancelInteraction(_motionInteraction);
+    _hoveredDestination.dispose();
     super.dispose();
   }
 
@@ -147,6 +149,9 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
     final sidebarColor = isLandscapeLayout
         ? landscapeNavigationBackground(cs)
         : cs.surfaceContainerLow;
+    final indicatorColor = isDark
+        ? cs.primary.withValues(alpha: 0.15)
+        : cs.primaryContainer.withValues(alpha: 0.6);
 
     final sidebar = AnimatedContainer(
       key: ValueKey<bool>(isLandscapeLayout),
@@ -175,9 +180,11 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final rail = ValueListenableBuilder<int>(
+            child: Builder(
+              builder: (context) {
+                Widget buildRail(
+                  double? landscapeWidth,
+                ) => ValueListenableBuilder<int>(
                   valueListenable: activePageIndex,
                   builder: (context, selectedIndex, _) {
                     final myIndex = destinations.indexWhere(
@@ -189,10 +196,17 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                         ? selectedIndex
                         : 0;
                     if (myIndex >= 0 && selectedIndex == myIndex) {
-                      activeIndex = widget.mySettingsPageMode == MySettingsPageMode.my
+                      activeIndex =
+                          widget.mySettingsPageMode == MySettingsPageMode.my
                           ? myIndex
                           : myIndex + 1;
                     }
+                    final labelOpacity = landscapeWidth == null
+                        ? 1.0
+                        : (4 *
+                                  (landscapeWidth - railMinWidth) /
+                                  (railMinExtendedWidth - railMinWidth))
+                              .clamp(0.0, 1.0);
                     return Theme(
                       data: Theme.of(context).copyWith(
                         splashFactory: NoSplash.splashFactory,
@@ -210,9 +224,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                             .navigationRailTheme
                             .copyWith(
                               indicatorShape: const CircleBorder(),
-                              indicatorColor: isDark
-                                  ? cs.primary.withValues(alpha: 0.15)
-                                  : cs.primaryContainer.withValues(alpha: 0.6),
+                              indicatorColor: indicatorColor,
                             ),
                       ),
                       child: Stack(
@@ -248,7 +260,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                                 });
                               }
                             },
-                            extended: !isMenuCollapsed,
+                            extended: isLandscapeLayout || !isMenuCollapsed,
                             minWidth: railMinWidth,
                             minExtendedWidth: railMinExtendedWidth,
                             useIndicator: !isLandscapeLayout,
@@ -257,9 +269,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                                 ? Container(
                                     alignment: Alignment.centerLeft,
                                     child: SizedBox(
-                                      width: isMenuCollapsed
-                                          ? railMinWidth
-                                          : 72,
+                                      width: railMinWidth,
                                       child: Center(
                                         child: IconButton(
                                           key: _menuToggleKey,
@@ -354,33 +364,68 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                               final item = entry.value;
                               final isSelected = activeIndex == index;
                               final label = i18n.tr(item.labelKey);
+                              final labelWidget = Text(
+                                label,
+                                style: isSelected
+                                    ? TextStyle(
+                                        color: cs.primary,
+                                        fontWeight: FontWeight.w700,
+                                      )
+                                    : null,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              );
 
+                              Widget iconTarget(bool selected) =>
+                                  CompositedTransformTarget(
+                                    key: menuIconKeys[item.type.index],
+                                    link: menuIconLinks[item.type.index],
+                                    child: SizedBox.square(
+                                      dimension: isLandscapeLayout
+                                          ? 48
+                                          : (selected ? 22 : 21),
+                                      child: landscapeWidth == null
+                                          ? null
+                                          : _buildDestinationHighlight(
+                                              item,
+                                              width:
+                                                  landscapeWidth -
+                                                  railMinWidth +
+                                                  48,
+                                              selected: selected,
+                                              selectedColor: indicatorColor,
+                                              hoverColor: cs.primary.withValues(
+                                                alpha: 0.08,
+                                              ),
+                                            ),
+                                    ),
+                                  );
+                              final styledLabel =
+                                  defaultTargetPlatform ==
+                                      TargetPlatform.windows
+                                  ? _WindowsNavigationLabel(
+                                      hoverColor: cs.primary,
+                                      child: labelWidget,
+                                    )
+                                  : labelWidget;
                               return NavigationRailDestination(
-                                icon: CompositedTransformTarget(
-                                  key: menuIconKeys[item.type.index],
-                                  link: menuIconLinks[item.type.index],
-                                  child: SizedBox.square(
-                                    dimension: isLandscapeLayout ? 48 : 21,
-                                  ),
-                                ),
-                                selectedIcon: CompositedTransformTarget(
-                                  key: menuIconKeys[item.type.index],
-                                  link: menuIconLinks[item.type.index],
-                                  child: SizedBox.square(
-                                    dimension: isLandscapeLayout ? 48 : 22,
-                                  ),
-                                ),
-                                label: Text(
-                                  label,
-                                  style: isSelected
-                                      ? TextStyle(
-                                          color: cs.primary,
-                                          fontWeight: FontWeight.w700,
-                                        )
-                                      : null,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                                icon: iconTarget(false),
+                                selectedIcon: iconTarget(true),
+                                label: landscapeWidth != null
+                                    ? SizedBox(
+                                        height: 48,
+                                        child: Align(
+                                          alignment:
+                                              AlignmentDirectional.centerStart,
+                                          widthFactor: 1,
+                                          child: Opacity(
+                                            alwaysIncludeSemantics: true,
+                                            opacity: labelOpacity,
+                                            child: styledLabel,
+                                          ),
+                                        ),
+                                      )
+                                    : styledLabel,
                               );
                             }).toList(),
                           ),
@@ -432,8 +477,10 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                                                 child: Opacity(
                                                   opacity: 1 - collapse,
                                                   child: _buildDestinationIcon(
-                                                    isLandscapeLayout:
-                                                        isLandscapeLayout,
+                                                    landscapeWidth:
+                                                        landscapeWidth,
+                                                    destination:
+                                                        entry.value.type,
                                                     railMinWidth: railMinWidth,
                                                     onPressed: () =>
                                                         onSwitchPage(entry.key),
@@ -444,10 +491,11 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                                                       ),
                                                       color:
                                                           cs.onSurfaceVariant,
-                                                      size: AppDesignTokens.opticalIconSize(
-                                                        entry.value.icon,
-                                                        21,
-                                                      ),
+                                                      size:
+                                                          AppDesignTokens.opticalIconSize(
+                                                            entry.value.icon,
+                                                            21,
+                                                          ),
                                                     ),
                                                   ),
                                                 ),
@@ -469,20 +517,13 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                                                   )
                                                 : Offset.zero,
                                             child: _buildDestinationIcon(
-                                              isLandscapeLayout:
-                                                  isLandscapeLayout,
+                                              landscapeWidth: landscapeWidth,
+                                              destination:
+                                                  destinations[activeIndex]
+                                                      .type,
                                               railMinWidth: railMinWidth,
                                               onPressed: () =>
                                                   onSwitchPage(activeIndex),
-                                              backgroundColor: isDark
-                                                  ? cs.primary.withValues(
-                                                      alpha: 0.15,
-                                                    )
-                                                  : cs.primaryContainer
-                                                        .withValues(alpha: 0.6),
-                                              indicatorKey: ValueKey<String>(
-                                                'main_destination_indicator_${destinations[activeIndex].navigationKey}',
-                                              ),
                                               icon: Icon(
                                                 destinations[activeIndex]
                                                     .selectedIcon,
@@ -490,10 +531,12 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                                                   'main_destination_${destinations[activeIndex].navigationKey}',
                                                 ),
                                                 color: cs.primary,
-                                                size: AppDesignTokens.opticalIconSize(
-                                                  destinations[activeIndex].selectedIcon,
-                                                  22,
-                                                ),
+                                                size:
+                                                    AppDesignTokens.opticalIconSize(
+                                                      destinations[activeIndex]
+                                                          .selectedIcon,
+                                                      22,
+                                                    ),
                                               ),
                                             ),
                                           ),
@@ -511,7 +554,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                   },
                 );
 
-                if (!isLandscapeLayout) return rail;
+                if (!isLandscapeLayout) return buildRail(null);
                 return Align(
                   alignment: Alignment.topLeft,
                   child: TweenAnimationBuilder<double>(
@@ -523,25 +566,27 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                     duration: motionDuration,
                     curve: Curves.easeInOut,
                     onEnd: _finishMotion,
-                    builder: (context, width, child) {
-                      final maxWidth = isMenuCollapsed
-                          ? width
-                          : (width < railMinWidth + 8.0
-                              ? railMinWidth + 8.0
-                              : width);
-                      return ClipRect(
-                        child: SizedBox(
-                          width: width,
+                    // The viewport can still paint during collapse after the
+                    // shell releases its space to the content pane.
+                    builder: (context, width, _) => OverflowBox(
+                      alignment: Alignment.topLeft,
+                      minWidth: width,
+                      maxWidth: width,
+                      child: ClipRect(
+                        key: const ValueKey('landscape_navigation_viewport'),
+                        child: ColoredBox(
+                          color: sidebarColor,
+                          // Keep the rail laid out at full width so its icon
+                          // column never moves as the viewport is resized.
                           child: OverflowBox(
                             alignment: Alignment.topLeft,
-                            minWidth: width,
-                            maxWidth: maxWidth,
-                            child: child,
+                            minWidth: railMinExtendedWidth,
+                            maxWidth: railMinExtendedWidth,
+                            child: buildRail(width),
                           ),
                         ),
-                      );
-                    },
-                    child: rail,
+                      ),
+                    ),
                   ),
                 );
               },
@@ -593,7 +638,10 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                                 presentation:
                                     ActiveSessionCarouselPresentation.embedded,
                                 onOpenSession: (sessionId, coverOrigin) {
-                                  Navigator.of(context, rootNavigator: true).push(
+                                  Navigator.of(
+                                    context,
+                                    rootNavigator: true,
+                                  ).push(
                                     buildSessionDetailRoute(
                                       sessionId: sessionId,
                                       coverOrigin: coverOrigin,
@@ -621,62 +669,125 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
     _syncMotionInteraction();
   }
 
+  Widget _buildDestinationHighlight(
+    MainDestination destination, {
+    required double width,
+    required bool selected,
+    required Color selectedColor,
+    required Color hoverColor,
+  }) {
+    Widget background(Color color) => DecoratedBox(
+      decoration: ShapeDecoration(color: color, shape: const StadiumBorder()),
+    );
+    // The icon slot stays square. Paint from its left edge under the label as
+    // the rail widens, leaving both the icon and label above the highlight.
+    return OverflowBox(
+      alignment: Alignment.centerLeft,
+      minWidth: width,
+      maxWidth: width,
+      child: ValueListenableBuilder<MainDestinationType?>(
+        valueListenable: _hoveredDestination,
+        child: selected
+            ? TweenAnimationBuilder<double>(
+                key: ValueKey<String>(
+                  'main_destination_indicator_${destination.navigationKey}',
+                ),
+                tween: Tween(begin: 0, end: 1),
+                duration: _disableAnimations ? Duration.zero : kAppMotionSlow,
+                curve: Curves.easeOutCubic,
+                builder: (context, scale, child) => Transform.scale(
+                  alignment: Alignment(48 / width - 1, 0),
+                  scale: scale,
+                  child: child,
+                ),
+                child: background(selectedColor),
+              )
+            : null,
+        builder: (context, hovered, indicator) => Stack(
+          fit: StackFit.expand,
+          children: [
+            ?indicator,
+            if (hovered == destination.type) background(hoverColor),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildDestinationIcon({
-    required bool isLandscapeLayout,
+    required double? landscapeWidth,
+    required MainDestinationType destination,
     required double railMinWidth,
     required Widget icon,
     required VoidCallback onPressed,
-    Color? backgroundColor,
-    Key? indicatorKey,
   }) {
-    if (!isLandscapeLayout) return icon;
-    // Consume the rail's surrounding padding so only the 48px button accepts
-    // pointer taps in the icon column. The rail retains keyboard/label actions.
-    return Listener(
-      behavior: HitTestBehavior.opaque,
+    if (landscapeWidth == null) return icon;
+    return MouseRegion(
+      hitTestBehavior: HitTestBehavior.translucent,
+      onEnter: (_) => _hoveredDestination.value = destination,
+      onExit: (_) {
+        if (_hoveredDestination.value == destination) {
+          _hoveredDestination.value = null;
+        }
+      },
       child: SizedBox(
-        width: railMinWidth,
+        width: landscapeWidth,
         height: 64,
-        child: Center(
-          child: SizedBox.square(
-            dimension: 48,
-            child: Stack(
-              children: [
-                if (backgroundColor != null)
-                  Positioned.fill(
-                    child: TweenAnimationBuilder<double>(
-                      key: indicatorKey,
-                      tween: Tween(begin: 0, end: 1),
-                      duration: _disableAnimations
-                          ? Duration.zero
-                          : kAppMotionSlow,
-                      curve: Curves.easeOutCubic,
-                      builder: (context, scale, child) => Transform.scale(
-                        scale: scale,
-                        child: child,
-                      ),
-                      child: DecoratedBox(
-                        decoration: ShapeDecoration(
-                          color: backgroundColor,
-                          shape: const CircleBorder(),
-                        ),
-                      ),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          // The rail handles label taps and keyboard actions. Keep the icon
+          // column's existing 48px button and consume its surrounding padding.
+          child: Listener(
+            behavior: HitTestBehavior.opaque,
+            child: SizedBox(
+              width: railMinWidth,
+              height: 64,
+              child: Center(
+                child: SizedBox.square(
+                  dimension: 48,
+                  child: IconButton(
+                    style: IconButton.styleFrom(
+                      fixedSize: const Size.square(48),
+                      shape: const CircleBorder(),
+                      overlayColor: Colors.transparent,
                     ),
+                    onPressed: onPressed,
+                    icon: icon,
                   ),
-                IconButton(
-                  style: IconButton.styleFrom(
-                    fixedSize: const Size.square(48),
-                    shape: const CircleBorder(),
-                    overlayColor: Theme.of(context).colorScheme.primary,
-                  ),
-                  onPressed: onPressed,
-                  icon: icon,
                 ),
-              ],
+              ),
             ),
           ),
         ),
       ),
     );
   }
+}
+
+class _WindowsNavigationLabel extends StatefulWidget {
+  const _WindowsNavigationLabel({
+    required this.hoverColor,
+    required this.child,
+  });
+
+  final Color hoverColor;
+  final Widget child;
+
+  @override
+  State<_WindowsNavigationLabel> createState() =>
+      _WindowsNavigationLabelState();
+}
+
+class _WindowsNavigationLabelState extends State<_WindowsNavigationLabel> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) => MouseRegion(
+    onEnter: (_) => setState(() => _hovered = true),
+    onExit: (_) => setState(() => _hovered = false),
+    child: DefaultTextStyle.merge(
+      style: TextStyle(color: _hovered ? widget.hoverColor : null),
+      child: widget.child,
+    ),
+  );
 }

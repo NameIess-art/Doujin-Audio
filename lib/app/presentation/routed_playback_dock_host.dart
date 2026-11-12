@@ -1,3 +1,4 @@
+import '../../core/widgets/app_search_page.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/mobile_overlay_inset.dart';
 import 'package:flutter/foundation.dart';
@@ -201,6 +202,9 @@ class _RoutedPlaybackDockHostState
                 currentRoute: _routeObserver.topRoute,
                 workDetailAnimation: workDetail?.animation,
                 fixedDockVisible: fixedDockVisible,
+                fadeWithWorkDetail:
+                    workDetail != null &&
+                    identical(workDetail, _routeObserver.workDetailFromSearch),
                 geometry: _playbackDockGeometry,
               ),
             );
@@ -274,6 +278,7 @@ class _RootPageRouteObserver extends NavigatorObserver {
   final Set<PageRoute<dynamic>> _departingRoutes = {};
   final Set<PageRoute<dynamic>> _departingWorkDetailRoutes = {};
   PageRoute<dynamic>? workDetailFromPlayback;
+  PageRoute<dynamic>? workDetailFromSearch;
   bool get hasPopups => _routes.any((route) => route is PopupRoute<dynamic>);
   bool _syncScheduled = false;
   bool _disposed = false;
@@ -373,6 +378,9 @@ class _RootPageRouteObserver extends NavigatorObserver {
     if (identical(route, workDetailFromPlayback)) {
       workDetailFromPlayback = null;
     }
+    if (identical(route, workDetailFromSearch)) {
+      workDetailFromSearch = null;
+    }
   }
 
   @override
@@ -392,9 +400,12 @@ class _RootPageRouteObserver extends NavigatorObserver {
     }
     if (route case final PageRoute<dynamic> pageRoute) {
       // A stack reset can already exclude playback from previousRoute.
-      if (pageRoute.settings.name == workDetailRouteName &&
-          topRoute is SessionDetailRoute) {
-        workDetailFromPlayback = pageRoute;
+      if (pageRoute.settings.name == workDetailRouteName) {
+        if (topRoute is SessionDetailRoute) {
+          workDetailFromPlayback = pageRoute;
+        } else if (topRoute?.settings.name == appSearchRouteName) {
+          workDetailFromSearch = pageRoute;
+        }
       }
       _routes.add(pageRoute);
       _trackAnimation(pageRoute);
@@ -482,6 +493,7 @@ class _RoutedPlaybackDock extends ConsumerStatefulWidget {
     required this.currentRoute,
     required this.workDetailAnimation,
     required this.fixedDockVisible,
+    required this.fadeWithWorkDetail,
     required this.geometry,
     this.departing = false,
   });
@@ -494,6 +506,7 @@ class _RoutedPlaybackDock extends ConsumerStatefulWidget {
   final Animation<double>? workDetailAnimation;
   // Other entrances retain the motion from the main playback dock.
   final bool? fixedDockVisible;
+  final bool fadeWithWorkDetail;
   final PlaybackDockGeometryController geometry;
 
   @override
@@ -554,7 +567,7 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
   }
 
   void _scheduleExpansion() {
-    if (widget.fixedDockVisible != null) return;
+    if (widget.fixedDockVisible != null || widget.fadeWithWorkDetail) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && widget.active) setState(() => _expanded = true);
     });
@@ -595,14 +608,28 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
         ? Duration.zero
         : _duration;
     final hasFixedEntrance = widget.fixedDockVisible != null;
-    final fixedAtBottom = hasFixedEntrance && !widget.departing;
-    Widget reveal(Widget dock) => !hasFixedEntrance
-        ? dock
-        : AppDeferredFade(
-            visible: _fixedDockShown,
-            fadeInDuration: widget.departing ? Duration.zero : _duration,
-            child: dock,
-          );
+    final fixedAtBottom =
+        widget.fadeWithWorkDetail || (hasFixedEntrance && !widget.departing);
+    final searchAnimation = widget.fadeWithWorkDetail
+        ? widget.workDetailAnimation
+        : null;
+    final ignoreInput =
+        widget.covered ||
+        (searchAnimation != null && !searchAnimation.isCompleted);
+    Widget reveal(Widget dock) {
+      if (searchAnimation != null && duration != Duration.zero) {
+        return FadeTransition(
+          opacity: searchAnimation.drive(CurveTween(curve: kAppFadeCurve)),
+          child: dock,
+        );
+      }
+      if (!hasFixedEntrance) return dock;
+      return AppDeferredFade(
+        visible: _fixedDockShown,
+        fadeInDuration: widget.departing ? Duration.zero : _duration,
+        child: dock,
+      );
+    }
 
     final padding = MediaQuery.paddingOf(context);
     final bottom = padding.bottom > kMobileDockBottomMargin
@@ -681,7 +708,7 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
         height: size.height,
         child: IgnorePointer(
           key: const ValueKey<String>('routed_playback_dock_interaction'),
-          ignoring: !widget.active || widget.covered,
+          ignoring: ignoreInput,
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -751,7 +778,7 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
         : width;
     final dock = IgnorePointer(
       key: const ValueKey<String>('routed_playback_dock_interaction'),
-      ignoring: !widget.active || widget.covered,
+      ignoring: ignoreInput,
       child: AnimatedBuilder(
         animation: animation,
         child: RepaintBoundary(

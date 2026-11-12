@@ -2893,6 +2893,62 @@ void main() {
     expect(find.textContaining(privateDetail), findsNothing);
   });
 
+  testWidgets(
+    'search result playback card fades in place with work detail',
+    (tester) async {
+      _setLogicalTestViewSize(tester, const Size(390, 820));
+      await _pumpAppShell(
+        tester,
+        playbackTrack: testMusicTrack(
+          name: 'Fade search work',
+          path: '/library/Fade search work/track.mp3',
+          groupKey: '/library/Fade search work',
+          groupTitle: 'Fade search work',
+        ),
+      );
+      await tester.tap(find.byKey(const ValueKey('library_search_button')));
+      await _waitForSearchRoute(tester);
+      await _submitSearchQuery(tester, 'Fade search work');
+      final result = find.descendant(
+        of: find.byKey(const ValueKey('library_search_confirmed')),
+        matching: find.text('Fade search work', findRichText: true),
+      );
+      await pumpUntilFound(tester, result);
+      await pumpUntilUiIdle(tester);
+
+      final card = find.byKey(const ValueKey('routed_playback_dock'));
+      double opacity() => tester
+          .widgetList<FadeTransition>(
+            find.ancestor(of: card, matching: find.byType(FadeTransition)),
+          )
+          .fold(1.0, (alpha, fade) => alpha * fade.opacity.value);
+
+      await tester.tap(result.first);
+      await pumpUntilFound(tester, card);
+      final cardRect = tester.getRect(card);
+      expect(opacity(), 0);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(opacity(), inExclusiveRange(0, 1));
+      expect(tester.getRect(card), cardRect);
+      await tester.pump(kAppFadeDuration);
+      await tester.pump();
+      expect(opacity(), 1);
+
+      Navigator.of(tester.element(find.byType(WorkDetailPage))).pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(opacity(), inExclusiveRange(0, 1));
+      expect(tester.getRect(card), cardRect);
+      await pumpUntilNotFound(tester, card);
+      expect(card, findsNothing);
+      expect(result, findsWidgets);
+      await pumpUntilUiIdle(tester);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
+
   testWidgets('app shell search controls follow the 300 ms route fade', (
     tester,
   ) async {
@@ -5277,7 +5333,12 @@ void main() {
       debugDefaultTargetPlatformOverride = null;
       tester.view.resetPhysicalSize();
     });
-    await _pumpAppShell(tester, includePlaybackSession: false);
+    final captureKey = GlobalKey();
+    await _pumpAppShell(
+      tester,
+      captureKey: captureKey,
+      includePlaybackSession: false,
+    );
 
     final navigationRail = find.byType(NavigationRail);
     expect(navigationRail, findsOneWidget);
@@ -5352,7 +5413,10 @@ void main() {
     );
     expect(menuButton.style?.shape?.resolve({}) is CircleBorder, isTrue);
     final expandedMenuX = tester.getCenter(expandedMenuButton).dx;
-    final expandedWidth = tester.getSize(navigationRail).width;
+    final viewport = find.byKey(
+      const ValueKey('landscape_navigation_viewport'),
+    );
+    final expandedWidth = tester.getSize(viewport).width;
     final focusedIcon = find.byKey(
       const ValueKey<String>('main_destination_show_asmr_one'),
     );
@@ -5368,6 +5432,33 @@ void main() {
         tester.getCenter(settingsIcon).dy - tester.getCenter(focusedIcon).dy;
     expect(expandedIconGap, greaterThan(0));
 
+    Future<int> railPixel(Offset point) async =>
+        (await tester.runAsync(() async {
+          final capture = tester.renderObject<RenderRepaintBoundary>(
+            find.byKey(captureKey),
+          );
+          final image = await capture.toImage();
+          try {
+            final bytes = (await image.toByteData())!;
+            final local = capture.globalToLocal(point);
+            return bytes.getUint32(
+              (local.dy.floor() * image.width + local.dx.floor()) * 4,
+            );
+          } finally {
+            image.dispose();
+          }
+        }))!;
+    final indicator = find.byWidgetPredicate((widget) {
+      final key = widget.key;
+      return key is ValueKey<String> &&
+          key.value.startsWith('main_destination_indicator_');
+    });
+    final highlightBounds = tester.getRect(indicator);
+    final outerHighlight = highlightBounds.bottomRight - const Offset(48, 8);
+    final background = await railPixel(outerHighlight + const Offset(0, 16));
+    final highlight = await railPixel(outerHighlight);
+    expect(highlight, isNot(background));
+
     await tester.tap(expandedMenuButton);
     await tester.pump();
     final collapsingStartX = tester
@@ -5375,25 +5466,18 @@ void main() {
         .dx;
     expect(collapsingStartX, closeTo(tester.getCenter(focusedIcon).dx, 0.1));
     expect(collapsingStartX, closeTo(tester.getCenter(settingsIcon).dx, 0.1));
-    final collapsedRail = tester.widget<NavigationRail>(navigationRail);
-    expect(collapsedRail.extended, isFalse);
-    expect(
-      collapsedRail.destinations
-          .map((destination) => destination.label)
-          .whereType<Text>()
-          .every((label) => (label.data ?? '').isNotEmpty),
-      isTrue,
-    );
+    expect(tester.getSize(viewport).width, expandedWidth);
+    expect(await railPixel(outerHighlight), highlight);
     await tester.pump(const Duration(milliseconds: 100));
     final collapsingMiddleX = tester
         .getCenter(find.byIcon(Icons.menu_rounded))
         .dx;
     expect(collapsingMiddleX, closeTo(tester.getCenter(focusedIcon).dx, 0.1));
     expect(collapsingMiddleX, closeTo(tester.getCenter(settingsIcon).dx, 0.1));
-    final animatingWidth = tester.getSize(navigationRail).width;
+    final animatingWidth = tester.getSize(viewport).width;
     expect(
       animatingWidth,
-      inExclusiveRange(collapsedRail.minWidth!, expandedWidth),
+      inExclusiveRange(expandedRail.minWidth!, expandedWidth),
     );
     final collapsingIconGap =
         tester.getCenter(settingsIcon).dy - tester.getCenter(focusedIcon).dy;
@@ -5407,7 +5491,7 @@ void main() {
     for (final x in [collapsingStartX, collapsingMiddleX]) {
       expect(x, inInclusiveRange(collapsedMenuX - 1, expandedMenuX + 1));
     }
-    expect(tester.getSize(navigationRail).width, collapsedRail.minWidth);
+    expect(tester.getSize(viewport).width, expandedRail.minWidth);
     expect(
       tester.getCenter(settingsIcon).dy - tester.getCenter(focusedIcon).dy,
       greaterThan(0),
@@ -5518,8 +5602,10 @@ void main() {
       expect(x, inInclusiveRange(collapsedMenuX - 1, expandedMenuX + 1));
     }
     expect(
-      tester.widget<NavigationRail>(find.byType(NavigationRail)).extended,
-      isFalse,
+      tester
+          .getSize(find.byKey(const ValueKey('landscape_navigation_viewport')))
+          .width,
+      64,
     );
     expect(iconGap(), closeTo(expandedGap, 0.1));
     expect(
@@ -7558,19 +7644,10 @@ void main() {
           await tester.pump();
           await tester.sendKeyEvent(LogicalKeyboardKey.enter);
           await tester.pump();
-          final rail = tester.widget<NavigationRail>(
-            find.byType(NavigationRail),
+          final viewport = find.byKey(
+            const ValueKey('landscape_navigation_viewport'),
           );
-          expect(rail.extended, !collapsed);
-          final animation = NavigationRail.extendedAnimation(
-            tester.element(
-              find.byIcon(
-                collapsed ? Icons.menu_rounded : Icons.menu_open_rounded,
-              ),
-            ),
-          );
-          expect(animation.value, collapsed ? 0 : 1);
-          expect(animation.isAnimating, isFalse);
+          expect(tester.getSize(viewport).width, collapsed ? 64 : 244);
           expect(menuFocus.hasPrimaryFocus, isTrue);
           expect(tester.takeException(), isNull);
         }

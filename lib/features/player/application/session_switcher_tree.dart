@@ -5,6 +5,7 @@ import '../../../core/media/music_track.dart';
 import '../../../core/media/natural_sort.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/path_matcher.dart';
+import '../../asmr/domain/asmr_models.dart' show withoutJapaneseAsmrSiteFolder;
 import '../domain/playback_queue.dart';
 
 typedef SessionSwitcherRow = ({
@@ -266,7 +267,9 @@ List<String> _queueFolderSegments(
   if (relativePath == null || relativePath.isEmpty) {
     return const <String>[];
   }
-  final displayPath = PathDisplay.displayPathFor(relativePath);
+  final displayPath = withoutJapaneseAsmrSiteFolder(
+    PathDisplay.displayPathFor(relativePath),
+  );
   final segments = displayPath
       .replaceAll('\\', '/')
       .split('/')

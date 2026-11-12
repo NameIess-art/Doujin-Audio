@@ -358,6 +358,7 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                     sliver: AppElementChipSliver(
                       items: items,
                       labels: view.labels,
+                      resolveRowCount: true,
                       isSelected: (key) =>
                           view.automatic.contains(key) ||
                           (_changes[key] ?? view.selected.contains(key)),

@@ -21,6 +21,7 @@ import '../application/library_catalog.dart';
 import '../application/library_scan_coordinator.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/app_search_page.dart';
 import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
@@ -147,10 +148,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   void _openSearchPage() {
     Navigator.of(context).push(
-      buildAppPageRoute<void>(
+      buildAppSearchPageRoute(
         context: context,
         child: const LibrarySearchPage(),
-        separateHeader: true,
       ),
     );
   }
@@ -911,32 +911,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                           mainAxisSize: MainAxisSize.min,
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                            HeaderFloatingButton(
-                              child: IconButton(
-                                key: const ValueKey<String>(
-                                  'library_search_button',
-                                ),
-                                style: AppEntryInkWell.entryButtonStyle(
-                                  Theme.of(context),
-                                ),
-                                onPressed: _openSearchPage,
-                                icon: const Icon(Icons.search_rounded),
-                                tooltip: i18n.tr('search'),
-                                iconSize: 20,
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints.tightFor(
-                                  width: 38,
-                                  height: 38,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            const WorkPageTranslationButton(
-                              buttonKey: 'library_translation',
-                              compact: true,
-                            ),
                             if (isLandscape) ...[
-                              const SizedBox(width: 8),
                               HeaderFloatingButton(
                                 child: IconButton(
                                   key: const ValueKey('library_refresh_button'),
@@ -965,7 +940,32 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                                   ),
                                 ),
                               ),
+                              const SizedBox(width: 8),
                             ],
+                            HeaderFloatingButton(
+                              child: IconButton(
+                                key: const ValueKey<String>(
+                                  'library_search_button',
+                                ),
+                                style: AppEntryInkWell.entryButtonStyle(
+                                  Theme.of(context),
+                                ),
+                                onPressed: _openSearchPage,
+                                icon: const Icon(Icons.search_rounded),
+                                tooltip: i18n.tr('search'),
+                                iconSize: 20,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints.tightFor(
+                                  width: 38,
+                                  height: 38,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const WorkPageTranslationButton(
+                              buttonKey: 'library_translation',
+                              compact: true,
+                            ),
                             const SizedBox(width: 8),
                             HeaderFloatingButton(
                               child: IconButton(

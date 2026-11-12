@@ -135,7 +135,6 @@ class _SubtitleWindowSettingsSheetState
                                   child: UnifiedDropdownButton<String>(
                                     value: settings.fontFamily,
                                     isDense: true,
-                                    isExpanded: true,
                                     multilineItems: true,
                                     items: List.generate(_fontFamilies.length, (
                                       i,

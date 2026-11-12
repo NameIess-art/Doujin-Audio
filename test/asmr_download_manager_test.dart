@@ -37,12 +37,15 @@ void main() {
         stagingDirectoryProvider: () async => root,
       );
       try {
-        final work = AsmrWork.fromJson(const {
+        final work = AsmrWork.fromJson({
           'id': 42,
           'title': 'Japanese work',
-          'resources': [
-            {'source': 'japaneseAsmr', 'id': 42, 'code': '', 'pageUrl': ''},
-          ],
+          // A fallback tree may come from Japanese ASMR before its resource
+          // is associated with the catalog work.
+          if (!selectSingleFile)
+            'resources': const [
+              {'source': 'japaneseAsmr', 'id': 42, 'code': '', 'pageUrl': ''},
+            ],
         });
         final tree = AsmrTrackFile.fromJson({
           'type': 'folder',
@@ -58,6 +61,13 @@ void main() {
                   'size': 3,
                   'mediaDownloadUrl': 'http://127.0.0.1:${server.port}/01.mp3',
                 },
+                if (!selectSingleFile)
+                  {
+                    'type': 'text',
+                    'title': 'Notes.txt',
+                    'size': 3,
+                    'mediaDownloadUrl': 'http://127.0.0.1:${server.port}/Notes.txt',
+                  },
               ],
             },
           ],
@@ -80,7 +90,10 @@ void main() {
           workKey: work.workKey,
         );
         final task = manager.getTask(work.workKey)!;
-        expect(task.completedFilePaths, {'Disc 1/01.mp3'});
+        expect(task.completedFilePaths, {
+          'Disc 1/01.mp3',
+          if (!selectSingleFile) 'Disc 1/Notes.txt',
+        });
         expect(
           await File(path.join(task.workRootPath, 'Disc 1', '01.mp3'))
               .readAsBytes(),
@@ -91,6 +104,17 @@ void main() {
               .exists(),
           isFalse,
         );
+        if (!selectSingleFile) {
+          final textFiles = collectAsmrWorkTextFiles(
+            [tree],
+            downloadManager: manager,
+            workKey: work.workKey,
+          );
+          expect(
+            textFiles.single.path,
+            path.join(task.workRootPath, 'Disc 1', 'Notes.txt'),
+          );
+        }
       } finally {
         manager.dispose();
         await server.close(force: true);

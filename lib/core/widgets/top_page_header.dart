@@ -906,53 +906,62 @@ class HeaderTopCapsule extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final titleText = Text(
+      title,
+      maxLines: 1,
+      softWrap: false,
+      style: textTheme.titleSmall?.copyWith(
+        fontWeight: FontWeight.w800,
+        color: cs.onSurface,
+        fontSize: 13.5,
+        letterSpacing: 0.1,
+      ),
+    );
+    final dataText = trailing == null && data != null && data!.isNotEmpty
+        ? Text(
+            data!,
+            maxLines: 1,
+            softWrap: false,
+            style: textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: cs.onSurfaceVariant.withValues(alpha: 0.85),
+              fontSize: 11.5,
+              letterSpacing: 0,
+            ),
+          )
+        : null;
 
     return HeaderFloatingSurface(
       height: height,
       radius: height / 2,
       padding: const EdgeInsets.symmetric(horizontal: 14),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Flexible(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (leading != null) ...[leading!, const SizedBox(width: 6)],
-                Flexible(
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: cs.onSurface,
-                      fontSize: 13.5,
-                      letterSpacing: 0.1,
-                    ),
+          if (leading != null) ...[leading!, const SizedBox(width: 6)],
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) => FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: AlignmentDirectional.centerStart,
+                child: ConstrainedBox(
+                  // Keep the count at the far edge when both strings fit.
+                  constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      titleText,
+                      if (dataText != null) ...[
+                        const SizedBox(width: 8),
+                        dataText,
+                      ],
+                    ],
                   ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          if (trailing != null)
-            trailing!
-          else if (data != null && data!.isNotEmpty)
-            Flexible(
-              child: Text(
-                data!,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.end,
-                style: textTheme.bodySmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: cs.onSurfaceVariant.withValues(alpha: 0.85),
-                  fontSize: 11.5,
-                  letterSpacing: 0,
                 ),
               ),
             ),
+          ),
+          if (trailing != null) ...[const SizedBox(width: 8), trailing!],
         ],
       ),
     );

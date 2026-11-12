@@ -1092,27 +1092,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
                             ),
                           ),
                         Row(
+                          // Paint the left rail over the content while its
+                          // closing animation extends past the layout slot.
+                          textDirection: TextDirection.rtl,
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            if (isDesktop)
-                              Consumer(
-                                builder: (context, ref, _) {
-                                  final overlaySessions = ref.watch(
-                                    mainOverlayUiProvider.select(
-                                      (state) => state.overlaySessions,
-                                    ),
-                                  );
-                                  return _buildDesktopNavigation(
-                                    context,
-                                    i18n,
-                                    overlaySessions,
-                                    isLandscapeLayout: isLandscape,
-                                    isMenuCollapsed: menuCollapsed,
-                                  );
-                                },
-                              )
-                            else
-                              const SizedBox.shrink(),
                             Expanded(
                               child: Align(
                                 alignment: Alignment.topLeft,
@@ -1178,6 +1162,23 @@ class _MainScreenState extends ConsumerState<MainScreen>
                                 ),
                               ),
                             ),
+                            if (isDesktop)
+                              Consumer(
+                                builder: (context, ref, _) {
+                                  final overlaySessions = ref.watch(
+                                    mainOverlayUiProvider.select(
+                                      (state) => state.overlaySessions,
+                                    ),
+                                  );
+                                  return _buildDesktopNavigation(
+                                    context,
+                                    i18n,
+                                    overlaySessions,
+                                    isLandscapeLayout: isLandscape,
+                                    isMenuCollapsed: menuCollapsed,
+                                  );
+                                },
+                              ),
                           ],
                         ),
                       ],

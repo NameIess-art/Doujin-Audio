@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/presentation/app_orientation_controller.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/media/time_text_formatters.dart';
 import '../../../core/platform/power_platform_gateway.dart';
@@ -20,7 +21,7 @@ class BedtimeCanvasPage extends ConsumerStatefulWidget {
   static Duration idleDimDelay = const Duration(seconds: 15);
 
   static Route<void> route(BuildContext context) {
-    return buildAppPageRoute<void>(
+    return buildBedtimeCanvasRoute(
       context: context,
       child: const BedtimeCanvasPage(),
     );
@@ -34,6 +35,7 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     with TickerProviderStateMixin {
   late final PowerPlatformGateway _powerGateway;
   late final VideoDisplayPlatformGateway _displayGateway;
+  late final AppOrientationController _orientationController;
   late final AnimationController _breathingController;
   late final Animation<double> _breathingAnimation;
   late final AnimationController _holdExitController;
@@ -55,9 +57,10 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     BedtimeCanvasPage.isCanvasActive = true;
     _powerGateway = ref.read(powerPlatformGatewayProvider);
     _displayGateway = ref.read(videoDisplayPlatformGatewayProvider);
+    _orientationController = ref.read(appOrientationControllerProvider);
     unawaited(_powerGateway.setKeepScreenOn(true));
     unawaited(_initBrightness());
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    unawaited(_orientationController.setBedtimeCanvasVisible(true));
 
     final playback = ref.read(playbackFacadeProvider);
     final playing = playback.sessions.values
@@ -143,7 +146,7 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
       unawaited(_displayGateway.endBrightnessControl(token));
     }
     unawaited(_powerGateway.setKeepScreenOn(false));
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    unawaited(_orientationController.setBedtimeCanvasVisible(false));
     super.dispose();
   }
 

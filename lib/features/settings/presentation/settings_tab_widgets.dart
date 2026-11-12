@@ -3,8 +3,6 @@ part of 'settings_tab.dart';
 const double _settingsTileHeight = 64;
 const double _settingsTileTitleFontSize = 16;
 const double _settingsTileSubtitleFontSize = 13;
-const double _settingsDropdownMaxWidth = 180;
-const double _settingsDropdownChromeWidth = kMinInteractiveDimension;
 
 Widget _settingsTitle(String text) {
   return Text(text, softWrap: true, overflow: TextOverflow.visible);
@@ -53,41 +51,22 @@ Widget _settingsDropdown<T>(
   required ValueChanged<T?>? onChanged,
   double? maxWidth,
 }) {
-  final mediaQuery = MediaQuery.of(context);
-  final screenWidth = mediaQuery.size.width;
-  final resolvedMaxWidth = (screenWidth * 0.52)
-      .clamp(0, maxWidth ?? _settingsDropdownMaxWidth + 40)
-      .toDouble();
-  final defaultTextStyle = DefaultTextStyle.of(context).style;
-  double? longestTextWidth = 0;
-  for (final item in items) {
-    final child = item.child;
-    if (child is! Text || child.data == null) {
-      longestTextWidth = null;
-      break;
-    }
-    final painter = TextPainter(
-      text: TextSpan(
-        text: child.data,
-        style: defaultTextStyle.merge(child.style),
-      ),
-      textDirection: Directionality.of(context),
-      textScaler: mediaQuery.textScaler,
-      maxLines: 1,
-    )..layout();
-    longestTextWidth = math.max(longestTextWidth!, painter.width);
-  }
-  final width =
-      ((longestTextWidth ?? resolvedMaxWidth) + _settingsDropdownChromeWidth)
-          .clamp(_settingsDropdownChromeWidth, resolvedMaxWidth)
-          .toDouble();
-  return SizedBox(
-    width: width,
+  final viewportWidth = MediaQuery.sizeOf(context).width;
+  return ConstraintsTransformBox(
+    alignment: Alignment.centerRight,
+    constraintsTransform: (constraints) {
+      final rowWidth = constraints.hasBoundedWidth
+          ? constraints.maxWidth
+          : viewportWidth;
+      return constraints.copyWith(
+        minWidth: 0,
+        maxWidth: math.min(rowWidth * 0.52, maxWidth ?? double.infinity),
+      );
+    },
     child: UnifiedDropdownButton<T>(
       value: value,
       items: items,
       onChanged: onChanged,
-      isExpanded: true,
       alignment: Alignment.centerRight,
       multilineItems: true,
     ),

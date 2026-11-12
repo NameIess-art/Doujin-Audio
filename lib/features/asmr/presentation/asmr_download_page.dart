@@ -189,10 +189,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
           lowQualityUrl: null,
           duration: Duration.zero,
           size: 0,
-          children: const AsmrDownloadPlanner().prepareDownloadTree(
-            currentWork,
-            result.tree,
-          ),
+          children: const AsmrDownloadPlanner().prepareDownloadTree(result.tree),
           workId: currentWork.id,
           workKey: currentWork.workKey,
           workTitle: currentWork.title,

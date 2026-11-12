@@ -1024,12 +1024,28 @@ void main() {
           tester.getRect(_main).contains(tester.getCenter(library)),
           isTrue,
         );
+        final librarySearch = find.byKey(
+          const ValueKey<String>('library_search_button'),
+        );
+        expect(librarySearch, findsOneWidget);
+        expect(
+          tester.getCenter(library).dx,
+          lessThan(tester.getCenter(librarySearch).dx),
+        );
         final rail = tester.widget<NavigationRail>(find.byType(NavigationRail));
         await tester.tap(find.byWidget(rail.destinations[0].label));
         await _settle(tester);
         final asmr = find.byKey(const ValueKey('asmr_refresh_button'));
         expect(asmr, findsOneWidget);
         expect(tester.getRect(_main).contains(tester.getCenter(asmr)), isTrue);
+        final asmrSearch = find.byKey(
+          const ValueKey<String>('asmr_search_button'),
+        );
+        expect(asmrSearch, findsOneWidget);
+        expect(
+          tester.getCenter(asmr).dx,
+          lessThan(tester.getCenter(asmrSearch).dx),
+        );
       },
       variant: TargetPlatformVariant({platform}),
     );

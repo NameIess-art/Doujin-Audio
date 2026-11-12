@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/widgets/app_bottom_sheet.dart';
+import '../../core/widgets/app_search_page.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../features/asmr/presentation/asmr_tab.dart';
 import '../../features/library/presentation/library_search_page.dart';
@@ -84,10 +85,9 @@ class ElementActionMenu extends StatelessWidget {
       return;
     }
     PageRoute<void> buildSearchRoute(BuildContext routeContext) =>
-        buildAppPageRoute<void>(
+        buildAppSearchPageRoute(
           context: routeContext,
           child: searchPage,
-          separateHeader: true,
         );
 
     if (navigation != null) {

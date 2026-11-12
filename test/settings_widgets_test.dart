@@ -1605,7 +1605,6 @@ void main() {
     final dropdown = tester.widget<UnifiedDropdownButton<StartupPage>>(
       dropdownFinder,
     );
-    expect(dropdown.isExpanded, isTrue);
     expect(dropdown.multilineItems, isTrue);
     expect(dropdown.alignment, Alignment.centerRight);
 
@@ -2078,8 +2077,14 @@ void main() {
     for (final key in keys) {
       final tile = find.widgetWithText(ListTile, i18n.tr(key));
       await tester.scrollUntilVisible(tile, 200);
-      final trailing = tester.widget<ListTile>(tile).trailing! as SizedBox;
-      final dropdown = trailing.child! as UnifiedDropdownButton<dynamic>;
+      final dropdown = tester.widget<UnifiedDropdownButton<dynamic>>(
+        find.descendant(
+          of: tile,
+          matching: find.byWidgetPredicate(
+            (widget) => widget is UnifiedDropdownButton<dynamic>,
+          ),
+        ),
+      );
       expect(dropdown.alignment, Alignment.centerRight, reason: key);
       for (final item in dropdown.items) {
         expect((item.child as Text).textAlign, TextAlign.right, reason: key);

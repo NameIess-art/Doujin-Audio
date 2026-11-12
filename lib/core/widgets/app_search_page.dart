@@ -15,6 +15,18 @@ import 'windows_horizontal_wheel_scroll.dart';
 
 export 'app_search_suggestions.dart';
 
+const appSearchRouteName = '/search';
+
+PageRoute<void> buildAppSearchPageRoute({
+  required BuildContext context,
+  required Widget child,
+}) => buildAppPageRoute<void>(
+  context: context,
+  settings: const RouteSettings(name: appSearchRouteName),
+  child: child,
+  separateHeader: true,
+);
+
 @immutable
 class AppSearchCategory<T> {
   const AppSearchCategory({required this.value, required this.label});

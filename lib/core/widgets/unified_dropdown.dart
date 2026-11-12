@@ -5,8 +5,15 @@ import '../../app/theme/app_styles.dart';
 List<DropdownMenuItem<T>> _alignItems<T>(
   List<DropdownMenuItem<T>> items,
   AlignmentGeometry alignment,
-  bool multilineItems,
-) {
+  bool multilineItems, {
+  double trailingPadding = 0,
+}) {
+  final verticalPadding = multilineItems ? 8.0 : 0.0;
+  final padding = EdgeInsetsDirectional.only(
+    top: verticalPadding,
+    end: trailingPadding,
+    bottom: verticalPadding,
+  );
   return items.map((item) {
     return DropdownMenuItem<T>(
       key: item.key,
@@ -14,11 +21,8 @@ List<DropdownMenuItem<T>> _alignItems<T>(
       onTap: item.onTap,
       enabled: item.enabled,
       alignment: alignment,
-      child: multilineItems
-          ? Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: item.child,
-            )
+      child: multilineItems || trailingPadding > 0
+          ? Padding(padding: padding, child: item.child)
           : item.child,
     );
   }).toList();
@@ -30,7 +34,6 @@ class UnifiedDropdownButton<T> extends StatefulWidget {
     required this.value,
     required this.items,
     required this.onChanged,
-    this.isExpanded = false,
     this.isDense = false,
     this.alignment = AlignmentDirectional.centerStart,
     this.menuMaxHeight,
@@ -40,7 +43,6 @@ class UnifiedDropdownButton<T> extends StatefulWidget {
   final T? value;
   final List<DropdownMenuItem<T>> items;
   final ValueChanged<T?>? onChanged;
-  final bool isExpanded;
   final bool isDense;
   final AlignmentGeometry alignment;
   final double? menuMaxHeight;
@@ -52,6 +54,10 @@ class UnifiedDropdownButton<T> extends StatefulWidget {
 }
 
 class _UnifiedDropdownButtonState<T> extends State<UnifiedDropdownButton<T>> {
+  // Material's aligned button uses 4px at the end plus the 24px arrow, while
+  // each popup row already has 16px of padding. Reserve the difference so
+  // both labels wrap within the same width and share the same alignment.
+  static const double _popupTrailingPadding = 12;
   final _focusNode = FocusNode();
 
   @override
@@ -63,48 +69,58 @@ class _UnifiedDropdownButtonState<T> extends State<UnifiedDropdownButton<T>> {
   @override
   Widget build(BuildContext context) {
     final onChanged = widget.onChanged;
-    return Theme(
+    final button = Theme(
       data: Theme.of(context).copyWith(hoverColor: Colors.transparent),
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 44),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<T>(
-            focusColor: Colors.transparent,
-            focusNode: _focusNode,
-            value: widget.value,
-            items: _alignItems(
-              widget.items,
-              widget.alignment,
-              widget.multilineItems,
+        child: ButtonTheme.fromButtonThemeData(
+          data: ButtonTheme.of(context).copyWith(alignedDropdown: true),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<T>(
+              focusColor: Colors.transparent,
+              focusNode: _focusNode,
+              value: widget.value,
+              items: _alignItems(
+                widget.items,
+                widget.alignment,
+                widget.multilineItems,
+                trailingPadding: _popupTrailingPadding,
+              ),
+              selectedItemBuilder: (context) => widget.items
+                  .map(
+                    (item) =>
+                        Align(alignment: widget.alignment, child: item.child),
+                  )
+                  .toList(growable: false),
+              onChanged: onChanged == null
+                  ? null
+                  : (value) {
+                      _focusNode.unfocus(
+                        disposition: UnfocusDisposition.previouslyFocusedChild,
+                      );
+                      onChanged(value);
+                    },
+              isExpanded: true,
+              isDense: widget.isDense,
+              alignment: widget.alignment,
+              menuMaxHeight: widget.menuMaxHeight,
+              itemHeight: widget.multilineItems
+                  ? null
+                  : kMinInteractiveDimension,
+              dropdownColor: Theme.of(context).colorScheme.surfaceContainerHigh,
+              borderRadius: AppRadius.borderMedium,
             ),
-            selectedItemBuilder: widget.multilineItems
-                ? (context) => widget.items
-                      .map(
-                        (item) => Align(
-                          alignment: widget.alignment,
-                          child: item.child,
-                        ),
-                      )
-                      .toList(growable: false)
-                : null,
-            onChanged: onChanged == null
-                ? null
-                : (value) {
-                    _focusNode.unfocus(
-                      disposition: UnfocusDisposition.previouslyFocusedChild,
-                    );
-                    onChanged(value);
-                  },
-            isExpanded: widget.isExpanded,
-            isDense: widget.isDense,
-            alignment: widget.alignment,
-            menuMaxHeight: widget.menuMaxHeight,
-            itemHeight: widget.multilineItems ? null : kMinInteractiveDimension,
-            dropdownColor: Theme.of(context).colorScheme.surfaceContainerHigh,
-            borderRadius: AppRadius.borderMedium,
           ),
         ),
       ),
+    );
+    // Keep the fitted trigger anchored inside its slot so the popup shares
+    // both its width and its selected label's position.
+    return Align(
+      alignment: widget.alignment,
+      widthFactor: 1,
+      heightFactor: 1,
+      child: IntrinsicWidth(child: button),
     );
   }
 }
@@ -131,16 +147,26 @@ class UnifiedDropdownButtonFormField<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DropdownButtonFormField<T>(
-      initialValue: initialValue,
-      items: _alignItems(items, alignment, multilineItems),
-      onChanged: onChanged,
-      decoration: decoration,
+    final field = ButtonTheme.fromButtonThemeData(
+      data: ButtonTheme.of(context).copyWith(alignedDropdown: true),
+      child: DropdownButtonFormField<T>(
+        initialValue: initialValue,
+        items: _alignItems(items, alignment, multilineItems),
+        onChanged: onChanged,
+        decoration: decoration,
+        isExpanded: true,
+        alignment: alignment,
+        menuMaxHeight: menuMaxHeight,
+        itemHeight: multilineItems ? null : kMinInteractiveDimension,
+        dropdownColor: Theme.of(context).colorScheme.surfaceContainerHigh,
+        borderRadius: AppRadius.borderMedium,
+      ),
+    );
+    return Align(
       alignment: alignment,
-      menuMaxHeight: menuMaxHeight,
-      itemHeight: multilineItems ? null : kMinInteractiveDimension,
-      dropdownColor: Theme.of(context).colorScheme.surfaceContainerHigh,
-      borderRadius: AppRadius.borderMedium,
+      widthFactor: 1,
+      heightFactor: 1,
+      child: IntrinsicWidth(child: field),
     );
   }
 }

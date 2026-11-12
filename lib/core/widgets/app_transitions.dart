@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -788,15 +789,35 @@ class _PreparedHeaderFadeTransition extends FadeTransition {
   const _PreparedHeaderFadeTransition({
     required super.opacity,
     required super.child,
+    this.snapFullOpacity = false,
   });
+
+  final bool snapFullOpacity;
 
   @override
   RenderAnimatedOpacity createRenderObject(BuildContext context) =>
-      _RenderPreparedHeaderOpacity(opacity: opacity);
+      _RenderPreparedHeaderOpacity(
+        opacity: opacity,
+        snapFullOpacity: snapFullOpacity,
+      );
 }
 
 class _RenderPreparedHeaderOpacity extends RenderAnimatedOpacity {
-  _RenderPreparedHeaderOpacity({required super.opacity});
+  _RenderPreparedHeaderOpacity({
+    required super.opacity,
+    required this.snapFullOpacity,
+  });
+
+  final bool snapFullOpacity;
+
+  @override
+  OffsetLayer updateCompositedLayer({
+    required covariant OpacityLayer? oldLayer,
+  }) {
+    return super.updateCompositedLayer(
+      oldLayer: oldLayer ?? (snapFullOpacity ? _HeaderOpacityLayer() : null),
+    );
+  }
 
   @override
   bool get isRepaintBoundary => child != null;
@@ -807,6 +828,60 @@ class _RenderPreparedHeaderOpacity extends RenderAnimatedOpacity {
   @override
   void paint(PaintingContext context, Offset offset) {
     if (child != null) context.paintChild(child!, offset);
+  }
+}
+
+class _HeaderOpacityLayer extends OpacityLayer {
+  static Offset _pixelCorrection(Matrix4 transform, Offset offset) {
+    final values = transform.storage;
+    final scaleX = values[0];
+    final scaleY = values[5];
+    if (scaleX == 0 ||
+        scaleY == 0 ||
+        values[1] != 0 ||
+        values[4] != 0 ||
+        values[3] != 0 ||
+        values[7] != 0 ||
+        values[15] != 1) {
+      return Offset.zero;
+    }
+    final x = values[12] + offset.dx * scaleX;
+    final y = values[13] + offset.dy * scaleY;
+    if (!x.isFinite || !y.isFinite) return Offset.zero;
+    return Offset((x.round() - x) / scaleX, (y.round() - y) / scaleY);
+  }
+
+  @override
+  void addToScene(ui.SceneBuilder builder) {
+    if (alpha != 255 || firstChild == null) {
+      super.addToScene(builder);
+      return;
+    }
+    // Skia can cache overlapping children of an opacity layer on their own,
+    // leaving a glass header without the page pixels behind it. Keep the same
+    // physical-pixel alignment at full opacity using an offset layer.
+    final ancestors = <ContainerLayer>[this];
+    for (var ancestor = parent; ancestor != null; ancestor = ancestor.parent) {
+      ancestors.add(ancestor);
+    }
+    final transform = Matrix4.identity();
+    for (var i = ancestors.length - 1; i > 0; i--) {
+      final ancestor = ancestors[i];
+      ancestor.applyTransform(ancestors[i - 1], transform);
+      if (ancestor is OpacityLayer &&
+          (ancestor.alpha != 255 || ancestor is _HeaderOpacityLayer)) {
+        final correction = _pixelCorrection(transform, Offset.zero);
+        transform.translateByDouble(correction.dx, correction.dy, 0, 1);
+      }
+    }
+    final aligned = offset + _pixelCorrection(transform, offset);
+    engineLayer = builder.pushOffset(
+      aligned.dx,
+      aligned.dy,
+      oldLayer: engineLayer as ui.OffsetEngineLayer?,
+    );
+    addChildrenToScene(builder);
+    builder.pop();
   }
 }
 
@@ -972,6 +1047,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
           }
           final fadedHeader = _PreparedHeaderFadeTransition(
             opacity: _opacity,
+            snapFullOpacity: defaultTargetPlatform == TargetPlatform.windows,
             child: coveredHeader,
           );
           if (widget.separateHeader || !widget.slide) {
@@ -2105,6 +2181,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         headerBuilder: (context, header) {
           final faded = _PreparedHeaderFadeTransition(
             opacity: opacity,
+            snapFullOpacity: defaultTargetPlatform == TargetPlatform.windows,
             child: header,
           );
           return parentMotion?.headerBuilder(context, faded) ?? faded;
@@ -2332,6 +2409,52 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
     pageBuilder: (context, animation, secondaryAnimation) => child,
     transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
       // Instant pages still track their header when another route covers them.
+      return _CoveringPageTransition(
+        contentKey: contentKey,
+        animation: animation,
+        secondaryAnimation: secondaryAnimation,
+        animatePage: duration != Duration.zero,
+        slide: slide,
+        separateHeader: separateHeader,
+        child: routedChild,
+      );
+    },
+  );
+}
+
+class BedtimeCanvasRoute extends AppPreparedPageRoute<void> {
+  BedtimeCanvasRoute({
+    required super.pageBuilder,
+    required super.transitionsBuilder,
+    required super.transitionDuration,
+    required super.reverseTransitionDuration,
+    super.settings,
+    super.fullscreenDialog,
+  });
+}
+
+PageRoute<void> buildBedtimeCanvasRoute({
+  required BuildContext context,
+  required Widget child,
+  RouteSettings? settings,
+  Duration duration = kAppMotionSlow,
+  bool fullscreenDialog = false,
+  bool slide = true,
+  bool separateHeader = false,
+}) {
+  final reducedMotion = MediaQuery.disableAnimationsOf(context);
+  final contentKey = GlobalKey();
+  return BedtimeCanvasRoute(
+    settings: settings,
+    fullscreenDialog: fullscreenDialog,
+    transitionDuration: reducedMotion || duration == Duration.zero
+        ? Duration.zero
+        : duration,
+    reverseTransitionDuration: reducedMotion || duration == Duration.zero
+        ? Duration.zero
+        : duration,
+    pageBuilder: (context, animation, secondaryAnimation) => child,
+    transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
       return _CoveringPageTransition(
         contentKey: contentKey,
         animation: animation,

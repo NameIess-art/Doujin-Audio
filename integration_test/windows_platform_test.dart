@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -166,6 +167,25 @@ void main() {
             timer,
           );
           expect(result?['ok'], true);
+          const taskPrefix = kDebugMode
+              ? 'DoujinAudio-Timer-Debug-'
+              : 'DoujinAudio-Timer-';
+          final scheduled = await Process.run('powershell.exe', [
+            '-NoProfile',
+            '-NonInteractive',
+            '-Command',
+            r'$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value; '
+                "\$task = Get-ScheduledTask -TaskPath '\\' -TaskName ('$taskPrefix' + \$sid) -ErrorAction Stop; "
+                r'[pscustomobject]@{ triggers = @($task.Triggers | ForEach-Object { $_.CimClass.CimClassName }); '
+                r'startWhenAvailable = $task.Settings.StartWhenAvailable; wakeToRun = $task.Settings.WakeToRun } '
+                r'| ConvertTo-Json -Compress',
+          ]);
+          expect(scheduled.exitCode, 0, reason: scheduled.stderr.toString());
+          final schedule =
+              jsonDecode(scheduled.stdout as String) as Map<String, dynamic>;
+          expect(schedule['triggers'], ['MSFT_TaskTimeTrigger']);
+          expect(schedule['startWhenAvailable'], isFalse);
+          expect(schedule['wakeToRun'], isTrue);
         } finally {
           timer['timerMode'] = null;
           timer['timerEndsAtWallClockMs'] = null;

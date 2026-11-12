@@ -843,10 +843,9 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
 
   void _openSearchPage() {
     Navigator.of(context).push(
-      buildAppPageRoute<void>(
+      buildAppSearchPageRoute(
         context: context,
         child: AsmrSearchPage(initialCategory: _selectedCategory),
-        separateHeader: true,
       ),
     );
   }
@@ -1071,6 +1070,32 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                                 mainAxisSize: MainAxisSize.min,
                                 mainAxisAlignment: MainAxisAlignment.end,
                                 children: [
+                                  if (isLandscape) ...[
+                                    HeaderFloatingButton(
+                                      child: IconButton(
+                                        key: const ValueKey(
+                                          'asmr_refresh_button',
+                                        ),
+                                        onPressed: globalInitialized
+                                            ? () => unawaited(
+                                                _refreshCategoryWithFeedback(
+                                                  showSnackbar: true,
+                                                ),
+                                              )
+                                            : null,
+                                        icon: const Icon(Icons.refresh_rounded),
+                                        tooltip: i18n.tr('refresh'),
+                                        iconSize: 20,
+                                        padding: EdgeInsets.zero,
+                                        constraints:
+                                            const BoxConstraints.tightFor(
+                                              width: 38,
+                                              height: 38,
+                                            ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                  ],
                                   HeaderFloatingButton(
                                     child: IconButton(
                                       key: const ValueKey<String>(
@@ -1096,32 +1121,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                                     buttonKey: 'asmr_translation',
                                     compact: true,
                                   ),
-                                  if (isLandscape) ...[
-                                    const SizedBox(width: 8),
-                                    HeaderFloatingButton(
-                                      child: IconButton(
-                                        key: const ValueKey(
-                                          'asmr_refresh_button',
-                                        ),
-                                        onPressed: globalInitialized
-                                            ? () => unawaited(
-                                                _refreshCategoryWithFeedback(
-                                                  showSnackbar: true,
-                                                ),
-                                              )
-                                            : null,
-                                        icon: const Icon(Icons.refresh_rounded),
-                                        tooltip: i18n.tr('refresh'),
-                                        iconSize: 20,
-                                        padding: EdgeInsets.zero,
-                                        constraints:
-                                            const BoxConstraints.tightFor(
-                                              width: 38,
-                                              height: 38,
-                                            ),
-                                      ),
-                                    ),
-                                  ],
                                   if (hasDownloadManager)
                                     const _AsmrDownloadProgressInlineButton(),
                                   const SizedBox(width: 8),

@@ -22,6 +22,39 @@ void main() {
   setUp(interaction.resetForTest);
   tearDown(interaction.resetForTest);
 
+  testWidgets('legacy download details skip the site folder and show output', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final language = AppLanguageProvider();
+    addTearDown(language.dispose);
+    await language.setLanguage(AppLanguage.en);
+    final task = _downloadTask().copyWith(
+      selectedRoots: [
+        _downloadNode(
+          'japaneseasmr.com',
+          children: [
+            _downloadNode(
+              'japaneseasmr.com/Disc 1',
+              children: [_downloadNode('japaneseasmr.com/Disc 1/Track.mp3')],
+            ),
+          ],
+        ),
+      ],
+      actualOutputPaths: const {
+        'japaneseasmr.com/Disc 1/Track.mp3': 'japaneseasmr.com/Disc 1/Track.m4a',
+      },
+    );
+    await tester.pumpWidget(_downloadDetailsApp(language, task));
+    await tester.pumpAndSettle();
+    expect(find.text('japaneseasmr.com'), findsNothing);
+    final disc = tester.widget<FileTreeRow>(
+      find.widgetWithText(FileTreeRow, 'Disc 1'),
+    );
+    expect(disc.depth, 0);
+    expect(find.text('Track.m4a'), findsOneWidget);
+  });
+
   testWidgets(
     'download details shows the actual M4A output while retaining folder labels',
     (tester) async {

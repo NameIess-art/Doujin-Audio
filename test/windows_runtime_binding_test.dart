@@ -2,12 +2,15 @@ import 'dart:async';
 
 import 'package:doujin_audio/app/application/app_runtime_lifecycle.dart';
 import 'package:doujin_audio/app/application/windows_runtime_binding.dart';
+import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/core/platform/windows_desktop_service.dart';
 import 'package:doujin_audio/features/player/application/notification_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_notification_service.dart';
 import 'package:doujin_audio/features/player/application/timer_facade.dart';
+import 'package:doujin_audio/features/player/presentation/playback_providers.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -178,6 +181,36 @@ void main() {
   });
 
   test(
+    'tray exit releases playback with the playlist provider paused',
+    () async {
+      final container = ProviderContainer(
+        overrides: [playbackFacadeProvider.overrideWithValue(playback)],
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        playlistResumeBatchProvider,
+        (_, _) {},
+      );
+      subscription.pause();
+      await container.pump();
+
+      runtime.disposePlayback = () async {
+        await playback.dispose();
+        calls.add('playbackDisposed');
+      };
+      await attach();
+      await _sendAction(channel, 'exit').timeout(const Duration(seconds: 2));
+      expect(calls, [
+        'ready',
+        'saveTimer',
+        'dispose',
+        'playbackDisposed',
+        'exit',
+      ]);
+    },
+  );
+
+  test(
     'endSession waits for an ongoing exit and suppresses window close',
     () async {
       runtime.disposeGate = Completer<void>();
@@ -248,11 +281,13 @@ final class _Runtime implements AppRuntimeLifecycle {
   final List<String> calls;
   Completer<void>? disposeGate;
   Object? disposeError;
+  Future<void> Function()? disposePlayback;
   @override
   Future<void> dispose() async {
     calls.add('dispose');
     await disposeGate?.future;
     if (disposeError case final error?) throw error;
+    await disposePlayback?.call();
   }
 
   @override

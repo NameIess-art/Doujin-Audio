@@ -114,6 +114,96 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  for (final alignment in [
+    AlignmentDirectional.centerStart,
+    Alignment.centerRight,
+  ]) {
+    testWidgets(
+      'selected label stays in place when opened ($alignment)',
+      (tester) async {
+        final label = alignment == Alignment.centerRight
+            ? 'Selected'
+            : 'Selected dropdown option';
+        await tester.pumpWidget(
+          harness(
+            Align(
+              alignment: Alignment.centerRight,
+              child: SizedBox(
+                width: 180,
+                child: UnifiedDropdownButton<String>(
+                  value: 'selected',
+                  items: [
+                    const DropdownMenuItem(value: 'a', child: Text('Alpha')),
+                    DropdownMenuItem(value: 'selected', child: Text(label)),
+                    const DropdownMenuItem(
+                      value: 'c',
+                      child: Text('Longer option to wrap'),
+                    ),
+                  ],
+                  alignment: alignment,
+                  multilineItems: true,
+                  onChanged: (_) {},
+                ),
+              ),
+            ),
+          ),
+        );
+        final closed = tester.getRect(find.text(label));
+        await tester.tap(find.text(label));
+        await tester.pumpAndSettle();
+        final open = find.descendant(
+          of: find.byType(Scrollable),
+          matching: find.text(label),
+        );
+        expect(tester.getRect(open), closed);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
+  testWidgets('popup uses the widest option instead of the available slot', (
+    tester,
+  ) async {
+    const selectedLabel = 'Short';
+    const widestLabel = 'Widest option';
+    await tester.pumpWidget(
+      harness(
+        SizedBox(
+          width: 420,
+          child: UnifiedDropdownButton<String>(
+            value: 'a',
+            items: const [
+              DropdownMenuItem(value: 'a', child: Text(selectedLabel)),
+              DropdownMenuItem(
+                value: 'b',
+                child: Text(widestLabel, style: TextStyle(fontSize: 18)),
+              ),
+            ],
+            alignment: Alignment.centerRight,
+            onChanged: (_) {},
+          ),
+        ),
+      ),
+    );
+    final closed = tester.getRect(find.text(selectedLabel));
+    await tester.tap(find.text(selectedLabel));
+    await tester.pumpAndSettle();
+    final menu = find.byType(Scrollable);
+    final widest = find.descendant(of: menu, matching: find.text(widestLabel));
+    final selected = find.descendant(
+      of: menu,
+      matching: find.text(selectedLabel),
+    );
+    expect(
+      tester.getSize(menu).width,
+      closeTo(tester.getSize(widest).width + 44, 1),
+    );
+    expect(tester.getRect(selected), closed);
+  });
+
   testWidgets('long multiline dropdown scrolls and selects an option', (
     tester,
   ) async {
@@ -174,7 +264,14 @@ void main() {
                     initialValue: initial,
                     items: items,
                     onChanged: (_) {},
-                    decoration: const InputDecoration(labelText: 'Choice'),
+                    decoration: const InputDecoration(
+                      labelText: 'Choice',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                    ),
                   ),
                 ),
               );
@@ -183,8 +280,13 @@ void main() {
         ),
       );
       final field = find.byType(DropdownButtonFormField<String>);
+      final fieldWidth = tester.getSize(field).width;
+      expect(fieldWidth, lessThan(240));
+      final closedLabel = tester.getRect(find.text('Alpha'));
       await tester.tap(find.text('Alpha').first);
       await tester.pumpAndSettle();
+      expect(tester.getSize(find.byType(Scrollable)).width, fieldWidth);
+      expect(tester.getRect(find.text('Alpha').last), closedLabel);
       expect(
         tester.getRect(find.text('Alpha').last).left,
         tester.getRect(find.text('Charlie').last).left,

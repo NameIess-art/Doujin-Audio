@@ -231,10 +231,9 @@ List<AsmrTrackFile> _decodeJapaneseTrackTree(
         mapNode(child as Map<dynamic, dynamic>),
     ],
   };
-  return roots
-      .map(
-        (node) =>
-            AsmrTrackFile.fromJson(mapNode(node as Map<dynamic, dynamic>)),
-      )
-      .toList(growable: false);
+  return japaneseAsmrContentRoots(
+    roots.map(
+      (node) => AsmrTrackFile.fromJson(mapNode(node as Map<dynamic, dynamic>)),
+    ),
+  ).toList(growable: false);
 }

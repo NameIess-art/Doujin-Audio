@@ -1237,9 +1237,11 @@ final class PlaybackFacade {
     if (persistenceTail != null) {
       await attempt(() => persistenceTail);
     }
+    // Riverpod can pause this UI-only subscription while the playlist is offstage.
+    // Waiting for it to receive the done event would block native player disposal.
+    unawaited(_resumeBatchChanges.close());
     await Future.wait(<Future<void>>[
       attempt(_sessionActivations.close),
-      attempt(_resumeBatchChanges.close),
       attempt(_persistedUriReferenceRevisionController.close),
     ]);
     final sessionsToDispose = _service.sessions.values.toList(growable: false);

@@ -50,10 +50,7 @@ void SyncScheduledTasks(const flutter::EncodableMap& payload) {
 #endif
   const auto end = Millis(payload,"timerEndsAtWallClockMs");
   const auto resume = Millis(payload,"autoResumeAtMs");
-  const auto mode = payload.find(flutter::EncodableValue("timerMode"));
-  const bool armed = end > 0 || resume > 0 ||
-      (mode != payload.end() && !std::holds_alternative<std::monostate>(mode->second));
-  if (!armed) {
+  if (end <= 0 && resume <= 0) {
     auto hr = folder->DeleteTask(_bstr_t(task_name.c_str()),0);
     if (hr != HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)) check_hresult(hr);
     return;
@@ -70,18 +67,14 @@ void SyncScheduledTasks(const flutter::EncodableMap& payload) {
   winrt::com_ptr<ITaskSettings> settings;
   check_hresult(task->get_Settings(settings.put()));
   check_hresult(settings->put_WakeToRun(VARIANT_TRUE));
-  check_hresult(settings->put_StartWhenAvailable(VARIANT_TRUE));
+  // A missed timer must not launch the app after Windows starts again.
+  check_hresult(settings->put_StartWhenAvailable(VARIANT_FALSE));
   check_hresult(settings->put_DisallowStartIfOnBatteries(VARIANT_FALSE));
   check_hresult(settings->put_StopIfGoingOnBatteries(VARIANT_FALSE));
   check_hresult(settings->put_ExecutionTimeLimit(_bstr_t(L"PT0S")));
   check_hresult(settings->put_MultipleInstances(TASK_INSTANCES_IGNORE_NEW));
   winrt::com_ptr<ITriggerCollection> triggers;
   check_hresult(task->get_Triggers(triggers.put()));
-  winrt::com_ptr<ITrigger> logon;
-  check_hresult(triggers->Create(TASK_TRIGGER_LOGON,logon.put()));
-  // Restrict the logon trigger to the same interactive user as the principal.
-  auto logon_trigger = logon.as<ILogonTrigger>();
-  check_hresult(logon_trigger->put_UserId(_bstr_t(user_sid.c_str())));
   for (const auto at : {end,resume}) {
     if (at <= 0) continue;
     winrt::com_ptr<ITrigger> trigger;

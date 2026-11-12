@@ -34,6 +34,19 @@ Future<SessionSwitcherTree> _prepare(
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('audio switching opens directly into Japanese ASMR folders', () async {
+    final track = _track(
+      r'JapaneseASMR.com\Disc 1\01.mp3',
+      url: 'https://media.test/chapter',
+    ).copyWith(remoteMetadataKind: MusicTrack.remoteMetadataKindJapaneseAsmr);
+    final tree = await _prepare([track]);
+    expect(tree.roots.single.title, 'Disc 1');
+    final row = tree.rows.last;
+    expect(row.depth, 1);
+    expect(row.node.selected, isTrue);
+    expect(row.node.track, same(track));
+  });
+
   test(
     'background tree keeps remote natural order and original identities',
     () async {

@@ -61,7 +61,7 @@ class _AsmrDownloadDetailsPageState
       }
     }
 
-    for (final root in roots) {
+    for (final root in japaneseAsmrContentRoots(roots)) {
       visit(root, 0);
     }
     _rowsSource = roots;

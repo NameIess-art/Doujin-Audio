@@ -73,10 +73,14 @@ class AppOrientationController {
   PlatformBrightnessLease? _brightnessLease;
 
   bool _playbackDetailVisible = false;
+  bool _bedtimeCanvasVisible = false;
   double? _displayShortestSide;
   int _nextLeaseId = 0;
+  SystemUiMode? _appliedSystemUiMode;
 
   bool get isVideoFullscreen => _fullscreenLeaseIds.isNotEmpty;
+  bool get isPlaybackDetailVisible => _playbackDetailVisible;
+  bool get isBedtimeCanvasVisible => _bedtimeCanvasVisible;
 
   Future<void> updateDisplay(double shortestSide) async {
     final previousTablet = (_displayShortestSide ?? 0) >= 600;
@@ -87,14 +91,33 @@ class AppOrientationController {
     await _applyPreferredOrientation();
   }
 
-  Future<void> setPlaybackDetailVisible(bool visible) async {
+  Future<void> updateTopRoute({
+    required bool playbackDetailVisible,
+    bool bedtimeCanvasVisible = false,
+  }) async {
     if (defaultTargetPlatform == TargetPlatform.windows) return;
-    if (_playbackDetailVisible == visible) return;
-    _playbackDetailVisible = visible;
+    if (_playbackDetailVisible == playbackDetailVisible &&
+        _bedtimeCanvasVisible == bedtimeCanvasVisible) {
+      return;
+    }
+    _playbackDetailVisible = playbackDetailVisible;
+    _bedtimeCanvasVisible = bedtimeCanvasVisible;
     if (isVideoFullscreen) return;
     await _applyPreferredOrientation();
     await _applySystemUiMode();
   }
+
+  Future<void> setPlaybackDetailVisible(bool visible) =>
+      updateTopRoute(
+        playbackDetailVisible: visible,
+        bedtimeCanvasVisible: _bedtimeCanvasVisible,
+      );
+
+  Future<void> setBedtimeCanvasVisible(bool visible) =>
+      updateTopRoute(
+        playbackDetailVisible: _playbackDetailVisible,
+        bedtimeCanvasVisible: visible,
+      );
 
   Future<AppVideoFullscreenLease> enterVideoFullscreen() async {
     final wasFullscreen = isVideoFullscreen;
@@ -194,7 +217,7 @@ class AppOrientationController {
         AppOrientationPolicy.forDisplay(
           platform: defaultTargetPlatform,
           shortestSide: _displayShortestSide ?? 0,
-          playbackDetailVisible: _playbackDetailVisible,
+          playbackDetailVisible: _playbackDetailVisible || _bedtimeCanvasVisible,
         ).allowedOrientations,
       ),
     );
@@ -203,10 +226,12 @@ class AppOrientationController {
   Future<void> _applySystemUiMode() {
     if (defaultTargetPlatform == TargetPlatform.windows) return Future.value();
     final mode = (isVideoFullscreen ||
-            (_playbackDetailVisible &&
+            ((_playbackDetailVisible || _bedtimeCanvasVisible) &&
                 defaultTargetPlatform == TargetPlatform.android))
         ? SystemUiMode.immersiveSticky
         : SystemUiMode.edgeToEdge;
+    if (_appliedSystemUiMode == mode) return Future.value();
+    _appliedSystemUiMode = mode;
     return _runPlatformUpdate(
       'system_ui_mode_update_failed',
       () => _setSystemUiMode(mode),

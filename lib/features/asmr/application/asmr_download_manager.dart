@@ -471,14 +471,13 @@ class AsmrDownloadManager {
     if (normalizedDestination.isEmpty) {
       throw ArgumentError.value(destinationRoot, 'destinationRoot');
     }
+    selectedRoots = _planner.prepareDownloadTree(selectedRoots);
     if (selectedRoots.isEmpty) {
       throw ArgumentError.value(selectedRoots, 'selectedRoots');
     }
     final normalizedRetryCount = normalizeAsmrDownloadRetryCount(
       automaticFileRetryCount,
     );
-    selectedRoots = _planner.prepareDownloadTree(work, selectedRoots);
-
     await initialize();
     if (_disposed || _shutdownFuture != null) return;
 

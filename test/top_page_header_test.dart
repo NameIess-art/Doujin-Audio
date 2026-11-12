@@ -9,6 +9,53 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('long header title and count share the available width', (
+    tester,
+  ) async {
+    const title = 'オンライン音声ライブラリ';
+    const count = '123456作品';
+    for (final width in [320.0, 550.0, 240.0]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: SizedBox(
+              width: width,
+              child: const HeaderTopCapsule(
+                title: title,
+                data: count,
+                leading: Icon(Icons.cloud_outlined, size: 16),
+              ),
+            ),
+          ),
+        ),
+      );
+      final titleFinder = find.text(title);
+      final countFinder = find.text(count);
+      final capsule = tester.getRect(find.byType(HeaderTopCapsule));
+      final titleBounds = tester.getRect(titleFinder);
+      final countBounds = tester.getRect(countFinder);
+      for (final finder in [titleFinder, countFinder]) {
+        expect(
+          tester.renderObject<RenderParagraph>(finder).didExceedMaxLines,
+          isFalse,
+          reason: 'Capsule width $width',
+        );
+        expect(tester.getRect(finder).width, greaterThan(0));
+      }
+      expect(titleBounds.right, lessThan(countBounds.left));
+      expect(countBounds.right, closeTo(capsule.right - 14, 0.01));
+      expect(
+        tester.getSize(find.byIcon(Icons.cloud_outlined)),
+        const Size(16, 16),
+      );
+      if (width == 550) {
+        expect(titleBounds.width, tester.getSize(titleFinder).width);
+        expect(countBounds.width, tester.getSize(countFinder).width);
+      }
+      expect(tester.takeException(), isNull);
+    }
+  });
+
   for (final brightness in Brightness.values) {
     testWidgets(
       'content capsules follow menu bar glass in $brightness',

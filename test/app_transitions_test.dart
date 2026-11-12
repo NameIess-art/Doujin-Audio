@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -3910,6 +3911,63 @@ void main() {
     expect(find.text('lazy-2'), findsOneWidget);
     expect(find.text('lazy-1', skipOffstage: false), findsOneWidget);
   });
+
+  testWidgets(
+    'Windows tab headers use opacity only while fading',
+    (tester) async {
+      final index = ValueNotifier(0);
+      addTearDown(index.dispose);
+      tester.view.devicePixelRatio = 1.25;
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Padding(
+            padding: const EdgeInsets.only(top: 30),
+            child: AppFadeThroughIndexedStack.lazy(
+              indexListenable: index,
+              itemCount: 2,
+              separateHeader: true,
+              itemBuilder: (_, page) => Align(
+                alignment: Alignment.topLeft,
+                child: AppPageHeaderTransition(child: Text('header-$page')),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      OpacityLayer headerLayer(int page) {
+        final header = find.text('header-$page');
+        final fade = find.ancestor(
+          of: header,
+          matching: find.byWidgetPredicate(
+            (widget) => widget is FadeTransition,
+          ),
+        );
+        return tester.renderObject<RenderAnimatedOpacity>(fade).debugLayer!
+            as OpacityLayer;
+      }
+
+      expect(tester.getTopLeft(find.text('header-0')).dy, 30);
+      expect(headerLayer(0).alpha, 255);
+      expect(headerLayer(0).engineLayer, isA<ui.OffsetEngineLayer>());
+
+      index.value = 1;
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 150));
+      for (final page in [0, 1]) {
+        expect(headerLayer(page).alpha, inExclusiveRange(0, 255));
+        expect(headerLayer(page).engineLayer, isA<ui.OpacityEngineLayer>());
+      }
+
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(find.text('header-1')).dy, 30);
+      expect(headerLayer(1).alpha, 255);
+      expect(headerLayer(1).engineLayer, isA<ui.OffsetEngineLayer>());
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
 
   testWidgets('lifted headers visit hidden ancestry once per paint', (
     tester,

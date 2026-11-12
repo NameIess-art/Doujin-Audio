@@ -138,13 +138,20 @@ List<WorkTextFile> collectAsmrWorkTextFiles(
             workFolderName.isNotEmpty &&
             !PathMatcher.isContentUri(destinationRoot)) {
           try {
-            final candidate = const AsmrDownloadPlanner()
-                .resolveLocalPathWithin(
-                  task!.workRootPath,
-                  task.actualOutputPaths[node.relativePath] ??
-                      node.relativePath,
-                );
-            if (File(candidate).existsSync()) localPath = candidate;
+            // Match new flattened outputs and files saved by older tasks.
+            final flattened = withoutJapaneseAsmrSiteFolder(node.relativePath);
+            for (final relativePath in {
+              ?task!.actualOutputPaths[node.relativePath],
+              task.actualOutputPaths[flattened] ?? flattened,
+              node.relativePath,
+            }) {
+              final candidate = const AsmrDownloadPlanner()
+                  .resolveLocalPathWithin(task.workRootPath, relativePath);
+              if (File(candidate).existsSync()) {
+                localPath = candidate;
+                break;
+              }
+            }
           } on FormatException {
             // A malformed remote filename can still be opened through its URL.
           }

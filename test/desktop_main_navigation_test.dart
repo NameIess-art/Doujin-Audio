@@ -22,7 +22,10 @@ void main() {
         await AppPreferences.init();
         final i18n = AppLanguageProvider();
         final activePage = ValueNotifier(0);
-        final iconKeys = List.generate(MainDestinationType.values.length, (_) => GlobalKey());
+        final iconKeys = List.generate(
+          MainDestinationType.values.length,
+          (_) => GlobalKey(),
+        );
         final destinations = resolveMainDestinations(
           showLocalLibrary: true,
           showAsmrOne: true,
@@ -59,7 +62,10 @@ void main() {
                         isMenuCollapsed: collapsed,
                         activePageIndex: activePage,
                         menuIconKeys: iconKeys,
-                        menuIconLinks: List.generate(MainDestinationType.values.length, (_) => LayerLink()),
+                        menuIconLinks: List.generate(
+                          MainDestinationType.values.length,
+                          (_) => LayerLink(),
+                        ),
                         collapseOffset: (_, _) => Offset.zero,
                         onSwitchPage: (index) => activePage.value = index,
                         onToggleMenu: () =>
@@ -81,14 +87,19 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.byIcon(Icons.playlist_play_rounded), findsOneWidget);
-        double indicatorScale(int index) => tester.widget<Transform>(
-          find.descendant(
-            of: find.byKey(ValueKey<String>(
-              'main_destination_indicator_${destinations[index].navigationKey}',
-            )),
-            matching: find.byType(Transform),
-          ),
-        ).transform.entry(0, 0);
+        double indicatorScale(int index) => tester
+            .widget<Transform>(
+              find.descendant(
+                of: find.byKey(
+                  ValueKey<String>(
+                    'main_destination_indicator_${destinations[index].navigationKey}',
+                  ),
+                ),
+                matching: find.byType(Transform),
+              ),
+            )
+            .transform
+            .entry(0, 0);
         expect(
           tester.widget<Icon>(find.byIcon(Icons.playlist_play_rounded)).size,
           closeTo(24.15, 0.001),
@@ -145,7 +156,9 @@ void main() {
         expect(indicatorScale(1), 1);
         tester.platformDispatcher.accessibilityFeaturesTestValue =
             const FakeAccessibilityFeatures(disableAnimations: true);
-        addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+        addTearDown(
+          tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+        );
         await tester.pump();
         activePage.value = 0;
         await tester.pump();
@@ -164,8 +177,14 @@ void main() {
         await AppPreferences.init();
         final i18n = AppLanguageProvider();
         final activePage = ValueNotifier(0);
-        final iconKeys = List.generate(MainDestinationType.values.length, (_) => GlobalKey());
-        final iconLinks = List.generate(MainDestinationType.values.length, (_) => LayerLink());
+        final iconKeys = List.generate(
+          MainDestinationType.values.length,
+          (_) => GlobalKey(),
+        );
+        final iconLinks = List.generate(
+          MainDestinationType.values.length,
+          (_) => LayerLink(),
+        );
         final destinations = resolveMainDestinations(
           showLocalLibrary: true,
           showAsmrOne: true,
@@ -248,6 +267,7 @@ void main() {
                 bytes.getUint8(offset + 2),
               );
             }
+
             final result = [
               pixel(2, 2),
               pixel(image.width - 3, 2),
@@ -265,23 +285,35 @@ void main() {
           final background = theme.colorScheme.surfaceContainerLow;
           expect(colors, everyElement(background));
         }
+
         await expectSidebarBackgroundAtEdges();
         final center = tester.getCenter(target);
-        Future<List<int>> iconPixels() async =>
+        final railBounds = tester.getRect(find.byType(NavigationRail));
+        final capsule = Rect.fromLTRB(
+          center.dx - 24,
+          center.dy - 24,
+          railBounds.right - 8,
+          center.dy + 24,
+        );
+        final samples = [
+          Offset(capsule.left + 8, capsule.center.dy),
+          Offset(capsule.right - 8, capsule.center.dy),
+          capsule.topLeft + const Offset(2, 2),
+          capsule.topRight + const Offset(-2, 2),
+        ];
+        Future<List<int>> capsulePixels() async =>
             (await tester.runAsync(() async {
               final boundary = tester.renderObject<RenderRepaintBoundary>(
                 find.byKey(const ValueKey('sidebar_capture')),
               );
               final image = await boundary.toImage();
               final data = (await image.toByteData())!;
-              final localCenter = boundary.globalToLocal(center);
-              final left = (localCenter.dx - 31.5).floor();
-              final top = (localCenter.dy - 32).floor();
-              final pixels = [
-                for (var y = top; y < top + 64; y++)
-                  for (var x = left; x < left + 63; x++)
-                    data.getUint32((y * image.width + x) * 4),
-              ];
+              final pixels = samples.map((point) {
+                final local = boundary.globalToLocal(point);
+                return data.getUint32(
+                  (local.dy.floor() * image.width + local.dx.floor()) * 4,
+                );
+              }).toList();
               image.dispose();
               return pixels;
             }))!;
@@ -290,62 +322,57 @@ void main() {
         );
         await mouse.addPointer(location: const Offset(1000, 400));
         await tester.pumpAndSettle();
-        final idlePixels = await iconPixels();
+        final idlePixels = await capsulePixels();
+        void expectCapsule(List<int> pixels) {
+          expect(pixels[0], isNot(idlePixels[0]));
+          expect(pixels[1], isNot(idlePixels[1]));
+          expect(pixels.skip(2), idlePixels.skip(2));
+        }
+
         final rail = tester.widget<NavigationRail>(find.byType(NavigationRail));
-        await mouse.moveTo(
-          tester.getCenter(find.byWidget(rail.destinations[1].label)),
-        );
+        final labelFinder = find.byWidget(rail.destinations[1].label);
+        Color? labelColor() => tester
+            .widget<RichText>(
+              find.descendant(of: labelFinder, matching: find.byType(RichText)),
+            )
+            .text
+            .style
+            ?.color;
+        final idleLabelColor = labelColor();
+        final labelRect = tester.getRect(labelFinder);
+        final primary = Theme.of(
+          tester.element(find.byType(DesktopMainNavigation)),
+        ).colorScheme.primary;
+        expect(idleLabelColor, isNot(primary));
+        await mouse.moveTo(tester.getCenter(labelFinder));
         await tester.pumpAndSettle();
         expect(
-          await iconPixels(),
-          idlePixels,
-          reason: 'Hovering a label must not paint rail ink behind the icon.',
+          labelColor(),
+          platform == TargetPlatform.windows ? primary : idleLabelColor,
         );
+        expect(tester.getRect(labelFinder), labelRect);
+        expect(activePage.value, 0);
+        expectCapsule(await capsulePixels());
         await mouse.down(
           tester.getCenter(find.byWidget(rail.destinations[1].label)),
         );
         await tester.pumpAndSettle();
-        expect(
-          await iconPixels(),
-          idlePixels,
-          reason: 'Holding a label must not paint rectangular pressed ink.',
-        );
+        expectCapsule(await capsulePixels());
         expect(activePage.value, 0);
         await mouse.cancel();
         await tester.pumpAndSettle();
         await mouse.moveTo(center);
         await tester.pumpAndSettle();
-        final hoveredPixels = await iconPixels();
-        expect(
-          hoveredPixels,
-          isNot(idlePixels),
-          reason: 'The independent icon button must retain hover feedback.',
-        );
-        void expectCircularInk(List<int> pixels) {
-          for (var y = 0; y < 64; y++) {
-            for (var x = 0; x < 63; x++) {
-              if ((Offset(x + 0.5, y + 0.5) - const Offset(31.5, 32)).distance >
-                  25) {
-                expect(
-                  pixels[y * 63 + x],
-                  idlePixels[y * 63 + x],
-                  reason: 'Icon feedback must remain circular.',
-                );
-              }
-            }
-          }
-        }
-
-        expectCircularInk(hoveredPixels);
+        expect(labelColor(), idleLabelColor);
+        expectCapsule(await capsulePixels());
         await mouse.down(center);
         await tester.pumpAndSettle();
-        final pressedPixels = await iconPixels();
-        expect(pressedPixels, isNot(idlePixels));
-        expectCircularInk(pressedPixels);
+        expectCapsule(await capsulePixels());
         await mouse.cancel();
         await tester.pumpAndSettle();
         await mouse.removePointer();
         await tester.pumpAndSettle();
+        expect(await capsulePixels(), idlePixels);
         for (final offset in [
           const Offset(25, 0),
           const Offset(-25, 0),
@@ -359,18 +386,56 @@ void main() {
         await tester.tapAt(center + const Offset(23, 23));
         await tester.pumpAndSettle();
         expect(activePage.value, 1);
+        expectCapsule(await capsulePixels());
 
+        final toggleCenter = tester.getCenter(toggle);
+        final destinationIcons = destinations
+            .map(
+              (destination) => find.byKey(
+                ValueKey<String>(
+                  'main_destination_${destination.navigationKey}',
+                ),
+              ),
+            )
+            .toList();
+        final iconCenters = destinationIcons.map(tester.getCenter).toList();
+        final selectedIndicator = find.byKey(
+          ValueKey<String>(
+            'main_destination_indicator_${destinations[1].navigationKey}',
+          ),
+        );
         for (final icon in [Icons.menu_open_rounded, Icons.menu_rounded]) {
           await tester.tap(find.byIcon(icon));
           await tester.pump();
+          expect(destinationIcons.map(tester.getCenter), iconCenters);
+          expect(tester.getSize(selectedIndicator).width, collapsed ? 228 : 48);
           final transitionLayouts = contentLayouts;
           final contentWidth = tester
               .getSize(find.byKey(const ValueKey('content')))
               .width;
           expect(contentWidth, collapsed ? 1200 : 1020);
           expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
-          for (var frame = 0; frame < 5; frame++) {
-            await tester.pump(const Duration(milliseconds: 30));
+          var previousWidth = tester.getSize(selectedIndicator).width;
+          for (final step in [1, 15, 30, 30, 30, 30, 30]) {
+            await tester.pump(Duration(milliseconds: step));
+            expect(destinationIcons.map(tester.getCenter), iconCenters);
+            final indicator = tester.getRect(selectedIndicator);
+            expect(indicator.left, center.dx - 24);
+            expect(indicator.height, 48);
+            expect(
+              indicator.width,
+              collapsed ? lessThan(previousWidth) : greaterThan(previousWidth),
+            );
+            previousWidth = indicator.width;
+            expect(
+              tester.getCenter(
+                find.widgetWithIcon(
+                  IconButton,
+                  collapsed ? Icons.menu_rounded : Icons.menu_open_rounded,
+                ),
+              ),
+              toggleCenter,
+            );
             expect(contentLayouts, transitionLayouts);
             expect(
               tester.getSize(find.byKey(const ValueKey('content'))).width,
@@ -378,6 +443,10 @@ void main() {
             );
           }
           await tester.pumpAndSettle();
+          expect(
+            tester.getSize(selectedIndicator),
+            Size(collapsed ? 48 : 228, 48),
+          );
           await expectSidebarBackgroundAtEdges();
           final otherTarget = find.byKey(
             iconKeys[MainDestinationType.settings.index],
@@ -407,6 +476,8 @@ void main() {
             IconButton,
             collapsed ? Icons.menu_rounded : Icons.menu_open_rounded,
           );
+          expect(destinationIcons.map(tester.getCenter), iconCenters);
+          expect(tester.getCenter(nextToggle), toggleCenter);
           expect(tester.getSize(target), tester.getSize(nextToggle));
           expect(tester.takeException(), isNull);
         }

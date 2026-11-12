@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:doujin_audio/app/presentation/my_tag_management_page.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
+import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
 import 'package:doujin_audio/core/widgets/page_header_inset.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/widgets/app_search_suggestions.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -19,6 +21,95 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     await AppPreferences.init();
   });
+
+  for (final excluded in [false, true]) {
+    testWidgets(
+      'interest editor thumb stays usable from top to bottom and back (excluded: $excluded)',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        final controller = _TagController(
+          createTestAsmrServices(),
+          count: 1500,
+        );
+        addTearDown(fixture.dispose);
+        addTearDown(controller.dispose);
+        tester.view.physicalSize = const Size(960, 600);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.pumpWidget(
+          fixture.build(
+            MyTagManagementPage(excluded: excluded),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        final catalog = find.byType(CustomScrollView);
+        final scroll = tester
+            .state<ScrollableState>(
+              find.descendant(of: catalog, matching: find.byType(Scrollable)),
+            )
+            .position;
+        final scrollbar = find.descendant(
+          of: catalog,
+          matching: find.byType(DragOnlyScrollbar),
+        );
+        final bounds = tester.getRect(scrollbar);
+        final top = bounds.top + PageHeaderInset.of(tester.element(scrollbar));
+        final theme = ScrollbarTheme.of(tester.element(scrollbar));
+        final thumb = Offset(
+          bounds.right -
+              theme.crossAxisMargin! -
+              theme.thickness!.resolve({})! / 2,
+          top + theme.mainAxisMargin! + 20,
+        );
+        final viewport = Rect.fromLTRB(
+          bounds.left,
+          top,
+          bounds.right,
+          bounds.bottom,
+        );
+        bool visible(Finder finder) =>
+            finder.evaluate().isNotEmpty &&
+            tester.getRect(finder).overlaps(viewport);
+        expect(scroll.maxScrollExtent.isFinite, isTrue);
+        final drag = await tester.startGesture(
+          thumb,
+          kind: PointerDeviceKind.mouse,
+        );
+        final bottom = Offset(thumb.dx, bounds.bottom - 5);
+        await drag.moveTo(bottom);
+        await tester.pump();
+        expect(scroll.pixels, greaterThan(0));
+        expect(visible(find.text('Tag 999')), isTrue);
+
+        for (final progress in [0.25, 0.5, 0.75]) {
+          final previous = scroll.pixels;
+          await drag.moveTo(Offset.lerp(bottom, thumb, progress)!);
+          await tester.pump();
+          expect(scroll.maxScrollExtent.isFinite, isTrue);
+          expect(scroll.pixels, lessThan(previous));
+          final chips = find.byType(AppElementChip);
+          expect(
+            Iterable<int>.generate(
+              chips.evaluate().length,
+            ).any((index) => visible(chips.at(index))),
+            isTrue,
+          );
+        }
+        await drag.moveTo(thumb.translate(0, -10));
+        await drag.up();
+        await tester.pumpAndSettle();
+        expect(scroll.pixels, closeTo(0, 1));
+        expect(visible(find.text('Tag 00')), isTrue);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    );
+  }
 
   testWidgets(
     'search and draft edits reuse catalog snapshots until they change',

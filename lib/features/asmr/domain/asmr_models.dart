@@ -761,6 +761,30 @@ class AsmrTrackFile {
   }
 }
 
+const _japaneseAsmrSiteFolder = 'japaneseasmr.com';
+
+/// Exposes the site's outer folder contents while retaining remote file keys.
+Iterable<AsmrTrackFile> japaneseAsmrContentRoots(
+  Iterable<AsmrTrackFile> roots,
+) sync* {
+  for (final root in roots) {
+    if (root.isFolder &&
+        root.relativePath.toLowerCase() == _japaneseAsmrSiteFolder) {
+      yield* root.children;
+    } else {
+      yield root;
+    }
+  }
+}
+
+String withoutJapaneseAsmrSiteFolder(String relativePath) {
+  const prefix = '$_japaneseAsmrSiteFolder/';
+  final normalized = relativePath.replaceAll('\\', '/');
+  return normalized.toLowerCase().startsWith(prefix)
+      ? normalized.substring(prefix.length)
+      : relativePath;
+}
+
 List<AsmrTrackFile> sortAsmrTrackTreeNaturally(Iterable<AsmrTrackFile> nodes) {
   final sorted = nodes.map((node) {
     if (node.children.isEmpty) return node;

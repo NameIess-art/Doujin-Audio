@@ -179,6 +179,7 @@ class AppElementChipSliver extends StatefulWidget {
     this.maxItems,
     this.collapsedRows,
     this.headerBuilder,
+    this.resolveRowCount = false,
   }) : assert(maxItems == null || maxItems > 0),
        assert(collapsedRows == null || collapsedRows > 0);
 
@@ -194,6 +195,10 @@ class AppElementChipSliver extends StatefulWidget {
   final int? maxItems;
   final int? collapsedRows;
   final Widget Function(BuildContext, bool, bool, VoidCallback)? headerBuilder;
+
+  /// Measures all expanded rows so a draggable scrollbar has a finite range.
+  /// Chip widgets are still built on demand.
+  final bool resolveRowCount;
 
   @override
   State<AppElementChipSliver> createState() => _AppElementChipSliverState();
@@ -332,17 +337,18 @@ class _AppElementChipSliverState extends State<AppElementChipSliver> {
       builder: (context, constraints) {
         final width = constraints.crossAxisExtent;
         if (_layout(width, style, scaler, direction, locale)) content = null;
+        // Scroll constraints change every frame. Reuse the delegate until inputs
+        // change, so scrolling builds only newly visible chips.
+        if (content != null) return content!;
         final collapsedRows = widget.collapsedRows;
         final expanded = collapsedRows == null || _expanded;
+        if (expanded && widget.resolveRowCount) _ensureRows(_itemCount);
         final canExpand =
             collapsedRows != null &&
             (!_layoutComplete || _rows.length > collapsedRows);
         final count = expanded
             ? _rows.length
             : math.min(collapsedRows, _rows.length);
-        // Scroll constraints change every frame. Reuse the delegate until inputs
-        // change, so scrolling builds only newly visible chips.
-        if (content != null) return content!;
         final rows = SliverList.builder(
           itemCount: expanded ? (_layoutComplete ? _rows.length : null) : count,
           itemBuilder: (context, index) {

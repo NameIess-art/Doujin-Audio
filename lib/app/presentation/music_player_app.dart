@@ -367,8 +367,9 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
       child: RoutedPlaybackDockHost(
         navigatorKey: _navigatorKey,
         onTopPageChanged: (route) => unawaited(
-          _orientationController.setPlaybackDetailVisible(
-            route is SessionDetailRoute,
+          _orientationController.updateTopRoute(
+            playbackDetailVisible: route is SessionDetailRoute,
+            bedtimeCanvasVisible: route is BedtimeCanvasRoute,
           ),
         ),
         builder:

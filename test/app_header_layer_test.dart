@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/widgets/app_glass_surface.dart';
@@ -76,6 +77,137 @@ Future<List<Color>> _pixels(
 }))!;
 
 void main() {
+  testWidgets(
+    'retained tabs and child routes blur content behind the header',
+    (tester) async {
+      final surface = GlobalKey();
+      final navigator = GlobalKey<NavigatorState>();
+      final index = ValueNotifier(0);
+      final outerIndex = ValueNotifier(0);
+      addTearDown(index.dispose);
+      addTearDown(outerIndex.dispose);
+      tester.view.devicePixelRatio = 1.25;
+      tester.view.physicalSize = const Size(1000, 750);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      const titleKey = ValueKey('glass_title');
+      const searchKey = ValueKey('glass_search');
+      Widget page({bool childRoute = false}) => Scaffold(
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            const AppPageContentTransition(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: ColoredBox(color: Colors.black)),
+                  Expanded(child: ColoredBox(color: Colors.white)),
+                ],
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              child: TopPageHeader(
+                leading: childRoute ? const BackButton() : null,
+                titleWidget: const HeaderTopCapsule(
+                  key: titleKey,
+                  title: 'Page',
+                ),
+                additionalChild: childRoute
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16),
+                        child: HeaderFloatingSurface(
+                          key: searchKey,
+                          child: SizedBox.expand(),
+                        ),
+                      )
+                    : null,
+              ),
+            ),
+          ],
+        ),
+      );
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: surface,
+          child: MaterialApp(
+            navigatorKey: navigator,
+            theme: ThemeData(
+              platform: defaultTargetPlatform,
+              extensions: [
+                AppDesignTokens.light.copyWith(barGlassEnabled: true),
+              ],
+            ),
+            builder: (_, child) => AppPageTransitionHost(child: child!),
+            home: AppFadeThroughIndexedStack.lazy(
+              indexListenable: outerIndex,
+              itemCount: 1,
+              separateHeader: true,
+              itemBuilder: (_, _) => AppFadeThroughIndexedStack.lazy(
+                indexListenable: index,
+                itemCount: 2,
+                separateHeader: true,
+                itemBuilder: (_, _) => page(),
+              ),
+            ),
+          ),
+        ),
+      );
+      Future<void> expectBlur(Key key) async {
+        final bar = tester.getRect(find.byKey(key).last);
+        final pixels = await _pixels(tester, surface, [
+          Offset(380, bar.center.dy),
+          Offset(398, bar.center.dy),
+          Offset(402, bar.center.dy),
+          Offset(420, bar.center.dy),
+        ]);
+        final contrast = pixels[3].r - pixels[0].r;
+        expect(contrast, greaterThan(1 / 255));
+        expect(pixels[2].r - pixels[1].r, lessThan(contrast * 0.75));
+
+        // Scene captures don't use the on-screen raster cache. Verify the
+        // settled backdrop can't be rasterized without its surrounding page.
+        final backdrops = tester.layers.whereType<BackdropFilterLayer>();
+        expect(backdrops, isNotEmpty);
+        for (final backdrop in backdrops) {
+          for (
+            var layer = backdrop.parent;
+            layer != null;
+            layer = layer.parent
+          ) {
+            if (layer is OpacityLayer && layer.alpha == 255) {
+              expect(layer.engineLayer, isNot(isA<ui.OpacityEngineLayer>()));
+            }
+          }
+        }
+      }
+
+      await tester.pumpAndSettle();
+      await expectBlur(titleKey);
+      index.value = 1;
+      await tester.pumpAndSettle();
+      await expectBlur(titleKey);
+      unawaited(
+        navigator.currentState!.push(
+          buildAppPageRoute<void>(
+            context: navigator.currentContext!,
+            child: page(childRoute: true),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await expectBlur(titleKey);
+      await expectBlur(searchKey);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets(
     'search capsules follow the bar glass preference without changing input',
     (tester) async {

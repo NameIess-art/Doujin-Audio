@@ -74,7 +74,7 @@ void main() {
   );
 
   test(
-    'Japanese tree preserves chapter identities and assigns the stable work key',
+    'Japanese tree exposes wrapper children and preserves chapter identities',
     () async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       addTearDown(() => server.close(force: true));
@@ -107,7 +107,9 @@ void main() {
       );
       addTearDown(api.close);
       final work = _work(42, japanese: true);
-      final tracks = (await api.fetchTrackTree(work)).single.children;
+      final tracks = await api.fetchTrackTree(work);
+      expect(tracks.map((node) => node.title), ['track0.m4a', 'track1.m4a']);
+      expect(tracks.first.relativePath, 'japaneseasmr.com/track0.m4a');
       expect(tracks.map((node) => node.streamUrl).toSet(), hasLength(2));
       expect(tracks.every((node) => node.workKey == work.workKey), isTrue);
       expect(tracks.every((node) => node.isAudio), isTrue);

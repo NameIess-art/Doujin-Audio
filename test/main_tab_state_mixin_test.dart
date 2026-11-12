@@ -119,6 +119,18 @@ void main() {
         find.ancestor(of: snapshot, matching: find.byType(Transform)).first,
       );
       expect(transform.transform.storage[13], greaterThan(0));
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(
+        tester
+            .widget<Transform>(
+              find
+                  .ancestor(of: snapshot, matching: find.byType(Transform))
+                  .first,
+            )
+            .transform
+            .storage[13],
+        lessThan(state.controller.position.viewportDimension / 4),
+      );
       await tester.pumpAndSettle();
       expect(state.controller.offset, 0);
       expect(snapshot, findsNothing);
@@ -357,7 +369,7 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('repeated requests finish and disposal cancels safely', (
+  testWidgets('repeated distant requests keep the current cross-fade', (
     tester,
   ) async {
     final state = await _pumpTab(tester);
@@ -366,7 +378,11 @@ void main() {
     state.signals.requestScrollToTop(0);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 80));
+    final snapshot = find.byType(RawImage);
+    final image = tester.widget<RawImage>(snapshot).image;
     state.signals.requestScrollToTop(0);
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(tester.widget<RawImage>(snapshot).image, same(image));
     await tester.pumpAndSettle();
     expect(state.controller.offset, 0);
 
@@ -377,6 +393,56 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('repeated short requests keep the original finish time', (
+    tester,
+  ) async {
+    final state = await _pumpTab(tester);
+    final controller = state.controller;
+    controller.jumpTo(controller.position.viewportDimension / 2);
+    await tester.pump();
+
+    state.signals.requestScrollToTop(0);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(controller.offset, greaterThan(0));
+    state.signals.requestScrollToTop(0);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(controller.offset, 0);
+  });
+
+  testWidgets('return from a fling freezes the viewport and moves toward top', (
+    tester,
+  ) async {
+    final state = await _pumpTab(tester);
+    final controller = state.controller;
+    controller.jumpTo(40000);
+    await tester.pump();
+    await tester.fling(
+      find.byType(ScrollToTopListView),
+      const Offset(0, -240),
+      1600,
+    );
+    await tester.pump(const Duration(milliseconds: 64));
+    expect(controller.position.isScrollingNotifier.value, isTrue);
+    final visibleOffset = controller.offset;
+
+    state.signals.requestScrollToTop(0);
+    expect(controller.offset, visibleOffset);
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(RawImage), findsOneWidget);
+    var previous = controller.offset;
+    for (var frame = 0; frame < 30; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(controller.offset, lessThanOrEqualTo(previous));
+      previous = controller.offset;
+    }
+    await tester.pumpAndSettle();
+    expect(controller.offset, 0);
+    expect(find.byType(RawImage), findsNothing);
   });
 }
 

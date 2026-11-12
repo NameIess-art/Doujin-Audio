@@ -36,6 +36,7 @@ class UnifiedDropdownButton<T> extends StatefulWidget {
     required this.onChanged,
     this.isDense = false,
     this.alignment = AlignmentDirectional.centerStart,
+    this.insetTrigger = true,
     this.menuMaxHeight,
     this.multilineItems = false,
   });
@@ -45,6 +46,7 @@ class UnifiedDropdownButton<T> extends StatefulWidget {
   final ValueChanged<T?>? onChanged;
   final bool isDense;
   final AlignmentGeometry alignment;
+  final bool insetTrigger;
   final double? menuMaxHeight;
   final bool multilineItems;
 
@@ -54,10 +56,6 @@ class UnifiedDropdownButton<T> extends StatefulWidget {
 }
 
 class _UnifiedDropdownButtonState<T> extends State<UnifiedDropdownButton<T>> {
-  // Material's aligned button uses 4px at the end plus the 24px arrow, while
-  // each popup row already has 16px of padding. Reserve the difference so
-  // both labels wrap within the same width and share the same alignment.
-  static const double _popupTrailingPadding = 12;
   final _focusNode = FocusNode();
 
   @override
@@ -74,7 +72,9 @@ class _UnifiedDropdownButtonState<T> extends State<UnifiedDropdownButton<T>> {
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 44),
         child: ButtonTheme.fromButtonThemeData(
-          data: ButtonTheme.of(context).copyWith(alignedDropdown: true),
+          data: ButtonTheme.of(context).copyWith(
+            alignedDropdown: widget.insetTrigger,
+          ),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<T>(
               focusColor: Colors.transparent,
@@ -84,7 +84,10 @@ class _UnifiedDropdownButtonState<T> extends State<UnifiedDropdownButton<T>> {
                 widget.items,
                 widget.alignment,
                 widget.multilineItems,
-                trailingPadding: _popupTrailingPadding,
+                // The unpadded Material trigger expands its popup by 16px
+                // at the start and 24px at the end to align the labels.
+                // Reserve the extra end space so the text wraps identically.
+                trailingPadding: widget.insetTrigger ? 12 : 32,
               ),
               selectedItemBuilder: (context) => widget.items
                   .map(

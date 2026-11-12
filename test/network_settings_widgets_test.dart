@@ -95,36 +95,13 @@ void main() {
         final categoryList = find.byType(ListView).last;
         final scroll = tester.widget<ListView>(categoryList).controller!;
         scroll.jumpTo(40);
-        await tester.pumpAndSettle();
-        final stickyTitle = find.byKey(
-          const ValueKey<String>('settings_sticky_section_pill'),
-        );
-        expect(stickyTitle, findsOneWidget);
-        expect(
-          find.descendant(
-            of: stickyTitle,
-            matching: find.text(i18n.tr('network_site_tests')),
-          ),
-          findsOneWidget,
-        );
-        final pinnedTop = tester.getTopLeft(stickyTitle).dy;
+        await tester.pump();
+        final pinnedTop = tester.getTopLeft(inlineTitles.first).dy;
         expect(
           pinnedTop - tester.getRect(find.byType(TopPageHeader)).bottom,
           closeTo(8, 0.5),
         );
-        expect(
-          tester
-              .widget<Visibility>(
-                find
-                    .ancestor(
-                      of: inlineTitles.first,
-                      matching: find.byType(Visibility),
-                    )
-                    .first,
-              )
-              .visible,
-          isFalse,
-        );
+        expect(find.text(i18n.tr('network_site_tests')), findsOneWidget);
         scroll.jumpTo(0);
         await tester.pumpAndSettle();
         final http = find.widgetWithText(ChoiceChip, 'HTTP');
@@ -158,18 +135,21 @@ void main() {
         expectPanelBackground(field('network_dns_ip'));
         await tester.enterText(field('network_proxy_host'), '127.0.0.1');
         await tester.enterText(field('network_proxy_port'), '8080');
+        final proxySlot = find.byKey(
+          const ValueKey<String>('settings_section_slot_network_1'),
+        );
         scroll.jumpTo(
-          scroll.offset + tester.getTopLeft(inlineTitles[1]).dy - pinnedTop,
+          scroll.offset + tester.getTopLeft(proxySlot).dy - pinnedTop,
         );
         await tester.pumpAndSettle();
         expect(
           find.descendant(
-            of: stickyTitle,
+            of: inlineTitles[1],
             matching: find.text(i18n.tr('network_proxy')),
           ),
           findsOneWidget,
         );
-        expect(tester.getTopLeft(stickyTitle).dy, closeTo(pinnedTop, 0.5));
+        expect(tester.getTopLeft(inlineTitles[1]).dy, closeTo(pinnedTop, 0.5));
         final apply = find.text(i18n.tr('network_apply_proxy'));
         await tester.ensureVisible(apply);
         await tester.tap(apply);

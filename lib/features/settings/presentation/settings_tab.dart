@@ -423,140 +423,12 @@ class _SettingsCategoryPage extends ConsumerStatefulWidget {
 class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
   final ScrollController _scrollController = ScrollController();
   final Map<int, GlobalKey> _sectionTitleKeys = <int, GlobalKey>{};
-  List<_SettingsStickySection> _stickySections =
-      const <_SettingsStickySection>[];
-  int? _pinnedSectionIndex;
-  int? _overlappingNextSectionIndex;
-  final _overlappingNextSectionTop = ValueNotifier<double?>(null);
-  bool _stickySectionSyncScheduled = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _scrollController.addListener(_scheduleStickySectionSync);
-  }
+  final _sectionTitleLayerKey = GlobalKey();
 
   @override
   void dispose() {
-    _scrollController
-      ..removeListener(_scheduleStickySectionSync)
-      ..dispose();
-    _overlappingNextSectionTop.dispose();
+    _scrollController.dispose();
     super.dispose();
-  }
-
-  double _contentTopInset(BuildContext context) =>
-      AppPageHeaderMetrics.contentTopInset(context);
-
-  double _pinnedTop(BuildContext context) =>
-      AppPageHeaderMetrics.contentTopInset(context);
-
-  List<Widget> _withStickySectionTitles(List<Widget> sections) {
-    final stickySections = <_SettingsStickySection>[];
-    final keyedSections = <Widget>[];
-    var cardIndex = 0;
-    for (var index = 0; index < sections.length; index++) {
-      final section = sections[index];
-      if (section is! _SettingsSectionCard) {
-        keyedSections.add(section);
-        continue;
-      }
-      final currentCardIndex = cardIndex++;
-      final titleKey = _sectionTitleKeys.putIfAbsent(
-        currentCardIndex,
-        () => GlobalKey(
-          debugLabel:
-              'settings_section_${widget.category.name}_$currentCardIndex',
-        ),
-      );
-      final isPinnedOrPast =
-          _pinnedSectionIndex != null &&
-          currentCardIndex <= _pinnedSectionIndex!;
-      final isOverlappingNext =
-          _overlappingNextSectionIndex != null &&
-          currentCardIndex == _overlappingNextSectionIndex!;
-      stickySections.add(
-        _SettingsStickySection(title: section.title, titleKey: titleKey),
-      );
-      keyedSections.add(
-        _SettingsSectionCard(
-          title: section.title,
-          leadingContent: section.leadingContent,
-          titleKey: titleKey,
-          sectionId: '${widget.category.name}_$currentCardIndex',
-          hideTitlePill: isPinnedOrPast || isOverlappingNext,
-          childrenUseOwnCards: section.childrenUseOwnCards,
-          children: section.children,
-        ),
-      );
-    }
-    _stickySections = stickySections;
-    _scheduleStickySectionSync();
-    return keyedSections;
-  }
-
-  void _scheduleStickySectionSync() {
-    if (_stickySectionSyncScheduled) return;
-    _stickySectionSyncScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _stickySectionSyncScheduled = false;
-      if (!mounted) return;
-      final pinnedTop = _pinnedTop(context);
-      int? nextPinnedIndex;
-      int? nextOverlappingIndex;
-      double? nextOverlappingTop;
-
-      if (_scrollController.hasClients && _scrollController.offset > 0) {
-        int? firstMountedIndex;
-        int? lastPastMountedIndex;
-
-        for (var i = 0; i < _stickySections.length; i++) {
-          final section = _stickySections[i];
-          final box =
-              section.titleKey.currentContext?.findRenderObject() as RenderBox?;
-          if (box == null || !box.hasSize) continue;
-          final dy = box.localToGlobal(Offset.zero).dy;
-          firstMountedIndex ??= i;
-          if (dy <= pinnedTop + 0.5) {
-            lastPastMountedIndex = i;
-          }
-        }
-
-        if (lastPastMountedIndex != null) {
-          nextPinnedIndex = lastPastMountedIndex;
-        } else if (firstMountedIndex != null && firstMountedIndex > 0) {
-          nextPinnedIndex = firstMountedIndex - 1;
-        } else if (firstMountedIndex == null && _stickySections.isNotEmpty) {
-          nextPinnedIndex = _stickySections.length - 1;
-        }
-
-        if (nextPinnedIndex != null &&
-            nextPinnedIndex + 1 < _stickySections.length) {
-          final nextIndex = nextPinnedIndex + 1;
-          final nextBox =
-              _stickySections[nextIndex].titleKey.currentContext
-                      ?.findRenderObject()
-                  as RenderBox?;
-          if (nextBox != null && nextBox.hasSize) {
-            final nextDy = nextBox.localToGlobal(Offset.zero).dy;
-            if (nextDy < pinnedTop + 38.0 && nextDy > pinnedTop) {
-              nextOverlappingIndex = nextIndex;
-              nextOverlappingTop = nextDy;
-            }
-          }
-        }
-      }
-
-      _overlappingNextSectionTop.value = nextOverlappingTop;
-      if (nextPinnedIndex == _pinnedSectionIndex &&
-          nextOverlappingIndex == _overlappingNextSectionIndex) {
-        return;
-      }
-      setState(() {
-        _pinnedSectionIndex = nextPinnedIndex;
-        _overlappingNextSectionIndex = nextOverlappingIndex;
-      });
-    });
   }
 
   @override
@@ -564,7 +436,7 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
-    final contentTopInset = _contentTopInset(context);
+    final contentTopInset = AppPageHeaderMetrics.contentTopInset(context);
 
     return Scaffold(
       backgroundColor: cs.surface,
@@ -599,8 +471,7 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
     final settings = ref.read(settingsRepositoryProvider);
     final settingsController = ref.read(settingsCommandControllerProvider);
     final cs = Theme.of(context).colorScheme;
-    final contentTopInset = _contentTopInset(context);
-    final pinnedTop = _pinnedTop(context);
+    final contentTopInset = AppPageHeaderMetrics.contentTopInset(context);
 
     return ValueListenableBuilder<AppUpdateInfo?>(
       valueListenable: widget.updateInfoListenable,
@@ -654,11 +525,47 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
         };
 
         Widget buildSections(List<Widget> rawSections) {
-          final sections = _withStickySectionTitles(rawSections);
+          final sections = <Widget>[];
+          final titles = <Widget>[];
+          final titleKeys = <GlobalKey>[];
+          for (final section in rawSections) {
+            if (section is! _SettingsSectionCard) {
+              sections.add(section);
+              continue;
+            }
+            final index = titles.length;
+            final sectionId = '${widget.category.name}_$index';
+            final titleKey = _sectionTitleKeys.putIfAbsent(index, GlobalKey.new);
+            titleKeys.add(titleKey);
+            titles.add(
+              _SettingsSectionTitlePill(
+                key: ValueKey('settings_section_pill_$sectionId'),
+                title: section.title,
+              ),
+            );
+            sections.add(
+              SizeChangedLayoutNotifier(
+                key: ValueKey('settings_section_slot_$sectionId'),
+                child: _SettingsSectionCard(
+                  title: section.title,
+                  titleKey: titleKey,
+                  leadingContent: section.leadingContent,
+                  childrenUseOwnCards: section.childrenUseOwnCards,
+                  children: section.children,
+                ),
+              ),
+            );
+          }
           return Stack(
             fit: StackFit.expand,
             children: [
-              Positioned.fill(
+              NotificationListener<SizeChangedLayoutNotification>(
+                onNotification: (_) {
+                  _sectionTitleLayerKey.currentContext
+                      ?.findRenderObject()
+                      ?.markNeedsPaint();
+                  return false;
+                },
                 child: ListView(
                   controller: _scrollController,
                   padding: EdgeInsets.fromLTRB(16, contentTopInset, 16, 24),
@@ -667,47 +574,25 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
                   ],
                 ),
               ),
-              if (_pinnedSectionIndex != null &&
-                  _pinnedSectionIndex! < _stickySections.length)
-                Positioned(
-                  top: pinnedTop,
-                  left: 16,
-                  right: 16,
-                  child: IgnorePointer(
-                    child: ExcludeSemantics(
-                      child: _SettingsSectionTitlePill(
-                        key: const ValueKey<String>(
-                          'settings_sticky_section_pill',
-                        ),
-                        title: _stickySections[_pinnedSectionIndex!].title,
+              Positioned(
+                top: contentTopInset,
+                bottom: 0,
+                left: 16,
+                right: 16,
+                child: IgnorePointer(
+                  child: ExcludeSemantics(
+                    child: Flow(
+                      key: _sectionTitleLayerKey,
+                      delegate: _SettingsSectionTitleLayout(
+                        _sectionTitleLayerKey,
+                        titleKeys,
+                        _scrollController,
                       ),
+                      children: titles,
                     ),
                   ),
                 ),
-              if (_overlappingNextSectionIndex != null &&
-                  _overlappingNextSectionIndex! < _stickySections.length)
-                ValueListenableBuilder<double?>(
-                  valueListenable: _overlappingNextSectionTop,
-                  builder: (context, top, child) => top == null
-                      ? const SizedBox.shrink()
-                      : Positioned(
-                          top: top,
-                          left: 16,
-                          right: 16,
-                          child: child!,
-                        ),
-                  child: IgnorePointer(
-                    child: ExcludeSemantics(
-                      child: _SettingsSectionTitlePill(
-                        key: const ValueKey<String>(
-                          'settings_overlapping_section_pill',
-                        ),
-                        title: _stickySections[_overlappingNextSectionIndex!]
-                            .title,
-                      ),
-                    ),
-                  ),
-                ),
+              ),
             ],
           );
         }
@@ -720,9 +605,45 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
   }
 }
 
-class _SettingsStickySection {
-  const _SettingsStickySection({required this.title, required this.titleKey});
+class _SettingsSectionTitleLayout extends FlowDelegate {
+  _SettingsSectionTitleLayout(this.layerKey, this.titleKeys, Listenable scroll)
+    : super(repaint: scroll);
 
-  final String title;
-  final GlobalKey titleKey;
+  final GlobalKey layerKey;
+  final List<GlobalKey> titleKeys;
+
+  @override
+  BoxConstraints getConstraintsForChild(int i, BoxConstraints constraints) =>
+      BoxConstraints(maxWidth: constraints.maxWidth);
+
+  @override
+  void paintChildren(FlowPaintingContext context) {
+    final layer = layerKey.currentContext?.findRenderObject();
+    if (layer is! RenderBox) return;
+
+    // Read the slots after layout so a fling cannot paint a title under the
+    // page header before the pinned title is updated.
+    final positions = <({int index, double top})>[];
+    int? pinned;
+    for (var i = 0; i < titleKeys.length; i++) {
+      final box = titleKeys[i].currentContext?.findRenderObject();
+      if (box is! RenderBox || !box.hasSize) continue;
+      final top = layer.globalToLocal(box.localToGlobal(Offset.zero)).dy;
+      if (top <= 0) {
+        pinned = i;
+      } else if (top < context.size.height) {
+        positions.add((index: i, top: top));
+      }
+    }
+    if (pinned != null) context.paintChild(pinned);
+    for (final position in positions) {
+      context.paintChild(
+        position.index,
+        transform: Matrix4.translationValues(0, position.top, 0),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SettingsSectionTitleLayout oldDelegate) => true;
 }

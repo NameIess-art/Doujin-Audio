@@ -5,6 +5,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import '../ui/ui_interaction_coordinator.dart';
+
 /// Cross-fades the outgoing viewport while the same list returns near its top.
 class ScrollToTopTransition extends StatefulWidget {
   const ScrollToTopTransition({
@@ -31,37 +33,76 @@ class ScrollToTopTransitionState extends State<ScrollToTopTransition> {
   double _start = 0;
   double _top = 0;
   int _generation = 0;
-  bool _pending = false;
 
   Future<void> scrollToTop() async {
-    if (_pending || _snapshot != null) return;
+    if (_position != null || !TickerMode.valuesOf(context).enabled) return;
     final controller = widget.controller();
     if (!controller.hasClients) return;
     final position = controller.position;
-    final offset = position.pixels;
-    _position = position;
-    _activeController = controller;
-    _pending = true;
-    final generation = ++_generation;
-    controller.jumpTo(offset);
-
-    // Capture a painted, stationary frame. The sync API returns an image handle
-    // immediately and rasterizes on the raster thread, as SnapshotWidget does.
-    await WidgetsBinding.instance.endOfFrame;
-    if (!mounted || generation != _generation) return;
-    _pending = false;
-    if (!controller.hasClients ||
-        !identical(controller.position, position) ||
-        position.pixels != offset) {
-      cancel();
+    if (!position.hasContentDimensions ||
+        position.pixels <= position.minScrollExtent) {
       return;
     }
-    final boundary =
-        _boundaryKey.currentContext!.findRenderObject()!
-            as RenderRepaintBoundary;
-    if (boundary.size.isEmpty) {
-      cancel();
+    if (MediaQuery.disableAnimationsOf(context) ||
+        position.viewportDimension <= 0) {
+      position.jumpTo(position.minScrollExtent);
       return;
+    }
+
+    _position = position;
+    _activeController = controller;
+    final generation = ++_generation;
+    UiInteractionCoordinator.instance.beginInteraction(
+      this,
+      deferVisualUpdates: true,
+    );
+    try {
+      if (position.pixels > _animationStart(position)) {
+        // Stop any fling before capturing the last painted viewport.
+        position.jumpTo(position.pixels);
+        await WidgetsBinding.instance.endOfFrame;
+        if (!mounted ||
+            generation != _generation ||
+            !controller.hasClients ||
+            !identical(controller.position, position) ||
+            !identical(widget.controller(), controller)) {
+          return;
+        }
+        if (position.pixels > _animationStart(position)) {
+          final image = _captureSnapshot();
+          if (image == null) return;
+          _top = position.minScrollExtent;
+          _start = _animationStart(position);
+          setState(() => _snapshot = image);
+          position.jumpTo(_start);
+        }
+      }
+
+      final top = position.minScrollExtent;
+      if (position.pixels <= top) return;
+      final screens = (position.pixels - top) / position.viewportDimension;
+      await position.animateTo(
+        top,
+        duration: Duration(milliseconds: (240 + 120 * screens).round()),
+        curve: Curves.easeInOutCubic,
+      );
+    } finally {
+      if (mounted && generation == _generation) cancel();
+    }
+  }
+
+  double _animationStart(ScrollPosition position) =>
+      position.minScrollExtent + position.viewportDimension * 2;
+
+  ui.Image? _captureSnapshot() {
+    final boundary =
+        _boundaryKey.currentContext?.findRenderObject()
+            as RenderRepaintBoundary?;
+    if (boundary == null ||
+        !boundary.attached ||
+        !boundary.hasSize ||
+        boundary.size.isEmpty) {
+      return null;
     }
 
     // Keep the live scrollbar outside the outgoing image, including hover width.
@@ -79,22 +120,13 @@ class ScrollToTopTransitionState extends State<ScrollToTopTransition> {
       math.min(MediaQuery.devicePixelRatioOf(context), 2.0),
       math.sqrt(2000000 / (bounds.width * bounds.height)),
     );
-    final image = boundary.toImageSync(pixelRatio: ratio);
-    _top = position.minScrollExtent;
-    _start = _top + position.viewportDimension * 2;
-    setState(() => _snapshot = image);
-    position.jumpTo(_start);
-    await position.animateTo(
-      _top,
-      duration: const Duration(milliseconds: 480),
-      curve: Curves.easeInOutCubic,
-    );
-    if (mounted && generation == _generation) cancel();
+    // Like SnapshotWidget, rasterize on the raster thread.
+    return boundary.toImageSync(pixelRatio: ratio);
   }
 
   void cancel({bool notify = true}) {
     _generation++;
-    _pending = false;
+    final returning = _position != null;
     _position = null;
     _activeController = null;
     _panZoomPosition = null;
@@ -102,6 +134,7 @@ class ScrollToTopTransitionState extends State<ScrollToTopTransition> {
     _snapshot = null;
     image?.dispose();
     if (notify && image != null) setState(() {});
+    if (returning) UiInteractionCoordinator.instance.cancelInteraction(this);
   }
 
   void _interrupt({bool notify = true}) {
@@ -202,20 +235,19 @@ class ScrollToTopTransitionState extends State<ScrollToTopTransition> {
                       child: RawImage(image: image, fit: BoxFit.fill),
                     ),
                     builder: (context, child) {
-                      final distance = (_start - position.pixels).clamp(
-                        0.0,
-                        _start - _top,
-                      );
-                      final progress = (distance / (_start - _top) / 0.8).clamp(
-                        0.0,
-                        1.0,
-                      );
+                      final progress =
+                          ((_start - position.pixels) / (_start - _top)).clamp(
+                            0.0,
+                            1.0,
+                          );
+                      // Let the snapshot move in the same direction while
+                      // keeping it in the viewport until it has faded out.
                       return Transform.translate(
-                        offset: Offset(0, distance),
-                        child: Opacity(
-                          opacity: 1 - Curves.easeInOut.transform(progress),
-                          child: child,
+                        offset: Offset(
+                          0,
+                          position.viewportDimension * 0.16 * progress,
                         ),
+                        child: Opacity(opacity: 1 - progress, child: child),
                       );
                     },
                   ),

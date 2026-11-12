@@ -136,8 +136,6 @@ class _SettingsSectionCard extends StatelessWidget {
     required this.children,
     this.leadingContent,
     this.titleKey,
-    this.sectionId,
-    this.hideTitlePill = false,
     this.childrenUseOwnCards = false,
   });
 
@@ -145,8 +143,6 @@ class _SettingsSectionCard extends StatelessWidget {
   final List<Widget> children;
   final Widget? leadingContent;
   final Key? titleKey;
-  final String? sectionId;
-  final bool hideTitlePill;
   final bool childrenUseOwnCards;
 
   @override
@@ -156,18 +152,15 @@ class _SettingsSectionCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Visibility(
-            visible: !hideTitlePill,
-            maintainSize: true,
-            maintainAnimation: true,
-            maintainState: true,
-            child: KeyedSubtree(
-              key: sectionId == null
-                  ? null
-                  : ValueKey<String>('settings_section_pill_$sectionId'),
-              child: _SettingsSectionTitlePill(key: titleKey, title: title),
+          if (titleKey == null)
+            _SettingsSectionTitlePill(title: title)
+          else
+            Semantics(
+              key: titleKey,
+              header: true,
+              label: title,
+              child: const SizedBox(height: AppPageHeaderMetrics.contentHeight),
             ),
-          ),
           const SizedBox(height: 8),
           if (leadingContent != null) ...[
             leadingContent!,

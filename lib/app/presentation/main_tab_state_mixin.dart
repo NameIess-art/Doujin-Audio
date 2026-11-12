@@ -74,30 +74,7 @@ mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
   }
 
   void scrollToTop() {
-    final controller = mainScrollController;
-    if (!controller.hasClients) return;
-    final position = controller.position;
-    if (!position.hasContentDimensions) return;
-    final top = position.minScrollExtent;
-    if (position.pixels <= top) return;
-    if (MediaQuery.disableAnimationsOf(context) ||
-        position.viewportDimension <= 0) {
-      controller.jumpTo(top);
-      return;
-    }
-
-    final animationStart = top + position.viewportDimension * 2;
-    if (position.pixels > animationStart) {
-      unawaited(_scrollTransitionKey.currentState!.scrollToTop());
-      return;
-    }
-    unawaited(
-      controller.animateTo(
-        top,
-        duration: const Duration(milliseconds: 320),
-        curve: Curves.easeOutCubic,
-      ),
-    );
+    unawaited(_scrollTransitionKey.currentState?.scrollToTop());
   }
 
   /// Immediately stops any ongoing momentum/animated scroll.

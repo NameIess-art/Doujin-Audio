@@ -574,115 +574,91 @@ void main() {
           tester.getTopLeft(startupPill).dy -
           tester.getRect(categoryHeader).bottom;
       expect(initialAppearanceGap, closeTo(8.0, 0.5));
-      expect(
-        find.byKey(const ValueKey<String>('settings_sticky_section_pill')),
-        findsNothing,
-      );
 
       final categoryList = find.byType(ListView).last;
-      await tester.drag(categoryList, const Offset(0, -100));
-      await tester.pumpAndSettle();
+      final controller = tester.widget<ListView>(categoryList).controller!;
+      final pinnedTop = tester.getRect(categoryHeader).bottom + 8;
+      bool painted(Finder title) {
+        var node = tester.renderObject(title);
+        while (!node.isRepaintBoundary) {
+          node = node.parent!;
+        }
+        return tester.layers.contains(node.debugLayer);
+      }
 
-      final stickyPill = find.byKey(
-        const ValueKey<String>('settings_sticky_section_pill'),
-      );
-      expect(stickyPill, findsOneWidget);
-      expect(
-        find.descendant(
-          of: stickyPill,
-          matching: find.text(i18n.tr('settings_group_theme_layout')),
-        ),
-        findsOneWidget,
-      );
-      final stickySurface = find.descendant(
-        of: stickyPill,
-        matching: find.byType(HeaderFloatingSurface),
-      );
-      expect(tester.getSize(stickySurface).width, lessThan(300));
-      expect(tester.getTopLeft(stickySurface).dx, equals(16.0));
-      expect(
-        tester.getTopLeft(stickyPill).dy -
-            tester.getRect(categoryHeader).bottom,
-        closeTo(8.0, 0.5),
-      );
-      // When section is pinned, its inline pill is hidden to avoid duplicate pills on screen
-      final inlineVisibility = tester.widget<Visibility>(
-        find.ancestor(of: startupPill, matching: find.byType(Visibility)).first,
-      );
-      expect(inlineVisibility.visible, isFalse);
+      controller.jumpTo(100);
+      await tester.pump();
+      expect(painted(startupPill), isTrue);
+      expect(tester.getTopLeft(startupPill).dy, closeTo(pinnedTop, 0.5));
+      expect(find.text(i18n.tr('settings_group_theme_layout')), findsOneWidget);
 
       final coverPill = find.byKey(
         const ValueKey<String>('settings_section_pill_appearance_1'),
       );
-      final controller = tester.widget<ListView>(categoryList).controller!;
-      final pinnedTop = tester.getTopLeft(stickyPill).dy;
+      final coverSlot = find.byKey(
+        const ValueKey<String>('settings_section_slot_appearance_1'),
+      );
       controller.jumpTo(
-        controller.offset + tester.getTopLeft(coverPill).dy - pinnedTop - 20,
+        controller.offset + tester.getTopLeft(coverSlot).dy - pinnedTop - 20,
       );
-      await tester.pumpAndSettle();
-      final overlappingPill = find.byKey(
-        const ValueKey<String>('settings_overlapping_section_pill'),
-      );
-      expect(overlappingPill, findsOneWidget);
-      expect(
-        tester.getTopLeft(overlappingPill).dy,
-        closeTo(pinnedTop + 20, 0.5),
-      );
+      await tester.pump();
+      expect(painted(coverPill), isTrue);
+      expect(tester.getTopLeft(coverPill).dy, closeTo(pinnedTop + 20, 0.5));
       final contentColumn = find
           .descendant(of: categoryList, matching: find.byType(Column))
           .first;
       final content = tester.widget<Column>(contentColumn);
       for (final distance in [4.0, 6.0]) {
-        final previousTop = tester.getTopLeft(overlappingPill).dy;
+        final previousTop = tester.getTopLeft(coverPill).dy;
         controller.jumpTo(controller.offset + distance);
-        await tester.pumpAndSettle();
+        await tester.pump();
         expect(
-          tester.getTopLeft(overlappingPill).dy,
+          tester.getTopLeft(coverPill).dy,
           closeTo(previousTop - distance, 0.5),
         );
+        expect(tester.getTopLeft(startupPill).dy, closeTo(pinnedTop, 0.5));
         expect(tester.widget<Column>(contentColumn), same(content));
       }
 
-      controller.jumpTo(controller.offset + 20);
-      await tester.pumpAndSettle();
-      expect(overlappingPill, findsNothing);
-      expect(
-        find.descendant(
-          of: stickyPill,
-          matching: find.text(i18n.tr('settings_group_cover_background')),
-        ),
-        findsOneWidget,
-      );
+      controller.jumpTo(controller.offset + 80);
+      await tester.pump();
+      expect(painted(startupPill), isFalse);
+      expect(painted(coverPill), isTrue);
+      expect(tester.getTopLeft(coverPill).dy, closeTo(pinnedTop, 0.5));
 
-      controller.jumpTo(controller.offset - 20);
-      await tester.pumpAndSettle();
-      expect(overlappingPill, findsOneWidget);
-      expect(
-        tester.getTopLeft(overlappingPill).dy,
-        closeTo(pinnedTop + 10, 0.5),
-      );
-      expect(
-        find.descendant(
-          of: stickyPill,
-          matching: find.text(i18n.tr('settings_group_theme_layout')),
-        ),
-        findsOneWidget,
-      );
+      controller.jumpTo(controller.offset - 80);
+      await tester.pump();
+      expect(painted(startupPill), isTrue);
+      expect(tester.getTopLeft(startupPill).dy, closeTo(pinnedTop, 0.5));
+      expect(tester.getTopLeft(coverPill).dy, closeTo(pinnedTop + 10, 0.5));
+
       controller.jumpTo(0);
-      await tester.pumpAndSettle();
-      expect(stickyPill, findsNothing);
-      expect(overlappingPill, findsNothing);
-      expect(
-        tester
-            .widget<Visibility>(
-              find
-                  .ancestor(of: startupPill, matching: find.byType(Visibility))
-                  .first,
-            )
-            .visible,
-        isTrue,
-      );
+      await tester.pump();
+      expect(painted(startupPill), isTrue);
+      expect(tester.getTopLeft(startupPill).dy, closeTo(pinnedTop, 0.5));
 
+      final pills = find.byWidgetPredicate((widget) {
+        final key = widget.key;
+        return key is ValueKey<String> &&
+            key.value.startsWith('settings_section_pill_appearance_');
+      });
+      await tester.fling(categoryList, const Offset(0, -170), 4000);
+      for (var frame = 0; frame < 12; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        final visibleTops = [
+          for (var index = 0; index < pills.evaluate().length; index++)
+            if (painted(pills.at(index))) tester.getTopLeft(pills.at(index)).dy,
+        ];
+        expect(
+          visibleTops,
+          everyElement(greaterThanOrEqualTo(pinnedTop - 0.5)),
+        );
+        expect(
+          visibleTops.where((top) => (top - pinnedTop).abs() <= 0.5),
+          hasLength(1),
+        );
+      }
+      await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.arrow_back_rounded));
       await tester.pumpAndSettle();
 
@@ -1222,6 +1198,39 @@ void main() {
       TargetPlatform.android,
       TargetPlatform.windows,
     }),
+  );
+
+  testWidgets(
+    'network domain label aligns with site names before and after opening',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 840));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final harness = AppRuntimeWidgetTestFixture();
+      addTearDown(harness.dispose);
+      await tester.pumpWidget(harness.build(const SettingsTab()));
+      await tester.pumpAndSettle();
+      final network = find.text(harness.languageProvider.tr('section_network'));
+      await tester.ensureVisible(network);
+      await tester.tap(network);
+      await tester.pumpAndSettle();
+
+      final dropdown = find.byType(UnifiedDropdownButton<String>);
+      final domain = tester
+          .widget<UnifiedDropdownButton<String>>(dropdown)
+          .value!;
+      final label = find.text(Uri.parse(domain).host);
+      final x = tester.getTopLeft(find.text('DLsite')).dx;
+      expect(tester.getTopLeft(find.text('Japanese ASMR')).dx, x);
+      expect(tester.getTopLeft(label).dx, x);
+
+      await tester.tap(label);
+      await tester.pumpAndSettle();
+      expect(label, findsNWidgets(2));
+      expect(tester.getTopLeft(label.last).dx, x);
+      await tester.tapAt(const Offset(2, 2));
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
   );
 
   testWidgets(

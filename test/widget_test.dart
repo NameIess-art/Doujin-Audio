@@ -4367,6 +4367,9 @@ void main() {
   testWidgets('ASMR quick return to top keeps content below expanded header', (
     tester,
   ) async {
+    tester.view.physicalSize = const Size(450, 280);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     final activePageIndex = ValueNotifier<int>(0);
     final controller = _QueuedEmptyAsmrLibraryController(
       services: createTestAsmrServices(),
@@ -4384,19 +4387,18 @@ void main() {
         ],
       ),
     );
-    await tester.pump();
-    await tester.pump();
-
     Finder contentList() => find.descendant(
       of: find.byKey(const ValueKey(AsmrCategoryType.collected)),
       matching: find.byKey(const PageStorageKey(AsmrCategoryType.collected)),
     );
 
+    await pumpUntilFound(tester, contentList());
     final scrollController = tester
         .widget<ScrollView>(contentList())
         .controller!;
-    scrollController.jumpTo(120);
+    scrollController.jumpTo(scrollController.position.maxScrollExtent);
     await tester.pump();
+    expect(scrollController.offset, greaterThan(0));
 
     activePageIndex.value = 1;
     await tester.pump();

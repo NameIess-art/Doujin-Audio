@@ -95,12 +95,6 @@ void main() {
     'download tree removes only the Japanese source wrapper and keeps media',
     () {
       const planner = AsmrDownloadPlanner();
-      final work = AsmrWork.fromJson(const {
-        'id': 42,
-        'resources': [
-          {'source': 'japaneseAsmr', 'id': 42, 'code': '', 'pageUrl': ''},
-        ],
-      });
       final root = AsmrTrackFile.fromJson(const {
         'type': 'folder',
         'title': 'japaneseasmr.com',
@@ -122,7 +116,7 @@ void main() {
         ],
       });
       final original = root.children.single.children.single;
-      final tree = planner.prepareDownloadTree(work, [root]);
+      final tree = planner.prepareDownloadTree([root]);
       final file = tree.single.children.single;
       expect(tree.single.relativePath, 'Disc 1');
       expect(file.relativePath, 'Disc 1/01.m4a');
@@ -131,16 +125,21 @@ void main() {
       expect(file.downloadUrl, original.downloadUrl);
       expect(original.relativePath, 'japaneseasmr.com/Disc 1/01.m4a');
       expect(
-        planner.prepareDownloadTree(work, [original]).single.relativePath,
+        planner.prepareDownloadTree([original]).single.relativePath,
         'Disc 1/01.m4a',
       );
+      expect(planner.prepareDownloadTree(tree).single, same(tree.single));
+      final ordinaryFolder = AsmrTrackFile.fromJson(const {
+        'type': 'folder',
+        'title': 'Bonus',
+        'children': [
+          {'type': 'audio', 'title': '02.m4a'},
+        ],
+      });
       expect(
-        planner.prepareDownloadTree(work, tree).single.relativePath,
-        'Disc 1',
+        planner.prepareDownloadTree([ordinaryFolder]).single,
+        same(ordinaryFolder),
       );
-      final one = AsmrWork.fromJson(const {'id': 42});
-      final oneRoots = [root];
-      expect(planner.prepareDownloadTree(one, oneRoots), same(oneRoots));
     },
   );
 

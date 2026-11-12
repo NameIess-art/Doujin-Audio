@@ -8349,6 +8349,7 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     AsmrCategoryType category, {
     String searchQuery = '',
     bool searchSession = false,
+    Object? expectedPaginationToken,
   }) async {
     if (!collectedHasMore ||
         category != AsmrCategoryType.collected ||

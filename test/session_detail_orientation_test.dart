@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:doujin_audio/app/presentation/app_orientation_controller.dart';
 import 'package:doujin_audio/app/presentation/work_detail_navigation.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:doujin_audio/features/library/presentation/library_search_page.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
@@ -16,9 +17,11 @@ import 'support/app_runtime_test_fixture.dart';
 void main() {
   for (final action in [
     'close',
+    'close timeout',
     'background',
     'back',
     'pop',
+    'pop timeout',
     'drag',
     'local work',
     'online work',
@@ -27,7 +30,8 @@ void main() {
   ]) {
     for (final reducedMotion in [false, true]) {
       testWidgets(
-        'phone detail $action waits for a portrait frame, reduced=$reducedMotion',
+        'phone detail $action restores portrait with bounded waiting, '
+        'reduced=$reducedMotion',
         (tester) async {
           tester.view.devicePixelRatio = 1;
           tester.view.physicalSize = const Size(390, 820);
@@ -46,6 +50,7 @@ void main() {
           addTearDown(fixture.dispose);
           final opensWork = action.endsWith(' work');
           final opensSearch = action.endsWith(' search');
+          final receivesPortraitMetrics = !action.endsWith(' timeout');
           var track = testMusicTrack(
             name: 'Orientation',
             path: '/music/orientation.mp3',
@@ -141,6 +146,7 @@ void main() {
                 find.byTooltip(fixture.languageProvider.tr('audio_detail')),
               );
             case 'close':
+            case 'close timeout':
             case 'background':
               await tester.tap(
                 find.byKey(const ValueKey('session_detail_close_button')),
@@ -149,6 +155,7 @@ void main() {
               await tester.binding.handlePopRoute();
               await tester.binding.handlePopRoute();
             case 'pop':
+            case 'pop timeout':
               navigator.pop();
               navigator.pop(); // Repeated back must not pop the home route.
             case 'drag':
@@ -158,7 +165,13 @@ void main() {
               );
           }
           // The platform call is already complete; resize has not arrived yet.
-          await tester.pumpAndSettle();
+          if (opensSearch) {
+            // Finish the menu's reverse transition before the portrait timeout.
+            await tester.pump();
+            await tester.pump(kAppFadeDuration);
+          } else {
+            await tester.pumpAndSettle();
+          }
           expect(find.byType(SessionDetailPage), findsOneWidget);
           expect(route.isCurrent, isTrue);
           expect(route.opaque, isTrue);
@@ -183,7 +196,11 @@ void main() {
               );
               await tester.pump();
             }
-            tester.view.physicalSize = const Size(390, 820);
+            if (receivesPortraitMetrics) {
+              tester.view.physicalSize = const Size(390, 820);
+            } else {
+              await tester.pump(const Duration(seconds: 1));
+            }
             if (opensWork) {
               if (!reducedMotion) {
                 await tester.pump();
@@ -246,9 +263,12 @@ void main() {
             }
             expect(find.byType(SessionDetailPage), findsNothing);
             expect(navigator.canPop(), isFalse);
+            expect(calls, [AppOrientationPolicy.portrait.allowedOrientations]);
             expect(homePaintSizes, isNotEmpty);
             expect(
-              homePaintSizes.every((size) => size.height > size.width),
+              homePaintSizes.every(
+                (size) => (size.height > size.width) == receivesPortraitMetrics,
+              ),
               isTrue,
             );
           }
@@ -271,7 +291,7 @@ class _GuardedSessionDetailRoute extends SessionDetailRoute {
   bool didPop(void result) {
     // Bound the regression failure: popUntil would otherwise loop forever
     // while the phone is waiting for a portrait metrics event.
-    if (++popAttempts > 2 && requiresPortraitRestore) {
+    if (++popAttempts > 2 && requiresPortraitRestore && preparingForExit) {
       throw StateError('Repeated pop before portrait restoration');
     }
     return super.didPop(result);

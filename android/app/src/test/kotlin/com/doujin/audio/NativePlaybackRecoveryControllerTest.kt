@@ -7,12 +7,115 @@ import com.doujin.audio.player.service.shouldClearPlaybackIntentForPlayWhenReady
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import java.lang.reflect.Proxy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NativePlaybackRecoveryControllerTest {
+    @Test
+    fun `scheduled health check resumes only the unexpectedly paused session`() {
+        val environment = FakeRecoveryEnvironment()
+        val paused = HealthCheckPlayer("paused", environment)
+        val playing = HealthCheckPlayer("playing", environment).apply { playWhenReady = true }
+        val stopped = HealthCheckPlayer("stopped", environment)
+        val host = healthCheckHost(paused, playing, stopped)
+        val controller = NativePlaybackRecoveryController(host, environment)
+        controller.markIntended("paused")
+        controller.markIntended("playing")
+        controller.markIntended("stopped")
+        controller.clear("stopped")
+
+        environment.runFirst(15_000L)
+
+        assertTrue(paused.playWhenReady)
+        assertEquals(1, paused.playCalls)
+        assertEquals(8_000L, paused.player.currentPosition)
+        assertEquals(2, paused.player.currentMediaItemIndex)
+        assertEquals(0, playing.playCalls)
+        assertEquals(0, stopped.playCalls)
+        assertEquals(1, host.requestAudioFocusCalls)
+    }
+
+    @Test
+    fun `scheduled resume waits for foreground and audio focus`() {
+        val environment = FakeRecoveryEnvironment()
+        val paused = HealthCheckPlayer("paused", environment)
+        val host = healthCheckHost(paused).apply { interruptionActive = true }
+        val controller = NativePlaybackRecoveryController(host, environment)
+        controller.markIntended("paused")
+
+        environment.runFirst(15_000L)
+        assertEquals(0, host.requestAudioFocusCalls)
+        assertFalse(paused.playWhenReady)
+
+        host.interruptionActive = false
+        host.foregroundPlaybackAllowed = false
+        environment.runFirst(15_000L)
+        assertEquals(0, host.requestAudioFocusCalls)
+        assertFalse(paused.playWhenReady)
+
+        host.foregroundPlaybackAllowed = true
+        host.audioFocusAllowed = false
+        environment.runFirst(15_000L)
+        assertEquals(1, host.requestAudioFocusCalls)
+        assertFalse(paused.playWhenReady)
+
+        host.audioFocusAllowed = true
+        environment.runFirst(15_000L)
+        assertTrue(paused.playWhenReady)
+    }
+
+    @Test
+    fun `scheduled resume skips suppressed nonready failed and pending sessions`() {
+        val environment = FakeRecoveryEnvironment()
+        val suppressed = HealthCheckPlayer("suppressed", environment).apply {
+            suppressionReason = Player.PLAYBACK_SUPPRESSION_REASON_TRANSIENT_AUDIO_FOCUS_LOSS
+        }
+        val buffering = HealthCheckPlayer("buffering", environment).apply {
+            playbackState = Player.STATE_BUFFERING
+        }
+        val failed = HealthCheckPlayer("failed", environment).apply {
+            hasPlayerError = true
+        }
+        val pending = HealthCheckPlayer("pending", environment)
+        val host = healthCheckHost(suppressed, buffering, failed, pending)
+        val controller = NativePlaybackRecoveryController(host, environment)
+        controller.markIntended("suppressed")
+        controller.markIntended("buffering")
+        controller.markIntended("failed")
+        controller.markIntended("pending")
+        controller.onPlayerError(
+            "pending", recoverable = true, errorCodeName = "ERROR_CODE_IO_UNSPECIFIED",
+            errorMessage = null, causeDescription = null
+        )
+
+        environment.runFirst(15_000L)
+
+        assertEquals(0, host.requestAudioFocusCalls)
+        assertFalse(suppressed.playWhenReady)
+        assertFalse(buffering.playWhenReady)
+        assertFalse(failed.playWhenReady)
+        assertFalse(pending.playWhenReady)
+        assertTrue(controller.isPending("pending"))
+    }
+
+    @Test
+    fun `clearing playback intent during scheduled recovery prevents resume`() {
+        val environment = FakeRecoveryEnvironment()
+        val paused = HealthCheckPlayer("paused", environment)
+        val host = healthCheckHost(paused)
+        val controller = NativePlaybackRecoveryController(host, environment)
+        controller.markIntended("paused")
+        host.onRequestAudioFocus = { controller.clear("paused") }
+
+        environment.runFirst(15_000L)
+
+        assertFalse(paused.playWhenReady)
+        assertTrue(environment.tasks.isEmpty())
+    }
+
     @Test
     fun `track boundary pause cannot be resumed by a later watchdog trigger`() {
         val environment = FakeRecoveryEnvironment()
@@ -639,6 +742,57 @@ private fun startCandidateRetry(controller: NativePlaybackRecoveryController) {
     controller.retryNow("player", "user_retry")
 }
 
+private class HealthCheckPlayer(sessionId: String, environment: FakeRecoveryEnvironment) {
+    var playWhenReady = false
+    var playbackState = Player.STATE_READY
+    var suppressionReason = Player.PLAYBACK_SUPPRESSION_REASON_NONE
+    var hasPlayerError = false
+    var playCalls = 0
+        private set
+    val player = Proxy.newProxyInstance(
+        ExoPlayer::class.java.classLoader,
+        arrayOf(ExoPlayer::class.java)
+    ) { _, method, _ ->
+        when (method.name) {
+            "getPlayWhenReady", "isPlaying" -> playWhenReady
+            "getPlaybackState" -> playbackState
+            "getPlaybackSuppressionReason" -> suppressionReason
+            "getPlayerError" -> null
+            "getCurrentPosition" -> 8_000L
+            "getBufferedPosition" -> 15_000L
+            "getDuration" -> 60_000L
+            "getCurrentMediaItemIndex" -> 2
+            "play" -> {
+                playCalls++
+                playWhenReady = true
+                null
+            }
+            else -> error("Unexpected ExoPlayer access: ${method.name}")
+        }
+    } as ExoPlayer
+    val session = NativePlaybackSession(
+        sessionId = sessionId,
+        createPlayer = { _, _ -> error("unused") },
+        logWarn = { _, _, _ -> },
+        elapsedRealtimeMs = { environment.now }
+    ).also { session ->
+        val playerField = NativePlaybackSession::class.java.getDeclaredField("_player")
+        playerField.isAccessible = true
+        playerField.set(session, player)
+    }
+}
+
+private fun healthCheckHost(vararg players: HealthCheckPlayer): FakeRecoveryHost {
+    val playersById = players.associateBy { it.session.sessionId }
+    return FakeRecoveryHost(playbackSessions = playersById.mapValues { it.value.session }).apply {
+        onHealthSample = { sessionId, now ->
+            playersById[sessionId]?.let { player ->
+                captureNativePlaybackHealthSample(player.session, now)?.copy(hasPlayerError = player.hasPlayerError)
+            }
+        }
+    }
+}
+
 private class FakeRecoveryHost(
     playbackSession: NativePlaybackSession? = null,
     private val playbackSessions: Map<String, NativePlaybackSession> =
@@ -648,6 +802,7 @@ private class FakeRecoveryHost(
     var syncForegroundCalls = 0
     var onSyncForeground: () -> Unit = {}
     var requestAudioFocusCalls = 0
+    var audioFocusAllowed = true
     var onRequestAudioFocus: () -> Unit = {}
     var onHealthSample: (String, Long) -> NativePlaybackHealthSample? = { _, _ -> null }
     val recoveryTimeouts = mutableListOf<String>()
@@ -680,7 +835,7 @@ private class FakeRecoveryHost(
     override fun requestAudioFocus(): Boolean {
         requestAudioFocusCalls += 1
         onRequestAudioFocus()
-        return !interruptionActive
+        return audioFocusAllowed && !interruptionActive
     }
     override fun establishForegroundPlayback(sessionId: String): Boolean =
         foregroundPlaybackAllowed

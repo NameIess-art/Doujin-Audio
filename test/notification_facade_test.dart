@@ -7,7 +7,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/platform/notifications_platform_service.dart';
+import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
+import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/player/application/notification_facade.dart';
 import 'package:doujin_audio/features/player/application/audio_state_services.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
@@ -129,6 +131,51 @@ void main() {
       unorderedEquals(tracks.map((track) => track.displayName)),
     );
   });
+
+  test(
+    'notification artwork follows focus without loading other covers',
+    () async {
+      final covers = _RecordingNotificationCoverCache();
+      final service = _RecordingPlaybackNotificationService();
+      final fixture = _createNotificationFixture(service, coverCache: covers);
+      addTearDown(fixture.dispose);
+      final fallback = _additionalSession();
+      fixture.playback.registerSession(fallback);
+      fixture.facade.setFocusedSession('missing-session');
+      fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+      await Future<void>.delayed(Duration.zero);
+
+      final firstPath = fallback.currentTrackPath;
+      final secondPath = fixture.session.currentTrackPath;
+      expect(covers.requests.keys, [firstPath]);
+      expect(service.payloads.last['mainSessionId'], fallback.id);
+      expect(service.payloads.last['items'], hasLength(2));
+
+      fixture.facade.setFocusedSession(fixture.session.id);
+      fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+      await Future<void>.delayed(Duration.zero);
+      expect(covers.requests.keys, [firstPath, secondPath]);
+      expect(service.payloads.last['mainSessionId'], fixture.session.id);
+
+      final syncCount = service.syncCount;
+      covers.requests[firstPath]!.complete('/covers/first.jpg');
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(service.syncCount, syncCount);
+
+      covers.requests[secondPath]!.complete('/covers/second.jpg');
+      await Future<void>.delayed(Duration.zero);
+      fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+      await Future<void>.delayed(Duration.zero);
+      final items =
+          service.payloads.last['items'] as List<Map<String, dynamic>>;
+      expect(
+        items.singleWhere(
+          (item) => item['id'] == fixture.session.id,
+        )['artPath'],
+        '/covers/second.jpg',
+      );
+    },
+  );
 
   for (final queueHasOriginalPath in [false, true]) {
     test(
@@ -691,8 +738,12 @@ _NotificationFixture _createNotificationFixture(
   NotificationTrackResolver? trackByPath,
   PlaybackSubtitleService? subtitles,
   bool Function()? notificationsEnabled,
+  CoverArtworkCacheService? coverCache,
 }) {
-  final library = _createLibraryFacade();
+  final library = LibraryFacade.create(
+    databaseRepository: TestPersistenceRepository(),
+    coverArtworkCacheService: coverCache,
+  );
   final playback = PlaybackFacade.create(
     databaseRepository:
         library.databaseRepository as PlaybackPersistenceRepository,
@@ -794,6 +845,22 @@ final class _RecordingPlaybackNotificationService
     syncCount++;
     payloads.add(payload);
     return const NativeSuccess<void>();
+  }
+}
+
+final class _RecordingNotificationCoverCache extends CoverArtworkCacheService {
+  _RecordingNotificationCoverCache() : super(libraryService: LibraryService());
+
+  final requests = <String, Completer<String?>>{};
+
+  @override
+  Future<String?> futureForPlaybackTrack(
+    MusicTrack? track, {
+    String? trackPath,
+  }) {
+    final path = trackPath ?? track!.path;
+    expect(requests.containsKey(path), isFalse);
+    return (requests[path] = Completer<String?>()).future;
   }
 }
 

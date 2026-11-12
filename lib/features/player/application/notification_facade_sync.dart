@@ -207,7 +207,12 @@ extension NotificationFacadeSync on NotificationFacade {
     final sessionIds = sessionsToShow.map((session) => session.id).toSet();
     _notificationPresentations.removeWhere((id, _) => !sessionIds.contains(id));
     final payload = sessionsToShow
-        .map(_notificationPayloadForSession)
+        .map(
+          (session) => _notificationPayloadForSession(
+            session,
+            resolveArtwork: identical(session, mainSession),
+          ),
+        )
         .toList(growable: false);
     final unchangedItems =
         payload.length == _lastNotificationItems.length &&
@@ -244,10 +249,16 @@ extension NotificationFacadeSync on NotificationFacade {
             _notificationsEnabled && !_notificationsDismissedWhilePaused
             ? activeSessions
             : const <PlaybackSession>[];
+        final latestMainSession = _focusedSessionFrom(latestSessions);
         final latestSyncKey = json.encode(<String, dynamic>{
-          'mainSessionId': _focusedSessionFrom(latestSessions)?.id,
+          'mainSessionId': latestMainSession?.id,
           'items': latestSessions
-              .map(_notificationPayloadForSession)
+              .map(
+                (session) => _notificationPayloadForSession(
+                  session,
+                  resolveArtwork: identical(session, latestMainSession),
+                ),
+              )
               .toList(growable: false),
         });
         // Preserve a newer pause/stop request, which may have no further
@@ -262,7 +273,10 @@ extension NotificationFacadeSync on NotificationFacade {
     return true;
   }
 
-  Map<String, dynamic> _notificationPayloadForSession(PlaybackSession session) {
+  Map<String, dynamic> _notificationPayloadForSession(
+    PlaybackSession session, {
+    required bool resolveArtwork,
+  }) {
     final previous = _notificationPresentations[session.id];
     final trackPath = session.currentTrackPath;
     final coverGeneration = _coverArtworkCacheService.generation;
@@ -278,11 +292,17 @@ extension NotificationFacadeSync on NotificationFacade {
     );
     final navigationChanged =
         metadataChanged || previous.navigation != navigation;
+    // Windows reads artwork only from the selected item. Revisit the cover
+    // when focus moves to a session whose metadata has already been cached.
+    final lookupArtwork =
+        resolveArtwork && (metadataChanged || !previous.artworkRequested);
     final track = metadataChanged
         ? _notificationTrackForSession(session)
-        : null;
-    final artPath = metadataChanged
+        : previous.track;
+    final artPath = lookupArtwork
         ? coverPathForTrack(track, trackPath: trackPath)
+        : metadataChanged
+        ? null
         : previous.payload['artPath'] as String?;
     final subtitle = _notificationSubtitleForSession(session);
     final next = <String, dynamic>{
@@ -312,15 +332,18 @@ extension NotificationFacadeSync on NotificationFacade {
     final presentation = _NotificationSessionPresentation(
       session: session,
       trackPath: trackPath,
+      track: track,
       coverGeneration: coverGeneration,
       navigation: navigation,
       coverSearchKey: metadataChanged
           ? _notificationCoverSearchKey(track, trackPath: trackPath)
           : previous.coverSearchKey,
+      artworkRequested:
+          lookupArtwork || (!metadataChanged && previous.artworkRequested),
       payload: payload,
     );
     _notificationPresentations[session.id] = presentation;
-    if (metadataChanged && artPath == null) {
+    if (lookupArtwork && artPath == null) {
       unawaited(
         _resolveNotificationCoverPathForTrack(track, trackPath: trackPath).then(
           (resolved) {
@@ -339,7 +362,9 @@ extension NotificationFacadeSync on NotificationFacade {
               ...current.payload,
               'artPath': resolved,
             };
-            _syncNotificationState();
+            if (_isNotificationFocusedSessionId(session.id)) {
+              _syncNotificationState();
+            }
           },
         ),
       );
@@ -352,17 +377,21 @@ final class _NotificationSessionPresentation {
   _NotificationSessionPresentation({
     required this.session,
     required this.trackPath,
+    required this.track,
     required this.coverGeneration,
     required this.navigation,
     required this.coverSearchKey,
+    required this.artworkRequested,
     required this.payload,
   });
 
   final PlaybackSession session;
   final String trackPath;
+  final MusicTrack? track;
   final int coverGeneration;
   final ({int queueVersion, int queueIndex, SessionLoopMode loopMode})
   navigation;
   final String? coverSearchKey;
+  final bool artworkRequested;
   Map<String, dynamic> payload;
 }

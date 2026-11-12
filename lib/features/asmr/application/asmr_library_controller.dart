@@ -1295,6 +1295,7 @@ class AsmrLibraryController extends ChangeNotifier
     AsmrCategoryType category, {
     String searchQuery = '',
     bool searchSession = false,
+    Object? expectedPaginationToken,
   }) async {
     if (searchSession) setSearchQuery(searchQuery, category);
     final searchEpoch = _catalog.searchEpoch;
@@ -1314,6 +1315,7 @@ class AsmrLibraryController extends ChangeNotifier
       searchQuery: searchQuery,
       searchSession: searchSession,
       context: _categoryRequestContext,
+      expectedPaginationToken: expectedPaginationToken,
     );
   }
 

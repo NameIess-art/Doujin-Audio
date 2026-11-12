@@ -144,8 +144,9 @@ class AudioDetailCacheService {
   }
 
   Future<List<AudioDetailLoadResult>> loadMany(
-    Iterable<AudioDetailTarget> targets,
-  ) => Future.wait(targets.map(load));
+    Iterable<AudioDetailTarget> targets, {
+    bool Function()? isActive,
+  }) => Future.wait(targets.map((target) => load(target, isActive: isActive)));
 
   void _scheduleReads() {
     if (_reading) return;

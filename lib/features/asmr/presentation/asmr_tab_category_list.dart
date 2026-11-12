@@ -132,21 +132,33 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   final Map<String, _AsmrWorkTreeCard> _workCardCache = {};
   List<AsmrWork>? _visibleWorksSource;
   List<AsmrWork> _visibleWorksCache = const [];
+  Object? _visiblePaginationToken;
   Map<String, _CollapsingAsmrWork> _visibleCollapsing = const {};
-  List<String> _anchorIds = const [];
   Map<String, int> _workIndexById = {};
   Map<Key, int> _workKeyIndices = {};
   LibraryCoverUiController? _coverUi;
   BuildContext? _coverContext;
 
-  List<AsmrWork> _prepareVisibleWorks(List<AsmrWork> works) {
+  List<AsmrWork> _prepareVisibleWorks(
+    List<AsmrWork> works,
+    AsmrCategoryViewState state,
+  ) {
     if (identical(_visibleWorksSource, works) &&
         _visibleCollapsing.length == _collapsingWorks.length &&
         _collapsingWorks.entries.every(
           (entry) => identical(_visibleCollapsing[entry.key], entry.value),
         )) {
+      _visiblePaginationToken = state.paginationToken;
       return _visibleWorksCache;
     }
+    final append = state.appendedTo;
+    final extendsVisibleOrder =
+        _visibleCollapsing.isEmpty &&
+        _collapsingWorks.isEmpty &&
+        append != null &&
+        identical(append.token, _visiblePaginationToken) &&
+        append.length == _visibleWorksCache.length &&
+        works.length >= append.length;
     final visible = _collapsingWorks.isEmpty ? works : <AsmrWork>[...works];
     if (_collapsingWorks.isNotEmpty) {
       final collapsing = _collapsingWorks.values.toList()
@@ -158,22 +170,25 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         );
       }
     }
+    final start = extendsVisibleOrder ? _visibleWorksCache.length : 0;
     _visibleWorksSource = works;
+    _visiblePaginationToken = state.paginationToken;
     _visibleCollapsing = Map.of(_collapsingWorks);
     _visibleWorksCache = visible;
-    _workIndexById = {};
-    _workKeyIndices = {};
-    final anchors = <String>[];
-    for (var index = 0; index < visible.length; index++) {
+    if (!extendsVisibleOrder) {
+      _workIndexById = {};
+      _workKeyIndices = {};
+    }
+    for (var index = start; index < visible.length; index++) {
       final id = visible[index].workKey;
       _workIndexById[id] = index;
-      anchors.add(id);
       final key = _itemKeys[id];
       if (key != null) _workKeyIndices[key] = index;
     }
-    _itemKeys.removeWhere((id, _) => !_workIndexById.containsKey(id));
-    _workCardCache.removeWhere((id, _) => !_workIndexById.containsKey(id));
-    _anchorIds = immutableList(anchors);
+    if (!extendsVisibleOrder) {
+      _itemKeys.removeWhere((id, _) => !_workIndexById.containsKey(id));
+      _workCardCache.removeWhere((id, _) => !_workIndexById.containsKey(id));
+    }
     return visible;
   }
 
@@ -284,8 +299,13 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         works.length <= previous.works.length) {
       return;
     }
-    for (var i = 0; i < previous.works.length; i++) {
-      if (previous.works[i].workKey != works[i].workKey) return;
+    final append = state.appendedTo;
+    if (append == null ||
+        !identical(append.token, previous.paginationToken) ||
+        append.length != previous.works.length) {
+      for (var i = 0; i < previous.works.length; i++) {
+        if (previous.works[i].workKey != works[i].workKey) return;
+      }
     }
     // Start once when a page enters the rendered data, including offscreen
     // records. Lazy card creation then observes the batch's current opacity.
@@ -421,7 +441,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       _lastFavoritesRevision = state.revision;
     }
 
-    final visibleWorks = _prepareVisibleWorks(works);
+    final visibleWorks = _prepareVisibleWorks(works, state);
     // Outgoing placeholder transitions can still build the previous list.
     // Keep each delegate's indices with the projection it renders.
     final workIndexById = _workIndexById;
@@ -521,11 +541,11 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
               final nearBottom =
                   notification.metrics.extentAfter <=
                   notification.metrics.viewportDimension;
-              final isManualUpwardDrag =
-                  notification.dragDetails != null &&
-                  (notification.scrollDelta ?? 0) > 0;
+              final towardBottom = (notification.scrollDelta ?? 0) > 0;
               if (nearBottom &&
-                  (!state.needsLoadMoreRetry || isManualUpwardDrag)) {
+                  towardBottom &&
+                  (!state.needsLoadMoreRetry ||
+                      notification.dragDetails != null)) {
                 _loadMoreOncePerScroll(state);
               }
             } else if (notification is OverscrollNotification) {
@@ -607,7 +627,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                   if (!widget.searchSession) {
                     BrowsePageScroll.setAnchorIds(
                       context,
-                      _anchorIds,
+                      null,
                       columnCount: _collapsingWorks.isEmpty
                           ? columnCount
                           : null,
@@ -779,7 +799,12 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                     collapsingWorks: _visibleCollapsing,
                     childCount: rowCount,
                     findChildIndexCallback: columnCount == 1
-                        ? (key) => workKeyIndices[key]
+                        ? (key) {
+                            final index = workKeyIndices[key];
+                            return index != null && index < visibleWorks.length
+                                ? index
+                                : null;
+                          }
                         : null,
                   );
                   final footer = RepaintBoundary(
@@ -872,7 +897,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
               pageKey:
                   'asmr_list:${ref.read(asmrLibraryControllerProvider)?.browseCacheScope ?? ''}:${widget.category.name}',
               controller: widget.scrollController,
-              anchorIds: _anchorIds,
+              anchorIndices: workIndexById,
               child: content,
             ),
     );
@@ -893,7 +918,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       return;
     }
     _loadMoreTriggeredInCurrentScroll = true;
-    unawaited(_loadMore());
+    unawaited(_loadMore(expectedPaginationToken: state.paginationToken));
   }
 
   void _scheduleAutomaticLoadMore(AsmrCategoryViewState state) {
@@ -913,13 +938,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         if (!mounted || !_isActive) {
           return;
         }
-        final currentState = ref
-            .read(asmrLibraryControllerProvider)
-            ?.categoryViewState(
-              widget.category,
-              searchQuery: canonicalElementQuery(widget.searchQuery),
-              searchSession: widget.searchSession,
-            );
+        final currentState = _lastPresentedState;
         if (currentState == null ||
             currentState.works.isEmpty ||
             currentState.isLoadingMore ||
@@ -930,18 +949,21 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         if (!widget.scrollController.hasClients) return;
         final position = widget.scrollController.position;
         if (position.extentAfter > position.viewportDimension) return;
-        unawaited(_loadMore());
+        unawaited(
+          _loadMore(expectedPaginationToken: currentState.paginationToken),
+        );
       },
     );
   }
 
-  Future<void> _loadMore() async {
+  Future<void> _loadMore({Object? expectedPaginationToken}) async {
     await ref
         .read(asmrLibraryControllerProvider)
         ?.loadMoreCategory(
           widget.category,
           searchQuery: widget.searchQuery,
           searchSession: widget.searchSession,
+          expectedPaginationToken: expectedPaginationToken,
         );
   }
 }

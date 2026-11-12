@@ -28,12 +28,14 @@ PageRoute<void> buildSessionDetailRoute({
         ? null
         : ProviderScope.containerOf(source.context, listen: false)
               .read(playbackFacadeProvider)
-              .sessionSnapshotById(sessionId)
+              .sessionById(sessionId)
               ?.currentTrackPath,
   );
 }
 
 class SessionDetailRoute extends AppPreparedPageRoute<void> {
+  static const _portraitRestoreTimeout = Duration(milliseconds: 500);
+
   SessionDetailRoute({
     required this.sessionId,
     SessionCoverAnchorState? source,
@@ -78,6 +80,7 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
   late Set<SessionCoverAnchorState> _coverTargets;
   Completer<void>? _portraitReady;
   Future<void>? _exitPreparation;
+  bool _portraitRestoreTimedOut = false;
   bool _popPending = false;
 
   ui.Image? coverPreviewFor(String trackPath) =>
@@ -101,18 +104,31 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
   }
 
   Future<void> prepareForExit() {
-    if (!requiresPortraitRestore) return Future<void>.value();
-    return _exitPreparation ??= _restorePortrait();
+    final pending = _exitPreparation;
+    if (pending != null) return pending;
+    if (!requiresPortraitRestore || _portraitRestoreTimedOut) {
+      return Future<void>.value();
+    }
+    return _exitPreparation = _restorePortrait();
   }
 
   Future<void> _restorePortrait() async {
     final ready = _portraitReady = Completer<void>();
     try {
-      await _orientationController!.setPlaybackDetailVisible(false);
-      // Android acknowledges orientation requests before it lays out the view.
-      if (requiresPortraitRestore) await ready.future;
-      await WidgetsBinding.instance.endOfFrame;
+      try {
+        // Android can acknowledge the request without changing view metrics.
+        await Future.wait([
+          _orientationController!.setPlaybackDetailVisible(false),
+          ready.future,
+        ]).timeout(_portraitRestoreTimeout);
+      } on TimeoutException {
+        _portraitRestoreTimedOut = requiresPortraitRestore;
+      }
+      if (isActive && !requiresPortraitRestore) {
+        await WidgetsBinding.instance.endOfFrame;
+      }
     } finally {
+      if (!ready.isCompleted) ready.complete();
       _portraitReady = null;
       _exitPreparation = null;
     }
@@ -129,7 +145,9 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
       await prepareForExit();
       if (!isCurrent) return;
       _playlist.requestCarouselSnap(sessionId, immediately: true);
-      if (!_reducedMotion) {
+      if (!_reducedMotion &&
+          !requiresPortraitRestore &&
+          detailCoverKey.currentState?.decodedImage != null) {
         // Lay out the previously covered page before measuring the destination.
         _setRevealBehind(true);
         await WidgetsBinding.instance.endOfFrame;
@@ -158,15 +176,19 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
         _clearFlight();
       }
     }
-    final ready = _portraitReady;
-    if (ready != null && !ready.isCompleted && !requiresPortraitRestore) {
-      ready.complete();
+    if (!requiresPortraitRestore) {
+      _portraitRestoreTimedOut = false;
+      final ready = _portraitReady;
+      if (ready != null && !ready.isCompleted) ready.complete();
     }
   }
 
   @override
   bool didPop(void result) {
-    if (!requiresPortraitRestore) return super.didPop(result);
+    if (_exitPreparation == null &&
+        (!requiresPortraitRestore || _portraitRestoreTimedOut)) {
+      return super.didPop(result);
+    }
     if (!_popPending) {
       _popPending = true;
       unawaited(
@@ -210,12 +232,14 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
         if (_reducedMotion && controller?.status == AnimationStatus.forward) {
           controller!.value = 1;
         }
-        _prepareCoverEntry(
-          container
-              .read(playbackFacadeProvider)
-              .sessionSnapshotById(sessionId)
-              ?.currentTrackPath,
-        );
+        if (_sourceImage != null && _sourceBounds != null) {
+          _prepareCoverEntry(
+            container
+                .read(playbackFacadeProvider)
+                .sessionById(sessionId)
+                ?.currentTrackPath,
+          );
+        }
       });
     }
     final page = PopScope<void>(
@@ -260,21 +284,21 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
     final source = _source;
     final sourceBounds = _sourceBounds;
     final image = trackPath == null ? null : coverPreviewFor(trackPath);
+    if (_reducedMotion ||
+        animation?.status != AnimationStatus.forward ||
+        source == null ||
+        sourceBounds == null ||
+        image == null) {
+      return;
+    }
     final detail = detailCoverKey.currentState;
     final detailBounds = detail?.bounds(
       within: _fadeKey.currentContext?.findRenderObject(),
     );
-    if (!_reducedMotion &&
-        animation?.status == AnimationStatus.forward &&
-        source != null &&
-        sourceBounds != null &&
-        image != null &&
-        detail != null &&
-        detailBounds != null) {
-      // The destination can use the same decoded thumbnail while its own
-      // image request is deferred or waiting for a larger decode.
-      _startFlight(source, sourceBounds, detail, detailBounds, image.clone());
-    }
+    if (detail == null || detailBounds == null) return;
+    // The destination can use the same decoded thumbnail while its own
+    // image request is deferred or waiting for a larger decode.
+    _startFlight(source, sourceBounds, detail, detailBounds, image.clone());
   }
 
   void _prepareCoverExit() {

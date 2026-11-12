@@ -312,7 +312,7 @@ internal class NativePlaybackRecoveryController(
     private val healthCheckTask = object : Runnable {
         override fun run() {
             healthCheckScheduled = false
-            checkPlaybackHealth("scheduled_health_check")
+            checkPlaybackHealth("scheduled_health_check", resumeUnexpectedPauses = true)
             ensureHealthCheck()
         }
     }
@@ -733,7 +733,7 @@ internal class NativePlaybackRecoveryController(
         }
     }
 
-    private fun checkPlaybackHealth(trigger: String) {
+    private fun checkPlaybackHealth(trigger: String, resumeUnexpectedPauses: Boolean = false) {
         val nowMs = environment.elapsedRealtimeMs()
         intended.toList().forEach { sessionId ->
             val sample = host.healthSample(sessionId, nowMs) ?: return@forEach
@@ -745,6 +745,15 @@ internal class NativePlaybackRecoveryController(
                 frozenPositionThresholdMs = frozenPositionThresholdMs
             )
             healthStates[sessionId] = evaluation.state
+            if (resumeUnexpectedPauses &&
+                !sample.playWhenReady &&
+                sample.playbackState == Player.STATE_READY &&
+                !sample.hasPlayerError &&
+                sample.playbackSuppressionReason == Player.PLAYBACK_SUPPRESSION_REASON_NONE
+            ) {
+                resumeUnexpectedPause(sessionId)
+                return@forEach
+            }
             if (evaluation.positionAdvanced &&
                 sample.isPlaying &&
                 sample.playWhenReady &&
@@ -764,6 +773,23 @@ internal class NativePlaybackRecoveryController(
             }
         }
     }
+
+    private fun resumeUnexpectedPause(sessionId: String) {
+        if (!canResumeUnexpectedPause(sessionId)) return
+        val session = host.session(sessionId) ?: return
+        val player = session.playerOrNull() ?: return
+        if (!host.establishForegroundPlayback(sessionId) || !host.requestAudioFocus()) return
+        if (!canResumeUnexpectedPause(sessionId) || host.session(sessionId) !== session ||
+            session.playerOrNull() !== player
+        ) return
+
+        host.logInfo("playback_health_resuming_unexpected_pause sessionId=$sessionId", session)
+        player.play()
+    }
+
+    private fun canResumeUnexpectedPause(sessionId: String): Boolean =
+        sessionId in intended && sessionId !in pending && sessionId !in retryTasks &&
+            sessionId !in recovering && !host.interruptionActive
 
     private fun beginStallRecovery(
         sessionId: String,

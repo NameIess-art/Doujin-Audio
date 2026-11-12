@@ -24,6 +24,7 @@ import android.content.Intent
 class PlaybackKeepAliveAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         if (intent?.action != PlaybackKeepAliveAlarmScheduler.actionHeartbeat) return
+        PlaybackKeepAliveAlarmScheduler.onAlarmDelivered()
         val appContext = context.applicationContext
         val pendingResult = goAsync()
         val deliveryWakeLock =

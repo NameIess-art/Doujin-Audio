@@ -3,6 +3,8 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:doujin_audio/app/presentation/app_orientation_controller.dart';
+import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
+import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/cover_image_resolution.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/platform/notifications_platform_service.dart';
@@ -68,6 +70,128 @@ class _SubtitlePresenceService extends PlaybackSubtitleService {
 }
 
 void main() {
+  testWidgets(
+    'detail defers cold credits and reverses before laying out a coverless close',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      UiInteractionCoordinator.instance.resetForTest();
+      addTearDown(UiInteractionCoordinator.instance.resetForTest);
+
+      final fixture = AppRuntimeWidgetTestFixture(
+        providedNotificationService: PlaybackNotificationService(
+          notificationsPlatformService: NotificationsPlatformService(
+            isWindowsOverride: false,
+          ),
+        ),
+      );
+      addTearDown(fixture.dispose);
+      final track = testMusicTrack(
+        name: 'Cold credits',
+        path: '/music/cold/track.mp3',
+        groupKey: '/music/cold',
+        groupTitle: 'Cold',
+      );
+      fixture.library.addTracks([track], persist: false);
+      final session = fixture.playback.createTrackSession(track);
+      addTearDown(session.shutdown);
+      fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      final target = fixture.library.audioDetailTargetForTrack(track);
+      var creditReads = 0;
+      final route = SessionDetailRoute(sessionId: session.id);
+      const homeKey = ValueKey('coverless_detail_home');
+      await tester.pumpWidget(
+        fixture.build(
+          const Scaffold(key: homeKey),
+          overrides: [
+            libraryDetailForTargetProvider(target).overrideWith((_) {
+              creditReads++;
+              return AudioDetail.empty(target).copyWith(circleName: 'Credits');
+            }),
+          ],
+        ),
+      );
+      final navigator = Navigator.of(tester.element(find.byKey(homeKey)));
+      unawaited(navigator.push(route));
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(route.animation!.status, AnimationStatus.forward);
+      expect(creditReads, 0);
+      expect(find.byType(ImageFiltered), findsNothing);
+
+      await tester.pumpAndSettle();
+      expect(creditReads, 1);
+      expect(find.text('Credits'), findsOneWidget);
+      expect(find.byType(ImageFiltered), findsNothing);
+      final closing = route.requestClose();
+      await Future<void>.value();
+      expect(route.animation!.status, AnimationStatus.reverse);
+      await closing;
+      await tester.pumpAndSettle();
+      expect(find.byType(SessionDetailPage), findsNothing);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'Android video detail mounts the surface after entry and retains it during exit',
+    (tester) async {
+      tester.view.physicalSize = const Size(450, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final track = testMusicTrack(
+        name: 'Video',
+        path: '/video/track.mp4',
+        groupKey: '/video',
+        groupTitle: 'Video',
+      ).copyWith(isVideo: true);
+      fixture.library.addTracks([track], persist: false);
+      final session = fixture.playback.createTrackSession(track)
+        ..loadedPath = track.path;
+      addTearDown(session.shutdown);
+      fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      const homeKey = ValueKey('video_detail_home');
+      await tester.pumpWidget(fixture.build(const Scaffold(key: homeKey)));
+      final route = SessionDetailRoute(sessionId: session.id);
+      unawaited(Navigator.of(tester.element(find.byKey(homeKey))).push(route));
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final surface = find.byKey(const ValueKey('session_video_surface'));
+      expect(route.animation!.status, AnimationStatus.forward);
+      expect(surface, findsNothing);
+      await tester.pumpAndSettle();
+      expect(surface, findsOneWidget);
+      final surfaceElement = tester.element(surface);
+
+      await route.requestClose();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(route.animation!.status, AnimationStatus.reverse);
+      expect(tester.element(surface), same(surfaceElement));
+      await tester.pumpAndSettle();
+      expect(surface, findsNothing);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
+
   for (final (entry, exitToDock) in [
     for (final entry in ['list', 'queue', 'dock', 'routed dock']) (entry, true),
     for (final entry in ['list', 'queue', 'dock']) (entry, false),
@@ -653,6 +777,7 @@ void main() {
         SessionDetailScaffold(
           transitionActive: transitioning,
           session: fixture.playback.sessionSnapshotById(session.id)!,
+          track: track,
           coverPathFuture: SynchronousFuture<String?>(null),
           onClose: () {},
           segmentPanelExpandedNotifier: expanded,
@@ -738,6 +863,7 @@ void main() {
         SessionDetailScaffold(
           transitionActive: ValueNotifier<bool>(false),
           session: fixture.playback.sessionSnapshotById(session.id)!,
+          track: track,
           coverPathFuture: SynchronousFuture<String?>(null),
           onClose: () {},
           segmentPanelExpandedNotifier: expanded,
@@ -851,10 +977,10 @@ void main() {
           tileMode: ui.TileMode.clamp,
         ),
       );
-      final backgroundCover = tester.widget<AsyncLocalCoverImage>(
+      final backgroundCover = tester.widget<RetryingFileImage>(
         find.descendant(
           of: imageFilteredFinder,
-          matching: find.byType(AsyncLocalCoverImage),
+          matching: find.byType(RetryingFileImage),
         ),
       );
       expect(backgroundCover.fit, BoxFit.cover);

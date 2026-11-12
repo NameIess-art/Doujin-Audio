@@ -16,6 +16,7 @@ class BrowsePageScroll extends ConsumerStatefulWidget {
     required this.child,
     this.displayState = const {},
     this.anchorIds = const [],
+    this.anchorIndices,
     this.restoreReady = true,
   });
   final String pageKey;
@@ -23,12 +24,14 @@ class BrowsePageScroll extends ConsumerStatefulWidget {
   final Widget child;
   final Map<String, Object?> displayState;
   final List<String> anchorIds;
+  final Map<String, int>? anchorIndices;
   final bool restoreReady;
 
-  /// A nested tree can supply its current visible order without owning scroll state.
+  /// A nested tree can supply its current order and layout for restoration.
+  /// When the widget already receives indices, only the layout is needed here.
   static void setAnchorIds(
     BuildContext context,
-    Iterable<String> ids, {
+    Iterable<String>? ids, {
     int? columnCount,
     double? rowExtent,
     double topPadding = 0,
@@ -37,7 +40,7 @@ class BrowsePageScroll extends ConsumerStatefulWidget {
         .dependOnInheritedWidgetOfExactType<_BrowseAnchors>()
         ?.owner;
     if (owner == null) return;
-    owner._updateAnchorIds(ids);
+    if (ids != null) owner._updateAnchorIds(ids);
     owner._prepareColumns(columnCount, rowExtent, topPadding);
     owner._scheduleRestore();
   }
@@ -135,6 +138,9 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
       _changingPage = true;
       _anchorRestored = false;
       _scheduleRestore();
+    }
+    if (oldWidget.anchorIndices != null && widget.anchorIndices == null) {
+      _anchorIndices = const {};
     }
     _store.update(widget.pageKey, widget.displayState, epoch: _epoch);
     if (!oldWidget.restoreReady &&
@@ -298,7 +304,12 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
 
   @override
   Widget build(BuildContext context) {
-    if (widget.anchorIds.isNotEmpty) _updateAnchorIds(widget.anchorIds);
+    if (widget.anchorIndices case final indices?) {
+      _anchorIds = const [];
+      _anchorIndices = indices;
+    } else if (widget.anchorIds.isNotEmpty) {
+      _updateAnchorIds(widget.anchorIds);
+    }
     _scheduleRestore();
     return _BrowseAnchors(
       owner: this,

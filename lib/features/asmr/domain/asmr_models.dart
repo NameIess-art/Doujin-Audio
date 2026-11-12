@@ -474,18 +474,6 @@ class AsmrWork {
         })
         .where((item) => item.isNotEmpty)
         .toList(growable: false);
-    final voiceActors =
-        (json['voiceActors'] as List<dynamic>? ??
-                json['vas'] as List<dynamic>? ??
-                const <dynamic>[])
-            .map((dynamic item) {
-              if (item is Map) {
-                return (item['name'] as String?) ?? '';
-              }
-              return item.toString();
-            })
-            .where((item) => item.isNotEmpty)
-            .toList(growable: false);
     return AsmrWork(
       id: (json['id'] as num?)?.toInt() ?? 0,
       title: _localizedText(json, language, 'title'),
@@ -524,7 +512,7 @@ class AsmrWork {
           (json['rating'] as num?)?.toDouble() ??
           (json['rate_average_2dp'] as num?)?.toDouble() ??
           0,
-      voiceActors: voiceActors,
+      voiceActors: voiceActorsFromJson(json),
       tags: tags,
       tagIds:
           (json['tagIds'] as List? ??
@@ -547,6 +535,17 @@ class AsmrWork {
           .toList(),
     );
   }
+
+  static List<String> voiceActorsFromJson(Map<String, dynamic> json) =>
+      (json['voiceActors'] as List<dynamic>? ??
+              json['vas'] as List<dynamic>? ??
+              const <dynamic>[])
+          .map((dynamic item) {
+            if (item is Map) return (item['name'] as String?) ?? '';
+            return item.toString();
+          })
+          .where((item) => item.isNotEmpty)
+          .toList(growable: false);
 
   static DateTime? _dateTimeOrNull(Object? value) {
     if (value is String && value.isNotEmpty) {

@@ -697,13 +697,20 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     var voiceActors = const <String>[];
     if (track?.isRemoteAsmr == true) {
       circleName = track!.remoteCircleName;
-      if (track.remoteMetadata != null) {
-        voiceActors = AsmrWork.fromJson(track.remoteMetadata!).voiceActors;
+      if (track.remoteMetadata case final metadata?
+          when widget.showCoverOverlays) {
+        voiceActors = AsmrWork.voiceActorsFromJson(metadata);
       }
     } else if (track != null) {
       final target = paths.library.audioDetailTargetForTrack(track);
+      final canLoadCredits =
+          widget.showCoverOverlays && widget.transitionActive?.value != true;
+      // The prepared route can report completed while measuring offstage.
+      // Its overlays are revealed after the visible entrance finishes.
       final detail =
-          ref.watch(libraryDetailForTargetProvider(target)).value ??
+          (canLoadCredits
+              ? ref.watch(libraryDetailForTargetProvider(target)).value
+              : null) ??
           paths.library.resolvedAudioDetail(target) ??
           paths.library.categorySnapshot?.detailFor(target);
       circleName = detail?.circleName ?? '';

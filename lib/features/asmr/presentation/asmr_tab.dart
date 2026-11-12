@@ -19,7 +19,6 @@ import '../application/asmr_api_service.dart';
 import '../application/asmr_remote_catalog_service.dart';
 import '../application/asmr_library_controller.dart';
 import '../../../core/media/search_query_utils.dart';
-import '../../../core/immutable_collections.dart';
 import '../../../core/media/time_text_formatters.dart';
 import '../../../core/widgets/rj_code_overlay.dart';
 import '../../../core/logging/app_log_service.dart';
@@ -430,45 +429,36 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     final defaultLanguage = AsmrContentLanguage.fromAppLanguageName(
       ref.read(appLanguageProviderInstanceProvider).language.name,
     );
-    final generation = coordinator.generation;
     _activationScheduled = true;
-    final accepted = coordinator.scheduleAfterIdle(
-      key: 'asmr_tab_activation_${identityHashCode(this)}',
-      generation: generation,
+    // Gate the start on interaction without holding or waiting for a slot
+    // shared with startup work such as download and history restoration.
+    coordinator.scheduleCommit(
+      key: _activationCommitKey,
       priority: 0,
-      task: () async {
+      commit: () {
         _activationScheduled = false;
-        if (!mounted || !_isActive || generation != coordinator.generation) {
+        if (!mounted ||
+            !_isActive ||
+            !identical(controller, ref.read(asmrLibraryControllerProvider))) {
           return;
         }
-        late final Future<void> task;
-        task = _runActivation(
+        final generation = coordinator.generation;
+        final task = _runActivation(
           controller: controller,
           defaultLanguage: defaultLanguage,
           generation: generation,
         );
         _activationTask = task;
-        await task;
-        if (identical(_activationTask, task)) _activationTask = null;
-        if (mounted && _isActive && generation != coordinator.generation) {
-          final currentGeneration = coordinator.generation;
-          // The idle scheduler releases this task's key after it returns.
-          coordinator.scheduleCommit(
-            key: _activationCommitKey,
-            generation: currentGeneration,
-            priority: 0,
-            commit: () {
-              if (mounted &&
-                  _isActive &&
-                  currentGeneration == coordinator.generation) {
-                _ensureActivated();
-              }
-            },
-          );
-        }
+        unawaited(
+          task.whenComplete(() {
+            if (identical(_activationTask, task)) _activationTask = null;
+            if (mounted && _isActive && generation != coordinator.generation) {
+              _ensureActivated();
+            }
+          }),
+        );
       },
     );
-    if (!accepted) _activationScheduled = false;
   }
 
   Future<void> _runActivation({
@@ -491,7 +481,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       _activationScheduled = true;
       coordinator.scheduleCommit(
         key: _activationCommitKey,
-        generation: generation,
         priority: 0,
         structural: true,
         commit: () {
@@ -501,7 +490,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
               !identical(controller, ref.read(asmrLibraryControllerProvider))) {
             return;
           }
-          if (scope != controller.browseCacheScope) {
+          if (generation != coordinator.generation ||
+              scope != controller.browseCacheScope) {
             _ensureActivated();
             return;
           }

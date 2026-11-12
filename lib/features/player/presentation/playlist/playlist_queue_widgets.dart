@@ -11,6 +11,7 @@ import '../../../../app/state/subtitle_settings_provider.dart';
 import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/media/path_matcher.dart';
+import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_entry_ink_well.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_transitions.dart';
@@ -67,10 +68,33 @@ class PlaybackQueueCard extends ConsumerStatefulWidget {
 }
 
 class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
+  static final _coverSelections = Expando<_QueueCoverSelection>();
   final Map<String, Future<String?>> _coverFutures = {};
-  PlaybackQueueDefinition? _coverQueue;
-  LibraryFacade? _coverLibrary;
-  int _coverGeneration = -1;
+  late final _coverScanKey = 'queue_cover_scan:${identityHashCode(this)}';
+  _QueueCoverSelection? _coverSelection;
+
+  @override
+  void dispose() {
+    UiInteractionCoordinator.instance.cancelCommit(_coverScanKey);
+    super.dispose();
+  }
+
+  void _scheduleCoverScan(_QueueCoverSelection selection) {
+    if (selection.isComplete) return;
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _coverScanKey,
+      structural: true,
+      commit: () {
+        if (!mounted ||
+            !identical(_coverSelection, selection) ||
+            !TickerMode.getValuesNotifier(context).value.enabled) {
+          return;
+        }
+        if (selection.scan()) setState(() {});
+        _scheduleCoverScan(selection);
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -103,13 +127,20 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
     final cs = Theme.of(context).colorScheme;
     final queue = session.playbackQueue!;
     final coverGeneration = ref.watch(coverGenerationProvider);
-    if (!identical(_coverQueue, queue) ||
-        !identical(_coverLibrary, library) ||
-        _coverGeneration != coverGeneration) {
+    var selection = _coverSelections[queue];
+    if (selection == null ||
+        !identical(selection.library, library) ||
+        selection.generation != coverGeneration) {
+      selection = _QueueCoverSelection(queue.entries, library, coverGeneration);
+      selection.scan();
+      _coverSelections[queue] = selection;
+    }
+    if (!identical(_coverSelection, selection)) {
       _coverFutures.clear();
-      _coverQueue = queue;
-      _coverLibrary = library;
-      _coverGeneration = coverGeneration;
+      _coverSelection = selection;
+    }
+    if (!selection.isComplete && TickerMode.valuesOf(context).enabled) {
+      _scheduleCoverScan(selection);
     }
     Future<String?> coverFuture(MusicTrack track) => _coverFutures.putIfAbsent(
       track.path,
@@ -125,32 +156,33 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
         ? cs.primary
         : activeColor;
     final isPlaying = cardState.isPlaying;
-    final coverTracks = queue.entries
-        .where((entry) => entry.tracks.isNotEmpty)
-        .map((entry) => entry.tracks.first);
-    for (final track in coverTracks.take(4)) {
-      unawaited(coverFuture(track));
+    final coverSelection = selection;
+    for (final probe in coverSelection.probes) {
+      final track = probe.track;
+      if (_coverFutures.containsKey(track.path)) continue;
+      final future = coverFuture(track);
+      if (coverSelection.selected.contains(probe)) continue;
+      unawaited(
+        future.then<void>((path) {
+          if (path == null || path.isEmpty) return;
+          // A cold standalone track can become eligible once its embedded art
+          // is found. Add it in queue order without repeating the candidate scan.
+          scheduleMicrotask(() {
+            if (coverSelection.addDiscoveredTrack(track.path) &&
+                mounted &&
+                identical(_coverSelection, coverSelection)) {
+              setState(() {});
+            }
+          });
+        }),
+      );
     }
-    final coverItems = coverTracks
+    final coverItems = coverSelection.selected
         .map(
-          (track) => (
-            track: track,
-            coverPath: library.resolvedPlaybackCoverPathForTrack(track),
-          ),
-        )
-        .where(
-          (item) =>
-              shouldShowPlaylistCoverArtwork(item.track, item.coverPath) ||
-              item.track.isVideo ||
-              !item.track.isSingle ||
-              item.coverPath != null,
-        )
-        .take(4)
-        .map(
-          (item) => (
-            track: item.track,
-            coverPath: item.coverPath,
-            future: coverFuture(item.track),
+          (entry) => (
+            track: entry.track,
+            coverPath: library.resolvedPlaybackCoverPathForTrack(entry.track),
+            future: coverFuture(entry.track),
           ),
         )
         .toList(growable: false);
@@ -477,6 +509,61 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
         ),
       ),
     );
+  }
+}
+
+class _QueueCoverSelection {
+  _QueueCoverSelection(this.entries, this.library, this.generation);
+
+  final List<PlaybackQueueEntry> entries;
+  final LibraryFacade library;
+  final int generation;
+  final probes = <({int index, MusicTrack track})>[];
+  final selected = <({int index, MusicTrack track})>[];
+  int _nextEntry = 0;
+
+  bool get isComplete =>
+      _nextEntry == entries.length ||
+      (probes.length == 4 && selected.length == 4);
+
+  bool scan() {
+    var changed = false;
+    // Missing artwork may force a search through the full queue. Bound each
+    // frame's share and retain the cursor across scroll-driven remounts.
+    final end = math.min(_nextEntry + 32, entries.length);
+    while (_nextEntry < end && !isComplete) {
+      final index = _nextEntry++;
+      final tracks = entries[index].tracks;
+      if (tracks.isEmpty) continue;
+      final track = tracks.first;
+      final candidate = (index: index, track: track);
+      if (probes.length < 4) {
+        probes.add(candidate);
+        changed = true;
+      }
+      if (selected.length < 4 &&
+          shouldShowPlaylistCoverArtwork(
+            track,
+            library.resolvedPlaybackCoverPathForTrack(track),
+          )) {
+        selected.add(candidate);
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  bool addDiscoveredTrack(String path) {
+    var changed = false;
+    for (final probe in probes) {
+      if (probe.track.path != path || selected.contains(probe)) continue;
+      if (selected.length == 4 && probe.index > selected.last.index) continue;
+      selected.add(probe);
+      selected.sort((left, right) => left.index.compareTo(right.index));
+      if (selected.length > 4) selected.removeLast();
+      changed = true;
+    }
+    return changed;
   }
 }
 

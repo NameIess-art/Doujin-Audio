@@ -15,22 +15,25 @@ class AsmrCatalogCursor {
   Map<_CatalogStream, int> _totals = {};
 
   // The category publishes this snapshot together with the prepared rows.
-  AsmrCatalogCursor copy() => AsmrCatalogCursor()
+  AsmrCatalogCursor copy() => _copyProgress().._emitted = Map.of(_emitted);
+
+  AsmrCatalogCursor _copyProgress() => AsmrCatalogCursor()
     .._japanesePages = _japanesePages
     .._pages = Map.of(_pages)
     .._more = Map.of(_more)
     .._totals = Map.of(_totals)
     .._pending = {
       for (final entry in _pending.entries) entry.key: List.of(entry.value),
-    }
-    .._emitted = Map.of(_emitted);
+    };
 
-  void _commit(AsmrCatalogCursor next) {
+  void _commit(AsmrCatalogCursor next, Iterable<AsmrWork> emitted) {
     _pages = next._pages;
     _more = next._more;
     _totals = next._totals;
     _pending = next._pending;
-    _emitted = next._emitted;
+    for (final work in emitted) {
+      _emitted[work.workKey] = work;
+    }
   }
 }
 
@@ -72,7 +75,8 @@ extension on AsmrRemoteCatalogService {
     AsmrRequestCancellationToken? cancellationToken,
     AsmrCatalogCursor? cursor,
   }) async {
-    final next = (cursor ?? AsmrCatalogCursor()).copy();
+    final next = cursor?._copyProgress() ?? AsmrCatalogCursor();
+    final emitted = cursor?._emitted ?? const <String, AsmrWork>{};
     final streams = [
       for (final query in queries) ...[
         (AsmrCatalogSource.asmrOne, query),
@@ -135,10 +139,9 @@ extension on AsmrRemoteCatalogService {
           next._more[stream] = loaded.hasMore;
           next._totals[stream] = loaded.totalCount;
           for (final work in loaded.works) {
-            final previous = next._emitted[work.workKey];
+            final previous = updates[work.workKey] ?? emitted[work.workKey];
             if (previous != null) {
               final merged = previous.mergedWith(work);
-              next._emitted[work.workKey] = merged;
               updates[work.workKey] = merged;
             } else {
               next._pending[stream]!.add(work);
@@ -205,17 +208,19 @@ extension on AsmrRemoteCatalogService {
         return order != 0 ? order : a.workKey.compareTo(b.workKey);
       });
     final selected = sorted.take(pageSize).toList(growable: false);
-    for (final work in selected) {
-      next._emitted[work.workKey] = work;
-    }
+    final selectedIds = {for (final work in selected) work.workKey};
     for (final pending in next._pending.values) {
-      pending.removeWhere((work) => next._emitted.containsKey(work.workKey));
+      pending.removeWhere(
+        (work) =>
+            emitted.containsKey(work.workKey) ||
+            selectedIds.contains(work.workKey),
+      );
     }
     final hasMore =
         next._more.values.any((value) => value) ||
         next._pending.values.any((works) => works.isNotEmpty);
     cancellationToken?.throwIfCancelled();
-    cursor?._commit(next);
+    cursor?._commit(next, updates.values.followedBy(selected));
     return AsmrMergedWorkPage(
       works: selected,
       currentPage: page,

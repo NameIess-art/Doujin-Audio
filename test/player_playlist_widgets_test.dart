@@ -5458,6 +5458,90 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
   });
 
+  testWidgets(
+    'large queue discovers later covers in bounded batches and reuses them',
+    (tester) async {
+      final interaction = UiInteractionCoordinator.instance;
+      interaction.resetForTest();
+      addTearDown(interaction.resetForTest);
+      final covers = _RecordingPlaybackCoverCacheService();
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: covers,
+      );
+      addTearDown(fixture.dispose);
+      final tracks = List.generate(
+        160,
+        (index) => testMusicTrack(
+          name: 'Queue track $index',
+          path: '/queue/$index.mp3',
+          groupKey: '/queue',
+          groupTitle: 'Queue',
+          isSingle: true,
+        ),
+      );
+      tracks.last = tracks.last.copyWith(isVideo: true);
+      final session = fixture.playback.createPlaybackQueue('Queue')
+        ..currentTrackPath = tracks.first.path
+        ..playbackQueue = PlaybackQueueDefinition(
+          name: 'Queue',
+          entries: [
+            for (final track in tracks)
+              PlaybackQueueEntry(
+                id: track.path,
+                kind: PlaybackQueueEntryKind.track,
+                title: track.displayName,
+                tracks: [track],
+              ),
+          ],
+        );
+      addTearDown(session.shutdown);
+      fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      Widget card(int mount) => fixture.build(
+        Center(
+          child: PlaybackQueueCard(
+            key: ValueKey(mount),
+            session: PlaybackSessionSnapshot.fromRuntime(session),
+            library: fixture.library,
+            playback: fixture.playback,
+            coverCacheWidth: 96,
+            onOpen: (_) {},
+            onEdit: () {},
+          ),
+        ),
+      );
+
+      final scrolling = Object();
+      interaction.beginInteraction(scrolling);
+      await tester.pumpWidget(card(0));
+      expect(covers.resolvedPlaybackPaths.length, lessThan(tracks.length));
+      expect(covers.resolvedPlaybackPaths, isNot(contains(tracks.last.path)));
+      expect(find.byType(QueueTrackCover), findsNothing);
+
+      interaction.cancelInteraction(scrolling);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<QueueTrackCover>(find.byType(QueueTrackCover)).track,
+        tracks.last,
+      );
+
+      covers.resolvedPlaybackPaths.clear();
+      await tester.pumpWidget(card(1));
+      await tester.pumpAndSettle();
+      expect(covers.resolvedPlaybackPaths.toSet(), {tracks.last.path});
+      expect(
+        tester.widget<QueueTrackCover>(find.byType(QueueTrackCover)).track,
+        tracks.last,
+      );
+    },
+  );
+
   for (final cached in [false, true]) {
     testWidgets(
       'queue cover defers cold decoding and reuses decoded artwork during navigation (cached: $cached)',

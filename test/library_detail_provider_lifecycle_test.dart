@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_repository.dart';
 import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -37,6 +38,52 @@ final class _QueuedDetailRepository extends AudioDetailRepository {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('cold detail waits to read and publish across interactions', () async {
+    final coordinator = UiInteractionCoordinator.instance;
+    coordinator.resetForTest();
+    addTearDown(coordinator.resetForTest);
+    final repository = _QueuedDetailRepository();
+    final graph = createTestRuntimeGraph(audioDetailRepository: repository);
+    final container = ProviderContainer(
+      overrides: [libraryFacadeProvider.overrideWithValue(graph.library)],
+    );
+    addTearDown(graph.runtime.dispose);
+    addTearDown(container.dispose);
+    addTearDown(() {
+      if (!repository.release.isCompleted) repository.release.complete();
+    });
+    final target = graph.library.canonicalAudioDetailTarget(
+      AudioDetailTarget.libraryRootFolder('/library/card'),
+    );
+    final provider = libraryDetailForTargetProvider(target);
+    final scroll = Object();
+    coordinator.beginInteraction(scroll);
+    final card = container.listen(provider, (_, _) {});
+    addTearDown(card.close);
+    await Future<void>.delayed(Duration.zero);
+    expect(repository.batches, isEmpty);
+    expect(container.read(provider).isLoading, isTrue);
+
+    coordinator.cancelInteraction(scroll);
+    coordinator.flushPendingCommitsForTest();
+    await repository.started.future;
+    expect(repository.batches, [
+      [target],
+    ]);
+
+    final route = Object();
+    coordinator.beginNavigation(route);
+    repository.release.complete();
+    await graph.library.detailCacheService.waitForPendingOperations();
+    await Future<void>.delayed(Duration.zero);
+    expect(graph.library.resolvedAudioDetail(target), isNotNull);
+    expect(container.read(provider).isLoading, isTrue);
+
+    coordinator.cancelNavigation(route);
+    coordinator.flushPendingCommitsForTest();
+    expect((await container.read(provider.future)).target, target);
+  });
 
   test(
     'disposed card metadata skips queued I/O and reloads on return',

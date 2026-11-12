@@ -15,6 +15,7 @@ import '../../core/media/music_track.dart';
 import '../../core/ui/ui_operation_service.dart';
 import '../../features/library/application/library_state_models.dart';
 import '../../features/library/application/audio_detail_cache_service.dart';
+import '../../features/library/application/audio_detail_repository.dart';
 import '../../features/library/presentation/library_cover_ui_controller.dart';
 import '../../features/library/domain/library_node.dart';
 import '../../features/library/application/library_sorting.dart';
@@ -290,12 +291,20 @@ class LibrarySortedSnapshotNotifier
                 preparation.reset();
               }
             }
-            // Sorting needs scalar metadata, not category term indexes or the
-            // complete track lists carried by the category snapshot.
-            final loaded = await libraryFacade.detailCacheService.loadMany(
-              targets.values,
-            );
-            details.addAll(loaded.map((result) => result.detail));
+            final gate = _LibraryDetailReadGate(ref, requiresListener: true);
+            final orderedTargets = targets.values.toList(growable: false);
+            // Leave the shared read queue available to visible cards between
+            // batches and stop enqueuing reads when the sort is superseded.
+            for (var start = 0; start < orderedTargets.length; start += 64) {
+              if (gate.waitForIdle() case final pending?) await pending;
+              if (!ref.mounted || request != _request) return;
+              final end = (start + 64).clamp(0, orderedTargets.length);
+              final loaded = await libraryFacade.detailCacheService.loadMany(
+                orderedTargets.getRange(start, end),
+                isActive: () => ref.mounted && request == _request,
+              );
+              details.addAll(loaded.map((result) => result.detail));
+            }
           }
           if (!ref.mounted || request != _request) return;
           final input = LibrarySortRequest(
@@ -387,10 +396,65 @@ final libraryDetailForTargetProvider = FutureProvider.autoDispose
           facade.resolvedAudioDetail(canonicalTarget) ??
           snapshot?.detailFor(canonicalTarget);
       if (detail != null) return detail;
-      return facade
-          .loadAudioDetail(canonicalTarget, isActive: () => ref.mounted)
-          .then((result) => result.detail);
+      return _loadColdLibraryDetail(
+        ref,
+        () => facade.loadAudioDetail(
+          canonicalTarget,
+          isActive: () => ref.mounted,
+        ),
+      );
     });
+
+Future<AudioDetail> _loadColdLibraryDetail(
+  Ref ref,
+  Future<AudioDetailLoadResult> Function() load,
+) async {
+  final gate = _LibraryDetailReadGate(ref);
+  if (gate.waitForIdle() case final pending?) await pending;
+  if (!ref.mounted) throw const AudioDetailOperationCancelled();
+  try {
+    return (await load()).detail;
+  } finally {
+    if (ref.mounted) {
+      if (gate.waitForIdle(structural: true) case final pending?) await pending;
+    }
+  }
+}
+
+final class _LibraryDetailReadGate {
+  _LibraryDetailReadGate(this._ref, {this.requiresListener = false}) {
+    _ref.onDispose(() {
+      _coordinator.cancelCommit(_key);
+      _pending?.complete();
+      _pending = null;
+    });
+    if (requiresListener) _ref.onResume(_coordinator.scheduleCommitFrame);
+  }
+
+  final Ref _ref;
+  final bool requiresListener;
+  final _coordinator = UiInteractionCoordinator.instance;
+  late final _key = 'library_detail_idle_${identityHashCode(this)}';
+  Completer<void>? _pending;
+
+  bool get _canRun => _ref.mounted && (!requiresListener || !_ref.isPaused);
+
+  Future<void>? waitForIdle({bool structural = false}) {
+    if (!_coordinator.isInteracting && _canRun) return null;
+    final pending = _pending = Completer<void>();
+    _coordinator.scheduleCommit(
+      key: _key,
+      priority: 30,
+      structural: structural,
+      canRun: () => _canRun,
+      commit: () {
+        _pending = null;
+        pending.complete();
+      },
+    );
+    return pending.future;
+  }
+}
 
 final libraryCoverForTrackProvider = FutureProvider.autoDispose
     .family<String?, ({String trackPath, BuildContext context})>((

@@ -31,7 +31,9 @@ final class _CategoryState {
   List<AsmrWork>? works;
   List<AsmrWork>? localSource;
   AsmrCatalogCursor cursor = AsmrCatalogCursor();
-  Set<String> workIds = const <String>{};
+  final workIndices = <String, int>{};
+  Object paginationToken = Object();
+  ({Object token, int length})? appendedTo;
   bool isLoading = false;
   bool isLoadingMore = false;
   int page = 1;
@@ -47,6 +49,14 @@ final class _CategoryState {
   Future<void>? refreshTask;
   Future<void>? loadMoreTask;
   AsmrRequestCancellationToken? cancellationToken;
+
+  void publishPagination({int? previousLength}) {
+    appendedTo = previousLength == null
+        ? null
+        : (token: paginationToken, length: previousLength);
+    paginationToken = Object();
+  }
+
   void invalidateRequest() {
     cancellationToken?.cancel();
     cancellationToken = null;
@@ -56,6 +66,7 @@ final class _CategoryState {
     needsLoadMoreRetry = false;
     refreshTask = null;
     loadMoreTask = null;
+    publishPagination();
   }
 }
 
@@ -203,6 +214,8 @@ final class AsmrCategoryCatalog {
       lastError: state.error,
       operationError: state.error,
       revision: state.revision,
+      paginationToken: state.paginationToken,
+      appendedTo: _hasExclusions() ? null : state.appendedTo,
     );
   }
 
@@ -579,12 +592,16 @@ final class AsmrCategoryCatalog {
         cursor,
       );
       if (!_isCurrent(cacheKey, request)) return;
-      final prepared = await _preparePage(state, result, cancellationToken);
+      final prepared = await _preparePage(result.works, cancellationToken);
       if (!_isCurrent(cacheKey, request)) return;
-      state.works = prepared.additions;
-      state.workIds = prepared.ids;
+      state.works = prepared;
+      state.workIndices.clear();
+      for (var index = 0; index < prepared.length; index++) {
+        state.workIndices[prepared[index].workKey] = index;
+      }
       state.cursor = cursor;
       _applyPageResult(state, cacheKey.query, result);
+      state.publishPagination();
       state.revision++;
       _onChanged();
     } on AsmrRequestCancelled {
@@ -604,12 +621,15 @@ final class AsmrCategoryCatalog {
     required String searchQuery,
     required AsmrCategoryRequestContext context,
     bool searchSession = false,
+    Object? expectedPaginationToken,
   }) async {
     if (searchSession && !isSearchRequestCurrent(searchQuery, category)) return;
     final state = _state(category, searchQuery, searchSession);
     final refresh = state.refreshTask;
     if (refresh != null) await refresh;
     if (!_isContextCurrent(context) ||
+        (expectedPaginationToken != null &&
+            !identical(state.paginationToken, expectedPaginationToken)) ||
         (searchSession && !isSearchRequestCurrent(searchQuery, category)) ||
         (searchSession && !_categories.containsValue(state))) {
       return;
@@ -677,43 +697,53 @@ final class AsmrCategoryCatalog {
         cursor,
       );
       if (!_isCurrent(key, request)) return;
-      final prepared = await _preparePage(
-        state,
-        result,
+      final additions = await _preparePage(
+        result.works
+            .where((work) => !state.workIndices.containsKey(work.workKey))
+            .toList(growable: false),
         cancellationToken,
-        append: true,
       );
       if (!_isCurrent(key, request)) return;
-      // Retain existing model identities and any favorites changed while the
-      // worker prepared this page. Only the new page crosses the isolate back.
-      final resourceUpdates = {
-        for (final work in [
-          ...result.works,
-          if (result is AsmrMergedWorkPage) ...result.resourceUpdates,
-        ])
-          work.workKey: work,
-      };
-      state.works = immutableList([
-        for (final previous in state.works!)
-          resourceUpdates.containsKey(previous.workKey)
-              ? previous
-                    .mergedWith(resourceUpdates[previous.workKey]!)
-                    .copyWith(isFavorite: previous.isFavorite)
-              : previous,
-        ...prepared.additions,
-      ]);
-      state.workIds = prepared.ids;
+      final previous = state.works!;
+      // Only duplicate works from the new page can change existing records.
+      // Read their current values so concurrent favorite changes survive.
+      final replacements = <int, AsmrWork>{};
+      final updates = result is AsmrMergedWorkPage
+          ? result.works.followedBy(result.resourceUpdates)
+          : result.works;
+      for (final work in updates) {
+        final index = state.workIndices[work.workKey];
+        if (index == null) continue;
+        final existing = previous[index];
+        final merged = existing.mergedWith(work);
+        replacements[index] = merged.isFavorite == existing.isFavorite
+            ? merged
+            : merged.copyWith(isFavorite: existing.isFavorite);
+      }
+      if (additions.isNotEmpty || replacements.isNotEmpty) {
+        final prefix = replacements.isEmpty
+            ? previous
+            : Iterable<AsmrWork>.generate(
+                previous.length,
+                (index) => replacements[index] ?? previous[index],
+              );
+        state.works = immutableList(prefix.followedBy(additions));
+      }
+      for (var index = 0; index < additions.length; index++) {
+        state.workIndices[additions[index].workKey] = previous.length + index;
+      }
       state.cursor = cursor;
       state.revision++;
       _applyPageResult(state, query, result);
-      state.needsLoadMoreRetry = prepared.additions.isEmpty && state.hasMore;
-      _onChanged();
+      state.publishPagination(previousLength: previous.length);
+      state.needsLoadMoreRetry = additions.isEmpty && state.hasMore;
     } on AsmrRequestCancelled {
       // Retain completed pages so returning to this category can resume.
     } catch (error) {
       if (_isCurrent(key, request)) {
         state.error = error;
         state.needsLoadMoreRetry = true;
+        state.publishPagination();
       }
     } finally {
       if (identical(state.cancellationToken, cancellationToken)) {
@@ -726,19 +756,17 @@ final class AsmrCategoryCatalog {
     }
   }
 
-  Future<_PreparedCategoryPage> _preparePage(
-    _CategoryState state,
-    AsmrWorkPage page,
-    AsmrRequestCancellationToken cancellationToken, {
-    bool append = false,
-  }) async {
+  Future<List<AsmrWork>> _preparePage(
+    List<AsmrWork> works,
+    AsmrRequestCancellationToken cancellationToken,
+  ) async {
+    if (works.isEmpty) return const [];
     while (true) {
       cancellationToken.throwIfCancelled();
       final favorites = _favoriteIds();
       final prepared = await cancellationToken.waitFor(
         compute(_prepareCategoryPage, (
-          existingIds: append ? state.workIds : const <String>{},
-          incoming: page.works,
+          incoming: works,
           favoriteIds: favorites,
         )),
       );
@@ -803,13 +831,10 @@ final class AsmrCategoryCatalog {
   );
 }
 
-typedef _PreparedCategoryPage = ({List<AsmrWork> additions, Set<String> ids});
-
-_PreparedCategoryPage _prepareCategoryPage(
-  ({Set<String> existingIds, List<AsmrWork> incoming, Set<String> favoriteIds})
-  request,
+List<AsmrWork> _prepareCategoryPage(
+  ({List<AsmrWork> incoming, Set<String> favoriteIds}) request,
 ) {
-  final ids = <String>{...request.existingIds};
+  final ids = <String>{};
   final additions = <AsmrWork>[];
   for (final work in request.incoming) {
     if (!ids.add(work.workKey)) continue;
@@ -818,5 +843,5 @@ _PreparedCategoryPage _prepareCategoryPage(
       work.isFavorite == favorite ? work : work.copyWith(isFavorite: favorite),
     );
   }
-  return (additions: immutableList(additions), ids: immutableSet(ids));
+  return immutableList(additions);
 }

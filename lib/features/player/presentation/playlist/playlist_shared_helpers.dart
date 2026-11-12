@@ -3,18 +3,14 @@ export '../../application/session_switcher_tree.dart'
 
 import '../playback_providers.dart';
 import '../../../settings/presentation/settings_providers.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-import '../../../library/application/library_facade.dart';
 
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/state/subtitle_settings_provider.dart';
 import '../../application/playback_facade.dart';
 import '../../domain/audio_effects.dart';
 import '../../../../app/theme/app_styles.dart';
-import '../../../../core/media/music_track.dart';
 import '../../../../core/ui/undoable_removal_service.dart';
 import '../../../../core/widgets/app_feedback.dart';
 
@@ -317,20 +313,4 @@ ButtonStyle sessionDetailResetButtonStyle(BuildContext context) {
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
   );
-}
-
-Future<String?> coverFutureForTrack(
-  LibraryFacade library,
-  MusicTrack? track, {
-  bool cachedOnly = false,
-}) {
-  if (track == null) {
-    return Future<String?>.value();
-  }
-  if (cachedOnly) {
-    return SynchronousFuture<String?>(
-      library.resolvedPlaybackCoverPathForTrack(track),
-    );
-  }
-  return library.playbackCoverPathFutureForTrack(track);
 }

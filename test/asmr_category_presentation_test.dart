@@ -110,6 +110,48 @@ void main() {
       );
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets('online pagination ignores scrolling away from the footer on $platform', (
+      tester,
+    ) async {
+      final controller = _PresentationController(createTestAsmrServices())
+        ..workCount = 100
+        ..hasMore = true;
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(controller.dispose);
+      addTearDown(fixture.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          const AsmrTab(),
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+          ],
+        ),
+      );
+      await pumpUntilFound(tester, find.text('Published work'));
+      final context = tester.element(find.byType(CustomScrollView).first);
+      final metrics = FixedScrollMetrics(
+        minScrollExtent: 0,
+        maxScrollExtent: 2000,
+        pixels: 1600,
+        viewportDimension: 500,
+        axisDirection: AxisDirection.down,
+        devicePixelRatio: 1,
+      );
+      void sendUpdate(double delta) => ScrollUpdateNotification(
+        metrics: metrics,
+        context: context,
+        scrollDelta: delta,
+      ).dispatch(context);
+
+      sendUpdate(-20);
+      await tester.pump();
+      expect(controller.loadMoreCount, 0);
+      sendUpdate(20);
+      await tester.pump();
+      expect(controller.loadMoreCount, 1);
+      await tester.pumpWidget(const SizedBox.shrink());
+    }, variant: TargetPlatformVariant({platform}));
+
     testWidgets(
       'online pagination status retains mounted cards on $platform',
       (tester) async {
@@ -118,7 +160,8 @@ void main() {
             for (var index = 0; index < 1000; index++)
               AsmrWork.fromJson({'id': index + 1, 'title': 'Work $index'}),
           ])
-          ..hasMore = true;
+          ..hasMore = true
+          ..paginationToken = Object();
         final fixture = AppRuntimeWidgetTestFixture();
         addTearDown(controller.dispose);
         addTearDown(fixture.dispose);
@@ -150,6 +193,8 @@ void main() {
         expect(cards.evaluate().toSet(), mountedCards);
 
         controller
+          ..appendedTo = (token: controller.paginationToken!, length: 1000)
+          ..paginationToken = Object()
           ..publishedWorks = [
             ...controller.publishedWorks!,
             AsmrWork.fromJson(const {'id': 1001, 'title': 'Appended work'}),
@@ -2525,6 +2570,8 @@ class _PresentationController extends AsmrLibraryController {
   int categoryReads = 0;
   int treeReads = 0;
   bool hasMore = false;
+  Object? paginationToken;
+  ({Object token, int length})? appendedTo;
   bool needsRetry = false;
   int workCount = 1;
   int? combinedTotalCount;
@@ -2627,6 +2674,8 @@ class _PresentationController extends AsmrLibraryController {
       needsLoadMoreRetry: needsRetry,
       totalCount: combinedTotalCount ?? publishedWorks?.length ?? workCount,
       hasCombinedTotalCount: combinedTotalCount != null,
+      paginationToken: paginationToken,
+      appendedTo: appendedTo,
       activeQuery: searchQuery,
       lastError: catalogError,
       operationError: catalogError,
@@ -2678,6 +2727,7 @@ class _PresentationController extends AsmrLibraryController {
     AsmrCategoryType category, {
     String searchQuery = '',
     bool searchSession = false,
+    Object? expectedPaginationToken,
   }) async {
     loadMoreCount++;
     hasMore = false;

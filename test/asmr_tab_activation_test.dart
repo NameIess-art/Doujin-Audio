@@ -184,6 +184,53 @@ void main() {
     TargetPlatform.windows,
   });
 
+  testWidgets('online activation waits for navigation but bypasses startup work', (
+    tester,
+  ) async {
+    final coordinator = UiInteractionCoordinator.instance;
+    final startup = Completer<void>();
+    addTearDown(() {
+      if (!startup.isCompleted) startup.complete();
+    });
+    var startupStarted = false;
+    coordinator.scheduleAfterIdle(
+      key: 'secondary_startup',
+      generation: coordinator.generation,
+      priority: 200,
+      task: () {
+        startupStarted = true;
+        return startup.future;
+      },
+    );
+    expect(startupStarted, isTrue);
+
+    final fixture = AppRuntimeWidgetTestFixture();
+    final controller = _ActivationController(createTestAsmrServices());
+    addTearDown(fixture.dispose);
+    addTearDown(controller.dispose);
+    final navigation = Object();
+    coordinator.beginNavigation(navigation);
+    await tester.pumpWidget(
+      fixture.build(
+        const AsmrTab(),
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      ),
+    );
+    await _pumpFrames(tester);
+    expect(controller.attempts, 0);
+    expect(controller.categoryLoads, 0);
+
+    coordinator.endNavigation(navigation);
+    await _pumpFrames(tester);
+    expect(controller.attempts, 1);
+    expect(controller.categoryLoads, 1);
+    expect(startup.isCompleted, isFalse);
+    startup.complete();
+    await tester.pumpWidget(const SizedBox.shrink());
+  }, variant: platforms);
+
   testWidgets(
     'Windows online work context menu enters selection with its work selected',
     (tester) async {

@@ -7,11 +7,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../core/media/music_track.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/marquee_text.dart';
 import '../../application/playback_session_snapshot.dart';
-import 'playlist_shared_helpers.dart';
 
 import 'session_detail_scaffold.dart';
 import 'session_detail_route.dart';
@@ -80,8 +80,10 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     false,
   );
   String? _cachedTrackPath;
+  MusicTrack? _cachedTrack;
   String? _cachedCoverScope;
   ({int epoch, int revision})? _cachedCoverRevision;
+  String? _initialCoverPath;
   Future<String?>? _cachedCoverFuture;
   String get _coverCommitKey =>
       'session_detail_${identityHashCode(this)}_cover';
@@ -137,6 +139,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
 
   void _handleEnterStatus(AnimationStatus status) {
     _transitionActive.value = status != AnimationStatus.completed;
+    if (!_transitionActive.value) {
+      UiInteractionCoordinator.instance.scheduleCommitFrame();
+    }
   }
 
   @override
@@ -168,7 +173,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   Widget build(BuildContext context) {
     final playback = ref.read(playbackFacadeProvider);
     final paths = ref.read(audioPathCoordinatorProvider);
-    final session = ref
+    final structure = ref
         .watch(
           playbackSessionProvider(
             widget.sessionId,
@@ -178,7 +183,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     ref.watch(
       libraryStateProvider.select((state) => state.value?.contentRevision),
     );
-    if (session == null) {
+    if (structure == null) {
       return Scaffold(
         appBar: AppBar(
           automaticallyImplyLeading: false,
@@ -192,6 +197,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       );
     }
 
+    final session = playback.sessionSnapshotById(widget.sessionId) ?? structure;
     final trackPath = session.currentTrackPath;
     final library = ref.read(libraryFacadeProvider);
     final detailTrack = paths.trackByPath(trackPath);
@@ -206,36 +212,40 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     );
     if (_cachedCoverFuture == null ||
         _cachedTrackPath != trackPath ||
+        !identical(_cachedTrack, detailTrack) ||
         _cachedCoverScope != coverScope ||
         _cachedCoverRevision != coverRevision) {
       _cachedTrackPath = trackPath;
+      _cachedTrack = detailTrack;
       _cachedCoverScope = coverScope;
       _cachedCoverRevision = coverRevision;
-      _cachedCoverFuture = coverFutureForTrack(
-        library,
-        detailTrack,
-        cachedOnly: true,
-      );
+      _initialCoverPath = library.resolvedPlaybackCoverPathForTrack(detailTrack);
+      _cachedCoverFuture = SynchronousFuture(_initialCoverPath);
       // Display indexed artwork first; discovery and extraction must
       // not compete with the route's moving first frames.
-      UiInteractionCoordinator.instance.scheduleCommit(
-        key: _coverCommitKey,
-        commit: () {
-          if (!mounted) return;
-          final coverFuture = coverFutureForTrack(library, detailTrack);
-          setState(() {
-            _cachedCoverFuture = coverFuture;
-          });
-        },
-      );
+      final coordinator = UiInteractionCoordinator.instance;
+      coordinator.cancelCommit(_coverCommitKey);
+      if (detailTrack != null) {
+        coordinator.scheduleCommit(
+          key: _coverCommitKey,
+          canRun: () => mounted && !_transitionActive.value,
+          commit: () {
+            if (!mounted) return;
+            final coverFuture = library.playbackCoverPathFutureForTrack(
+              detailTrack,
+            );
+            setState(() {
+              _cachedCoverFuture = coverFuture;
+            });
+          },
+        );
+      }
     }
     final coverPathFuture = _cachedCoverFuture!;
 
     return SessionDetailTheme(
       coverPathFuture: coverPathFuture,
-      initialCoverPath: ref
-          .read(libraryFacadeProvider)
-          .resolvedPlaybackCoverPathForTrack(detailTrack),
+      initialCoverPath: _initialCoverPath,
       requestKey: (session.id, trackPath),
       coverRevision: (
         scope: coverScope,
@@ -256,7 +266,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
         child: RepaintBoundary(
           key: const ValueKey('session_detail_content_cache'),
           child: SessionDetailScaffold(
-            session: playback.sessionSnapshotById(widget.sessionId) ?? session,
+            session: session,
+            track: detailTrack,
+            initialCoverPath: _initialCoverPath,
             coverPathFuture: coverPathFuture,
             transitionActive: _transitionActive,
             detailCoverKey: _detailRoute?.detailCoverKey,

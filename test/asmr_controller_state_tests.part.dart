@@ -2926,9 +2926,14 @@ void registerAsmrControllerStateTests({
     final coordinator = UiInteractionCoordinator.instance;
     coordinator.resetForTest();
     addTearDown(coordinator.resetForTest);
+    final api = _FakeAsmrApiService(
+      largeRecommendationPool: true,
+      recommendationPageCount: 3,
+    );
+    addTearDown(api.close);
     final controller = createTestAsmrController(
       preferencesStore: preferences,
-      apiService: _FakeAsmrApiService(largeRecommendationPool: true),
+      apiService: api,
       persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
@@ -2936,21 +2941,37 @@ void registerAsmrControllerStateTests({
     await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
     await controller.refreshCategory(AsmrCategoryType.release);
     expect(controller.worksFor(AsmrCategoryType.release), hasLength(40));
-    final firstPage = controller.worksFor(AsmrCategoryType.release);
+    final firstPage = controller.categoryViewState(AsmrCategoryType.release);
 
     final interactionSource = Object();
     coordinator.beginInteraction(interactionSource);
-    await controller.loadMoreCategory(AsmrCategoryType.release);
+    await controller.loadMoreCategory(
+      AsmrCategoryType.release,
+      expectedPaginationToken: firstPage.paginationToken,
+    );
     expect(controller.isLoadingMoreCategory(AsmrCategoryType.release), isFalse);
 
     coordinator.beginGeneration();
     coordinator.finishInteractionsForTest();
 
-    expect(controller.worksFor(AsmrCategoryType.release), hasLength(80));
-    expect(
-      controller.worksFor(AsmrCategoryType.release).first,
-      same(firstPage.first),
+    final secondPage = controller.categoryViewState(AsmrCategoryType.release);
+    expect(secondPage.works, hasLength(80));
+    expect(firstPage.works, hasLength(40));
+    expect(secondPage.works.first, same(firstPage.works.first));
+    expect(secondPage.appendedTo, (token: firstPage.paginationToken, length: 40));
+    final requests = api.fetchWorkRequests.length;
+    await controller.loadMoreCategory(
+      AsmrCategoryType.release,
+      expectedPaginationToken: firstPage.paginationToken,
     );
+    expect(api.fetchWorkRequests, hasLength(requests));
+    expect(controller.worksFor(AsmrCategoryType.release), same(secondPage.works));
+    await controller.loadMoreCategory(
+      AsmrCategoryType.release,
+      expectedPaginationToken: secondPage.paginationToken,
+    );
+    expect(api.fetchWorkRequests, hasLength(requests + 1));
+    expect(controller.worksFor(AsmrCategoryType.release), hasLength(120));
     expect(controller.isLoadingMoreCategory(AsmrCategoryType.release), isFalse);
   });
 

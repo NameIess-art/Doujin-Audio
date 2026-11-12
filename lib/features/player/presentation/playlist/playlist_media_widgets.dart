@@ -27,16 +27,20 @@ class SessionHeroArtwork extends ConsumerWidget {
     required this.height,
     required this.track,
     required this.coverPathFuture,
+    this.initialCoverPath,
     this.coverAnchorKey,
     this.coverPreview,
+    this.mountVideoSurface = true,
   });
 
   final PlaybackSessionSnapshot session;
   final double height;
   final MusicTrack? track;
   final Future<String?> coverPathFuture;
+  final String? initialCoverPath;
   final GlobalKey<SessionCoverAnchorState>? coverAnchorKey;
   final ui.Image? coverPreview;
+  final bool mountVideoSurface;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -49,7 +53,6 @@ class SessionHeroArtwork extends ConsumerWidget {
     final videoReady =
         allowVideoPlayback && isSessionVideoReady(session, track);
     final coverResolution = ref.watch(coverImageResolutionProvider);
-    final initialCoverPath = library.resolvedPlaybackCoverPathForTrack(track);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -126,7 +129,7 @@ class SessionHeroArtwork extends ConsumerWidget {
                   radius: 16,
                   enabled: !videoReady,
                   child: SessionVideoViewport(
-                    videoReady: videoReady,
+                    videoReady: videoReady && mountVideoSurface,
                     surfaceBuilder: (_) => NativeSessionVideoSurface(
                       sessionId: sessionId,
                       nativeRepository: ref

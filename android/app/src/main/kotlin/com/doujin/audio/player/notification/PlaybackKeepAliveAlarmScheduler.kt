@@ -26,32 +26,29 @@ object PlaybackKeepAliveAlarmScheduler {
      */
     const val intervalMs = 9L * 60L * 1000L
 
-    /**
-     * Callers include the per-event active-sync path, so re-arming is throttled:
-     * Scheduling is not free and the exact deadline does not matter
-     * for a backstop. Each successful call pushes the deadline out by
-     * interval, which is the intent - while events keep flowing the handler
-     * timers are demonstrably alive and the alarm is not needed.
-     */
-    const val rearmThrottleMs = 60L * 1000L
-    const val activeRearmThrottleMs = 30L * 1000L
-
-    @Volatile
-    private var lastArmedElapsedRealtimeMs = Long.MIN_VALUE
+    // Service events and the alarm receiver both run on the main thread.
+    private var pendingDeadlineMs: Long? = null
 
     fun ensureScheduled(context: Context, activePlayback: Boolean = true) {
-        val nowMs = SystemClock.elapsedRealtime()
-        val currentIntervalMs = if (activePlayback) activeIntervalMs else intervalMs
-        val currentThrottleMs = if (activePlayback) activeRearmThrottleMs else rearmThrottleMs
-        if (shouldSkipRearm(nowMs, lastArmedElapsedRealtimeMs, currentThrottleMs)) return
+        val interval = if (activePlayback) activeIntervalMs else intervalMs
+        val triggerAtMs = SystemClock.elapsedRealtime() + interval
+        val pendingDeadline = pendingDeadlineMs
+        // Replacing the same PendingIntent also cancels its existing alarm.
+        // Keep an earlier deadline even if Android has delayed its delivery.
+        if (pendingDeadline != null && pendingDeadline <= triggerAtMs) return
         val alarmManager = alarmManager(context) ?: return
-        val triggerAtMs = nowMs + currentIntervalMs
         val operation = pendingIntent(context) ?: return
         try {
             scheduleAlarmCompat(alarmManager, triggerAtMs, operation)
-            lastArmedElapsedRealtimeMs = nowMs
+            pendingDeadlineMs = triggerAtMs
         } catch (_: Exception) {
         }
+    }
+
+    internal fun onAlarmDelivered() {
+        val pendingDeadline = pendingDeadlineMs ?: return
+        // A broadcast already queued before cancellation can arrive after rearming.
+        if (pendingDeadline <= SystemClock.elapsedRealtime()) pendingDeadlineMs = null
     }
 
     private fun scheduleAlarmCompat(
@@ -95,21 +92,14 @@ object PlaybackKeepAliveAlarmScheduler {
      * system, and a no-op cancel is cheaper than a stray wakeup every 9 minutes.
      */
     fun cancel(context: Context) {
+        pendingDeadlineMs = null
         val alarmManager = alarmManager(context) ?: return
         val operation = pendingIntent(context) ?: return
         try {
             alarmManager.cancel(operation)
         } catch (_: Exception) {
         }
-        lastArmedElapsedRealtimeMs = Long.MIN_VALUE
     }
-
-    internal fun shouldSkipRearm(
-        nowMs: Long,
-        lastArmedMs: Long,
-        throttleMs: Long = rearmThrottleMs
-    ): Boolean =
-        lastArmedMs != Long.MIN_VALUE && nowMs - lastArmedMs < throttleMs
 
     private fun alarmManager(context: Context): AlarmManager? =
         context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager

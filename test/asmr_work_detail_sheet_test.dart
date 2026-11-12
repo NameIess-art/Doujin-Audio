@@ -2251,6 +2251,7 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
     AsmrCategoryType category, {
     String searchQuery = '',
     bool searchSession = false,
+    Object? expectedPaginationToken,
   }) async {}
 
   @override

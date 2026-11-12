@@ -932,6 +932,63 @@ void main() {
     );
   }
 
+  testWidgets(
+    'library sorting pauses subsequent metadata batches during scroll',
+    (tester) async {
+      final repository = _WorkDetailRepository();
+      addTearDown(() {
+        if (!repository.ready.isCompleted) repository.ready.complete();
+      });
+      final fixture = AppRuntimeWidgetTestFixture(
+        providedPersistenceRepository: repository,
+      );
+      addTearDown(fixture.dispose);
+      fixture.settingsRepository
+        ..librarySortCriterion = LibrarySortCriterion.releaseDate
+        ..syncSlice(isInitialized: true);
+      fixture.library.addTracks([
+        for (var index = 0; index < 65; index++)
+          testMusicTrack(
+            name: 'Track $index',
+            path: '/track-$index.mp3',
+            groupKey: '/track-$index.mp3',
+            groupTitle: 'Track $index',
+            isSingle: true,
+          ),
+      ], persist: false);
+      fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+      await tester.runAsync(fixture.library.ensureCardSnapshot);
+      List<LibraryNode> nodes = const [];
+      await tester.pumpWidget(
+        fixture.build(
+          Consumer(
+            builder: (context, ref, _) {
+              nodes = ref.watch(librarySortedTreeUiProvider);
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+      await _waitForSort(
+        tester,
+        () => repository.requestedTargets.length == 64,
+      );
+
+      final coordinator = UiInteractionCoordinator.instance;
+      final scroll = Object();
+      coordinator.beginInteraction(scroll);
+      repository.ready.complete();
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(repository.requestedTargets, hasLength(64));
+      expect(nodes, isEmpty);
+
+      coordinator.cancelInteraction(scroll);
+      await _waitForSort(tester, () => nodes.length == 65);
+      expect(repository.requestedTargets, hasLength(65));
+      expect(repository.batchReads, 2);
+    },
+  );
+
   testWidgets('new queues stay first until sorting or pinning is applied', (
     tester,
   ) async {

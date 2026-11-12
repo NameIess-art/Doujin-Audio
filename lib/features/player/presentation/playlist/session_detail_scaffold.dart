@@ -36,7 +36,9 @@ import 'session_cover_transition.dart';
 class SessionDetailScaffold extends ConsumerStatefulWidget {
   final ValueListenable<bool> transitionActive;
   final PlaybackSessionSnapshot session;
+  final MusicTrack? track;
   final Future<String?> coverPathFuture;
+  final String? initialCoverPath;
   final GlobalKey<SessionCoverAnchorState>? detailCoverKey;
   final ui.Image? coverPreview;
   final bool deferCoverOverlays;
@@ -47,7 +49,9 @@ class SessionDetailScaffold extends ConsumerStatefulWidget {
     super.key,
     required this.transitionActive,
     required this.session,
+    required this.track,
     required this.coverPathFuture,
+    this.initialCoverPath,
     required this.onClose,
     this.detailCoverKey,
     this.coverPreview,
@@ -182,7 +186,6 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final session = widget.session;
-    final paths = ref.read(audioPathCoordinatorProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final coverPathFuture = widget.coverPathFuture;
     final onClose = widget.onClose;
@@ -235,10 +238,9 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
           ),
         );
 
-    final track = paths.trackByPath(session.currentTrackPath);
+    final track = widget.track;
     final cs = Theme.of(context).colorScheme;
     final library = ref.read(libraryFacadeProvider);
-    final initialCoverPath = library.resolvedPlaybackCoverPathForTrack(track);
     return Material(
       color: cs.surface,
       animationDuration: Duration.zero,
@@ -246,10 +248,9 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
         fit: StackFit.expand,
         children: [
           _SessionDetailBlurredCoverBackground(
-            session: session,
-            track: track,
+            requestKey: (session.id, track?.path ?? session.currentTrackPath),
             coverPathFuture: coverPathFuture,
-            initialCoverPath: initialCoverPath,
+            initialCoverPath: widget.initialCoverPath,
             onImageError:
                 library.coverArtworkCacheService.reportArtworkReadFailure,
           ),
@@ -352,44 +353,21 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                             : headerTop + AppPageHeaderMetrics.buttonSize + 8,
                         child: Consumer(
                           builder: (context, ref, child) {
-                            Widget artworkWidget = AnimatedSwitcher(
-                              duration: MediaQuery.disableAnimationsOf(context)
-                                  ? Duration.zero
-                                  : kAppFadeDuration,
-                              reverseDuration:
-                                  MediaQuery.disableAnimationsOf(context)
-                                  ? Duration.zero
-                                  : kAppFadeDuration,
-                              switchInCurve: kAppFadeCurve,
-                              switchOutCurve: kAppFadeCurve,
-                              transitionBuilder: (child, animation) =>
-                                  MediaQuery.disableAnimationsOf(context)
-                                  ? child
-                                  : FadeTransition(
-                                      opacity: animation,
-                                      child: child,
-                                    ),
-                              layoutBuilder: (currentChild, previousChildren) {
-                                return Stack(
-                                  alignment: Alignment.center,
-                                  fit: StackFit.expand,
-                                  children: [
-                                    ...previousChildren,
-                                    ?currentChild,
-                                  ],
-                                );
-                              },
-                              child: KeyedSubtree(
-                                key: ValueKey('artwork_${session.id}'),
-                                child: SessionHeroArtwork(
-                                  session: session,
-                                  height: constraints.maxHeight,
-                                  track: track,
-                                  coverPathFuture: coverPathFuture,
-                                  coverAnchorKey: widget.detailCoverKey,
-                                  coverPreview: widget.coverPreview,
-                                ),
-                              ),
+                            final artworkWidget = SessionHeroArtwork(
+                              key: ValueKey('artwork_${session.id}'),
+                              session: session,
+                              height: constraints.maxHeight,
+                              track: track,
+                              coverPathFuture: coverPathFuture,
+                              initialCoverPath: widget.initialCoverPath,
+                              coverAnchorKey: widget.detailCoverKey,
+                              coverPreview: widget.coverPreview,
+                              // Creating the Android platform view can contend
+                              // with the entrance. Retain it for the exit.
+                              mountVideoSurface:
+                                  defaultTargetPlatform !=
+                                      TargetPlatform.android ||
+                                  _coverOverlaysVisible,
                             );
 
                             final artwork = Stack(
@@ -587,60 +565,68 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
 
 class _SessionDetailBlurredCoverBackground extends StatelessWidget {
   const _SessionDetailBlurredCoverBackground({
-    required this.session,
-    required this.track,
+    required this.requestKey,
     required this.coverPathFuture,
     required this.initialCoverPath,
     required this.onImageError,
   });
 
-  final PlaybackSessionSnapshot session;
-  final MusicTrack? track;
+  final Object requestKey;
   final Future<String?> coverPathFuture;
   final String? initialCoverPath;
   final ValueChanged<String>? onImageError;
 
+  static final _lightBlur = ui.ImageFilter.blur(
+    sigmaX: 18,
+    sigmaY: 18,
+    tileMode: TileMode.clamp,
+  );
+  static final _darkBlur = ui.ImageFilter.blur(
+    sigmaX: 30,
+    sigmaY: 30,
+    tileMode: TileMode.clamp,
+  );
+
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final blurSigma = isDark ? 30.0 : 18.0;
+    final theme = Theme.of(context);
+    final surface = theme.colorScheme.surface;
+    final isDark = theme.brightness == Brightness.dark;
 
     return Positioned.fill(
       child: IgnorePointer(
-        child: RepaintBoundary(
-          child: ClipRect(
+        child: AsyncCoverImage(
+          future: coverPathFuture,
+          requestKey: requestKey,
+          initialPath: initialCoverPath,
+          fallbackBuilder: _emptyBackground,
+          loadingBuilder: _emptyBackground,
+          imageBuilder: (_, path) => ClipRect(
             child: Stack(
               fit: StackFit.expand,
               children: [
-                Transform.scale(
-                  scale: isDark ? 1.12 : 1.08,
-                  child: ImageFiltered(
-                    imageFilter: ui.ImageFilter.blur(
-                      sigmaX: blurSigma,
-                      sigmaY: blurSigma,
-                      tileMode: TileMode.clamp,
-                    ),
-                    child: AsyncLocalCoverImage(
-                      deferLoadDuringInteraction: true,
-                      onImageError: onImageError,
-                      future: coverPathFuture,
-                      requestKey: (
-                        session.id,
-                        track?.path ?? session.currentTrackPath,
+                RepaintBoundary(
+                  // Palette changes repaint the tint without invalidating
+                  // the filtered artwork layer.
+                  child: Transform.scale(
+                    scale: isDark ? 1.12 : 1.08,
+                    child: ImageFiltered(
+                      imageFilter: isDark ? _darkBlur : _lightBlur,
+                      child: RetryingFileImage(
+                        path: path,
+                        deferLoadDuringInteraction: true,
+                        onImageError: onImageError,
+                        cacheWidth: 200,
+                        useDefaultCacheWidth: false,
+                        fit: BoxFit.cover,
+                        fallbackBuilder: _emptyBackground,
+                        loadingBuilder: _emptyBackground,
                       ),
-                      initialPath: initialCoverPath,
-                      cacheWidth: 200,
-                      useDefaultCacheWidth: false,
-                      fit: BoxFit.cover,
-                      fallbackBuilder: (_) => const SizedBox.shrink(),
                     ),
                   ),
                 ),
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: cs.surface.withValues(alpha: isDark ? 0.70 : 0.80),
-                  ),
+                ColoredBox(
+                  color: surface.withValues(alpha: isDark ? 0.70 : 0.80),
                 ),
                 DecoratedBox(
                   decoration: BoxDecoration(
@@ -648,9 +634,9 @@ class _SessionDetailBlurredCoverBackground extends StatelessWidget {
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                       colors: [
-                        cs.surface.withValues(alpha: isDark ? 0.35 : 0.25),
+                        surface.withValues(alpha: isDark ? 0.35 : 0.25),
                         Colors.transparent,
-                        cs.surface.withValues(alpha: isDark ? 0.50 : 0.40),
+                        surface.withValues(alpha: isDark ? 0.50 : 0.40),
                       ],
                       stops: const [0.0, 0.45, 1.0],
                     ),
@@ -663,4 +649,6 @@ class _SessionDetailBlurredCoverBackground extends StatelessWidget {
       ),
     );
   }
+
+  static Widget _emptyBackground(BuildContext _) => const SizedBox.shrink();
 }

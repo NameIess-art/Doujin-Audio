@@ -26,6 +26,7 @@ import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/target_countdown_builder.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
+import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 
 part 'timer_tab_body.dart';
 part 'timer_tab_detail_body.dart';

@@ -1244,6 +1244,63 @@ void main() {
     expect(harness.coverCache.requestedPaths, isEmpty);
   });
 
+  testWidgets('Windows subtitle wheel animates to the selected cue', (
+    tester,
+  ) async {
+    final subtitleTrack = SubtitleTrack(
+      sourcePath: 'wheel.srt',
+      cues: List.generate(
+        10,
+        (index) => SubtitleCue(
+          start: Duration(seconds: index * 2),
+          end: Duration(seconds: index * 2 + 2),
+          text: 'Cue $index',
+        ),
+      ),
+    );
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    await tester.pumpWidget(
+      fixture.build(
+        Center(
+          child: SizedBox(
+            width: 400,
+            height: 160,
+            child: TimelineSubtitleView(
+              cues: subtitleTrack.cues,
+              playbackSubtitleIndex: 2,
+              onSeek: (_) async {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final list = find.byKey(const ValueKey('subtitle_timeline_list'));
+    final controller = tester.widget<ListView>(list).controller!;
+    final start = controller.offset;
+    Future<void> wheel() => tester.sendEventToBinding(
+      PointerScrollEvent(
+        position: tester.getCenter(list),
+        scrollDelta: const Offset(0, 80),
+      ),
+    );
+    await wheel();
+    await wheel();
+    expect(controller.offset, start);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 48));
+    expect(controller.offset, greaterThan(start));
+    final partial = controller.offset;
+    await tester.pumpAndSettle();
+    expect(controller.offset, greaterThan(partial));
+    final cue = find.byKey(const ValueKey('subtitle_timeline_cue_4'));
+    expect(tester.getCenter(cue).dy, closeTo(tester.getCenter(list).dy, 0.1));
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+    expect(controller.offset, closeTo(start, 0.1));
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
   for (final cueCount in [100, 1000, 5000]) {
     testWidgets('timeline reuses measured overlap for $cueCount cues', (
       tester,

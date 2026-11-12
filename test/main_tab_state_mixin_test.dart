@@ -1,6 +1,7 @@
 import 'package:doujin_audio/app/presentation/audio_ui_controllers.dart';
 import 'package:doujin_audio/app/presentation/main_tab_state_mixin.dart';
 import 'package:doujin_audio/core/widgets/scroll_to_top_list.dart';
+import 'package:doujin_audio/core/widgets/windows_smooth_scroll_controller.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -162,6 +163,33 @@ void main() {
       await tester.pumpAndSettle();
       expect(state.controller.offset, stopped);
     },
+  );
+
+  testWidgets(
+    'touchpad pans the live list directly after interrupting a return snapshot',
+    (tester) async {
+      final state = await _pumpTab(tester);
+      state.controller.jumpTo(40000);
+      await tester.pump();
+      state.scrollToTop();
+      await tester.pump();
+      await tester.pump();
+      expect(find.byType(RawImage), findsOneWidget);
+
+      const location = Offset(100, 100);
+      final offset = state.controller.offset;
+      final gesture = await tester.startGesture(
+        location,
+        kind: PointerDeviceKind.trackpad,
+      );
+      await gesture.panZoomUpdate(location, pan: const Offset(0, -35));
+      expect(state.controller.offset, offset + 35);
+      await gesture.panZoomEnd();
+      await tester.pumpAndSettle();
+      expect(find.byType(RawImage), findsNothing);
+      expect(state.controller.offset, offset + 35);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
 
   testWidgets(
@@ -502,7 +530,7 @@ class _ScrollToTopTestTab extends StatefulWidget {
 
 class _ScrollToTopTestTabState extends State<_ScrollToTopTestTab>
     with MainTabStateMixin<_ScrollToTopTestTab> {
-  final controller = ScrollController();
+  final controller = WindowsSmoothScrollController();
   final secondaryController = ScrollController();
   final selectedList = ValueNotifier<int>(0);
   final signals = MainScreenController();

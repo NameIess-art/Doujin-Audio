@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/persistence/persisted_state_reloader.dart';
@@ -7,6 +8,48 @@ import '../../core/persistence/app_preferences.dart';
 import '../../core/widgets/app_transitions.dart';
 import 'app_design_tokens.dart';
 import 'app_styles.dart';
+
+const _windowsTextTheme = TextTheme(
+  headlineMedium: TextStyle(
+    fontSize: 30,
+    fontWeight: FontWeight.w600,
+    height: 1.2,
+  ),
+  headlineSmall: TextStyle(
+    fontSize: 24,
+    fontWeight: FontWeight.w600,
+    height: 1.25,
+  ),
+  titleLarge: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, height: 1.3),
+  titleMedium: TextStyle(
+    fontSize: 14,
+    fontWeight: FontWeight.w600,
+    height: 1.4,
+  ),
+  titleSmall: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, height: 1.4),
+  bodyLarge: TextStyle(fontSize: 16, fontWeight: FontWeight.w400, height: 1.5),
+  bodyMedium: TextStyle(
+    fontSize: 14,
+    fontWeight: FontWeight.w400,
+    height: 1.45,
+  ),
+  bodySmall: TextStyle(fontSize: 12, fontWeight: FontWeight.w400, height: 1.4),
+  labelLarge: TextStyle(
+    fontSize: 14,
+    fontWeight: FontWeight.w600,
+    height: 1.35,
+  ),
+  labelMedium: TextStyle(
+    fontSize: 13,
+    fontWeight: FontWeight.w400,
+    height: 1.35,
+  ),
+  labelSmall: TextStyle(
+    fontSize: 12,
+    fontWeight: FontWeight.w400,
+    height: 1.35,
+  ),
+);
 
 enum ThemeAccentPreset {
   coral,
@@ -504,7 +547,8 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
   }
 
   ThemeData _buildTheme(ColorScheme scheme) {
-    final bodyText = const TextTheme().copyWith(
+    final isWindows = defaultTargetPlatform == TargetPlatform.windows;
+    final mobileText = const TextTheme().copyWith(
       bodyMedium: const TextStyle(
         fontFamily: 'Raleway',
         fontSize: 14,
@@ -559,6 +603,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
         fontSize: 20,
       ),
     );
+    final bodyText = isWindows ? _windowsTextTheme : mobileText;
 
     final tokens =
         (scheme.brightness == Brightness.dark
@@ -578,6 +623,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
       headlineSmall: bodyText.headlineSmall?.copyWith(color: scheme.onSurface),
       titleLarge: bodyText.titleLarge?.copyWith(color: scheme.onSurface),
       titleMedium: bodyText.titleMedium?.copyWith(color: scheme.onSurface),
+      titleSmall: bodyText.titleSmall?.copyWith(color: scheme.onSurface),
       bodyLarge: bodyText.bodyLarge?.copyWith(color: bodyColor),
       bodyMedium: bodyText.bodyMedium?.copyWith(color: bodyColor),
       bodySmall: bodyText.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
@@ -594,6 +640,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
       extensions: <ThemeExtension<dynamic>>[tokens],
       visualDensity: VisualDensity.standard,
       colorScheme: scheme,
+      fontFamily: isWindows ? 'Segoe UI' : null,
       textTheme: textTheme,
       tooltipTheme: const TooltipThemeData(
         triggerMode: TooltipTriggerMode.manual,
@@ -649,11 +696,11 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
           size: 21,
         ),
         selectedLabelTextStyle: TextStyle(
-          fontWeight: FontWeight.w700,
+          fontWeight: isWindows ? FontWeight.w600 : FontWeight.w700,
           color: scheme.primary,
         ),
         unselectedLabelTextStyle: TextStyle(
-          fontWeight: FontWeight.w600,
+          fontWeight: isWindows ? FontWeight.w400 : FontWeight.w600,
           color: scheme.onSurfaceVariant,
         ),
         indicatorColor: scheme.primaryContainer,
@@ -662,7 +709,9 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
         style: FilledButton.styleFrom(
           minimumSize: const Size.fromHeight(52),
           shape: buttonShape,
-          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          textStyle: TextStyle(
+            fontWeight: isWindows ? FontWeight.w600 : FontWeight.w700,
+          ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -670,7 +719,9 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
           minimumSize: const Size.fromHeight(48),
           shape: buttonShape,
           side: BorderSide(color: scheme.outlineVariant),
-          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          textStyle: TextStyle(
+            fontWeight: isWindows ? FontWeight.w600 : FontWeight.w700,
+          ),
         ),
       ),
       textButtonTheme: TextButtonThemeData(

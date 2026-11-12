@@ -33,6 +33,7 @@ import 'folder_cover_selector.dart';
 import 'work_text_viewer_page.dart';
 import 'work_detail_page.dart';
 import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 
 part 'audio_detail_cover_widgets.dart';
 part 'audio_detail_field_widgets.dart';
@@ -810,7 +811,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
             ),
           ],
         ),
-      ),
+      ).withWindowsSmoothScroll(),
     );
     return content;
   }

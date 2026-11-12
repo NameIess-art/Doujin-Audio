@@ -262,7 +262,9 @@ class _TopPageHeaderState extends State<TopPageHeader> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final isWindows = theme.platform == TargetPlatform.windows;
     final isLandscape =
         defaultTargetPlatform == TargetPlatform.windows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
@@ -299,6 +301,12 @@ class _TopPageHeaderState extends State<TopPageHeader> {
         );
       }
 
+      final titleStyle = theme.textTheme.titleSmall?.copyWith(
+        color: cs.onSurface,
+        fontSize: isWindows ? null : 13.5,
+        fontWeight: isWindows ? null : FontWeight.w800,
+        letterSpacing: isWindows ? null : 0.1,
+      );
       return HeaderFloatingSurface(
         height: null,
         padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -330,13 +338,7 @@ class _TopPageHeaderState extends State<TopPageHeader> {
                       widget.marqueeTitle
                           ? MarqueeText(
                               text: resolvedTitle,
-                              style: Theme.of(context).textTheme.titleSmall
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                    color: cs.onSurface,
-                                    fontSize: 13.5,
-                                    letterSpacing: 0.1,
-                                  ),
+                              style: titleStyle,
                               scrollSpeed: 24,
                               edgePadding: 2,
                               forceMarquee: widget.forceMarqueeTitle,
@@ -345,13 +347,7 @@ class _TopPageHeaderState extends State<TopPageHeader> {
                               resolvedTitle,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.titleSmall
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                    color: cs.onSurface,
-                                    fontSize: 13.5,
-                                    letterSpacing: 0.1,
-                                  ),
+                              style: titleStyle,
                             ),
                       if (widget.subtitle != null &&
                           widget.subtitle!.isNotEmpty)
@@ -359,14 +355,13 @@ class _TopPageHeaderState extends State<TopPageHeader> {
                           widget.subtitle!,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: cs.onSurfaceVariant.withValues(
-                                  alpha: 0.85,
-                                ),
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w600,
-                              ),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: cs.onSurfaceVariant.withValues(
+                              alpha: isWindows ? 1 : 0.85,
+                            ),
+                            fontSize: isWindows ? null : 11.5,
+                            fontWeight: isWindows ? null : FontWeight.w600,
+                          ),
                         ),
                     ],
                   ),
@@ -818,8 +813,10 @@ class HeaderSegmentedCategoryBar<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final textTheme = theme.textTheme;
+    final isWindows = theme.platform == TargetPlatform.windows;
     final activeColor = accentColor ?? cs.primary;
 
     return Align(
@@ -863,10 +860,14 @@ class HeaderSegmentedCategoryBar<T> extends StatelessWidget {
                                       color: isSelected
                                           ? activeColor
                                           : cs.onSurfaceVariant,
-                                      fontWeight: isSelected
-                                          ? FontWeight.w700
-                                          : FontWeight.w600,
-                                      fontSize: 12.5,
+                                      fontWeight: isWindows
+                                          ? (isSelected
+                                                ? FontWeight.w600
+                                                : null)
+                                          : (isSelected
+                                                ? FontWeight.w700
+                                                : FontWeight.w600),
+                                      fontSize: isWindows ? null : 12.5,
                                     ),
                                   ),
                                 ),
@@ -904,17 +905,19 @@ class HeaderTopCapsule extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final textTheme = theme.textTheme;
+    final isWindows = theme.platform == TargetPlatform.windows;
     final titleText = Text(
       title,
       maxLines: 1,
       softWrap: false,
       style: textTheme.titleSmall?.copyWith(
-        fontWeight: FontWeight.w800,
+        fontWeight: isWindows ? null : FontWeight.w800,
         color: cs.onSurface,
-        fontSize: 13.5,
-        letterSpacing: 0.1,
+        fontSize: isWindows ? null : 13.5,
+        letterSpacing: isWindows ? null : 0.1,
       ),
     );
     final dataText = trailing == null && data != null && data!.isNotEmpty
@@ -923,9 +926,11 @@ class HeaderTopCapsule extends StatelessWidget {
             maxLines: 1,
             softWrap: false,
             style: textTheme.bodySmall?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: cs.onSurfaceVariant.withValues(alpha: 0.85),
-              fontSize: 11.5,
+              fontWeight: isWindows ? null : FontWeight.w600,
+              color: cs.onSurfaceVariant.withValues(
+                alpha: isWindows ? 1 : 0.85,
+              ),
+              fontSize: isWindows ? null : 11.5,
               letterSpacing: 0,
             ),
           )

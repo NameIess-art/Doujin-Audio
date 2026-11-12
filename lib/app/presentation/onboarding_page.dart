@@ -12,6 +12,7 @@ import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/app_entry_ink_well.dart';
 import '../../core/widgets/page_header_inset.dart';
 import '../../core/widgets/top_page_header.dart';
+import '../../core/widgets/windows_smooth_scroll_controller.dart';
 
 class OnboardingGate extends ConsumerStatefulWidget {
   const OnboardingGate({super.key, required this.child, this.initiallyVisible});
@@ -197,7 +198,7 @@ class OnboardingPage extends ConsumerWidget {
                       ),
                     ),
                   ),
-                );
+                ).withWindowsSmoothScroll();
               },
             ),
           ),
@@ -277,7 +278,7 @@ class PrivacySummaryPage extends ConsumerWidget {
                     body: i18n.tr('privacy_summary_diagnostics_body'),
                   ),
                 ],
-              ),
+              ).withWindowsSmoothScroll(),
             ),
             Positioned(
               top: 0,

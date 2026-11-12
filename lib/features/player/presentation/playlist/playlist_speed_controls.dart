@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../application/playback_facade.dart';
 import '../../application/playback_session_snapshot.dart';
 import 'playlist_shared_helpers.dart';
@@ -340,7 +341,7 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
           height: constraints.maxHeight.clamp(200.0, double.infinity),
           child: controls,
         ),
-      ),
+      ).withWindowsSmoothScroll(),
     );
   }
 }

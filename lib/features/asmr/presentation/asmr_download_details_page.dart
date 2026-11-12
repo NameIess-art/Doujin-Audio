@@ -16,6 +16,7 @@ import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/file_tree_row.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
+import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 
 class AsmrDownloadDetailsPage extends ConsumerStatefulWidget {
   const AsmrDownloadDetailsPage({super.key, required this.workId});
@@ -254,7 +255,7 @@ class _AsmrDownloadDetailsPageState
                           ),
                         ),
                     ],
-                  );
+                  ).withWindowsSmoothScroll();
                 },
               ),
             ),

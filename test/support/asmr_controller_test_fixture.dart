@@ -6,6 +6,7 @@ import 'package:doujin_audio/features/asmr/application/asmr_auth_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_preferences.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_remote_catalog_service.dart';
+import 'package:doujin_audio/features/asmr/application/japanese_asmr_api_service.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_persistence_repository.dart';
 import 'package:doujin_audio/infrastructure/sqlite/sqlite_asmr_repository.dart';
 
@@ -20,6 +21,7 @@ TestAsmrServices createTestAsmrServices({
   AsmrPersistenceRepository? persistenceRepository,
   AsmrApiService? apiService,
   AsmrAuthService? authService,
+  JapaneseAsmrApiService? japaneseApiService,
 }) {
   final repository =
       persistenceRepository ??
@@ -35,6 +37,7 @@ TestAsmrServices createTestAsmrServices({
     preferencesStore: preferences,
     remoteCatalogService: AsmrRemoteCatalogService(
       apiService: api,
+      japaneseApiService: japaneseApiService,
       persistenceRepository: repository,
     ),
     accountSyncService: AsmrAccountSyncService(

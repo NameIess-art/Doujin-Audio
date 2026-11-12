@@ -19,9 +19,9 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
   final FocusNode _focusNode = FocusNode();
   final Map<AsmrCategoryType, ScrollController> _scrollControllers = {
     for (final category in kAsmrSelectableCategories)
-      category: ScrollController(keepScrollOffset: false),
+      category: WindowsSmoothScrollController(keepScrollOffset: false),
   };
-  final ScrollController _suggestionsScrollController = ScrollController();
+  final _suggestionsScrollController = WindowsSmoothScrollController();
   late final ValueNotifier<int> _activeCategoryIndex;
   String _query = '';
   final ValueNotifier<String> _inputQuery = ValueNotifier('');

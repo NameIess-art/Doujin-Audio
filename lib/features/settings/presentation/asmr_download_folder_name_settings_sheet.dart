@@ -8,6 +8,7 @@ import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
+import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../asmr/domain/asmr_download.dart';
 
 class AsmrDownloadFolderNameSettingsSheet extends ConsumerStatefulWidget {
@@ -192,7 +193,7 @@ class _AsmrDownloadFolderNameSettingsSheetState
                 ),
               ),
             ],
-          ),
+          ).withWindowsSmoothScroll(),
         ),
       ),
     );

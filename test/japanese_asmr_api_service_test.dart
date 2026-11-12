@@ -547,19 +547,35 @@ void main() {
     addTearDown(jp.close);
     final service = AsmrMetadataService(apiService: one);
     final japanese = AsmrMetadataService.japanese(apiService: jp);
-    final oneMatch = await service.findAsmrWorkByRjCode('RJ000001');
-    expect(oneMatch!.title, oneWork.title);
-    expect(oneMatch.resources.single.source, AsmrCatalogSource.asmrOne);
+    final oneMatch = await service.fetchByRjCode('RJ000001');
+    expect(oneMatch.workTitle, oneWork.title);
     expect(jp.calls, isEmpty);
-    expect(await service.findAsmrWorkByRjCode('RJ000002'), isNull);
-    final japaneseMatch = await japanese.findAsmrWorkByRjCode('RJ000001');
-    expect(japaneseMatch!.id, jpWork.id);
-    expect(
-      japaneseMatch.resources.single.source,
-      AsmrCatalogSource.japaneseAsmr,
-    );
+    final japaneseMatch = await japanese.fetchByRjCode('RJ000001');
+    expect(japaneseMatch.workTitle, jpWork.title);
     final onlyJapanese = await japanese.fetchByRjCode('RJ000002');
     expect(onlyJapanese.rjCode, 'RJ000002');
+  });
+
+  test('download lookup falls back only when ONE has no exact RJ match', () async {
+    final oneWork = _work(1);
+    final japaneseOnly = _work(8, japanese: true, code: 'RJ01741028');
+    final one = _OneApi({1: [oneWork]});
+    final japanese = _JapaneseApi({1: [_work(2, japanese: true), japaneseOnly]});
+    final catalog = _catalog(one, japanese);
+    Future<AsmrWork?> find(String code) => catalog.findWorkByRjCode(
+      code,
+      language: AsmrContentLanguage.ja,
+      token: null,
+    );
+
+    expect(await find('invalid'), isNull);
+    expect(await find('rj000001'), same(oneWork));
+    expect(japanese.queries, isEmpty);
+    expect(await find('RJ999999'), isNull);
+    expect(await find('rj01741028'), same(japaneseOnly));
+    expect(japanese.queries.last.$1, 'RJ01741028');
+    one.searchError = const FormatException('ONE unavailable');
+    expect(await find('RJ01741028'), same(japaneseOnly));
   });
 }
 
@@ -610,6 +626,7 @@ class _OneApi extends AsmrApiService {
   _OneApi(this.pages);
   final Map<int, List<AsmrWork>> pages;
   Object? mediaError;
+  Object? searchError;
   int mediaProbes = 0;
   @override
   Future<void> verifyMediaStream(
@@ -642,13 +659,16 @@ class _OneApi extends AsmrApiService {
     String? token,
     AsmrContentLanguage language = AsmrContentLanguage.zh,
     AsmrRequestCancellationToken? cancellationToken,
-  }) => fetchWorks(
-    page: page,
-    pageSize: pageSize,
-    token: token,
-    language: language,
-    cancellationToken: cancellationToken,
-  );
+  }) async {
+    if (searchError case final error?) throw error;
+    return fetchWorks(
+      page: page,
+      pageSize: pageSize,
+      token: token,
+      language: language,
+      cancellationToken: cancellationToken,
+    );
+  }
   @override
   Future<AsmrWorkPage> fetchWorks({
     String order = 'release',

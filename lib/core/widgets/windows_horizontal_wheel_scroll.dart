@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'windows_smooth_scroll_controller.dart';
 
 /// Maps a Windows mouse wheel to a horizontal scrollable's existing position.
 /// Keeps wheel input in that region even when the scrollable reaches an edge.
@@ -21,7 +22,7 @@ class WindowsHorizontalWheelScroll extends StatefulWidget {
 
 class _WindowsHorizontalWheelScrollState
     extends State<WindowsHorizontalWheelScroll> {
-  final ScrollController _ownedController = ScrollController();
+  final ScrollController _ownedController = WindowsSmoothScrollController();
 
   @override
   void dispose() {
@@ -44,12 +45,7 @@ class _WindowsHorizontalWheelScrollState
           if (!mounted || delta == 0 || controller.positions.length != 1) {
             return;
           }
-          final position = controller.position;
-          final target = (position.pixels + delta).clamp(
-            position.minScrollExtent,
-            position.maxScrollExtent,
-          );
-          if (target != position.pixels) position.pointerScroll(delta);
+          controller.position.pointerScroll(delta);
         });
       },
       child: widget.builder(controller),

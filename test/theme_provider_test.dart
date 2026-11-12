@@ -1,7 +1,9 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_audio_features.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
@@ -12,6 +14,62 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets(
+    'desktop typography follows the platform across themes and locales',
+    (tester) async {
+      final platform = defaultTargetPlatform;
+      final provider = ThemeProvider(loadPersistedState: false);
+      addTearDown(provider.dispose);
+      final isWindows = platform == TargetPlatform.windows;
+      for (final mode in [ThemeMode.light, ThemeMode.dark]) {
+        for (final locale in const [Locale('zh'), Locale('ja'), Locale('en')]) {
+          await tester.pumpWidget(
+            MaterialApp(
+              locale: locale,
+              supportedLocales: const [
+                Locale('zh'),
+                Locale('ja'),
+                Locale('en'),
+              ],
+              localizationsDelegates: GlobalMaterialLocalizations.delegates,
+              theme: provider.lightTheme,
+              darkTheme: provider.darkTheme,
+              themeMode: mode,
+              home: const Scaffold(body: Text('音声・播放 / Playback 01:23')),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          final sample = find.byType(Text);
+          final context = tester.element(sample);
+          final theme = Theme.of(context).textTheme;
+          expect(Localizations.localeOf(context), locale);
+          expect(
+            theme.bodyMedium!.fontFamily,
+            isWindows ? 'Segoe UI' : 'Raleway',
+          );
+          expect(
+            theme.titleLarge!.fontFamily,
+            isWindows ? 'Segoe UI' : 'Outfit',
+          );
+          expect(theme.labelSmall!.fontSize, isWindows ? 12 : 10);
+          expect(
+            theme.titleMedium!.fontWeight,
+            isWindows ? FontWeight.w600 : FontWeight.w700,
+          );
+          expect(
+            DefaultTextStyle.of(context).style.fontFamily,
+            theme.bodyMedium!.fontFamily,
+          );
+        }
+      }
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.windows,
+      TargetPlatform.android,
+    }),
+  );
 
   for (final platform in [TargetPlatform.windows, TargetPlatform.android]) {
     for (final featureRow in [false, true]) {

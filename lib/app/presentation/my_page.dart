@@ -23,6 +23,7 @@ import '../../core/widgets/scroll_activity_gate.dart';
 import '../../core/widgets/shimmer_loading.dart';
 import '../../core/widgets/top_page_header.dart';
 import '../../core/widgets/windows_horizontal_wheel_scroll.dart';
+import '../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../features/asmr/domain/asmr_models.dart';
 import '../../features/asmr/presentation/asmr_providers.dart';
 import '../../features/asmr/presentation/asmr_work_detail_sheet.dart';
@@ -47,7 +48,7 @@ class MyPage extends ConsumerStatefulWidget {
 
 class _MyPageState extends ConsumerState<MyPage>
     with MainTabStateMixin<MyPage> {
-  final _scroll = ScrollController();
+  final _scroll = WindowsSmoothScrollController();
   MyInterestType _interestType = MyInterestType.tags;
   late final _refreshCommitKey =
       'my_activity_refresh_${identityHashCode(this)}';
@@ -658,7 +659,7 @@ class _HistoryStrip extends ConsumerStatefulWidget {
 }
 
 class _HistoryStripState extends ConsumerState<_HistoryStrip> {
-  final _scroll = ScrollController();
+  final _scroll = WindowsSmoothScrollController();
   bool _loading = false;
   Object? _loadError;
   @override

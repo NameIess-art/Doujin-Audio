@@ -1417,6 +1417,13 @@ class AsmrLibraryController extends ChangeNotifier
     ];
   }
 
+  Future<AsmrWork?> findWorkByRjCode(String rjCode) =>
+      _remoteCatalogService.findWorkByRjCode(
+        rjCode,
+        language: _contentLanguage,
+        token: _authSession?.token,
+      );
+
   Future<List<AsmrTrackFile>> ensureTrackTree(
     AsmrWork work, {
     bool forceRefresh = false,

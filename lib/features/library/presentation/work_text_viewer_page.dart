@@ -17,6 +17,7 @@ import '../../../core/widgets/top_page_header.dart';
 import '../application/work_text_service.dart';
 import 'library_providers.dart';
 import '../../../core/widgets/page_translation_scope.dart';
+import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import 'translated_markdown_body.dart';
 
 class WorkTextViewerPage extends ConsumerStatefulWidget {
@@ -35,7 +36,7 @@ class WorkTextViewerPage extends ConsumerStatefulWidget {
 
 class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
   late int _currentIndex;
-  final ScrollController _scrollController = ScrollController();
+  final ScrollController _scrollController = WindowsSmoothScrollController();
   ModalRoute<dynamic>? _route;
 
   bool _loading = true;

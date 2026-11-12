@@ -121,8 +121,10 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
       :playbackGeometryKey,
       :onReportPlaybackRect,
     ) = widget;
-    final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final isWindows = theme.platform == TargetPlatform.windows;
     final isLandscapeLayout =
         defaultTargetPlatform == TargetPlatform.windows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
@@ -369,7 +371,9 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                                 style: isSelected
                                     ? TextStyle(
                                         color: cs.primary,
-                                        fontWeight: FontWeight.w700,
+                                        fontWeight: isWindows
+                                            ? FontWeight.w600
+                                            : FontWeight.w700,
                                       )
                                     : null,
                                 maxLines: 1,

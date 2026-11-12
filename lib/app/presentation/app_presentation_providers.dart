@@ -296,7 +296,7 @@ class LibrarySortedSnapshotNotifier
             // Leave the shared read queue available to visible cards between
             // batches and stop enqueuing reads when the sort is superseded.
             for (var start = 0; start < orderedTargets.length; start += 64) {
-              if (gate.waitForIdle() case final pending?) await pending;
+              if (gate.waitForCommit() case final pending?) await pending;
               if (!ref.mounted || request != _request) return;
               final end = (start + 64).clamp(0, orderedTargets.length);
               final loaded = await libraryFacade.detailCacheService.loadMany(
@@ -409,20 +409,27 @@ Future<AudioDetail> _loadColdLibraryDetail(
   Ref ref,
   Future<AudioDetailLoadResult> Function() load,
 ) async {
-  final gate = _LibraryDetailReadGate(ref);
-  if (gate.waitForIdle() case final pending?) await pending;
+  // Newly visible cards need their first metadata while the list is moving.
+  final gate = _LibraryDetailReadGate(ref, allowDuringScroll: true);
+  if (gate.waitForCommit() case final pending?) await pending;
   if (!ref.mounted) throw const AudioDetailOperationCancelled();
   try {
     return (await load()).detail;
   } finally {
     if (ref.mounted) {
-      if (gate.waitForIdle(structural: true) case final pending?) await pending;
+      if (gate.waitForCommit(structural: true) case final pending?) {
+        await pending;
+      }
     }
   }
 }
 
 final class _LibraryDetailReadGate {
-  _LibraryDetailReadGate(this._ref, {this.requiresListener = false}) {
+  _LibraryDetailReadGate(
+    this._ref, {
+    this.requiresListener = false,
+    this.allowDuringScroll = false,
+  }) {
     _ref.onDispose(() {
       _coordinator.cancelCommit(_key);
       _pending?.complete();
@@ -433,18 +440,20 @@ final class _LibraryDetailReadGate {
 
   final Ref _ref;
   final bool requiresListener;
+  final bool allowDuringScroll;
   final _coordinator = UiInteractionCoordinator.instance;
-  late final _key = 'library_detail_idle_${identityHashCode(this)}';
+  late final _key = 'library_detail_commit_${identityHashCode(this)}';
   Completer<void>? _pending;
 
   bool get _canRun => _ref.mounted && (!requiresListener || !_ref.isPaused);
 
-  Future<void>? waitForIdle({bool structural = false}) {
+  Future<void>? waitForCommit({bool structural = false}) {
     if (!_coordinator.isInteracting && _canRun) return null;
     final pending = _pending = Completer<void>();
     _coordinator.scheduleCommit(
       key: _key,
       priority: 30,
+      allowDuringScroll: allowDuringScroll,
       structural: structural,
       canRun: () => _canRun,
       commit: () {

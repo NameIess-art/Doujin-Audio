@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -13,6 +14,7 @@ import '../../../app/theme/app_styles.dart';
 
 import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 
 class LibraryScanCountChip extends StatelessWidget {
   const LibraryScanCountChip({
@@ -80,7 +82,7 @@ class LibraryEmptyState extends StatelessWidget {
       builder: (context, constraints) {
         final availableHeight = constraints.maxHeight - topInset - bottomInset;
         return ListView(
-          primary: false,
+          primary: defaultTargetPlatform == TargetPlatform.windows,
           padding: EdgeInsets.fromLTRB(
             AppSpacing.xl,
             topInset,
@@ -214,7 +216,7 @@ class LibraryEmptyState extends StatelessWidget {
               ),
             ),
           ],
-        );
+        ).withWindowsSmoothScroll();
       },
     );
   }

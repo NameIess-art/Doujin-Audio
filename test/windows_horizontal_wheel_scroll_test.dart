@@ -3,6 +3,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/widgets/windows_horizontal_wheel_scroll.dart';
+import 'package:doujin_audio/core/widgets/windows_smooth_scroll_controller.dart';
 
 void main() {
   testWidgets('Windows wheel stays inside a horizontal strip at its edge', (
@@ -10,8 +11,8 @@ void main() {
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
-    final horizontal = ScrollController();
-    final vertical = ScrollController();
+    final horizontal = WindowsSmoothScrollController();
+    final vertical = WindowsSmoothScrollController();
     addTearDown(horizontal.dispose);
     addTearDown(vertical.dispose);
 
@@ -64,8 +65,18 @@ void main() {
     await tester.sendEventToBinding(
       PointerScrollEvent(position: position, scrollDelta: const Offset(0, 120)),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(horizontal.offset, greaterThan(0));
+    expect(vertical.offset, 0);
+
+    horizontal.jumpTo(0);
+    for (final delta in [80.0, -80.0]) {
+      await tester.sendEventToBinding(
+        PointerScrollEvent(position: position, scrollDelta: Offset(0, delta)),
+      );
+    }
+    await tester.pumpAndSettle();
+    expect(horizontal.offset, 0);
     expect(vertical.offset, 0);
 
     horizontal.jumpTo(horizontal.position.maxScrollExtent);
@@ -94,7 +105,16 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(vertical.offset, greaterThan(0));
+    expect(vertical.offset, 0);
+
+    // A wheel animation on the outer list must leave the inner region hit-testable.
+    horizontal.jumpTo(0);
+    await tester.sendEventToBinding(
+      PointerScrollEvent(position: position, scrollDelta: const Offset(0, 80)),
+    );
+    await tester.pumpAndSettle();
+    expect(horizontal.offset, 80);
+    expect(vertical.offset, 120);
     debugDefaultTargetPlatformOverride = null;
   });
 

@@ -9,6 +9,7 @@ import 'package:doujin_audio/features/asmr/application/asmr_library_controller.d
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -27,6 +28,7 @@ class _ActivationController extends AsmrLibraryController {
 
   bool fail = false;
   bool hasCachedWork = false;
+  int cachedWorkCount = 1;
   bool _initialized = false;
   int attempts = 0;
   int categoryLoads = 0;
@@ -106,7 +108,11 @@ class _ActivationController extends AsmrLibraryController {
     category: category,
     works: hasCachedWork
         ? [
-            AsmrWork.fromJson(const {'id': 1, 'title': 'Cached work'}),
+            for (var id = 1; id <= cachedWorkCount; id++)
+              AsmrWork.fromJson({
+                'id': id,
+                'title': id == 1 ? 'Cached work' : 'Cached work $id',
+              }),
           ]
         : const [],
     isLoading: false,
@@ -116,7 +122,7 @@ class _ActivationController extends AsmrLibraryController {
     hasAttemptedLoad: hasCachedWork || categoryLoads != 0,
     hasMore: false,
     needsLoadMoreRetry: false,
-    totalCount: hasCachedWork ? 1 : 0,
+    totalCount: hasCachedWork ? cachedWorkCount : 0,
     activeQuery: searchQuery,
     lastError: null,
     operationError: null,
@@ -183,6 +189,56 @@ void main() {
     TargetPlatform.android,
     TargetPlatform.windows,
   });
+
+  for (final (name, page) in [
+    ('catalog', const AsmrTab()),
+    ('search results', const AsmrSearchPage(initialQuery: 'Cached')),
+  ]) {
+    testWidgets('online $name handles wheel input on both platforms', (
+      tester,
+    ) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      final controller = _SearchSuggestionsController(createTestAsmrServices())
+        ..hasCachedWork = true
+        ..cachedWorkCount = 40;
+      addTearDown(fixture.dispose);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          page,
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+          ],
+        ),
+      );
+      await _pumpFrames(tester);
+
+      final list = find.byKey(const PageStorageKey(AsmrCategoryType.collected));
+      final scrollable = tester.state<ScrollableState>(
+        find.descendant(of: list, matching: find.byType(Scrollable)).first,
+      );
+      final position = scrollable.position;
+      expect(position.maxScrollExtent, greaterThan(80));
+      final start = position.pixels;
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: tester.getCenter(list),
+          scrollDelta: const Offset(0, 80),
+        ),
+      );
+      if (defaultTargetPlatform == TargetPlatform.windows) {
+        expect(position.pixels, start);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 48));
+        expect(position.pixels, inExclusiveRange(start, start + 80));
+      } else {
+        expect(position.pixels, start + 80);
+      }
+      await tester.pumpAndSettle();
+      expect(position.pixels, start + 80);
+      await tester.pumpWidget(const SizedBox.shrink());
+    }, variant: platforms);
+  }
 
   testWidgets('online activation waits for navigation but bypasses startup work', (
     tester,

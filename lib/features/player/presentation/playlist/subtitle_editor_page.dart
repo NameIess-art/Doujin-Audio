@@ -9,6 +9,7 @@ import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/page_header_inset.dart';
 import '../../../../core/widgets/swipe_reveal_card.dart';
 import '../../../../core/widgets/top_page_header.dart';
+import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../playback_providers.dart';
 
 class SubtitleEditorPage extends ConsumerStatefulWidget {
@@ -126,7 +127,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                 ),
             ],
           ),
-        ),
+        ).withWindowsSmoothScroll(),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -515,7 +516,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                           ),
                         );
                       },
-                    ),
+                    ).withWindowsSmoothScroll(),
             ),
             Positioned(
               top: 0,

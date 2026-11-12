@@ -8,6 +8,7 @@ import '../../app/theme/app_design_tokens.dart';
 import 'app_feedback.dart';
 import 'app_transitions.dart';
 import 'mobile_overlay_inset.dart';
+import 'windows_smooth_scroll_controller.dart';
 
 TextAlign _menuTextAlign(
   BuildContext context,
@@ -921,7 +922,7 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
                                 ),
                               ),
                             ),
-                          ),
+                          ).withWindowsSmoothScroll(),
                         ),
                       ),
                     ),

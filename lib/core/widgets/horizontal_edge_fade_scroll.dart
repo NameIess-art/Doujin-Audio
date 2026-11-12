@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import 'windows_horizontal_wheel_scroll.dart';
+import 'windows_smooth_scroll_controller.dart';
 
 class HorizontalEdgeFadeScroll extends StatefulWidget {
   const HorizontalEdgeFadeScroll({
@@ -25,7 +26,9 @@ class _HorizontalEdgeFadeScrollState extends State<HorizontalEdgeFadeScroll> {
   ScrollController? _ownedController;
   ScrollController get _controller =>
       widget.controller ??
-      (_ownedController ??= ScrollController(keepScrollOffset: false));
+      (_ownedController ??= WindowsSmoothScrollController(
+        keepScrollOffset: false,
+      ));
   bool _fadeLeft = false;
   bool _fadeRight = false;
   @override

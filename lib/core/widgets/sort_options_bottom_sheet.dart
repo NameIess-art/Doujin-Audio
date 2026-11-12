@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'app_bottom_sheet.dart';
+import 'windows_smooth_scroll_controller.dart';
 
 class SortOption<T> {
   const SortOption({required this.value, required this.label});
@@ -198,7 +199,7 @@ class _SortOptionsSheetState<T> extends State<_SortOptionsSheet<T>> {
                           ),
                         ],
                       ),
-                    ),
+                    ).withWindowsSmoothScroll(),
                   ),
                   SizedBox(
                     key: const ValueKey('sort_options_actions'),

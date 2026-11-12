@@ -15,6 +15,7 @@ import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/top_page_header.dart';
+import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import 'asmr_download_details_page.dart';
 
 import 'asmr_download_task_card.dart';
@@ -139,7 +140,7 @@ class _AsmrDownloadTaskPageState extends ConsumerState<AsmrDownloadTaskPage> {
                                   workId: taskIds[index],
                                 );
                               },
-                            );
+                            ).withWindowsSmoothScroll();
                     },
                   ),
                 );

@@ -7,6 +7,7 @@ import '../../../core/media/path_display.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/file_tree_row.dart';
 import '../../../core/widgets/shimmer_loading.dart';
+import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import 'library_providers.dart';
 
 import 'library_edit_tree_projection.dart';
@@ -358,7 +359,7 @@ class _LibraryEditTreeListState extends ConsumerState<LibraryEditTreeList>
           ),
         );
       },
-    );
+    ).withWindowsSmoothScroll();
   }
 }
 

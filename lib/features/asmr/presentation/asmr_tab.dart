@@ -45,6 +45,7 @@ import '../../../core/widgets/search_highlight.dart';
 import '../../../core/widgets/swipe_reveal_card.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/page_translation_scope.dart';
+import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 
 import 'asmr_download_page.dart';
 import 'asmr_error_text.dart';
@@ -374,7 +375,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   void initState() {
     super.initState();
     _scrollControllers = {
-      for (final category in _headerCategories) category: ScrollController(),
+      for (final category in _headerCategories)
+        category: WindowsSmoothScrollController(),
     };
     _activeCategoryIndex = ValueNotifier<int>(0);
     _languageProvider = ref.read(appLanguageProviderInstanceProvider);
@@ -952,7 +954,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                                 retryTooltip: i18n.tr('retry'),
                               ),
                             ],
-                          ),
+                          ).withWindowsSmoothScroll(),
                     content: AppFadeThroughIndexedStack.lazy(
                       key: const ValueKey<String>('asmr_category_stack'),
                       indexListenable: _activeCategoryIndex,

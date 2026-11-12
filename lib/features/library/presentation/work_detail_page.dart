@@ -57,6 +57,7 @@ import 'audio_detail_sheet.dart' show showAudioDetailEditor;
 import 'library_providers.dart';
 import 'library_removal_feedback.dart';
 import '../../../core/widgets/page_translation_scope.dart';
+import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import 'work_image_viewer_page.dart';
 import 'work_text_viewer_page.dart';
 
@@ -91,7 +92,7 @@ class WorkDetailPage extends ConsumerStatefulWidget {
 
 class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     with TickerProviderStateMixin {
-  final ScrollController _scrollController = ScrollController();
+  final ScrollController _scrollController = WindowsSmoothScrollController();
   final GlobalKey _pageStackKey = GlobalKey();
   final GlobalKey _loadingSkeletonKey = GlobalKey();
   ModalRoute<dynamic>? _route;

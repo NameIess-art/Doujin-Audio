@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 
 import 'mobile_overlay_inset.dart';
 import 'page_header_inset.dart';
+import 'windows_smooth_scroll_controller.dart';
 
 class DragOnlyScrollbar extends RawScrollbar {
   const DragOnlyScrollbar({
@@ -238,6 +239,11 @@ class AppScrollBehavior extends MaterialScrollBehavior {
     Widget child,
     ScrollableDetails details,
   ) {
+    final controller = details.controller;
+    if (defaultTargetPlatform == TargetPlatform.windows &&
+        controller is WindowsSmoothScrollController) {
+      child = controller.handleWheelReversal(context, child);
+    }
     if (axisDirectionToAxis(details.direction) != Axis.vertical) {
       return child;
     }
@@ -254,6 +260,12 @@ class AppScrollBehavior extends MaterialScrollBehavior {
     Widget child,
     ScrollableDetails details,
   ) {
+    // Some pages hide the scrollbar, while refreshable lists hide overscroll.
+    final controller = details.controller;
+    if (defaultTargetPlatform == TargetPlatform.windows &&
+        controller is WindowsSmoothScrollController) {
+      child = controller.handleWheelReversal(context, child);
+    }
     if (details.direction == AxisDirection.left ||
         details.direction == AxisDirection.right) {
       return child;

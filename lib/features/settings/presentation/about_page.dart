@@ -13,6 +13,7 @@ import '../../../core/widgets/app_brand_icon.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
+import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../application/app_update_service.dart';
 
 class AboutPage extends ConsumerWidget {
@@ -179,7 +180,7 @@ class AboutPage extends ConsumerWidget {
                       ],
                     ),
                   ],
-                ),
+                ).withWindowsSmoothScroll(),
               ),
             ),
             Positioned(

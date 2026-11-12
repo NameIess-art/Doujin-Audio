@@ -257,7 +257,7 @@ extension _TimerTabDetailBody on _TimerTabState {
                     ],
                   ],
                 ),
-              ),
+              ).withWindowsSmoothScroll(),
             ),
             const SizedBox(height: 12),
             if (timerConfigured)

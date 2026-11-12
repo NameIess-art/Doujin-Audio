@@ -15,6 +15,7 @@ import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
+import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 
 import 'dlsite_metadata_batch_review_page.dart';
 
@@ -310,7 +311,7 @@ class _DlsiteMetadataBatchResultsPageState
                           child: row,
                         );
                       },
-                    );
+                    ).withWindowsSmoothScroll();
                   },
                 ),
               ),

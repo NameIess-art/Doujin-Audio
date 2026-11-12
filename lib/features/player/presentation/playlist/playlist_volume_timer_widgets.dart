@@ -112,23 +112,26 @@ class TimecodeLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final isWindows = theme.platform == TargetPlatform.windows;
 
     final label = Text(
       text,
       textAlign: alignEnd ? TextAlign.end : TextAlign.start,
-      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+      style: theme.textTheme.labelMedium?.copyWith(
         color: sessionDetailForeground(
           cs,
           SessionDetailForegroundLevel.muted,
           darkFallback: cs.onSurface.withValues(alpha: 0.8),
         ),
-        fontWeight: FontWeight.w800,
+        fontWeight: isWindows ? FontWeight.w600 : FontWeight.w800,
         letterSpacing: 0.5,
         fontSize: 13,
         height: 1.1,
-        // Inline labels reserve space by digit count. Outfit has tabular digits.
-        fontFamily: reserveText == null ? null : 'Outfit',
+        // Inline labels reserve space by digit count. Segoe UI and Outfit
+        // both support tabular figures.
+        fontFamily: reserveText != null && !isWindows ? 'Outfit' : null,
         fontFeatures: const [FontFeature.tabularFigures()],
       ),
     );

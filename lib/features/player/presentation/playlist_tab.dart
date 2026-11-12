@@ -29,6 +29,7 @@ import '../../../core/widgets/scroll_to_top_list.dart';
 import '../../../core/widgets/sort_options_bottom_sheet.dart';
 import '../../../core/widgets/swipe_reveal_card.dart';
 import '../../../core/widgets/top_page_header.dart';
+import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../settings/application/settings_state.dart';
 import '../application/playback_facade.dart';
 import '../domain/playback_mode.dart';
@@ -78,7 +79,7 @@ class PlaylistTab extends ConsumerStatefulWidget {
 
 class _PlaylistTabState extends ConsumerState<PlaylistTab>
     with MainTabStateMixin<PlaylistTab> {
-  final ScrollController _scrollController = ScrollController();
+  final ScrollController _scrollController = WindowsSmoothScrollController();
   bool _isSelectionMode = false;
   bool _creatingQueue = false;
   final Set<String> _selectedSessionIds = <String>{};
@@ -1004,7 +1005,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                   ],
                 ),
               ),
-            ),
+            ).withWindowsSmoothScroll(),
           );
         },
       ),

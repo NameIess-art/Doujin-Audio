@@ -18,6 +18,7 @@ import '../../../../core/widgets/marquee_text.dart';
 import '../../../../core/widgets/playing_sound_wave_indicator.dart';
 import '../../../../core/widgets/shimmer_loading.dart';
 import '../../../../core/widgets/swipe_reveal_card.dart';
+import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../../library/application/library_facade.dart';
 import '../../application/playback_facade.dart';
 import '../../application/playback_session_snapshot.dart';
@@ -259,7 +260,7 @@ class SessionsEmptyState extends StatelessWidget {
       builder: (context, constraints) {
         final availableHeight = constraints.maxHeight - topInset - bottomInset;
         return SingleChildScrollView(
-          primary: false,
+          primary: defaultTargetPlatform == TargetPlatform.windows,
           padding: EdgeInsets.fromLTRB(
             AppSpacing.xl,
             topInset,
@@ -357,7 +358,7 @@ class SessionsEmptyState extends StatelessWidget {
               ),
             ),
           ),
-        );
+        ).withWindowsSmoothScroll();
       },
     );
   }

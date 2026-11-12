@@ -56,12 +56,68 @@ import 'package:doujin_audio/features/library/application/cover_artwork_cache_se
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/application/library_organizer.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_api_service.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
+import 'package:doujin_audio/features/asmr/application/japanese_asmr_api_service.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/app_runtime_test_fixture.dart';
+import 'support/asmr_controller_test_fixture.dart';
+
+class _LocalDownloadOneApi extends AsmrApiService {
+  @override
+  Future<AsmrWorkPage> searchWorks({
+    required String keyword,
+    required String order,
+    required String sort,
+    int page = 1,
+    int pageSize = 40,
+    String? token,
+    AsmrContentLanguage language = AsmrContentLanguage.zh,
+    AsmrRequestCancellationToken? cancellationToken,
+  }) async => AsmrWorkPage(
+    works: const [],
+    currentPage: page,
+    pageSize: pageSize,
+    totalCount: 0,
+  );
+}
+
+class _LocalDownloadJapaneseApi extends JapaneseAsmrApiService {
+  final result = Completer<AsmrWork>();
+
+  @override
+  Future<AsmrWorkPage> searchWorks({
+    required String keyword,
+    int page = 1,
+    int pageSize = 40,
+    AsmrRequestCancellationToken? cancellationToken,
+  }) async {
+    expect(keyword, 'RJ123456');
+    return AsmrWorkPage(
+      works: [await result.future],
+      currentPage: page,
+      pageSize: pageSize,
+      totalCount: 1,
+    );
+  }
+
+  @override
+  Future<List<AsmrTrackFile>> fetchTrackTree(
+    AsmrWork work, {
+    AsmrRequestCancellationToken? cancellationToken,
+  }) async => [
+    AsmrTrackFile.fromJson(const {
+      'type': 'audio',
+      'title': 'chapter.mp3',
+      'mediaDownloadUrl': 'https://example.com/chapter.mp3',
+    }),
+  ];
+}
 
 class _QueuedEntryEditorService extends LibraryEntryEditorService {
   final List<Future<LibraryEntryDiskSnapshot>> responses;
@@ -5795,7 +5851,7 @@ void main() {
   );
 
   testWidgets(
-    'root folder card swipe download action finds ASMR work and navigates to AsmrDownloadPage',
+    'local folder download resolves Japanese ASMR and loads its directory',
     (WidgetTester tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -5836,18 +5892,37 @@ void main() {
         rating: 0,
         voiceActors: const <String>[],
         tags: const <String>[],
+        resources: const [
+          AsmrWorkResource(
+            source: AsmrCatalogSource.japaneseAsmr,
+            id: 123456,
+            code: 'RJ123456',
+            pageUrl: '',
+          ),
+        ],
       );
 
-      final workCompleter = Completer<AsmrWork?>();
+      final japanese = _LocalDownloadJapaneseApi();
+      addTearDown(japanese.close);
+      final services = createTestAsmrServices(
+        apiService: _LocalDownloadOneApi(),
+        japaneseApiService: japanese,
+      );
+      final controller = AsmrLibraryController(
+        preferencesStore: services.preferencesStore,
+        remoteCatalogService: services.remoteCatalogService,
+        accountSyncService: services.accountSyncService,
+      );
+      final downloads = AsmrDownloadManager(persistTasks: false);
+      addTearDown(controller.dispose);
+      addTearDown(downloads.dispose);
 
       await tester.pumpWidget(
         fixture.build(
           const LibraryTab(),
           overrides: [
-            asmrWorkFinderProvider.overrideWithValue(
-              (rjCode, {required language}) =>
-                  rjCode == 'RJ123456' ? workCompleter.future : Future.value(),
-            ),
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+            asmrDownloadManagerProvider.overrideWithValue(downloads),
           ],
         ),
       );
@@ -5870,11 +5945,20 @@ void main() {
         fixture.languageProvider.tr('download'),
       );
 
-      swipeCard.onSecondaryAction!();
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 100));
+      if (defaultTargetPlatform == TargetPlatform.windows) {
+        await tester.tap(
+          swipeCardFinder,
+          buttons: kSecondaryMouseButton,
+          kind: PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(fixture.languageProvider.tr('download')));
+      } else {
+        swipeCard.onSecondaryAction!();
+      }
 
       final downloadPage = find.byType(AsmrDownloadPage);
+      await pumpUntilFound(tester, downloadPage);
       expect(downloadPage, findsOneWidget);
 
       final pageWidget = tester.widget<AsmrDownloadPage>(downloadPage);
@@ -5890,13 +5974,27 @@ void main() {
         findsOneWidget,
       );
 
-      workCompleter.complete(testWork);
+      japanese.result.complete(testWork);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
       expect(find.text('Remote ASMR Title'), findsOneWidget);
+      await pumpUntilNotFound(tester, find.byType(FileTreeSkeleton));
+      expect(
+        find.byKey(const ValueKey('asmr_download_file_list')),
+        findsOneWidget,
+      );
+      expect(find.text('chapter.mp3'), findsOneWidget);
+      expect(
+        find.text(fixture.languageProvider.tr('asmr_detail_load_failed')),
+        findsNothing,
+      );
 
       await finishLibraryTest(tester, fixture);
     },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   for (final kind in ['audio', 'covered audio', 'video']) {

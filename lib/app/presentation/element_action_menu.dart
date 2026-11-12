@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/widgets/app_bottom_sheet.dart';
 import '../../core/widgets/app_search_page.dart';
 import '../../core/widgets/app_transitions.dart';
+import '../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../features/asmr/presentation/asmr_tab.dart';
 import '../../features/library/presentation/library_search_page.dart';
 import '../../features/player/presentation/playlist/session_detail_route.dart';
@@ -59,7 +60,7 @@ class ElementActionMenu extends StatelessWidget {
                 onTap: () => Navigator.of(sheetContext).pop(action),
               ),
           ],
-        ),
+        ).withWindowsSmoothScroll(),
       ),
     );
     if (!context.mounted || action == null) return;

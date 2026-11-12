@@ -379,15 +379,17 @@ class _LibraryLikeCardInfo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final titleStyle = Theme.of(context).textTheme.titleMedium!.copyWith(
-      fontWeight: FontWeight.w800,
-      fontSize: 14,
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final isWindows = theme.platform == TargetPlatform.windows;
+    final titleStyle = theme.textTheme.titleMedium!.copyWith(
+      fontWeight: isWindows ? null : FontWeight.w800,
+      fontSize: isWindows ? null : 14,
       color: cs.onSurface,
     );
-    final infoStyle = Theme.of(context).textTheme.labelSmall!.copyWith(
-      fontWeight: FontWeight.w700,
-      fontSize: 11,
+    final infoStyle = theme.textTheme.labelSmall!.copyWith(
+      fontWeight: isWindows ? null : FontWeight.w700,
+      fontSize: isWindows ? null : 11,
       color: cs.onSurface.withValues(alpha: 0.82),
     );
     final primaryLines = lines.where((line) => !line.isSecondary).toList();
@@ -438,10 +440,12 @@ class _LibraryLikeCardInfo extends StatelessWidget {
     );
     // Five fixed-height rows already fit the cover at normal text sizes.
     // Keep scaling for larger accessibility fonts or additional metadata rows.
+    final titleSize = titleStyle.fontSize!;
+    final infoSize = infoStyle.fontSize!;
     final fitsWithoutScaling =
         primaryLines.length <= 3 &&
-        textScaler.scale(14) <= 14 &&
-        textScaler.scale(11) <= 11;
+        textScaler.scale(titleSize) <= titleSize &&
+        textScaler.scale(infoSize) <= infoSize;
     return SizedBox(
       height: LibraryLikeCardMetrics.contentHeight,
       child: fitsWithoutScaling
@@ -467,14 +471,15 @@ Widget _libraryLikeSecondaryInfo(
   List<LibraryLikeInfoLineData> lines, {
   Widget? trailingActions,
 }) {
-  final color = Theme.of(
-    context,
-  ).colorScheme.onSurfaceVariant.withValues(alpha: 0.6);
-  final style = TextStyle(
-    fontSize: 11,
-    fontWeight: FontWeight.w400,
-    color: color,
-  );
+  final theme = Theme.of(context);
+  final color = theme.colorScheme.onSurfaceVariant;
+  final style = theme.platform == TargetPlatform.windows
+      ? theme.textTheme.bodySmall!.copyWith(color: color)
+      : TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w400,
+          color: color.withValues(alpha: 0.6),
+        );
   return SizedBox(
     height: _libraryLikeInfoLineHeight,
     child: Align(

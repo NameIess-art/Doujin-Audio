@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/widgets/app_dialog.dart';
 import '../../core/widgets/app_transitions.dart';
+import '../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../features/player/presentation/playback_providers.dart';
 import '../state/app_runtime_providers.dart';
 import 'work_detail_navigation.dart';
@@ -350,7 +351,7 @@ class GlobalShortcuts extends ConsumerWidget {
                       ),
                     ],
                   ),
-                ),
+                ).withWindowsSmoothScroll(),
               ),
               actions: [
                 TextButton(

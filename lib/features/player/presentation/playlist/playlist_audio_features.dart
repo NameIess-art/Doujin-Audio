@@ -13,6 +13,7 @@ import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/unified_dropdown.dart';
+import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../../settings/application/settings_command_controller.dart';
 import '../../application/playback_facade.dart';
 import '../../application/playback_session_snapshot.dart';
@@ -127,7 +128,7 @@ class AudioFeaturesPage extends ConsumerWidget {
           },
         ),
       ],
-    );
+    ).withWindowsSmoothScroll();
   }
 }
 
@@ -537,7 +538,7 @@ class EqualizerPage extends ConsumerWidget {
           ],
         ),
       ],
-    );
+    ).withWindowsSmoothScroll();
   }
 
   Future<void> _showSavePresetDialog(

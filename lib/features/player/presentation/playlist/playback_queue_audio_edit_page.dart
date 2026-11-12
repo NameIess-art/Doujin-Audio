@@ -19,6 +19,7 @@ import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/async_cover_image.dart';
 import '../../../../core/widgets/page_header_inset.dart';
 import '../../../../core/widgets/top_page_header.dart';
+import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../domain/playback_queue.dart';
 import 'playlist_shared_helpers.dart';
@@ -58,7 +59,7 @@ class PlaybackQueueAudioEditPage extends ConsumerStatefulWidget {
 
 class _PlaybackQueueAudioEditPageState
     extends ConsumerState<PlaybackQueueAudioEditPage> {
-  final ScrollController _addedQueueScrollController = ScrollController();
+  final _addedQueueScrollController = WindowsSmoothScrollController();
 
   @override
   void dispose() {
@@ -342,7 +343,7 @@ class _PlaybackQueueAudioEditPageState
                                   source: source,
                                 );
                               },
-                            ),
+                            ).withWindowsSmoothScroll(),
                           ),
                           Positioned(
                             top: 0,

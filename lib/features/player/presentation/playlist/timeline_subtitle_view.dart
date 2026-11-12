@@ -10,6 +10,7 @@ import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../core/media/subtitle_parser.dart';
 import '../../../../core/media/time_text_formatters.dart';
 import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import 'playlist_shared_helpers.dart';
 
 class _DashedLinePainter extends CustomPainter {
@@ -75,7 +76,7 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
   static const Duration _returnDelay = Duration(seconds: 3);
   static const Duration _focusHapticInterval = Duration(milliseconds: 110);
 
-  late final ScrollController _scrollController;
+  late final WindowsSmoothScrollController _scrollController;
   late int _focusedIndex;
   int _windowStart = 0;
   int _windowEnd = 0;
@@ -106,7 +107,7 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
     super.initState();
     _focusedIndex = widget.playbackSubtitleIndex.clamp(0, _lastIndex);
     _resetWindowAround(_focusedIndex);
-    _scrollController = ScrollController()
+    _scrollController = WindowsSmoothScrollController()
       ..addListener(_handleScrollOffsetChanged);
   }
 
@@ -115,6 +116,13 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
     super.didUpdateWidget(oldWidget);
     final playbackIndex = widget.playbackSubtitleIndex.clamp(0, _lastIndex);
     if (!identical(oldWidget.cues, widget.cues)) {
+      if (_scrollController.isWheelScrolling) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _wheelTargetIndex == null) {
+            _scrollToIndex(_focusedIndex);
+          }
+        });
+      }
       _focusedIndex = playbackIndex;
       _wheelTargetIndex = null;
       _resetWindowAround(playbackIndex);
@@ -174,16 +182,16 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
     final nextIndex = (baseIndex + delta).clamp(0, _lastIndex);
     if (nextIndex == _focusedIndex && _wheelTargetIndex == nextIndex) return;
     _wheelTargetIndex = nextIndex;
-    _browseToIndex(nextIndex);
+    _browseToIndex(nextIndex, fromWheel: true);
   }
 
-  void _browseToIndex(int index) {
+  void _browseToIndex(int index, {bool fromWheel = false}) {
     _returnTimer?.cancel();
     if (!_isBrowsing) {
       AppInteractionFeedback.resetContinuous();
       setState(() => _isBrowsing = true);
     }
-    _scrollToIndex(index);
+    _scrollToIndex(index, fromWheel: fromWheel);
 
     unawaited(
       AppInteractionFeedback.continuous(
@@ -213,6 +221,7 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
 
   void _handleScrollOffsetChanged() {
     if (!_scrollController.hasClients ||
+        _scrollController.isWheelScrolling ||
         _itemCenters.isEmpty ||
         !_hasCurrentWindowLayout) {
       return;
@@ -234,7 +243,9 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
   }
 
   bool _handleScrollNotification(ScrollNotification notification) {
-    if (_isProgrammaticScroll) return false;
+    if (_isProgrammaticScroll || _scrollController.isWheelScrolling) {
+      return false;
+    }
     if (notification is ScrollStartNotification ||
         (notification is ScrollUpdateNotification &&
             notification.scrollDelta != null &&
@@ -280,7 +291,7 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
     _scrollToIndex(playbackIndex);
   }
 
-  void _scrollToIndex(int index) {
+  void _scrollToIndex(int index, {bool fromWheel = false}) {
     final targetIndex = index.clamp(0, _lastIndex);
     if (_focusedIndex != targetIndex || !_windowContains(targetIndex)) {
       setState(() {
@@ -295,7 +306,9 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
         _itemCenters.isEmpty ||
         !_hasCurrentWindowLayout) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _scrollToIndex(targetIndex);
+        if (mounted && (!fromWheel || _wheelTargetIndex == targetIndex)) {
+          _scrollToIndex(targetIndex, fromWheel: fromWheel);
+        }
       });
       return;
     }
@@ -304,10 +317,14 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
     final targetOffset = (_itemCenters[localIndex] - (_viewportHeight / 2))
         .clamp(position.minScrollExtent, position.maxScrollExtent)
         .toDouble();
-    if ((_scrollController.offset - targetOffset).abs() < 0.05) return;
     _isProgrammaticScroll = true;
     try {
-      _scrollController.jumpTo(targetOffset);
+      if (fromWheel) {
+        _scrollController.scrollWheelTo(targetOffset);
+      } else if (_scrollController.isWheelScrolling ||
+          (_scrollController.offset - targetOffset).abs() >= 0.05) {
+        _scrollController.jumpTo(targetOffset);
+      }
     } finally {
       _isProgrammaticScroll = false;
     }
@@ -448,6 +465,7 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
       if (!mounted ||
           _isBrowsing ||
           _isPointerDown ||
+          _scrollController.isWheelScrolling ||
           !_scrollController.hasClients) {
         return;
       }

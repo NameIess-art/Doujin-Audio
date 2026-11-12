@@ -9,6 +9,7 @@ import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/widgets/app_entry_ink_well.dart';
 import '../../../../core/widgets/app_transitions.dart';
+import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import 'playlist_shared_helpers.dart';
 
 import 'playback_queue_audio_edit_page.dart';
@@ -257,7 +258,7 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
                           ],
                         ],
                       ),
-                    ),
+                    ).withWindowsSmoothScroll(),
                   ),
                 ),
                 Align(

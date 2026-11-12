@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/theme/app_styles.dart';
 import 'app_glass_surface.dart';
 import 'app_transitions.dart';
+import 'windows_smooth_scroll_controller.dart';
 
 class _AppAnimatedScrim extends StatelessWidget {
   const _AppAnimatedScrim({required this.animation, required this.scrimKey});
@@ -316,7 +317,9 @@ class AppDialog extends StatelessWidget {
                 const SizedBox(height: AppSpacing.md),
                 Flexible(
                   child: scrollable
-                      ? SingleChildScrollView(child: content)
+                      ? SingleChildScrollView(
+                          child: content,
+                        ).withWindowsSmoothScroll()
                       : content,
                 ),
                 if (actions != null) ...[

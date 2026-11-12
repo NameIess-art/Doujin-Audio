@@ -1541,7 +1541,9 @@ void main() {
     final controller = _TestFavoritesAsmrLibraryController(
       createTestAsmrServices(),
       const <AsmrWork>[],
-    )..pendingTrackTree = trackTree.future;
+    )
+      ..pendingWork = workResult.future
+      ..pendingTrackTree = trackTree.future;
     final downloads = AsmrDownloadManager(persistTasks: false);
     addTearDown(controller.dispose);
     addTearDown(downloads.dispose);
@@ -1550,9 +1552,6 @@ void main() {
       fixture.build(
         const AsmrDownloadPage(initialRjCode: 'RJ000123'),
         overrides: [
-          asmrWorkFinderProvider.overrideWithValue(
-            (_, {required language}) => workResult.future,
-          ),
           asmrLibraryControllerProvider.overrideWithValue(controller),
           asmrDownloadManagerProvider.overrideWithValue(downloads),
         ],
@@ -2179,9 +2178,13 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
   Future<void> ensureSearchSuggestions({bool force = false}) async {}
 
   List<AsmrWork> favoriteWorks;
+  Future<AsmrWork?>? pendingWork;
   Future<List<AsmrTrackFile>>? pendingTrackTree;
   int _revision = 0;
   bool hasMore = false;
+
+  @override
+  Future<AsmrWork?> findWorkByRjCode(String rjCode) => pendingWork!;
 
   @override
   Future<List<AsmrTrackFile>> ensureTrackTree(

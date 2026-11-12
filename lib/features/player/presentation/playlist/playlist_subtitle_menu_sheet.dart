@@ -13,6 +13,7 @@ import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_entry_ink_well.dart';
 import '../../../../core/widgets/app_transitions.dart';
+import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../../library/application/work_text_service.dart';
 import '../../../library/presentation/library_providers.dart';
 import '../../application/playback_session_snapshot.dart';
@@ -1045,7 +1046,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                                   ],
                                 ),
                               ),
-                            ),
+                            ).withWindowsSmoothScroll(),
                           ),
                         ),
                       ],
@@ -1518,7 +1519,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                   ),
                 ],
               ),
-            ),
+            ).withWindowsSmoothScroll(),
           ),
         );
         return PopScope(

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:io';
 
 import '../domain/asmr_models.dart';
+import '../../../core/media/audio_detail.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/search_query_utils.dart';
 import '../../../core/logging/app_log_service.dart';
@@ -305,6 +306,43 @@ class AsmrRemoteCatalogService {
       },
     );
     return await (cancellationToken?.waitFor(ranking) ?? ranking);
+  }
+
+  Future<AsmrWork?> findWorkByRjCode(
+    String value, {
+    required AsmrContentLanguage language,
+    required String? token,
+  }) async {
+    final code = AudioDetail.findRjCodeInText(value);
+    if (code == null) return null;
+    AsmrWork? exactMatch(AsmrWorkPage page) =>
+        page.works.where((work) => work.rjCode == code).firstOrNull;
+
+    Object? oneError;
+    try {
+      final work = exactMatch(
+        await _apiService.searchWorks(
+          keyword: code,
+          order: 'release',
+          sort: 'desc',
+          pageSize: 20,
+          language: language,
+          token: token,
+        ),
+      );
+      if (work != null) return work;
+    } catch (error) {
+      oneError = error;
+    }
+    final japanese = _japaneseApiService;
+    if (japanese != null) {
+      final work = exactMatch(
+        await japanese.searchWorks(keyword: code, pageSize: 20),
+      );
+      if (work != null) return work;
+    }
+    if (oneError != null) throw oneError;
+    return null;
   }
 
   Future<List<AsmrTrackFile>> loadTrackTree(

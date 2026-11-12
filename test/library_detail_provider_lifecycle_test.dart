@@ -39,7 +39,7 @@ final class _QueuedDetailRepository extends AudioDetailRepository {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('cold detail waits to read and publish across interactions', () async {
+  test('cold detail loads while scrolling', () async {
     final coordinator = UiInteractionCoordinator.instance;
     coordinator.resetForTest();
     addTearDown(coordinator.resetForTest);
@@ -58,21 +58,23 @@ void main() {
     );
     final provider = libraryDetailForTargetProvider(target);
     final scroll = Object();
+    final route = Object();
     coordinator.beginInteraction(scroll);
+    coordinator.beginNavigation(route);
     final card = container.listen(provider, (_, _) {});
     addTearDown(card.close);
     await Future<void>.delayed(Duration.zero);
     expect(repository.batches, isEmpty);
     expect(container.read(provider).isLoading, isTrue);
 
-    coordinator.cancelInteraction(scroll);
+    coordinator.cancelNavigation(route);
     coordinator.flushPendingCommitsForTest();
-    await repository.started.future;
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
     expect(repository.batches, [
       [target],
     ]);
 
-    final route = Object();
     coordinator.beginNavigation(route);
     repository.release.complete();
     await graph.library.detailCacheService.waitForPendingOperations();
@@ -82,6 +84,9 @@ void main() {
 
     coordinator.cancelNavigation(route);
     coordinator.flushPendingCommitsForTest();
+    await Future<void>.delayed(Duration.zero);
+    expect(coordinator.isInteracting, isTrue);
+    expect(container.read(provider).isLoading, isFalse);
     expect((await container.read(provider.future)).target, target);
   });
 

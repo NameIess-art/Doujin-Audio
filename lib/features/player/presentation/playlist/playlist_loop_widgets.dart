@@ -6,6 +6,7 @@ import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../application/playback_facade.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../domain/playback_mode.dart';
@@ -216,7 +217,7 @@ class _LoopModeSheetState extends ConsumerState<LoopModeSheet> {
                           ),
                         ],
                       ),
-                    ),
+                    ).withWindowsSmoothScroll(),
                   ),
                   SizedBox(
                     key: const ValueKey('loop_mode_actions'),

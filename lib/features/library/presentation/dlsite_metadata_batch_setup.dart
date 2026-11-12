@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/widgets/app_entry_ink_well.dart';
+import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 
 enum DlsiteMetadataBatchScope {
   anyMissing,
@@ -122,6 +123,6 @@ class BatchMetadataSetupView extends StatelessWidget {
           ),
         ),
       ],
-    );
+    ).withWindowsSmoothScroll();
   }
 }

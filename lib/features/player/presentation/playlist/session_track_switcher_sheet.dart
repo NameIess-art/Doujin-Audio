@@ -9,6 +9,7 @@ import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/file_tree_row.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/playing_sound_wave_indicator.dart';
+import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../application/session_switcher_tree.dart';
 
@@ -198,7 +199,7 @@ class _SessionTrackSwitcherSheetState
         }
         return _buildRow(index - 1);
       },
-    );
+    ).withWindowsSmoothScroll();
   }
 
   @override

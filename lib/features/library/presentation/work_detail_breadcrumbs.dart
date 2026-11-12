@@ -5,6 +5,7 @@ import '../../../app/localization/app_language_provider.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/windows_horizontal_wheel_scroll.dart';
 import '../../../core/widgets/page_translation_scope.dart';
+import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 
 class WorkDetailBreadcrumbs extends StatefulWidget {
   const WorkDetailBreadcrumbs({
@@ -23,7 +24,7 @@ class WorkDetailBreadcrumbs extends StatefulWidget {
 }
 
 class _WorkDetailBreadcrumbsState extends State<WorkDetailBreadcrumbs> {
-  final _scrollController = ScrollController();
+  final _scrollController = WindowsSmoothScrollController();
   @override
   void didUpdateWidget(covariant WorkDetailBreadcrumbs oldWidget) {
     super.didUpdateWidget(oldWidget);

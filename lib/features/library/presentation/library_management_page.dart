@@ -13,6 +13,7 @@ import '../../../core/widgets/file_tree_row.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/search_highlight.dart';
 import '../../../core/widgets/top_page_header.dart';
+import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import 'library_removal_feedback.dart';
 
 class LibraryManagementPage extends ConsumerStatefulWidget {
@@ -131,7 +132,7 @@ class _LibraryManagementPageState extends ConsumerState<LibraryManagementPage> {
                             ),
                           );
                         },
-                      ),
+                      ).withWindowsSmoothScroll(),
               ),
               Positioned(
                 top: 0,

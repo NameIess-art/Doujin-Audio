@@ -32,6 +32,7 @@ import '../../../core/widgets/sort_options_bottom_sheet.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/page_translation_scope.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
+import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../../core/widgets/glass_refresh_indicator.dart';
 import 'dlsite_metadata_batch_page.dart';
 import 'library_scan_feedback.dart';
@@ -130,7 +131,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   bool _isSelectionMode = false;
   final Set<String> _selectedLibraryPaths = <String>{};
 
-  final ScrollController _scrollController = ScrollController();
+  final _scrollController = WindowsSmoothScrollController();
   final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
       GlobalKey();
   int? _cardSnapshotRequestRevision;

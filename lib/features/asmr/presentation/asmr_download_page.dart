@@ -109,7 +109,6 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     var destinationMissing = false;
     try {
       final i18n = ref.read(appLanguageProviderInstanceProvider);
-      final findWork = _work == null ? ref.read(asmrWorkFinderProvider) : null;
       final libraryController = ref.read(asmrLibraryControllerProvider);
       final downloadManager = ref.read(asmrDownloadManagerProvider);
       final settings = ref.read(settingsRepositoryProvider);
@@ -121,13 +120,16 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
             scope: UiOperationScope.asmrDownloadInit,
             labelKey: 'asmr_download_title',
             task: (_) async {
+              if (libraryController == null || downloadManager == null) {
+                throw StateError('ASMR services are not configured.');
+              }
               var work = _work;
               if (work == null) {
                 final rjCode = widget.initialRjCode?.trim();
                 if (rjCode == null || rjCode.isEmpty) {
                   throw StateError('No RJ code provided');
                 }
-                work = await findWork!(rjCode, language: i18n.language);
+                work = await libraryController.findWorkByRjCode(rjCode);
                 if (work == null) {
                   throw StateError(
                     i18n.tr('audio_detail_asmr_work_not_found', {'rj': rjCode}),
@@ -136,10 +138,6 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                 if (mounted) {
                   setState(() => _work = work);
                 }
-              }
-
-              if (libraryController == null || downloadManager == null) {
-                throw StateError('ASMR services are not configured.');
               }
 
               final tree = await libraryController.ensureTrackTree(work);

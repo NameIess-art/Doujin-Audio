@@ -44,23 +44,6 @@ class AsmrMetadataService implements LibraryMetadataSource {
     return _metadataFromWork(exact.first);
   }
 
-  Future<AsmrWork?> findAsmrWorkByRjCode(
-    String rjCode, {
-    AppLanguage language = AppLanguage.zh,
-  }) async {
-    final normalizedRjCode = AudioDetail.findRjCodeInText(rjCode);
-    if (normalizedRjCode == null) return null;
-    try {
-      final works = await _search(normalizedRjCode, language);
-      final exact = works.where(
-        (work) => work.rjCode.toUpperCase() == normalizedRjCode,
-      );
-      return exact.firstOrNull;
-    } catch (_) {
-      return null;
-    }
-  }
-
   @override
   Future<List<DlsiteMetadata>> searchByTitleCandidates(
     Iterable<String> titles, {

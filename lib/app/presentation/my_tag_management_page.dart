@@ -13,6 +13,7 @@ import '../../core/widgets/mobile_overlay_inset.dart';
 import '../../core/widgets/page_header_inset.dart';
 import '../../core/widgets/scroll_activity_gate.dart';
 import '../../core/widgets/top_page_header.dart';
+import '../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../features/asmr/presentation/asmr_providers.dart';
 import '../../features/asmr/application/asmr_library_controller.dart';
 
@@ -377,7 +378,7 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                     ),
                   ),
                 ],
-              );
+              ).withWindowsSmoothScroll();
             },
           );
     return PopScope(

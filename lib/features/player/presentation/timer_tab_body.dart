@@ -256,7 +256,7 @@ extension _TimerTabBody on _TimerTabState {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: sectionChildren,
                       ),
-                    ),
+                    ).withWindowsSmoothScroll(),
                   ),
                   const SizedBox(height: 12),
                   confirmButton,
@@ -587,7 +587,7 @@ extension _TimerTabBody on _TimerTabState {
                         ),
                       ),
                     ],
-                  ),
+                  ).withWindowsSmoothScroll(),
                 ),
                 if (widget.showHeader && !showCompactOnly)
                   Positioned(

@@ -50,7 +50,6 @@ Widget createAudioPlayerApp({
     :appLanguageProvider,
     :appUpdateService,
     :asmrDownloadManager,
-    :asmrMetadataService,
     :asmrLibraryController,
     :asmrPlaybackCoordinator,
     :initializePresentation,
@@ -85,9 +84,6 @@ Widget createAudioPlayerApp({
       ),
       appUpdateServiceProvider.overrideWithValue(appUpdateService),
       asmrDownloadManagerProvider.overrideWithValue(asmrDownloadManager),
-      asmrWorkFinderProvider.overrideWithValue(
-        asmrMetadataService.findAsmrWorkByRjCode,
-      ),
       asmrLibraryControllerProvider.overrideWithValue(asmrLibraryController),
       asmrPlaybackCoordinatorProvider.overrideWithValue(
         asmrPlaybackCoordinator,

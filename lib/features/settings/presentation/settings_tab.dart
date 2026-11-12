@@ -41,6 +41,7 @@ import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/unified_dropdown.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../data_support/presentation/data_support_settings_controls.dart';
 import '../../data_support/presentation/storage_usage_card.dart';
 import '../../asmr/domain/asmr_download.dart';
@@ -83,7 +84,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
     updateService: ref.read(appUpdateServiceProvider),
   );
 
-  final ScrollController _scrollController = ScrollController();
+  final ScrollController _scrollController = WindowsSmoothScrollController();
 
   @override
   int get tabIndex => widget.tabIndex;
@@ -421,7 +422,7 @@ class _SettingsCategoryPage extends ConsumerStatefulWidget {
 }
 
 class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
-  final ScrollController _scrollController = ScrollController();
+  final ScrollController _scrollController = WindowsSmoothScrollController();
   final Map<int, GlobalKey> _sectionTitleKeys = <int, GlobalKey>{};
   final _sectionTitleLayerKey = GlobalKey();
 

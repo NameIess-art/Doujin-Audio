@@ -7,6 +7,7 @@ import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_settings_group_card.dart';
 import '../../../core/widgets/unified_dropdown.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
+import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../../app/state/subtitle_settings_provider.dart';
 
 import 'subtitle_window_preview_card.dart';
@@ -316,7 +317,7 @@ class _SubtitleWindowSettingsSheetState
                       ),
                     ],
                   ),
-                ),
+                ).withWindowsSmoothScroll(),
               ),
               Positioned(
                 top: _previewTopInset,

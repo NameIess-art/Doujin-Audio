@@ -14,6 +14,7 @@ import '../../../core/widgets/app_search_page.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/drag_only_scrollbar.dart';
 import '../../../core/widgets/page_header_inset.dart';
+import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../settings/presentation/settings_providers.dart';
 import '../application/library_facade.dart';
 import '../domain/audio_library_category.dart';
@@ -35,8 +36,10 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
   final _draftQuery = ValueNotifier<String>('');
-  final _resultsScrollController = ScrollController(keepScrollOffset: false);
-  final _suggestionsScrollController = ScrollController(
+  final _resultsScrollController = WindowsSmoothScrollController(
+    keepScrollOffset: false,
+  );
+  final _suggestionsScrollController = WindowsSmoothScrollController(
     keepScrollOffset: false,
   );
   String? _submittedQuery;

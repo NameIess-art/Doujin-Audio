@@ -54,29 +54,6 @@ void main() {
     expect(results.single.rjCode, 'RJ123456');
   });
 
-  test('findAsmrWorkByRjCode returns exact match by RJ code', () async {
-    final target = _work(sourceId: 'RJ123456', title: 'Target Work');
-    final service = AsmrMetadataService(
-      apiService: _FakeAsmrApiService(
-        works: [
-          _work(sourceId: 'RJ000001', title: 'Other Work'),
-          target,
-        ],
-      ),
-    );
-
-    final work = await service.findAsmrWorkByRjCode('rj123456');
-    expect(work, isNotNull);
-    expect(work!.rjCode, 'RJ123456');
-    expect(work.title, 'Target Work');
-
-    final missing = await service.findAsmrWorkByRjCode('RJ999999');
-    expect(missing, isNull);
-
-    final invalid = await service.findAsmrWorkByRjCode('no_rj_here');
-    expect(invalid, isNull);
-  });
-
   for (final byTitle in [false, true]) {
     group(byTitle ? 'title metadata lookup' : 'RJ metadata lookup', () {
       final completeWork = _work(

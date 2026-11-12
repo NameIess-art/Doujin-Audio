@@ -5,6 +5,7 @@ import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/file_tree_row.dart';
+import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../application/asmr_download_selection.dart';
 import 'asmr_download_format.dart';
 
@@ -192,7 +193,7 @@ class _AsmrDownloadSelectionListState extends State<AsmrDownloadSelectionList>
     findChildIndexCallback: (key) =>
         _rowIndices[(key as ValueKey<String>).value],
     itemBuilder: (context, index) => _buildRow(index),
-  );
+  ).withWindowsSmoothScroll();
 }
 
 class AsmrDownloadNodeTile extends ConsumerWidget {

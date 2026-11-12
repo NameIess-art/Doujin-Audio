@@ -213,7 +213,8 @@ class ScrollToTopTransitionState extends State<ScrollToTopTransition> {
         if (position != null &&
             widget.controller().hasClients &&
             identical(widget.controller().position, position)) {
-          position.pointerScroll(-event.panDelta.dy);
+          // The covered viewport follows the touchpad directly until it lifts.
+          position.moveTo(position.pixels - event.panDelta.dy);
         }
       },
       onPointerPanZoomEnd: (_) => _panZoomPosition = null,

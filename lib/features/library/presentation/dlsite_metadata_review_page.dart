@@ -27,6 +27,7 @@ import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
+import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../application/audio_detail_repository.dart';
 import 'folder_cover_selector.dart';
 
@@ -117,7 +118,7 @@ class DlsiteMetadataReviewPage extends ConsumerStatefulWidget {
 class _DlsiteMetadataReviewPageState
     extends ConsumerState<DlsiteMetadataReviewPage> {
   final GlobalKey _headerKey = GlobalKey();
-  final ScrollController _scrollController = ScrollController();
+  final ScrollController _scrollController = WindowsSmoothScrollController();
   double _headerHeight = 0;
   final _titleController = TextEditingController();
   final _folderNameController = TextEditingController();

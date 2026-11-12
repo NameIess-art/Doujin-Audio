@@ -277,18 +277,7 @@ class FileTreeSkeleton extends StatelessWidget {
           ],
         ),
       );
-      if (viewportHeight != null) {
-        return ClipRect(
-          child: FittedBox(
-            fit: BoxFit.none,
-            alignment: Alignment.topLeft,
-            child: SizedBox(
-              width: constraints.maxWidth,
-              child: Padding(padding: padding, child: rows),
-            ),
-          ),
-        );
-      }
+      if (viewportHeight != null) return Padding(padding: padding, child: rows);
       return SingleChildScrollView(
         primary: false,
         physics: const NeverScrollableScrollPhysics(),

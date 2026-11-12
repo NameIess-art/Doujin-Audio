@@ -1641,7 +1641,16 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                   ? const SizedBox.shrink()
                   : Positioned.fromRect(
                       rect: _departingSkeletonRect!,
-                      child: child!,
+                      child: ClipRect(
+                        child: OverflowBox(
+                          alignment: Alignment.topLeft,
+                          minWidth: 0,
+                          maxWidth: _departingSkeletonRect!.width,
+                          minHeight: 0,
+                          maxHeight: double.infinity,
+                          child: child!,
+                        ),
+                      ),
                     ),
             ),
         ],

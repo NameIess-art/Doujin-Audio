@@ -3,6 +3,9 @@ import 'dart:collection';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, mapEquals;
+
 import '../../../core/errors/native_result.dart';
 import '../../../core/immutable_collections.dart';
 import '../../../core/media/music_track.dart';
@@ -119,7 +122,8 @@ final class PlaybackFacade {
   static const _resumeBatchKey = 'playlist_resume_batch_v1';
   Map<String, String> _resumeBatch = {};
   Map<String, String> _resumeRetryTargets = {};
-  bool _resumingBatch = false;
+  Future<bool>? _resumeInFlight;
+  Future<bool>? _pauseAllInFlight;
   int _resumeBatchRevision = 0;
   int _pauseSequence = 0;
   int _recordedPauseSequence = 0;
@@ -127,12 +131,14 @@ final class PlaybackFacade {
 
   Stream<int> get resumeBatchChanges => _resumeBatchChanges.stream;
 
-  bool get hasActivePlayback => _service.sessions.values.any(
-    (session) => session.playbackRequested || session.state.playing,
-  );
+  bool get hasActivePlayback => _service.sessions.values.any(_isPlaybackActive);
+
+  bool _isPlaybackActive(PlaybackSession session) =>
+      session.playbackRequested || session.state.playing;
 
   bool get canResumeLastPlayback =>
-      !_resumingBatch &&
+      _resumeInFlight == null &&
+      _pauseAllInFlight == null &&
       !hasActivePlayback &&
       _resumeBatch.entries.any(_isResumeTarget);
 
@@ -146,8 +152,9 @@ final class PlaybackFacade {
 
   Map<String, String> _captureActivePlayback() => {
     for (final session in _service.sessions.values)
-      if ((session.playbackRequested || session.state.playing) &&
-          session.currentTrackPath.isNotEmpty)
+      if (_isPlaybackActive(session) &&
+          session.currentTrackPath.isNotEmpty &&
+          session.state.processingState != ProcessingState.completed)
         session.id: session.currentTrackPath,
   };
 
@@ -159,74 +166,108 @@ final class PlaybackFacade {
     final targets = _captureActivePlayback();
     if (targets.isNotEmpty) {
       _recordedPauseSequence = ++_pauseSequence;
-      await _setResumeBatch({...targets, ..._resumeRetryTargets});
+      await _setResumeBatch({
+        ..._resumeRetryTargets,
+        if (_resumeInFlight != null) ..._resumeBatch,
+        ...targets,
+      });
     }
   }
 
   Future<void> handleAudioDeviceDisconnected() async {
-    final candidates = _captureActivePlayback();
     final sequence = ++_pauseSequence;
     final generations = {
-      for (final id in candidates.keys)
-        id: _service.sessions[id]!.playbackCommandGeneration,
+      for (final session in _service.sessions.values)
+        if (_isPlaybackActive(session))
+          session.id: (
+            session,
+            session.loadGeneration,
+            session.playbackCommandGeneration,
+          ),
     };
     if (!await nativeRepository.handleDeviceDisconnected()) return;
-    if (candidates.isEmpty || sequence <= _recordedPauseSequence) return;
+    if (generations.isEmpty || sequence <= _recordedPauseSequence) return;
     final result = await nativeRepository.snapshot();
     final snapshots = result.valueOrNull?.sessions;
     if (snapshots == null) return;
-    _rememberPausedBatch({
-      for (final snapshot in snapshots)
-        if (!snapshot.playWhenReady &&
-            !snapshot.playing &&
-            candidates.containsKey(snapshot.sessionId) &&
-            _service.sessions[snapshot.sessionId]?.playbackCommandGeneration ==
-                generations[snapshot.sessionId])
-          snapshot.sessionId: candidates[snapshot.sessionId]!,
-    }, sequence: sequence);
+    final confirmed = <String, String>{};
+    for (final snapshot in snapshots) {
+      final request = generations[snapshot.sessionId];
+      if (request == null || snapshot.playWhenReady || snapshot.playing) {
+        continue;
+      }
+      final (session, loadGeneration, commandGeneration) = request;
+      if (!isRegisteredSession(session) ||
+          session.loadGeneration != loadGeneration ||
+          session.playbackCommandGeneration != commandGeneration ||
+          (snapshot.transportCommandId ?? commandGeneration) <
+              commandGeneration) {
+        continue;
+      }
+      _applyPauseSnapshot(snapshot);
+      confirmed[session.id] = session.currentTrackPath;
+    }
+    _rememberPausedBatch(confirmed, sequence: sequence);
   }
 
-  Future<bool> resumeLastPlayback() async {
-    if (!canResumeLastPlayback) return false;
+  Future<bool> resumeLastPlayback() {
+    final pending = _resumeInFlight;
+    if (pending != null) return pending;
     final commands = _commandPort;
-    if (commands == null) return false;
-    _resumingBatch = true;
-    _notifyResumeBatchChanged();
-    final batch = _resumeBatch;
-    try {
-      final results = await Future.wait(
-        batch.entries.where(_isResumeTarget).map((target) async {
-          final session = _service.sessions[target.key]!;
-          if (session.playbackRequested || session.state.playing) return null;
-          session.lastPlayedAt = DateTime.now();
-          final started = await _startPausedSession(session, commands);
-          return started ? null : target;
-        }),
-      );
-      final failed = results.whereType<MapEntry<String, String>>().toList();
-      if (identical(batch, _resumeBatch)) {
-        _resumeRetryTargets = Map.fromEntries(failed.where(_isResumeTarget));
-        _scheduleResumeBatch(Map.of(_resumeRetryTargets));
-      }
-      return failed.isEmpty;
-    } finally {
-      _resumingBatch = false;
+    if (commands == null || !canResumeLastPlayback) return Future.value(false);
+    final resume = _resumePlaybackBatch(commands).whenComplete(() {
+      _resumeInFlight = null;
       _notifyResumeBatchChanged();
+    });
+    _resumeInFlight = resume;
+    _notifyResumeBatchChanged();
+    return resume;
+  }
+
+  Future<bool> _resumePlaybackBatch(PlaybackCommandPort commands) async {
+    final sequence = _recordedPauseSequence;
+    final results = await Future.wait(
+      _resumeBatch.entries.where(_isResumeTarget).toList().map((target) async {
+        final session = _service.sessions[target.key]!;
+        if (_isPlaybackActive(session)) return null;
+        session.lastPlayedAt = DateTime.now();
+        try {
+          if (await _startPausedSession(session, commands)) return null;
+        } catch (error, stackTrace) {
+          AppLogService.error(
+            'resume_playback_failed sessionId=${session.id}',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
+        return isRegisteredSession(session) ? target : null;
+      }),
+    );
+    final failed = results.whereType<MapEntry<String, String>>().where(
+      (target) =>
+          _isResumeTarget(target) &&
+          !_isPlaybackActive(_service.sessions[target.key]!),
+    );
+    final retryTargets = Map<String, String>.fromEntries(failed);
+    if (!_disposed && sequence == _recordedPauseSequence) {
+      _resumeRetryTargets = retryTargets;
+      _scheduleResumeBatch(Map.of(retryTargets));
     }
+    return retryTargets.isEmpty;
   }
 
   Future<bool> pauseSessionForResume(
     PlaybackSession session, {
     Future<bool> Function()? pause,
   }) async {
-    final path = session.playbackRequested || session.state.playing
-        ? session.currentTrackPath
-        : null;
+    final wasActive = _isPlaybackActive(session);
     final sequence = ++_pauseSequence;
     final paused =
         await (pause?.call() ?? _commandPort?.pauseSession(session)) ?? false;
-    if (paused && path != null && isRegisteredSession(session)) {
-      _rememberPausedBatch({session.id: path}, sequence: sequence);
+    if (paused && wasActive && isRegisteredSession(session)) {
+      _rememberPausedBatch({
+        session.id: session.currentTrackPath,
+      }, sequence: sequence);
     }
     return paused;
   }
@@ -501,7 +542,19 @@ final class PlaybackFacade {
     _onSessionsReordered?.call();
   }
 
-  Future<bool> pauseAllSessions() async {
+  Future<bool> pauseAllSessions() {
+    final pending = _pauseAllInFlight;
+    if (pending != null) return pending;
+    final pause = _pauseAllSessions().whenComplete(() {
+      _pauseAllInFlight = null;
+      _notifyResumeBatchChanged();
+    });
+    _pauseAllInFlight = pause;
+    _notifyResumeBatchChanged();
+    return pause;
+  }
+
+  Future<bool> _pauseAllSessions() async {
     final candidates = _captureActivePlayback();
     final sequence = ++_pauseSequence;
     final confirmed = <String, String>{};
@@ -518,7 +571,6 @@ final class PlaybackFacade {
     final response = await nativeRepository.pauseAll();
     if (response.isFailure) {
       _logNativeCommandFailure('pauseAllSessions', response);
-      return false;
     }
     final snapshotResult = await nativeRepository.snapshot();
     if (snapshotResult.isFailure) {
@@ -538,21 +590,13 @@ final class PlaybackFacade {
         continue;
       }
       final snapshot = nativeSessions[session.id];
+      if (snapshot == null && response.isFailure) continue;
       if (snapshot != null) {
         final commandId = snapshot.transportCommandId;
         if (commandId != null && commandId < session.transportCommandId) {
           continue;
         }
-        final commands = _commandPort;
-        if (commands != null) {
-          commands.handleNativeSnapshot(snapshot);
-        } else {
-          applyNativeSnapshot(
-            snapshot,
-            hasLibraryTrack: (path) =>
-                _persistedTrackResolver?.call(path) != null,
-          );
-        }
+        _applyPauseSnapshot(snapshot);
       } else {
         session.loadedPath = null;
         if (session.state.processingState != ProcessingState.completed) {
@@ -563,16 +607,29 @@ final class PlaybackFacade {
         continue;
       }
       session.confirmPaused();
-      final path = candidates[session.id];
-      if (path != null) confirmed[session.id] = path;
+      if (candidates.containsKey(session.id)) {
+        confirmed[session.id] = session.currentTrackPath;
+      }
     }
-    // The pause command succeeded. The follow-up snapshot reconciles the
-    // session state but may be unavailable after the native runtime idles.
+    // A successful pause can retire the native runtime before the snapshot.
+    // After a failure, only sessions confirmed by a snapshot enter the batch.
     _rememberPausedBatch(confirmed, sequence: sequence);
     _notifySessionStateChanged();
     _onRuntimeStateChanged?.call();
     scheduleSessionStatePersistence();
-    return true;
+    return response.isOk;
+  }
+
+  void _applyPauseSnapshot(NativePlaybackSnapshot snapshot) {
+    final commands = _commandPort;
+    if (commands != null) {
+      commands.handleNativeSnapshot(snapshot);
+    } else {
+      applyNativeSnapshot(
+        snapshot,
+        hasLibraryTrack: (path) => _persistedTrackResolver?.call(path) != null,
+      );
+    }
   }
 
   Future<bool> removeSession(String sessionId) {

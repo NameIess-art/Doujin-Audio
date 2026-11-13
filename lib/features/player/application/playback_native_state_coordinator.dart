@@ -38,6 +38,7 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
       final isNewCompletion =
           previousProcessing != ProcessingState.completed &&
           state.processingState == ProcessingState.completed;
+      if (isNewCompletion) _pruneResumeBatch();
       final currentGeneration = session.playbackCommandGeneration;
       final shouldAutoAdvanceAfterCompletion =
           isNewCompletion &&
@@ -319,7 +320,11 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
     if (!_service.applyNativeSnapshot(normalized)) {
       return PlaybackNativeSnapshotApplication.notApplied(normalized);
     }
-    if (previousTrackPath != session.currentTrackPath) _pruneResumeBatch();
+    if (normalized.playing) _resumeRetryTargets.remove(session.id);
+    if (previousTrackPath != session.currentTrackPath ||
+        session.state.processingState == ProcessingState.completed) {
+      _pruneResumeBatch();
+    }
     return PlaybackNativeSnapshotApplication(
       snapshot: normalized,
       session: session,

@@ -5,19 +5,18 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     _resumeBatch = targets;
     _notifyResumeBatchChanged();
     if (!_persistenceEnabled) return Future<void>.value();
-    final persistent = {
-      for (final target in targets.entries)
-        if (_service.sessions[target.key]?.isTemporary == false)
-          target.key: target.value,
-    };
     return _enqueueSessionPersistence(() async {
-      if (!await AppPreferences.writeJson(
-        PlaybackFacade._resumeBatchKey,
-        persistent,
-      )) {
-        throw StateError('Could not persist playlist resume batch');
-      }
+      if (identical(_resumeBatch, targets)) await _writeResumeBatch(targets);
     });
+  }
+
+  Future<void> _writeResumeBatch(Map<String, String> targets) async {
+    if (!await AppPreferences.writeJson(
+      PlaybackFacade._resumeBatchKey,
+      targets,
+    )) {
+      throw StateError('Could not persist playlist resume batch');
+    }
   }
 
   void _rememberPausedBatch(Map<String, String> candidates, {int? sequence}) {
@@ -30,6 +29,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     _recordedPauseSequence = event;
     // A partially failed resume can be retried after the successful sessions
     // are paused again.
+    _resumeRetryTargets.removeWhere((id, _) => targets.containsKey(id));
     _scheduleResumeBatch({...targets, ..._resumeRetryTargets});
   }
 
@@ -49,6 +49,37 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     _scheduleResumeBatch(
       Map.fromEntries(_resumeBatch.entries.where(_isResumeTarget)),
     );
+  }
+
+  Future<void> _saveBackgroundResumeBatch() async {
+    if (!_backgroundMode ||
+        defaultTargetPlatform != TargetPlatform.android ||
+        _pauseAllInFlight != null ||
+        _resumeInFlight != null) {
+      return;
+    }
+    final active = Map<String, String>.fromEntries(
+      _captureActivePlayback().entries.where((target) {
+        final stored = _persistedSessions[target.key];
+        return stored != null &&
+            PathMatcher.equalsNormalized(stored.trackPath, target.value);
+      }),
+    );
+    if (active.isEmpty) return;
+    final targets = {..._resumeRetryTargets, ...active};
+    if (mapEquals(targets, _resumeBatch)) return;
+    final previous = _resumeBatch;
+    _resumeBatch = targets;
+    _notifyResumeBatchChanged();
+    try {
+      await _writeResumeBatch(targets);
+    } catch (_) {
+      if (identical(_resumeBatch, targets)) {
+        _resumeBatch = previous;
+        _notifyResumeBatchChanged();
+      }
+      rethrow;
+    }
   }
 
   int get positionBucketSeconds => _backgroundMode
@@ -396,6 +427,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
           updateHistory: true,
         );
       }
+      await _saveBackgroundResumeBatch();
     } catch (_) {
       _pendingDeletedSessionIds.addAll(deletedIds);
       _pendingSessionDefinitionIds.addAll(sessionIds);

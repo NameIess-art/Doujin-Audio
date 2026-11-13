@@ -25,6 +25,7 @@ const double kStandardCoverAspectRatio = 4 / 3;
 final _browseDecodes = WarmupScheduler(maxQueueSize: 64);
 final _browseLoads = <ImageProvider<Object>, _BrowseThumbnailLoad>{};
 int _browseLoadId = 0;
+Duration? _lastBrowseDecodeFrame;
 
 /// Visible thumbnails and idle prefetch share one first-frame decode budget.
 Future<void> warmBrowseThumbnail(
@@ -85,16 +86,21 @@ class _BrowseThumbnailLoad {
       finish();
       return;
     }
-    final started = Completer<void>();
-    // A completed decode can release its slot in a microtask. Admit the next
-    // image through the frame budget rather than starting a burst of decodes.
-    SchedulerBinding.instance.scheduleFrameCallback((_) => started.complete());
-    SchedulerBinding.instance.scheduleFrame();
-    await started.future;
+    final scheduler = SchedulerBinding.instance;
+    // A visible row is admitted after layout. Use that frame for its first
+    // decode, and let later requests wait if the frame budget is spent.
+    if (scheduler.schedulerPhase != SchedulerPhase.postFrameCallbacks ||
+        _lastBrowseDecodeFrame == scheduler.currentSystemFrameTimeStamp) {
+      final started = Completer<void>();
+      scheduler.scheduleFrameCallback((_) => started.complete());
+      scheduler.scheduleFrame();
+      await started.future;
+    }
     if (!active) {
       finish();
       return;
     }
+    _lastBrowseDecodeFrame = scheduler.currentSystemFrameTimeStamp;
     final ready = Completer<void>();
     ImageStream? stream;
     ImageStreamListener? listener;

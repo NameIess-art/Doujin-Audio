@@ -22,6 +22,10 @@ void main() {
   for (final event in [
     'manual',
     'pause all',
+    'queue advance during pause all',
+    'partial pause failure',
+    'resume command throws',
+    'another target is removed during resume',
     'equivalent Windows paths',
     'equivalent Android document URIs',
     'device disconnect',
@@ -72,7 +76,14 @@ void main() {
         playback.registerSession(session);
       }
       final started = <String>[];
-      var failC = event == 'pause all';
+      var failC = switch (event) {
+        'pause all' ||
+        'resume command throws' ||
+        'another target is removed during resume' => true,
+        _ => false,
+      };
+      final resumeGate = Completer<void>();
+      final partialResume = failC;
       playback.attachPlaybackCommands(
         prepareSession:
             (
@@ -91,7 +102,15 @@ void main() {
         startSession: (session, {required shouldStartTriggerCountdown}) async {
           expect(session.position, const Duration(seconds: 12));
           started.add(session.id);
-          if (session == c && failC) return false;
+          if (session == c && failC) {
+            if (event == 'resume command throws') {
+              throw StateError('start failed');
+            }
+            if (event == 'another target is removed during resume') {
+              await resumeGate.future;
+            }
+            return false;
+          }
           session.setOptimisticState(playing: true);
           return true;
         },
@@ -127,18 +146,27 @@ void main() {
             hasLibraryTrack: (_) => false,
           );
         case 'pause all':
+        case 'queue advance during pause all':
+        case 'partial pause failure':
+        case 'resume command throws':
+        case 'another target is removed during resume':
         case 'equivalent Windows paths':
         case 'equivalent Android document URIs':
+          native.failPauseAll = event == 'partial pause failure';
           native.snapshotResponse = NativeSuccess(
             NativePlaybackBundleSnapshot(
               sessions: [
                 paused(a),
-                paused(b).copyWith(path: nativePath?.call(b.id)),
+                paused(b).copyWith(
+                  path: event == 'queue advance during pause all'
+                      ? '/tracks/next.mp3'
+                      : nativePath?.call(b.id),
+                ),
                 paused(c).copyWith(path: nativePath?.call(c.id)),
               ],
             ),
           );
-          expect(await playback.pauseAllSessions(), isTrue);
+          expect(await playback.pauseAllSessions(), !native.failPauseAll);
           native.failPauseAll = true;
           expect(await playback.pauseAllSessions(), isFalse);
         case 'device disconnect':
@@ -155,9 +183,21 @@ void main() {
       }
 
       expect(playback.canResumeLastPlayback, isTrue);
-      expect(await playback.resumeLastPlayback(), !failC);
+      final resume = playback.resumeLastPlayback();
+      expect(playback.resumeLastPlayback(), same(resume));
+      if (event == 'another target is removed during resume') {
+        expect(await playback.removeSession(b.id), isTrue);
+        resumeGate.complete();
+      }
+      expect(await resume, !partialResume);
       expect(started, event == 'manual' ? ['c'] : ['b', 'c']);
-      if (failC) {
+      if (event == 'another target is removed during resume') {
+        await playback.toggleSessionPlayPause(a.id);
+        await playback.toggleSessionPlayPause(a.id);
+        failC = false;
+        expect(await playback.resumeLastPlayback(), isTrue);
+        expect(started, ['b', 'c', 'a', 'a', 'c']);
+      } else if (failC) {
         expect(playback.canResumeLastPlayback, isFalse);
         await playback.toggleSessionPlayPause(b.id);
         failC = false;
@@ -167,6 +207,27 @@ void main() {
       expect(playback.canResumeLastPlayback, isFalse);
     });
   }
+
+  test(
+    'concurrent global pauses preserve the pending playback target',
+    () async {
+      final native = _RecordingNativePlaybackRepository();
+      final playback = PlaybackFacade.create(
+        databaseRepository: TestPersistenceRepository(),
+        nativeRepository: native,
+      )..configurePersistence(enabled: false);
+      addTearDown(playback.dispose);
+      final session = _session('pending')
+        ..beginPreparation(showLoading: true, autoPlay: true);
+      playback.registerSession(session);
+
+      final first = playback.pauseAllSessions();
+      final duplicate = playback.pauseAllSessions();
+      expect(await Future.wait([first, duplicate]), [true, true]);
+      expect(playback.canResumeLastPlayback, isTrue);
+      expect(native.pauseAllCount, 1);
+    },
+  );
 
   group('offset seek loading delay', () {
     late LibraryFacade library;

@@ -545,7 +545,7 @@ void main() {
   );
 
   test(
-    'exit persists only active durable sessions for explicit resume',
+    'exit persists active resume targets and prunes replaced tracks',
     () async {
       SharedPreferences.setMockInitialValues(const {});
       final repository = _RecordingPlaybackPersistenceRepository();
@@ -577,22 +577,21 @@ void main() {
               playing: id != 'paused',
               processingState: ProcessingState.ready,
             );
-        if (!session.isTemporary) {
-          repository.restoredSessions.add(
-            PersistedPlaybackSession(
-              id: session.id,
-              trackPath: track.path,
-              loopModeIndex: SessionLoopMode.single.index,
-              volume: 1,
-              positionMs: 22000,
-              durationMs: 30000,
-              customQueueTracks: [track],
-              channelSwapEnabled: false,
-              sortOrder: 0,
-              createdAtMs: DateTime(2026).millisecondsSinceEpoch,
-            ),
-          );
-        }
+        repository.restoredSessions.add(
+          PersistedPlaybackSession(
+            id: session.id,
+            trackPath: track.path,
+            isTemporary: session.isTemporary,
+            loopModeIndex: SessionLoopMode.single.index,
+            volume: 1,
+            positionMs: 22000,
+            durationMs: 30000,
+            customQueueTracks: [track],
+            channelSwapEnabled: false,
+            sortOrder: 0,
+            createdAtMs: DateTime(2026).millisecondsSinceEpoch,
+          ),
+        );
       }
       await playback.saveResumeBatchForExit();
       await restored.loadPersistedState();
@@ -602,8 +601,40 @@ void main() {
         (session) => session.currentTrackPath.endsWith('/playing.mp3'),
       );
       expect(playing.position, const Duration(seconds: 22));
+      final temporary = restored.sessions.values.singleWhere(
+        (session) => session.isTemporary,
+      );
+      await restored.retargetPath(
+        temporary.currentTrackPath,
+        '/tracks/renamed.mp3',
+      );
+      final reopened = PlaybackFacade.create(databaseRepository: repository);
+      addTearDown(reopened.dispose);
+      repository.restoredSessions.removeWhere(
+        (item) => item.id == playing.id || item.id == temporary.id,
+      );
+      final renamedTrack = temporary.customQueueTracks!.single;
+      repository.restoredSessions.add(
+        PersistedPlaybackSession(
+          id: temporary.id,
+          trackPath: renamedTrack.path,
+          isTemporary: true,
+          loopModeIndex: SessionLoopMode.single.index,
+          volume: 1,
+          positionMs: 22000,
+          durationMs: 30000,
+          customQueueTracks: [renamedTrack],
+          channelSwapEnabled: false,
+          sortOrder: 0,
+        ),
+      );
+      await reopened.loadPersistedState();
+      expect(reopened.canResumeLastPlayback, isTrue);
       playing.currentTrackPath = '/tracks/replaced.mp3';
       restored.publishSessionState(playing.id);
+      expect(restored.canResumeLastPlayback, isTrue);
+      temporary.currentTrackPath = '/tracks/another.mp3';
+      restored.publishSessionState(temporary.id);
       expect(restored.canResumeLastPlayback, isFalse);
       playing.currentTrackPath = '/tracks/playing.mp3';
       restored.publishSessionState(playing.id);

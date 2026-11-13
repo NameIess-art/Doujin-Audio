@@ -51,6 +51,48 @@ void main() {
     interaction.resetForTest();
   });
 
+  testWidgets(
+    'visible cold browse decode uses its layout frame before the 300ms fade',
+    (tester) async {
+      final first = _SlowImage();
+      final second = _SlowImage();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ListView(
+            children: [
+              for (final provider in [first, second])
+                SizedBox(
+                  height: 50,
+                  child: RetryingImage(
+                    retryKey: provider,
+                    browseThumbnail: true,
+                    imageProviderBuilder: () => provider,
+                    fallbackBuilder: (_) => SizedBox(key: ValueKey(provider)),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+      expect(first.loads + second.loads, 1);
+      final started = first.loads == 1 ? first : second;
+      final queued = identical(started, first) ? second : first;
+      await started.complete(tester);
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(queued.loads, 1);
+      final placeholder = find.byKey(ValueKey(started));
+      expect(placeholder, findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 120));
+      expect(placeholder, findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 180));
+      expect(placeholder, findsNothing);
+      await queued.complete(tester);
+      await tester.pumpAndSettle();
+    },
+  );
+
   for (final browse in [false, true]) {
     testWidgets(
       'cover fade leaves idle work and metadata unblocked (browse=$browse)',
@@ -169,10 +211,9 @@ void main() {
       await tester.pump();
       await tester.pump();
       final placeholder = find.byKey(ValueKey(first));
-      final fade = find.ancestor(
-        of: placeholder,
-        matching: find.byType(FadeTransition),
-      ).first;
+      final fade = find
+          .ancestor(of: placeholder, matching: find.byType(FadeTransition))
+          .first;
       expect(fade, findsOneWidget);
       expect(tester.widget<FadeTransition>(fade).opacity.value, 1);
       expect(interaction.isVisualUpdateDeferred, isFalse);
@@ -197,7 +238,10 @@ void main() {
       expect(tester.element(find.byType(Image).first), same(imageElement));
       await tester.pump(const Duration(milliseconds: 1));
       await tester.pump();
-      expect(tester.widget<FadeTransition>(fade).opacity.value, closeTo(0, 0.001));
+      expect(
+        tester.widget<FadeTransition>(fade).opacity.value,
+        closeTo(0, 0.001),
+      );
       await tester.pumpAndSettle();
       expect(placeholder, findsNothing);
       await second.complete(tester);

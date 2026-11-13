@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/playback_facade.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:flutter/foundation.dart';
@@ -12,57 +13,181 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'support/app_runtime_test_fixture.dart';
 import 'support/test_persistence_repository.dart';
+import 'support/test_playback_commands.dart';
 
 void main() {
   AppRuntimeTestFixture.initialize();
 
-  test(
-    'Android background saves active playback before runtime disposal',
-    () async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.android;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      final database = await AppRuntimeTestFixture.installSharedDatabase();
-      addTearDown(() => AppRuntimeTestFixture.disposeSharedDatabase(database));
-      final repository = TestPersistenceRepository();
-      final graph = createTestRuntimeGraph(
-        persistenceRepository: repository,
-        skipPersistence: false,
-      );
-      addTearDown(graph.runtime.dispose);
-      await graph.runtime.start();
+  for (final (platform, isTemporary) in [
+    (TargetPlatform.android, false),
+    (TargetPlatform.android, true),
+    (TargetPlatform.windows, true),
+  ]) {
+    test(
+      '$platform persists resume targets (temporary=$isTemporary)',
+      () async {
+        debugDefaultTargetPlatformOverride = platform;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        final database = await AppRuntimeTestFixture.installSharedDatabase();
+        addTearDown(
+          () => AppRuntimeTestFixture.disposeSharedDatabase(database),
+        );
+        final repository = TestPersistenceRepository();
+        final graph = createTestRuntimeGraph(
+          persistenceRepository: repository,
+          skipPersistence: false,
+        );
+        addTearDown(graph.runtime.dispose);
+        await graph.runtime.start();
 
-      final track = MusicTrack(
-        path: '/music/background.mp3',
-        displayName: 'Background',
-        groupKey: '/music',
-        groupTitle: 'Music',
-        groupSubtitle: '',
-        isSingle: true,
-      );
-      final session =
-          graph.playback.createTrackSession(track, customQueueTracks: [track])
-            ..setOptimisticState(
+        final track = MusicTrack(
+          path: '/music/background.mp3',
+          displayName: 'Background',
+          groupKey: '/music',
+          groupTitle: 'Music',
+          groupSubtitle: '',
+          isSingle: true,
+        );
+        final session =
+            graph.playback.createTrackSession(
+              track,
+              customQueueTracks: [track],
+              isTemporary: isTemporary,
+            )..setOptimisticState(
               playing: true,
               processingState: ProcessingState.ready,
             );
-      session.setOptimisticPosition(const Duration(seconds: 14));
-      graph.playback.publishSessionState(session.id);
+        session.setOptimisticPosition(const Duration(seconds: 14));
+        graph.playback.publishSessionState(session.id);
 
-      await graph.runtime.enterBackground();
-      expect(session.playbackRequested, isTrue);
+        if (platform == TargetPlatform.android) {
+          // Android may remove the task before Dart disposal runs.
+          await graph.runtime.enterBackground();
+          expect(session.playbackRequested, isTrue);
+        } else {
+          await graph.runtime.dispose();
+        }
 
-      // Reopen from storage without calling dispose on the original runtime.
-      final restarted = PlaybackFacade.create(databaseRepository: repository);
-      addTearDown(restarted.dispose);
-      await restarted.loadPersistedState();
-      expect(restarted.hasActivePlayback, isFalse);
-      expect(restarted.canResumeLastPlayback, isTrue);
-      expect(
-        restarted.sessions[session.id]?.position,
-        const Duration(seconds: 14),
-      );
-    },
-  );
+        final restarted = PlaybackFacade.create(databaseRepository: repository);
+        addTearDown(restarted.dispose);
+        await restarted.loadPersistedState();
+        expect(restarted.hasActivePlayback, isFalse);
+        expect(
+          restarted.sessions[session.id]?.position,
+          const Duration(seconds: 14),
+        );
+        expect(restarted.sessions[session.id]?.isTemporary, isTemporary);
+        expect(restarted.canResumeLastPlayback, isTrue);
+
+        restarted.attachPlaybackCommands(
+          prepareSession:
+              (
+                session, {
+                required nextPath,
+                autoPlay = true,
+                forceStartAtZero = false,
+                showLoading = true,
+                targetQueueIndex,
+              }) async {
+                expect(nextPath, track.path);
+                expect(session.position, const Duration(seconds: 14));
+                expect(autoPlay, isTrue);
+                expect(forceStartAtZero, isFalse);
+                session.setOptimisticState(playing: true);
+                return true;
+              },
+          pauseSession: (_) async => fail('Resume must not pause playback'),
+          startSession: (_, {required shouldStartTriggerCountdown}) async =>
+              fail('A cold session must prepare its source first'),
+          resolveAdvance: (_, {required forward}) => null,
+          hasAdjacent: (_, {required forward}) => false,
+        );
+        expect(await restarted.resumeLastPlayback(), isTrue);
+        expect(restarted.hasActivePlayback, isTrue);
+      },
+    );
+  }
+
+  for (final completed in [false, true]) {
+    test(
+      'Android updates the background resume target (completed=$completed)',
+      () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(
+          nativePlaybackChannel,
+          (_) async => <String, Object?>{'ok': true},
+        );
+        addTearDown(
+          () => messenger.setMockMethodCallHandler(nativePlaybackChannel, null),
+        );
+        final database = await AppRuntimeTestFixture.installSharedDatabase();
+        addTearDown(
+          () => AppRuntimeTestFixture.disposeSharedDatabase(database),
+        );
+        final repository = TestPersistenceRepository();
+        final graph = createTestRuntimeGraph(
+          persistenceRepository: repository,
+          skipPersistence: false,
+        );
+        addTearDown(graph.runtime.dispose);
+        await graph.runtime.start();
+        final tracks = [
+          for (final name in ['first', 'second'])
+            testMusicTrack(
+              name: name,
+              path: '/music/$name.mp3',
+              groupKey: '/music',
+              groupTitle: 'Music',
+            ),
+        ];
+        final session =
+            graph.playback.createTrackSession(
+              tracks.first,
+              customQueueTracks: tracks,
+              isTemporary: true,
+              loopMode: SessionLoopMode.folderOnce,
+            )..setOptimisticState(
+              playing: true,
+              processingState: ProcessingState.ready,
+            );
+        await graph.runtime.enterBackground();
+
+        final index = completed ? 0 : 1;
+        graph.playbackCommands.handleNativeSnapshot(
+          NativePlaybackSnapshot(
+            sessionId: session.id,
+            path: tracks[index].path,
+            queueIndex: index,
+            playing: !completed,
+            playWhenReady: !completed,
+            processingState: completed ? 'completed' : 'ready',
+            position: const Duration(seconds: 18),
+            bufferedPosition: const Duration(seconds: 18),
+            volume: 1,
+            boostGain: 1,
+            channelSwapEnabled: false,
+          ),
+        );
+        await graph.playback.flushSessionStatePersistence();
+
+        final restarted = PlaybackFacade.create(databaseRepository: repository);
+        addTearDown(restarted.dispose);
+        await restarted.loadPersistedState();
+        expect(
+          restarted.sessions[session.id]?.currentTrackPath,
+          tracks[index].path,
+        );
+        expect(
+          restarted.sessions[session.id]?.position,
+          const Duration(seconds: 18),
+        );
+        expect(restarted.canResumeLastPlayback, !completed);
+      },
+    );
+  }
 
   test(
     'core readiness excludes secondary hydration and merges requests',

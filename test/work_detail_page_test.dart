@@ -1408,7 +1408,60 @@ void main() {
       );
 
       _detailTestWidgets(
-        'cold directory preparation waits until the detail route finishes on $platform',
+        'indexed directory appears while detail navigation is still protected on $platform',
+        (tester) async {
+          final interaction = UiInteractionCoordinator.instance;
+          interaction.resetForTest();
+          final guard = Object();
+          interaction.beginNavigation(guard);
+          addTearDown(() => interaction.cancelNavigation(guard));
+          const folder = 'C:/works/early-directory';
+          final fixture = AppRuntimeWidgetTestFixture(
+            libraryTreeSnapshotBuilder: (payload) async =>
+                const LibraryOrganizer().buildTree(
+                  tracks: payload.tracks,
+                  watchedFolders: payload.watchedFolders,
+                ),
+          );
+          _detailFixtures.add(fixture);
+          addTearDown(fixture.dispose);
+          fixture.library.addWatchedFolder(folder, notify: false);
+          fixture.library.addTracks([
+            MusicTrack(
+              path: '$folder/Extras/voice.mp3',
+              displayName: 'voice.mp3',
+              groupKey: folder,
+              groupTitle: '',
+              groupSubtitle: '',
+              isSingle: false,
+            ),
+          ], persist: false);
+          await tester.pumpWidget(
+            fixture.build(
+              WorkDetailPage.forLocal(
+                target: AudioDetailTarget.libraryRootFolder(folder),
+              ),
+            ),
+          );
+          for (
+            var i = 0;
+            i < 30 && find.text('Extras').evaluate().isEmpty;
+            i++
+          ) {
+            await tester.runAsync(
+              () => Future<void>.delayed(const Duration(milliseconds: 10)),
+            );
+            await tester.pump();
+          }
+          expect(find.text('Extras'), findsOneWidget);
+          expect(interaction.isVisualUpdateDeferred, isTrue);
+          interaction.cancelNavigation(guard);
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+
+      _detailTestWidgets(
+        'cold directory preparation starts during the detail route on $platform',
         (tester) async {
           await tester.binding.setSurfaceSize(const Size(800, 1000));
           addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -1472,7 +1525,8 @@ void main() {
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 100));
           expect(find.text('Cold directory'), findsOneWidget);
-          expect(treeRequests, 0);
+          expect(treeRequests, 1);
+          expect(covers.imageRequests, 0);
           expect(find.text('audio'), findsNothing);
           final skeleton = tester.renderObject<RenderRepaintBoundary>(
             find.byKey(const ValueKey('work_detail_entries_skeleton')),

@@ -508,6 +508,14 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
       }
     }
     if (!changed) return;
+    String retargetResumePath(String path) =>
+        PathMatcher.replaceWithinOrEqual(path, oldPath, newPath);
+    _resumeRetryTargets.updateAll((_, path) => retargetResumePath(path));
+    final retargetedBatch = _resumeBatch.map(
+      (id, path) => MapEntry(id, retargetResumePath(path)),
+    );
+    final resumeBatchChanged = !mapEquals(_resumeBatch, retargetedBatch);
+    if (resumeBatchChanged) _resumeBatch = retargetedBatch;
     _service.markActiveSessionsDirty();
     _notifySessionStateChanged();
     final current = _service.state;
@@ -547,6 +555,9 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     }
     await Future.wait(retargetTasks);
     await savePersistedState();
+    if (resumeBatchChanged && identical(_resumeBatch, retargetedBatch)) {
+      await _setResumeBatch(retargetedBatch);
+    }
   }
 
   bool _sameTrack(MusicTrack first, MusicTrack second) {

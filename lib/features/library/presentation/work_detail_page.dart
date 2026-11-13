@@ -111,6 +111,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   List<CoverImageReference> _localImageReferences = const [];
   String? _localManualCover;
   bool _loadingLocal = true;
+  bool _loadingInitialTree = false;
   int _localLoadRequest = 0;
   late final String _filesCommitKey =
       'work_detail_files_${identityHashCode(this)}';
@@ -205,32 +206,42 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       _loadingAsmr = _asmrTree == null;
     }
     _directory = _directoryInput.resolved;
-    // Show cached details immediately; fresh directory I/O still waits for
-    // navigation so opening the page does not start competing background work.
+    final initialRequest = ++_localLoadRequest;
+    if (widget.isLocal && (_localFolderNode == null || _directory == null)) {
+      _loadingInitialTree = true;
+      final folderPath = _localTarget!.targetPath;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || initialRequest != _localLoadRequest) return;
+        unawaited(_loadLocalTree(initialRequest, folderPath, initial: true));
+      });
+    }
+    // File discovery can touch disk or SAF. Start it after navigation while
+    // the indexed audio tree is already being prepared from the catalog.
     UiInteractionCoordinator.instance.scheduleCommit(
       key: _filesCommitKey,
       allowDuringScroll: true,
       canRun: () => _isPageCurrent,
       commit: () {
-        if (!mounted) return;
-        unawaited(_prepareDirectory());
+        if (!mounted || initialRequest != _localLoadRequest) return;
         if (widget.isLocal) {
           if (_localDetail == null) {
-            unawaited(_loadLocalData());
+            unawaited(_loadLocalData(initial: true));
           } else {
             unawaited(
-              _loadLocalFiles(++_localLoadRequest, _localTarget!.targetPath),
+              _loadLocalFiles(initialRequest, _localTarget!.targetPath),
             );
           }
         } else {
+          unawaited(_prepareDirectory());
           unawaited(_loadAsmrData());
         }
       },
     );
   }
 
-  Future<void> _loadLocalData() async {
-    final request = ++_localLoadRequest;
+  Future<void> _loadLocalData({bool initial = false}) async {
+    final request = initial ? _localLoadRequest : ++_localLoadRequest;
+    if (!initial) _loadingInitialTree = false;
     UiInteractionCoordinator.instance.cancelCommit(_filesCommitKey);
     final target = _localTarget!;
     final folderPath = target.targetPath;
@@ -249,13 +260,14 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
             detailResult.detail.cardCoverPath;
       }, request: request);
 
-      // File trees, directory scans and cover discovery wait for navigation.
+      // Attachment scans and cover discovery wait for navigation.
       UiInteractionCoordinator.instance.scheduleCommit(
         key: _filesCommitKey,
         allowDuringScroll: true,
         canRun: () => _isPageCurrent,
         commit: () {
           if (mounted && request == _localLoadRequest) {
+            if (!initial) unawaited(_loadLocalTree(request, folderPath));
             unawaited(_loadLocalFiles(request, folderPath));
           }
         },
@@ -265,6 +277,38 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       _publishDataUpdate(() {
         _loadingLocal = false;
       }, request: request);
+    }
+  }
+
+  Future<void> _loadLocalTree(
+    int request,
+    String folderPath, {
+    bool initial = false,
+  }) async {
+    try {
+      final tree = _localFolderNode != null && initial
+          ? _localFolderNode
+          : await ref
+                .read(libraryFacadeProvider)
+                .loadLibraryFolderTree(folderPath);
+      if (!mounted || request != _localLoadRequest) return;
+      if (!initial) {
+        _publishDataUpdate(() => _localFolderNode = tree, request: request);
+        return;
+      }
+      _localFolderNode = tree;
+      if (tree != null) {
+        await _prepareDirectory(allowInitialDuringNavigation: true);
+      }
+    } catch (_) {
+      // Attachment discovery can still populate the directory independently.
+    } finally {
+      if (initial && mounted && request == _localLoadRequest) {
+        _loadingInitialTree = false;
+        if (_localFolderNode == null && !_loadingLocal) {
+          await _prepareDirectory();
+        }
+      }
     }
   }
 
@@ -295,15 +339,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     }
 
     await Future.wait<void>([
-      () async {
-        try {
-          final tree = await library.loadLibraryFolderTree(folderPath);
-          if (!isCurrent()) return;
-          _publishDataUpdate(() => _localFolderNode = tree, request: request);
-        } catch (_) {
-          // Text and image discovery can still complete independently.
-        }
-      }(),
       () async {
         try {
           final texts = await textService.refreshWorkTextFiles(folderPath);
@@ -371,13 +406,16 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
         )
       : WorkDirectoryInput.asmr(_asmrTree);
 
-  Future<void> _prepareDirectory() async {
+  Future<void> _prepareDirectory({
+    bool allowInitialDuringNavigation = false,
+  }) async {
     final request = ++_directoryRequest;
+    final localRequest = _localLoadRequest;
     final input = _directoryInput;
     final cached = input.resolved;
     final loading = widget.isLocal ? _loadingLocal : _loadingAsmr;
     // Wait for a real source instead of computing an empty intermediate tree.
-    if (loading &&
+    if ((loading || _loadingInitialTree) &&
         input.root == null &&
         input.tree == null &&
         input.texts.isEmpty &&
@@ -394,13 +432,19 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       return;
     }
     final directory = cached ?? await input.load();
-    if (!mounted || request != _directoryRequest) return;
+    bool isCurrent() =>
+        mounted &&
+        request == _directoryRequest &&
+        localRequest == _localLoadRequest;
+    if (!isCurrent()) return;
     UiInteractionCoordinator.instance.scheduleCommit(
       key: _directoryCommitKey,
       structural: true,
+      allowDuringInteraction:
+          allowInitialDuringNavigation && _directory == null,
       canRun: () => _isPageCurrent,
       commit: () {
-        if (!mounted || request != _directoryRequest) return;
+        if (!isCurrent()) return;
         if (_directoryWasLoading == false &&
             !MediaQuery.disableAnimationsOf(context) &&
             (_route?.isCurrent ?? true)) {
@@ -1414,6 +1458,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       final currentEntries = _buildCurrentEntries(_directoryVisibilityKey(ref));
       final isLoading =
           ((widget.isLocal ? _loadingLocal : _loadingAsmr) ||
+              _loadingInitialTree ||
               _preparingDirectory ||
               _directory == null) &&
           currentEntries.isEmpty &&

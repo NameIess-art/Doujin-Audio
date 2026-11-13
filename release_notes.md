@@ -2,27 +2,27 @@
 
 > **升级前必读：**本版本使用 Android 应用 ID `com.doujin.audio`，会作为独立应用安装，不能覆盖更名前版本，也不会继承旧应用私有数据。`.dabackup` 备份恢复要求平台及备份格式兼容，且备份数据库版本不能高于应用支持的版本；不提供更名前旧数据或旧备份格式的自动迁移。
 
-本次更新重点引入 Windows 桌面端平滑滚轮滚动机制，全方位消除滚轮阻尼生硬与卡顿；优化封面升级解析完成后的渐变淡入动效；新增各主页面平滑回到顶部过渡动效；全面重构全应用统一下拉选择框与桌面端主导航布局；完善 Android 原生后台保活定时与异常中断恢复；优化主题配色体系、纯黑模式与桌面文字排版规范；并进一步增强媒体库卡片多选、时间轴字幕与在线目录加载体验。
-
-## Windows 桌面端与交互动效
-
-- **全应用平滑滚轮滚动**：引入 Windows 专用平滑滚轮滚动控制器（WindowsSmoothScrollController / withWindowsSmoothScroll），累积微小滚轮步长并采用平滑阻尼插值过渡，妥善处理边界反向滚动（handleWheelReversal），大幅提升媒体库、作品详情与设置面板等长页面的滚轮丝滑度。
-- **平滑回到顶部动效**：引入平滑回到顶部动效（ScrollToTopTransition）与主 Tab 滚动状态协同（MainTabStateMixin），点击或双击导航回到顶部时平滑过渡，杜绝突兀瞬移与滚动穿透。
-- **桌面端主导航重构**：重构 Windows 桌面端主导航容器（DesktopMainNavigation），规范分栏间距、页面层级与自适应宽度响应，优化方向控制器（AppOrientationController）的跨端分流。
-- **统一下拉选择框控件**：重构并统一各端下拉组件（UnifiedDropdown），规范基准对齐、阴影与展开浮层布局，统一设置页、音频控制与弹窗内的选项交互。
+本次更新重点完善收听时长统计与历史记录的即时刷新机制，重构全应用通用悬浮按钮与作品详情交互细节；在 Android 原生层精细化播放时长账本聚合与无缝过渡，在 Windows 原生层升级独立悬浮字幕 DirectWrite 渲染与字体后备排版；加固媒体库排除文件夹与音轨删除的落盘时序；优化封面缩略图解码调度防饥饿与冷启动会话恢复竞态；并完善标签兴趣偏好与全局搜索建议的动态联动。
 
 ## 媒体播放与原生会话
 
-- **封面解析渐变淡入**：优化异步封面加载组件（AsyncCoverImage），在高清或本地解析封面就绪后采用平滑渐变淡入动效替换占位图，消除封面刷新时的硬切与视觉跳变。
-- **播放详情与队列交互优化**：重构会话详情脚手架（SessionDetailScaffold）与播放队列排版（PlaylistQueueWidgets），自适应横竖屏切换与不同视口宽度，优化会话切换路由动效与背景渲染层次。
-- **Android 后台保活与状态恢复**：完善系统定时保活唤醒机制（PlaybackKeepAliveAlarmScheduler）与原生播放恢复控制器（NativePlaybackRecoveryController），增强息屏、后台低内存及短暂停顿后的状态持久化与通知栏控制连续性。
-- **时间轴字幕与状态派发**：优化时间轴字幕视图（TimelineSubtitleView）在各尺寸屏幕下的布局自适应，精简播放器与媒体库 Provider 依赖图及生命周期回收机制，降低非必要重绘开销。
+- **收听活动与历史记录即时刷新**：在播放暂停、进度跃迁与多会话切换时即时同步刷新收听活动服务（ListeningActivityService / PlaybackCommandCoordinator），保障“我的”页面与播放历史统计数据的实时性与一致性。
+- **Android 原生使用账本与会话无缝过渡**：在 Android 原生层完善播放时长账本（NativePlaybackUsageLedger.kt），精细化统计多会话的播放时长聚合与状态切换，优化会话切换时的无缝过渡（NativePlaybackSession.kt / NativePlaybackService.kt）。
+- **封面缩略图调度与会话恢复竞态消除**：优化异步封面加载组件（AsyncCoverImage），完善缩略图解码并发调度，杜绝长列表快速滑动时的解码线程饥饿；同时消除播放会话恢复（PlaybackSessionPersistenceCoordinator / PlaybackQueuePathCoordinator / PlaybackFacade）中的潜在竞态。
+- **多会话轮播指示器与队列操作体验**：重构多会话切换轮播指示器（ActiveSessionCarousel / ActiveSessionCarouselWidgets），采用平滑自适应动效提升视觉反馈；优化播放队列音频编辑（PlaybackQueueAudioEditPage）与媒体列表交互。
 
-## 主题配色与媒体库体验
+## 媒体库管理与检索交互
 
-- **主题与系统文字排版优化**：重构应用主题系统（ThemeProvider），优化 Windows 桌面端各语言 Typography 基准渲染，完善纯黑模式（Pure Black）与各强调色（消除蓝色预设在部分面板上的杂色偏光）的层次配合。
-- **媒体库卡片与右键多选**：优化作品卡片（LibraryLikeCards）与右键快捷菜单，规范桌面端单轨音频/视频与根目录的多选进入与选中状态保持；完善仅拖动滑块滚动条（DragOnlyScrollbar）的拖拽交互。
-- **在线分类目录与下载规划**：改进 ASMR 在线分类目录聚合服务（AsmrCatalogMerge / AsmrCategoryCatalog / AsmrRemoteCatalogService），提升分类标签切换与分页请求的稳定性；完善下载任务分块规划（AsmrDownloadPlanner）与作品内容映射容错。
+- **音轨移除与排除文件夹落盘时序加固**：媒体库在从内存移除音轨或排除文件夹前，强制等待持久化操作（LibraryMutationCoordinator / LibraryFacade）落盘完成，消除高并发与快速连续操作时的状态不一致与界面残留。
+- **标签兴趣偏好与全局搜索建议联动**：完善“我的”页面标签偏好管理（AsmrTagInterest / MyTagManagementPage），并在全局搜索建议（AppSearchSuggestions）中动态关联用户感兴趣的标签与题材，提升检索发现效率。
+- **在线分类目录多标签合并与分页优化**：改进 ASMR 在线分类目录（AsmrCategoryCatalog / AsmrRemoteCatalogService），完善多分类标签聚合合并与分页加载容错。
+- **封面艺术图缓存与保留策略**：增强封面艺术图缓存服务（CoverArtworkCacheService）与图片保留策略（CoverImageRetention），提高本地与远程封面在多页面流转中的复用效率与内存回收表现。
+
+## 桌面端与界面细节优化
+
+- **Windows 独立悬浮字幕 DirectWrite 渲染与字体后备**：重构 Windows C++ 原生独立悬浮字幕窗口（subtitle_window.cpp），优化 DirectWrite 文本格式化、多语言字体后备（Font Fallback）与高 DPI 文本布局排版性能。
+- **通用悬浮按钮控件重构**：引入全应用统一的悬浮图标按钮（AppOverlayIconButton），规范作品详情页返回、编辑、DLsite 以及翻译悬浮按钮（WorkPageTranslationButton / PageTranslationScope）的阴影、高亮水波纹与主题前景色规范。
+- **视频视口与详情页关闭路由加固**：完善会话详情脚手架（SessionDetailScaffold）、队列组件（PlaylistQueueWidgets）与视频视口（SessionVideoViewport / PlaylistVideoWidgets）的关闭路由保护，杜绝重复触发关闭操作时的异常路由分发。
 
 ## 发布资产
 

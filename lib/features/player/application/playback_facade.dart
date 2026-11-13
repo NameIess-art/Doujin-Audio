@@ -174,41 +174,8 @@ final class PlaybackFacade {
     }
   }
 
-  Future<void> handleAudioDeviceDisconnected() async {
-    final sequence = ++_pauseSequence;
-    final generations = {
-      for (final session in _service.sessions.values)
-        if (_isPlaybackActive(session))
-          session.id: (
-            session,
-            session.loadGeneration,
-            session.playbackCommandGeneration,
-          ),
-    };
-    if (!await nativeRepository.handleDeviceDisconnected()) return;
-    if (generations.isEmpty || sequence <= _recordedPauseSequence) return;
-    final result = await nativeRepository.snapshot();
-    final snapshots = result.valueOrNull?.sessions;
-    if (snapshots == null) return;
-    final confirmed = <String, String>{};
-    for (final snapshot in snapshots) {
-      final request = generations[snapshot.sessionId];
-      if (request == null || snapshot.playWhenReady || snapshot.playing) {
-        continue;
-      }
-      final (session, loadGeneration, commandGeneration) = request;
-      if (!isRegisteredSession(session) ||
-          session.loadGeneration != loadGeneration ||
-          session.playbackCommandGeneration != commandGeneration ||
-          (snapshot.transportCommandId ?? commandGeneration) <
-              commandGeneration) {
-        continue;
-      }
-      _applyPauseSnapshot(snapshot);
-      confirmed[session.id] = session.currentTrackPath;
-    }
-    _rememberPausedBatch(confirmed, sequence: sequence);
-  }
+  Future<void> handleAudioDeviceDisconnected() =>
+      _reconcileAudioDeviceDisconnection();
 
   Future<bool> resumeLastPlayback() {
     final pending = _resumeInFlight;
@@ -618,18 +585,6 @@ final class PlaybackFacade {
     _onRuntimeStateChanged?.call();
     scheduleSessionStatePersistence();
     return response.isOk;
-  }
-
-  void _applyPauseSnapshot(NativePlaybackSnapshot snapshot) {
-    final commands = _commandPort;
-    if (commands != null) {
-      commands.handleNativeSnapshot(snapshot);
-    } else {
-      applyNativeSnapshot(
-        snapshot,
-        hasLibraryTrack: (path) => _persistedTrackResolver?.call(path) != null,
-      );
-    }
   }
 
   Future<bool> removeSession(String sessionId) {

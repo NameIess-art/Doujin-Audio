@@ -132,7 +132,7 @@ final class LibraryMutationCoordinator {
       if (_service.isLibraryPathExcluded(libraryPath, removedTrack.path)) {
         return null;
       }
-      excludeLibraryTrack(libraryPath, removedTrack.path);
+      await excludeLibraryTrack(libraryPath, removedTrack.path);
       return LibraryRemovalKind.libraryAudioRecoverable;
     }
 
@@ -145,7 +145,7 @@ final class LibraryMutationCoordinator {
       if (_service.isLibraryPathExcluded(folderPath, removedTrack.path)) {
         return null;
       }
-      excludeLibraryTrack(folderPath, removedTrack.path);
+      await excludeLibraryTrack(folderPath, removedTrack.path);
       return LibraryRemovalKind.folderAudioPermanent;
     }
 
@@ -355,33 +355,29 @@ final class LibraryMutationCoordinator {
     );
   }
 
-  void excludeLibraryTrack(String libraryPath, String trackPath) {
+  Future<void> excludeLibraryTrack(String libraryPath, String trackPath) async {
     final normalizedTrackPath = PathMatcher.normalize(trackPath);
     final mutation = _service.setLibraryTrackExcluded(
       libraryPath,
       normalizedTrackPath,
       true,
-      onPersist: () {
-        if (_persistenceCoordinator.enabled) {
-          unawaited(_persistenceCoordinator.saveExclusions());
-        }
-      },
     );
     if (!mutation.changed) return;
-    if (mutation.affectedEntryPaths.isNotEmpty &&
-        _persistenceCoordinator.enabled) {
-      unawaited(
+    final persistenceEnabled = _persistenceCoordinator.enabled;
+    final writes = <Future<void>>[
+      if (persistenceEnabled) _persistenceCoordinator.saveExclusions(),
+      if (persistenceEnabled && mutation.affectedEntryPaths.isNotEmpty)
         databaseRepository.setLibraryEntriesState(
           libraryPath,
           mutation.affectedEntryPaths,
           LibraryEntryState.excluded,
         ),
-      );
-    }
+    ];
     _syncStateSlice();
-    unawaited(
+    await Future.wait([
+      ...writes,
       _removeExcludedTrackFromActiveLibrary(libraryPath, normalizedTrackPath),
-    );
+    ]);
   }
 
   void setLibraryFolderExcluded(
@@ -431,7 +427,7 @@ final class LibraryMutationCoordinator {
     bool excluded,
   ) {
     if (excluded) {
-      excludeLibraryTrack(libraryPath, trackPath);
+      unawaited(excludeLibraryTrack(libraryPath, trackPath));
       return;
     }
     final normalizedTrackPath = PathMatcher.normalize(trackPath);

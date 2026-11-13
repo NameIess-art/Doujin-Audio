@@ -5,6 +5,7 @@ import 'package:doujin_audio/features/player/domain/audio_effects.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'package:doujin_audio/features/library/domain/audio_library_category.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/domain/playback_queue.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
@@ -198,8 +199,8 @@ void main() {
 
     expect(result.matchCount, 1);
     expect(result.expandedFolderPaths, <String>{
-      '/library/work',
-      '/library/work/disc',
+      PathMatcher.normalize(root.path),
+      PathMatcher.normalize(disc.path),
     });
   });
 

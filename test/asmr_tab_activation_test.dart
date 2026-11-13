@@ -18,7 +18,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'support/app_runtime_test_fixture.dart';
 import 'support/asmr_controller_test_fixture.dart';
 
-class _ActivationController extends AsmrLibraryController {
+class _ActivationController extends AsmrLibraryController
+    with TestAsmrCategoryViewOverrides {
   _ActivationController(TestAsmrServices services)
     : super(
         preferencesStore: services.preferencesStore,
@@ -87,17 +88,6 @@ class _ActivationController extends AsmrLibraryController {
     categoryLoads++;
     notifyListeners();
   }
-
-  @override
-  List<AsmrWork> filteredWorksFor(
-    AsmrCategoryType category, {
-    String searchQuery = '',
-    bool searchSession = false,
-  }) => categoryViewState(
-    category,
-    searchQuery: searchQuery,
-    searchSession: searchSession,
-  ).works;
 
   @override
   AsmrCategoryViewState categoryViewState(

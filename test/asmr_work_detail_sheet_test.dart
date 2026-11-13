@@ -2163,7 +2163,8 @@ void main() {
   }
 }
 
-class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
+class _TestFavoritesAsmrLibraryController extends AsmrLibraryController
+    with TestAsmrCategoryViewOverrides {
   _TestFavoritesAsmrLibraryController(
     TestAsmrServices services,
     List<AsmrWork> initialWorks,
@@ -2274,17 +2275,6 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
       category == AsmrCategoryType.favorites
       ? favoriteWorks
       : const <AsmrWork>[];
-
-  @override
-  List<AsmrWork> filteredWorksFor(
-    AsmrCategoryType category, {
-    String searchQuery = '',
-    bool searchSession = false,
-  }) => categoryViewState(
-    category,
-    searchQuery: searchQuery,
-    searchSession: searchSession,
-  ).works;
 
   @override
   int totalCountFor(AsmrCategoryType category) => worksFor(category).length;

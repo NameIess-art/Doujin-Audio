@@ -7,6 +7,7 @@ import 'package:doujin_audio/features/asmr/application/asmr_library_controller.d
 import 'package:doujin_audio/features/asmr/application/asmr_preferences.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_remote_catalog_service.dart';
 import 'package:doujin_audio/features/asmr/application/japanese_asmr_api_service.dart';
+import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_persistence_repository.dart';
 import 'package:doujin_audio/infrastructure/sqlite/sqlite_asmr_repository.dart';
 
@@ -15,6 +16,32 @@ typedef TestAsmrServices = ({
   AsmrRemoteCatalogService remoteCatalogService,
   AsmrAccountSyncService accountSyncService,
 });
+
+/// Resolves category reads from the snapshots supplied by widget test doubles.
+mixin TestAsmrCategoryViewOverrides on AsmrLibraryController {
+  @override
+  List<AsmrWork> filteredWorksFor(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+    bool searchSession = false,
+  }) => categoryViewState(
+    category,
+    searchQuery: searchQuery,
+    searchSession: searchSession,
+  ).works;
+
+  @override
+  List<AsmrWork> selectedWorks(
+    AsmrCategoryType category, {
+    required String searchQuery,
+    required bool searchSession,
+    required Set<String> workIds,
+  }) => filteredWorksFor(
+    category,
+    searchQuery: searchQuery,
+    searchSession: searchSession,
+  ).where((work) => workIds.contains(work.workKey)).toList(growable: false);
+}
 
 TestAsmrServices createTestAsmrServices({
   AsmrPreferencesStore? preferencesStore,

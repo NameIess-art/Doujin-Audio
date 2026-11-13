@@ -794,7 +794,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
       _mutationCoordinator.clearLibraryExclusions(libraryPath);
 
   Future<LibraryRemovalKind?> removeTrack(String trackPath) =>
-      _mutationCoordinator.removeTrack(trackPath);
+      _withScanPaused(() => _mutationCoordinator.removeTrack(trackPath));
 
   Future<LibraryRemovalKind?> removeFolder(String folderPath) =>
       _withScanPaused(() => _mutationCoordinator.removeFolder(folderPath));
@@ -802,8 +802,9 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   void excludeLibraryFolder(String libraryPath, String folderPath) =>
       _mutationCoordinator.excludeLibraryFolder(libraryPath, folderPath);
 
-  void excludeLibraryTrack(String libraryPath, String trackPath) =>
-      _mutationCoordinator.excludeLibraryTrack(libraryPath, trackPath);
+  void excludeLibraryTrack(String libraryPath, String trackPath) => unawaited(
+    _mutationCoordinator.excludeLibraryTrack(libraryPath, trackPath),
+  );
 
   void setLibraryFolderExcluded(
     String libraryPath,

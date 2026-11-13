@@ -760,13 +760,23 @@ void registerAsmrControllerStateTests({
       );
       await controller.ensureCategoryLoaded(AsmrCategoryType.release);
       final original = controller.worksFor(AsmrCategoryType.release);
+      final selectedIds = original.reversed.map((work) => work.workKey).toSet();
+      List<AsmrWork> selection() => controller.selectedWorks(
+        AsmrCategoryType.release,
+        searchQuery: '',
+        searchSession: false,
+        workIds: selectedIds,
+      );
       expect(controller.worksFor(AsmrCategoryType.release), same(original));
+      expect(selection(), original);
       await controller.setTagExcluded('local:sleep', true);
       final filtered = controller.worksFor(AsmrCategoryType.release);
       expect(filtered.map((work) => work.id), [101]);
+      expect(selection(), filtered);
       expect(controller.worksFor(AsmrCategoryType.release), same(filtered));
       await controller.setTagExcluded('local:sleep', false);
       expect(controller.worksFor(AsmrCategoryType.release), same(original));
+      expect(selection(), original);
     },
   );
 
@@ -3007,6 +3017,17 @@ void registerAsmrControllerStateTests({
     expect(firstPage.works, hasLength(40));
     expect(secondPage.works.first, same(firstPage.works.first));
     expect(secondPage.appendedTo, (token: firstPage.paginationToken, length: 40));
+    final firstWork = firstPage.works.first;
+    final appendedWork = secondPage.works.last;
+    expect(
+      controller.selectedWorks(
+        AsmrCategoryType.release,
+        searchQuery: '',
+        searchSession: false,
+        workIds: {appendedWork.workKey, firstWork.workKey},
+      ),
+      [firstWork, appendedWork],
+    );
     final requests = api.fetchWorkRequests.length;
     await controller.loadMoreCategory(
       AsmrCategoryType.release,

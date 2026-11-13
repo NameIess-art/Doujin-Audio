@@ -7959,7 +7959,8 @@ final class _AppShellNativePlaybackRepository extends NativePlaybackRepository {
   Future<void> dispose() async {}
 }
 
-final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
+final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController
+    with TestAsmrCategoryViewOverrides {
   @override
   Future<void> ensureSearchSuggestions({bool force = false}) async {}
 
@@ -8179,17 +8180,6 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
       : category == AsmrCategoryType.collected && delayInitialCollectedRefresh
       ? _initialCollectedRefresh.isCompleted
       : true;
-
-  @override
-  List<AsmrWork> filteredWorksFor(
-    AsmrCategoryType category, {
-    String searchQuery = '',
-    bool searchSession = false,
-  }) => categoryViewState(
-    category,
-    searchQuery: searchQuery,
-    searchSession: searchSession,
-  ).works;
 
   @override
   int totalCountFor(AsmrCategoryType category) => worksFor(category).length;

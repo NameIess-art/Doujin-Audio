@@ -1410,7 +1410,7 @@ void main() {
       final session = runtimeGraph.playback.createTrackSession(
         library.library.first,
       );
-      Future<Object?>? deletion;
+      late final Future<LibraryRemovalKind?> deletion;
       final source = _JsonPreservationScanDataSource()
         ..configure(
           selectedPath: root,
@@ -1434,20 +1434,21 @@ void main() {
               ),
             );
             deletion = library.removeTrack(tracks.last.path);
-            library.cancelScan();
           },
         );
-      await LibraryScannerService(dataSource: source).refreshWatchedFolders(
-        provider: library,
-        labels: const LibraryScanLabels(
-          chooseMusicFolder: 'folder',
-          chooseLibraryFolder: 'library',
-          chooseAudioFiles: 'files',
-          importedFiles: 'imported',
-          manuallySelectedFiles: 'selected',
-        ),
-      );
-      await deletion;
+      final outcome = await LibraryScannerService(dataSource: source)
+          .refreshWatchedFolders(
+            provider: library,
+            labels: const LibraryScanLabels(
+              chooseMusicFolder: 'folder',
+              chooseLibraryFolder: 'library',
+              chooseAudioFiles: 'files',
+              importedFiles: 'imported',
+              manuallySelectedFiles: 'selected',
+            ),
+          );
+      expect(outcome.code, LibraryScanOutcomeCode.cancelled);
+      expect(await deletion, LibraryRemovalKind.folderAudioPermanent);
       final current = library.trackByPath(tracks.first.path)!;
       expect(current.displayName, tracks.first.displayName);
       expect(current.duration, const Duration(seconds: 31));

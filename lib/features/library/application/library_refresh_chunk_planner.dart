@@ -139,6 +139,7 @@ class LibraryRefreshChunkPlanner {
     final allFolderPaths = LinkedHashSet<String>.from(folderPaths);
     retainedEntryPaths.addAll(allFolderPaths.map(PathMatcher.normalize));
     var processedTracks = 0;
+    final worker = LibraryScanMergeWorker();
 
     Future<bool> mergeChunk(FolderScanChunk chunk) async {
       if (!provider.isScanGenerationActive(generation)) return false;
@@ -161,8 +162,7 @@ class LibraryRefreshChunkPlanner {
           existingTracks.add(existing);
         }
       }
-      final result = await compute(
-        processScannedTracksInIsolate,
+      final result = await worker.merge(
         ScanMergeIsolatePayload(
           scannedTracks: chunk.tracks,
           library: existingTracks,
@@ -192,39 +192,48 @@ class LibraryRefreshChunkPlanner {
       );
     }
 
-    var scanResult = await _dataSource.scanFolderChunked(
-      sourceFolderPath,
-      mergeChunk,
-      onProgress: (event) {
-        if (!provider.isScanGenerationActive(generation)) return;
-        onProgress(event);
-      },
-    );
-    if (scanResult.notSupported) {
-      if (PathMatcher.isContentUri(sourceFolderPath)) {
-        final legacyScan = await _dataSource.scanFolder(sourceFolderPath);
-        if (!legacyScan.ok) {
-          scanResult = legacyScan;
-        } else {
-          if (!await mergeChunk(
-            FolderScanChunk(tracks: legacyScan.tracks, paths: legacyScan.paths),
-          )) {
-            return;
+    final NativeScanResult scanResult;
+    try {
+      var result = await _dataSource.scanFolderChunked(
+        sourceFolderPath,
+        mergeChunk,
+        onProgress: (event) {
+          if (!provider.isScanGenerationActive(generation)) return;
+          onProgress(event);
+        },
+      );
+      if (result.notSupported) {
+        if (PathMatcher.isContentUri(sourceFolderPath)) {
+          final legacyScan = await _dataSource.scanFolder(sourceFolderPath);
+          if (!legacyScan.ok) {
+            result = legacyScan;
+          } else {
+            if (!await mergeChunk(
+              FolderScanChunk(
+                tracks: legacyScan.tracks,
+                paths: legacyScan.paths,
+              ),
+            )) {
+              return;
+            }
+            result = NativeScanResult.success(
+              const <ScannedTrack>[],
+              legacyScan.paths,
+              failureCount: legacyScan.failureCount,
+              completenessKnown: legacyScan.completenessKnown,
+              wasCancelled: legacyScan.wasCancelled,
+            );
           }
-          scanResult = NativeScanResult.success(
-            const <ScannedTrack>[],
-            legacyScan.paths,
-            failureCount: legacyScan.failureCount,
-            completenessKnown: legacyScan.completenessKnown,
-            wasCancelled: legacyScan.wasCancelled,
+        } else {
+          result = await _dataSource.scanFileSystemFolderChunked(
+            sourceFolderPath,
+            mergeChunk,
           );
         }
-      } else {
-        scanResult = await _dataSource.scanFileSystemFolderChunked(
-          sourceFolderPath,
-          mergeChunk,
-        );
       }
+      scanResult = result;
+    } finally {
+      await worker.dispose();
     }
     if (!provider.isScanGenerationActive(generation) ||
         scanResult.wasCancelled) {

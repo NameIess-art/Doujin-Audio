@@ -56,6 +56,8 @@ internal class NativePlaybackSessionManager(
         p != null && p.playbackState != Player.STATE_ENDED && (p.isPlaying || p.playWhenReady)
     }
 
+    fun usageItems(): List<Map<String, Any?>> = sessions.values.mapNotNull(NativePlaybackSession::usageItem)
+
     fun hasNetworkPlayback(isIntended: (String) -> Boolean): Boolean = sessions.values.any { session ->
         val player = session.playerOrNull()
         (player?.isPlaying == true || player?.playWhenReady == true || isIntended(session.sessionId)) &&

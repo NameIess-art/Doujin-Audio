@@ -830,6 +830,18 @@ class AsmrLibraryController extends ChangeNotifier
   List<AsmrWork> worksFor(AsmrCategoryType category) =>
       _catalog.worksFor(category);
 
+  List<AsmrWork> selectedWorks(
+    AsmrCategoryType category, {
+    required String searchQuery,
+    required bool searchSession,
+    required Set<String> workIds,
+  }) => _catalog.selectedWorks(
+    category,
+    searchQuery: searchQuery,
+    searchSession: searchSession,
+    workIds: workIds,
+  );
+
   List<AsmrWork> filteredWorksFor(
     AsmrCategoryType category, {
     String searchQuery = '',

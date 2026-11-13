@@ -136,11 +136,6 @@ class LibraryScannerService {
     );
   }
 
-  Future<bool> _flushRefreshBatch(LibraryCatalogReader provider) async {
-    await Future<void>.delayed(Duration.zero);
-    return provider.isScanning;
-  }
-
   Future<LibraryScanOutcome> refreshWatchedFolders({
     required LibraryCatalog provider,
     required LibraryScanLabels labels,
@@ -526,10 +521,6 @@ class LibraryScannerService {
         provider: provider,
         libraryRoot: normalizedFolderPath,
         labels: labels,
-        onChunkCommitted: () async {
-          if (!provider.isScanGenerationActive(generation)) return false;
-          return _flushRefreshBatch(provider);
-        },
         generation: generation,
         onTrackCommitted: recordTrackChange,
       );
@@ -547,10 +538,6 @@ class LibraryScannerService {
             scannedTracks: nativeScan.tracks,
             libraryRoot: normalizedFolderPath,
             labels: labels,
-            onChunkCommitted: () async {
-              if (!provider.isScanGenerationActive(generation)) return false;
-              return _flushRefreshBatch(provider);
-            },
             generation: generation,
             onTrackCommitted: recordTrackChange,
           );
@@ -565,10 +552,6 @@ class LibraryScannerService {
             provider,
             normalizedFolderPath,
             labels: labels,
-            onChunkCommitted: () async {
-              if (!provider.isScanGenerationActive(generation)) return false;
-              return _flushRefreshBatch(provider);
-            },
             generation: generation,
             onTrackCommitted: recordTrackChange,
           );
@@ -735,10 +718,6 @@ class LibraryScannerService {
         normalizedFolderPath,
         provider,
         labels,
-        onChunkCommitted: () async {
-          if (!provider.isScanGenerationActive(generation)) return false;
-          return _flushRefreshBatch(provider);
-        },
         generation: generation,
         onTrackCommitted: recordTrackChange,
       );

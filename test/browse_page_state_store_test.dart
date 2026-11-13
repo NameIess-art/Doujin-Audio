@@ -27,4 +27,16 @@ void main() {
     store.update('library', {'offset': 120.0}, epoch: store.epoch);
     expect(store.stateFor('library')['offset'], 120.0);
   });
+
+  test('unchanged patches retain the same immutable page snapshot', () {
+    final store = BrowsePageStateStore();
+    store.update('library', {'offset': 280.0, 'anchor': null});
+    final first = store.stateFor('library');
+    store.update('library', {'offset': 280.0});
+    expect(store.stateFor('library'), same(first));
+    expect(() => first['offset'] = 400.0, throwsUnsupportedError);
+    store.update('library', {'offset': 400.0});
+    expect(first['offset'], 280.0);
+    expect(store.stateFor('library')['offset'], 400.0);
+  });
 }

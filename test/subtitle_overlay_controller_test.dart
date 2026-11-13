@@ -266,21 +266,18 @@ class _CountingSubtitles extends PlaybackSubtitleService {
 
   int textReads = 0;
   @override
-  bool hasResult(String trackPath) => true;
-  @override
-  SubtitleTrack trackSync(String trackPath) =>
-      SubtitleTrack(sourcePath: '$trackPath.lrc', cues: const []);
-  @override
-  Future<SubtitleTrack?> load(String trackPath) async => trackSync(trackPath);
-  @override
-  String textAt(
+  ({String? text, Future<SubtitleTrack?>? loading}) readPlaybackSubtitle(
     String trackPath,
     Duration position, {
-    SubtitleTrack? subtitleTrack,
-    bool persistent = false,
+    bool loadIfMissing = true,
+    bool loadOnTrackChange = false,
+    bool automatic = true,
   }) {
     textReads++;
     final name = trackPath.contains('/a.') ? 'a' : 'b';
-    return '$name:${position.inSeconds >= 2 ? 'next' : 'first'}';
+    return (
+      text: '$name:${position.inSeconds >= 2 ? 'next' : 'first'}',
+      loading: null,
+    );
   }
 }

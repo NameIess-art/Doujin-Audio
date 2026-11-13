@@ -124,10 +124,11 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private val usageLedger by lazy { NativePlaybackUsageLedger.get(this) }
-    private fun updateUsage() = usageLedger.update(sessionManager.allSessions.mapNotNull { it.usageItem() })
+    private fun updateUsage() = usageLedger.update(sessionManager.usageItems())
     private val usageHeartbeat = object : Runnable {
         override fun run() {
             updateUsage()
+            usageLedger.checkpoint()
             mainHandler.postDelayed(this, 15_000L)
         }
     }
@@ -668,6 +669,7 @@ class NativePlaybackService : MediaSessionService() {
     override fun onDestroy() {
         updateUsage()
         usageLedger.update(emptyList())
+        usageLedger.checkpoint()
         mainHandler.removeCallbacks(usageHeartbeat)
         logInfo(
             "on_destroy_begin sessions=${sessionManager.size} " +
@@ -791,6 +793,7 @@ class NativePlaybackService : MediaSessionService() {
             val wasFocused = focusedSessionId == sessionId
             sessionManager.remove(sessionId)
             nativeSession.release()
+            updateUsage()
             clearPlaybackIntent(sessionId)
             if (wasFocused) {
                 updateMediaSessionPlayer()
@@ -1283,6 +1286,7 @@ class NativePlaybackService : MediaSessionService() {
         val snapshot = sessionManager.releaseIdleSession(session, statePersistence, processingState) {
             publishNativePlaybackSessionState(it, stateListeners.values)
         }
+        updateUsage()
         progressHeartbeat.stopIfUnobserved()
         return snapshot
     }
@@ -1590,7 +1594,6 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun publishSessionState(sessionId: String): Map<String, Any?>? {
-        updateUsage()
         pendingStateSessions.remove(sessionId)
         val session = sessionManager.get(sessionId) ?: return null
         val snapshot = publishNativePlaybackSessionState(session, stateListeners.values)

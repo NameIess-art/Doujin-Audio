@@ -1,7 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
-
 import '../../../core/media/music_track.dart';
 import '../../../core/logging/app_log_service.dart';
 import 'library_catalog.dart';
@@ -46,6 +44,7 @@ class LibraryScanImporter {
     void Function(MusicTrack? before, MusicTrack after)? onTrackCommitted,
     int? generation,
     LibraryScanMergeContext? mergeContext,
+    LibraryScanMergeWorker? mergeWorker,
   }) async {
     bool isActive() => generation == null
         ? provider.isScanning
@@ -66,75 +65,79 @@ class LibraryScanImporter {
     final sourceName = _displaySourceName(sourceFolderPath);
     var added = 0;
     var duplicates = 0;
+    final worker = mergeWorker ?? LibraryScanMergeWorker();
 
-    // Bound both the isolate message and the catalog work on the UI isolate.
-    const chunkSize = 120;
-    for (var start = 0; start < scannedTracks.length; start += chunkSize) {
-      if (!isActive()) break;
-      final end = (start + chunkSize).clamp(0, scannedTracks.length);
-      final scannedChunk = scannedTracks.sublist(start, end);
-      final existingTracks = <MusicTrack>[];
-      final existingPaths = <String>{};
-      for (final scannedTrack in scannedChunk) {
-        final existing = provider.trackByPath(scannedTrack.path);
-        if (existing != null &&
-            existingPaths.add(PathMatcher.equivalenceKey(existing.path))) {
-          existingTracks.add(existing);
-        }
-      }
-      final result = await compute(
-        processScannedTracksInIsolate,
-        ScanMergeIsolatePayload(
-          scannedTracks: scannedChunk,
-          library: existingTracks,
-          libraryRoot: libraryRoot,
-          promoteRootTracksToSingles: promoteRootTracksToSingles,
-          i18nImportedFiles: labels.importedFiles,
-          i18nManuallySelectedFiles: labels.manuallySelectedFiles,
-          exclusionMatcher: context?.exclusionMatcher,
-        ),
-      );
-      if (!isActive()) break;
-
-      if (libraryRoot != null && result.entryBatch.isNotEmpty) {
-        provider.recordLibraryEntriesForTracks(
-          libraryRoot,
-          result.entryBatch,
-          exclusionMatcher: context?.exclusionMatcher,
-          entrySnapshot: context?.entrySnapshot,
-        );
-      }
-      if (result.trackBatch.isNotEmpty) {
-        final beforeCount = provider.library.length;
-        final previousTracks = <String, MusicTrack?>{
-          for (final track in result.trackBatch)
-            track.path: provider.trackByPath(track.path),
-        };
-        provider.addOrReplaceTracks(result.trackBatch);
-        for (final track in result.trackBatch) {
-          final committed = provider.trackByPath(track.path);
-          if (committed != null) {
-            onTrackCommitted?.call(previousTracks[track.path], committed);
+    try {
+      // Bound both the isolate message and the catalog work on the UI isolate.
+      const chunkSize = 120;
+      for (var start = 0; start < scannedTracks.length; start += chunkSize) {
+        if (!isActive()) break;
+        final end = (start + chunkSize).clamp(0, scannedTracks.length);
+        final scannedChunk = scannedTracks.sublist(start, end);
+        final existingTracks = <MusicTrack>[];
+        final existingPaths = <String>{};
+        for (final scannedTrack in scannedChunk) {
+          final existing = provider.trackByPath(scannedTrack.path);
+          if (existing != null &&
+              existingPaths.add(PathMatcher.equivalenceKey(existing.path))) {
+            existingTracks.add(existing);
           }
         }
-        added += provider.library.length - beforeCount;
+        final result = await worker.merge(
+          ScanMergeIsolatePayload(
+            scannedTracks: scannedChunk,
+            library: existingTracks,
+            libraryRoot: libraryRoot,
+            promoteRootTracksToSingles: promoteRootTracksToSingles,
+            i18nImportedFiles: labels.importedFiles,
+            i18nManuallySelectedFiles: labels.manuallySelectedFiles,
+            exclusionMatcher: context?.exclusionMatcher,
+          ),
+        );
+        if (!isActive()) break;
+
+        if (libraryRoot != null && result.entryBatch.isNotEmpty) {
+          provider.recordLibraryEntriesForTracks(
+            libraryRoot,
+            result.entryBatch,
+            exclusionMatcher: context?.exclusionMatcher,
+            entrySnapshot: context?.entrySnapshot,
+          );
+        }
+        if (result.trackBatch.isNotEmpty) {
+          final beforeCount = provider.library.length;
+          final previousTracks = <String, MusicTrack?>{
+            for (final track in result.trackBatch)
+              track.path: provider.trackByPath(track.path),
+          };
+          provider.addOrReplaceTracks(result.trackBatch);
+          for (final track in result.trackBatch) {
+            final committed = provider.trackByPath(track.path);
+            if (committed != null) {
+              onTrackCommitted?.call(previousTracks[track.path], committed);
+            }
+          }
+          added += provider.library.length - beforeCount;
+        }
+        duplicates += result.duplicatesCount;
+        provider.setScanProgress(
+          currentFolder: sourceName,
+          foundCount: baseFoundCount + added,
+          duplicateCount: baseDuplicateCount + duplicates,
+          failureCount: baseFailureCount,
+          generation: generation,
+          stage: FolderScanStage.merging,
+        );
+        // Even immediately completed callbacks only drain microtasks. Yield an
+        // event turn so input, frames, and cancellation can run between chunks.
+        await Future<void>.delayed(Duration.zero);
+        if (!isActive()) break;
+        if (onChunkCommitted != null && !await onChunkCommitted()) break;
       }
-      duplicates += result.duplicatesCount;
-      provider.setScanProgress(
-        currentFolder: sourceName,
-        foundCount: baseFoundCount + added,
-        duplicateCount: baseDuplicateCount + duplicates,
-        failureCount: baseFailureCount,
-        generation: generation,
-        stage: FolderScanStage.merging,
-      );
-      // Even immediately completed callbacks only drain microtasks. Yield an
-      // event turn so input, frames, and cancellation can run between chunks.
-      await Future<void>.delayed(Duration.zero);
-      if (!isActive()) break;
-      if (onChunkCommitted != null && !await onChunkCommitted()) break;
+      return added;
+    } finally {
+      if (mergeWorker == null) await worker.dispose();
     }
-    return added;
   }
 
   Future<int> importFolder(
@@ -164,9 +167,12 @@ class LibraryScanImporter {
     final mergeContext = libraryRoot == null
         ? null
         : LibraryScanMergeContext(provider: provider, libraryRoot: libraryRoot);
-    final scanResult = await _dataSource.scanFileSystemFolderChunked(
-      folderPath,
-      (chunk) async {
+    final worker = LibraryScanMergeWorker();
+    final NativeScanResult scanResult;
+    try {
+      scanResult = await _dataSource.scanFileSystemFolderChunked(folderPath, (
+        chunk,
+      ) async {
         if (!isActive()) return false;
         discoveredFolders.addAll(chunk.folders);
         if (libraryRoot != null && chunk.folders.isNotEmpty) {
@@ -189,10 +195,13 @@ class LibraryScanImporter {
           onTrackCommitted: onTrackCommitted,
           generation: generation,
           mergeContext: mergeContext,
+          mergeWorker: worker,
         );
         return isActive();
-      },
-    );
+      });
+    } finally {
+      await worker.dispose();
+    }
     if (!isActive()) return added;
     final failures = scanResult.ok ? scanResult.failureCount : 1;
     provider.setScanProgress(
@@ -242,12 +251,36 @@ class LibraryScanImporter {
     final mergeContext = libraryRoot == null
         ? null
         : LibraryScanMergeContext(provider: provider, libraryRoot: libraryRoot);
-    final result = await _dataSource.scanFolderChunked(
-      sourceFolderPath,
-      (chunk) async {
-        if (!provider.isScanGenerationActive(generation)) return false;
-        failures += chunk.failureCount;
-        if (chunk.tracks.isEmpty) {
+    final worker = LibraryScanMergeWorker();
+    final NativeScanResult result;
+    try {
+      result = await _dataSource.scanFolderChunked(
+        sourceFolderPath,
+        (chunk) async {
+          if (!provider.isScanGenerationActive(generation)) return false;
+          failures += chunk.failureCount;
+          if (chunk.tracks.isEmpty) {
+            if (failures > 0) {
+              provider.setScanProgress(
+                failureCount: baseFailureCount + failures,
+                generation: generation,
+              );
+            }
+            return provider.isScanGenerationActive(generation);
+          }
+          added += await mergeScannedTracks(
+            sourceFolderPath: sourceFolderPath,
+            provider: provider,
+            scannedTracks: chunk.tracks,
+            libraryRoot: libraryRoot,
+            promoteRootTracksToSingles: promoteRootTracksToSingles,
+            labels: labels,
+            onChunkCommitted: onChunkCommitted,
+            onTrackCommitted: onTrackCommitted,
+            generation: generation,
+            mergeContext: mergeContext,
+            mergeWorker: worker,
+          );
           if (failures > 0) {
             provider.setScanProgress(
               failureCount: baseFailureCount + failures,
@@ -255,37 +288,20 @@ class LibraryScanImporter {
             );
           }
           return provider.isScanGenerationActive(generation);
-        }
-        added += await mergeScannedTracks(
-          sourceFolderPath: sourceFolderPath,
-          provider: provider,
-          scannedTracks: chunk.tracks,
-          libraryRoot: libraryRoot,
-          promoteRootTracksToSingles: promoteRootTracksToSingles,
-          labels: labels,
-          onChunkCommitted: onChunkCommitted,
-          onTrackCommitted: onTrackCommitted,
-          generation: generation,
-          mergeContext: mergeContext,
-        );
-        if (failures > 0) {
+        },
+        onProgress: (event) {
+          if (!provider.isScanGenerationActive(generation)) return;
           provider.setScanProgress(
-            failureCount: baseFailureCount + failures,
             generation: generation,
+            stage: event.stage,
+            processed: event.processed,
+            total: event.total,
           );
-        }
-        return provider.isScanGenerationActive(generation);
-      },
-      onProgress: (event) {
-        if (!provider.isScanGenerationActive(generation)) return;
-        provider.setScanProgress(
-          generation: generation,
-          stage: event.stage,
-          processed: event.processed,
-          total: event.total,
-        );
-      },
-    );
+        },
+      );
+    } finally {
+      await worker.dispose();
+    }
     if (result.notSupported) return null;
     if (!result.ok) {
       provider.setScanProgress(

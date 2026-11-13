@@ -58,7 +58,7 @@ class PlaybackSessionSnapshot {
     required List<MusicTrack>? customQueueTracks,
     required this.positionStream,
     required this.durationStream,
-    required this.bufferedPositionStream,
+    required this.progressStream,
   }) : customQueueTracks = customQueueTracks == null
            ? null
            : immutableList(customQueueTracks);
@@ -98,7 +98,7 @@ class PlaybackSessionSnapshot {
       customQueueTracks: session.customQueueTracks,
       positionStream: session.positionStream,
       durationStream: session.durationStream,
-      bufferedPositionStream: session.bufferedPositionStream,
+      progressStream: session.progressStream,
     );
   }
 
@@ -130,7 +130,13 @@ class PlaybackSessionSnapshot {
   final List<MusicTrack>? customQueueTracks;
   final Stream<Duration> positionStream;
   final Stream<Duration?> durationStream;
-  final Stream<Duration> bufferedPositionStream;
+  final Stream<PlaybackPositionSample> progressStream;
+
+  PlaybackPositionSample get progress => PlaybackPositionSample(
+    position: position,
+    duration: duration,
+    bufferedPosition: bufferedPosition,
+  );
 
   bool get isPlaybackQueue => playbackQueue != null;
 

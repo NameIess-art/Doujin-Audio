@@ -1089,8 +1089,8 @@ void main() {
         await newStarted.future;
         oldStat.complete(usableStat);
         expect(await oldLookup, isNull);
-        expect(await newLookup, isNull);
         final joinedLookup = cache.futureForTrack(track);
+        expect(joinedLookup, same(newLookup));
         await Future<void>.delayed(Duration.zero);
         expect(validations, 2);
         newStat.complete(usableStat);
@@ -1167,6 +1167,70 @@ void main() {
     expect(identical(first, second), isTrue);
     expect(await first, isNull);
   });
+
+  test(
+    'reading a persisted folder cover does not save the same detail again',
+    () async {
+      final cover = await _temporaryCoverFile('folder_detail_read');
+      final folder = cover.parent.path;
+      final library = LibraryService()..watchedFolders.add(folder);
+      addTearDown(library.dispose);
+      final details = _MemoryAudioDetailCacheService();
+      addTearDown(details.dispose);
+      details.seedCardCover(
+        AudioDetailTarget.libraryRootFolder(folder),
+        cover.path,
+        selected: false,
+      );
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        audioDetailCacheService: details,
+        artworkStore: CoverArtworkStore(
+          persistentDirectory: () async => cover.parent,
+        ),
+      );
+      addTearDown(cache.dispose);
+      expect(await cache.futureForFolder(folder), cover.path);
+      expect(details.loadedTargets, hasLength(1));
+      expect(details.savedTargets, isEmpty);
+    },
+  );
+
+  test(
+    'cold track requests share lookup before the artwork store is ready',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'track_cover_lookup_',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final cover = await File(
+        '${directory.path}/manual.jpg',
+      ).writeAsBytes([1]);
+      final storeDirectory = Completer<Directory>();
+      final library = LibraryService();
+      addTearDown(library.dispose);
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        artworkStore: CoverArtworkStore(
+          persistentDirectory: () => storeDirectory.future,
+        ),
+      );
+      addTearDown(cache.dispose);
+      final track = _track(
+        path: '${directory.path}/voice.flac',
+        groupKey: '',
+        isSingle: true,
+        manualCoverPath: cover.path,
+      );
+      final requests = List.generate(24, (_) => cache.futureForTrack(track));
+      storeDirectory.complete(directory);
+      expect(await Future.wait(requests), everyElement(cover.path));
+      expect(
+        requests.every((future) => identical(future, requests.first)),
+        isTrue,
+      );
+    },
+  );
 
   test('remote cover future reuses the same in-flight download', () async {
     final cover = await _temporaryCoverFile('remote_inflight');

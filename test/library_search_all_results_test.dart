@@ -103,6 +103,83 @@ void main() {
     expect(cached(12), same(result));
   });
 
+  test('search reuses normalized text and keeps source folder links', () {
+    final matchingTrack = _ReadCountingTrackNode(
+      testMusicTrack(
+        name: 'Ocean',
+        path: '/library/track.mp3',
+        groupKey: '/library/ocean',
+        groupTitle: 'Ocean',
+      ),
+    );
+    final matchingFolder = FolderNode('Ocean', '/library/ocean')
+      ..addChild(matchingTrack);
+    final root = FolderNode('Collection', '/library')..addChild(matchingFolder);
+    final tree = <LibraryNode>[root];
+    expect(root.totalTrackCount, 1);
+    final index = LibrarySearchIndex();
+    final ocean = index.resolve(
+      tree: tree,
+      query: 'Ocean',
+      structureRevision: 1,
+    );
+    expect(ocean.matchCount, 1);
+    final next = index.resolve(
+      tree: tree,
+      query: 'track',
+      structureRevision: 1,
+    );
+    expect(next.matchCount, 1);
+    final reads = matchingTrack.reads;
+    expect(
+      index.resolve(tree: tree, query: 'mp3', structureRevision: 1).matchCount,
+      1,
+    );
+    expect(matchingTrack.reads, reads);
+    matchingFolder.addChild(
+      TrackNode(
+        testMusicTrack(
+          name: 'Next',
+          path: '/library/next.mp3',
+          groupKey: '/library/ocean',
+          groupTitle: 'Ocean',
+        ),
+      ),
+    );
+    expect(root.totalTrackCount, 2);
+  });
+
+  test('background searches reuse a corpus across different queries', () async {
+    final tree = List<LibraryNode>.generate(
+      250,
+      (i) => TrackNode(
+        testMusicTrack(
+          name: 'Track $i',
+          path: '/library/$i.mp3',
+          groupKey: '/library/$i.mp3',
+          groupTitle: 'Collection',
+        ),
+      ),
+    );
+    final snapshot = AudioLibraryCategorySnapshot(
+      entries: const [],
+      structureRevision: 1,
+      detailRevision: 0,
+    );
+    final index = LibrarySearchIndex();
+    for (final id in [247, 248]) {
+      final result = await index.searchInBackground(
+        tree: tree,
+        query: 'Track $id',
+        structureRevision: 1,
+        detailRevision: 0,
+        categorySnapshot: snapshot,
+      );
+      expect(result.matchCount, 1);
+      expect(result.initialRows.single.node.path, '/library/$id.mp3');
+    }
+  });
+
   Widget results({
     required AppRuntimeWidgetTestFixture fixture,
     required ScrollController scrollController,

@@ -172,51 +172,59 @@ void SubtitleWindow::Paint(HDC screen) {
   const double scale = dpi / 96.0;
   if (background_dirty_) {
     const DWORD alpha = opacity_;
-    const DWORD background = (alpha<<24) | ((GetRValue(background_)*alpha/255)<<16)
-        | ((GetGValue(background_)*alpha/255)<<8) | (GetBValue(background_)*alpha/255);
-    const double radius = std::min({font_size_ * 1.2 * scale,
-        width / 2.0, rows / 2.0});
+    const DWORD red = GetRValue(background_) * alpha / 255;
+    const DWORD green = GetGValue(background_) * alpha / 255;
+    const DWORD blue = GetBValue(background_) * alpha / 255;
+    const DWORD background = (alpha << 24) | (red << 16) | (green << 8) | blue;
+    const DWORD frame = ((64 + alpha * 191 / 255) << 24)
+        | ((64 + red * 191 / 255) << 16)
+        | ((64 + green * 191 / 255) << 8)
+        | (64 + blue * 191 / 255);
+    const double half_width = width / 2.0, half_height = rows / 2.0;
+    const double radius = std::min({font_size_ * 1.2 * scale, half_width, half_height});
     const double border = border_depth_ * 4 * scale;
+    const double right_border = width - border, bottom_border = rows - border;
     // Match the preview's rounded surface and translucent white frame.
-    for (int y = 0; y < rows; ++y) for (int x = 0; x < width; ++x) {
-      const double dx = std::max(std::abs(x + 0.5 - width / 2.0) - (width / 2.0 - radius), 0.0);
-      const double dy = std::max(std::abs(y + 0.5 - rows / 2.0) - (rows / 2.0 - radius), 0.0);
-      const double edge = radius - std::sqrt(dx * dx + dy * dy);
-      DWORD color = background;
-      if (edge < border || x < border || y < border || x >= width-border || y >= rows-border) {
-        color = ((64 + alpha * 191 / 255) << 24)
-            | ((64 + GetRValue(background_) * alpha / 255 * 191 / 255) << 16)
-            | ((64 + GetGValue(background_) * alpha / 255 * 191 / 255) << 8)
-            | (64 + GetBValue(background_) * alpha / 255 * 191 / 255);
+    for (int y = 0; y < rows; ++y) {
+      const double dy = std::max(std::abs(y + 0.5 - half_height) - (half_height - radius), 0.0);
+      const bool row_border = y < border || y >= bottom_border;
+      for (int x = 0; x < width; ++x) {
+        const double dx = std::max(std::abs(x + 0.5 - half_width) - (half_width - radius), 0.0);
+        const double distance = dy == 0 ? dx : dx == 0 ? dy : std::sqrt(dx * dx + dy * dy);
+        const double edge = radius - distance;
+        const bool in_frame = row_border || x < border || x >= right_border || edge < border;
+        background_pixels_[y * width + x] = edge < 0 ? 0 : in_frame ? frame : background;
       }
-      background_pixels_[y * width + x] = edge < 0 ? 0 : color;
     }
     background_dirty_ = false;
   }
   if (content_dirty_) {
     // Cue changes reuse the rounded background; text-only updates do no geometry work.
     std::copy(background_pixels_.begin(), background_pixels_.end(), pixels_);
-    std::fill(coverage_,coverage_+width*rows,0);
-    // A separate grayscale mask preserves text opacity on a translucent background.
-    auto composite = [&](COLORREF color) {
+    if (!text_.empty()) {
+      std::fill(coverage_, coverage_ + width * rows, 0);
+      // A separate grayscale mask preserves text opacity on a translucent background.
+      auto previous = SelectObject(mask_dc_, font_);
+      SetBkMode(mask_dc_, TRANSPARENT);
+      InflateRect(&rect, -static_cast<int>((20 + border_depth_ * 4) * scale),
+          -static_cast<int>((10 + border_depth_ * 4) * scale));
+      const auto flags = DT_CENTER | DT_WORDBREAK | DT_NOPREFIX;
+      SetTextColor(mask_dc_, RGB(255, 255, 255));
+      DrawTextW(mask_dc_, text_.c_str(), -1, &rect, flags);
       GdiFlush();
-      for (int i=0; i<width*rows; ++i) {
-        const DWORD a = coverage_[i]&255, inverse = 255-a, destination = pixels_[i];
+      const DWORD red = GetRValue(text_color_), green = GetGValue(text_color_);
+      const DWORD blue = GetBValue(text_color_);
+      for (int i = 0; i < width * rows; ++i) {
+        const DWORD a = coverage_[i] & 255;
+        if (a == 0) continue;
+        const DWORD inverse = 255 - a, destination = pixels_[i];
         pixels_[i] = ((a+((destination>>24)*inverse/255))<<24)
-          | (((GetRValue(color)*a+((destination>>16)&255)*inverse)/255)<<16)
-          | (((GetGValue(color)*a+((destination>>8)&255)*inverse)/255)<<8)
-          | ((GetBValue(color)*a+(destination&255)*inverse)/255);
+          | (((red*a+((destination>>16)&255)*inverse)/255)<<16)
+          | (((green*a+((destination>>8)&255)*inverse)/255)<<8)
+          | ((blue*a+(destination&255)*inverse)/255);
       }
-    };
-    auto previous = SelectObject(mask_dc_, font_);
-    SetBkMode(mask_dc_, TRANSPARENT);
-    InflateRect(&rect, -static_cast<int>((20 + border_depth_ * 4) * scale),
-        -static_cast<int>((10 + border_depth_ * 4) * scale));
-    const auto flags = DT_CENTER | DT_WORDBREAK | DT_NOPREFIX;
-    SetTextColor(mask_dc_, RGB(255,255,255));
-    DrawTextW(mask_dc_, text_.c_str(), -1, &rect, flags);
-    composite(text_color_);
-    SelectObject(mask_dc_, previous);
+      SelectObject(mask_dc_, previous);
+    }
     content_dirty_ = false;
   }
   RECT bounds; GetWindowRect(window_, &bounds);

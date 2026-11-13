@@ -17,8 +17,7 @@ PlaybackSessionSnapshot _createTestSnapshot({
   required String trackPath,
   Duration position = Duration.zero,
   Duration duration = const Duration(minutes: 2),
-  StreamController<Duration>? positionController,
-  StreamController<Duration?>? durationController,
+  Stream<PlaybackPositionSample>? progressStream,
   int? queueColorValue,
 }) {
   return PlaybackSessionSnapshot(
@@ -55,9 +54,9 @@ PlaybackSessionSnapshot _createTestSnapshot({
           )
         : null,
     customQueueTracks: null,
-    positionStream: positionController?.stream ?? const Stream.empty(),
-    durationStream: durationController?.stream ?? const Stream.empty(),
-    bufferedPositionStream: const Stream.empty(),
+    positionStream: const Stream.empty(),
+    durationStream: const Stream.empty(),
+    progressStream: progressStream ?? const Stream.empty(),
   );
 }
 
@@ -111,14 +110,14 @@ void main() {
     });
 
     testWidgets('updates progress arc on stream position ticks', (tester) async {
-      final posController = StreamController<Duration>.broadcast();
+      final posController = StreamController<PlaybackPositionSample>.broadcast();
       addTearDown(posController.close);
 
       final snapshot = _createTestSnapshot(
         id: 's2',
         trackPath: '/test/track2.mp3',
         duration: const Duration(seconds: 100),
-        positionController: posController,
+        progressStream: posController.stream,
       );
 
       await tester.pumpWidget(
@@ -138,7 +137,11 @@ void main() {
       final ring = find.byType(SessionCoverProgressRing);
       final paint = find.descendant(of: ring, matching: find.byType(CustomPaint));
       final original = tester.widget<CustomPaint>(paint);
-      posController.add(const Duration(seconds: 50));
+      posController.add(const PlaybackPositionSample(
+        position: Duration(seconds: 50),
+        duration: Duration(seconds: 100),
+        bufferedPosition: Duration.zero,
+      ));
       await tester.pump(const Duration(milliseconds: 50));
       expect(tester.widget<CustomPaint>(paint), same(original));
       expect(paint, paints..arc(sweepAngle: math.pi));

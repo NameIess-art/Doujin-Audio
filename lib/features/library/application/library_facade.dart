@@ -237,7 +237,6 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     if (_disposed || generation != _service.libraryDerivedGeneration) return;
 
     _service
-      ..library = persisted.tracks
       ..groupOrder.clear()
       ..groupOrder.addAll(persisted.groupOrder)
       ..groupOrderSet.clear()
@@ -252,7 +251,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
       ..excludedLibraryTracks.clear()
       ..excludedLibraryTracks.addAll(persisted.trackExclusions);
 
-    if (!await _catalogWrites.rebuildDerivedSnapshot() || _disposed) return;
+    _catalogWrites.applyDerivedSnapshot(persisted.derived);
     // Startup caches shallow cards; nested trees stay lazy until requested.
     _syncStateSlice(isInitialized: true);
   }

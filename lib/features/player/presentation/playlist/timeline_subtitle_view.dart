@@ -10,6 +10,7 @@ import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../core/media/subtitle_parser.dart';
 import '../../../../core/media/time_text_formatters.dart';
 import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/scroll_to_top_list.dart';
 import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import 'playlist_shared_helpers.dart';
 
@@ -82,6 +83,7 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
   int _windowEnd = 0;
   List<double> _itemExtents = const <double>[];
   List<double> _itemCenters = const <double>[];
+  List<double> _itemOffsets = const <double>[];
   double _viewportHeight = _minimumViewportHeight;
   double _leadingPadding = _minimumItemExtent / 2;
   double _trailingPadding = _minimumItemExtent / 2;
@@ -395,6 +397,7 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
     _layoutSignature = null;
     _itemExtents = const <double>[];
     _itemCenters = const <double>[];
+    _itemOffsets = const <double>[];
   }
 
   double _measureCueExtent(
@@ -413,11 +416,16 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
       textAlign: TextAlign.center,
       textDirection: textDirection,
       textScaler: textScaler,
-    )..layout(maxWidth: textWidth);
-    return max(
-      _minimumItemExtent,
-      (painter.height * 1.03) + (_textVerticalPadding * 2),
     );
+    try {
+      painter.layout(maxWidth: textWidth);
+      return max(
+        _minimumItemExtent,
+        (painter.height * 1.03) + (_textVerticalPadding * 2),
+      );
+    } finally {
+      painter.dispose();
+    }
   }
 
   void _updateLayoutMetrics(
@@ -427,6 +435,7 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
     if (itemExtents.isEmpty) {
       _itemExtents = const [];
       _itemCenters = const [];
+      _itemOffsets = const [];
       _viewportHeight = (availableHeight != null && availableHeight.isFinite)
           ? max(0.0, availableHeight)
           : _minimumViewportHeight;
@@ -443,14 +452,17 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
         : contentMinHeight;
     final leadingPadding = max(0.0, (viewportHeight - itemExtents.first) / 2);
     final trailingPadding = max(0.0, (viewportHeight - itemExtents.last) / 2);
-    var offset = leadingPadding;
+    var offset = 0.0;
     final itemCenters = <double>[];
+    final itemOffsets = <double>[offset];
     for (final extent in itemExtents) {
-      itemCenters.add(offset + (extent / 2));
+      itemCenters.add(leadingPadding + offset + (extent / 2));
       offset += extent;
+      itemOffsets.add(offset);
     }
     _itemExtents = itemExtents;
     _itemCenters = itemCenters;
+    _itemOffsets = itemOffsets;
     _viewportHeight = viewportHeight;
     _leadingPadding = leadingPadding;
     _trailingPadding = trailingPadding;
@@ -633,7 +645,7 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
                         behavior: ScrollConfiguration.of(
                           context,
                         ).copyWith(scrollbars: false),
-                        child: ListView.builder(
+                        child: ScrollToTopListView.builder(
                           key: const ValueKey('subtitle_timeline_list'),
                           controller: _scrollController,
                           padding: EdgeInsets.only(
@@ -641,6 +653,7 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
                             bottom: _trailingPadding,
                           ),
                           itemExtentBuilder: (index, _) => _itemExtents[index],
+                          rowOffsets: _itemOffsets,
                           itemCount: _windowLength,
                           itemBuilder: (context, localIndex) {
                             final index = _windowStart + localIndex;
@@ -656,7 +669,9 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
                                 child: Opacity(
                                   opacity: isFocused ? 1 : 0.30,
                                   child: SizedBox(
-                                    key: ValueKey('subtitle_timeline_cue_$index'),
+                                    key: ValueKey(
+                                      'subtitle_timeline_cue_$index',
+                                    ),
                                     child: Padding(
                                       key: ValueKey(
                                         'subtitle_timeline_text_padding_$index',
@@ -678,7 +693,9 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
                                                 context,
                                               )
                                               ? Duration.zero
-                                              : const Duration(milliseconds: 120),
+                                              : const Duration(
+                                                  milliseconds: 120,
+                                                ),
                                           curve: Curves.easeOutCubic,
                                           child: SizedBox(
                                             width: double.infinity,
@@ -720,7 +737,9 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
                         children: [
                           if (widget.isLandscape) const Spacer(),
                           SizedBox(
-                            key: const ValueKey('subtitle_timeline_seek_dashes'),
+                            key: const ValueKey(
+                              'subtitle_timeline_seek_dashes',
+                            ),
                             width: 36,
                             child: IgnorePointer(
                               child: ShaderMask(

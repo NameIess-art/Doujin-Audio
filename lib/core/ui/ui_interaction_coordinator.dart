@@ -206,6 +206,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
 
   void _flushCommitFrame() {
     _dropStaleCommits();
+    if (_pendingCommits.isEmpty) return;
     final commits = _pendingCommits.values.toList(growable: false)
       ..sort((a, b) => a.priority.compareTo(b.priority));
     final stopwatch = Stopwatch()..start();
@@ -214,17 +215,17 @@ class UiInteractionCoordinator extends ChangeNotifier {
     var committedStructure = false;
     for (final pending in commits) {
       if (committedAny && stopwatch.elapsed >= budget) break;
-      if (!_canRunCommit(pending)) continue;
       // A short notification can schedule an expensive build/layout later in
       // this frame, outside the callback stopwatch's measured budget.
       if (pending.structural && committedStructure) continue;
       if (!identical(_pendingCommits[pending.key], pending)) continue;
+      if (!_canRunCommit(pending)) continue;
       _pendingCommits.remove(pending.key);
       pending.commit();
       committedAny = true;
       committedStructure = committedStructure || pending.structural;
     }
-    if (_hasRunnableCommits) scheduleCommitFrame();
+    scheduleCommitFrame();
   }
 
   bool _canRunCommit(_PendingCommit commit) =>

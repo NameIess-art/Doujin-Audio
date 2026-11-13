@@ -3,6 +3,7 @@ package com.doujin.audio
 import android.content.Context
 import com.doujin.audio.player.session.NativePlaybackUsageLedger
 import java.util.Calendar
+import java.util.concurrent.Executor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -19,7 +20,8 @@ class NativePlaybackUsageLedgerTest {
     private var tick = 0L
     private var wall = 0L
     private val work = mapOf<String, Any?>("uri" to "file:///RJ123456/a.mp3", "title" to "RJ123456")
-    private fun ledger() = NativePlaybackUsageLedger(context, { tick }, { wall })
+    private fun ledger(writer: Executor = Executor { it.run() }) =
+        NativePlaybackUsageLedger(context, { tick }, { wall }, writer)
     private fun advance(ms: Long) { tick += ms; wall += ms }
 
     @Before fun setup() {
@@ -64,5 +66,36 @@ class NativePlaybackUsageLedgerTest {
         advance(500)
         val days = ledger.read().single()["days"] as List<*>
         assertEquals(500L, (days.single() as Map<*, *>)["totalMs"])
+    }
+
+    @Test fun `checkpoint persists unchanged audible playback before read`() {
+        val first = ledger()
+        first.update(listOf(work))
+        advance(1200)
+        first.update(listOf(work))
+        first.checkpoint()
+        val restored = ledger().read().single()
+        assertEquals(first.read().single()["id"], restored["id"])
+        val day = (restored["days"] as List<*>).single() as Map<*, *>
+        assertEquals(1200L, (day["totalMs"] as Number).toLong())
+    }
+
+    @Test fun `queued writes cannot restore acknowledged batches`() {
+        val writes = ArrayDeque<Runnable>()
+        val first = ledger(Executor { writes.addLast(it) })
+        first.update(listOf(work))
+        advance(500)
+        first.checkpoint()
+        first.update(emptyList())
+        val batch = first.read().single()
+        first.acknowledge(setOf(batch["id"] as String))
+        assertEquals(1, writes.size)
+        assertTrue(ledger().read().isEmpty())
+
+        writes.removeFirst().run()
+        assertTrue(ledger().read().isEmpty())
+        first.checkpoint()
+        first.acknowledge(setOf("unknown"))
+        assertTrue(writes.isEmpty())
     }
 }

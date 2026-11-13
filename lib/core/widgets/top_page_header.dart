@@ -383,16 +383,30 @@ class _TopPageHeaderState extends State<TopPageHeader> {
         ? null
         : wrapButton(widget.trailing!);
 
-    Widget buildSecondaryCapsuleRow({double trailingOpacity = 1.0}) {
+    final trailingContent =
+        trailing != null && !hasTopCapsule && widget.collapseController != null
+        ? ValueListenableBuilder<double>(
+            valueListenable: _collapseProgress,
+            child: trailing,
+            builder: (context, progress, child) => Opacity(
+              opacity: 1 - Curves.easeOutCubic.transform(progress),
+              child: child,
+            ),
+          )
+        : trailing == null
+        ? null
+        : Opacity(opacity: 1, child: trailing);
+
+    Widget buildSecondaryCapsuleRow() {
       // Only siblings in this row share input. The upper capsule can overlap
       // this row while collapsing and must keep its own backdrop.
       final row = Row(
         children: [
           if (widget.leading != null) ...[leading!, const SizedBox(width: 8)],
           Expanded(child: titleContent),
-          if (widget.trailing != null) ...[
+          if (trailingContent != null) ...[
             const SizedBox(width: 8),
-            Opacity(opacity: trailingOpacity, child: trailing!),
+            trailingContent,
           ],
         ],
       );
@@ -452,13 +466,7 @@ class _TopPageHeaderState extends State<TopPageHeader> {
           widget.collapsedPadding,
           titleCollapseT,
         )!;
-        final trailingOpacity = widget.collapseController != null
-            ? (1.0 - titleCollapseT).clamp(0.0, 1.0)
-            : 1.0;
-        return Padding(
-          padding: resolvedPadding,
-          child: buildSecondaryCapsuleRow(trailingOpacity: trailingOpacity),
-        );
+        return Padding(padding: resolvedPadding, child: secondaryCapsuleRow);
       }
 
       final topCapsuleOpacity = (1.0 - Curves.easeIn.transform(collapseT))

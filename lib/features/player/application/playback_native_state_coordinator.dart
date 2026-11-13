@@ -72,7 +72,6 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
 
     final positionSub = session.positionStream.listen((position) {
       if (!_service.sessions.containsKey(session.id)) return;
-      session.lastKnownPosition = position;
       final bucket = position.inSeconds ~/ positionBucketSeconds;
       if (bucket != session.lastPersistedPositionBucket) {
         session.lastPersistedPositionBucket = bucket;

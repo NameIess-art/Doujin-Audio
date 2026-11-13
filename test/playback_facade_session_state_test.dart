@@ -2917,11 +2917,11 @@ final class _RecordingTestPersistenceRepository
   }
 
   @override
-  Future<void> upsertSessionPlaybackState(
-    PersistedPlaybackSession session,
+  Future<void> upsertSessionPlaybackStates(
+    List<PersistedPlaybackSession> sessions,
   ) async {
-    sessionStateUpserts++;
-    lastPlaybackState = session;
+    sessionStateUpserts += sessions.length;
+    lastPlaybackState = sessions.last;
   }
 
   @override

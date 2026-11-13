@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:meta/meta.dart';
+
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/immutable_collections.dart';
@@ -8,6 +10,46 @@ import '../domain/playback_mode.dart';
 import '../domain/playback_queue.dart';
 import 'native_playback_bridge.dart';
 import 'playback_queue_resolver.dart';
+
+@immutable
+class PlaybackPositionSample {
+  const PlaybackPositionSample({
+    required this.position,
+    required this.duration,
+    required this.bufferedPosition,
+  });
+
+  final Duration position;
+  final Duration? duration;
+  final Duration bufferedPosition;
+
+  PlaybackPositionSample copyWith({
+    Duration? position,
+    Object? duration = _durationUnchanged,
+    Duration? bufferedPosition,
+  }) {
+    return PlaybackPositionSample(
+      position: position ?? this.position,
+      duration: identical(duration, _durationUnchanged)
+          ? this.duration
+          : duration as Duration?,
+      bufferedPosition: bufferedPosition ?? this.bufferedPosition,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is PlaybackPositionSample &&
+        other.position == position &&
+        other.duration == duration &&
+        other.bufferedPosition == bufferedPosition;
+  }
+
+  @override
+  int get hashCode => Object.hash(position, duration, bufferedPosition);
+}
+
+const Object _durationUnchanged = Object();
 
 class PlaybackSession {
   static const loadingIndicatorThreshold = Duration(milliseconds: 400);
@@ -49,8 +91,8 @@ class PlaybackSession {
       StreamController<Duration>.broadcast();
   final StreamController<Duration?> _durationController =
       StreamController<Duration?>.broadcast();
-  final StreamController<Duration> _bufferedPositionController =
-      StreamController<Duration>.broadcast();
+  final StreamController<PlaybackPositionSample> _progressController =
+      StreamController<PlaybackPositionSample>.broadcast();
   Timer? _loadingIndicatorTimer;
   bool _suppressTransientLoading = false;
   int _queueVersion = 0;
@@ -181,8 +223,8 @@ class PlaybackSession {
   Stream<PlayerState> get stateStream => _stateController.stream;
   Stream<Duration> get positionStream => _positionController.stream;
   Stream<Duration?> get durationStream => _durationController.stream;
-  Stream<Duration> get bufferedPositionStream =>
-      _bufferedPositionController.stream;
+  Stream<PlaybackPositionSample> get progressStream =>
+      _progressController.stream;
   Duration get position => lastKnownPosition;
   bool get effectivePlaying => _pendingPlayingIntent ?? state.playing;
   bool get playbackRequested =>
@@ -390,18 +432,11 @@ class PlaybackSession {
       state = nextState;
       _stateController.add(state);
     }
-    if (lastKnownPosition != snapshot.position) {
-      lastKnownPosition = snapshot.position;
-      _positionController.add(lastKnownPosition);
-    }
-    if (snapshot.duration != null && duration != snapshot.duration) {
-      duration = snapshot.duration;
-      _durationController.add(duration);
-    }
-    if (bufferedPosition != snapshot.bufferedPosition) {
-      bufferedPosition = snapshot.bufferedPosition;
-      _bufferedPositionController.add(bufferedPosition);
-    }
+    _applyProgress(
+      snapshot.position,
+      snapshot.duration,
+      snapshot.bufferedPosition,
+    );
     final nativePath = snapshot.path ?? _pathFromUri(snapshot.uri);
     if (nativePath != null && nativePath.isNotEmpty) {
       currentTrackPath = nativePath;
@@ -489,18 +524,40 @@ class PlaybackSession {
   void applyNativeProgress(NativePlaybackProgressUpdate progress) {
     if (isDisposed) return;
     if (progress.sessionId != id) return;
-    if (lastKnownPosition != progress.position) {
-      lastKnownPosition = progress.position;
-      _positionController.add(lastKnownPosition);
+    _applyProgress(
+      progress.position,
+      progress.duration,
+      progress.bufferedPosition,
+    );
+  }
+
+  void _applyProgress(
+    Duration position,
+    Duration? nextDuration,
+    Duration buffered,
+  ) {
+    final positionChanged = lastKnownPosition != position;
+    final durationChanged = nextDuration != null && duration != nextDuration;
+    if (!positionChanged && !durationChanged && bufferedPosition == buffered) {
+      return;
     }
-    if (progress.duration != null && duration != progress.duration) {
-      duration = progress.duration;
-      _durationController.add(duration);
-    }
-    if (bufferedPosition != progress.bufferedPosition) {
-      bufferedPosition = progress.bufferedPosition;
-      _bufferedPositionController.add(bufferedPosition);
-    }
+    lastKnownPosition = position;
+    if (durationChanged) duration = nextDuration;
+    bufferedPosition = buffered;
+    if (positionChanged) _positionController.add(position);
+    if (durationChanged) _durationController.add(duration);
+    _publishProgress();
+  }
+
+  void _publishProgress() {
+    if (!_progressController.hasListener) return;
+    _progressController.add(
+      PlaybackPositionSample(
+        position: lastKnownPosition,
+        duration: duration,
+        bufferedPosition: bufferedPosition,
+      ),
+    );
   }
 
   void setOptimisticState({bool? playing, ProcessingState? processingState}) {
@@ -519,6 +576,7 @@ class PlaybackSession {
     if (isDisposed) return;
     lastKnownPosition = position;
     _positionController.add(position);
+    _publishProgress();
   }
 
   void beginLoadingIndicatorThreshold({
@@ -547,6 +605,7 @@ class PlaybackSession {
     if (duration == nextDuration) return;
     duration = nextDuration;
     _durationController.add(duration);
+    _publishProgress();
   }
 
   void resetStreamsForNewTrack({Duration position = Duration.zero}) {
@@ -557,7 +616,7 @@ class PlaybackSession {
     duration = null;
     _durationController.add(null);
     bufferedPosition = Duration.zero;
-    _bufferedPositionController.add(Duration.zero);
+    _publishProgress();
   }
 
   Future<void> shutdown() => _shutdownFuture ??= _shutdown();
@@ -587,7 +646,7 @@ class PlaybackSession {
       attempt(_stateController.close),
       attempt(_positionController.close),
       attempt(_durationController.close),
-      attempt(_bufferedPositionController.close),
+      attempt(_progressController.close),
     ]);
     if (firstError != null) {
       Error.throwWithStackTrace(firstError!, firstStackTrace!);

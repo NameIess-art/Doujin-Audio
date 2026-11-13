@@ -146,14 +146,31 @@ extension AppDatabaseSessions on AppDatabase {
     });
   }
 
-  Future<void> upsertSessionPlaybackState(PlaybackSessionRecord session) async {
+  Future<void> upsertSessionPlaybackStates(
+    Iterable<PlaybackSessionRecord> sessions,
+  ) async {
+    if (sessions.isEmpty) return;
     await _runDatabaseWrite((db) async {
       final batch = db.batch();
-      batch.insert(
-        'session_playback_state',
-        _sessionPlaybackStateRow(session),
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+      for (final session in sessions) {
+        // A late progress write must not recreate state for a deleted session.
+        batch.rawInsert(
+          '''
+          INSERT OR REPLACE INTO session_playback_state
+            (session_id, volume, speed, position_ms, duration_ms, current_queue_index, channel_swap)
+          SELECT id, ?, ?, ?, ?, ?, ? FROM sessions WHERE id = ?
+        ''',
+          [
+            session.volume,
+            session.speed,
+            session.positionMs,
+            session.durationMs,
+            session.currentQueueIndex,
+            session.channelSwapEnabled ? 1 : 0,
+            session.id,
+          ],
+        );
+      }
       await batch.commit(noResult: true);
     });
   }

@@ -212,7 +212,8 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
         // insertion or a layout change. Estimate from currently mounted rows,
         // then use the item's actual geometry on the next frame.
         final targetIndex = _anchorIndices[anchor]!;
-        final samples = <(int, double)>[];
+        (int, double)? first;
+        (int, double)? last;
         for (final entry in _anchors.entries) {
           final index = _anchorIndices[entry.key];
           final render = entry.value.findRenderObject();
@@ -222,16 +223,18 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
           final reveal = RenderAbstractViewport.maybeOf(
             render,
           )?.getOffsetToReveal(render, 0);
-          if (reveal != null) samples.add((index, reveal.offset));
+          if (reveal == null) continue;
+          if (first == null || index < first.$1) first = (index, reveal.offset);
+          if (last == null || index >= last.$1) last = (index, reveal.offset);
         }
-        samples.sort((a, b) => a.$1.compareTo(b.$1));
-        if (samples.length >= 2 && samples.last.$2 > samples.first.$2) {
-          final stride =
-              (samples.last.$2 - samples.first.$2) /
-              (samples.last.$1 - samples.first.$1);
+        if (first != null &&
+            last != null &&
+            last.$1 > first.$1 &&
+            last.$2 > first.$2) {
+          final stride = (last.$2 - first.$2) / (last.$1 - first.$1);
           destination =
-              samples.first.$2 +
-              (targetIndex - samples.first.$1) * stride -
+              first.$2 +
+              (targetIndex - first.$1) * stride -
               (anchorOffset ?? 0);
         }
       }

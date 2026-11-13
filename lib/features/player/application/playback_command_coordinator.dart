@@ -195,26 +195,18 @@ final class PlaybackCommandCoordinator
   Future<String?> _resolveNotificationCoverPathForTrack(MusicTrack? track) =>
       _libraryFacade.playbackCoverPathFutureForTrack(track);
 
-  void _ensureSubtitleTrackLoaded(String trackPath) {
-    if (_subtitleService.hasResult(trackPath) ||
-        _subtitleService.isLoading(trackPath)) {
-      return;
-    }
-    unawaited(_subtitleService.load(trackPath));
-  }
-
   bool _refreshNotificationSubtitleForSession(
     PlaybackSession session, {
     Duration? position,
     bool syncNotification = true,
   }) {
     final trackPath = session.currentTrackPath;
-    _ensureSubtitleTrackLoaded(trackPath);
-    final nextText = _subtitleService.textAt(
+    final (text: nextText, :loading) = _subtitleService.readPlaybackSubtitle(
       trackPath,
       position ?? session.position,
-      subtitleTrack: _subtitleService.trackSync(trackPath),
+      automatic: false,
     );
+    unawaited(loading);
     return _notificationFacade.updateSessionSubtitle(
       sessionId: session.id,
       trackPath: trackPath,

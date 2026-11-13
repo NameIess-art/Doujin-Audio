@@ -158,7 +158,7 @@ void main() {
             PathMatcher.normalize(hiddenFolder),
           });
           expect(
-            state.tracks.map((track) => track.path),
+            state.derived.library.map((track) => track.path),
             legacy ? [hiddenTrack] : isEmpty,
           );
           if (!legacy) {
@@ -239,7 +239,7 @@ void main() {
         expect(state.trackExclusions[PathMatcher.normalize(indexedRoot)], {
           PathMatcher.normalize(excluded.path),
         });
-        expect(state.tracks.map((track) => track.path), [restored.path]);
+        expect(state.derived.library.map((track) => track.path), [restored.path]);
         expect(state.entriesByLibrary.keys, [PathMatcher.normalize(indexedRoot)]);
       }
     });

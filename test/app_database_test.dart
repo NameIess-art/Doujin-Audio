@@ -1231,7 +1231,9 @@ void main() {
       ];
       await repository.saveHistoryState(
         work: _asmrWork(2000, 'New history'),
-        historyWorkKeys: historyIds.map((id) => _asmrWork(id, '').workKey).toList(),
+        historyWorkKeys: historyIds
+            .map((id) => _asmrWork(id, '').workKey)
+            .toList(),
         operation: operation(2000, listening, 4),
       );
       expect(await repository.loadWorkList('favorites'), hasLength(1000));
@@ -1560,7 +1562,10 @@ void main() {
 
     expect(await db.query('asmr_works', where: 'id = 1'), isEmpty);
     expect(
-      await db.query('asmr_work_voice_actors', where: "work_id = 'code:RJ000001'"),
+      await db.query(
+        'asmr_work_voice_actors',
+        where: "work_id = 'code:RJ000001'",
+      ),
       isEmpty,
     );
     expect(
@@ -1569,7 +1574,10 @@ void main() {
     );
     expect(await db.query('asmr_works', where: 'id = 2'), hasLength(1));
     expect(
-      await db.query('asmr_work_voice_actors', where: "work_id = 'code:RJ000002'"),
+      await db.query(
+        'asmr_work_voice_actors',
+        where: "work_id = 'code:RJ000002'",
+      ),
       hasLength(1),
     );
     expect(
@@ -1647,7 +1655,10 @@ void main() {
       );
       expect((await repository.loadWorkList('history')).single.title, 'Stale');
       expect(
-        await db.query('asmr_work_voice_actors', where: "work_id = 'code:RJ000002'"),
+        await db.query(
+          'asmr_work_voice_actors',
+          where: "work_id = 'code:RJ000002'",
+        ),
         hasLength(1),
       );
       expect(
@@ -2617,7 +2628,7 @@ void main() {
         includeQueue: false,
         includeEffects: false,
       );
-      await repository.upsertSessionPlaybackState(update);
+      await repository.upsertSessionPlaybackStates([update]);
 
       final afterA = await _sessionTableRows(db, 'a');
       expect(await _sessionTableRows(db, 'b'), beforeB);
@@ -2934,6 +2945,46 @@ void main() {
     expect(await repository.load(secondTarget), isNull);
   });
 
+  test(
+    'bulk audio details keep ordered values within each target type',
+    () async {
+      final folders = List.generate(
+        903,
+        (index) => AudioDetailTarget.libraryRootFolder('/library/work $index'),
+      );
+      final file = AudioDetailTarget.singleAudioFile(folders.last.targetPath);
+      await repository.upsertMany([
+        for (final folder in folders)
+          AudioDetail.empty(folder).copyWith(
+            voiceActors: ['Second actor', 'First actor'],
+            tags: ['Z', 'A'],
+          ),
+        AudioDetail.empty(
+          file,
+        ).copyWith(voiceActors: ['File actor'], tags: ['File tag']),
+      ]);
+
+      final loaded = await repository.loadMany([
+        ...folders,
+        file,
+        folders.first,
+        AudioDetailTarget.libraryRootFolder('/library/missing'),
+      ]);
+
+      expect(loaded, hasLength(folders.length + 1));
+      for (final detail in loaded) {
+        final isFile = detail.target.targetType == file.targetType;
+        expect(
+          detail.voiceActors,
+          isFile
+              ? ['File actor']
+              : ['Second actor', 'First actor'],
+        );
+        expect(detail.tags, isFile ? ['File tag'] : ['Z', 'A']);
+      }
+    },
+  );
+
   test('audio detail target uniqueness supplies its lookup index', () async {
     final indexes = await db.rawQuery('PRAGMA index_list(audio_details)');
     final indexNames = indexes
@@ -3097,6 +3148,49 @@ void main() {
         .toSet();
     expect(indexNames, contains('idx_library_entries_library'));
     expect(indexNames, contains('idx_library_entries_state'));
+  });
+
+  test('library path changes are scoped to their root across chunks', () async {
+    const root = '/library';
+    const otherRoot = '/other';
+    final paths = List.generate(905, (index) => '$root/work $index');
+    await repository.upsertLibraryEntries([
+      for (final path in paths)
+        LibraryEntry.folder(
+          libraryPath: root,
+          path: path,
+          parentPath: root,
+          displayName: path,
+          state: LibraryEntryState.active,
+        ),
+      LibraryEntry.folder(
+        libraryPath: otherRoot,
+        path: paths.last,
+        parentPath: otherRoot,
+        displayName: 'Other root',
+        state: LibraryEntryState.active,
+      ),
+    ]);
+
+    await repository.setLibraryEntriesState(root, [
+      ...paths,
+      paths.first,
+    ], LibraryEntryState.excluded);
+
+    final updated = await repository.loadLibraryEntries(root);
+    expect(updated, hasLength(paths.length));
+    expect(updated.every((entry) => entry.isExcluded), isTrue);
+    expect(
+      (await repository.loadLibraryEntries(otherRoot)).single.isExcluded,
+      isFalse,
+    );
+
+    await repository.deleteLibraryEntries(root, paths.take(904));
+    expect(
+      (await repository.loadLibraryEntries(root)).single.path,
+      PathMatcher.normalize(paths.last),
+    );
+    expect(await repository.loadLibraryEntries(otherRoot), hasLength(1));
   });
 }
 

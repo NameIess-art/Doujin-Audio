@@ -52,18 +52,24 @@ bool matchesSearchTerms(
   if (effectiveTerms.isEmpty && normalizedAnyTerms.isEmpty) {
     return true;
   }
-  final mergedHaystack = haystacks
-      .map(
-        (value) => value
-            .replaceAll(_searchQueryWhitespacePattern, ' ')
-            .trim()
-            .toLowerCase(),
-      )
-      .join('\n');
-  return effectiveTerms.every(mergedHaystack.contains) &&
-      (normalizedAnyTerms.isEmpty ||
-          normalizedAnyTerms.any(mergedHaystack.contains));
+  return matchesNormalizedSearchText(normalizeSearchText(haystacks), (
+    all: effectiveTerms,
+    any: normalizedAnyTerms,
+  ));
 }
+
+String normalizeSearchText(Iterable<String> values) => values
+    .map(
+      (value) => value
+          .replaceAll(_searchQueryWhitespacePattern, ' ')
+          .trim()
+          .toLowerCase(),
+    )
+    .join('\n');
+
+bool matchesNormalizedSearchText(String text, SearchElements terms) =>
+    terms.all.every(text.contains) &&
+    (terms.any.isEmpty || terms.any.any(text.contains));
 
 final _elementSeparator = RegExp(r'[,/，、]');
 final _elementEscape = RegExp(r'[\\(),/（），、]');

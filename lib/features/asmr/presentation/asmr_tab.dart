@@ -89,18 +89,13 @@ List<AsmrWork> _selectedAsmrWorks(
 }) {
   if (selectedWorkIds.isEmpty) return const <AsmrWork>[];
   final controller = ref.read(asmrLibraryControllerProvider);
-  if (controller == null) return const <AsmrWork>[];
-  final selected = <AsmrWork>[];
-  for (final work in controller.filteredWorksFor(
-    category,
-    searchQuery: searchQuery,
-    searchSession: searchSession,
-  )) {
-    if (!selectedWorkIds.contains(work.workKey)) continue;
-    selected.add(work);
-    if (selected.length == selectedWorkIds.length) break;
-  }
-  return selected;
+  return controller?.selectedWorks(
+        category,
+        searchQuery: searchQuery,
+        searchSession: searchSession,
+        workIds: selectedWorkIds,
+      ) ??
+      const <AsmrWork>[];
 }
 
 const _asmrBatchAddScope = UiOperationScope('asmr:batch-add');

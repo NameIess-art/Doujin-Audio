@@ -45,23 +45,12 @@ extension AppDatabaseLibraryEntries on AppDatabase {
   }) => _runDatabaseWrite(
     (db) => db.transaction((txn) async {
       await AppDatabaseTracks._deleteTrackPaths(txn, removedTrackPaths);
-      for (final entry in removedEntryPaths.entries) {
-        for (var start = 0; start < entry.value.length; start += 120) {
-          await Future<void>.delayed(Duration.zero);
-          final paths = entry.value.sublist(
-            start,
-            (start + 120).clamp(0, entry.value.length),
-          );
-          await txn.delete(
-            'library_entries',
-            where:
-                'library_path = ? AND path IN (${List.filled(paths.length, '?').join(',')})',
-            whereArgs: [
-              PathMatcher.normalize(entry.key),
-              ...paths.map(PathMatcher.normalize),
-            ],
-          );
+      if (removedEntryPaths.isNotEmpty) {
+        final batch = txn.batch();
+        for (final entry in removedEntryPaths.entries) {
+          _changeLibraryEntryPaths(batch, entry.key, entry.value);
         }
+        await batch.commit(noResult: true);
       }
       await _upsertCatalogTrackChunks(txn, tracks);
       await _upsertEntryChunks(txn, entries);
@@ -102,18 +91,10 @@ extension AppDatabaseLibraryEntries on AppDatabase {
     String libraryPath,
     Iterable<String> paths,
   ) async {
-    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
-    final normalizedPaths = paths.map(PathMatcher.normalize).toSet();
-    if (normalizedPaths.isEmpty) return;
+    if (paths.isEmpty) return;
     await _runDatabaseWrite((db) async {
       final batch = db.batch();
-      for (final entryPath in normalizedPaths) {
-        batch.delete(
-          'library_entries',
-          where: 'library_path = ? AND path = ?',
-          whereArgs: [normalizedLibraryPath, entryPath],
-        );
-      }
+      _changeLibraryEntryPaths(batch, libraryPath, paths);
       await batch.commit(noResult: true);
     });
   }
@@ -123,21 +104,39 @@ extension AppDatabaseLibraryEntries on AppDatabase {
     Iterable<String> entryPaths,
     String state,
   ) async {
-    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
-    final paths = entryPaths.map(PathMatcher.normalize).toSet();
-    if (paths.isEmpty) return;
+    if (entryPaths.isEmpty) return;
     await _runDatabaseWrite((db) async {
       final batch = db.batch();
-      for (final entryPath in paths) {
-        batch.update(
-          'library_entries',
-          {'state': state},
-          where: 'library_path = ? AND path = ?',
-          whereArgs: [normalizedLibraryPath, entryPath],
-        );
-      }
+      _changeLibraryEntryPaths(batch, libraryPath, entryPaths, state: state);
       await batch.commit(noResult: true);
     });
+  }
+}
+
+void _changeLibraryEntryPaths(
+  Batch batch,
+  String libraryPath,
+  Iterable<String> entryPaths, {
+  String? state,
+}) {
+  final root = PathMatcher.normalize(libraryPath);
+  final paths = entryPaths.map(PathMatcher.normalize).toSet().toList();
+  for (var start = 0; start < paths.length; start += _sqliteInClauseBatchSize) {
+    final end = (start + _sqliteInClauseBatchSize).clamp(0, paths.length);
+    final chunk = paths.sublist(start, end);
+    final placeholders = List.filled(chunk.length, '?').join(', ');
+    final where = 'library_path = ? AND path IN ($placeholders)';
+    final args = [root, ...chunk];
+    if (state == null) {
+      batch.delete('library_entries', where: where, whereArgs: args);
+    } else {
+      batch.update(
+        'library_entries',
+        {'state': state},
+        where: where,
+        whereArgs: args,
+      );
+    }
   }
 }
 

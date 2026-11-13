@@ -28,8 +28,12 @@ void main() {
     await File(subtitlePath).writeAsString('[00:01.00]first line');
 
     var loadedCount = 0;
+    var sourceLookups = 0;
     final service = PlaybackSubtitleService(
-      trackResolver: (_) => null,
+      trackResolver: (_) {
+        sourceLookups++;
+        return null;
+      },
       onTrackLoaded: (_, _) => loadedCount++,
     );
 
@@ -45,6 +49,15 @@ void main() {
       'first line',
     );
     expect(loadedCount, 1);
+
+    sourceLookups = 0;
+    final sample = service.readPlaybackSubtitle(
+      audioPath,
+      const Duration(milliseconds: 1100),
+    );
+    expect(sample.text, 'first line');
+    expect(sample.loading, isNull);
+    expect(sourceLookups, 1);
 
     service.clear();
     expect(service.hasResult(audioPath), isFalse);

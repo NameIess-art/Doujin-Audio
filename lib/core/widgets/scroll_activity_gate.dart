@@ -60,6 +60,7 @@ class _ScrollActivityGateState extends State<ScrollActivityGate> {
   bool _tickerModeEnabled = true;
   bool _scrolling = false;
   bool _scrollingUpdateScheduled = false;
+  bool _fastScrollingUpdateScheduled = false;
 
   @override
   void didChangeDependencies() {
@@ -152,7 +153,10 @@ class _ScrollActivityGateState extends State<ScrollActivityGate> {
     _fastScrolling = value;
     if (SchedulerBinding.instance.schedulerPhase ==
         SchedulerPhase.persistentCallbacks) {
+      if (_fastScrollingUpdateScheduled) return;
+      _fastScrollingUpdateScheduled = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        _fastScrollingUpdateScheduled = false;
         if (mounted) _isFastScrolling.value = _fastScrolling;
       });
     } else {

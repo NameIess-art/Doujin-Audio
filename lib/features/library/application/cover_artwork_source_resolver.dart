@@ -710,18 +710,20 @@ final class CoverArtworkSourceResolver {
 
   Future<String?> resolvePreferredFolderCover(String folderPath) async {
     final preferredOnly = PathMatcher.isContentUri(folderPath);
-    final images = await discoverFolderImages(
+    final images = await discoverFolderImageReferences(
       folderPath,
       recursive: false,
       preferredOnly: preferredOnly,
+      firstOnly: true,
     );
-    if (images.isNotEmpty) return images.first;
+    if (images.isNotEmpty) return images.first.displayPath;
 
-    final nestedImages = await discoverFolderImages(
+    final nestedImages = await discoverFolderImageReferences(
       folderPath,
       preferredOnly: preferredOnly,
+      firstOnly: true,
     );
-    if (nestedImages.isNotEmpty) return nestedImages.first;
+    if (nestedImages.isNotEmpty) return nestedImages.first.displayPath;
 
     for (final track in tracksInCompleteCoverScope(folderPath)) {
       final candidate = _isVideoTrack(track)
@@ -755,6 +757,7 @@ final class CoverArtworkSourceResolver {
     bool propagateFailure = false,
     bool refresh = false,
     bool preferredOnly = false,
+    bool firstOnly = false,
   }) async {
     final normalizedFolder = PathMatcher.normalize(folderPath);
     final isContent = PathMatcher.isContentUri(normalizedFolder);
@@ -813,13 +816,16 @@ final class CoverArtworkSourceResolver {
           rememberFolderImageSource(image.displayPath, image.sourcePath);
         }
       }
+      final matching = isContent || !recursive
+          ? indexedImages
+          : indexedImages.where(
+              (image) => PathMatcher.isWithinOrEqual(
+                image.displayPath,
+                normalizedFolder,
+              ),
+            );
       return List<CoverImageReference>.unmodifiable(
-        indexedImages.where(
-          (image) =>
-              isContent ||
-              !recursive ||
-              PathMatcher.isWithinOrEqual(image.displayPath, normalizedFolder),
-        ),
+        firstOnly ? matching.take(1) : matching,
       );
     } finally {
       lookup.users--;

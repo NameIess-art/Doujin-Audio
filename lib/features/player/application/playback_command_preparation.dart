@@ -419,7 +419,6 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     }
     session.lastPersistedPositionBucket = 0;
     if (!PathMatcher.isRemoteUri(target.logicalPath)) {
-      _ensureSubtitleTrackLoaded(target.logicalPath);
       _refreshNotificationSubtitleForSession(
         session,
         position: Duration.zero,

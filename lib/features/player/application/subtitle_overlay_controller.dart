@@ -222,15 +222,16 @@ final class SubtitleOverlayController {
       _lastRuntimeText = null;
     }
     final trackPath = session.currentTrackPath;
-    final subtitleTrack = subtitles.trackSync(trackPath);
-    if (loadIfMissing &&
-        (trackChanged ||
-            subtitleTrack == null &&
-                !subtitles.isLoading(trackPath) &&
-                !subtitles.hasResult(trackPath))) {
+    final (:text, :loading) = subtitles.readPlaybackSubtitle(
+      trackPath,
+      position ?? session.position,
+      loadIfMissing: loadIfMissing,
+      loadOnTrackChange: trackChanged,
+    );
+    if (loading != null) {
       unawaited(() async {
         try {
-          await subtitles.loadAutomatically(trackPath);
+          await loading;
           if (_runtimeEnabled &&
               _runtimeRunning &&
               identical(_observedRuntimeSession, session) &&
@@ -248,16 +249,10 @@ final class SubtitleOverlayController {
       }());
     }
 
-    final text =
-        subtitles.textAt(
-          session.currentTrackPath,
-          position ?? session.position,
-          subtitleTrack: subtitleTrack,
-        ) ??
-        '';
-    if (_lastRuntimeText != text) {
-      _lastRuntimeText = text;
-      unawaited(updateSubtitle(text));
+    final overlayText = text ?? '';
+    if (_lastRuntimeText != overlayText) {
+      _lastRuntimeText = overlayText;
+      unawaited(updateSubtitle(overlayText));
     }
   }
 

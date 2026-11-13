@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/browse_page_scroll.dart';
@@ -797,18 +796,14 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
     for (final key in _removalKeys) {
       ref.listen(isUndoableRemovalHiddenProvider(key), (_, _) {});
     }
-    final tilePadding =
-        ListTileTheme.of(context).minVerticalPadding ??
-        Theme.of(context).listTileTheme.minVerticalPadding ??
-        (Theme.of(context).useMaterial3 ? 8.0 : 4.0);
+    final fixedTileExtents = libraryTileExtentsAreFixed(context);
     final uniformRootRows =
         !_removalMotionActive &&
         _removingItemIds.isEmpty &&
         _expandedCardPaths.isEmpty &&
         _cardExpansionMotions.isEmpty &&
         _uniformRoots;
-    final useFixedExtent =
-        uniformRootRows && tilePadding <= LibraryLikeCardMetrics.coverDistance;
+    final useFixedExtent = uniformRootRows && fixedTileExtents;
     final useKnownRowExtents =
         !useFixedExtent &&
         visibleItems.isNotEmpty &&
@@ -818,18 +813,7 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
         _cardExpansionMotions.isEmpty &&
         _folderLoadAnimations.isEmpty &&
         _folderTreeErrorPaths.isEmpty &&
-        tilePadding <= LibraryLikeCardMetrics.coverDistance;
-    double itemExtent(VisibleLibraryItem item) => switch (item.node) {
-      FolderNode(:final depth) =>
-        depth == 0
-            ? LibraryLikeCardMetrics.rootTileHeight
-            : kLibraryChildFolderTileHeight,
-      TrackNode(:final track) =>
-        track.isSingle
-            ? LibraryLikeCardMetrics.rootTileHeight
-            : kLibraryTrackTileHeight,
-      _ => 0,
-    };
+        fixedTileExtents;
     Widget buildTopLevelLibraryItem(BuildContext context, int index) {
       final item = visibleItems[index];
       final node = item.node;
@@ -943,7 +927,7 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
             for (var column = 0; column < columnCount; column++) {
               final index = rowIndex * columnCount + column;
               if (index >= visibleItems.length) break;
-              final extent = itemExtent(visibleItems[index]);
+              final extent = libraryTileExtent(visibleItems[index].node);
               if (extent > height) height = extent;
             }
             offsets.add(offsets.last + height);
@@ -993,7 +977,7 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
         }
         return AnimatedReorder(
           order: itemIds,
-          child: _LibraryListView(
+          child: ScrollToTopListView.builder(
             key: const PageStorageKey<String>('library_list'),
             controller: widget.scrollController,
             clipBehavior: Clip.none,
@@ -1004,6 +988,7 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
               widget.bottomPadding,
             ),
             cacheExtent: widget.cacheExtent,
+            addRepaintBoundaries: false,
             itemExtent: useFixedExtent
                 ? LibraryLikeCardMetrics.rootTileHeight
                 : null,
@@ -1060,121 +1045,4 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
       },
     );
   }
-}
-
-class _LibraryListView extends ScrollToTopListView {
-  _LibraryListView({
-    required this.rowOffsets,
-    super.key,
-    super.controller,
-    super.clipBehavior,
-    super.padding,
-    super.cacheExtent,
-    super.itemExtent,
-    super.itemExtentBuilder,
-    super.physics,
-    super.keyboardDismissBehavior,
-    super.itemCount,
-    super.findChildIndexCallback,
-    required super.itemBuilder,
-  }) : super.builder();
-
-  final List<double>? rowOffsets;
-
-  @override
-  Widget buildChildLayout(BuildContext context) => rowOffsets == null
-      ? super.buildChildLayout(context)
-      : _LibraryExtentSliver(
-          delegate: childrenDelegate,
-          itemExtentBuilder: itemExtentBuilder!,
-          offsets: rowOffsets!,
-        );
-}
-
-class _LibraryExtentSliver extends SliverVariedExtentList {
-  const _LibraryExtentSliver({
-    required super.delegate,
-    required super.itemExtentBuilder,
-    required this.offsets,
-  });
-
-  final List<double> offsets;
-
-  @override
-  RenderSliverVariedExtentList createRenderObject(BuildContext context) =>
-      _LibraryExtentRenderer(
-        childManager: context as SliverMultiBoxAdaptorElement,
-        itemExtentBuilder: itemExtentBuilder,
-        offsets: offsets,
-      );
-
-  @override
-  void updateRenderObject(
-    BuildContext context,
-    covariant _LibraryExtentRenderer renderObject,
-  ) {
-    super.updateRenderObject(context, renderObject);
-    renderObject.offsets = offsets;
-  }
-}
-
-// Flutter's varied-extent sliver scans from row zero for every offset lookup.
-// Expanded libraries can contain thousands of tracks; retain its lazy layout
-// while looking up stable row offsets in O(1), and scroll indices in O(log n).
-class _LibraryExtentRenderer extends RenderSliverVariedExtentList {
-  _LibraryExtentRenderer({
-    required super.childManager,
-    required super.itemExtentBuilder,
-    required List<double> offsets,
-  }) : _offsets = offsets;
-
-  List<double> _offsets;
-
-  set offsets(List<double> value) {
-    if (identical(value, _offsets)) return;
-    _offsets = value;
-    markNeedsLayout();
-  }
-
-  @override
-  double indexToLayoutOffset(double itemExtent, int index) =>
-      _offsets[index.clamp(0, _offsets.length - 1)];
-
-  int _indexForOffset(double scrollOffset, {required bool includeBoundary}) {
-    var low = 0;
-    var high = _offsets.length;
-    while (low < high) {
-      final middle = (low + high) ~/ 2;
-      if (_offsets[middle] < scrollOffset ||
-          (includeBoundary && _offsets[middle] == scrollOffset)) {
-        low = middle + 1;
-      } else {
-        high = middle;
-      }
-    }
-    return (low - 1).clamp(0, _offsets.length - 2);
-  }
-
-  @override
-  int getMinChildIndexForScrollOffset(double scrollOffset, double itemExtent) =>
-      _indexForOffset(scrollOffset, includeBoundary: true);
-
-  @override
-  int getMaxChildIndexForScrollOffset(double scrollOffset, double itemExtent) =>
-      _indexForOffset(scrollOffset, includeBoundary: false);
-
-  @override
-  double computeMaxScrollOffset(
-    SliverConstraints constraints,
-    double itemExtent,
-  ) => _offsets.last;
-
-  @override
-  double estimateMaxScrollOffset(
-    SliverConstraints constraints, {
-    int? firstIndex,
-    int? lastIndex,
-    double? leadingScrollOffset,
-    double? trailingScrollOffset,
-  }) => _offsets.last;
 }

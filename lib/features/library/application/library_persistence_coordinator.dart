@@ -12,10 +12,11 @@ import '../../../core/persistence/app_preferences.dart';
 import '../domain/library_entry.dart';
 import '../domain/library_persistence_repository.dart';
 import 'library_service.dart';
+import 'library_snapshot_cache_service.dart';
 
 final class LibraryPersistedState {
   const LibraryPersistedState({
-    required this.tracks,
+    required this.derived,
     required this.entriesByLibrary,
     required this.groupOrder,
     required this.watchedFolders,
@@ -24,7 +25,7 @@ final class LibraryPersistedState {
     required this.trackExclusions,
   });
 
-  final List<MusicTrack> tracks;
+  final LibraryDerivedSnapshot derived;
   final Map<String, Map<String, LibraryEntry>> entriesByLibrary;
   final List<String> groupOrder;
   final Map<String, Set<String>> folderExclusions;
@@ -49,6 +50,11 @@ final class LibraryPersistenceCoordinator {
   static const _groupOrderKey = 'group_order_v1';
   static const _exclusionsKey = 'library_exclusions_v1';
   static const _legacyRemovedFoldersKey = 'removed_library_folders_v1';
+  static const _catalogKeys = [
+    _groupOrderKey,
+    _watchedFoldersKey,
+    _watchedLibrariesKey,
+  ];
 
   final LibraryPersistenceRepository _repository;
   final LibraryService _service;
@@ -66,11 +72,10 @@ final class LibraryPersistenceCoordinator {
     final generation = ++_loadGeneration;
     final tracksFuture = _repository.loadStartupTracks();
     final entriesFuture = _repository.loadAllLibraryEntries();
-    final catalogValues = await Future.wait([
-      _repository.loadAppSetting(_groupOrderKey),
-      _repository.loadAppSetting(_watchedFoldersKey),
-      _repository.loadAppSetting(_watchedLibrariesKey),
-    ]);
+    final catalogSettings = await _repository.loadAppSettings(_catalogKeys);
+    final catalogValues = [
+      for (final key in _catalogKeys) catalogSettings[key],
+    ];
     final preferences = await Future.wait<Object?>(<Future<Object?>>[
       if (catalogValues[0] == null)
         AppPreferences.readJson<List<String>>(_groupOrderKey, _decodeStringList)
@@ -119,7 +124,8 @@ final class LibraryPersistenceCoordinator {
       );
     }
     await _queueWrite(
-      () async => AppPreferences.remove(_legacyRemovedFoldersKey),
+      () async =>
+          AppPreferences.remove(_legacyRemovedFoldersKey, ifPresent: true),
       loadGeneration: generation,
     );
     final legacyLists = preferences
@@ -140,13 +146,17 @@ final class LibraryPersistenceCoordinator {
     }
     final tracks = await tracksFuture;
     final entries = await entriesFuture;
-    return compute(_preparePersistedLibrary, (
-      tracks: tracks,
-      entries: entries,
-      catalogLists: catalogLists,
-      folderExclusions: folderExclusions,
-      trackExclusions: trackExclusions,
-    ));
+    return AppLogService.measureAsync(
+      'library_derived_snapshot_build',
+      () => compute(_preparePersistedLibrary, (
+        tracks: tracks,
+        entries: entries,
+        catalogLists: catalogLists,
+        folderExclusions: folderExclusions,
+        trackExclusions: trackExclusions,
+      )),
+      details: {'tracks': tracks.length},
+    );
   }
 
   Future<void> prepareForReset() {
@@ -372,7 +382,13 @@ LibraryPersistedState _preparePersistedLibrary(
   final ordered = order.toSet();
   order.addAll(activeGroups.where(ordered.add));
   return LibraryPersistedState(
-    tracks: retained,
+    derived: buildLibraryDerivedSnapshot(
+      LibraryDerivedSnapshotPayload(
+        tracks: retained,
+        watchedFolders: catalogLists[1],
+        watchedLibraries: catalogLists[2],
+      ),
+    ),
     entriesByLibrary: entriesByLibrary,
     groupOrder: order,
     watchedFolders: catalogLists[1],

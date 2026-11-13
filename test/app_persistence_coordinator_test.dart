@@ -871,10 +871,10 @@ final class _RecordingPlaybackPersistenceRepository
   }
 
   @override
-  Future<void> upsertSessionPlaybackState(
-    PersistedPlaybackSession session,
+  Future<void> upsertSessionPlaybackStates(
+    List<PersistedPlaybackSession> sessions,
   ) async {
-    playbackWrites.add(session);
+    playbackWrites.addAll(sessions);
     final started = playbackWriteStarted;
     if (started != null && !started.isCompleted) started.complete();
     if (failNextPlaybackWrite) {

@@ -1618,6 +1618,21 @@ void main() {
         final pixels = scrollState.position.pixels;
         expect(pixels, greaterThan(0));
 
+        final builds = <Type, int>{};
+        final previousRebuildCallback = debugOnRebuildDirtyWidget;
+        debugOnRebuildDirtyWidget = (element, builtOnce) {
+          previousRebuildCallback?.call(element, builtOnce);
+          final type = element.widget.runtimeType;
+          if (type == MainScreen || type == SettingsTab || type == _Detail) {
+            builds.update(type, (count) => count + 1, ifAbsent: () => 1);
+          }
+        };
+        addTearDown(() => debugOnRebuildDirtyWidget = previousRebuildCallback);
+
+        final interaction = UiInteractionCoordinator.instance;
+        const commitKey = 'navigation-test-structural-update';
+        addTearDown(() => interaction.cancelCommit(commitKey));
+
         void expectPreserved() {
           expect(tester.state(settings), same(settingsState));
           expect(tester.state<ScrollableState>(scroll), same(scrollState));
@@ -1634,6 +1649,27 @@ void main() {
         await selectTab(0);
         await selectTab(settingsIndex);
         expectPreserved();
+
+        var backgroundCommits = 0;
+        final rail = tester.widget<NavigationRail>(find.byType(NavigationRail));
+        await tester.tap(find.byWidget(rail.destinations.first.label));
+        interaction.scheduleCommit(
+          key: commitKey,
+          structural: true,
+          commit: () => backgroundCommits++,
+        );
+        await tester.pump();
+        expect(backgroundCommits, 0);
+        final settingsBuilds = builds[SettingsTab] ?? 0;
+        for (var frame = 0; frame < 3; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        expect(backgroundCommits, 0);
+        expect(builds[SettingsTab] ?? 0, settingsBuilds);
+        await _settle(tester);
+        expect(backgroundCommits, 1);
+        expect(builds[_Detail], greaterThanOrEqualTo(2));
+        debugPrint('NAVIGATION_BUILD_COUNTS $platform $builds');
       },
       variant: TargetPlatformVariant({platform}),
     );

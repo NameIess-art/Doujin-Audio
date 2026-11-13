@@ -598,11 +598,11 @@ void main() {
 
     final positions = <Duration>[];
     final durations = <Duration?>[];
-    final buffers = <Duration>[];
+    final samples = <PlaybackPositionSample>[];
     final states = <PlayerState>[];
     session.positionStream.listen(positions.add);
     session.durationStream.listen(durations.add);
-    session.bufferedPositionStream.listen(buffers.add);
+    session.progressStream.listen(samples.add);
     session.stateStream.listen(states.add);
 
     session.applyNativeProgress(
@@ -618,7 +618,13 @@ void main() {
 
     expect(positions, [const Duration(seconds: 9)]);
     expect(durations, [const Duration(minutes: 2)]);
-    expect(buffers, [const Duration(seconds: 15)]);
+    expect(samples, [
+      const PlaybackPositionSample(
+        position: Duration(seconds: 9),
+        duration: Duration(minutes: 2),
+        bufferedPosition: Duration(seconds: 15),
+      ),
+    ]);
     expect(states, isEmpty);
     expect(session.state.playing, isTrue);
     expect(session.currentTrackPath, '/audio/one.mp3');
@@ -786,7 +792,7 @@ void main() {
       session.stateStream.drain<void>(),
       session.positionStream.drain<void>(),
       session.durationStream.drain<void>(),
-      session.bufferedPositionStream.drain<void>(),
+      session.progressStream.drain<void>(),
     ]);
     final firstShutdown = session.shutdown();
     final secondShutdown = session.shutdown();
@@ -826,7 +832,7 @@ void main() {
         session.stateStream.drain<void>(),
         session.positionStream.drain<void>(),
         session.durationStream.drain<void>(),
-        session.bufferedPositionStream.drain<void>(),
+        session.progressStream.drain<void>(),
       ]);
 
       await expectLater(session.shutdown(), throwsStateError);

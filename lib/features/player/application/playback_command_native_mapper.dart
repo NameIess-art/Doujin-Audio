@@ -48,7 +48,6 @@ extension PlaybackCommandNativeMapper on PlaybackCommandCoordinator {
     if (session != null &&
         previousTrackPath != null &&
         application.trackChanged) {
-      _ensureSubtitleTrackLoaded(session.currentTrackPath);
       _refreshNotificationSubtitleForSession(
         session,
         position: session.position,

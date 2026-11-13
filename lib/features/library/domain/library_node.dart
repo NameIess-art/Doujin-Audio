@@ -20,8 +20,18 @@ abstract class LibraryNode {
 }
 
 class FolderNode extends LibraryNode {
-  FolderNode(this.name, this.path, {this.depth = 0}) {
+  FolderNode(this.name, this.path, {this.depth = 0})
+    : _children = <LibraryNode>[] {
     _childrenView = UnmodifiableListView<LibraryNode>(_children);
+  }
+
+  /// A filtered view shares source children without reparenting them.
+  FolderNode.searchResult(FolderNode source, List<LibraryNode> children)
+    : name = source.name,
+      path = source.path,
+      depth = source.depth,
+      _children = List.unmodifiable(children) {
+    _childrenView = _children;
   }
 
   @override
@@ -31,7 +41,7 @@ class FolderNode extends LibraryNode {
   final String path;
 
   final int depth;
-  final List<LibraryNode> _children = <LibraryNode>[];
+  final List<LibraryNode> _children;
   late final List<LibraryNode> _childrenView;
   FolderNode? _parent;
   List<MusicTrack>? _allTracksCache;
@@ -171,18 +181,18 @@ class FolderNode extends LibraryNode {
   }
 
   void addChild(LibraryNode child) {
-    _attachChild(child);
     _children.add(child);
+    _attachChild(child);
     _invalidateMetrics();
   }
 
   void addChildren(Iterable<LibraryNode> children) {
     final additions = children.toList(growable: false);
     if (additions.isEmpty) return;
+    _children.addAll(additions);
     for (final child in additions) {
       _attachChild(child);
     }
-    _children.addAll(additions);
     _invalidateMetrics();
   }
 

@@ -412,15 +412,18 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     _pendingPlaybackStateSessionIds.removeAll(sessionIds);
     final now = DateTime.now();
     final orderedIds = _service.sessionOrder;
+    final sortOrders = {
+      for (var i = 0; i < orderedIds.length; i++) orderedIds[i]: i,
+    };
+    final writes = <(PlaybackSession, PersistedPlaybackSession)>[];
     try {
       for (final sessionId in sessionIds) {
         final session = _service.sessions[sessionId];
         if (session == null) continue;
         if (_pendingSessionDefinitionIds.contains(sessionId)) continue;
-        final sortOrder = orderedIds.indexOf(sessionId);
         final next = _persistedSessionSnapshot(
           session,
-          sortOrder: sortOrder < 0 ? orderedIds.length : sortOrder,
+          sortOrder: sortOrders[sessionId] ?? orderedIds.length,
           now: now,
           updateHistory: true,
         );
@@ -446,9 +449,17 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
           continue;
         }
         if (_sameSessionDefinition(previous, next)) continue;
-        await databaseRepository.upsertSessionPlaybackState(next);
-        await _savePausedRecovery(session);
-        _persistedSessions[sessionId] = next;
+        writes.add((session, next));
+      }
+      if (writes.isNotEmpty) {
+        await databaseRepository.upsertSessionPlaybackStates([
+          for (final (_, next) in writes) next,
+        ]);
+        for (final (session, next) in writes) {
+          if (!identical(_service.sessions[next.id], session)) continue;
+          await _savePausedRecovery(session);
+          _persistedSessions[next.id] = next;
+        }
       }
       if (_pendingSessionDefinitionIds.isNotEmpty) {
         await _savePendingSessionDefinitions();

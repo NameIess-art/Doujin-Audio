@@ -295,44 +295,42 @@ Future<List<AudioDetailRecord>> _loadAudioDetailRecords(
   }
   if (parentRows.isEmpty) return const <AudioDetailRecord>[];
 
+  final matchedPathsByType = <String, List<String>>{};
+  for (final row in parentRows) {
+    matchedPathsByType
+        .putIfAbsent(row['target_type'] as String, () => <String>[])
+        .add(row['target_path'] as String);
+  }
+
   final valuesByTable = <String, Map<String, List<String>>>{};
-  for (final table in <String>[
-    'audio_detail_voice_actors',
-    'audio_detail_tags',
+  for (final (table, valueColumn) in [
+    ('audio_detail_voice_actors', 'voice_actor'),
+    ('audio_detail_tags', 'tag'),
   ]) {
     final byTarget = <String, List<String>>{};
-    for (
-      var start = 0;
-      start < parentRows.length;
-      start += _sqliteInClauseBatchSize ~/ 2
-    ) {
-      final end = (start + _sqliteInClauseBatchSize ~/ 2).clamp(
-        0,
-        parentRows.length,
-      );
-      final chunk = parentRows.sublist(start, end);
-      final clauses = List.filled(
-        chunk.length,
-        '(target_type = ? AND target_path = ?)',
-      ).join(' OR ');
-      final args = <Object?>[];
-      for (final row in chunk) {
-        args
-          ..add(row['target_type'])
-          ..add(row['target_path']);
-      }
-      final rows = await db.query(
-        table,
-        where: clauses,
-        whereArgs: args,
-        orderBy: 'target_type, target_path, sort_order',
-      );
-      final valueColumn = table == 'audio_detail_tags' ? 'tag' : 'voice_actor';
-      for (final row in rows) {
-        final key = '${row['target_type']}\x1F${row['target_path']}';
-        byTarget
-            .putIfAbsent(key, () => <String>[])
-            .add(row[valueColumn]! as String);
+    for (final entry in matchedPathsByType.entries) {
+      final paths = entry.value;
+      for (
+        var start = 0;
+        start < paths.length;
+        start += _sqliteInClauseBatchSize
+      ) {
+        final end = (start + _sqliteInClauseBatchSize).clamp(0, paths.length);
+        final chunk = paths.sublist(start, end);
+        final placeholders = List.filled(chunk.length, '?').join(', ');
+        final rows = await db.query(
+          table,
+          columns: ['target_path', valueColumn],
+          where: 'target_type = ? AND target_path IN ($placeholders)',
+          whereArgs: [entry.key, ...chunk],
+          orderBy: 'target_path, sort_order',
+        );
+        for (final row in rows) {
+          final key = '${entry.key}\x1F${row['target_path']}';
+          byTarget
+              .putIfAbsent(key, () => <String>[])
+              .add(row[valueColumn]! as String);
+        }
       }
     }
     valuesByTable[table] = byTarget;

@@ -1,10 +1,6 @@
 part of 'notification_facade.dart';
 
 extension NotificationFacadeSubtitles on NotificationFacade {
-  Future<SubtitleTrack?> _subtitleTrackForPath(String trackPath) {
-    return _subtitleService.loadAutomatically(trackPath);
-  }
-
   void _handleSubtitleTrackLoaded(String trackPath, SubtitleTrack? track) {
     if (!_notificationsEnabled) return;
     var shouldRefreshNotification = false;
@@ -26,24 +22,18 @@ extension NotificationFacadeSubtitles on NotificationFacade {
     }
   }
 
-  String? _subtitleTextForTrackAt(
-    String trackPath,
-    Duration position, {
-    SubtitleTrack? subtitleTrack,
-  }) {
-    return _subtitleService.textAt(
-      trackPath,
-      position,
-      subtitleTrack: subtitleTrack,
-    );
-  }
-
   String? _notificationSubtitleForSession(PlaybackSession session) {
-    _ensureSubtitleTrackLoaded(session.currentTrackPath);
     if (_notificationSubtitleTrackPaths[session.id] !=
             session.currentTrackPath ||
         !_notificationSubtitleTexts.containsKey(session.id)) {
       _refreshNotificationSubtitleForSession(session, syncNotification: false);
+    } else if (_notificationsEnabled) {
+      // Periodic notifications can observe source changes while paused.
+      final (:loading, text: _) = _subtitleService.readPlaybackSubtitle(
+        session.currentTrackPath,
+        session.position,
+      );
+      unawaited(loading);
     }
     return _notificationSubtitleTexts[session.id];
   }
@@ -55,15 +45,6 @@ extension NotificationFacadeSubtitles on NotificationFacade {
       ? NotificationFacade._multiSessionNotificationRefreshInterval
       : NotificationFacade._notificationProgressRefreshInterval;
 
-  void _ensureSubtitleTrackLoaded(String trackPath) {
-    if (!_notificationsEnabled ||
-        _subtitleService.hasResult(trackPath) ||
-        _subtitleService.isLoading(trackPath)) {
-      return;
-    }
-    unawaited(_subtitleTrackForPath(trackPath));
-  }
-
   bool _refreshNotificationSubtitleForSession(
     PlaybackSession session, {
     Duration? position,
@@ -71,12 +52,11 @@ extension NotificationFacadeSubtitles on NotificationFacade {
   }) {
     if (!_notificationsEnabled) return false;
     final trackPath = session.currentTrackPath;
-    _ensureSubtitleTrackLoaded(trackPath);
-    final nextText = _subtitleTextForTrackAt(
+    final (text: nextText, :loading) = _subtitleService.readPlaybackSubtitle(
       trackPath,
       position ?? session.position,
-      subtitleTrack: _subtitleService.trackSync(trackPath),
     );
+    unawaited(loading);
     final previousText = _notificationSubtitleTexts[session.id];
     final previousTrackPath = _notificationSubtitleTrackPaths[session.id];
     if (previousTrackPath == trackPath && previousText == nextText) {

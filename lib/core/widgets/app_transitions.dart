@@ -297,11 +297,16 @@ class _RenderPageTransitionHost extends RenderProxyBox {
     if (index == firstPath.length || index == secondPath.length) {
       return firstPath.length.compareTo(secondPath.length);
     }
-    final siblings = <RenderObject>[];
-    firstPath[index - 1].visitChildren(siblings.add);
-    return siblings
-        .indexOf(firstPath[index])
-        .compareTo(siblings.indexOf(secondPath[index]));
+    var order = 0;
+    firstPath[index - 1].visitChildren((sibling) {
+      if (order != 0) return;
+      if (identical(sibling, firstPath[index])) {
+        order = -1;
+      } else if (identical(sibling, secondPath[index])) {
+        order = 1;
+      }
+    });
+    return order;
   }
 
   @override
@@ -350,7 +355,9 @@ class _RenderPageTransitionHost extends RenderProxyBox {
     // Cached tabs can reverse their Stack order without mounting new headers.
     // Sort only visible headers and reuse the ancestry collected above for
     // each comparison; hidden cached pages add no sorting or listener work.
-    visibleHeaders.sort((a, b) => _comparePaintOrder(a.path, b.path));
+    if (visibleHeaders.length > 1) {
+      visibleHeaders.sort((a, b) => _comparePaintOrder(a.path, b.path));
+    }
     for (final entry in visibleHeaders) {
       final header = entry.header;
       final viewport = header.viewport.currentContext?.findRenderObject();

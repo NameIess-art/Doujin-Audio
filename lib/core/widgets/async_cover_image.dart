@@ -629,7 +629,8 @@ class AsyncLocalCoverImage extends StatelessWidget {
       retryFutureBuilder: retryFutureBuilder,
       duration: duration,
       fallbackBuilder: fallback,
-      loadingBuilder: loadingBuilder ??
+      loadingBuilder:
+          loadingBuilder ??
           (_) => CoverLoadingArtwork(placeholder: fallback(context)),
       imageBuilder: (_, coverPath) => _cover(coverPath),
     );
@@ -871,6 +872,43 @@ class RetryingImage extends StatefulWidget {
   State<RetryingImage> createState() => _RetryingImageState();
 }
 
+final _browseDecodeViewports = Expando<_BrowseDecodeViewport>();
+
+/// A lazy viewport can mount many cold cards before any of them is visible.
+/// Read their geometry together after layout and listen only while work waits.
+class _BrowseDecodeViewport {
+  _BrowseDecodeViewport(this.position);
+
+  final ScrollPosition position;
+  final _pending = <_RetryingImageState>{};
+  bool _scheduled = false;
+
+  void add(_RetryingImageState state) {
+    if (_pending.add(state) && _pending.length == 1) {
+      position.addListener(schedule);
+    }
+    schedule();
+  }
+
+  void remove(_RetryingImageState state) {
+    if (_pending.remove(state) && _pending.isEmpty) {
+      position.removeListener(schedule);
+    }
+  }
+
+  void schedule() {
+    if (_scheduled || _pending.isEmpty) return;
+    _scheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scheduled = false;
+      for (final state in _pending.toList(growable: false)) {
+        state._startBrowseDecode();
+      }
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+}
+
 class _RetryingImageState extends State<RetryingImage> {
   final UiInteractionCoordinator _interaction =
       UiInteractionCoordinator.instance;
@@ -883,6 +921,7 @@ class _RetryingImageState extends State<RetryingImage> {
   ValueListenable<bool>? _fastScrolling;
   ValueListenable<TickerModeData>? _tickerMode;
   ScrollPosition? _scrollPosition;
+  _BrowseDecodeViewport? _decodeViewport;
   Object _decodeToken = Object();
   bool _decodeQueued = false;
   bool _admissionScheduled = false;
@@ -932,9 +971,8 @@ class _RetryingImageState extends State<RetryingImage> {
         ? Scrollable.maybeOf(context)?.position
         : null;
     if (!identical(position, _scrollPosition)) {
-      _scrollPosition?.removeListener(_scheduleLoadWhenAllowed);
+      _stopWatchingDecodeViewport();
       _scrollPosition = position;
-      _scrollPosition?.addListener(_scheduleLoadWhenAllowed);
     }
     if (!_loadEnabled) _scheduleLoadWhenAllowed();
   }
@@ -949,6 +987,7 @@ class _RetryingImageState extends State<RetryingImage> {
       _retryAttempt = 0;
       _loadEnabled = _canLoadImmediately;
       _cacheCheckKey = null;
+      _stopWatchingDecodeViewport();
       _previewProvider = null;
       _hasDisplayedFrame = false;
       _decodeToken = Object();
@@ -967,7 +1006,7 @@ class _RetryingImageState extends State<RetryingImage> {
     _interaction.cancelCommit(_loadCommitKey);
     _fastScrolling?.removeListener(_scheduleLoadWhenAllowed);
     _tickerMode?.removeListener(_handleTickerModeChanged);
-    _scrollPosition?.removeListener(_scheduleLoadWhenAllowed);
+    _stopWatchingDecodeViewport();
     super.dispose();
   }
 
@@ -1022,43 +1061,67 @@ class _RetryingImageState extends State<RetryingImage> {
 
   void _scheduleBrowseDecode() {
     if (_decodeQueued || _admissionScheduled || _decodeError != null) return;
+    final position = _scrollPosition;
+    if (position != null) {
+      final viewport = _decodeViewport ??= _browseDecodeViewports[position] ??=
+          _BrowseDecodeViewport(position);
+      viewport.add(this);
+      return;
+    }
     _admissionScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _admissionScheduled = false;
-      if (!mounted || _loadEnabled || !_canStartLoad) return;
-      final priority = _visiblePriority();
-      if (priority == null) return;
-      final token = _decodeToken;
-      final provider = widget.imageProviderBuilder();
-      _decodeQueued = true;
-      unawaited(
-        warmBrowseThumbnail(
-          provider,
-          createLocalImageConfiguration(context),
-          priority: priority,
-          isActive: () =>
-              mounted &&
-              identical(token, _decodeToken) &&
-              _canStartLoad &&
-              _visiblePriority() != null,
-        ).then(
-          (_) {
-            if (!mounted || !identical(token, _decodeToken)) return;
-            _decodeQueued = false;
-            // A request may have been discarded while its row left the view.
-            _cacheCheckKey = null;
-            setState(() {});
-            _scheduleLoadWhenAllowed();
-          },
-          onError: (Object error, StackTrace stack) {
-            if (!mounted || !identical(token, _decodeToken)) return;
-            _decodeQueued = false;
-            setState(() => _decodeError = error);
-          },
-        ),
-      );
+      _startBrowseDecode();
     });
     WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  void _stopWatchingDecodeViewport() {
+    _decodeViewport?.remove(this);
+    _decodeViewport = null;
+  }
+
+  void _startBrowseDecode() {
+    if (!mounted ||
+        _loadEnabled ||
+        _decodeQueued ||
+        _decodeError != null ||
+        !_canStartLoad) {
+      return;
+    }
+    final priority = _visiblePriority();
+    if (priority == null) return;
+    _stopWatchingDecodeViewport();
+    final token = _decodeToken;
+    final provider = widget.imageProviderBuilder();
+    _decodeQueued = true;
+    unawaited(
+      warmBrowseThumbnail(
+        provider,
+        createLocalImageConfiguration(context),
+        priority: priority,
+        isActive: () =>
+            mounted &&
+            identical(token, _decodeToken) &&
+            _canStartLoad &&
+            _visiblePriority() != null,
+      ).then(
+        (_) {
+          if (!mounted || !identical(token, _decodeToken)) return;
+          _decodeQueued = false;
+          // A request may have been discarded while its row left the view.
+          _cacheCheckKey = null;
+          setState(() {});
+          _scheduleLoadWhenAllowed();
+        },
+        onError: (Object error, StackTrace stack) {
+          if (!mounted || !identical(token, _decodeToken)) return;
+          _decodeQueued = false;
+          _stopWatchingDecodeViewport();
+          setState(() => _decodeError = error);
+        },
+      ),
+    );
   }
 
   ImageProvider<Object>? _cachedProviderForBuild(
@@ -1196,7 +1259,10 @@ class _RetryingImageState extends State<RetryingImage> {
         _scheduleLoadWhenAllowed();
       }
     }
-    if (_loadEnabled) _interaction.cancelCommit(_loadCommitKey);
+    if (_loadEnabled) {
+      _interaction.cancelCommit(_loadCommitKey);
+      _stopWatchingDecodeViewport();
+    }
     if (!_loadEnabled) provider ??= _previewProvider;
     if (!_loadEnabled && provider == null) {
       return widget.browseThumbnail

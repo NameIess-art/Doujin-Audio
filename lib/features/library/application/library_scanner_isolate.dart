@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:isolate';
+
 import '../../../core/immutable_collections.dart';
 import '../../../core/media/music_track.dart';
 import 'library_scan_models.dart';
@@ -54,6 +57,55 @@ class ScanMergeIsolateResult {
   final int duplicatesCount;
   final List<String> removedTrackPaths;
   final List<String> removedEntryPaths;
+}
+
+/// Reuses one isolate for the ordered chunks of a folder scan.
+final class LibraryScanMergeWorker {
+  final _messages = ReceivePort();
+  late final _responses = StreamIterator<dynamic>(_messages);
+  Isolate? _worker;
+  SendPort? _requests;
+
+  Future<ScanMergeIsolateResult> merge(ScanMergeIsolatePayload payload) async {
+    if (_requests == null) {
+      _worker = await Isolate.spawn(
+        _serveScanMergeRequests,
+        _messages.sendPort,
+        onError: _messages.sendPort,
+        onExit: _messages.sendPort,
+      );
+      _requests = await _readResponse<SendPort>();
+    }
+    _requests!.send(payload);
+    return _readResponse<ScanMergeIsolateResult>();
+  }
+
+  Future<T> _readResponse<T>() async {
+    if (await _responses.moveNext()) {
+      final response = _responses.current;
+      if (response is T) return response;
+      if (response is List && response.length == 2) {
+        throw RemoteError(response[0].toString(), response[1].toString());
+      }
+    }
+    throw StateError('Library scan merge isolate stopped.');
+  }
+
+  Future<void> dispose() async {
+    _worker?.kill(priority: Isolate.immediate);
+    _messages.close();
+    await _responses.cancel();
+  }
+}
+
+void _serveScanMergeRequests(SendPort responses) {
+  final requests = ReceivePort();
+  responses.send(requests.sendPort);
+  requests.listen((message) {
+    responses.send(
+      processScannedTracksInIsolate(message as ScanMergeIsolatePayload),
+    );
+  });
 }
 
 ScanMergeIsolateResult processScannedTracksInIsolate(

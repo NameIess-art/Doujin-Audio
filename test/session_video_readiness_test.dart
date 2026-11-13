@@ -115,6 +115,6 @@ PlaybackSessionSnapshot _session(
     customQueueTracks: null,
     positionStream: const Stream<Duration>.empty(),
     durationStream: const Stream<Duration?>.empty(),
-    bufferedPositionStream: const Stream<Duration>.empty(),
+    progressStream: const Stream.empty(),
   );
 }

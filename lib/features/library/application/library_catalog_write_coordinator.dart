@@ -626,6 +626,11 @@ final class LibraryCatalogWriteCoordinator {
     final derivedGeneration = ++_service.libraryDerivedGeneration;
     final snapshot = await snapshotCacheService.buildDerivedSnapshot();
     if (derivedGeneration != _service.libraryDerivedGeneration) return false;
+    applyDerivedSnapshot(snapshot);
+    return true;
+  }
+
+  void applyDerivedSnapshot(LibraryDerivedSnapshot snapshot) {
     AppLogService.measureSync(
       'library_derived_snapshot_commit',
       () {
@@ -644,7 +649,6 @@ final class LibraryCatalogWriteCoordinator {
       },
       details: {'tracks': snapshot.library.length},
     );
-    return true;
   }
 }
 

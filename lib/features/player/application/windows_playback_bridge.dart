@@ -62,7 +62,7 @@ class WindowsPlaybackBridge
   Future<void> _usageSerial = Future.value();
   Timer? _usageTimer;
   bool _usageStarted = false;
-  String? _persistedUsage;
+  int? _persistedUsageRevision;
 
   Future<void> _loadUsage() async {
     if (!_persistUsage) return;
@@ -74,12 +74,15 @@ class WindowsPlaybackBridge
       final encoded = await file.readAsString();
       final stored = jsonDecode(encoded) as Map<String, dynamic>;
       _usage.restoreState(stored);
-      _persistedUsage = encoded;
     }
+    _persistedUsageRevision = _usage.revision;
     if (_disposed) return;
     _usageTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       unawaited(
-        readUsage().then<void>(
+        _usageOperation(() {
+          _refreshUsage();
+          _usage.checkpoint();
+        }).then<void>(
           (_) {},
           onError: (Object error, StackTrace stack) {
             AppLogService.error(
@@ -98,13 +101,13 @@ class WindowsPlaybackBridge
       await (_usageLoaded ??= _loadUsage());
       final value = operation();
       final file = _usageFile;
-      if (file != null) {
+      final revision = _usage.revision;
+      if (file != null && revision != _persistedUsageRevision) {
         final encoded = jsonEncode(_usage.exportState());
-        if (encoded == _persistedUsage) return value;
         final temporary = File('${file.path}.tmp');
         await temporary.writeAsString(encoded, flush: true);
         await temporary.rename(file.path);
-        _persistedUsage = encoded;
+        _persistedUsageRevision = revision;
       }
       return value;
     });
@@ -141,17 +144,24 @@ class WindowsPlaybackBridge
     _usage.update(session.id, audible ? session.queue[session.index] : null);
   }
 
-  @override
-  Future<List<PlaybackUsageBatch>> readUsage() => _usageOperation(() {
+  void _refreshUsage() {
     for (final session in _sessions.values) {
       _updateUsage(session);
     }
+  }
+
+  @override
+  Future<List<PlaybackUsageBatch>> readUsage() => _usageOperation(() {
+    _refreshUsage();
     return _usage.read();
   });
 
   @override
   Future<void> acknowledgeUsage(List<String> batchIds) =>
-      _usageOperation(() => _usage.acknowledge(batchIds));
+      _usageOperation(() {
+        _usage.acknowledge(batchIds);
+        _usage.checkpoint();
+      });
 
   @override
   Future<void> resetUsage() => _usageOperation(_usage.reset);

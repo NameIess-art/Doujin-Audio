@@ -188,6 +188,10 @@ void main() {
         await Future<void>.delayed(Duration.zero);
         expect(multipliers, [('first', 0.3), ('second', 0.6)]);
 
+        timer.applyTrackEndFade('first', 0.2);
+        await Future<void>.delayed(Duration.zero);
+        expect(multipliers, [('first', 0.3), ('second', 0.6), ('first', 0.2)]);
+
         await timer.releaseTrackStopTarget('first');
         expect(timer.stopAfterCurrentTrack, true);
         expect(multipliers.last, ('first', 1.0));
@@ -197,6 +201,7 @@ void main() {
         expect(multipliers, [
           ('first', 0.3),
           ('second', 0.6),
+          ('first', 0.2),
           ('first', 1.0),
           ('second', 1.0),
         ]);

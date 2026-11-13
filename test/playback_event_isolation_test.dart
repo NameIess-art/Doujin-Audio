@@ -133,6 +133,38 @@ void main() {
     },
   );
 
+  testWidgets('one persistence round batches progress from multiple sessions', (
+    tester,
+  ) async {
+    final harness = (await tester.runAsync(
+      () async => _PlaybackIsolationHarness(),
+    ))!;
+    addTearDown(() => _disposeRuntime(tester, harness.dispose));
+    await tester.runAsync(harness.start);
+    final sessions = await tester.runAsync(() async {
+      final sessions = [
+        harness.addSession('first', loaded: true),
+        harness.addSession('second', loaded: true),
+      ];
+      await harness.graph.playback.flushSessionStatePersistence();
+      return sessions;
+    });
+    // Observe their position streams in the real async zone and flush through
+    // a third ID so the progress entries reach the progress-only batch path.
+    await tester.runAsync(() async {
+      for (final session in sessions!) {
+        session.setOptimisticPosition(const Duration(seconds: 15));
+      }
+      await Future<void>.delayed(Duration.zero);
+      await harness.graph.playback.flushSessionStatePersistence(
+        sessionId: 'missing',
+      );
+    });
+    expect(harness.database.playbackBatches, [
+      ['first', 'second'],
+    ]);
+  });
+
   for (final sessionCount in <int>[1, 2, 3, 4, 5, 50]) {
     testWidgets(
       '$sessionCount paused sessions do no periodic work for sixty seconds',
@@ -401,6 +433,7 @@ final class _CountedPlaybackSession extends PlaybackSession {
 
 final class _IsolationPersistenceRepository extends TestPersistenceRepository {
   final writtenSessionIds = <String>[];
+  final playbackBatches = <List<String>>[];
   int orderWrites = 0;
 
   @override
@@ -416,10 +449,12 @@ final class _IsolationPersistenceRepository extends TestPersistenceRepository {
   }
 
   @override
-  Future<void> upsertSessionPlaybackState(
-    PersistedPlaybackSession session,
+  Future<void> upsertSessionPlaybackStates(
+    List<PersistedPlaybackSession> sessions,
   ) async {
-    writtenSessionIds.add(session.id);
+    final ids = sessions.map((session) => session.id).toList();
+    playbackBatches.add(ids);
+    writtenSessionIds.addAll(ids);
   }
 
   @override

@@ -6,6 +6,7 @@ import '../domain/library_node.dart';
 import '../application/library_scan_models.dart';
 import '../application/library_state_models.dart';
 import '../../../core/media/audio_detail.dart';
+import '../../../core/media/path_matcher.dart';
 import '../../../core/media/search_query_utils.dart';
 import '../domain/audio_library_category.dart';
 
@@ -180,12 +181,40 @@ class FilteredLibraryTreeResult {
   FilteredLibraryTreeResult({
     required this.tree,
     required this.matchCount,
-    Iterable<String> expandedFolderPaths = const <String>[],
-  }) : expandedFolderPaths = Set<String>.unmodifiable(expandedFolderPaths);
+    Set<String> expandedFolderPaths = const <String>{},
+  }) : expandedFolderPaths = Set<String>.unmodifiable(expandedFolderPaths),
+       initialRows = List.unmodifiable(
+         projectLibrarySearchRows(tree, expandedFolderPaths),
+       );
 
   final List<LibraryNode> tree;
   final int matchCount;
   final Set<String> expandedFolderPaths;
+  final List<LibrarySearchRow> initialRows;
+}
+
+typedef LibrarySearchRow = ({LibraryNode node, int depth});
+
+List<LibrarySearchRow> projectLibrarySearchRows(
+  List<LibraryNode> tree,
+  Set<String> expandedPaths, {
+  int depth = 0,
+}) {
+  final rows = <LibrarySearchRow>[];
+  void addNode(LibraryNode node, int depth) {
+    rows.add((node: node, depth: depth));
+    if (node is FolderNode &&
+        expandedPaths.contains(PathMatcher.normalize(node.path))) {
+      for (final child in node.children) {
+        addNode(child, depth + 1);
+      }
+    }
+  }
+
+  for (final node in tree) {
+    addNode(node, depth);
+  }
+  return rows;
 }
 
 AudioLibraryCategorySnapshot? currentLibraryCategorySnapshot({
@@ -203,6 +232,32 @@ class LibrarySearchIndex {
 
   static const int _maxEntries = 12;
 
+  (List<LibraryNode>, int, int)? _corpusKey;
+  LibrarySearchCorpus? _corpus;
+
+  Future<FilteredLibraryTreeResult> searchInBackground({
+    required List<LibraryNode> tree,
+    required String query,
+    required int structureRevision,
+    required int detailRevision,
+    required AudioLibraryCategorySnapshot categorySnapshot,
+  }) async {
+    final key = (tree, structureRevision, detailRevision);
+    if (_corpusKey != key) {
+      _corpusKey = key;
+      _corpus = null;
+    }
+    final previous = _corpus;
+    final (corpus, result) = await compute(buildFilteredLibraryTreeSnapshot, (
+      previous ?? LibrarySearchCorpus(tree, categorySnapshot),
+      query,
+    ));
+    if (_corpusKey == key && identical(_corpus, previous)) {
+      _corpus = corpus;
+    }
+    return result;
+  }
+
   FilteredLibraryTreeResult resolve({
     required List<LibraryNode> tree,
     required String query,
@@ -216,11 +271,12 @@ class LibrarySearchIndex {
       detailRevision: detailRevision,
     );
     if (cached != null) return cached;
-    final elements = parseSearchElements(query) ?? emptySearchElements;
-    final result = _buildFilteredTree(tree, (
-      all: elements.all.map((term) => term.toLowerCase()).toList(),
-      any: elements.any.map((term) => term.toLowerCase()).toList(),
-    ), categorySnapshot);
+    final key = (tree, structureRevision, detailRevision);
+    if (_corpusKey != key || _corpus == null) {
+      _corpusKey = key;
+      _corpus = LibrarySearchCorpus(tree, categorySnapshot);
+    }
+    final result = _corpus!.search(query);
     storeResult(
       query: query,
       structureRevision: structureRevision,
@@ -264,173 +320,94 @@ class LibrarySearchIndex {
     }
     return canonicalElementQuery(query).toLowerCase();
   }
+}
 
-  FilteredLibraryTreeResult _buildFilteredTree(
-    List<LibraryNode> tree,
-    SearchElements searchTerms,
-    AudioLibraryCategorySnapshot? categorySnapshot,
-  ) {
-    if (searchTerms.all.isEmpty && searchTerms.any.isEmpty) {
+/// Reuses normalized fields for nodes visited across queries of one revision.
+class LibrarySearchCorpus {
+  LibrarySearchCorpus(this.tree, AudioLibraryCategorySnapshot? categorySnapshot)
+    : _categorySnapshot = categorySnapshot;
+
+  final List<LibraryNode> tree;
+  final AudioLibraryCategorySnapshot? _categorySnapshot;
+  final _text = Map<LibraryNode, String>.identity();
+
+  String _textFor(LibraryNode node) {
+    return _text.putIfAbsent(node, () {
+      if (node is FolderNode) {
+        final entry = _categorySnapshot?.entryFor(
+          AudioDetailTarget.libraryRootFolder(node.path),
+        );
+        return normalizeSearchText([
+          node.name,
+          node.path,
+          if (entry != null) entry.searchableText,
+        ]);
+      }
+      if (node is TrackNode) {
+        final track = node.track;
+        final entry = _categorySnapshot?.entryFor(
+          AudioDetailTarget.singleAudioFile(track.path),
+        );
+        return normalizeSearchText([
+          track.displayName,
+          track.groupTitle,
+          track.groupSubtitle,
+          track.path,
+          ...track.tags,
+          if (entry != null) entry.searchableText,
+        ]);
+      }
+      return '';
+    });
+  }
+
+  FilteredLibraryTreeResult search(String query) {
+    final elements = parseSearchElements(query) ?? emptySearchElements;
+    final terms = (
+      all: elements.all.map((term) => term.toLowerCase()).toList(),
+      any: elements.any.map((term) => term.toLowerCase()).toList(),
+    );
+    if (terms.all.isEmpty && terms.any.isEmpty) {
       return FilteredLibraryTreeResult(
         tree: tree,
         matchCount: libraryTreeTrackCount(tree),
       );
     }
 
-    final resultNodes = <LibraryNode>[];
-    final expandedFolderPaths = <String>{};
-    var totalMatches = 0;
-
-    for (final node in tree) {
-      if (node is FolderNode) {
-        final folderResult = _filterFolderNode(
-          node,
-          searchTerms,
-          categorySnapshot,
-        );
-        if (folderResult == null) continue;
-        resultNodes.add(folderResult.node);
-        totalMatches += folderResult.matchCount;
-        expandedFolderPaths.addAll(folderResult.expandedFolderPaths);
-        continue;
-      }
-
-      final trackNode = node as TrackNode;
-      if (_trackMatchesQuery(trackNode, searchTerms, categorySnapshot)) {
-        resultNodes.add(trackNode);
-        totalMatches++;
-      }
-    }
-
-    return FilteredLibraryTreeResult(
-      tree: List<LibraryNode>.unmodifiable(resultNodes),
-      matchCount: totalMatches,
-      expandedFolderPaths: expandedFolderPaths,
-    );
-  }
-
-  _FilteredFolderNodeResult? _filterFolderNode(
-    FolderNode folder,
-    SearchElements searchTerms,
-    AudioLibraryCategorySnapshot? categorySnapshot,
-  ) {
-    final folderTargets = <AudioDetailTarget>[
-      AudioDetailTarget.libraryRootFolder(folder.path),
-    ];
-    final folderEntries = categorySnapshot == null
-        ? const <AudioLibraryCategoryEntry>[]
-        : folderTargets
-              .map((t) => categorySnapshot.entryFor(t))
-              .whereType<AudioLibraryCategoryEntry>();
-
-    final matchesFolderName = matchesSearchTerms(
-      <String>[
-        folder.name,
-        folder.path,
-        ...folderEntries.map((e) => e.searchableText),
-      ],
-      '',
-      normalizedTerms: searchTerms.all,
-      normalizedAnyTerms: searchTerms.any,
-    );
-    if (matchesFolderName) {
-      return _FilteredFolderNodeResult(
-        node: folder,
-        matchCount: folder.totalTrackCount,
-        expandedFolderPaths: const <String>{},
-      );
-    }
-
-    final filteredChildren = <LibraryNode>[];
-    final expandedFolderPaths = <String>{};
+    final expandedPaths = <String>{};
     var matchCount = 0;
-
-    for (final child in folder.children) {
-      if (child is FolderNode) {
-        final nestedResult = _filterFolderNode(
-          child,
-          searchTerms,
-          categorySnapshot,
-        );
-        if (nestedResult == null) continue;
-        filteredChildren.add(nestedResult.node);
-        matchCount += nestedResult.matchCount;
-        expandedFolderPaths.addAll(nestedResult.expandedFolderPaths);
-        continue;
+    LibraryNode? filter(LibraryNode node) {
+      if (matchesNormalizedSearchText(_textFor(node), terms)) {
+        matchCount += node is FolderNode ? node.totalTrackCount : 1;
+        return node;
       }
-
-      final trackNode = child as TrackNode;
-      if (_trackMatchesQuery(trackNode, searchTerms, categorySnapshot)) {
-        filteredChildren.add(trackNode);
-        matchCount++;
+      if (node is! FolderNode) return null;
+      final children = <LibraryNode>[];
+      for (final child in node.children) {
+        final result = filter(child);
+        if (result != null) children.add(result);
       }
+      if (children.isEmpty) return null;
+      expandedPaths.add(PathMatcher.normalize(node.path));
+      return FolderNode.searchResult(node, children);
     }
 
-    if (filteredChildren.isEmpty) return null;
-    expandedFolderPaths.add(folder.path);
-
-    final filteredFolder = FolderNode(
-      folder.name,
-      folder.path,
-      depth: folder.depth,
-    )..addChildren(filteredChildren);
-    return _FilteredFolderNodeResult(
-      node: filteredFolder,
+    final nodes = <LibraryNode>[];
+    for (final node in tree) {
+      final result = filter(node);
+      if (result != null) nodes.add(result);
+    }
+    return FilteredLibraryTreeResult(
+      tree: List.unmodifiable(nodes),
       matchCount: matchCount,
-      expandedFolderPaths: expandedFolderPaths,
-    );
-  }
-
-  bool _trackMatchesQuery(
-    TrackNode trackNode,
-    SearchElements searchTerms,
-    AudioLibraryCategorySnapshot? categorySnapshot,
-  ) {
-    final track = trackNode.track;
-    final trackEntry = categorySnapshot?.entryFor(
-      AudioDetailTarget.singleAudioFile(track.path),
-    );
-
-    return matchesSearchTerms(
-      <String>[
-        track.displayName,
-        track.groupTitle,
-        track.groupSubtitle,
-        track.path,
-        ...track.tags,
-        if (trackEntry != null) trackEntry.searchableText,
-      ],
-      '',
-      normalizedTerms: searchTerms.all,
-      normalizedAnyTerms: searchTerms.any,
+      expandedFolderPaths: expandedPaths,
     );
   }
 }
 
-class LibrarySearchSnapshotRequest {
-  const LibrarySearchSnapshotRequest({
-    required this.tree,
-    required this.query,
-    required this.structureRevision,
-    this.categorySnapshot,
-  });
-
-  final List<LibraryNode> tree;
-  final String query;
-  final int structureRevision;
-  final AudioLibraryCategorySnapshot? categorySnapshot;
-}
-
-FilteredLibraryTreeResult buildFilteredLibraryTreeSnapshot(
-  LibrarySearchSnapshotRequest request,
-) {
-  return LibrarySearchIndex().resolve(
-    tree: request.tree,
-    query: request.query,
-    structureRevision: request.structureRevision,
-    categorySnapshot: request.categorySnapshot,
-  );
-}
+(LibrarySearchCorpus, FilteredLibraryTreeResult)
+buildFilteredLibraryTreeSnapshot((LibrarySearchCorpus, String) input) =>
+    (input.$1, input.$1.search(input.$2));
 
 int libraryTreeTrackCount(List<LibraryNode> tree) {
   var count = 0;
@@ -442,18 +419,6 @@ int libraryTreeTrackCount(List<LibraryNode> tree) {
     };
   }
   return count;
-}
-
-class _FilteredFolderNodeResult {
-  const _FilteredFolderNodeResult({
-    required this.node,
-    required this.matchCount,
-    required this.expandedFolderPaths,
-  });
-
-  final FolderNode node;
-  final int matchCount;
-  final Set<String> expandedFolderPaths;
 }
 
 LibraryHeaderState libraryHeaderStateFromSlice(

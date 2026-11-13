@@ -38,6 +38,27 @@ const Color _librarySelectionCheckmarkColor = Color(0xFF4CAF50);
 const double kLibraryChildFolderTileHeight = 44;
 const double kLibraryTrackTileHeight = 38;
 
+bool libraryTileExtentsAreFixed(BuildContext context) {
+  final theme = Theme.of(context);
+  final padding =
+      ListTileTheme.of(context).minVerticalPadding ??
+      theme.listTileTheme.minVerticalPadding ??
+      (theme.useMaterial3 ? 8.0 : 4.0);
+  return padding <= LibraryLikeCardMetrics.coverDistance;
+}
+
+double libraryTileExtent(LibraryNode node) => switch (node) {
+  FolderNode(:final depth) =>
+    depth == 0
+        ? LibraryLikeCardMetrics.rootTileHeight
+        : kLibraryChildFolderTileHeight,
+  TrackNode(:final track) =>
+    track.isSingle
+        ? LibraryLikeCardMetrics.rootTileHeight
+        : kLibraryTrackTileHeight,
+  _ => 0,
+};
+
 class LibrarySelectionIndicator extends StatelessWidget {
   const LibrarySelectionIndicator({
     super.key,

@@ -6,55 +6,9 @@ import '../../../core/media/subtitle_parser.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../application/playback_session_snapshot.dart';
 
-@immutable
-class PlaybackPositionUiSnapshot {
-  const PlaybackPositionUiSnapshot({
-    required this.position,
-    required this.duration,
-    required this.bufferedPosition,
-  });
+import '../application/playback_session.dart' show PlaybackPositionSample;
 
-  factory PlaybackPositionUiSnapshot.fromSession(
-    PlaybackSessionSnapshot session,
-  ) {
-    return PlaybackPositionUiSnapshot(
-      position: session.position,
-      duration: session.duration,
-      bufferedPosition: session.bufferedPosition,
-    );
-  }
-
-  final Duration position;
-  final Duration? duration;
-  final Duration bufferedPosition;
-
-  PlaybackPositionUiSnapshot copyWith({
-    Duration? position,
-    Object? duration = _durationUnchanged,
-    Duration? bufferedPosition,
-  }) {
-    return PlaybackPositionUiSnapshot(
-      position: position ?? this.position,
-      duration: identical(duration, _durationUnchanged)
-          ? this.duration
-          : duration as Duration?,
-      bufferedPosition: bufferedPosition ?? this.bufferedPosition,
-    );
-  }
-
-  @override
-  bool operator ==(Object other) {
-    return other is PlaybackPositionUiSnapshot &&
-        other.position == position &&
-        other.duration == duration &&
-        other.bufferedPosition == bufferedPosition;
-  }
-
-  @override
-  int get hashCode => Object.hash(position, duration, bufferedPosition);
-}
-
-const Object _durationUnchanged = Object();
+typedef PlaybackPositionUiSnapshot = PlaybackPositionSample;
 
 class PlaybackPositionUiGate extends ChangeNotifier {
   PlaybackPositionUiGate({
@@ -66,7 +20,7 @@ class PlaybackPositionUiGate extends ChangeNotifier {
   }) : _session = session,
        _interactionCoordinator =
            interactionCoordinator ?? UiInteractionCoordinator.instance,
-       _value = PlaybackPositionUiSnapshot.fromSession(session) {
+       _value = session.progress {
     _publishedValue = _value;
     _bindSession();
     _interactionCoordinator.addListener(_handleInteractionChanged);
@@ -80,9 +34,7 @@ class PlaybackPositionUiGate extends ChangeNotifier {
   PlaybackPositionUiSnapshot _value;
   late PlaybackPositionUiSnapshot _publishedValue;
   Object? _pendingPublish;
-  StreamSubscription<Duration>? _positionSub;
-  StreamSubscription<Duration?>? _durationSub;
-  StreamSubscription<Duration>? _bufferedSub;
+  StreamSubscription<PlaybackPositionSample>? _progressSub;
   Timer? _throttleTimer;
   bool _disposed = false;
   bool _dirty = false;
@@ -106,9 +58,7 @@ class PlaybackPositionUiGate extends ChangeNotifier {
     if (identical(_session, session)) return;
     final streamsChanged =
         _session.id != session.id ||
-        _session.positionStream != session.positionStream ||
-        _session.durationStream != session.durationStream ||
-        _session.bufferedPositionStream != session.bufferedPositionStream;
+        _session.progressStream != session.progressStream;
     final trackChanged = _session.currentTrackPath != session.currentTrackPath;
     _session = session;
     if (streamsChanged) {
@@ -116,7 +66,7 @@ class PlaybackPositionUiGate extends ChangeNotifier {
       _throttleTimer?.cancel();
       _throttleTimer = null;
       _unbindSession();
-      _value = PlaybackPositionUiSnapshot.fromSession(session);
+      _value = session.progress;
       _dirty = false;
       _bindSession();
       _publish(force: true);
@@ -139,29 +89,22 @@ class PlaybackPositionUiGate extends ChangeNotifier {
 
   void _bindSession() {
     final generation = _sessionGeneration;
-    _positionSub = _session.positionStream.listen((position) {
+    _progressSub = _session.progressStream.listen((sample) {
       if (_disposed || generation != _sessionGeneration) return;
-      _updateValue(_value.copyWith(position: position));
+      if (includeBufferedPosition) {
+        _updateValue(sample);
+      } else if (_value.position != sample.position ||
+          _value.duration != sample.duration) {
+        _updateValue(
+          sample.copyWith(bufferedPosition: _value.bufferedPosition),
+        );
+      }
     });
-    _durationSub = _session.durationStream.listen((duration) {
-      if (_disposed || generation != _sessionGeneration) return;
-      _updateValue(_value.copyWith(duration: duration));
-    });
-    if (includeBufferedPosition) {
-      _bufferedSub = _session.bufferedPositionStream.listen((buffered) {
-        if (_disposed || generation != _sessionGeneration) return;
-        _updateValue(_value.copyWith(bufferedPosition: buffered));
-      });
-    }
   }
 
   void _unbindSession() {
-    unawaited(_positionSub?.cancel());
-    unawaited(_durationSub?.cancel());
-    unawaited(_bufferedSub?.cancel());
-    _positionSub = null;
-    _durationSub = null;
-    _bufferedSub = null;
+    unawaited(_progressSub?.cancel());
+    _progressSub = null;
   }
 
   void _updateValue(PlaybackPositionUiSnapshot nextValue) {
@@ -170,8 +113,8 @@ class PlaybackPositionUiGate extends ChangeNotifier {
     _dirty = true;
     if (_pendingPublish != null) return;
     final pending = _pendingPublish = Object();
-    // A native sample arrives on three asynchronous streams. Publish after
-    // their same-turn events so listeners see one complete sample.
+    // Coalesce same-turn updates and let an intervening session replacement
+    // invalidate a queued publication before notifying the widget.
     scheduleMicrotask(() {
       if (_disposed || !identical(_pendingPublish, pending)) return;
       _pendingPublish = null;

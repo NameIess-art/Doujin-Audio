@@ -11,6 +11,7 @@ int _maximumRetainedCoverBytes = 50 * 1024 * 1024;
 int _maximumRetainedCovers = 200;
 final LinkedHashMap<ImageProvider<Object>, _RetainedCover> _retainedCovers =
     LinkedHashMap<ImageProvider<Object>, _RetainedCover>();
+final _providersBySource = <(String, double), Set<ImageProvider<Object>>>{};
 int _retainedCoverBytes = 0;
 
 void configureRetainedCoverBudget({
@@ -29,11 +30,19 @@ void retainCoverImage(
   final retained = _retainedCovers.remove(provider);
   if (retained != null) {
     _retainedCovers[provider] = retained;
+    if (retained.sourceKey case final source?) {
+      _providersBySource[source]!
+        ..remove(provider)
+        ..add(provider);
+    }
     return;
   }
 
   final cover = _RetainedCover(sourceKey: _fileSourceKey(provider));
   _retainedCovers[provider] = cover;
+  if (cover.sourceKey case final source?) {
+    _providersBySource.putIfAbsent(source, () => {}).add(provider);
+  }
   _trimRetainedCovers();
   unawaited(
     provider
@@ -95,15 +104,16 @@ void restoreRetainedCoverImage(ImageProvider<Object> provider) {
   }
   final sourceKey = _fileSourceKey(requested);
   if (sourceKey == null) return null;
+  final candidates = _providersBySource[sourceKey];
+  if (candidates == null) return null;
   ImageProvider<Object>? selected;
   _RetainedCover? selectedCover;
   var selectedIsAdequate = false;
-  for (final entry in _retainedCovers.entries) {
-    final cover = entry.value;
+  for (final provider in candidates) {
+    final cover = _retainedCovers[provider]!;
     if (cover.handle == null) continue;
-    if (cover.sourceKey != sourceKey) continue;
     final adequate =
-        entry.key is FileImage ||
+        provider is FileImage ||
         (requested is ResizeImage &&
             (requested.width == null || cover.width >= requested.width!) &&
             (requested.height == null || cover.height >= requested.height!));
@@ -114,7 +124,7 @@ void restoreRetainedCoverImage(ImageProvider<Object> provider) {
             (adequate
                 ? cover.bytes < selectedCover.bytes
                 : cover.bytes > selectedCover.bytes))) {
-      selected = entry.key;
+      selected = provider;
       selectedCover = cover;
       selectedIsAdequate = adequate;
     }
@@ -159,6 +169,11 @@ void _trimRetainedCovers() {
 void _removeRetainedCover(ImageProvider<Object> provider) {
   final cover = _retainedCovers.remove(provider);
   if (cover == null) return;
+  if (cover.sourceKey case final source?) {
+    final candidates = _providersBySource[source]!;
+    candidates.remove(provider);
+    if (candidates.isEmpty) _providersBySource.remove(source);
+  }
   _retainedCoverBytes -= cover.bytes;
   cover.stopListening();
   cover.handle?.dispose();

@@ -44,6 +44,22 @@ extension AppDatabaseAsmr on AppDatabase {
     });
   }
 
+  Future<Map<String, String?>> loadAppSettings(List<String> keys) async {
+    if (keys.isEmpty) return const {};
+    return _runDatabaseRead((db) async {
+      final placeholders = List.filled(keys.length, '?').join(', ');
+      final rows = await db.query(
+        'app_kv_settings',
+        columns: ['key', 'value'],
+        where: 'key IN ($placeholders)',
+        whereArgs: keys,
+      );
+      return {
+        for (final row in rows) row['key'] as String: row['value'] as String?,
+      };
+    });
+  }
+
   Future<void> saveAppSetting(String key, String? value) async {
     await _runDatabaseWrite((db) async {
       if (value == null) {
@@ -221,7 +237,12 @@ extension AppDatabaseAsmr on AppDatabase {
         if (favorite.isEmpty) {
           _writeAsmrWorkToBatch(batch, work, isFavorite: false);
         } else if (favorite.single['resources_json'] != work.resourcesJson) {
-          batch.update('asmr_works', {'resources_json': work.resourcesJson}, where: 'work_key = ?', whereArgs: [work.workKey]);
+          batch.update(
+            'asmr_works',
+            {'resources_json': work.resourcesJson},
+            where: 'work_key = ?',
+            whereArgs: [work.workKey],
+          );
         }
         _replaceAsmrWorkListMembershipInBatch(batch, 'history', historyWorkIds);
         final retainedIds = historyWorkIds.toSet();

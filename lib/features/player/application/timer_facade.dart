@@ -41,6 +41,7 @@ final class TimerFacade {
   Timer? _resumeFadeTimer;
   Timer? _trackEndFadeTimer;
   final _trackEndFades = <String, double>{};
+  final _pendingTrackEndFades = <String>{};
   double _fadeMultiplier = 1.0;
   final TimerService _service;
   final PowerPlatformService powerPlatformService;
@@ -339,15 +340,23 @@ final class TimerFacade {
       _restoreTrackEndFade(sessionId);
       return;
     }
-    if (_trackEndFades[sessionId] == multiplier) return;
+    final previous = _trackEndFades[sessionId] ?? 1.0;
+    if (previous == multiplier) return;
     _trackEndFades[sessionId] = multiplier;
+    if (math.min(_fadeMultiplier, previous) ==
+        math.min(_fadeMultiplier, multiplier)) {
+      return;
+    }
+    _pendingTrackEndFades.add(sessionId);
     _trackEndFadeTimer ??= Timer(Duration.zero, () {
       _trackEndFadeTimer = null;
-      for (final entry in _trackEndFades.entries) {
-        _applySessionFadeMultiplier(
-          entry.key,
-          math.min(_fadeMultiplier, entry.value),
-        );
+      final changed = _pendingTrackEndFades.toList();
+      _pendingTrackEndFades.clear();
+      for (final id in changed) {
+        final fade = _trackEndFades[id];
+        if (fade != null) {
+          _applySessionFadeMultiplier(id, math.min(_fadeMultiplier, fade));
+        }
       }
     });
   }
@@ -355,15 +364,18 @@ final class TimerFacade {
   void _cancelPendingTrackEndFade() {
     _trackEndFadeTimer?.cancel();
     _trackEndFadeTimer = null;
+    _pendingTrackEndFades.clear();
   }
 
   void _restoreTrackEndFade(String sessionId) {
+    _pendingTrackEndFades.remove(sessionId);
     if (_trackEndFades.remove(sessionId) != null) {
       _applySessionFadeMultiplier(sessionId, _fadeMultiplier);
     }
   }
 
   void _setFadeMultiplier(double multiplier) {
+    _cancelPendingTrackEndFade();
     _fadeMultiplier = multiplier;
     _applyFadeMultiplier(multiplier);
     for (final entry in _trackEndFades.entries) {

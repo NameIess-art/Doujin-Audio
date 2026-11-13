@@ -219,6 +219,8 @@ internal class NativePlaybackSession(
     var transportCommandId: Long = 0L
     var queueRevision: Long = 0L
     private var lastPublishedSnapshot: Map<String, Any?>? = null
+    private var usageItemDescriptor: NativeMediaItemDescriptor? = null
+    private var usageItemFields: Map<String, Any?>? = null
     @Volatile
     private var progressAnchor = NativePlaybackProgressAnchor(
         sessionId = sessionId,
@@ -613,9 +615,18 @@ internal class NativePlaybackSession(
         val player = _player ?: return null
         if (!player.isPlaying || player.playbackState != Player.STATE_READY) return null
         val descriptor = currentQueueDescriptor() ?: return null
-        return mapOf("uri" to descriptor.uri, "path" to descriptor.path,
-            "title" to descriptor.title, "subtitle" to descriptor.subtitle,
-            "artUri" to descriptor.artUri, "usageDescriptor" to descriptor.usageDescriptor)
+        if (usageItemDescriptor !== descriptor) {
+            usageItemDescriptor = descriptor
+            usageItemFields = mapOf(
+                "uri" to descriptor.uri,
+                "path" to descriptor.path,
+                "title" to descriptor.title,
+                "subtitle" to descriptor.subtitle,
+                "artUri" to descriptor.artUri,
+                "usageDescriptor" to descriptor.usageDescriptor
+            )
+        }
+        return usageItemFields
     }
 
     override fun snapshot(): Map<String, Any?> = snapshot(includeRetainedUris = false)

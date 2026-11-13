@@ -95,9 +95,11 @@ class AppPreferences {
     }
   }
 
-  static Future<bool> remove(String key) async {
+  static Future<bool> remove(String key, {bool ifPresent = false}) async {
     try {
-      return await (await _prefs).remove(key);
+      final preferences = await _prefs;
+      if (ifPresent && !preferences.containsKey(key)) return true;
+      return await preferences.remove(key);
     } catch (error, stackTrace) {
       _logFailure('remove', key, error, stackTrace);
       return false;

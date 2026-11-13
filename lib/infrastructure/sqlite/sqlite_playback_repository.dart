@@ -54,10 +54,14 @@ class SqlitePlaybackRepository implements PlaybackPersistenceRepository {
     List<String> entryIds,
   ) => _database.updatePlaybackQueueEntryOrder(sessionId, entryIds);
   @override
-  Future<void> upsertSessionPlaybackState(PersistedPlaybackSession session) =>
-      _database.upsertSessionPlaybackState(
-        _sessionToRecord(session, includeQueue: false, includeEffects: false),
-      );
+  Future<void> upsertSessionPlaybackStates(
+    List<PersistedPlaybackSession> sessions,
+  ) => _database.upsertSessionPlaybackStates(
+    sessions.map(
+      (session) =>
+          _sessionToRecord(session, includeQueue: false, includeEffects: false),
+    ),
+  );
   @override
   Future<void> updateTrackPlaybackHistory(List<MusicTrack> tracks) =>
       _database.updateTrackPlaybackHistory(tracks);

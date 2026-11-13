@@ -327,6 +327,7 @@ extension AppDatabaseTracks on AppDatabase {
       final end = (start + _sqliteInClauseBatchSize).clamp(0, paths.length);
       final chunk = paths.sublist(start, end);
       final placeholders = List.filled(chunk.length, '?').join(', ');
+      final batch = database.batch();
       for (final table in <String>[
         'track_tags',
         'track_remote_metadata',
@@ -335,11 +336,12 @@ extension AppDatabaseTracks on AppDatabase {
         'track_scan_info',
         'tracks',
       ]) {
-        await database.rawDelete(
+        batch.rawDelete(
           'DELETE FROM $table WHERE path IN ($placeholders)',
           chunk,
         );
       }
+      await batch.commit(noResult: true);
     }
   }
 

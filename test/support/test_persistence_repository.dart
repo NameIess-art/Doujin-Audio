@@ -29,6 +29,16 @@ class TestPersistenceRepository extends SqliteLibraryRepository
   /// Test seeding supplies complete records, unlike production catalog writes.
   Future<void> upsertTracks(List<MusicTrack> tracks) =>
       _database.upsertTracks(tracks);
+
+  @override
+  Future<Map<String, String?>> loadAppSettings(List<String> keys) async {
+    final values = await Future.wait(keys.map(loadAppSetting));
+    return {
+      for (var index = 0; index < keys.length; index++)
+        keys[index]: values[index],
+    };
+  }
+
   @override
   Future<void> updateTrackPlaybackHistory(List<MusicTrack> tracks) =>
       _playback.updateTrackPlaybackHistory(tracks);
@@ -68,8 +78,9 @@ class TestPersistenceRepository extends SqliteLibraryRepository
     List<String> entryIds,
   ) => _playback.updatePlaybackQueueEntryOrder(sessionId, entryIds);
   @override
-  Future<void> upsertSessionPlaybackState(PersistedPlaybackSession session) =>
-      _playback.upsertSessionPlaybackState(session);
+  Future<void> upsertSessionPlaybackStates(
+    List<PersistedPlaybackSession> sessions,
+  ) => _playback.upsertSessionPlaybackStates(sessions);
   @override
   Future<List<TimeSegmentLabel>> loadTimeSegmentLabels(String trackKey) =>
       timeSegmentLabelLoader?.call(trackKey) ??

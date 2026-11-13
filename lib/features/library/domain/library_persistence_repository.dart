@@ -35,6 +35,7 @@ abstract interface class LibraryPersistenceRepository {
   Future<void> deleteTracksMissingFromGeneration(int generation);
 
   Future<String?> loadAppSetting(String key);
+  Future<Map<String, String?>> loadAppSettings(List<String> keys);
   Future<void> saveAppSetting(String key, String? value);
 
   /// The startup snapshot worker materializes this iterable, including mapping.

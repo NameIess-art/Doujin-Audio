@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../domain/playback_usage.dart';
 
 /// Counts audible wall time, independent of position, playback speed or UI ticks.
@@ -6,20 +8,26 @@ class PlaybackUsageLedger {
     : now = now ?? DateTime.now;
   final Duration Function() elapsed;
   final DateTime Function() now;
-  final _active = <String, Map<String, Object?>>{};
+  final _active = <String, ({String key, Map<String, Object?> item})>{};
   final _days = <String, _UsageDay>{};
   final _pending = <PlaybackUsageBatch>[];
   Duration? _anchor;
   DateTime? _wall;
   int _sequence = 0;
   String _epoch = DateTime.now().microsecondsSinceEpoch.toString();
+  int _revision = 0;
+
+  int get revision => _revision;
 
   void update(String sessionId, Map<String, Object?>? playingItem) {
     settle();
     if (playingItem == null) {
       _active.remove(sessionId);
-    } else {
-      _active[sessionId] = Map.of(playingItem);
+    } else if (!mapEquals(_active[sessionId]?.item, playingItem)) {
+      _active[sessionId] = (
+        key: playbackUsageWorkKey(playingItem),
+        item: Map.of(playingItem),
+      );
     }
   }
 
@@ -32,8 +40,8 @@ class PlaybackUsageLedger {
     _wall = wall;
     if (_active.isEmpty || remaining <= 0) return;
     final works = <String, Map<String, Object?>>{};
-    for (final item in _active.values) {
-      works[playbackUsageWorkKey(item)] = item;
+    for (final entry in _active.values) {
+      works[entry.key] = entry.item;
     }
     while (remaining > 0) {
       final midnight = DateTime(start.year, start.month, start.day + 1);
@@ -64,31 +72,33 @@ class PlaybackUsageLedger {
   }
 
   List<PlaybackUsageBatch> read() {
-    settle();
-    if (_days.isNotEmpty) {
-      _pending.add(
-        PlaybackUsageBatch(
-          id: 'windows:$_epoch:${++_sequence}',
-          days: [
-            for (final day in _days.entries)
-              PlaybackUsageDay(
-                date: day.key,
-                totalMs: day.value.total,
-                works: day.value.works.values.toList(),
-              ),
-          ],
-        ),
-      );
-      _days.clear();
-    }
+    checkpoint();
     return List.unmodifiable(_pending);
   }
 
-  void restore(List<PlaybackUsageBatch> batches) =>
-      _pending.insertAll(0, batches);
+  void checkpoint() {
+    settle();
+    if (_days.isEmpty) return;
+    _pending.add(
+      PlaybackUsageBatch(
+        id: 'windows:$_epoch:${++_sequence}',
+        days: [
+          for (final day in _days.entries)
+            PlaybackUsageDay(
+              date: day.key,
+              totalMs: day.value.total,
+              works: day.value.works.values.toList(),
+            ),
+        ],
+      ),
+    );
+    _days.clear();
+    _revision++;
+  }
 
+  /// Encodes only batches already frozen by a read or checkpoint.
   Map<String, Object?> exportState() => {
-    'batches': read().map((e) => e.toMap()).toList(),
+    'batches': _pending.map((e) => e.toMap()).toList(),
     'epoch': _epoch,
     'sequence': _sequence,
   };
@@ -96,17 +106,25 @@ class PlaybackUsageLedger {
   void restoreState(Map<String, dynamic> state) {
     _epoch = state['epoch'] as String;
     _sequence = (state['sequence'] as num).toInt();
-    restore(
+    _pending.insertAll(
+      0,
       (state['batches'] as List)
           .map((e) => PlaybackUsageBatch.fromMap(e as Map))
           .toList(),
     );
+    _revision++;
   }
 
-  void acknowledge(List<String> ids) =>
-      _pending.removeWhere((batch) => ids.contains(batch.id));
+  void acknowledge(List<String> ids) {
+    final previousCount = _pending.length;
+    final acknowledged = ids.toSet();
+    _pending.removeWhere((batch) => acknowledged.contains(batch.id));
+    if (_pending.length != previousCount) _revision++;
+  }
+
   void reset() {
     _days.clear();
+    if (_pending.isNotEmpty) _revision++;
     _pending.clear();
     _anchor = elapsed();
     _wall = now();

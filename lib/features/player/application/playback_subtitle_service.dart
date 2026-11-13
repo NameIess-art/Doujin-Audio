@@ -1011,8 +1011,12 @@ class PlaybackSubtitleService extends ChangeNotifier {
   Future<SubtitleTrack?> load(String trackPath) =>
       _load(trackPath, automatic: false);
 
-  Future<SubtitleTrack?> _load(String trackPath, {required bool automatic}) {
-    var source = _refreshSubtitleSource(trackPath);
+  Future<SubtitleTrack?> _load(
+    String trackPath, {
+    required bool automatic,
+    _SubtitleSource? validatedSource,
+  }) {
+    var source = validatedSource ?? _refreshSubtitleSource(trackPath);
     if (_tracks.containsKey(trackPath)) {
       return _results.putIfAbsent(
         trackPath,
@@ -1138,10 +1142,34 @@ class PlaybackSubtitleService extends ChangeNotifier {
     SubtitleTrack? subtitleTrack,
     bool persistent = false,
   }) {
-    final cue = (subtitleTrack ?? trackSync(trackPath))?.cueAt(
-      position,
-      persistent: persistent,
+    return _textAt(subtitleTrack ?? trackSync(trackPath), position, persistent);
+  }
+
+  ({String? text, Future<SubtitleTrack?>? loading}) readPlaybackSubtitle(
+    String trackPath,
+    Duration position, {
+    bool loadIfMissing = true,
+    bool loadOnTrackChange = false,
+    bool automatic = true,
+  }) {
+    final source = _refreshSubtitleSource(trackPath);
+    final track = _tracks[trackPath];
+    final shouldLoad =
+        loadIfMissing &&
+        (loadOnTrackChange ||
+            (track == null &&
+                !_tracks.containsKey(trackPath) &&
+                !_loading.containsKey(trackPath)));
+    return (
+      text: _textAt(track, position, false),
+      loading: shouldLoad
+          ? _load(trackPath, automatic: automatic, validatedSource: source)
+          : null,
     );
+  }
+
+  String? _textAt(SubtitleTrack? track, Duration position, bool persistent) {
+    final cue = track?.cueAt(position, persistent: persistent);
     final text = cue?.text.trim();
     return text == null || text.isEmpty ? null : text;
   }

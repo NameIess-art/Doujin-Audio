@@ -573,6 +573,57 @@ void main() {
     expect(taps, 1);
   });
 
+  testWidgets('single-row collapse reuses its glass row and fades the action', (
+    tester,
+  ) async {
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    const actionKey = ValueKey('collapse-action');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: [
+              ListView.builder(
+                controller: controller,
+                itemCount: 100,
+                itemExtent: 40,
+                itemBuilder: (_, index) => Text('item $index'),
+              ),
+              TopPageHeader(
+                title: 'Title',
+                collapseController: controller,
+                trailing: const SizedBox(key: actionKey, width: 40, height: 40),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final row = find.descendant(
+      of: find.byType(TopPageHeader),
+      matching: find.byType(BackdropGroup),
+    );
+    final original = tester.widget<BackdropGroup>(row);
+    double opacity() => tester
+        .widget<Opacity>(
+          find
+              .ancestor(
+                of: find.byKey(actionKey),
+                matching: find.byType(Opacity),
+              )
+              .first,
+        )
+        .opacity;
+    expect(opacity(), 1);
+    for (var offset = 8.0; offset <= 64; offset += 8) {
+      controller.jumpTo(offset);
+      await tester.pump();
+      expect(tester.widget<BackdropGroup>(row), same(original));
+    }
+    expect(opacity(), lessThan(1));
+  });
+
   testWidgets(
     'scrolling rebuilds only changing header geometry',
     (tester) async {

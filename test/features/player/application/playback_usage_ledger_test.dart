@@ -67,6 +67,28 @@ void main() {
   });
 
   test(
+    'idle checkpoints and unknown acknowledgements keep the same revision',
+    () {
+      final idleRevision = ledger.revision;
+      ledger.checkpoint();
+      expect(ledger.revision, idleRevision);
+
+      ledger.update('a', item);
+      advance(1000);
+      ledger.update('a', null);
+      ledger.checkpoint();
+      final savedRevision = ledger.revision;
+      final batch = ledger.read().single;
+      expect(savedRevision, greaterThan(idleRevision));
+      ledger.checkpoint();
+      ledger.acknowledge(['unknown']);
+      expect(ledger.revision, savedRevision);
+      ledger.acknowledge([batch.id]);
+      expect(ledger.revision, greaterThan(savedRevision));
+    },
+  );
+
+  test(
     'reset discards previous contributions and establishes a fresh boundary',
     () {
       ledger.update('a', item);

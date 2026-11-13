@@ -338,22 +338,53 @@ final class AsmrCategoryCatalog {
   }
 
   void updateFavorites(Map<String, bool> favorites) {
+    if (favorites.isEmpty) return;
     for (final entry in _categories.entries) {
       if (!isRemote(entry.key.category)) continue;
-      final works = entry.value.works;
-      if (works == null ||
-          !works.any((work) => favorites.containsKey(work.workKey))) {
-        continue;
+      final state = entry.value;
+      final works = state.works;
+      if (works == null) continue;
+      List<AsmrWork>? updated;
+      for (final favorite in favorites.entries) {
+        final index = state.workIndices[favorite.key];
+        if (index == null || works[index].isFavorite == favorite.value) {
+          continue;
+        }
+        (updated ??= works.toList(growable: false))[index] = works[index]
+            .copyWith(isFavorite: favorite.value);
       }
-      entry.value.works = immutableList(
-        works.map(
-          (work) => favorites.containsKey(work.workKey)
-              ? work.copyWith(isFavorite: favorites[work.workKey])
-              : work,
-        ),
-      );
-      entry.value.revision++;
+      if (updated == null) continue;
+      state.works = immutableList(updated);
+      state.revision++;
     }
+  }
+
+  List<AsmrWork> selectedWorks(
+    AsmrCategoryType category, {
+    required String searchQuery,
+    required bool searchSession,
+    required Set<String> workIds,
+  }) {
+    if (workIds.isEmpty) return const [];
+    if (!isRemote(category)) {
+      return filteredWorksFor(
+        category,
+        searchQuery: searchQuery,
+        searchSession: searchSession,
+      ).where((work) => workIds.contains(work.workKey)).toList(growable: false);
+    }
+    final state = _state(category, searchQuery, searchSession);
+    final works = state.works;
+    if (works == null) return const [];
+    final indices = <int>[
+      for (final id in workIds)
+        ?state.workIndices[id],
+    ]..sort();
+    final hasExclusions = _hasExclusions();
+    return [
+      for (final index in indices)
+        if (!hasExclusions || _isWorkAllowed(works[index])) works[index],
+    ];
   }
 
   Map<AsmrCategoryType, String> get loadedRemoteQueries => {

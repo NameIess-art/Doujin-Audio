@@ -177,6 +177,45 @@ void main() {
     expect(scans, hasLength(41));
   });
 
+  test(
+    'first local cover keeps the shared index complete for the chooser',
+    () async {
+      final library = LibraryService()..addWatchedLibrary('/works');
+      addTearDown(library.dispose);
+      final scans = <(String, bool)>[];
+      final resolver = CoverArtworkSourceResolver(
+        libraryService: library,
+        fileCacheGateway: FileCachePlatformGateway(),
+        artworkStore: CoverArtworkStore(),
+        isClearingPersistentCache: () => false,
+        filesystemImageScanner: (root, recursive) async {
+          scans.add((root, recursive));
+          if (!recursive) return [];
+          return [
+            for (var i = 0; i < 100; i++) '/works/other/$i.jpg',
+            '/works/target/first.jpg',
+            '/works/target/second.jpg',
+          ];
+        },
+      );
+
+      expect(
+        await resolver.resolvePreferredFolderCover('/works/target'),
+        '/works/target/first.jpg',
+      );
+      expect(await resolver.discoverFolderImages('/works/target'), [
+        '/works/target/first.jpg',
+        '/works/target/second.jpg',
+      ]);
+      expect(scans.map((scan) => scan.$2), [false, true]);
+      expect(
+        PathMatcher.equalsNormalized(scans.first.$1, '/works/target'),
+        isTrue,
+      );
+      expect(PathMatcher.equalsNormalized(scans.last.$1, '/works'), isTrue);
+    },
+  );
+
   test('a failed pending root scan observes its refresh patches', () async {
     final library = LibraryService()..addWatchedLibrary('/works');
     addTearDown(library.dispose);

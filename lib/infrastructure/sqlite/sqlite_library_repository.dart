@@ -126,6 +126,10 @@ class SqliteLibraryRepository
       );
   @override
   Future<String?> loadAppSetting(String key) => _database.loadAppSetting(key);
+
+  @override
+  Future<Map<String, String?>> loadAppSettings(List<String> keys) =>
+      _database.loadAppSettings(keys);
   @override
   Future<void> saveAppSetting(String key, String? value) =>
       _database.saveAppSetting(key, value);

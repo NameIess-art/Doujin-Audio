@@ -55,7 +55,7 @@ LibraryDerivedSnapshot buildLibraryDerivedSnapshot(
   LibraryDerivedSnapshotPayload payload,
 ) {
   const organizer = LibraryOrganizer();
-  final library = List<MusicTrack>.of(payload.tracks);
+  final library = payload.tracks;
   final (libraryByPath, libraryIndexByPath) = AppLogService.measureSync(
     'library_path_index_build',
     () {
@@ -76,10 +76,6 @@ LibraryDerivedSnapshot buildLibraryDerivedSnapshot(
   for (final track in sortedTracks) {
     tracksByGroup.putIfAbsent(track.groupKey, () => <MusicTrack>[]).add(track);
   }
-  final immutableTracksByGroup = tracksByGroup.map(
-    (groupKey, tracks) =>
-        MapEntry(groupKey, List<MusicTrack>.unmodifiable(tracks)),
-  );
   final cardSnapshot = organizer.buildCardTree(
     tracks: sortedTracks,
     watchedFolders: payload.watchedFolders,
@@ -90,7 +86,7 @@ LibraryDerivedSnapshot buildLibraryDerivedSnapshot(
     library: library,
     libraryByPath: libraryByPath,
     libraryIndexByPath: libraryIndexByPath,
-    tracksByGroup: immutableTracksByGroup,
+    tracksByGroup: tracksByGroup,
     cardSnapshot: cardSnapshot,
   );
 }
@@ -391,13 +387,9 @@ class LibrarySnapshotCacheService {
       () => compute(
         buildLibraryDerivedSnapshot,
         LibraryDerivedSnapshotPayload(
-          tracks: List<MusicTrack>.unmodifiable(_libraryService.library),
-          watchedFolders: List<String>.unmodifiable(
-            _libraryService.watchedFolders,
-          ),
-          watchedLibraries: List<String>.unmodifiable(
-            _libraryService.watchedLibraries,
-          ),
+          tracks: _libraryService.library,
+          watchedFolders: _libraryService.watchedFolders,
+          watchedLibraries: _libraryService.watchedLibraries,
         ),
       ),
       details: <String, Object?>{'tracks': _libraryService.library.length},
@@ -431,11 +423,9 @@ class LibrarySnapshotCacheService {
     }
 
     final payload = LibraryDerivedSnapshotPayload(
-      tracks: List<MusicTrack>.unmodifiable(_libraryService.library),
-      watchedFolders: List<String>.unmodifiable(_libraryService.watchedFolders),
-      watchedLibraries: List<String>.unmodifiable(
-        _libraryService.watchedLibraries,
-      ),
+      tracks: _libraryService.library,
+      watchedFolders: _libraryService.watchedFolders,
+      watchedLibraries: _libraryService.watchedLibraries,
     );
     final buildFuture = AppLogService.measureAsync(
       'library_card_snapshot_build',
@@ -488,11 +478,9 @@ class LibrarySnapshotCacheService {
     }
 
     final payload = LibraryDerivedSnapshotPayload(
-      tracks: List<MusicTrack>.unmodifiable(_libraryService.library),
-      watchedFolders: List<String>.unmodifiable(_libraryService.watchedFolders),
-      watchedLibraries: List<String>.unmodifiable(
-        _libraryService.watchedLibraries,
-      ),
+      tracks: _libraryService.library,
+      watchedFolders: _libraryService.watchedFolders,
+      watchedLibraries: _libraryService.watchedLibraries,
     );
     final buildFuture = AppLogService.measureAsync(
       'library_tree_snapshot_build',

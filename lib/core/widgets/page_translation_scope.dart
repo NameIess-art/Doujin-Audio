@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/localization/app_language_provider.dart';
 import '../../app/state/app_runtime_providers.dart';
 import 'app_feedback.dart';
+import 'app_buttons.dart';
 import 'top_page_header.dart';
 import '../translation/text_translation_service.dart';
 import '../ui/ui_interaction_coordinator.dart';
@@ -279,15 +280,15 @@ class WorkPageTranslationButton extends StatelessWidget {
   const WorkPageTranslationButton({
     super.key,
     this.buttonKey = 'work_detail_translation',
-    this.backgroundOpacity = 1,
     this.enabled = true,
     this.compact = false,
+    this.overlay = false,
   });
 
   final String buttonKey;
-  final double backgroundOpacity;
   final bool enabled;
   final bool compact;
+  final bool overlay;
 
   @override
   Widget build(BuildContext context) {
@@ -296,38 +297,51 @@ class WorkPageTranslationButton extends StatelessWidget {
         .state;
     return ValueListenableBuilder<int>(
       valueListenable: state._status,
-      builder: (context, _, _) => HeaderFloatingButton(
-        backgroundOpacity: backgroundOpacity,
-        child: IconButton(
-          key: ValueKey(buttonKey),
-          onPressed: enabled ? state._toggle : null,
-          iconSize: compact ? 20 : null,
-          padding: compact ? EdgeInsets.zero : null,
-          constraints: compact
-              ? const BoxConstraints.tightFor(width: 38, height: 38)
-              : null,
-          tooltip: state._i18n.tr(
-            state._loading
-                ? 'work_translation_loading'
-                : state._enabled.value
-                ? 'work_translation_original'
-                : 'work_translation_translate',
-          ),
-          icon: state._loading
-              ? SizedBox.square(
-                  dimension: 20,
-                  child: CircularProgressIndicator(
-                    key: ValueKey('${buttonKey}_loading'),
-                    strokeWidth: 2,
-                  ),
-                )
-              : Icon(
-                  state._enabled.value
-                      ? Icons.restore_rounded
-                      : Icons.translate,
+      builder: (context, _, _) {
+        final key = ValueKey(buttonKey);
+        final onPressed = enabled ? state._toggle : null;
+        final tooltip = state._i18n.tr(
+          state._loading
+              ? 'work_translation_loading'
+              : state._enabled.value
+              ? 'work_translation_original'
+              : 'work_translation_translate',
+        );
+        final icon = state._loading
+            ? SizedBox.square(
+                dimension: 20,
+                child: CircularProgressIndicator(
+                  key: ValueKey('${buttonKey}_loading'),
+                  strokeWidth: 2,
                 ),
-        ),
-      ),
+              )
+            : Icon(
+                state._enabled.value ? Icons.restore_rounded : Icons.translate,
+                size: overlay ? 20 : null,
+              );
+        if (overlay) {
+          return AppOverlayIconButton(
+            buttonKey: key,
+            onPressed: onPressed,
+            tooltip: tooltip,
+            icon: icon,
+            foregroundColor: Theme.of(context).colorScheme.onSurface,
+          );
+        }
+        return HeaderFloatingButton(
+          child: IconButton(
+            key: key,
+            onPressed: onPressed,
+            iconSize: compact ? 20 : null,
+            padding: compact ? EdgeInsets.zero : null,
+            constraints: compact
+                ? const BoxConstraints.tightFor(width: 38, height: 38)
+                : null,
+            tooltip: tooltip,
+            icon: icon,
+          ),
+        );
+      },
     );
   }
 }

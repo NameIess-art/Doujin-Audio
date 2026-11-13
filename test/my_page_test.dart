@@ -17,6 +17,8 @@ import 'package:doujin_audio/core/media/path_display.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/interaction_deferred_stream.dart';
 import 'package:doujin_audio/features/player/application/listening_activity_service.dart';
+import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
+import 'package:doujin_audio/features/player/domain/playback_usage.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
@@ -42,6 +44,99 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     await AppPreferences.init();
   });
+
+  testWidgets(
+    'confirmed playback updates history on the open My page',
+    (tester) async {
+      final repository = _ListeningRepository();
+      final track = testMusicTrack(
+        name: 'Recently played',
+        path: '/library/recent.mp3',
+        groupKey: '/library/recent',
+        groupTitle: 'Recent work',
+      );
+      var usageReads = 0;
+      var batches = <PlaybackUsageBatch>[];
+      final activity = ListeningActivityService(
+        repository: repository,
+        readUsage: () async {
+          usageReads++;
+          return batches;
+        },
+        acknowledgeUsage: (_) async => batches = [],
+        resolveTrack: (_) => track,
+        recordInterests: ({required batchId, required contributions}) async {},
+      );
+      final fixture = AppRuntimeWidgetTestFixture(listeningActivity: activity);
+      addTearDown(fixture.dispose);
+      final session = fixture.playback.createTrackSession(track);
+      final playback = fixture.runtimeGraph.playbackCommands;
+      await tester.pumpWidget(
+        fixture.build(
+          const MyPage(tabIndex: 3),
+          overrides: [
+            listeningActivityServiceProvider.overrideWithValue(activity),
+          ],
+        ),
+      );
+      await pumpUntilUiIdle(tester);
+      await pumpAndSettleWithAsync(tester);
+      expect(
+        find.text(fixture.languageProvider.tr('my_no_history')),
+        findsOneWidget,
+      );
+      final readsBeforePlayback = usageReads;
+
+      final snapshot = NativePlaybackSnapshot.fromMap({
+        'sessionId': session.id,
+        'path': track.path,
+        'playing': true,
+        'playWhenReady': true,
+        'processingState': 'ready',
+      });
+      playback.handleNativeSnapshot(snapshot);
+      playback.handleNativeSnapshot(snapshot);
+      batches = [
+        PlaybackUsageBatch(
+          id: 'recent-playback',
+          days: [
+            PlaybackUsageDay(
+              date: '2026-11-13',
+              totalMs: 500,
+              works: [
+                PlaybackUsageWork(
+                  key: 'recent',
+                  path: track.path,
+                  milliseconds: 500,
+                  lastPlayedAtMs: 500,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ];
+      await tester.pump(const Duration(milliseconds: 500));
+      await pumpAndSettleWithAsync(tester);
+      expect(usageReads, readsBeforePlayback + 1);
+      expect(
+        find.byKey(const ValueKey('my-history-card-recent')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(fixture.languageProvider.tr('my_no_history')),
+        findsNothing,
+      );
+
+      playback.handleNativeSnapshot(snapshot);
+      await tester.pump(const Duration(seconds: 1));
+      expect(usageReads, readsBeforePlayback + 1);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets('first taste projections wait for scrolling to finish', (
     tester,
@@ -2132,20 +2227,29 @@ class _PendingInterestController extends _InterestController {
 
 class _ListeningRepository implements ListeningActivityRepository {
   List<ListeningDay> days = const [];
+  List<ListeningHistoryEntry> history = const [];
   @override
   Future<List<ListeningDay>> loadDays() async => days;
   @override
   Future<List<ListeningHistoryEntry>> loadHistory({
     int offset = 0,
     int limit = 40,
-  }) async => const [];
+  }) async => history.skip(offset).take(limit).toList();
   @override
   Future<MusicTrack?> findTrack(String workKey) async => null;
   @override
   Future<bool> importBatch(
     String batchId,
     List<ListeningDayContribution> days,
-  ) async => false;
+  ) async {
+    history = [
+      for (final day in days)
+        for (final work in day.works)
+          ListeningHistoryEntry(workKey: work.workKey, track: work.track),
+    ];
+    return history.isNotEmpty;
+  }
+
   @override
   Future<void> seedHistory(List<ListeningHistoryEntry> entries) async {}
 }

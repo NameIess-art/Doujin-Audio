@@ -19,6 +19,7 @@ import '../../../../core/media/path_matcher.dart';
 import '../../../../core/media/time_text_formatters.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/async_cover_image.dart';
 import '../../../settings/application/settings_state.dart';
 import '../../application/playback_facade.dart';
@@ -892,12 +893,12 @@ class _SessionVideoFullscreenPageState
                     ),
                     child: Align(
                       alignment: Alignment.topLeft,
-                      child: SessionOverlayIconButton(
+                      child: AppOverlayIconButton(
                         key: const ValueKey<String>('fullscreen_video_exit'),
                         tooltip: i18n.tr('exit_fullscreen'),
                         onPressed: _requestExit,
                         buttonSize: exitButtonSize,
-                        icon: Icons.fullscreen_exit_rounded,
+                        icon: const Icon(Icons.fullscreen_exit_rounded),
                       ),
                     ),
                   ),

@@ -215,56 +215,6 @@ Color sessionDetailForeground(
   };
 }
 
-class SessionOverlayIconButton extends StatelessWidget {
-  const SessionOverlayIconButton({
-    super.key,
-    required this.icon,
-    required this.tooltip,
-    required this.onPressed,
-    this.buttonSize = AppPageHeaderMetrics.buttonSize,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onPressed;
-  final double buttonSize;
-
-  @override
-  Widget build(BuildContext context) {
-    final highlightColor = Theme.of(context).colorScheme.primary;
-    final size = Size.square(buttonSize);
-    return IconButton(
-      onPressed: onPressed,
-      tooltip: tooltip,
-      style: IconButton.styleFrom(
-        fixedSize: size,
-        minimumSize: size,
-        maximumSize: size,
-        padding: EdgeInsets.zero,
-        visualDensity: VisualDensity.standard,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        iconSize: 32,
-        backgroundColor: Colors.transparent,
-        overlayColor: Colors.transparent,
-        splashFactory: NoSplash.splashFactory,
-        shape: const RoundedRectangleBorder(),
-      ).copyWith(
-        foregroundColor: WidgetStateProperty.resolveWith(
-          (states) => states.contains(WidgetState.hovered)
-              ? highlightColor
-              : Colors.white,
-        ),
-      ),
-      icon: Icon(
-        icon,
-        shadows: const [
-          Shadow(color: Color(0xA6000000), offset: Offset(0, 2), blurRadius: 5),
-        ],
-      ),
-    );
-  }
-}
-
 List<IconData> sessionFeatureBadgeIcons({
   required bool showSubtitles,
   required bool channelSwapEnabled,

@@ -349,6 +349,7 @@ final class AppRuntimeWidgetTestFixture {
     DlsiteMetadataService? dlsiteMetadataService,
     AsmrMetadataService? asmrMetadataService,
     NativePlaybackRepository? providedNativePlaybackRepository,
+    ListeningActivityService? listeningActivity,
     TestPersistenceRepository? providedPersistenceRepository,
     bool persistenceEnabled = false,
     SettingsRepository? providedSettingsRepository,
@@ -421,6 +422,7 @@ final class AppRuntimeWidgetTestFixture {
       notifications: notifications,
       settings: settingsRepository,
       persistenceEnabled: persistenceEnabled,
+      listeningActivity: listeningActivity,
     );
   }
 

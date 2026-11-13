@@ -5517,6 +5517,16 @@ void main() {
     await tester.pump();
     expect(coverCache.requestedPaths, [track.path, track.path]);
     await tester.pump(const Duration(milliseconds: 200));
+
+    final addedTrack = testMusicTrack(
+      name: 'Added track',
+      path: '/library/queue/added.mp3',
+      groupKey: '/library/queue',
+      groupTitle: 'Queue work',
+    );
+    await fixture.playback.addTrackToPlaybackQueue(session.id, addedTrack);
+    await tester.pumpAndSettle();
+    expect(coverCache.requestedPaths, contains(addedTrack.path));
   });
 
   testWidgets(
@@ -6725,46 +6735,77 @@ void main() {
     }),
   );
 
-  testWidgets('queue editor adds a remote session absent from the library', (
-    tester,
-  ) async {
-    final fixture = AppRuntimeWidgetTestFixture();
-    addTearDown(fixture.dispose);
-    final track = MusicTrack(
-      path: 'https://example.test/audio.mp3',
-      displayName: 'Remote source',
-      groupKey: 'remote-work',
-      groupTitle: 'Remote work',
-      groupSubtitle: '',
-      isSingle: false,
-      remoteMetadataKind: 'asmr.one',
-    );
-    final source = fixture.playback.createTrackSession(
-      track,
-      customQueueTracks: [track],
-    );
-    final queue = fixture.playback.createPlaybackQueue('Remote queue');
-    fixture.playbackService.syncSlice(
-      activeSessions: [source, queue],
-      playingSessionCount: 0,
-      focusedSessionId: source.id,
-      coverGeneration: 0,
-      isInitialized: true,
-    );
-    expect(fixture.library.trackByPath(track.path), isNull);
-    await tester.pumpWidget(
-      fixture.build(PlaybackQueueAudioEditPage(sessionId: queue.id)),
-    );
-    await tester.pumpAndSettle();
-    final add = find.byTooltip(
-      fixture.languageProvider.tr('add_audio_to_queue'),
-    );
-    expect(add, findsOneWidget);
-    await tester.tap(add);
-    await tester.pumpAndSettle();
-    expect(queue.playbackQueue!.expandedTracks.single.path, track.path);
-    expect(tester.takeException(), isNull);
-  });
+  testWidgets(
+    'queue editor reveals a newly added remote audio entry',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final track = MusicTrack(
+        path: 'https://example.test/audio.mp3',
+        displayName: 'Remote source',
+        groupKey: 'remote-work',
+        groupTitle: 'Remote work',
+        groupSubtitle: '',
+        isSingle: false,
+        remoteMetadataKind: 'asmr.one',
+      );
+      final source = fixture.playback.createTrackSession(
+        track,
+        customQueueTracks: [track],
+      );
+      final queue = fixture.playback.createPlaybackQueue('Remote queue');
+      fixture.playbackService.syncSlice(
+        activeSessions: [source, queue],
+        playingSessionCount: 0,
+        focusedSessionId: source.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      expect(fixture.library.trackByPath(track.path), isNull);
+      await tester.pumpWidget(
+        fixture.build(
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () => Navigator.of(context).push(
+                buildAppPageRoute<void>(
+                  context: context,
+                  child: PlaybackQueueAudioEditPage(sessionId: queue.id),
+                ),
+              ),
+              child: const Text('Open queue editor'),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Open queue editor'));
+      await tester.pumpAndSettle();
+      final add = find.byTooltip(
+        fixture.languageProvider.tr('add_audio_to_queue'),
+      );
+      expect(add, findsOneWidget);
+      await tester.tap(add);
+      await tester.pumpAndSettle();
+      expect(queue.playbackQueue!.expandedTracks.single.path, track.path);
+      expect(
+        find.byTooltip(fixture.languageProvider.tr('remove')),
+        findsOneWidget,
+      );
+      for (var i = 0; i < 30; i++) {
+        await fixture.playback.addTrackToPlaybackQueue(queue.id, track);
+      }
+      await tester.pumpAndSettle();
+      await tester.tap(add);
+      await tester.pumpAndSettle();
+      final appended = queue.playbackQueue!.entries.last;
+      expect(find.byKey(ValueKey(appended.id)).hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets(
     'batch queue creation freezes sources before announcing its queue',

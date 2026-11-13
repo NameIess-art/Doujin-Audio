@@ -2899,10 +2899,8 @@ void main() {
           coverCacheWidthForResolution(fixture.settings.coverImageResolution),
           reason: 'The work header must reuse the library card decode size.',
         );
-        // Top-left floating back button
-        expect(
-          find.byKey(const ValueKey<String>('work_detail_back_button')),
-          findsOneWidget,
+        final backButton = find.byKey(
+          const ValueKey<String>('work_detail_back_button'),
         );
         final editButton = find.byKey(
           const ValueKey<String>('work_detail_edit'),
@@ -2916,33 +2914,20 @@ void main() {
           findsNothing,
         );
         expect(tester.widget<IconButton>(editButton).tooltip, isNotEmpty);
-        expect(
-          find.ancestor(
-            of: editButton,
-            matching: find.byType(HeaderFloatingButton),
-          ),
-          findsOneWidget,
+        final translationButton = find.byKey(
+          const ValueKey<String>('work_detail_translation'),
         );
-        final backFloatingButton = find.ancestor(
-          of: find.byKey(const ValueKey<String>('work_detail_back_button')),
-          matching: find.byType(HeaderFloatingButton),
-        );
-        final editFloatingButton = find.ancestor(
-          of: editButton,
-          matching: find.byType(HeaderFloatingButton),
-        );
-        expect(
-          tester.getSize(editFloatingButton),
-          tester.getSize(backFloatingButton),
-        );
-        expect(
-          tester
-              .widgetList<HeaderFloatingSurface>(
-                find.byType(HeaderFloatingSurface),
-              )
-              .map((surface) => surface.backgroundOpacity),
-          everyElement(0.5),
-        );
+        for (final button in [backButton, editButton, translationButton]) {
+          expect(tester.getSize(button), const Size.square(38));
+          final icon = find.descendant(of: button, matching: find.byType(Icon));
+          final iconTheme = IconTheme.of(tester.element(icon));
+          expect(
+            tester.getSize(icon),
+            Size.square(button == backButton ? 32 : 20),
+          );
+          expect(iconTheme.shadows, isNotEmpty);
+          expect(tester.getRect(icon).center, tester.getRect(button).center);
+        }
         final header = find.byKey(const ValueKey('work_detail_page_header'));
         expect(
           find.descendant(
@@ -2953,7 +2938,7 @@ void main() {
         );
         expect(
           find.descendant(of: header, matching: find.byType(HeaderFloatingSurface)),
-          findsNWidgets(3),
+          findsNothing,
         );
 
         expect(find.text('Test Local Work Title'), findsOneWidget);
@@ -3265,22 +3250,25 @@ void main() {
               .right,
         ),
       );
-      final translationButton = find.ancestor(
-        of: find.byKey(const ValueKey<String>('work_detail_translation')),
-        matching: find.byType(HeaderFloatingButton),
+      final translationButton = find.byKey(
+        const ValueKey<String>('work_detail_translation'),
       );
       expect(
         tester.getRect(statusIndicator).top,
         greaterThan(tester.getRect(translationButton).bottom),
       );
       expect(tester.getRect(translationButton).right, 304);
+      final dlsiteButton = find.byKey(const ValueKey('work_detail_dlsite'));
+      expect(tester.getSize(dlsiteButton), const Size.square(38));
+      final dlsiteLabel = find.descendant(
+        of: dlsiteButton,
+        matching: find.text('DL'),
+      );
+      expect(tester.widget<Text>(dlsiteLabel).style?.shadows, isNotEmpty);
+      expect(tester.widget<Text>(dlsiteLabel).style?.fontSize, 15);
       expect(
-        tester
-            .widgetList<HeaderFloatingSurface>(
-              find.byType(HeaderFloatingSurface),
-            )
-            .map((surface) => surface.backgroundOpacity),
-        everyElement(0.5),
+        tester.getRect(dlsiteLabel).center,
+        tester.getRect(dlsiteButton).center,
       );
       expect(find.text('|'), findsOneWidget);
       expect(tester.widget<Text>(find.text('RJ009999')).style?.fontSize, 13);
@@ -3411,7 +3399,7 @@ void main() {
           of: find.byKey(const ValueKey<String>('work_detail_back_button')),
           matching: find.byType(HeaderFloatingButton),
         ),
-        findsOneWidget,
+        findsNothing,
       );
 
       expect(

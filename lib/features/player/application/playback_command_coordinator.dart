@@ -63,6 +63,7 @@ final class PlaybackCommandCoordinator
     required PlaybackTrackCache asmrPlaybackCacheService,
     required void Function() notifyPlaybackChanged,
     required PlaybackNotificationSynchronizer syncNotificationState,
+    void Function()? onAudiblePlaybackChanged,
     Random? random,
   }) : _libraryFacade = library,
        _playbackFacade = playback,
@@ -75,6 +76,7 @@ final class PlaybackCommandCoordinator
        _asmrPlaybackCacheService = asmrPlaybackCacheService,
        _notifyPlaybackChangedCallback = notifyPlaybackChanged,
        _syncNotificationStateCallback = syncNotificationState,
+       _onAudiblePlaybackChanged = onAudiblePlaybackChanged,
        _random = random ?? Random();
 
   final PlaybackLibraryCatalog _libraryFacade;
@@ -88,6 +90,7 @@ final class PlaybackCommandCoordinator
   final PlaybackTrackCache _asmrPlaybackCacheService;
   final void Function() _notifyPlaybackChangedCallback;
   final PlaybackNotificationSynchronizer _syncNotificationStateCallback;
+  final void Function()? _onAudiblePlaybackChanged;
   final Random _random;
 
   Map<String, PlaybackSession> get _sessions => _playbackFacade.sessions;
@@ -120,8 +123,12 @@ final class PlaybackCommandCoordinator
   _activePlaybackCachePaths = {};
   final Map<String, ({String trackPath, String playedPath})>
   _automaticPlaybackCacheTracks = {};
+  final _audibleTrackPaths = <String, String>{};
 
   void releaseSessionResources(String sessionId) {
+    if (_audibleTrackPaths.remove(sessionId) != null) {
+      _onAudiblePlaybackChanged?.call();
+    }
     _automaticPlaybackCacheTracks.remove(sessionId);
     _asmrPlaybackCacheService.releaseOwner(sessionId);
     unawaited(_timerFacade.clearTimerPauseForManualStop(sessionId));
@@ -136,6 +143,7 @@ final class PlaybackCommandCoordinator
     _activePlaybackCacheLeases.clear();
     _activePlaybackCachePaths.clear();
     _automaticPlaybackCacheTracks.clear();
+    _audibleTrackPaths.clear();
     await _asmrPlaybackCacheService.dispose();
   }
 

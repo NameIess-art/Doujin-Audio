@@ -28,7 +28,6 @@ import '../../../core/platform/file_cache_platform_gateway.dart'
 import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/widgets/app_feedback.dart';
-import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/drag_only_scrollbar.dart';
@@ -1738,68 +1737,59 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
               key: const ValueKey('work_detail_page_header'),
               showFadeMask: false,
               titleWidget: const SizedBox.shrink(),
-              leading: HeaderFloatingButton(
-                backgroundOpacity: 0.5,
-                child: IconButton(
-                  key: const ValueKey<String>('work_detail_back_button'),
-                  icon: const Icon(Icons.arrow_back_rounded),
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-                ),
+              leading: AppOverlayIconButton(
+                buttonKey: const ValueKey<String>('work_detail_back_button'),
+                icon: const Icon(Icons.chevron_left_rounded),
+                onPressed: () => Navigator.of(context).maybePop(),
+                tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                foregroundColor: cs.onSurface,
               ),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (widget.isLocal) ...[
-                    HeaderFloatingButton(
-                      backgroundOpacity: 0.5,
-                      child: IconButton(
-                        key: const ValueKey<String>('work_detail_edit'),
-                        style: AppEntryInkWell.entryButtonStyle(
-                          Theme.of(context),
-                        ),
-                        onPressed: _handleLocalEdit,
-                        tooltip: i18n.tr('edit'),
-                        icon: const Icon(Icons.edit_rounded),
-                      ),
+                    AppOverlayIconButton(
+                      buttonKey: const ValueKey<String>('work_detail_edit'),
+                      onPressed: _handleLocalEdit,
+                      tooltip: i18n.tr('edit'),
+                      foregroundColor: cs.onSurface,
+                      icon: const Icon(Icons.edit_rounded, size: 20),
                     ),
                     const SizedBox(width: 6),
                   ],
                   if (widget.isAsmr) ...[
-                    HeaderFloatingButton(
-                      backgroundOpacity: 0.5,
-                      child: Semantics(
-                        toggled: _showDlsiteMetadata,
-                        child: IconButton(
-                          key: const ValueKey('work_detail_dlsite'),
-                          onPressed: _loadingDlsiteMetadata || !hasDlsiteRj
-                              ? null
-                              : _toggleDlsiteMetadata,
-                          tooltip: i18n.tr(dlsiteTooltip),
-                          icon: _loadingDlsiteMetadata
-                              ? const SizedBox.square(
-                                  dimension: 20,
-                                  child: CircularProgressIndicator(
-                                    key: ValueKey('work_detail_dlsite_loading'),
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : Text(
-                                  'DL',
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold,
-                                    color: _showDlsiteMetadata
-                                        ? cs.primary
-                                        : null,
-                                  ),
+                    Semantics(
+                      toggled: _showDlsiteMetadata,
+                      child: AppOverlayIconButton(
+                        buttonKey: const ValueKey('work_detail_dlsite'),
+                        onPressed: _loadingDlsiteMetadata || !hasDlsiteRj
+                            ? null
+                            : _toggleDlsiteMetadata,
+                        tooltip: i18n.tr(dlsiteTooltip),
+                        foregroundColor: _showDlsiteMetadata
+                            ? cs.primary
+                            : cs.onSurface,
+                        icon: _loadingDlsiteMetadata
+                            ? const SizedBox.square(
+                                dimension: 20,
+                                child: CircularProgressIndicator(
+                                  key: ValueKey('work_detail_dlsite_loading'),
+                                  strokeWidth: 2,
                                 ),
-                        ),
+                              )
+                            : const Text(
+                                'DL',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  shadows: AppOverlayIconButton.iconShadows,
+                                ),
+                              ),
                       ),
                     ),
                     const SizedBox(width: 6),
                   ],
-                  const WorkPageTranslationButton(backgroundOpacity: 0.5),
+                  const WorkPageTranslationButton(overlay: true),
                 ],
               ),
             ),

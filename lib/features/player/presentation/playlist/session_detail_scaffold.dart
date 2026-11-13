@@ -17,6 +17,7 @@ import '../../../../app/theme/app_styles.dart';
 import '../../../../core/ui/permission_action_controller.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_transitions.dart';
+import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_entry_ink_well.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../application/playback_subtitle_service.dart';
@@ -219,11 +220,11 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
             headerTop + AppPageHeaderMetrics.buttonSize + 8,
           )
         : topBarHeight;
-    final closeButton = SessionOverlayIconButton(
+    final closeButton = AppOverlayIconButton(
       key: const ValueKey('session_detail_close_button'),
       onPressed: onClose,
       tooltip: i18n.tr('close'),
-      icon: Icons.chevron_left_rounded,
+      icon: const Icon(Icons.chevron_left_rounded),
     );
     final headerActionStyle =
         AppEntryInkWell.entryButtonStyle(Theme.of(context)).merge(

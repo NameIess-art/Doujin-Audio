@@ -38,6 +38,21 @@ extension PlaybackCommandNativeMapper on PlaybackCommandCoordinator {
           _sessionTrackForPath(currentSession, path) != null,
     );
     if (!application.applied) return;
+    if (_onAudiblePlaybackChanged case final onChanged?) {
+      final audiblePath =
+          application.snapshot.playing &&
+              application.snapshot.processingState == 'ready'
+          ? application.session!.currentTrackPath
+          : null;
+      if (audiblePath != _audibleTrackPaths[snapshot.sessionId]) {
+        if (audiblePath == null) {
+          _audibleTrackPaths.remove(snapshot.sessionId);
+        } else {
+          _audibleTrackPaths[snapshot.sessionId] = audiblePath;
+        }
+        onChanged();
+      }
+    }
     _timerFacade.reconcileTrackStopTargets();
     _syncActivePlaybackCacheLease(application.session!);
     final normalizedSnapshot = application.snapshot;

@@ -1,5 +1,70 @@
 import 'package:flutter/material.dart';
 
+import '../../app/theme/app_styles.dart';
+
+class AppOverlayIconButton extends StatelessWidget {
+  const AppOverlayIconButton({
+    super.key,
+    this.buttonKey,
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+    this.buttonSize = AppPageHeaderMetrics.buttonSize,
+    this.foregroundColor = Colors.white,
+  });
+
+  static const iconShadows = [
+    Shadow(color: Color(0xA6000000), offset: Offset(0, 2), blurRadius: 5),
+  ];
+
+  final Key? buttonKey;
+  final Widget icon;
+  final String tooltip;
+  final VoidCallback? onPressed;
+  final double buttonSize;
+  final Color foregroundColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final size = Size.square(buttonSize);
+    return IconButton(
+      key: buttonKey,
+      onPressed: onPressed,
+      tooltip: tooltip,
+      style:
+          IconButton.styleFrom(
+            fixedSize: size,
+            minimumSize: size,
+            maximumSize: size,
+            padding: EdgeInsets.zero,
+            visualDensity: VisualDensity.standard,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            iconSize: 32,
+            backgroundColor: Colors.transparent,
+            overlayColor: Colors.transparent,
+            splashFactory: NoSplash.splashFactory,
+            shape: const RoundedRectangleBorder(),
+          ).copyWith(
+            foregroundColor: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.disabled)) {
+                return colors.onSurface.withValues(alpha: 0.38);
+              }
+              if (states.contains(WidgetState.hovered) ||
+                  states.contains(WidgetState.focused)) {
+                return colors.primary;
+              }
+              return foregroundColor;
+            }),
+          ),
+      icon: IconTheme.merge(
+        data: const IconThemeData(shadows: iconShadows),
+        child: icon,
+      ),
+    );
+  }
+}
+
 class AppPrimaryButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final String label;

@@ -50,6 +50,7 @@ final class ListeningActivityService {
   bool _disposed = false;
   Future<void>? _disposeFuture;
   Future<void>? _startFuture;
+  Timer? _playbackRefreshTimer;
   bool _needsReload = true;
   DateTime? _loadedDay;
   int _historyLimit = 40;
@@ -96,19 +97,29 @@ final class ListeningActivityService {
     }
     if (_disposeFuture != null) return;
     _timer ??= Timer.periodic(const Duration(seconds: 30), (_) {
-      unawaited(
-        refresh(forceReload: false).catchError((
-          Object error,
-          StackTrace stack,
-        ) {
-          AppLogService.error(
-            'listening_activity_import_failed',
-            error: error,
-            stackTrace: stack,
-          );
-        }),
-      );
+      _refreshInBackground();
     });
+  }
+
+  void schedulePlaybackRefresh() {
+    if (_disposeFuture != null) return;
+    // Let the native ledger accrue audible time before checkpointing it.
+    _playbackRefreshTimer ??= Timer(const Duration(milliseconds: 500), () {
+      _playbackRefreshTimer = null;
+      _refreshInBackground();
+    });
+  }
+
+  void _refreshInBackground() {
+    unawaited(
+      refresh(forceReload: false).catchError((Object error, StackTrace stack) {
+        AppLogService.error(
+          'listening_activity_import_failed',
+          error: error,
+          stackTrace: stack,
+        );
+      }),
+    );
   }
 
   Future<void> refresh({bool forceReload = true}) => _serialize(() async {
@@ -270,6 +281,7 @@ final class ListeningActivityService {
 
   Future<void> _dispose() async {
     _timer?.cancel();
+    _playbackRefreshTimer?.cancel();
     await _tail;
     _disposed = true;
     await _changes.close();

@@ -22,6 +22,7 @@ import '../../../library/application/library_facade.dart';
 import '../../application/playback_facade.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../domain/playback_queue.dart';
+import '../playback_providers.dart';
 import 'playlist_feature_icons.dart';
 import 'playlist_list_view.dart';
 import 'playlist_media_widgets.dart';
@@ -119,13 +120,21 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
       isUndoableRemovalHiddenProvider(playbackSessionRemovalKey(session.id)),
     );
     final cardState = ref.watch(playlistSessionCardStateProvider(session.id));
-    if (cardState == null) return const SizedBox.shrink();
+    final queueState = ref.watch(
+      playbackSessionProvider(session.id).select(
+        (session) => (
+          queue: session?.playbackQueue,
+          currentIndex: session?.currentQueueIndex ?? -1,
+        ),
+      ),
+    );
+    final queue = queueState.queue;
+    if (cardState == null || queue == null) return const SizedBox.shrink();
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
-    final queue = session.playbackQueue!;
     final coverGeneration = ref.watch(coverGenerationProvider);
     var selection = _coverSelections[queue];
     if (selection == null ||
@@ -193,7 +202,7 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
         playback.originalPathForRetargeted(cardState.trackPath) ??
         playback.originalPathForRetargeted(resolvedCurrentPath);
     int currentIndex = -1;
-    final hintIndex = session.currentQueueIndex;
+    final hintIndex = queueState.currentIndex;
     if (hintIndex >= 0 && hintIndex < tracks.length) {
       final hintTrack = tracks[hintIndex];
       if (PathMatcher.equalsNormalized(hintTrack.path, cardState.trackPath) ||

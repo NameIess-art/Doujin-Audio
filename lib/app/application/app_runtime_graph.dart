@@ -177,6 +177,7 @@ AppRuntimeGraph createAppRuntimeGraph({
         asmrPlaybackCacheService ?? AsmrPlaybackCacheService(),
     notifyPlaybackChanged: syncPlaybackState,
     syncNotificationState: notifications.syncPlaybackState,
+    onAudiblePlaybackChanged: listeningActivity?.schedulePlaybackRefresh,
   );
 
   library.configurePersistence(enabled: persistenceEnabled);

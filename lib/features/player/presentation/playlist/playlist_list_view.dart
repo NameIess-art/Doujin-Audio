@@ -370,8 +370,6 @@ class SessionListCard extends ConsumerWidget {
     required this.sessionId,
     this.session,
     required this.track,
-    required this.coverPath,
-    required this.coverGeneration,
     required this.coverCacheWidth,
     required this.library,
     required this.playback,
@@ -388,8 +386,6 @@ class SessionListCard extends ConsumerWidget {
   final String sessionId;
   final PlaybackSessionSnapshot? session;
   final MusicTrack? track;
-  final String? coverPath;
-  final int coverGeneration;
   final int? coverCacheWidth;
   final LibraryFacade library;
   final PlaybackFacade playback;
@@ -507,8 +503,6 @@ class SessionListCard extends ConsumerWidget {
                           child: SessionCoverThumbnail(
                             sessionId: sessionId,
                             track: track,
-                            coverPath: coverPath,
-                            coverGeneration: coverGeneration,
                             coverCacheWidth: coverCacheWidth,
                             dimension: coverProgressInnerDimension(
                               playlistCoverSize,

@@ -548,8 +548,6 @@ void main() {
                 SessionCoverThumbnail(
                   sessionId: 'session-$i',
                   track: _track(i),
-                  coverPath: null,
-                  coverGeneration: 0,
                   coverCacheWidth: 64,
                 ),
             ],

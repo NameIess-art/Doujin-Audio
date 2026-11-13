@@ -85,6 +85,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   final Set<String> _selectedSessionIds = <String>{};
   Set<String>? _knownSessionIds;
   final Set<String> _appearingQueueIds = <String>{};
+  List<PlaylistStructureEntry>? _indexedEntries;
+  List<String> _sessionOrder = const [];
+  Map<String, int> _sessionIndices = const {};
 
   void _scrollToTopOnQueueAdded() {
     if (_scrollController.hasClients && _scrollController.offset > 0) {
@@ -683,10 +686,17 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final structureState = ref.watch(playlistStructureUiProvider);
     final visibleEntries = ref.watch(playlistSortedEntriesUiProvider);
     final disableAnimations = MediaQuery.disableAnimationsOf(context);
-    if (structureState.isInitialized) {
-      final sessionIds = visibleEntries
-          .map((entry) => entry.session.id)
-          .toSet();
+    final orderChanged = !identical(_indexedEntries, visibleEntries);
+    if (orderChanged) {
+      _indexedEntries = visibleEntries;
+      _sessionOrder = visibleEntries.map((entry) => entry.sessionId).toList();
+      _sessionIndices = {
+        for (var i = 0; i < _sessionOrder.length; i++) _sessionOrder[i]: i,
+      };
+    }
+    if (structureState.isInitialized &&
+        (orderChanged || _knownSessionIds == null)) {
+      final sessionIds = _sessionIndices.keys.toSet();
       if (_knownSessionIds case final known?) {
         _appearingQueueIds.addAll(
           visibleEntries
@@ -699,8 +709,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       }
       _knownSessionIds = sessionIds;
       _appearingQueueIds.retainAll(sessionIds);
-      if (disableAnimations) _appearingQueueIds.clear();
     }
+    if (disableAnimations) _appearingQueueIds.clear();
     final pinnedPlaylistSessionIds = ref
         .watch(
           settingsStateProvider.select(
@@ -729,9 +739,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       final track = structure.isPlaybackQueue
           ? null
           : paths.sessionTrackForPath(session.id, structure.trackPath);
-      final coverPath = structure.isPlaybackQueue
-          ? null
-          : library.resolvedPlaybackCoverPathForTrack(track);
       final card = RepaintBoundary(
         child: structure.isPlaybackQueue
             ? PlaybackQueueCard(
@@ -768,8 +775,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 sessionId: session.id,
                 session: session,
                 track: track,
-                coverPath: coverPath,
-                coverGeneration: structureState.coverGeneration,
                 coverCacheWidth: coverCacheWidth,
                 library: library,
                 playback: playback,
@@ -819,15 +824,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       );
     }
 
-    final sessionIndices = <Key, int>{
-      for (var i = 0; i < visibleEntries.length; i++)
-        ValueKey(visibleEntries[i].session.id): i,
-    };
+    final sessionIndices = _sessionIndices;
 
     return BrowsePageScroll(
       pageKey: 'playlist',
       controller: _scrollController,
-      anchorIds: visibleEntries.map((entry) => entry.session.id).toList(),
+      anchorIndices: sessionIndices,
       child: PlaceholderContentTransition(
         showPlaceholder: !structureState.isInitialized,
         placeholder: PlaylistLoadingSkeleton(
@@ -845,7 +847,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
             onOpenLibrary: widget.onOpenLibrary,
           ),
           content: AnimatedReorder(
-            order: visibleEntries.map((entry) => entry.session.id).toList(),
+            order: _sessionOrder,
             child: ScrollToTopListView.builder(
               key: const PageStorageKey<String>('playlist_list'),
               controller: _scrollController,
@@ -863,7 +865,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
               keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               itemCount: visibleEntries.length + 1,
               itemBuilder: buildSessionItem,
-              findChildIndexCallback: (key) => sessionIndices[key],
+              findChildIndexCallback: (key) =>
+                  key is ValueKey<String> ? sessionIndices[key.value] : null,
             ),
           ),
         ),

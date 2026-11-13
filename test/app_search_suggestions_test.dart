@@ -539,7 +539,7 @@ void main() {
                     labels: labels,
                     isSelected: (key) => key != 'other',
                     isEnabled: (key) => key != 'automatic',
-                    disabledHint: 'Already listened',
+                    mutedHint: 'Already listened',
                     readOnly: readOnly,
                     onToggle: (_) => toggles++,
                   ),

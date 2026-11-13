@@ -79,7 +79,10 @@ void main() {
       expect(state.recommendationWeights['occasional'], 1);
       state.setInterested(state.resolve('Occasional'), false);
       expect(state.recommendationWeights['occasional'], 0.25);
-      expect(state.interests.map((interest) => interest.weight), [120, 30]);
+      expect(state.listenedInterests.map((interest) => interest.weight), [
+        120,
+        30,
+      ]);
     },
   );
 
@@ -120,7 +123,6 @@ void main() {
     for (var i = 0; i < 15; i++) {
       voices.setInterested(voices.resolve('Voice $i'), true);
     }
-    expect(voices.interests, isEmpty);
     expect(voices.manualInterests, hasLength(15));
     expect(voices.listenedInterests, isEmpty);
     const batch = (
@@ -130,12 +132,12 @@ void main() {
     expect(voices.recordListeningBatch('epoch:1', [batch]), isTrue);
     expect(voices.recordListeningBatch('epoch:1', [batch]), isFalse);
     expect(tags.recordListeningBatch('epoch:1', [batch]), isTrue);
-    expect(voices.interests.take(2).map((e) => e.weight), [20, 20]);
+    expect(voices.listenedInterests.take(2).map((e) => e.weight), [20, 20]);
     final restored = AsmrTagPreferences.fromJson(voices.toJson());
     expect(restored.limit, 20);
     expect(
-      restored.interests.map((e) => e.tag.key),
-      voices.interests.map((e) => e.tag.key),
+      restored.listenedInterests.map((e) => e.tag.key),
+      voices.listenedInterests.map((e) => e.tag.key),
     );
     restored.mergeTag(AsmrTag(key: 'online:uuid', name: 'Voice 14'));
     expect(restored.learned['online:uuid'], 20);
@@ -149,18 +151,18 @@ void main() {
       for (var i = 0; i < 25; i++) {
         state.learned[state.resolve('tag$i')] = i + 1.0;
       }
-      final ranking = state.interests.map((e) => e.tag.key).toList();
+      final ranking = state.listenedInterests.map((e) => e.tag.key).toList();
       expect(state.recommendationWeights, hasLength(20));
       expect(state.recommendationWeights, isNot(contains('tag0')));
       state.setInterested('local:tag0', true);
       expect(state.recommendationWeights, hasLength(21));
-      expect(state.interests.map((e) => e.tag.key), ranking);
+      expect(state.listenedInterests.map((e) => e.tag.key), ranking);
       state.setInterested('local:tag0', false);
       state.recordListeningBatch('test:1', [
         (tags: ['tag0'], duration: const Duration(minutes: 100)),
       ]);
       expect(state.manualInterests, isEmpty);
-      expect(state.interests.first.tag.key, 'local:tag0');
+      expect(state.listenedInterests.first.tag.key, 'local:tag0');
       expect(state.recommendationWeights, contains('tag0'));
     },
   );
@@ -174,25 +176,25 @@ void main() {
         state.setInterested(key, true);
         state.learned[key] = i + 1.0;
       }
-      final original = state.interests.map((e) => e.tag.key).toList();
+      final original = state.listenedInterests.map((e) => e.tag.key).toList();
       expect(original, hasLength(20));
       expect(original.first, 'local:tag24');
       expect(original.last, 'local:tag5');
       state.setInterested('local:tag24', false);
       final newKey = state.resolve('never listened');
       state.setInterested(newKey, true);
-      expect(state.interests.map((e) => e.tag.key), original);
+      expect(state.listenedInterests.map((e) => e.tag.key), original);
       expect(state.manualInterests, hasLength(25));
       final restored = AsmrTagPreferences.fromJson(state.toJson());
       expect(restored.manualInterests, state.manualInterests);
-      expect(restored.interests.map((e) => e.tag.key), original);
+      expect(restored.listenedInterests.map((e) => e.tag.key), original);
       expect(restored.recommendationWeights['never listened'], 1);
       restored.setInterested(newKey, false);
       expect(restored.recommendationWeights, isNot(contains('never listened')));
       restored.recordListeningBatch('test:1', [
         (tags: ['tag0'], duration: const Duration(minutes: 100)),
       ]);
-      expect(restored.interests.first.tag.key, 'local:tag0');
+      expect(restored.listenedInterests.first.tag.key, 'local:tag0');
     },
   );
 
@@ -204,23 +206,22 @@ void main() {
       final b = state.resolve('B');
       state.setInterested(a, true);
       state.setInterested(b, true);
-      expect(state.interests, isEmpty);
       expect(state.listenedInterests, isEmpty);
       state.recordListeningBatch('test:1', [
         (tags: ['B'], duration: const Duration(minutes: 1)),
       ]);
-      expect(state.interests.map((e) => e.tag.key), [b]);
+      expect(state.listenedInterests.map((e) => e.tag.key), [b]);
       state.setInterested(b, false);
-      expect(state.interests.map((e) => e.tag.key), [b]);
+      expect(state.listenedInterests.map((e) => e.tag.key), [b]);
       expect(state.learned[b], 1);
       expect(state.recommendationWeights['b'], 1);
       state.setInterested(a, false);
-      expect(state.interests.map((e) => e.tag.key), [b]);
+      expect(state.listenedInterests.map((e) => e.tag.key), [b]);
       state.recordListeningBatch('test:2', [
         (tags: ['A'], duration: const Duration(minutes: 2)),
       ]);
       expect(state.manualInterests, isEmpty);
-      expect(state.interests.first.tag.key, a);
+      expect(state.listenedInterests.first.tag.key, a);
     },
   );
 
@@ -242,7 +243,7 @@ void main() {
       state.setInterested('a', false);
       final restored = AsmrTagPreferences.fromJson(state.toJson());
       expect(restored.manualInterests, isEmpty);
-      expect(restored.interests.single.tag.key, 'b');
+      expect(restored.listenedInterests.single.tag.key, 'b');
     },
   );
 

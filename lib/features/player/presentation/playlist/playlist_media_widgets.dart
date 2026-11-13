@@ -197,16 +197,12 @@ class SessionCoverThumbnail extends ConsumerStatefulWidget {
     super.key,
     required this.sessionId,
     required this.track,
-    required this.coverPath,
-    required this.coverGeneration,
     required this.coverCacheWidth,
     this.dimension = playlistCoverSize,
   });
 
   final String sessionId;
   final MusicTrack? track;
-  final String? coverPath;
-  final int coverGeneration;
   final int? coverCacheWidth;
   final double dimension;
 
@@ -217,34 +213,52 @@ class SessionCoverThumbnail extends ConsumerStatefulWidget {
 
 class _SessionCoverThumbnailState extends ConsumerState<SessionCoverThumbnail> {
   Future<String?>? _coverFuture;
-  String? _lastTrackPath;
-  int _lastCoverGeneration = -1;
-
-  Future<String?> _futureFor() {
-    final trackPath = widget.track?.path;
-    if (_coverFuture == null ||
-        _lastTrackPath != trackPath ||
-        _lastCoverGeneration != widget.coverGeneration) {
-      _lastTrackPath = trackPath;
-      _lastCoverGeneration = widget.coverGeneration;
-      // Admit discovery through the same bounded queue as library artwork;
-      // deferring image decode alone still starts source work during layout.
-      _coverFuture = ref
-          .read(libraryCoverUiControllerProvider)
-          .deferredPlaybackCover(widget.track, context: context);
-    }
-    return _coverFuture!;
-  }
+  MusicTrack? _lastTrack;
+  Object? _lastCoverRevision;
+  String? _initialPath;
 
   @override
   Widget build(BuildContext context) {
     final library = ref.read(libraryFacadeProvider);
+    final cache = library.coverArtworkCacheService;
+    final track = widget.track;
+    final scope = track == null
+        ? null
+        : cache.coverSearchKeyForTrack(track) ?? track.path;
+    final folderScope = track == null
+        ? null
+        : cache.coverScopeFolderForTrack(track);
+    final revision = scope == null
+        ? null
+        : ref.watch(
+            coverGenerationProvider.select(
+              (_) => (
+                cache.revisionForScope(scope),
+                folderScope == null ? null : cache.revisionForScope(folderScope),
+              ),
+            ),
+          );
+    if (_coverFuture == null ||
+        !identical(_lastTrack, track) ||
+        _lastCoverRevision != revision) {
+      _lastTrack = track;
+      _lastCoverRevision = revision;
+      _initialPath = track == null
+          ? null
+          : library.resolvedPlaybackCoverPathForTrack(track);
+      // Admit discovery through the same bounded queue as library artwork;
+      // deferring image decode alone still starts source work during layout.
+      _coverFuture = ref
+          .read(libraryCoverUiControllerProvider)
+          .deferredPlaybackCover(track, context: context);
+    }
     final cover = AsyncLocalCoverImage(
+      browseThumbnail: true,
       deferLoadDuringInteraction: true,
-      onImageError: library.coverArtworkCacheService.reportArtworkReadFailure,
-      future: _futureFor(),
-      requestKey: (widget.sessionId, widget.track?.path),
-      initialPath: widget.coverPath,
+      onImageError: cache.reportArtworkReadFailure,
+      future: _coverFuture!,
+      requestKey: (widget.sessionId, track?.path),
+      initialPath: _initialPath,
       retryFutureBuilder: () => ref
           .read(libraryCoverUiControllerProvider)
           .deferredPlaybackCover(widget.track, context: context),

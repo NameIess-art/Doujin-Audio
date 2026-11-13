@@ -2279,6 +2279,7 @@ void main() {
   testWidgets('carousel hides indicator dots in compact presentation', (
     tester,
   ) async {
+    final indicator = find.byKey(const ValueKey('active_session_indicator'));
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
     final session1 = PlaybackSession(
@@ -2316,13 +2317,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(
-      find.descendant(
-        of: find.byType(ActiveSessionCarousel),
-        matching: find.byType(AnimatedContainer),
-      ),
-      findsNothing,
-    );
+    expect(indicator, findsNothing);
 
     await tester.pumpWidget(
       fixture.build(
@@ -2330,13 +2325,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('active_session_indicator')),
-        matching: find.byType(AnimatedContainer),
-      ),
-      findsNWidgets(2),
-    );
+    expect(indicator, findsOneWidget);
   });
 
   testWidgets('replaying a session refocuses its card after manual paging', (
@@ -4790,8 +4779,7 @@ void main() {
         coverGeneration: 0,
         isInitialized: true,
       );
-      // Windows notifications resolve all session artwork after their debounce.
-      // Drain that work before measuring the list's own lazy cover requests.
+      // Drain the focused media notification before measuring list requests.
       await tester.pump(const Duration(milliseconds: 120));
       await tester.pumpAndSettle();
       covers.requestedPaths.clear();
@@ -4809,6 +4797,24 @@ void main() {
       expect(
         covers.requestedPaths.toSet().length,
         lessThanOrEqualTo(initialLimit),
+      );
+
+      final initialList = tester.widget<ListView>(list);
+      covers.resolvedPlaybackPaths.clear();
+      covers.requestedPaths.clear();
+      covers.invalidateFolder('/unrelated-work');
+      await tester.pumpAndSettle();
+      expect(tester.widget<ListView>(list), same(initialList));
+      expect(covers.resolvedPlaybackPaths, isEmpty);
+      expect(covers.requestedPaths, isEmpty);
+
+      covers.invalidateFolder('/playlist-scroll');
+      await tester.pumpAndSettle();
+      expect(tester.widget<ListView>(list), same(initialList));
+      expect(covers.resolvedPlaybackPaths, isNotEmpty);
+      expect(
+        covers.resolvedPlaybackPaths.toSet(),
+        hasLength(lessThanOrEqualTo(initialLimit)),
       );
 
       await tester.drag(list, const Offset(0, -500));
@@ -7139,22 +7145,38 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Check section header floating capsules
-      expect(
-        find.text(fixture.languageProvider.tr('queue_added_audio')),
-        findsOneWidget,
+      Finder sectionCapsule(String title) => find.ancestor(
+        of: find.text(fixture.languageProvider.tr(title)),
+        matching: find.byType(HeaderFloatingSurface),
       );
-      expect(
-        find.text(fixture.languageProvider.tr('playback_list_audio')),
-        findsOneWidget,
+
+      final titleBar = find.descendant(
+        of: find.byType(TopPageHeader),
+        matching: find.byType(HeaderFloatingSurface),
       );
+      final leftEdge = tester.getRect(titleBar.first).left;
+      final rightEdge = tester.getRect(titleBar.last).right;
+      final isWindows = defaultTargetPlatform == TargetPlatform.windows;
+      expect(
+        tester.getRect(sectionCapsule('queue_added_audio')).left,
+        leftEdge,
+      );
+      final sourceSectionLeft = isWindows
+          ? tester.getRect(find.byType(VerticalDivider)).right + leftEdge
+          : leftEdge;
+      expect(
+        tester.getRect(sectionCapsule('playback_list_audio')).left,
+        sourceSectionLeft,
+      );
+      final emptyQueue = find.text(
+        fixture.languageProvider.tr('empty_playback_queue'),
+      );
+      expect(tester.getRect(emptyQueue).left, leftEdge);
       expect(find.byType(HeaderFloatingSurface), findsNWidgets(4));
       expect(find.byType(Divider), findsNothing);
       expect(
         find.byType(VerticalDivider),
-        defaultTargetPlatform == TargetPlatform.windows
-            ? findsOneWidget
-            : findsNothing,
+        isWindows ? findsOneWidget : findsNothing,
       );
       final placeholders = find.byType(CoverFallbackArtwork);
       expect(placeholders, findsNWidgets(2));
@@ -7162,10 +7184,10 @@ void main() {
         final cover = find.byElementPredicate(
           (element) => identical(element, placeholder),
         );
-        final labels = find.descendant(
-          of: find.ancestor(of: cover, matching: find.byType(Card)).first,
-          matching: find.byType(Text),
-        );
+        final card = find.ancestor(of: cover, matching: find.byType(Card)).first;
+        expect(tester.getRect(card).left, sourceSectionLeft);
+        expect(tester.getRect(card).right, rightEdge);
+        final labels = find.descendant(of: card, matching: find.byType(Text));
         expect(tester.getSize(cover), const Size.square(52));
         expect(
           tester.getRect(cover).right,
@@ -7181,10 +7203,15 @@ void main() {
       await tester.tap(addButtons.first);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
-      expect(
-        find.byTooltip(fixture.languageProvider.tr('remove')),
-        findsOneWidget,
+      final queuedCard = find.ancestor(
+        of: find.byTooltip(fixture.languageProvider.tr('remove')),
+        matching: find.byType(Card),
       );
+      expect(tester.getRect(queuedCard).left, leftEdge);
+      final queuedSectionRight = isWindows
+          ? tester.getRect(find.byType(VerticalDivider)).left - leftEdge
+          : rightEdge;
+      expect(tester.getRect(queuedCard).right, queuedSectionRight);
       expect(placeholders, findsNWidgets(3));
       final scrollableTargets = tester
           .elementList(find.byType(Scrollable))

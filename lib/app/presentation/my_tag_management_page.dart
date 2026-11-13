@@ -66,7 +66,7 @@ enum MyInterestType {
 
 typedef _InterestCatalogInputs = ({
   List<AsmrTag> tags,
-  List<AsmrTagInterest> listened,
+  List<AsmrTagInterest> automatic,
   Set<String> selected,
   Set<String> excluded,
 });
@@ -75,7 +75,7 @@ typedef _InterestCatalogView = ({
   List<String> items,
   Map<String, String> labels,
   Map<String, AsmrTag> tags,
-  Set<String> automatic,
+  Map<String, double> automatic,
   Set<String> selected,
 });
 
@@ -119,7 +119,7 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
     _catalogInputs = next;
     if (previous == null ||
         !identical(previous.tags, next.tags) ||
-        !identical(previous.listened, next.listened) ||
+        !identical(previous.automatic, next.automatic) ||
         !setEquals(previous.selected, next.selected) ||
         !setEquals(previous.excluded, next.excluded)) {
       _invalidateCatalogView();
@@ -201,7 +201,7 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
     final weights = widget.excluded
         ? <String, double>{}
         : {
-            for (final interest in inputs.listened)
+            for (final interest in inputs.automatic)
               interest.tag.key: interest.weight,
           };
     final tags = inputs.tags
@@ -227,7 +227,7 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
       items: [for (final tag in tags) tag.key],
       labels: {for (final tag in tags) tag.key: tag.name},
       tags: {for (final tag in tags) tag.key: tag},
-      automatic: weights.keys.toSet(),
+      automatic: weights,
       selected: inputs.selected,
     );
   }
@@ -256,8 +256,8 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
           MyInterestType.voiceActors => controller.allVoiceActors,
           MyInterestType.circles => controller.allCircles,
         },
-        listened: switch (widget.type) {
-          MyInterestType.tags => controller.listenedTagInterests,
+        automatic: switch (widget.type) {
+          MyInterestType.tags => controller.interestTags,
           MyInterestType.voiceActors => controller.listenedVoiceActorInterests,
           MyInterestType.circles => controller.listenedCircleInterests,
         },
@@ -361,10 +361,13 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                       labels: view.labels,
                       resolveRowCount: true,
                       isSelected: (key) =>
-                          view.automatic.contains(key) ||
+                          (view.automatic[key] ?? 0) > 0 ||
                           (_changes[key] ?? view.selected.contains(key)),
-                      isEnabled: (key) => !view.automatic.contains(key),
-                      disabledHint: i18n.tr(widget.type.listenedKey),
+                      isEnabled: (key) => (view.automatic[key] ?? 0) <= 0,
+                      isMuted: (key) =>
+                          view.automatic.containsKey(key) &&
+                          _changes[key] != false,
+                      mutedHint: i18n.tr(widget.type.listenedKey),
                       readOnly: _saving,
                       onToggle: (key) => setState(() {
                         final value =

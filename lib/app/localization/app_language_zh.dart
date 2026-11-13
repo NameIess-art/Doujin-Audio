@@ -78,7 +78,7 @@ const Map<String, String> appLanguageZh = {
   'my_circle_catalog_incomplete': '完整社团库尚未加载',
   'my_circle_catalog_error': '社团库加载失败',
   'my_circle_search': '搜索社团',
-  'my_listened_tag': '常听标签（自动）',
+  'my_listened_tag': '自动选中的标签',
   'my_interval_day': '日',
   'my_interval_week': '周',
   'my_interval_month': '月',

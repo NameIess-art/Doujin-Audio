@@ -15,8 +15,6 @@ class _CountingSessionCard extends SessionListCard {
     required super.playback,
     required this.onBuild,
   }) : super(
-         coverPath: null,
-         coverGeneration: 0,
          coverCacheWidth: null,
          isTemporary: false,
          onOpen: _noop,

@@ -499,8 +499,8 @@ void registerAsmrControllerStateTests({
       await preferences.saveVoiceActorPreferences(voices);
       final restored = await preferences.loadVoiceActorPreferences();
       expect(restored.limit, 20);
-      expect(restored.interests, hasLength(20));
-      expect(restored.interests.first.tag.name, 'Voice 24');
+      expect(restored.listenedInterests, hasLength(20));
+      expect(restored.listenedInterests.first.tag.name, 'Voice 24');
       expect(restored.manualInterests, voices.manualInterests);
       expect(restored.learned, voices.learned);
       expect(restored.consumedSequences, voices.consumedSequences);
@@ -804,9 +804,57 @@ void registerAsmrControllerStateTests({
         excluded ? saved.excluded : saved.manualInterests,
         unorderedEquals([first, second]),
       );
-      expect(saved.interests, isEmpty);
+      expect(saved.listenedInterests, isEmpty);
+      expect(
+        controller.interestTags.map((entry) => entry.tag.key),
+        excluded ? isEmpty : [first, second],
+      );
     });
   }
+
+  test(
+    'listening displaces a tag from the list but preserves its manual selection',
+    () async {
+      await resetPrefs();
+      final state = AsmrTagPreferences(limit: 2);
+      final manual = state.resolve('Manual');
+      state.learned[state.resolve('Frequent')] = 10;
+      await preferences.saveTagPreferences(state);
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+        apiService: _FakeAsmrApiService(),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.setTagInterested(manual, true);
+      expect(controller.interestTags.map((entry) => entry.tag.name), [
+        'Frequent',
+        'Manual',
+      ]);
+
+      await controller.recordTagListening(
+        batchId: 'displacement:1',
+        tags: ['New tag'],
+        duration: const Duration(minutes: 5),
+      );
+      expect(controller.interestTags.map((entry) => entry.tag.name), [
+        'Frequent',
+        'New tag',
+      ]);
+      expect(controller.manualInterestTagKeys, {manual});
+      final saved = await preferences.loadTagPreferences();
+      expect(saved.manualInterests, {manual});
+      expect(saved.learned, isNot(contains(manual)));
+      expect(saved.recommendationWeights['manual'], 1);
+
+      await controller.setTagExcluded('local:new tag', true);
+      expect(controller.interestTags.map((entry) => entry.tag.name), [
+        'Frequent',
+        'Manual',
+      ]);
+    },
+  );
 
   test(
     'adding interest updates already loaded recommendation ordering',

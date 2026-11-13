@@ -517,7 +517,6 @@ final playlistStructureUiProvider = Provider<PlaylistStructureState>((ref) {
   return playlistStructureStateFromPlaybackState(
     PlaybackStateSliceData(
       activeSessions: catalog.sessions,
-      coverGeneration: ref.watch(coverGenerationProvider),
       isInitialized: catalog.isInitialized,
     ),
   );
@@ -543,16 +542,7 @@ class PlaylistSortedEntriesNotifier
 
   @override
   List<PlaylistStructureEntry> build() {
-    // Artwork changes refresh cards without invalidating their sort order.
-    final structureState = ref.watch(
-      playlistStructureUiProvider.select(
-        (state) => PlaylistStructureState(
-          entries: state.entries,
-          coverGeneration: 0,
-          isInitialized: state.isInitialized,
-        ),
-      ),
-    );
+    final structureState = ref.watch(playlistStructureUiProvider);
     final criterion = ref.watch(
       settingsStateProvider.select(
         (state) =>

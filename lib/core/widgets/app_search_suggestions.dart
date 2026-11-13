@@ -173,7 +173,8 @@ class AppElementChipSliver extends StatefulWidget {
     required this.onToggle,
     this.labels,
     this.isEnabled,
-    this.disabledHint,
+    this.isMuted,
+    this.mutedHint,
     this.readOnly = false,
     this.accentColor,
     this.maxItems,
@@ -189,7 +190,8 @@ class AppElementChipSliver extends StatefulWidget {
   final bool Function(String) isSelected;
   final bool Function(String)? isEnabled;
   final ValueChanged<String> onToggle;
-  final String? disabledHint;
+  final bool Function(String)? isMuted;
+  final String? mutedHint;
   final bool readOnly;
   final Color? accentColor;
   final int? maxItems;
@@ -392,14 +394,15 @@ class _AppElementChipSliverState extends State<AppElementChipSliver> {
 
   Widget _chip(String item, double maxWidth, Color accent) {
     final enabled = widget.isEnabled?.call(item) ?? true;
+    final muted = !enabled || (widget.isMuted?.call(item) ?? false);
     return AppElementChip(
       key: ValueKey(item),
       label: widget.labels?[item] ?? item,
       maxWidth: maxWidth,
       accentColor: accent,
       selected: widget.isSelected(item),
-      disabledHint: enabled ? null : widget.disabledHint,
-      muted: !enabled,
+      mutedHint: muted ? widget.mutedHint : null,
+      muted: muted,
       onPressed: !enabled || widget.readOnly
           ? null
           : () => widget.onToggle(item),
@@ -418,7 +421,7 @@ class AppElementChip extends StatelessWidget {
     required this.selected,
     required this.onPressed,
     this.muted = false,
-    this.disabledHint,
+    this.mutedHint,
   });
 
   static const _paddingWidth = 16.0;
@@ -429,7 +432,7 @@ class AppElementChip extends StatelessWidget {
   final bool selected;
   final VoidCallback? onPressed;
   final bool muted;
-  final String? disabledHint;
+  final String? mutedHint;
 
   @override
   Widget build(BuildContext context) {
@@ -483,7 +486,7 @@ class AppElementChip extends StatelessWidget {
         ),
       ),
     );
-    final hint = disabledHint;
+    final hint = mutedHint;
     return hint == null ? chip : Tooltip(message: hint, child: chip);
   }
 }

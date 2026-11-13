@@ -233,7 +233,7 @@ void main() {
       await service.refresh();
       await service.refresh();
       for (final state in [tags, voices, circles]) {
-        final ranking = state.interests;
+        final ranking = state.listenedInterests;
         expect(ranking.first.tag.name, startsWith('Long'));
         expect(ranking.first.weight, 12);
         expect(ranking.last.tag.name, startsWith('Short'));
@@ -245,7 +245,7 @@ void main() {
         expect(
           AsmrTagPreferences.fromJson(
             state.toJson(),
-          ).interests.map((e) => e.weight),
+          ).listenedInterests.map((e) => e.weight),
           ranking.map((e) => e.weight),
         );
       }
@@ -449,7 +449,7 @@ void main() {
       failVoices = false;
       await service.refresh();
       expect(acknowledged, [batch.id]);
-      expect(voicePreferences.interests.map((e) => e.tag.name), [
+      expect(voicePreferences.listenedInterests.map((e) => e.tag.name), [
         'Voice One',
         'Voice Two',
       ]);
@@ -458,7 +458,7 @@ void main() {
         (await repository.loadDays()).single.duration,
         const Duration(minutes: 1),
       );
-      expect(tags.interests, isEmpty);
+      expect(tags.listenedInterests, isEmpty);
     },
   );
 
@@ -531,8 +531,8 @@ void main() {
     addTearDown(service.dispose);
     await service.refresh();
     expect(detailReads, 1);
-    expect(voicePreferences.interests.single.tag.name, 'Local Voice');
-    expect(circlePreferences.interests.single.tag.name, 'Local Circle');
+    expect(voicePreferences.listenedInterests.single.tag.name, 'Local Voice');
+    expect(circlePreferences.listenedInterests.single.tag.name, 'Local Circle');
     expect(voicePreferences.learned.values, [1.0]);
     expect(circlePreferences.learned.values, [1.0]);
   });

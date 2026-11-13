@@ -111,7 +111,10 @@ class AsmrTagPreferences {
     }
   }
 
-  List<AsmrTagInterest> get listenedInterests {
+  List<AsmrTagInterest> get listenedInterests =>
+      rankedListeningInterests.take(limit).toList(growable: false);
+
+  List<AsmrTagInterest> get rankedListeningInterests {
     final values = learned.entries
         .where((e) => e.value > 0 && tags.containsKey(e.key))
         .map((e) => AsmrTagInterest(tag: tags[e.key]!, weight: e.value))
@@ -120,10 +123,38 @@ class AsmrTagPreferences {
       final order = b.weight.compareTo(a.weight);
       return order == 0 ? a.tag.name.compareTo(b.tag.name) : order;
     });
-    return values.take(limit).toList(growable: false);
+    return values;
   }
 
-  List<AsmrTagInterest> get interests => listenedInterests;
+  List<AsmrTagInterest> fillInterestSlots(
+    Iterable<AsmrTagInterest> rankedListening,
+  ) {
+    final interests = rankedListening
+        .where((entry) => !excluded.contains(entry.tag.key))
+        .take(limit)
+        .toList();
+    if (interests.length == limit) return interests;
+
+    final rankedKeys = interests.map((entry) => entry.tag.key).toSet();
+    final manualTags =
+        manualInterests
+            .where(
+              (key) => !rankedKeys.contains(key) && !excluded.contains(key),
+            )
+            .map((key) => tags[key])
+            .whereType<AsmrTag>()
+            .toList()
+          ..sort((a, b) {
+            final name = a.name.compareTo(b.name);
+            return name == 0 ? a.key.compareTo(b.key) : name;
+          });
+    interests.addAll(
+      manualTags
+          .take(limit - interests.length)
+          .map((tag) => AsmrTagInterest(tag: tag, weight: 0)),
+    );
+    return interests;
+  }
 
   void setInterested(String key, bool value) {
     if (!tags.containsKey(key)) throw ArgumentError.value(key, 'key');

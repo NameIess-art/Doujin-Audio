@@ -80,7 +80,7 @@ const Map<String, String> appLanguageJa = {
   'my_circle_catalog_incomplete': '完全なサークル一覧は未読み込みです',
   'my_circle_catalog_error': 'サークルを読み込めませんでした',
   'my_circle_search': 'サークルを検索',
-  'my_listened_tag': 'よく聴くタグ（自動）',
+  'my_listened_tag': '自動選択されたタグ',
   'my_interval_day': '日',
   'my_interval_week': '週',
   'my_interval_month': '月',

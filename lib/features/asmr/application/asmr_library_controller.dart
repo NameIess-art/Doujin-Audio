@@ -156,10 +156,15 @@ class AsmrLibraryController extends ChangeNotifier
   _InterestSnapshot _interestSnapshot(AsmrTagPreferences preferences) {
     final cached = _interestSnapshots[preferences];
     if (cached != null) return cached;
-    final interests = immutableList(preferences.listenedInterests);
+    final ranked = preferences.rankedListeningInterests;
+    final listened = ranked.take(preferences.limit).toList(growable: false);
     return _interestSnapshots[preferences] = (
-      interests: interests,
-      weights: immutableMap(preferences.recommendationWeightsFor(interests)),
+      interests: immutableList(
+        identical(preferences, _tagPreferences)
+            ? preferences.fillInterestSlots(ranked)
+            : listened,
+      ),
+      weights: immutableMap(preferences.recommendationWeightsFor(listened)),
     );
   }
 
@@ -197,7 +202,6 @@ class AsmrLibraryController extends ChangeNotifier
   Object? _tagCatalogError;
   List<AsmrTagInterest> get interestTags =>
       _interestSnapshot(_tagPreferences).interests;
-  List<AsmrTagInterest> get listenedTagInterests => interestTags;
   Set<String> get manualInterestTagKeys =>
       Set.unmodifiable(_tagPreferences.manualInterests);
   List<AsmrTag> get allTags => _sortedCatalog(_tagPreferences);

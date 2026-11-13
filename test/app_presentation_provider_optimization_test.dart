@@ -1094,7 +1094,7 @@ void main() {
 
     Object? sorted;
     List<String> sortedIds = const [];
-    var displayedCoverGeneration = -1;
+    Object? structure;
     await tester.pumpWidget(
       fixture.build(
         Consumer(
@@ -1102,9 +1102,7 @@ void main() {
             final entries = ref.watch(playlistSortedEntriesUiProvider);
             sorted = entries;
             sortedIds = entries.map((entry) => entry.sessionId).toList();
-            displayedCoverGeneration = ref
-                .watch(playlistStructureUiProvider)
-                .coverGeneration;
+            structure = ref.watch(playlistStructureUiProvider);
             return const SizedBox.shrink();
           },
         ),
@@ -1113,12 +1111,12 @@ void main() {
     await tester.pumpAndSettle();
     final initial = sorted;
     expect(initial, hasLength(2));
-    final initialCoverGeneration = displayedCoverGeneration;
+    final initialStructure = structure;
 
     fixture.library.coverArtworkCacheService.invalidateAll();
     await tester.pump();
     await tester.pump();
-    expect(displayedCoverGeneration, greaterThan(initialCoverGeneration));
+    expect(structure, same(initialStructure));
     expect(identical(sorted, initial), isTrue);
 
     fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 1);

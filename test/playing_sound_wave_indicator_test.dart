@@ -376,8 +376,6 @@ void main() {
                           : SessionListCard(
                               sessionId: session.id,
                               track: track,
-                              coverPath: null,
-                              coverGeneration: 0,
                               coverCacheWidth: 96,
                               library: fixture.runtimeGraph.library,
                               playback: fixture.runtimeGraph.playback,

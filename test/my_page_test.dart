@@ -1592,11 +1592,11 @@ void main() {
               expect(chip(automatic).selected, isTrue);
               expect(chip(automatic).onPressed, isNull);
               expect(chip(automatic).muted, isTrue);
-              expect(chip(manual).muted, isFalse);
+              expect(chip(manual).muted, type == MyInterestType.tags);
               expect(chip(secondAutomatic).onPressed, isNull);
               expect(
                 find.byTooltip(fixture.languageProvider.tr(type.listenedKey)),
-                findsNWidgets(2),
+                findsNWidgets(type == MyInterestType.tags ? 3 : 2),
               );
               expect(chip(manual).selected, isTrue);
               expect(chip(manual).onPressed, isNotNull);
@@ -2023,7 +2023,7 @@ class _InterestController extends AsmrLibraryController {
   @override
   List<AsmrTagInterest> get voiceActorInterests {
     voiceInterestReads++;
-    return voices.interests;
+    return voices.listenedInterests;
   }
 
   @override
@@ -2034,7 +2034,7 @@ class _InterestController extends AsmrLibraryController {
   @override
   Set<String> get excludedVoiceActorKeys => voices.excluded;
   @override
-  List<AsmrTagInterest> get circleInterests => circles.interests;
+  List<AsmrTagInterest> get circleInterests => circles.listenedInterests;
   @override
   List<AsmrTagInterest> get listenedCircleInterests =>
       circles.listenedInterests;
@@ -2100,13 +2100,11 @@ class _InterestController extends AsmrLibraryController {
   @override
   List<AsmrTagInterest> get interestTags {
     interestReads++;
-    return state.interests;
+    return state.fillInterestSlots(state.rankedListeningInterests);
   }
 
   @override
   List<AsmrTag> get allTags => state.tags.values.toList();
-  @override
-  List<AsmrTagInterest> get listenedTagInterests => state.listenedInterests;
   @override
   Set<String> get manualInterestTagKeys => state.manualInterests;
   @override

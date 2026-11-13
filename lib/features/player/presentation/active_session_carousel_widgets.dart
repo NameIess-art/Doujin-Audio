@@ -12,7 +12,6 @@ class _ActiveSessionCard extends ConsumerWidget {
     this.expandedDockWidth,
     this.dockCollapsed = false,
     this.circularCover = false,
-    required this.indicatorIndex,
     this.isPlaybackRaised = false,
     required this.isRoutedDock,
   });
@@ -27,7 +26,6 @@ class _ActiveSessionCard extends ConsumerWidget {
   final double? expandedDockWidth;
   final bool dockCollapsed;
   final bool circularCover;
-  final ValueListenable<int> indicatorIndex;
   final bool isPlaybackRaised;
   final bool isRoutedDock;
   @override
@@ -351,10 +349,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         titleSubtitle,
-                        if (!compact && count >= 2) ...[
-                          const SizedBox(height: 2.5),
-                          _buildIndicator(activeColor, cs),
-                        ],
+                        if (!compact && count >= 2) const SizedBox(height: 6),
                       ],
                     ),
                   ),
@@ -399,36 +394,74 @@ class _ActiveSessionCard extends ConsumerWidget {
       ),
     );
   }
+}
 
-  Widget _buildIndicator(Color activeColor, ColorScheme cs) {
+class _ActiveSessionIndicator extends StatelessWidget {
+  const _ActiveSessionIndicator({
+    required this.sessions,
+    required this.indexListenable,
+  });
+
+  final List<PlaybackSessionSnapshot> sessions;
+  final ValueListenable<int> indexListenable;
+
+  @override
+  Widget build(BuildContext context) {
+    const dotHeight = 3.5;
+    const highlightWidth = 10.0;
+    final colors = Theme.of(context).colorScheme;
+    final shape = BorderRadius.circular(2);
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 150);
     return ValueListenableBuilder<int>(
-      valueListenable: indicatorIndex,
-      builder: (context, activePage, _) {
-        final active = count > 0 ? activePage % count : 0;
-        final isFocusedCard = position == active;
-        return Semantics(
-          key: isFocusedCard
-              ? const ValueKey('active_session_indicator')
-              : ValueKey('active_session_indicator_$position'),
-          label: isFocusedCard ? '${activePage + 1} / $count' : null,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (var index = 0; index < count; index++)
-                AnimatedContainer(
-                  duration: MediaQuery.disableAnimationsOf(context)
-                      ? Duration.zero
-                      : const Duration(milliseconds: 150),
-                  margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                  width: index == active ? 10 : 4,
-                  height: 3.5,
+      valueListenable: indexListenable,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final _ in sessions)
+            SizedBox(
+              width: highlightWidth,
+              child: Center(
+                child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: index == active
-                        ? activeColor
-                        : cs.onSurfaceVariant.withValues(alpha: 0.38),
-                    borderRadius: BorderRadius.circular(2),
+                    color: colors.onSurfaceVariant.withValues(alpha: 0.38),
+                    borderRadius: shape,
+                  ),
+                  child: const SizedBox(width: 4, height: dotHeight),
+                ),
+              ),
+            ),
+        ],
+      ),
+      builder: (context, index, dots) {
+        final count = sessions.length;
+        final active = index % count;
+        final queueColor = sessions[active].playbackQueue?.colorValue;
+        return Semantics(
+          key: const ValueKey('active_session_indicator'),
+          label: '${active + 1} / $count',
+          child: Stack(
+            children: [
+              dots!,
+              Positioned.fill(
+                child: AnimatedAlign(
+                  alignment: AlignmentDirectional(2 * active / (count - 1) - 1, 0),
+                  duration: duration,
+                  curve: Curves.easeInOut,
+                  child: AnimatedContainer(
+                    duration: duration,
+                    width: highlightWidth,
+                    height: dotHeight,
+                    decoration: BoxDecoration(
+                      color: queueColor == null
+                          ? colors.primary
+                          : Color(queueColor),
+                      borderRadius: shape,
+                    ),
                   ),
                 ),
+              ),
             ],
           ),
         );

@@ -111,12 +111,10 @@ class PlaylistStructureEntry {
 class PlaylistStructureState {
   const PlaylistStructureState({
     required this.entries,
-    required this.coverGeneration,
     required this.isInitialized,
   });
 
   final List<PlaylistStructureEntry> entries;
-  final int coverGeneration;
   final bool isInitialized;
 
   bool get hasSessions => entries.isNotEmpty;
@@ -125,13 +123,12 @@ class PlaylistStructureState {
   bool operator ==(Object other) {
     return other is PlaylistStructureState &&
         listEquals(other.entries, entries) &&
-        other.coverGeneration == coverGeneration &&
         other.isInitialized == isInitialized;
   }
 
   @override
   int get hashCode =>
-      Object.hash(Object.hashAll(entries), coverGeneration, isInitialized);
+      Object.hash(Object.hashAll(entries), isInitialized);
 }
 
 @immutable
@@ -475,7 +472,6 @@ PlaylistStructureState playlistStructureStateFromPlaybackState(
     entries: List<PlaylistStructureEntry>.unmodifiable(
       playbackState.activeSessions.map(_playlistStructureEntry),
     ),
-    coverGeneration: playbackState.coverGeneration,
     isInitialized: playbackState.isInitialized,
   );
 }

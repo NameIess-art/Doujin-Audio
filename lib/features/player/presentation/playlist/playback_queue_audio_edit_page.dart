@@ -114,6 +114,7 @@ class _PlaybackQueueAudioEditPageState
         : cs.surfaceContainer;
 
     final headerHeight = AppPageHeaderMetrics.contentTopInset(context);
+    final horizontalPadding = AppPageHeaderMetrics.padding.copyWith(top: 0);
 
     return Scaffold(
       backgroundColor: cs.surface,
@@ -148,6 +149,7 @@ class _PlaybackQueueAudioEditPageState
                                     top: headerHeight + 48,
                                   ),
                                   child: ListTile(
+                                    contentPadding: horizontalPadding,
                                     title: Text(
                                       i18n.tr('empty_playback_queue'),
                                     ),
@@ -155,11 +157,9 @@ class _PlaybackQueueAudioEditPageState
                                 )
                               : ReorderableListView.builder(
                                   scrollController: _addedQueueScrollController,
-                                  padding: EdgeInsets.fromLTRB(
-                                    AppSpacing.xs,
-                                    headerHeight + 44,
-                                    AppSpacing.xs,
-                                    AppSpacing.xs,
+                                  padding: horizontalPadding.copyWith(
+                                    top: headerHeight + 44,
+                                    bottom: AppSpacing.xs,
                                   ),
                                   buildDefaultDragHandles: false,
                                   proxyDecorator: (child, index, animation) =>
@@ -275,11 +275,8 @@ class _PlaybackQueueAudioEditPageState
                           child: Listener(
                             behavior: HitTestBehavior.opaque,
                             child: Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                AppSpacing.xs,
-                                0,
-                                AppSpacing.xs,
-                                AppSpacing.xs,
+                              padding: horizontalPadding.copyWith(
+                                bottom: AppSpacing.xs,
                               ),
                               child: Align(
                                 alignment: Alignment.centerLeft,
@@ -329,11 +326,9 @@ class _PlaybackQueueAudioEditPageState
                         children: [
                           Positioned.fill(
                             child: ListView.builder(
-                              padding: EdgeInsets.fromLTRB(
-                                AppSpacing.xs,
-                                sectionTopOffset + 44,
-                                AppSpacing.xs,
-                                AppSpacing.xs,
+                              padding: horizontalPadding.copyWith(
+                                top: sectionTopOffset + 44,
+                                bottom: AppSpacing.xs,
                               ),
                               itemCount: ordinarySessions.length,
                               itemBuilder: (context, index) {
@@ -362,11 +357,8 @@ class _PlaybackQueueAudioEditPageState
                             child: Listener(
                               behavior: HitTestBehavior.opaque,
                               child: Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  AppSpacing.xs,
-                                  0,
-                                  AppSpacing.xs,
-                                  AppSpacing.xs,
+                                padding: horizontalPadding.copyWith(
+                                  bottom: AppSpacing.xs,
                                 ),
                                 child: Align(
                                   alignment: Alignment.centerLeft,

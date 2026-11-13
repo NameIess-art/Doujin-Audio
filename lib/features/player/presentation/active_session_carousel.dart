@@ -397,7 +397,6 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
           expandedDockWidth: embedded ? widget.expandedDockWidth : null,
           dockCollapsed: dockCollapsed,
           circularCover: requestsCircularCover,
-          indicatorIndex: _indicatorIndex,
           isPlaybackRaised: widget.isPlaybackRaised,
           isRoutedDock: widget.isRoutedDock,
           onOpen: (coverOrigin) => _openSessionDetail(coverOrigin, session),
@@ -467,7 +466,29 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
           if (requestsCircularCover || (embedded && totalWidth < 160)) {
             return roundCard;
           }
-          return pages;
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              pages,
+              if (!compact && visibleSessions.length > 1)
+                PositionedDirectional(
+                  start: 12,
+                  end: 12,
+                  bottom: 7,
+                  child: IgnorePointer(
+                    child: Center(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: _ActiveSessionIndicator(
+                          sessions: visibleSessions,
+                          indexListenable: _indicatorIndex,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
         },
       ),
     );

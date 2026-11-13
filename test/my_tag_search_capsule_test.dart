@@ -411,14 +411,23 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('my_tags_confirm')));
     await tester.pumpAndSettle();
     expect(controller.manualInterestTagKeys, hasLength(25));
+    expect(controller.interestTags, hasLength(20));
     await tester.tap(find.text('Open tags'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), 'Tag 24');
+    await tester.enterText(find.byType(TextField), 'Tag 19');
     await tester.pump();
-    expect(
-      tester.widget<AppElementChip>(find.byType(AppElementChip)).selected,
-      isTrue,
-    );
+    AppElementChip chip() =>
+        tester.widget<AppElementChip>(find.byType(AppElementChip));
+    expect(chip().selected, isTrue);
+    expect(chip().muted, isTrue);
+
+    controller._state.recordListeningBatch('test:1', [
+      (tags: ['Tag 24'], duration: const Duration(minutes: 1)),
+    ]);
+    controller.notifyListeners();
+    await tester.pump();
+    expect(chip().selected, isTrue);
+    expect(chip().muted, isFalse);
     await tester.tap(find.byType(AppElementChip));
     await tester.pump();
     expect(controller.manualInterestTagKeys, hasLength(25));
@@ -429,7 +438,7 @@ void main() {
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
-      'automatic listening tags and manual recommendation choices are separate on $platform',
+      'a full listening ranking keeps additional tag choices manual on $platform',
       (tester) async {
         final fixture = AppRuntimeWidgetTestFixture();
         final controller = _TagController(createTestAsmrServices());
@@ -561,6 +570,9 @@ void main() {
         final first = find.byType(AppElementChip).first;
         expect(tester.widget<AppElementChip>(first).label, 'Tag 05');
         expect(tester.widget<AppElementChip>(first).selected, isTrue);
+        if (!excluded) {
+          expect(tester.widget<AppElementChip>(first).muted, isTrue);
+        }
         await tester.tap(first);
         await tester.pumpAndSettle();
         expect(tester.widget<AppElementChip>(first).label, 'Tag 05');
@@ -594,9 +606,8 @@ class _TagController extends AsmrLibraryController {
   int saveCalls = 0;
   int catalogReads = 0;
   @override
-  List<AsmrTagInterest> get interestTags => _state.interests;
-  @override
-  List<AsmrTagInterest> get listenedTagInterests => _state.listenedInterests;
+  List<AsmrTagInterest> get interestTags =>
+      _state.fillInterestSlots(_state.rankedListeningInterests);
   @override
   Set<String> get manualInterestTagKeys => _state.manualInterests;
   @override

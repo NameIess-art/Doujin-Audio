@@ -2179,8 +2179,6 @@ void main() {
         SessionCoverThumbnail(
           sessionId: session.id,
           track: track,
-          coverPath: coverPath,
-          coverGeneration: 0,
           coverCacheWidth: 600,
         ),
         SessionHeroArtwork(

@@ -387,7 +387,7 @@ void main() {
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
-      'carousel rebuilds indicators only at mapped page changes on $platform',
+      'carousel keeps dots fixed and slides only the highlight on $platform',
       (tester) async {
         debugDefaultTargetPlatformOverride = platform;
         addTearDown(() => debugDefaultTargetPlatformOverride = null);
@@ -428,20 +428,30 @@ void main() {
         final indicator = find.byKey(
           const ValueKey('active_session_indicator'),
         );
-        AnimatedContainer firstDot() => tester.widget<AnimatedContainer>(
-          find
-              .descendant(
-                of: indicator,
-                matching: find.byType(AnimatedContainer),
-              )
-              .first,
+        final indicatorRect = tester.getRect(indicator);
+        final dots = find.descendant(
+          of: indicator,
+          matching: find.byType(DecoratedBox),
         );
-        var previous = firstDot();
+        final highlight = find.descendant(
+          of: indicator,
+          matching: find.byType(AnimatedContainer),
+        );
+        List<Offset> dotCenters() => [
+          for (var index = 0; index < 3; index++)
+            tester.getCenter(dots.at(index)),
+        ];
+
+        final fixedDots = dotCenters();
+        expect(tester.getCenter(highlight), fixedDots.first);
+        var previous = tester.widget<AnimatedContainer>(highlight);
         var indicatorRebuilds = 0;
         Future<void> move(TestGesture gesture) async {
           await gesture.moveBy(const Offset(-20, 0));
           await tester.pump(const Duration(milliseconds: 40));
-          final next = firstDot();
+          expect(tester.getRect(indicator), indicatorRect);
+          expect(dotCenters(), fixedDots);
+          final next = tester.widget<AnimatedContainer>(highlight);
           if (!identical(next, previous)) indicatorRebuilds++;
           previous = next;
         }
@@ -468,8 +478,16 @@ void main() {
         }
         expect(indicatorRebuilds, 1);
         expect(tester.widget<Semantics>(indicator).properties.label, '2 / 3');
+        await tester.pump(const Duration(milliseconds: 40));
+        expect(dotCenters(), fixedDots);
+        expect(
+          tester.getCenter(highlight).dx,
+          inExclusiveRange(fixedDots[0].dx, fixedDots[1].dx),
+        );
         await gesture.up();
         await tester.pumpAndSettle();
+        expect(dotCenters(), fixedDots);
+        expect(tester.getCenter(highlight), fixedDots[1]);
         await tester.pumpWidget(
           carousel([sessions[1], sessions[0], sessions[2]]),
         );

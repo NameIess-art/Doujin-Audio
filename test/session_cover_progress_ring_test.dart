@@ -290,8 +290,6 @@ void main() {
             sessionId: session.id,
             session: session,
             track: track,
-            coverPath: null,
-            coverGeneration: 0,
             coverCacheWidth: 64,
             library: fixture.runtimeGraph.library,
             playback: fixture.runtimeGraph.playback,

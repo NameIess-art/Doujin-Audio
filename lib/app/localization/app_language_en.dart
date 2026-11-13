@@ -89,7 +89,7 @@ const Map<String, String> appLanguageEn = {
   'my_circle_catalog_incomplete': 'Full circle catalog not loaded',
   'my_circle_catalog_error': 'Could not load circles',
   'my_circle_search': 'Search circles',
-  'my_listened_tag': 'Frequently listened (automatic)',
+  'my_listened_tag': 'Automatically selected tag',
   'my_interval_day': 'Day',
   'my_interval_week': 'Week',
   'my_interval_month': 'Month',

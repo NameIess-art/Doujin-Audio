@@ -394,11 +394,6 @@ class EqualizerPage extends ConsumerWidget {
             i18n.tr('equalizer'),
             style: const TextStyle(fontWeight: FontWeight.w900),
           ),
-          subtitle: Text(
-            eqCapabilities.supported
-                ? i18n.tr('equalizer_supported')
-                : i18n.tr('equalizer_enable_hint'),
-          ),
           value: effects.eqEnabled,
           onChanged: (value) {
             AppInteractionFeedback.trigger(
@@ -409,6 +404,7 @@ class EqualizerPage extends ConsumerWidget {
         ),
         UnifiedDropdownButtonFormField<String>(
           initialValue: selectedPresetId,
+          expandWidth: true,
           decoration: InputDecoration(
             labelText: i18n.tr('eq_preset'),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),

@@ -12,6 +12,8 @@ import '../localization/app_language_provider.dart';
 
 enum ListeningInterval { day, week, month, quarter, year }
 
+const _minimumBarColumns = 7;
+
 class ListeningPeriod {
   const ListeningPeriod(this.start, this.end, this.duration);
   final DateTime start;
@@ -75,7 +77,7 @@ List<ListeningPeriod> aggregateListeningPeriods(
     ListeningInterval.day => 30,
     ListeningInterval.week || ListeningInterval.month => 12,
     ListeningInterval.quarter => 8,
-    ListeningInterval.year => 5,
+    ListeningInterval.year => _minimumBarColumns,
   };
   var first = move(latest, 1 - minimum);
   if (includedStart != null && includedStart.isBefore(first)) {
@@ -131,7 +133,7 @@ class ListeningTimeChart extends StatefulWidget {
 }
 
 class _ListeningTimeChartState extends State<ListeningTimeChart> {
-  static const double _itemExtent = 48;
+  static const double _preferredBarExtent = 48;
   double _heatmapExtent = 0;
   int _heatmapColumnCount = 0;
   static const int _heatmapRows = 7;
@@ -183,6 +185,14 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
     if (oldWidget.style != widget.style) _revealSelection();
   }
 
+  double _barExtent(double width) {
+    final columns = math.max(
+      _minimumBarColumns,
+      (width / _preferredBarExtent).floor(),
+    );
+    return width / columns;
+  }
+
   void _revealSelection() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final controller = _scrollController;
@@ -192,14 +202,16 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
         (period) => _containsSelection(period),
       );
       final heatmap = widget.style == ListeningChartStyle.heatmap;
-      final extent = heatmap ? _heatmapExtent : _itemExtent;
+      final position = controller.position;
+      final extent = heatmap
+          ? _heatmapExtent
+          : _barExtent(position.viewportDimension);
       final periodsAfterSelection = selectedIndex < 0
           ? 0
           : periods.length - 1 - selectedIndex;
       final reversedIndex = heatmap
           ? periodsAfterSelection ~/ _heatmapRows
           : periodsAfterSelection;
-      final position = controller.position;
       final offset =
           (reversedIndex * extent - (position.viewportDimension - extent) / 2)
               .clamp(position.minScrollExtent, position.maxScrollExtent);
@@ -287,14 +299,18 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
       return '$start – ${localizations.formatMediumDate(DateTime(period.end.year, period.end.month, period.end.day - 1))}';
     }
 
-    String label(ListeningPeriod period) => switch (_interval) {
-      ListeningInterval.day ||
-      ListeningInterval.week => '${period.start.month}/${period.start.day}',
-      ListeningInterval.month => '${period.start.year}/${period.start.month}',
-      ListeningInterval.quarter =>
-        '${period.start.year} Q${(period.start.month - 1) ~/ 3 + 1}',
-      ListeningInterval.year => '${period.start.year}',
-    };
+    String label(ListeningPeriod period) {
+      final date = period.start;
+      final year = (date.year % 100).toString().padLeft(2, '0');
+      return switch (_interval) {
+        ListeningInterval.day ||
+        ListeningInterval.week => '${date.month}/${date.day}',
+        ListeningInterval.month => '$year/${date.month}',
+        ListeningInterval.quarter => '$year Q${(date.month - 1) ~/ 3 + 1}',
+        ListeningInterval.year => year,
+      };
+    }
+
     Widget selectablePeriod(
       ListeningPeriod period,
       Widget child, {
@@ -526,7 +542,10 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
                         controller: controller,
                         reverse: true,
                         scrollDirection: Axis.horizontal,
-                        itemExtent: heatmap ? _heatmapExtent : _itemExtent,
+                        padding: EdgeInsets.zero,
+                        itemExtent: heatmap
+                            ? _heatmapExtent
+                            : _barExtent(constraints.maxWidth),
                         itemCount: heatmap
                             ? _heatmapColumnCount
                             : periods.length,
@@ -573,10 +592,13 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
                                 ),
                                 const SizedBox(height: 6),
                                 placeholderFor(
-                                  Text(
-                                    label(period),
-                                    maxLines: 1,
-                                    style: labelStyle,
+                                  FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text(
+                                      label(period),
+                                      maxLines: 1,
+                                      style: labelStyle,
+                                    ),
                                   ),
                                   width: 30,
                                   height: 12,

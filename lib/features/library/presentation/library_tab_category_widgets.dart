@@ -613,16 +613,16 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
                 library.isLibraryTrack(entry.path) ? 'exclude' : 'remove',
               ),
         secondaryActionLabel: i18n.tr('download'),
-        secondaryActionTooltip: i18n.tr('download'),
         secondaryActionIcon: Icons.download_rounded,
-        verticalActions: useFeaturedCard,
-        onSecondaryAction: () => unawaited(
-          downloadAudioTargetFromAsmr(
-            context: context,
-            ref: ref,
-            target: entry.target,
-          ),
-        ),
+        onSecondaryAction: defaultTargetPlatform == TargetPlatform.windows
+            ? () => unawaited(
+                downloadAudioTargetFromAsmr(
+                  context: context,
+                  ref: ref,
+                  target: entry.target,
+                ),
+              )
+            : null,
         animateLeadingActionClose: true,
         onLeadingAction: () => unawaited(
           saveSettingsWithFeedback(

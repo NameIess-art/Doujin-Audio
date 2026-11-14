@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../media/search_query_utils.dart';
 
@@ -198,8 +199,8 @@ class AppElementChipSliver extends StatefulWidget {
   final int? collapsedRows;
   final Widget Function(BuildContext, bool, bool, VoidCallback)? headerBuilder;
 
-  /// Measures all expanded rows so a draggable scrollbar has a finite range.
-  /// Chip widgets are still built on demand.
+  /// Completes row measurement in batches so a draggable scrollbar can use
+  /// the full range after the visible rows have been laid out.
   final bool resolveRowCount;
 
   @override
@@ -209,6 +210,7 @@ class AppElementChipSliver extends StatefulWidget {
 class _AppElementChipSliverState extends State<AppElementChipSliver> {
   static const _gap = 8.0;
   static const _rowGap = 8.0;
+  static const _measurementBatchSize = 128;
   bool _expanded = false;
   Map<String, String>? _layoutLabels;
   final _widths = <String, double>{};
@@ -224,6 +226,37 @@ class _AppElementChipSliverState extends State<AppElementChipSliver> {
   TextDirection? _layoutDirection;
   Locale? _layoutLocale;
   bool _layoutComplete = false;
+  int? _measurementFrame;
+  final _rowsKey = GlobalKey();
+
+  @override
+  void dispose() {
+    _cancelMeasurement();
+    super.dispose();
+  }
+
+  void _cancelMeasurement() {
+    if (_measurementFrame case final id?) {
+      SchedulerBinding.instance.cancelFrameCallbackWithId(id);
+      _measurementFrame = null;
+    }
+  }
+
+  void _scheduleMeasurement() {
+    if (_layoutComplete || _measurementFrame != null) return;
+    _measurementFrame = SchedulerBinding.instance.scheduleFrameCallback((_) {
+      _measurementFrame = null;
+      // A new search or layout replaces the queue during the next layout.
+      _ensureRows(_itemCount, maxNewItems: _measurementBatchSize);
+      if (_layoutComplete) {
+        setState(() {});
+        // A new delegate count alone does not relayout unchanged visible rows.
+        _rowsKey.currentContext?.findRenderObject()?.markNeedsLayout();
+      } else {
+        _scheduleMeasurement();
+      }
+    });
+  }
 
   bool _layout(
     double width,
@@ -257,6 +290,7 @@ class _AppElementChipSliverState extends State<AppElementChipSliver> {
         !identical(_layoutLabels, widget.labels)) {
       _widths.clear();
     }
+    _cancelMeasurement();
     _layoutLabels = widget.labels;
     _layoutWidth = width;
     _layoutStyle = style;
@@ -274,7 +308,7 @@ class _AppElementChipSliverState extends State<AppElementChipSliver> {
     return true;
   }
 
-  void _ensureRows(int count) {
+  void _ensureRows(int count, {int? maxNewItems}) {
     if (_layoutComplete || _rows.length >= count) return;
     final width = _layoutWidth!;
     final style = _layoutStyle!;
@@ -287,7 +321,12 @@ class _AppElementChipSliverState extends State<AppElementChipSliver> {
       locale: _layoutLocale,
       maxLines: 1,
     );
-    while (_rows.length < count && !_layoutComplete) {
+    final measureUntil = maxNewItems == null
+        ? _itemCount
+        : _nextItemIndex + maxNewItems;
+    while (_rows.length < count &&
+        !_layoutComplete &&
+        _nextItemIndex <= measureUntil) {
       final row = <String>[];
       var used = 0.0;
       while (_pendingItem != null || _nextItemIndex < _itemCount) {
@@ -300,7 +339,7 @@ class _AppElementChipSliverState extends State<AppElementChipSliver> {
           item = _layoutItems![_nextItemIndex++];
           final measured = _widths.putIfAbsent(item, () {
             painter.text = TextSpan(
-              text: widget.labels?[item] ?? item,
+              text: _layoutLabels?[item] ?? item,
               style: style,
             );
             painter.layout();
@@ -344,7 +383,11 @@ class _AppElementChipSliverState extends State<AppElementChipSliver> {
         if (content != null) return content!;
         final collapsedRows = widget.collapsedRows;
         final expanded = collapsedRows == null || _expanded;
-        if (expanded && widget.resolveRowCount) _ensureRows(_itemCount);
+        if (expanded && widget.resolveRowCount) {
+          _scheduleMeasurement();
+        } else {
+          _cancelMeasurement();
+        }
         final canExpand =
             collapsedRows != null &&
             (!_layoutComplete || _rows.length > collapsedRows);
@@ -352,6 +395,7 @@ class _AppElementChipSliverState extends State<AppElementChipSliver> {
             ? _rows.length
             : math.min(collapsedRows, _rows.length);
         final rows = SliverList.builder(
+          key: _rowsKey,
           itemCount: expanded ? (_layoutComplete ? _rows.length : null) : count,
           itemBuilder: (context, index) {
             _ensureRows(index + 1);
@@ -458,7 +502,9 @@ class AppElementChip extends StatelessWidget {
           shape: shape,
           child: InkWell(
             onTap: onPressed,
-            customBorder: shape,
+            borderRadius: _radius,
+            splashFactory: InkRipple.splashFactory,
+            splashColor: accentColor.withValues(alpha: .24),
             child: Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: _paddingWidth / 2,

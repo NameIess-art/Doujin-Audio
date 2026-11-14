@@ -110,14 +110,13 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
-    final primaryColor = Theme.of(context).colorScheme.primary;
     final actionsEnabled =
         !widget.isSelectionMode &&
         !_runningAction &&
         ref.watch(asmrPlaybackCoordinatorProvider) != null;
     const cardShape = LibraryLikeCardMetrics.cardShape;
 
-    // The swipe shell already clips the rounded card; keep its ink surface
+    // The card shell already clips the rounded card; keep its ink surface
     // rectangular so each scrolling row avoids another shaped physical layer.
     final cardContent = Material(
       animationDuration: kAppSelectionDuration,
@@ -127,7 +126,7 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
       shadowColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
       // The tap surface sits inside the card so its ink highlight and ripple
-      // paint above the swipe card's closed background.
+      // paint above the card's closed background.
       child: AppEntryInkWell(
         canRequestFocus: widget.isSelectionMode,
         onLongPress: widget.onLongPress,
@@ -157,7 +156,7 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
                   isSelected: widget.isSelected,
                   rjCode: widget.work.workCode,
                 ),
-                accentColor: primaryColor,
+                accentColor: cs.primary,
                 trailingActions: LibraryLikeCardActions(
                   addLabel: i18n.tr('add'),
                   playLabel: i18n.tr('play'),
@@ -175,6 +174,11 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
       ),
     );
 
+    final favoriteLabel = i18n.tr(
+      widget.work.isFavorite
+          ? 'asmr_unfavorite_action'
+          : 'asmr_favorite_action',
+    );
     return SwipeRevealCard(
       onSelectMultiple: widget.onLongPress,
       selectMultipleLabel: i18n.tr('select_multiple'),
@@ -182,24 +186,14 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
       enabled: !widget.isSelectionMode,
       closedColor: cs.surface,
       destructive: false,
-      color: primaryColor,
-      verticalActions: true,
-      actionLabel: i18n.tr(
-        widget.work.isFavorite
-            ? 'asmr_unfavorite_action'
-            : 'asmr_favorite_action',
-      ),
-      removeTooltip: i18n.tr(
-        widget.work.isFavorite
-            ? 'asmr_unfavorite_action'
-            : 'asmr_favorite_action',
-      ),
+      swipeEnabled: false,
+      actionLabel: favoriteLabel,
+      removeTooltip: favoriteLabel,
       primaryActionIcon: widget.work.isFavorite
           ? Icons.favorite_rounded
           : Icons.favorite_border_rounded,
       onRemove: () => unawaited(_toggleFavorite(context)),
       secondaryActionLabel: i18n.tr('download'),
-      secondaryActionTooltip: i18n.tr('download'),
       secondaryActionIcon: Icons.download_rounded,
       onSecondaryAction: () =>
           unawaited(_downloadAsmrWorks(context, [widget.work])),

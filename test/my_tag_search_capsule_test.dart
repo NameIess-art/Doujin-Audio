@@ -6,6 +6,7 @@ import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
 import 'package:doujin_audio/core/widgets/page_header_inset.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/widgets/app_search_suggestions.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:flutter/gestures.dart';
@@ -21,6 +22,54 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     await AppPreferences.init();
   });
+
+  testWidgets(
+    'opening the editor paints the header before reading the catalog',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      final controller = _TagController(createTestAsmrServices(), count: 5000);
+      addTearDown(fixture.dispose);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () => Navigator.of(context).push(
+                buildAppPageRoute<void>(
+                  context: context,
+                  child: const MyTagManagementPage(excluded: false),
+                ),
+              ),
+              child: const Text('Open tags'),
+            ),
+          ),
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+          ],
+        ),
+      );
+      await tester.tap(find.text('Open tags'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(find.byType(TopPageHeader), findsOneWidget);
+      expect(find.byType(TextField), findsOneWidget);
+      expect(controller.catalogReads, 0);
+      expect(controller.catalogLoads, 0);
+      await tester.pump(kAppMotionSlow ~/ 2);
+      expect(controller.catalogReads, 0);
+      expect(controller.catalogLoads, 0);
+      expect(find.byType(AppElementChip), findsNothing);
+      await tester.pumpAndSettle();
+      expect(controller.catalogReads, 1);
+      expect(controller.catalogLoads, 1);
+      expect(find.byType(AppElementChip), findsWidgets);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   for (final excluded in [false, true]) {
     testWidgets(
@@ -339,8 +388,25 @@ void main() {
         expect(offset, greaterThan(0));
         final visible = find.byType(AppElementChip).hitTestable();
         final chosen = tester.widget<AppElementChip>(visible.last).key!;
-        await tester.tap(find.byKey(chosen));
+        final chip = find.byKey(chosen);
+        final inkWell = find.descendant(
+          of: chip,
+          matching: find.byType(InkWell),
+        );
+        final inkController = Material.of(tester.element(inkWell));
+        Iterable<InkRipple> ripples() =>
+            ((inkController as dynamic).debugInkFeatures as List<InkFeature>? ??
+                    const <InkFeature>[])
+                .whereType<InkRipple>();
+        await tester.tap(chip);
+        expect(ripples(), hasLength(1));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 120));
+        expect(tester.widget<AppElementChip>(chip).selected, isTrue);
+        expect(Material.of(tester.element(inkWell)), same(inkController));
+        expect(ripples(), hasLength(1));
         await tester.pumpAndSettle();
+        expect(ripples(), isEmpty);
         expect(scroll.pixels, offset);
         expect(controller.catalogReads, reads);
         expect(controller.manualInterestTagKeys, isEmpty);
@@ -605,6 +671,7 @@ class _TagController extends AsmrLibraryController {
   Completer<void>? finishSave;
   int saveCalls = 0;
   int catalogReads = 0;
+  int catalogLoads = 0;
   @override
   List<AsmrTagInterest> get interestTags =>
       _state.fillInterestSlots(_state.rankedListeningInterests);
@@ -621,7 +688,10 @@ class _TagController extends AsmrLibraryController {
   @override
   bool get tagCatalogComplete => true;
   @override
-  Future<void> ensureTagCatalog({bool force = false}) async {}
+  Future<void> ensureTagCatalog({bool force = false}) async {
+    catalogLoads++;
+  }
+
   @override
   Future<void> applyTagSelections({
     required bool excluded,

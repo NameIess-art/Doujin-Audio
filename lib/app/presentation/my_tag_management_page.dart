@@ -12,6 +12,7 @@ import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/mobile_overlay_inset.dart';
 import '../../core/widgets/page_header_inset.dart';
 import '../../core/widgets/scroll_activity_gate.dart';
+import '../../core/widgets/shimmer_loading.dart';
 import '../../core/widgets/top_page_header.dart';
 import '../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../features/asmr/presentation/asmr_providers.dart';
@@ -97,6 +98,7 @@ class MyTagManagementPage extends ConsumerStatefulWidget {
 class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
   final _search = TextEditingController();
   final _changes = <String, bool>{};
+  final _draftRevision = ValueNotifier(0);
   bool _saving = false;
   AsmrLibraryController? _catalogController;
   _InterestCatalogInputs? _catalogInputs;
@@ -133,6 +135,14 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
     controller?.addListener(_refreshCatalog);
     _catalogInputs = null;
     _invalidateCatalogView();
+    if (controller != null) {
+      // Catalog loading may notify listeners immediately. Start it after the
+      // deferred list has mounted and subscribed to the controller.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !identical(_catalogController, controller)) return;
+        unawaited(_loadCatalog(controller));
+      });
+    }
   }
 
   @override
@@ -145,13 +155,6 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
     }
   }
 
-  @override
-  void initState() {
-    super.initState();
-    final controller = ref.read(asmrLibraryControllerProvider);
-    if (controller != null) unawaited(_loadCatalog(controller));
-  }
-
   Future<void> _loadCatalog(AsmrLibraryController controller) =>
       switch (widget.type) {
         MyInterestType.tags => controller.ensureTagCatalog(),
@@ -162,6 +165,7 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
   @override
   void dispose() {
     _catalogController?.removeListener(_refreshCatalog);
+    _draftRevision.dispose();
     _search.dispose();
     super.dispose();
   }
@@ -288,7 +292,6 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final controller = ref.watch(asmrLibraryControllerProvider);
-    _watchCatalog(controller);
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     const searchHeight = 38.0;
@@ -356,28 +359,32 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                       16,
                       MobileOverlayInset.of(context) + 88,
                     ),
-                    sliver: AppElementChipSliver(
-                      items: items,
-                      labels: view.labels,
-                      resolveRowCount: true,
-                      isSelected: (key) =>
-                          (view.automatic[key] ?? 0) > 0 ||
-                          (_changes[key] ?? view.selected.contains(key)),
-                      isEnabled: (key) => (view.automatic[key] ?? 0) <= 0,
-                      isMuted: (key) =>
-                          view.automatic.containsKey(key) &&
-                          _changes[key] != false,
-                      mutedHint: i18n.tr(widget.type.listenedKey),
-                      readOnly: _saving,
-                      onToggle: (key) => setState(() {
-                        final value =
-                            !(_changes[key] ?? view.selected.contains(key));
-                        if (value == view.selected.contains(key)) {
-                          _changes.remove(key);
-                        } else {
-                          _changes[key] = value;
-                        }
-                      }),
+                    sliver: ListenableBuilder(
+                      listenable: _draftRevision,
+                      builder: (context, _) => AppElementChipSliver(
+                        items: items,
+                        labels: view.labels,
+                        resolveRowCount: true,
+                        isSelected: (key) =>
+                            (view.automatic[key] ?? 0) > 0 ||
+                            (_changes[key] ?? view.selected.contains(key)),
+                        isEnabled: (key) => (view.automatic[key] ?? 0) <= 0,
+                        isMuted: (key) =>
+                            view.automatic.containsKey(key) &&
+                            _changes[key] != false,
+                        mutedHint: i18n.tr(widget.type.listenedKey),
+                        readOnly: _saving,
+                        onToggle: (key) {
+                          final value =
+                              !(_changes[key] ?? view.selected.contains(key));
+                          if (value == view.selected.contains(key)) {
+                            _changes.remove(key);
+                          } else {
+                            _changes[key] = value;
+                          }
+                          _draftRevision.value++;
+                        },
+                      ),
                     ),
                   ),
                 ],
@@ -392,7 +399,38 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
             topInset: headerTopInset,
             child: Stack(
               children: [
-                Positioned.fill(child: content),
+                Positioned.fill(
+                  child: AppDeferredContent(
+                    placeholder: Padding(
+                      padding: EdgeInsets.fromLTRB(16, headerTopInset, 16, 0),
+                      child: Align(
+                        alignment: AlignmentDirectional.topStart,
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final width in const [
+                              72.0,
+                              92.0,
+                              64.0,
+                              76.0,
+                              88.0,
+                            ])
+                              ShimmerContainer(
+                                width: width,
+                                height: 28,
+                                borderRadius: 8,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    builder: (_) {
+                      _watchCatalog(controller);
+                      return content;
+                    },
+                  ),
+                ),
                 Positioned(
                   right: 16,
                   bottom:

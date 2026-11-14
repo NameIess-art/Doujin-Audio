@@ -145,11 +145,23 @@ class _RenderHorizontalEdgeMask extends RenderShaderMask {
 
   @override
   void paint(PaintingContext context, Offset offset) {
-    if (_enabled) {
-      super.paint(context, offset);
-    } else {
+    final content = child;
+    if (!_enabled || content == null) {
       layer = null;
-      if (child != null) context.paintChild(child!, offset);
+      if (content != null) context.paintChild(content, offset);
+      return;
     }
+
+    // Rasterization can round the viewport clip and the mask rectangle
+    // differently. Cover the boundary pixels without moving the gradient.
+    const overlap = 1.0;
+    layer ??= ShaderMaskLayer();
+    layer!
+      ..shader = shaderCallback(const Offset(overlap, overlap) & size)
+      ..maskRect = (offset & size).inflate(overlap)
+      ..blendMode = blendMode;
+    context.pushLayer(layer!, (context, offset) {
+      context.paintChild(content, offset);
+    }, offset);
   }
 }

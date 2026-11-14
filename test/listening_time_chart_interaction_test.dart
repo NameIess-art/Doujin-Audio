@@ -146,6 +146,73 @@ void main() {
   final heatmapSwitch = find.byKey(const ValueKey('listening-style-heatmap'));
   final barSwitch = find.byKey(const ValueKey('listening-style-bar'));
 
+  for (final (platform, width, dayColumns) in [
+    (TargetPlatform.android, 280.0, 7),
+    (TargetPlatform.windows, 720.0, 15),
+  ]) {
+    testWidgets(
+      'bar chart fits $dayColumns days and keeps column widths on $platform',
+      (tester) async {
+        await pumpChart(
+          tester,
+          platform: platform,
+          width: width,
+          textScale: 1.6,
+        );
+        final list = find.byKey(const ValueKey('listening-chart-bar'));
+        final bounds = tester.getRect(list);
+        final columnWidth = bounds.width / dayColumns;
+        void expectColumns(DateTime latest, DateTime oldest, int count) {
+          final newestBar = tester.getRect(find.byKey(ValueKey(latest)));
+          final oldestBar = tester.getRect(find.byKey(ValueKey(oldest)));
+          expect(newestBar.right, closeTo(bounds.right, 0.01));
+          expect(
+            oldestBar.left,
+            closeTo(bounds.right - columnWidth * count, 0.01),
+          );
+          expect(newestBar.width, closeTo(columnWidth, 0.01));
+          expect(oldestBar.width, closeTo(columnWidth, 0.01));
+        }
+
+        expectColumns(
+          today,
+          DateTime(today.year, today.month, today.day - dayColumns + 1),
+          dayColumns,
+        );
+
+        final year = today.year.toString().substring(2);
+        for (final (interval, label) in [
+          (ListeningInterval.week, null),
+          (ListeningInterval.month, '$year/${today.month}'),
+          (ListeningInterval.quarter, '$year Q${(today.month + 2) ~/ 3}'),
+          (ListeningInterval.year, year),
+        ]) {
+          final chip = find.widgetWithText(
+            ChoiceChip,
+            i18n.tr('my_interval_${interval.name}'),
+          );
+          await tester.ensureVisible(chip);
+          await tester.tap(chip);
+          await tester.pumpAndSettle();
+          final periods = aggregateListeningPeriods([], interval, now: today);
+          expectColumns(
+            periods.last.start,
+            periods[periods.length - 7].start,
+            7,
+          );
+          if (label != null) {
+            expect(
+              find
+                  .descendant(of: list, matching: find.text(label))
+                  .hitTestable(),
+              findsOneWidget,
+            );
+          }
+        }
+      },
+    );
+  }
+
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     for (final reducedMotion in [false, true]) {
       testWidgets(

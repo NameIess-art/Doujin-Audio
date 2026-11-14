@@ -513,6 +513,40 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('large directories measure visible rows before the full range', (
+    tester,
+  ) async {
+    final items = _TrackedSuggestions(5000);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CustomScrollView(
+            slivers: [
+              AppElementChipSliver(
+                items: items,
+                isSelected: (_) => false,
+                onToggle: (_) {},
+                resolveRowCount: true,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    expect(find.text('suggestion 0000'), findsOneWidget);
+    expect(items.highestReadIndex, lessThan(500));
+    await tester.pumpAndSettle();
+    expect(items.readCount, items.length);
+    expect(
+      tester
+          .state<ScrollableState>(find.byType(Scrollable))
+          .position
+          .maxScrollExtent
+          .isFinite,
+      isTrue,
+    );
+  });
+
   testWidgets(
     'standalone element rows track labels, scale, width and read-only state',
     (tester) async {

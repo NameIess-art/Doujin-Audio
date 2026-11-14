@@ -1153,6 +1153,65 @@ void main() {
     }),
   );
 
+  testWidgets(
+    'fractional viewport edges do not leak unmasked pixels',
+    (tester) async {
+      final boundaryKey = GlobalKey();
+      final controller = ScrollController(initialScrollOffset: 20);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        _buildApp(
+          RepaintBoundary(
+            key: boundaryKey,
+            child: SizedBox(
+              width: 130,
+              height: 20,
+              child: Stack(
+                children: [
+                  Positioned(
+                    left: 4.4,
+                    width: 120.2,
+                    height: 20,
+                    child: HorizontalEdgeFadeScroll(
+                      controller: controller,
+                      builder: (controller) => SingleChildScrollView(
+                        controller: controller,
+                        scrollDirection: Axis.horizontal,
+                        clipBehavior: Clip.antiAlias,
+                        child: const ColoredBox(
+                          color: Colors.white,
+                          child: SizedBox(width: 600, height: 20),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final boundary = tester.renderObject<RenderRepaintBoundary>(
+        find.byKey(boundaryKey),
+      );
+      await tester.runAsync(() async {
+        for (final scale in [1.0, 1.25, 1.5, 2.0]) {
+          final image = await boundary.toImage(pixelRatio: scale);
+          final pixels = (await image.toByteData())!;
+          int alpha(int x) =>
+              pixels.getUint8(((10 * scale).floor() * image.width + x) * 4 + 3);
+          expect(alpha((64 * scale).floor()), 255);
+          for (final x in [(4.4 * scale).floor(), (124.6 * scale).floor()]) {
+            expect(alpha(x), lessThan(40), reason: 'column $x at scale $scale');
+          }
+          image.dispose();
+        }
+      });
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.windows}),
+  );
+
   testWidgets('top page header can render marquee title', (tester) async {
     await tester.pumpWidget(
       _buildApp(

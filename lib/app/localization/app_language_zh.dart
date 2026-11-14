@@ -539,8 +539,6 @@ const Map<String, String> appLanguageZh = {
   'audio_features': '功能',
   'equalizer': '均衡器',
   'time_segments': '时间段',
-  'equalizer_supported': '播放时按设备支持的频段应用设置',
-  'equalizer_enable_hint': '可提前调节，开启后在播放时生效',
   'eq_preset': '预设',
   'eq_reset': '重置',
   'eq_save_preset': '保存预设',

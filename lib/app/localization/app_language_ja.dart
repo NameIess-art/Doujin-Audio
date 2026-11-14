@@ -543,8 +543,6 @@ const Map<String, String> appLanguageJa = {
   'audio_features': '機能',
   'equalizer': 'イコライザー',
   'time_segments': '時間区間',
-  'equalizer_supported': '再生時に端末対応のバンドへ適用。',
-  'equalizer_enable_hint': '再生前でも調整可能。オンで再生時に適用。',
   'eq_preset': 'プリセット',
   'eq_reset': 'リセット',
   'eq_save_preset': 'プリセット保存',

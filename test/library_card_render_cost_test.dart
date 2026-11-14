@@ -1,6 +1,7 @@
 import 'dart:ui' show Tristate;
 
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -34,6 +35,52 @@ const _lines = [
 }
 
 void main() {
+  testWidgets(
+    'Windows card actions highlight independently on hover',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(hoverColor: Colors.transparent),
+          home: Material(
+            child: Center(
+              child: LibraryLikeCardActions(
+                addLabel: 'Add',
+                playLabel: 'Play',
+                onAdd: () {},
+                onPlay: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+      final add = find.byTooltip('Add');
+      final play = find.byTooltip('Play');
+      final dynamic material = Material.of(tester.element(add));
+      Iterable<InkHighlight> highlights() =>
+          (material.debugInkFeatures as List<InkFeature>? ?? [])
+              .whereType<InkHighlight>()
+              .where((feature) => feature.active && feature.color.a > 0);
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      for (final action in [add, play]) {
+        await mouse.moveTo(tester.getCenter(action));
+        await tester.pump();
+        final feature = highlights().single;
+        expect(
+          feature.referenceBox.localToGlobal(
+            feature.referenceBox.size.center(Offset.zero),
+          ),
+          tester.getCenter(action),
+        );
+      }
+      await mouse.moveTo(Offset.zero);
+      await tester.pumpAndSettle();
+      expect(highlights(), isEmpty);
+      await mouse.removePointer();
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
       'large font cards retain their row height on $platform',

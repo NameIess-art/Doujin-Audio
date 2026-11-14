@@ -41,6 +41,7 @@ class SwipeRevealCard extends StatefulWidget {
     this.tertiaryActionIcon = Icons.download_rounded,
     this.destructive = true,
     this.verticalActions = false,
+    this.swipeEnabled = true,
     this.enabled = true,
     this.onSelectMultiple,
     this.selectMultipleLabel,
@@ -80,6 +81,9 @@ class SwipeRevealCard extends StatefulWidget {
   final IconData tertiaryActionIcon;
   final bool destructive;
   final bool verticalActions;
+
+  /// Leaves the desktop context menu available when swipe actions are absent.
+  final bool swipeEnabled;
   final bool enabled;
   final VoidCallback? onSelectMultiple;
   final String? selectMultipleLabel;
@@ -195,7 +199,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   @override
   void didUpdateWidget(covariant SwipeRevealCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!widget.enabled && oldWidget.enabled) {
+    if ((!widget.enabled && oldWidget.enabled) ||
+        (!widget.swipeEnabled && oldWidget.swipeEnabled)) {
       _resetPaneState();
     }
     if (oldWidget.key != widget.key &&
@@ -443,6 +448,60 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    Widget buildClosedContent(BuildContext context) {
+      final content = ColoredBox(
+        color: widget.closedColor ?? cs.surface,
+        child: IgnorePointer(ignoring: _isOpen, child: widget.child),
+      );
+
+      if (widget.shape.runtimeType == RoundedRectangleBorder) {
+        final roundedShape = widget.shape as RoundedRectangleBorder;
+        return ClipRRect(
+          borderRadius: roundedShape.borderRadius.resolve(
+            Directionality.of(context),
+          ),
+          child: content,
+        );
+      }
+      return ClipPath(
+        clipBehavior: Clip.hardEdge,
+        clipper: ShapeBorderClipper(shape: widget.shape),
+        child: content,
+      );
+    }
+
+    // Preserve child animations when the swipe transform is removed on close.
+    final closedContent = Builder(
+      key: _contentKey,
+      builder: buildClosedContent,
+    );
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      return Padding(
+        padding: widget.margin,
+        child: CallbackShortcuts(
+          bindings: widget.enabled
+              ? {
+                  const SingleActivator(LogicalKeyboardKey.f10, shift: true):
+                      _showContextMenu,
+                  const SingleActivator(LogicalKeyboardKey.contextMenu):
+                      _showContextMenu,
+                }
+              : const {},
+          child: Focus(
+            canRequestFocus: widget.enabled,
+            skipTraversal: true,
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onSecondaryTapDown: widget.enabled ? _showContextMenu : null,
+              child: closedContent,
+            ),
+          ),
+        ),
+      );
+    }
+    if (!widget.swipeEnabled) {
+      return Padding(padding: widget.margin, child: closedContent);
+    }
     final actionWidth = _activeActionWidth;
     final revealProgress = (_revealedWidth / actionWidth).clamp(0.0, 1.0);
     final actionLabel = _hasTertiaryAction
@@ -506,57 +565,6 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
             : AppInteractionFeedbackType.confirmation,
       ),
     ];
-    Widget buildClosedContent(BuildContext context) {
-      final content = ColoredBox(
-        color: widget.closedColor ?? cs.surface,
-        child: IgnorePointer(ignoring: _isOpen, child: widget.child),
-      );
-
-      if (widget.shape.runtimeType == RoundedRectangleBorder) {
-        final roundedShape = widget.shape as RoundedRectangleBorder;
-        return ClipRRect(
-          borderRadius: roundedShape.borderRadius.resolve(
-            Directionality.of(context),
-          ),
-          child: content,
-        );
-      }
-      return ClipPath(
-        clipBehavior: Clip.hardEdge,
-        clipper: ShapeBorderClipper(shape: widget.shape),
-        child: content,
-      );
-    }
-
-    // Preserve child animations when the swipe transform is removed on close.
-    final closedContent = Builder(
-      key: _contentKey,
-      builder: buildClosedContent,
-    );
-    if (defaultTargetPlatform == TargetPlatform.windows) {
-      return Padding(
-        padding: widget.margin,
-        child: CallbackShortcuts(
-          bindings: widget.enabled
-              ? {
-                  const SingleActivator(LogicalKeyboardKey.f10, shift: true):
-                      _showContextMenu,
-                  const SingleActivator(LogicalKeyboardKey.contextMenu):
-                      _showContextMenu,
-                }
-              : const {},
-          child: Focus(
-            canRequestFocus: widget.enabled,
-            skipTraversal: true,
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onSecondaryTapDown: widget.enabled ? _showContextMenu : null,
-              child: closedContent,
-            ),
-          ),
-        ),
-      );
-    }
     // Lists own per-card repaint isolation. Adding it here duplicates the
     // same full-card layer for every visible library and playlist entry.
     return TapRegion(

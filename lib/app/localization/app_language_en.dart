@@ -583,9 +583,6 @@ const Map<String, String> appLanguageEn = {
   'audio_features': 'Features',
   'equalizer': 'Equalizer',
   'time_segments': 'Segments',
-  'equalizer_supported': 'Applies to supported EQ bands during playback.',
-  'equalizer_enable_hint':
-      'Adjust anytime; enable EQ to apply during playback.',
   'eq_preset': 'Preset',
   'eq_reset': 'Reset',
   'eq_save_preset': 'Save preset',

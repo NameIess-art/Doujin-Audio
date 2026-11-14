@@ -676,10 +676,9 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
       actionLabel: i18n.tr('remove'),
       removeTooltip: i18n.tr('remove_audio_folder'),
       secondaryActionLabel: isRootFolder ? i18n.tr('download') : null,
-      secondaryActionTooltip: isRootFolder ? i18n.tr('download') : null,
       secondaryActionIcon: Icons.download_rounded,
-      verticalActions: isRootFolder,
-      onSecondaryAction: isRootFolder
+      onSecondaryAction:
+          isRootFolder && defaultTargetPlatform == TargetPlatform.windows
           ? () => unawaited(
               downloadAudioTargetFromAsmr(
                 context: context,
@@ -865,16 +864,16 @@ class _TrackNodeWidget extends ConsumerWidget {
         actionLabel: removalLabel,
         removeTooltip: removalLabel,
         secondaryActionLabel: i18n.tr('audio_detail_edit_info'),
-        secondaryActionTooltip: i18n.tr('audio_detail_edit_info'),
         secondaryActionIcon: Icons.edit_rounded,
-        verticalActions: useFeaturedCard,
-        onSecondaryAction: () => unawaited(
-          showAudioDetailEditor(
-            context,
-            ref,
-            AudioDetailTarget.singleAudioFile(track.path),
-          ),
-        ),
+        onSecondaryAction: defaultTargetPlatform == TargetPlatform.windows
+            ? () => unawaited(
+                showAudioDetailEditor(
+                  context,
+                  ref,
+                  AudioDetailTarget.singleAudioFile(track.path),
+                ),
+              )
+            : null,
         animateLeadingActionClose: true,
         onLeadingAction: () => unawaited(
           saveSettingsWithFeedback(

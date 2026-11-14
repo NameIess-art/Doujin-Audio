@@ -3804,6 +3804,17 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      final equalizer = find.byType(EqualizerPage);
+      final toggle = find.descendant(
+        of: equalizer,
+        matching: find.byType(SwitchListTile),
+      );
+      final preset = find.descendant(
+        of: equalizer,
+        matching: find.byType(DropdownButtonFormField<String>),
+      );
+      expect(tester.widget<SwitchListTile>(toggle).subtitle, isNull);
+      expect(tester.getSize(preset).width, tester.getSize(toggle).width);
       expect(find.byType(EqBandSlider), findsNWidgets(8));
       expect(
         tester.widgetList<Slider>(find.byType(Slider)).map((s) => s.onChanged),
@@ -3853,6 +3864,7 @@ void main() {
         isInitialized: true,
       );
       await tester.pumpAndSettle();
+      expect(tester.widget<SwitchListTile>(toggle).subtitle, isNull);
       expect(find.byType(EqBandSlider), findsNWidgets(9));
       expect(tester.widget<EqBandSlider>(band).value, 3);
       expect(tester.widget<EqBandSlider>(band).min, -6);

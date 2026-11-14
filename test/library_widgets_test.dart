@@ -5723,7 +5723,7 @@ void main() {
   );
 
   testWidgets(
-    'root folder card supports swipe pin and displays pin badge on cover',
+    'root folder swipes left to remove and right to pin',
     (WidgetTester tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -5769,11 +5769,20 @@ void main() {
         fixture.languageProvider.tr('pin_to_top'),
       );
       expect(swipeCard.leadingActionIcon, Icons.push_pin_rounded);
-      expect(swipeCard.onSecondaryAction, isNotNull);
+      expect(swipeCard.onSecondaryAction, isNull);
+
+      await tester.drag(rootFolderFinder, const Offset(-200, 0));
+      await tester.pumpAndSettle();
       expect(
-        swipeCard.secondaryActionLabel,
-        fixture.languageProvider.tr('download'),
+        find.byTooltip(fixture.languageProvider.tr('remove_audio_folder')),
+        findsOneWidget,
       );
+      expect(
+        find.byTooltip(fixture.languageProvider.tr('download')),
+        findsNothing,
+      );
+      await tester.tapAt(tester.getCenter(swipeCardFinder));
+      await tester.pumpAndSettle();
 
       // Pin badge not shown initially
       expect(
@@ -5785,8 +5794,9 @@ void main() {
         findsNothing,
       );
 
-      // Toggle pin
-      swipeCard.onLeadingAction!();
+      await tester.drag(rootFolderFinder, const Offset(180, 0));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip(fixture.languageProvider.tr('pin_to_top')));
       await tester.pump();
       await pumpUntilFound(
         tester,
@@ -5943,17 +5953,13 @@ void main() {
         fixture.languageProvider.tr('download'),
       );
 
-      if (defaultTargetPlatform == TargetPlatform.windows) {
-        await tester.tap(
-          swipeCardFinder,
-          buttons: kSecondaryMouseButton,
-          kind: PointerDeviceKind.mouse,
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(find.text(fixture.languageProvider.tr('download')));
-      } else {
-        swipeCard.onSecondaryAction!();
-      }
+      await tester.tap(
+        swipeCardFinder,
+        buttons: kSecondaryMouseButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(fixture.languageProvider.tr('download')));
 
       final downloadPage = find.byType(AsmrDownloadPage);
       await pumpUntilFound(tester, downloadPage);
@@ -5989,15 +5995,12 @@ void main() {
 
       await finishLibraryTest(tester, fixture);
     },
-    variant: const TargetPlatformVariant({
-      TargetPlatform.android,
-      TargetPlatform.windows,
-    }),
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
 
   for (final kind in ['audio', 'covered audio', 'video']) {
     testWidgets(
-      'single $kind card plays temporarily on tap and edits from its menu',
+      'single $kind card plays temporarily and offers platform-specific actions',
       (tester) async {
         var prepareCalls = 0;
         var playCalls = 0;
@@ -6166,10 +6169,6 @@ void main() {
           matching: find.byType(SwipeRevealCard),
         );
         final editLabel = fixture.languageProvider.tr('audio_detail_edit_info');
-        expect(
-          tester.widget<SwipeRevealCard>(card).secondaryActionLabel,
-          editLabel,
-        );
         if (defaultTargetPlatform == TargetPlatform.windows) {
           await tester.tap(
             card,
@@ -6181,7 +6180,14 @@ void main() {
         } else {
           await tester.drag(card, const Offset(-250, 0));
           await tester.pumpAndSettle();
-          await tester.tap(find.byTooltip(editLabel));
+          expect(find.byTooltip(editLabel), findsNothing);
+          expect(
+            find.byTooltip(tester.widget<SwipeRevealCard>(card).removeTooltip),
+            findsOneWidget,
+          );
+          await finishLibraryTest(tester, fixture);
+          await tester.pump(const Duration(seconds: 1));
+          return;
         }
         await pumpUntilFound(tester, find.byType(DlsiteMetadataReviewPage));
         await tester.pumpAndSettle();

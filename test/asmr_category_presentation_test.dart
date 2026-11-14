@@ -829,20 +829,16 @@ void main() {
           expect(find.text(favoriteLabel), findsOneWidget);
           expect(find.text(downloadLabel), findsOneWidget);
         } else {
-          expect(find.byTooltip(favoriteLabel), findsWidgets);
-          expect(find.byTooltip(downloadLabel), findsWidgets);
-          expect(
-            tester.getRect(contentFinder.first).left,
-            lessThan(before.left),
-          );
+          expect(find.byTooltip(favoriteLabel), findsNothing);
+          expect(find.byTooltip(downloadLabel), findsNothing);
+          expect(tester.getRect(contentFinder.first), before);
+          expect(controller.favoriteToggles, 0);
         }
-        await tester.tap(
-          platform == TargetPlatform.windows
-              ? find.text(favoriteLabel)
-              : find.byTooltip(favoriteLabel).last,
-        );
-        await tester.pumpAndSettle();
-        expect(controller.favoriteToggles, 1);
+        if (platform == TargetPlatform.windows) {
+          await tester.tap(find.text(favoriteLabel));
+          await tester.pumpAndSettle();
+          expect(controller.favoriteToggles, 1);
+        }
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
       },

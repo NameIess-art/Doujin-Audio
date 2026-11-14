@@ -542,7 +542,9 @@ class LibraryLikeCardActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final desktop = theme.platform == TargetPlatform.windows;
     // The card already owns an ink surface. A full Material button adds an
     // independent surface and style-state machinery for each tiny action.
     Widget action(IconData icon, String label, VoidCallback? onTap) => Tooltip(
@@ -556,6 +558,8 @@ class LibraryLikeCardActions extends StatelessWidget {
         child: InkResponse(
           onTap: onTap,
           canRequestFocus: onTap != null,
+          hoverColor: desktop ? colors.primary.withValues(alpha: 0.24) : null,
+          hoverDuration: desktop ? Duration.zero : null,
           containedInkWell: true,
           customBorder: const CircleBorder(),
           radius: 12,

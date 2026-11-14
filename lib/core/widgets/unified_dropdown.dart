@@ -136,6 +136,7 @@ class UnifiedDropdownButtonFormField<T> extends StatelessWidget {
     required this.onChanged,
     required this.decoration,
     this.alignment = AlignmentDirectional.centerStart,
+    this.expandWidth = false,
     this.menuMaxHeight,
     this.multilineItems = false,
   });
@@ -145,6 +146,7 @@ class UnifiedDropdownButtonFormField<T> extends StatelessWidget {
   final ValueChanged<T?>? onChanged;
   final InputDecoration decoration;
   final AlignmentGeometry alignment;
+  final bool expandWidth;
   final double? menuMaxHeight;
   final bool multilineItems;
 
@@ -165,6 +167,7 @@ class UnifiedDropdownButtonFormField<T> extends StatelessWidget {
         borderRadius: AppRadius.borderMedium,
       ),
     );
+    if (expandWidth) return SizedBox(width: double.infinity, child: field);
     return Align(
       alignment: alignment,
       widthFactor: 1,

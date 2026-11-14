@@ -18,6 +18,7 @@ import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
+import 'package:doujin_audio/core/widgets/library_like_cards.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
@@ -1799,7 +1800,7 @@ void main() {
   );
 
   testWidgets(
-    'ASMR work card left-swipe reveals favorite and download actions and tapping opens WorkDetailPage',
+    'ASMR work card stays in place on left swipe and tap opens WorkDetailPage',
     (tester) async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       final fixture = AppRuntimeWidgetTestFixture();
@@ -1847,19 +1848,20 @@ void main() {
         findsWidgets,
       );
 
+      final content = find.descendant(
+        of: card,
+        matching: find.byType(LibraryLikeMetadataWorkCardContent),
+      );
+      final before = tester.getRect(content);
       await tester.drag(card, const Offset(-180, 0));
       await tester.pumpAndSettle();
 
-      // Swiping left reveals favorite and download actions
-      expect(find.byTooltip('取消收藏'), findsOneWidget);
-      expect(find.byTooltip('下载'), findsOneWidget);
+      expect(tester.getRect(content), before);
+      expect(find.byTooltip('取消收藏'), findsNothing);
+      expect(find.byTooltip('下载'), findsNothing);
       expect(find.byTooltip('查看作品详细信息'), findsNothing);
       expect(find.text('查看文档/文本'), findsNothing);
       expect(find.byIcon(Icons.description_outlined), findsNothing);
-
-      // Close swipe by dragging right
-      await tester.drag(card, const Offset(180, 0));
-      await tester.pumpAndSettle();
 
       // Tapping card opens WorkDetailPage
       await tester.tap(card);
@@ -1868,9 +1870,10 @@ void main() {
         tester,
         find.byKey(const ValueKey('work_detail_entries_skeleton')),
       );
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 350));
       expect(find.byType(WorkDetailPage), findsOneWidget);
       expect(find.text('Swipe Test Work'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
     },
   );
 

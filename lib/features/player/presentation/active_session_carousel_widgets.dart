@@ -503,24 +503,10 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
           containedInkWell: true,
           radius: 20,
           customBorder: const CircleBorder(),
+          splashFactory: AppEntryInkWell.entrySplashFactory(context),
+          highlightColor: Colors.transparent,
           child: Center(
-            child: AnimatedSwitcher(
-              switchOutCurve: kAppFadeCurve,
-              switchInCurve: kAppFadeCurve,
-              duration: MediaQuery.disableAnimationsOf(context)
-                  ? Duration.zero
-                  : kAppFadeDuration,
-              transitionBuilder: (child, animation) {
-                return ScaleTransition(
-                  scale: Tween<double>(begin: 0.4, end: 1.0).animate(
-                    CurvedAnimation(
-                      parent: animation,
-                      curve: Curves.easeOutBack,
-                    ),
-                  ),
-                  child: FadeTransition(opacity: animation, child: child),
-                );
-              },
+            child: AppPlaybackIconTransition(
               child: isLoading
                   ? SizedBox(
                       key: const ValueKey('loading'),

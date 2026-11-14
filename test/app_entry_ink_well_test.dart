@@ -25,7 +25,7 @@ void main() {
                     builder: (context) {
                       final style =
                           AppEntryInkWell.entryButtonStyle(
-                            Theme.of(context),
+                            context,
                           ).merge(
                             localShape
                                 ? const ButtonStyle(
@@ -110,7 +110,7 @@ void main() {
           body: Center(
             child: Builder(
               builder: (context) => OutlinedButton(
-                style: AppEntryInkWell.entryButtonStyle(Theme.of(context)),
+                style: AppEntryInkWell.entryButtonStyle(context),
                 onPressed: () => Navigator.of(context).push<void>(
                   buildAppPageRoute<void>(
                     context: context,
@@ -192,7 +192,7 @@ void main() {
                 child: Builder(
                   builder: (context) {
                     final style = AppEntryInkWell.entryButtonStyle(
-                      Theme.of(context),
+                      context,
                     );
                     void open() => Navigator.of(context).push<void>(
                       buildAppPageRoute<void>(
@@ -329,7 +329,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 120));
       expect(visibleInk(), isNotEmpty);
       await gesture.up();
-      expect(visibleInk().whereType<InkSplash>(), isEmpty);
+      expect(visibleInk().where((ink) => ink is! InkHighlight), isEmpty);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
       expect(visibleInk(), isEmpty);
@@ -341,7 +341,7 @@ void main() {
       expect(visibleInk(), isEmpty);
       await tester.pumpAndSettle();
       expect(find.byKey(entryKey), findsOneWidget);
-      expect(visibleInk().whereType<InkSplash>(), isEmpty);
+      expect(visibleInk().where((ink) => ink is! InkHighlight), isEmpty);
       if (platform == TargetPlatform.windows) {
         // A stationary mouse can legitimately hover the restored entry.
         await gesture.moveTo(Offset.zero);
@@ -379,10 +379,10 @@ void main() {
         ),
       );
       final entry = find.byType(AppEntryInkWell);
-      Iterable<InkSplash> splashes() {
+      Iterable<InteractiveInkFeature> splashes() {
         final dynamic controller = Material.of(entryContext);
         final features = controller.debugInkFeatures as List<InkFeature>?;
-        return (features ?? <InkFeature>[]).whereType<InkSplash>();
+        return (features ?? <InkFeature>[]).whereType<InteractiveInkFeature>().where((feature) => feature.color.a > 0);
       }
 
       final cancelled = await tester.startGesture(tester.getCenter(entry));
@@ -406,6 +406,51 @@ void main() {
     });
   }
 
+  testWidgets('starting a scroll clears the pressed row without opening it', (
+    tester,
+  ) async {
+    final scroll = ScrollController();
+    addTearDown(scroll.dispose);
+    final row = find.byKey(const ValueKey('scrolling-entry'));
+    var taps = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: TargetPlatform.android),
+        home: Scaffold(
+          body: Material(
+            child: ListView(
+              controller: scroll,
+              children: [
+                AppEntryInkWell(
+                  key: const ValueKey('scrolling-entry'),
+                  onTap: () => taps++,
+                  child: const SizedBox(height: 160),
+                ),
+                const SizedBox(height: 1200),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    final dynamic ink = Material.of(tester.element(row));
+    Iterable<InteractiveInkFeature> visibleInk() =>
+        ((ink.debugInkFeatures as List<InkFeature>?) ?? [])
+            .whereType<InteractiveInkFeature>()
+            .where((feature) => feature.color.a > 0);
+    final gesture = await tester.startGesture(tester.getCenter(row));
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(visibleInk(), isNotEmpty);
+    await gesture.moveBy(const Offset(0, -30));
+    await gesture.moveBy(const Offset(0, -30));
+    await tester.pump();
+    expect(scroll.offset, greaterThan(0));
+    expect(visibleInk(), isEmpty);
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(taps, 0);
+  });
+
   testWidgets('Windows hover background conforms to button shape', (
     tester,
   ) async {
@@ -421,7 +466,7 @@ void main() {
           body: Center(
             child: Builder(
               builder: (context) => IconButton(
-                style: AppEntryInkWell.entryButtonStyle(Theme.of(context)),
+                style: AppEntryInkWell.entryButtonStyle(context),
                 onPressed: () {},
                 icon: const Icon(Icons.settings),
               ),

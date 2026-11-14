@@ -35,22 +35,22 @@ PageRoute<void> buildSessionDetailRoute({
 
 class SessionDetailRoute extends AppPreparedPageRoute<void> {
   static const _portraitRestoreTimeout = Duration(milliseconds: 500);
+  static const _coverDuration = Duration(milliseconds: 260);
 
   SessionDetailRoute({
     required this.sessionId,
     SessionCoverAnchorState? source,
     String? sourceTrackPath,
-  })
-    : _source = source,
-      _sourceTrackPath = sourceTrackPath,
-      _sourceBounds = source?.bounds(),
-      super(
-        transitionDuration: kAppFadeDuration,
-        reverseTransitionDuration: kAppFadeDuration,
-        pageBuilder: (context, animation, secondaryAnimation) =>
-            SessionDetailPage(sessionId: sessionId, routeAnimation: animation),
-        transitionsBuilder: (_, animation, secondaryAnimation, child) => child,
-      ) {
+  }) : _source = source,
+       _sourceTrackPath = sourceTrackPath,
+       _sourceBounds = source?.bounds(),
+       super(
+         transitionDuration: _coverDuration,
+         reverseTransitionDuration: _coverDuration,
+         pageBuilder: (context, animation, secondaryAnimation) =>
+             SessionDetailPage(sessionId: sessionId, routeAnimation: animation),
+         transitionsBuilder: (_, animation, secondaryAnimation, child) => child,
+       ) {
     _sourceImage = _sourceBounds == null ? null : source?.decodedImage?.clone();
   }
 
@@ -202,14 +202,6 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
   }
 
   @override
-  Duration get transitionDuration =>
-      _reducedMotion ? Duration.zero : super.transitionDuration;
-
-  @override
-  Duration get reverseTransitionDuration =>
-      _reducedMotion ? Duration.zero : super.reverseTransitionDuration;
-
-  @override
   Widget buildPage(
     BuildContext context,
     Animation<double> animation,
@@ -222,16 +214,11 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
     _playlist = container.read(playlistUiControllerProvider);
     _coverTargets = container.read(sessionCoverTargetsProvider);
     _reducedMotion = MediaQuery.disableAnimationsOf(context);
-    controller!.duration = transitionDuration;
-    controller!.reverseDuration = reverseTransitionDuration;
     if (!_entryPrepared) {
       _entryPrepared = true;
       animation.addStatusListener(_handleFlightStatus);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!isActive) return;
-        if (_reducedMotion && controller?.status == AnimationStatus.forward) {
-          controller!.value = 1;
-        }
         if (_sourceImage != null && _sourceBounds != null) {
           _prepareCoverEntry(
             container

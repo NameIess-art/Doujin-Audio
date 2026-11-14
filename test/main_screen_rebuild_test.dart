@@ -236,7 +236,7 @@ void main() {
         (element) => identical(element, route.subtreeContext),
       );
       final origin = tester.getTopLeft(page).dx;
-      expect(route.reverseTransitionDuration, kAppMotionSlow);
+      expect(route.reverseTransitionDuration, kAppPagePopDuration);
 
       await tester.tap(
         category == 'about'
@@ -261,7 +261,7 @@ void main() {
       addTearDown(() => debugOnRebuildDirtyWidget = previous);
       var previousLeft = tester.getTopLeft(page).dx;
       var previousProgress = route.animation!.value;
-      for (var frame = 0; frame < 12; frame++) {
+      for (var frame = 0; frame < 10; frame++) {
         session.setOptimisticPosition(Duration(milliseconds: frame * 100));
         await tester.pump(const Duration(milliseconds: 16));
         expect(tester.state(carousel), same(carouselState));
@@ -283,7 +283,7 @@ void main() {
             'Route animation frames must retain the settings and dock '
             'subtrees while playback progress changes.',
       );
-      await tester.pump(const Duration(milliseconds: 91));
+      await tester.pump(const Duration(milliseconds: 23));
       expect(route.animation!.status, AnimationStatus.reverse);
       await tester.pump(const Duration(milliseconds: 2));
       await tester.pumpAndSettle();

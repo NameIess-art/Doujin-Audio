@@ -1361,7 +1361,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                   const SizedBox(height: 12),
 
                   Theme(
-                    data: AppEntryInkWell.entryTheme(Theme.of(context)),
+                    data: AppEntryInkWell.entryTheme(context),
                     child: ListTile(
                       key: const ValueKey('subtitle_edit_tile'),
                       enabled: canEditSubtitle,

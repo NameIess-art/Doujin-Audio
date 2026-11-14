@@ -6,6 +6,7 @@ import '../../settings/presentation/settings_providers.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../../core/widgets/app_entry_ink_well.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:flutter/services.dart';
@@ -656,7 +657,7 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
           surfaceTintColor: Colors.transparent,
           // The tap surface sits inside the card so its ink highlight and
           // ripple paint above the swipe card's closed background.
-          child: InkWell(
+          child: AppEntryInkWell(
             canRequestFocus: isSelectionMode,
             onLongPress: onLongPress,
             onTap: isSelectionMode ? onToggleSelect : null,

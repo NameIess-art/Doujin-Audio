@@ -1137,7 +1137,7 @@ void main() {
           commands,
           replaceQueue ? isEmpty : [(harness.session.id, tracks[1].path, 1)],
         );
-        await tester.pump(const Duration(milliseconds: 210));
+        await tester.pump(const Duration(milliseconds: 140));
         expect(exited, isFalse);
         expect(harness.session.currentTrackPath, tracks.first.path);
         await tester.pump(const Duration(milliseconds: 100));

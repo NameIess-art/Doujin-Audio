@@ -16,6 +16,10 @@ const kAppMotionFast = Duration(milliseconds: 180);
 const kAppMotionStandard = Duration(milliseconds: 220);
 const kAppMotionSlow = Duration(milliseconds: 300);
 const kAppSelectionDuration = Duration(milliseconds: 80);
+const kAppPagePushDuration = Duration(milliseconds: 240);
+const kAppPagePopDuration = Duration(milliseconds: 200);
+const kAppOverlayDuration = Duration(milliseconds: 200);
+const kAppPlaybackIconDuration = Duration(milliseconds: 120);
 
 /// Keeps the current badge until the preceding card motion has finished.
 class AppDeferredFade extends StatefulWidget {
@@ -1447,8 +1451,8 @@ class _PlaceholderContentTransitionState
 class SecondaryOverlayConfig {
   const SecondaryOverlayConfig({
     this.backgroundOpacity = 0.80,
-    this.transitionDuration = kAppFadeDuration,
-    this.reverseTransitionDuration = kAppFadeDuration,
+    this.transitionDuration = kAppOverlayDuration,
+    this.reverseTransitionDuration = kAppOverlayDuration,
     this.curve = kAppFadeCurve,
     this.reverseCurve = kAppFadeCurve,
   });
@@ -1529,7 +1533,7 @@ class UndoableRemovalTransition extends StatefulWidget {
     super.key,
     required this.hidden,
     required this.child,
-    this.duration = kAppFadeDuration,
+    this.duration = kAppMotionFast,
     this.curve = kAppFadeCurve,
     this.reverseCurve = kAppFadeCurve,
   });
@@ -1549,6 +1553,17 @@ class _UndoableRemovalTransitionState extends State<UndoableRemovalTransition>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final CurvedAnimation _animation;
+
+  bool get _skipMotion =>
+      MediaQuery.disableAnimationsOf(context) ||
+      !TickerMode.valuesOf(context).enabled ||
+      widget.duration == Duration.zero;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_skipMotion) _controller.value = widget.hidden ? 0 : 1;
+  }
 
   @override
   void initState() {
@@ -1577,8 +1592,7 @@ class _UndoableRemovalTransitionState extends State<UndoableRemovalTransition>
       _animation.reverseCurve = widget.curve;
     }
     if (widget.hidden != oldWidget.hidden) {
-      if (MediaQuery.disableAnimationsOf(context) ||
-          widget.duration == Duration.zero) {
+      if (_skipMotion) {
         _controller.value = widget.hidden ? 0.0 : 1.0;
       } else if (widget.hidden) {
         _controller.reverse();
@@ -1655,6 +1669,38 @@ Widget buildAppFadeTransition({
     reverseCurve: reverseCurve,
     child: child,
   );
+}
+
+/// Shared by the playback dock, session cards, and playback detail.
+class AppPlaybackIconTransition extends StatelessWidget {
+  const AppPlaybackIconTransition({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context) ||
+        !TickerMode.valuesOf(context).enabled) {
+      return child;
+    }
+    return AnimatedSwitcher(
+      duration: kAppPlaybackIconDuration,
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: _buildTransition,
+      child: child,
+    );
+  }
+
+  static Widget _buildTransition(Widget child, Animation<double> animation) {
+    return FadeTransition(
+      opacity: animation,
+      child: ScaleTransition(
+        scale: Tween<double>(begin: 0.92, end: 1).animate(animation),
+        child: child,
+      ),
+    );
+  }
 }
 
 // The route can outlive many parent rebuilds. Own its curve listener here,
@@ -2343,10 +2389,10 @@ class AppPageTransitionsBuilder extends PageTransitionsBuilder {
   DelegatedTransitionBuilder get delegatedTransition => _coveredPageTransition;
 
   @override
-  Duration get transitionDuration => kAppMotionSlow;
+  Duration get transitionDuration => kAppPagePushDuration;
 
   @override
-  Duration get reverseTransitionDuration => kAppMotionSlow;
+  Duration get reverseTransitionDuration => kAppPagePopDuration;
 
   @override
   Widget buildTransitions<T>(
@@ -2396,7 +2442,8 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
   required BuildContext context,
   required Widget child,
   RouteSettings? settings,
-  Duration duration = kAppMotionSlow,
+  Duration duration = kAppPagePushDuration,
+  Duration? reverseDuration,
   bool fullscreenDialog = false,
   bool slide = true,
   // Opt in only when the page marks its body with AppPageContentTransition.
@@ -2412,7 +2459,10 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
         : duration,
     reverseTransitionDuration: reducedMotion || duration == Duration.zero
         ? Duration.zero
-        : duration,
+        : reverseDuration ??
+              (duration == kAppPagePushDuration
+                  ? kAppPagePopDuration
+                  : duration),
     pageBuilder: (context, animation, secondaryAnimation) => child,
     transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
       // Instant pages still track their header when another route covers them.
@@ -2489,7 +2539,16 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
 
   bool _prepared = false;
   bool _disposed = false;
+  bool _reducedMotion = false;
   Timer? _exitCompletionTimer;
+
+  @override
+  Duration get transitionDuration =>
+      _reducedMotion ? Duration.zero : super.transitionDuration;
+
+  @override
+  Duration get reverseTransitionDuration =>
+      _reducedMotion ? Duration.zero : super.reverseTransitionDuration;
 
   // Match the theme delegate without introducing a second activity subtree.
   @override
@@ -2501,6 +2560,26 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
   ) {
+    final reducedMotion = MediaQuery.disableAnimationsOf(context);
+    if (_reducedMotion != reducedMotion) {
+      _reducedMotion = reducedMotion;
+      controller!.duration = transitionDuration;
+      controller!.reverseDuration = reverseTransitionDuration;
+      if (reducedMotion) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_disposed || !_reducedMotion) return;
+          switch (controller!.status) {
+            case AnimationStatus.forward:
+              controller!.value = 1;
+            case AnimationStatus.reverse:
+              controller!.value = 0;
+            case AnimationStatus.completed:
+            case AnimationStatus.dismissed:
+              break;
+          }
+        });
+      }
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (isActive) _prepared = true;
     });
@@ -2513,7 +2592,7 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
   @override
   Simulation? createSimulation({required bool forward}) {
     if (!forward &&
-        controller!.reverseDuration != Duration.zero &&
+        reverseTransitionDuration != Duration.zero &&
         controller!.value > 0) {
       return _PostFrameExitSimulation(
         initialValue: controller!.value,

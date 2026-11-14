@@ -611,7 +611,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                   'playlist_sleep_canvas_button',
                                 ),
                                 style: AppEntryInkWell.entryButtonStyle(
-                                  Theme.of(context),
+                                  context,
                                 ),
                                 onPressed: headerState.hasPlayingAudioSession
                                     ? () {

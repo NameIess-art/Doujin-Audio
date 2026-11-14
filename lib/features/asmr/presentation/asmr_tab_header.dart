@@ -17,7 +17,7 @@ class _AsmrDownloadProgressInlineButton extends ConsumerWidget {
       padding: const EdgeInsets.only(left: 8),
       child: HeaderFloatingButton(
         child: IconButton(
-          style: AppEntryInkWell.entryButtonStyle(Theme.of(context)),
+          style: AppEntryInkWell.entryButtonStyle(context),
           icon: Stack(
             alignment: Alignment.center,
             children: [
@@ -62,7 +62,7 @@ class _AsmrAccountButton extends ConsumerWidget {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     return IconButton(
-      style: AppEntryInkWell.entryButtonStyle(Theme.of(context)),
+      style: AppEntryInkWell.entryButtonStyle(context),
       onPressed: onPressed,
       icon: const Icon(Icons.account_circle_rounded),
       tooltip: i18n.tr('asmr_account_menu'),

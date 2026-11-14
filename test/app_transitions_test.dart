@@ -1236,15 +1236,15 @@ void main() {
     expect(route.animation!.status, AnimationStatus.forward);
     await tester.pump(const Duration(milliseconds: 500));
     expect(route.animation!.value, 0);
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 120));
     expect(route.animation!.value, closeTo(0.5, 0.001));
-    await tester.pump(const Duration(milliseconds: 149));
+    await tester.pump(const Duration(milliseconds: 119));
     expect(route.animation!.status, AnimationStatus.forward);
     await tester.pump(const Duration(milliseconds: 1));
     expect(route.animation!.status, AnimationStatus.completed);
     navigatorKey.currentState!.pop();
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 301));
+    await tester.pump(const Duration(milliseconds: 201));
     expect(route.animation!.value, 0);
     expect(route.animation!.status, AnimationStatus.reverse);
     await tester.pumpAndSettle();
@@ -1681,7 +1681,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('page routes open and close in 300 ms', (tester) async {
+  testWidgets('page routes open in 240 ms and close in 200 ms', (tester) async {
     final navigatorKey = GlobalKey<NavigatorState>();
     await tester.pumpWidget(
       MaterialApp(
@@ -1703,16 +1703,16 @@ void main() {
       context: navigator.context,
       child: const Scaffold(),
     );
-    expect(appRoute.transitionDuration, kAppMotionSlow);
-    expect(appRoute.reverseTransitionDuration, kAppMotionSlow);
+    expect(appRoute.transitionDuration, kAppPagePushDuration);
+    expect(appRoute.reverseTransitionDuration, kAppPagePopDuration);
 
     final materialRoute = MaterialPageRoute<void>(
       builder: (_) => const Scaffold(),
     );
     unawaited(navigator.push(materialRoute));
     await tester.pump();
-    expect(materialRoute.transitionDuration, kAppMotionSlow);
-    expect(materialRoute.reverseTransitionDuration, kAppMotionSlow);
+    expect(materialRoute.transitionDuration, kAppPagePushDuration);
+    expect(materialRoute.reverseTransitionDuration, kAppPagePopDuration);
     await tester.pumpAndSettle();
   });
 
@@ -1838,10 +1838,10 @@ void main() {
           context: navigator.context,
           child: regions('trajectory-detail'),
         );
-        expect(route.transitionDuration, const Duration(milliseconds: 300));
+        expect(route.transitionDuration, kAppPagePushDuration);
         expect(
           route.reverseTransitionDuration,
-          const Duration(milliseconds: 300),
+          kAppPagePopDuration,
         );
         String? popResult;
         var routeCompleted = false;
@@ -1864,14 +1864,14 @@ void main() {
           isFalse,
         );
         expect(tester.getRect(body).left, closeTo(origin, 0.001));
-        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 65));
         final firstStep = tester.getRect(body).left - origin;
-        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 65));
         final secondPosition = tester.getRect(body).left - origin;
         expect(firstStep, greaterThan(width * 0.5));
         expect(firstStep, greaterThan((width - secondPosition) * 2));
         expect(secondPosition, inExclusiveRange(firstStep, width));
-        await tester.pump(const Duration(milliseconds: 99));
+        await tester.pump(const Duration(milliseconds: 69));
         expect(route.animation!.status, AnimationStatus.reverse);
         var retainedFinalFrame = false;
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2112,10 +2112,10 @@ void main() {
             onHeaderPaint: () => headerPaints++,
           ),
         );
-        expect(route.transitionDuration, const Duration(milliseconds: 300));
+        expect(route.transitionDuration, kAppPagePushDuration);
         expect(
           route.reverseTransitionDuration,
-          const Duration(milliseconds: 300),
+          kAppPagePopDuration,
         );
         unawaited(navigatorKey.currentState!.push(route));
         await tester.pump(const Duration(milliseconds: 500));
@@ -2131,7 +2131,7 @@ void main() {
         final headerLeft = tester
             .getRect(find.byKey(const ValueKey('whole-home-header')))
             .left;
-        await tester.pump(const Duration(milliseconds: 75));
+        await tester.pump(const Duration(milliseconds: 60));
         final header = find.byKey(const ValueKey('whole-detail-header'));
         final body = find.byKey(const ValueKey('whole-detail-body'));
         expect(tester.getRect(header).left, closeTo(headerLeft, 0.01));
@@ -2145,7 +2145,7 @@ void main() {
           reason: 'Header geometry stays fixed while the page moves.',
         );
         for (var i = 0; i < 3; i++) {
-          await tester.pump(const Duration(milliseconds: 75));
+          await tester.pump(const Duration(milliseconds: 60));
         }
         await tester.pump(const Duration(milliseconds: 1));
         expect(route.animation!.status, AnimationStatus.completed);
@@ -2159,7 +2159,7 @@ void main() {
 
         navigatorKey.currentState!.pop();
         await tester.pump();
-        await tester.pump(const Duration(milliseconds: 225));
+        await tester.pump(const Duration(milliseconds: 150));
         expect(tester.getRect(header).left, closeTo(headerLeft, 0.01));
         expect(tester.getRect(body).left, greaterThan(0));
         expect(_effectiveOpacity(tester, header), inExclusiveRange(0, 1));
@@ -2176,7 +2176,7 @@ void main() {
                   .evaluate()
                   .isNotEmpty;
         });
-        await tester.pump(const Duration(milliseconds: 76));
+        await tester.pump(const Duration(milliseconds: 51));
         expect(
           finalFrameRetained,
           isTrue,
@@ -2250,15 +2250,15 @@ void main() {
       unawaited(navigatorKey.currentState!.push(route));
       await tester.pump();
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(const Duration(milliseconds: 100));
       expect(tester.getRect(body).left, greaterThan(0));
-      expect(tester.getRect(overlay).left - tester.getRect(body).left, 16);
+      expect(tester.getRect(overlay).left - tester.getRect(body).left, closeTo(16, 0.001));
       await tester.pumpAndSettle();
       navigatorKey.currentState!.pop();
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(const Duration(milliseconds: 100));
       expect(tester.getRect(body).left, greaterThan(0));
-      expect(tester.getRect(overlay).left - tester.getRect(body).left, 16);
+      expect(tester.getRect(overlay).left - tester.getRect(body).left, closeTo(16, 0.001));
       await tester.pumpAndSettle();
       expect(overlay, findsNothing);
       expect(tester.takeException(), isNull);
@@ -2312,7 +2312,7 @@ void main() {
       unawaited(navigatorKey.currentState!.push(route));
       await tester.pump();
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 75));
+      await tester.pump(const Duration(milliseconds: 60));
       expect(route.animation!.value, closeTo(0.25, 0.001));
       navigatorKey.currentState!.pop();
       await tester.pump();
@@ -2533,7 +2533,7 @@ void main() {
 
       navigatorKey.currentState!.pop();
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 240));
+      await tester.pump(const Duration(milliseconds: 160));
       final popBody = tester.getRect(body);
       final popHeader = tester.getRect(header);
       expect(find.byKey(const ValueKey('home-body')), findsOneWidget);
@@ -2551,7 +2551,7 @@ void main() {
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     for (final size in [const Size(400, 800), const Size(1000, 600)]) {
       testWidgets(
-        'route header fades while opaque body slides for 300 ms ($platform, $size)',
+        'route header fades while opaque body slides ($platform, $size)',
         (tester) async {
           await tester.binding.setSurfaceSize(size);
           addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -2576,18 +2576,18 @@ void main() {
           expect(opacity(), 0);
           expect(_effectiveOpacity(tester, body), 1);
           final left = tester.getRect(header).left;
-          await tester.pump(const Duration(milliseconds: 150));
+          await tester.pump(const Duration(milliseconds: 120));
           expect(opacity(), closeTo(kAppFadeCurve.transform(0.5), 0.001));
           expect(_effectiveOpacity(tester, body), 1);
           expect(tester.getRect(header).left, closeTo(left, 0.01));
-          await tester.pump(const Duration(milliseconds: 75));
+          await tester.pump(const Duration(milliseconds: 60));
           expect(opacity(), inExclusiveRange(0.5, 1));
-          await tester.pump(const Duration(milliseconds: 75));
+          await tester.pump(const Duration(milliseconds: 60));
           expect(opacity(), 1);
           expect(_effectiveOpacity(tester, body), 1);
           key.currentState!.pop();
           await tester.pump();
-          await tester.pump(const Duration(milliseconds: 150));
+          await tester.pump(const Duration(milliseconds: 100));
           expect(opacity(), closeTo(kAppFadeCurve.transform(0.5), 0.001));
           expect(tester.getRect(header).left, closeTo(left, 0.01));
           await tester.pumpAndSettle();
@@ -2649,7 +2649,7 @@ void main() {
     expect(headerOpacity(incoming), 1);
     navigator.pop();
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 225));
+    await tester.pump(const Duration(milliseconds: 150));
     expect(headerOpacity(incoming), inExclusiveRange(0, 1));
     expect(tester.getRect(incoming).left, closeTo(headerLeft, 0.01));
     await tester.pumpAndSettle();
@@ -2692,7 +2692,7 @@ void main() {
             findsNothing,
           );
           if (!reduced) {
-            await tester.pump(const Duration(milliseconds: 150));
+            await tester.pump(const Duration(milliseconds: 120));
             expect(
               _effectiveOpacity(tester, body),
               closeTo(kAppFadeCurve.transform(0.5), 0.001),
@@ -2702,13 +2702,13 @@ void main() {
               closeTo(kAppFadeCurve.transform(0.5), 0.001),
             );
             expect(tester.getRect(body), rect);
-            await tester.pump(const Duration(milliseconds: 150));
+            await tester.pump(const Duration(milliseconds: 120));
             expect(_effectiveOpacity(tester, body), 1);
           }
           navigatorKey.currentState!.pop();
           await tester.pump();
           if (!reduced) {
-            await tester.pump(const Duration(milliseconds: 150));
+            await tester.pump(const Duration(milliseconds: 100));
             expect(
               _effectiveOpacity(tester, body),
               closeTo(kAppFadeCurve.transform(0.5), 0.001),
@@ -4428,6 +4428,62 @@ void main() {
     expect(TickerMode.valuesOf(tester.element(hidden)).enabled, isFalse);
     await tester.pumpAndSettle();
     expect(TickerMode.valuesOf(tester.element(hidden)).enabled, isTrue);
+  });
+
+  testWidgets('enabling reduced motion completes an active route transition', (
+    tester,
+  ) async {
+    final reduced = ValueNotifier(false);
+    addTearDown(reduced.dispose);
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigator,
+        builder: (context, child) => ValueListenableBuilder<bool>(
+          valueListenable: reduced,
+          child: child,
+          builder: (context, enabled, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(disableAnimations: enabled),
+            child: child!,
+          ),
+        ),
+        home: const Scaffold(),
+      ),
+    );
+    final state = navigator.currentState!;
+    final route = buildAppPageRoute<void>(
+      context: state.context,
+      child: Scaffold(
+        body: TextButton(
+          onPressed: () {},
+          child: const Text('Reduced motion detail'),
+        ),
+      ),
+    );
+    unawaited(state.push(route));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(route.animation!.value, inExclusiveRange(0, 1));
+
+    reduced.value = true;
+    await tester.pump();
+    expect(route.animation!.status, AnimationStatus.completed);
+    expect(route.reverseTransitionDuration, Duration.zero);
+    await tester.pump();
+    expect(find.text('Reduced motion detail').hitTestable(), findsOneWidget);
+
+    reduced.value = false;
+    await tester.pump();
+    state.pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(route.animation!.status, AnimationStatus.reverse);
+    reduced.value = true;
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Reduced motion detail'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('reduced motion makes routes, expansion and tabs immediate', (

@@ -1089,7 +1089,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                                         'asmr_search_button',
                                       ),
                                       style: AppEntryInkWell.entryButtonStyle(
-                                        Theme.of(context),
+                                        context,
                                       ),
                                       onPressed: _openSearchPage,
                                       icon: const Icon(Icons.search_rounded),

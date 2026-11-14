@@ -45,7 +45,7 @@ class _BottomDestinationInkResponse extends StatelessWidget {
       containedInkWell: true,
       radius: 32,
       highlightColor: Colors.transparent,
-      splashColor: Colors.transparent,
+      splashFactory: AppEntryInkWell.entrySplashFactory(context),
       child: child,
     );
   }

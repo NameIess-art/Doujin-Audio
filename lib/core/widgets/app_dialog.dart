@@ -46,7 +46,7 @@ Future<T?> showAppOverlayPanel<T>({
     barrierColor: Colors.transparent,
     transitionDuration: MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
-        : kAppFadeDuration,
+        : kAppOverlayDuration,
     pageBuilder: (dialogContext, animation, secondaryAnimation) {
       final mediaSize = MediaQuery.sizeOf(dialogContext);
       final isDesktop =
@@ -123,6 +123,7 @@ class _AppOverlayPanelShell extends StatelessWidget {
                   child: buildAppScaleFadeTransition(
                     context: context,
                     animation: animation,
+                    beginScale: 0.98,
                     // Ink must paint inside the transition so tile backgrounds
                     // and splashes fade and scale with the panel content.
                     child: Material(
@@ -202,6 +203,7 @@ Future<T?> showAppDialog<T>({
                           child: buildAppScaleFadeTransition(
                             context: dialogContext,
                             animation: animation,
+                            beginScale: 0.98,
                             child: Material(
                               color: Colors.transparent,
                               child: Builder(builder: builder),

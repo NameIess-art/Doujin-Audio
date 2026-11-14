@@ -386,17 +386,13 @@ class _MyPageState extends ConsumerState<MyPage>
                           runSpacing: 4,
                           children: [
                             OutlinedButton.icon(
-                              style: AppEntryInkWell.entryButtonStyle(
-                                Theme.of(context),
-                              ),
+                              style: AppEntryInkWell.entryButtonStyle(context),
                               onPressed: () => _openTags(false),
                               icon: const Icon(Icons.add_rounded),
                               label: Text(i18n.tr(interestType.addKey)),
                             ),
                             OutlinedButton.icon(
-                              style: AppEntryInkWell.entryButtonStyle(
-                                Theme.of(context),
-                              ),
+                              style: AppEntryInkWell.entryButtonStyle(context),
                               onPressed: () => _openTags(true),
                               icon: const Icon(Icons.block_rounded),
                               label: Text(i18n.tr(interestType.excludedKey)),
@@ -614,9 +610,7 @@ class _MyPageState extends ConsumerState<MyPage>
                     ? null
                     : IconButton(
                         key: const ValueKey('switch-to-settings'),
-                        style: AppEntryInkWell.entryButtonStyle(
-                          Theme.of(context),
-                        ),
+                        style: AppEntryInkWell.entryButtonStyle(context),
                         tooltip: i18n.tr('switch_to_settings'),
                         onPressed: widget.onSwitchPage,
                         icon: const Icon(Icons.settings_rounded),

@@ -368,7 +368,7 @@ void main() {
     );
     expect(dialogScrim.color.a, closeTo(0, 0.001));
 
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 100));
     expect(
       tester
           .widget<ColoredBox>(find.byKey(const ValueKey('app_dialog_scrim')))
@@ -380,7 +380,7 @@ void main() {
         0.001,
       ),
     );
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.byType(AppDialog), findsOneWidget);
     expect(find.byKey(const ValueKey('app_dialog_surface')), findsOneWidget);
@@ -498,7 +498,7 @@ void main() {
     expect(
       beforeClose,
       closeTo(
-        kAppFadeCurve.transform(110 / 300) *
+        kAppFadeCurve.transform(110 / 200) *
             kSecondaryOverlayConfig.backgroundOpacity,
         0.001,
       ),
@@ -602,7 +602,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('shared overlay panel fades in and out over 300ms', (
+  testWidgets('shared overlay panel fades in and out over 200 ms', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -635,8 +635,8 @@ void main() {
     final route = ModalRoute.of(
       tester.element(find.byKey(const ValueKey('overlay_panel_content'))),
     )!;
-    expect(route.transitionDuration, const Duration(milliseconds: 300));
-    expect(route.reverseTransitionDuration, const Duration(milliseconds: 300));
+    expect(route.transitionDuration, const Duration(milliseconds: 200));
+    expect(route.reverseTransitionDuration, const Duration(milliseconds: 200));
 
     double panelOpacity() => tester
         .widget<FadeTransition>(
@@ -653,7 +653,7 @@ void main() {
         )
         .color
         .a;
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 100));
     final middleOpacity = Curves.easeInOutCubic.transform(0.5);
     expect(panelOpacity(), closeTo(middleOpacity, 0.001));
     expect(
@@ -663,7 +663,7 @@ void main() {
         0.001,
       ),
     );
-    await tester.pump(const Duration(milliseconds: 149));
+    await tester.pump(const Duration(milliseconds: 99));
     expect(panelOpacity(), lessThan(1));
     await tester.pump(const Duration(milliseconds: 1));
     expect(panelOpacity(), 1);
@@ -690,7 +690,7 @@ void main() {
 
     await tester.tapAt(const Offset(1, 1));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 100));
 
     final fadingPanelScrim = tester.widget<ColoredBox>(
       find.byKey(const ValueKey('app_overlay_panel_scrim')),
@@ -701,7 +701,7 @@ void main() {
     );
     expect(panelOpacity(), closeTo(middleOpacity, 0.001));
 
-    await tester.pump(const Duration(milliseconds: 149));
+    await tester.pump(const Duration(milliseconds: 99));
     expect(find.text('Overlay content'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 1));
     expect(panelOpacity(), closeTo(0, 0.001));

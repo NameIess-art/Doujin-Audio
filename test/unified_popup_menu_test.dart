@@ -284,7 +284,7 @@ void main() {
         await tester.pumpAndSettle();
         await tester.sendKeyEvent(LogicalKeyboardKey.escape);
         await tester.pump();
-        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(const Duration(milliseconds: 60));
         expect(find.text('Closing action'), findsOneWidget);
         expect(find.semantics.byLabel('Closing action'), findsNothing);
         final action = find
@@ -338,7 +338,7 @@ void main() {
     await tester.pumpAndSettle();
     dismiss.value!();
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 60));
     final fade = tester.widget<FadeTransition>(
       find
           .ancestor(
@@ -349,7 +349,7 @@ void main() {
     );
     expect(fade.opacity.value, inExclusiveRange(0, 1));
     expect(completed, isFalse);
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 60));
     await tester.pumpAndSettle();
     expect(find.text('Fading action'), findsNothing);
     expect(completed, isTrue);
@@ -1108,6 +1108,30 @@ void main() {
         expect(find.text('Action'), findsNothing);
       },
     );
+
+    testWidgets('menu can dismiss during its entrance (dock: $dockAware)', (
+      tester,
+    ) async {
+      await pumpMenu(tester);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 45));
+      final action = find.text('Action');
+      final fade = find
+          .ancestor(of: action, matching: find.byType(FadeTransition))
+          .first;
+      double opacity() => tester.widget<FadeTransition>(fade).opacity.value;
+
+      final beforeClose = opacity();
+      expect(beforeClose, inExclusiveRange(0, 1));
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      expect(opacity(), closeTo(beforeClose, 0.001));
+      await tester.pumpAndSettle();
+      expect(action, findsNothing);
+      await tester.pump(coordinator.idleDelay);
+      expect(coordinator.isInteracting, isFalse);
+      expect(tester.takeException(), isNull);
+    });
 
     testWidgets('static open menu allows data commits (dock: $dockAware)', (
       tester,

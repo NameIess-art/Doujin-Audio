@@ -949,7 +949,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                                   'library_search_button',
                                 ),
                                 style: AppEntryInkWell.entryButtonStyle(
-                                  Theme.of(context),
+                                  context,
                                 ),
                                 onPressed: _openSearchPage,
                                 icon: const Icon(Icons.search_rounded),
@@ -1058,7 +1058,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         ),
         IconButton(
           key: const ValueKey<String>('library_edit_button'),
-          style: AppEntryInkWell.entryButtonStyle(Theme.of(context)),
+          style: AppEntryInkWell.entryButtonStyle(context),
           onPressed: libraryRefreshBusy ? null : _openLibraryManagementPage,
           icon: const Icon(Icons.edit_note_rounded),
           tooltip: i18n.tr('edit_library'),
@@ -1068,7 +1068,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         ),
         IconButton(
           key: const ValueKey<String>('library_batch_metadata_button'),
-          style: AppEntryInkWell.entryButtonStyle(Theme.of(context)),
+          style: AppEntryInkWell.entryButtonStyle(context),
           onPressed: libraryRefreshBusy ? null : _openBatchMetadataPage,
           icon: const Icon(Icons.library_add_check_rounded),
           tooltip: i18n.tr('batch_metadata'),

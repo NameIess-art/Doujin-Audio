@@ -215,9 +215,10 @@ class PrimaryPlaybackControls extends ConsumerWidget {
                     height: playButtonSize,
                   ),
                   padding: EdgeInsets.zero,
-                  style: IconButton.styleFrom(
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
+                  style: AppEntryInkWell.entryButtonStyle(
+                    context,
+                    foregroundColor: onPrimaryColor,
+                  ).copyWith(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
                   onPressed: enabled
                       ? () {
                           AppInteractionFeedback.trigger(
@@ -227,28 +228,30 @@ class PrimaryPlaybackControls extends ConsumerWidget {
                         }
                       : null,
                   iconSize: playIconSize,
-                  icon: isLoading
-                      ? SizedBox(
-                          key: const ValueKey('loading'),
-                          width: playIconSize * 0.48,
-                          height: playIconSize * 0.48,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 3,
+                  icon: AppPlaybackIconTransition(
+                    child: isLoading
+                        ? SizedBox(
+                            key: const ValueKey('loading'),
+                            width: playIconSize * 0.48,
+                            height: playIconSize * 0.48,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 3,
+                              color: enabled
+                                  ? onPrimaryColor
+                                  : cs.onSurface.withValues(alpha: 0.35),
+                            ),
+                          )
+                        : Icon(
+                            showPauseIcon
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                            key: ValueKey(showPauseIcon),
+                            size: playIconSize * 0.75,
                             color: enabled
                                 ? onPrimaryColor
                                 : cs.onSurface.withValues(alpha: 0.35),
                           ),
-                        )
-                      : Icon(
-                          showPauseIcon
-                              ? Icons.pause_rounded
-                              : Icons.play_arrow_rounded,
-                          key: ValueKey(showPauseIcon),
-                          size: playIconSize * 0.75,
-                          color: enabled
-                              ? onPrimaryColor
-                              : cs.onSurface.withValues(alpha: 0.35),
-                        ),
+                  ),
                 ),
               ),
               PrimaryTransportButton(
@@ -749,7 +752,7 @@ class _SecondaryControlButton extends StatelessWidget {
       tooltip: tooltip,
       style:
           AppEntryInkWell.entryButtonStyle(
-            Theme.of(context),
+            context,
             foregroundColor: active
                 ? cs.onPrimaryContainer
                 : sessionDetailForeground(

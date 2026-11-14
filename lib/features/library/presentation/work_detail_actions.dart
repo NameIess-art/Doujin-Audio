@@ -103,7 +103,7 @@ class WorkDetailActions extends StatelessWidget {
         onPressed: onPressed,
         style: navigationEntry
             ? AppEntryInkWell.entryButtonStyle(
-                Theme.of(context),
+                context,
                 foregroundColor: foregroundColor,
               ).merge(buttonStyle)
             : buttonStyle,

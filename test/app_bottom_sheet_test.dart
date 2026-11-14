@@ -41,20 +41,20 @@ void main() {
           .opacity;
       await tester.pump();
       expect(opacity(), 0);
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(const Duration(milliseconds: 110));
       expect(opacity(), inExclusiveRange(0, 1));
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(const Duration(milliseconds: 110));
       expect(opacity(), 1);
       final settledTop = tester.getTopLeft(find.byType(BottomSheet)).dy;
       Navigator.of(pageContext).pop();
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(const Duration(milliseconds: 89));
       expect(opacity(), 1);
       expect(
         tester.getTopLeft(find.byType(BottomSheet)).dy,
         greaterThan(settledTop),
       );
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(const Duration(milliseconds: 89));
       expect(opacity(), 1);
       await tester.pumpAndSettle();
       expect(find.byType(BottomSheet), findsNothing);

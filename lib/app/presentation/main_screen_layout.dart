@@ -155,6 +155,7 @@ extension _MainScreenLayout on _MainScreenState {
               color: pageCs.surface,
               child: AppFadeThroughIndexedStack.lazy(
                 key: const ValueKey<String>('main_page_stack'),
+                duration: kAppMotionStandard,
                 separateHeader: true,
                 indexListenable: _activePageIndex,
                 itemCount: destinations.length,

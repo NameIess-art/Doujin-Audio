@@ -183,9 +183,7 @@ class OnboardingPage extends ConsumerWidget {
                           ),
                           const SizedBox(height: 8),
                           TextButton(
-                            style: AppEntryInkWell.entryButtonStyle(
-                              Theme.of(context),
-                            ),
+                            style: AppEntryInkWell.entryButtonStyle(context),
                             onPressed: () => Navigator.of(context).push(
                               buildAppPageRoute<void>(
                                 context: context,

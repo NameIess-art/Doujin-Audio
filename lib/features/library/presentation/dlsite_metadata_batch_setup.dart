@@ -96,7 +96,7 @@ class BatchMetadataSetupView extends StatelessWidget {
                   ),
                 ),
                 Theme(
-                  data: AppEntryInkWell.entryTheme(Theme.of(context)),
+                  data: AppEntryInkWell.entryTheme(context),
                   child: RadioListTile<DlsiteMetadataBatchScope>(
                     value: DlsiteMetadataBatchScope.specific,
                     title: Text(

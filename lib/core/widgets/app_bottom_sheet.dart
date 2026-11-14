@@ -9,9 +9,7 @@ class AppBottomSheet {
 
   /// Shows a standardized bottom sheet with a drag handle and rounded top corners.
   static Duration reverseAnimationDurationOf(BuildContext context) =>
-      MediaQuery.disableAnimationsOf(context)
-      ? Duration.zero
-      : kAppFadeDuration;
+      MediaQuery.disableAnimationsOf(context) ? Duration.zero : kAppMotionFast;
 
   static Future<T?> show<T>({
     required BuildContext context,
@@ -29,16 +27,15 @@ class AppBottomSheet {
     final size = MediaQuery.sizeOf(context);
     final isWindows = defaultTargetPlatform == TargetPlatform.windows;
     final useHalfWidth = isWindows || size.width > size.height;
-    final effectiveAnimationStyle =
-        sheetAnimationStyle ??
-        (MediaQuery.disableAnimationsOf(context)
-            ? AnimationStyle.noAnimation
-            : AnimationStyle(
-                duration: kAppFadeDuration,
+    final effectiveAnimationStyle = MediaQuery.disableAnimationsOf(context)
+        ? AnimationStyle.noAnimation
+        : sheetAnimationStyle ??
+              AnimationStyle(
+                duration: kAppMotionStandard,
                 reverseDuration: reverseAnimationDurationOf(context),
                 curve: Curves.fastOutSlowIn,
                 reverseCurve: Curves.fastOutSlowIn,
-              ));
+              );
 
     final navigator = Navigator.of(context, rootNavigator: useRootNavigator);
     final localizations = MaterialLocalizations.of(context);

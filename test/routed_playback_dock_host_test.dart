@@ -480,7 +480,7 @@ void main() {
         navigator.currentState!.pop();
         revision.value++;
         coveredFrames = 0;
-        for (var frame = 0; frame < 16; frame++) {
+        for (var frame = 0; frame < 12; frame++) {
           await tester.pump(const Duration(milliseconds: 16));
           if (await expectCoveredPixel('exiting', frame)) coveredFrames++;
         }

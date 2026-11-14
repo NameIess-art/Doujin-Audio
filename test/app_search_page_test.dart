@@ -314,7 +314,7 @@ void main() {
 
   for (final hasCategories in [false, true]) {
     testWidgets(
-      'search slides in and out while its header fades for 300 ms (categories: $hasCategories)',
+      'search slides in and out while its header fades at the route pace (categories: $hasCategories)',
       (tester) async {
         final controller = TextEditingController();
         final focusNode = FocusNode();
@@ -380,10 +380,10 @@ void main() {
             body: const SizedBox.expand(key: ValueKey('sliding_search_body')),
           ),
         );
-        expect(route.transitionDuration, const Duration(milliseconds: 300));
+        expect(route.transitionDuration, kAppPagePushDuration);
         expect(
           route.reverseTransitionDuration,
-          const Duration(milliseconds: 300),
+          kAppPagePopDuration,
         );
         unawaited(navigator.currentState!.push(route));
         await tester.pump();
@@ -409,14 +409,14 @@ void main() {
         for (final point in points) {
           expect(await headerPixel(point), lowerPageColor);
         }
-        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(const Duration(milliseconds: 120));
         expect(route.animation!.value, closeTo(0.5, 0.001));
         expect(tester.getTopLeft(body).dx, inExclusiveRange(0, width));
         expect(tester.getRect(header), headerRect);
         expect(await headerPixel(leftBodyPoint), lowerPageColor);
         expect(await headerPixel(rightBodyPoint), Colors.black);
         final entering = [for (final point in points) await headerPixel(point)];
-        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(const Duration(milliseconds: 120));
         expect(tester.getTopLeft(body).dx, 0);
         expect(await headerPixel(leftBodyPoint), Colors.black);
         expect(await headerPixel(rightBodyPoint), Colors.black);
@@ -430,7 +430,7 @@ void main() {
         }
         navigator.currentState!.pop();
         await tester.pump();
-        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(const Duration(milliseconds: 100));
         expect(tester.getTopLeft(body).dx, inExclusiveRange(0, width));
         expect(tester.getRect(header), headerRect);
         expect(await headerPixel(leftBodyPoint), lowerPageColor);
@@ -504,10 +504,10 @@ void main() {
     unawaited(Navigator.of(routeContext).push(route));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 16));
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 120));
     expect(route.animation!.value, closeTo(0.5, 0.01));
     expect(focusNode.hasFocus, isFalse);
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 120));
     await tester.pump();
     expect(focusNode.hasFocus, isTrue);
 
@@ -1170,7 +1170,7 @@ void main() {
   );
 
   testWidgets(
-    'search results fade in and out over 300ms and hide confirm button',
+    'search results fade in and out over 150 ms and hide confirm button',
     (tester) async {
       final interaction = UiInteractionCoordinator.instance;
       interaction.resetForTest();
@@ -1243,7 +1243,7 @@ void main() {
         commit: () => commits++,
       );
 
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(const Duration(milliseconds: 75));
       expect(commits, 0);
       expect(
         fadeOpacityOf(results),
@@ -1254,7 +1254,7 @@ void main() {
         closeTo(1 - kAppFadeCurve.transform(0.5), 0.001),
       );
 
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(const Duration(milliseconds: 75));
       await tester.pumpAndSettle();
       expect(results, findsOneWidget);
       expect(suggestions, findsNothing);
@@ -1271,7 +1271,7 @@ void main() {
       expect(fadeOpacityOf(results), 1);
       expect(interaction.isVisualUpdateDeferred, isTrue);
 
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(const Duration(milliseconds: 75));
       expect(
         fadeOpacityOf(results),
         closeTo(kAppFadeCurve.transform(0.5), 0.001),
@@ -1281,7 +1281,7 @@ void main() {
         closeTo(1 - kAppFadeCurve.transform(0.5), 0.001),
       );
 
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(const Duration(milliseconds: 75));
       await tester.pumpAndSettle();
       expect(suggestions, findsOneWidget);
       expect(results, findsNothing);

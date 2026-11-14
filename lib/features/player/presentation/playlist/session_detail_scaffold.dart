@@ -226,18 +226,17 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
       tooltip: i18n.tr('close'),
       icon: const Icon(Icons.chevron_left_rounded),
     );
-    final headerActionStyle =
-        AppEntryInkWell.entryButtonStyle(Theme.of(context)).merge(
-          IconButton.styleFrom(
-            fixedSize: const Size.square(38),
-            minimumSize: const Size.square(38),
-            maximumSize: const Size.square(38),
-            visualDensity: VisualDensity.standard,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            backgroundColor: Colors.transparent,
-            shape: const CircleBorder(),
-          ),
-        );
+    final headerActionStyle = AppEntryInkWell.entryButtonStyle(context).merge(
+      IconButton.styleFrom(
+        fixedSize: const Size.square(38),
+        minimumSize: const Size.square(38),
+        maximumSize: const Size.square(38),
+        visualDensity: VisualDensity.standard,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        backgroundColor: Colors.transparent,
+        shape: const CircleBorder(),
+      ),
+    );
 
     final track = widget.track;
     final cs = Theme.of(context).colorScheme;

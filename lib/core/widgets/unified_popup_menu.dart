@@ -10,6 +10,9 @@ import 'app_transitions.dart';
 import 'mobile_overlay_inset.dart';
 import 'windows_smooth_scroll_controller.dart';
 
+const _menuEnterDuration = Duration(milliseconds: 150);
+const _menuExitDuration = Duration(milliseconds: 120);
+
 TextAlign _menuTextAlign(
   BuildContext context,
   RenderBox overlay,
@@ -106,8 +109,8 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: kAppFadeDuration,
-      reverseDuration: kAppFadeDuration,
+      duration: _menuEnterDuration,
+      reverseDuration: _menuExitDuration,
     )..addStatusListener(_handleAnimationStatus);
   }
 
@@ -328,8 +331,8 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
   void _bindAnimation() {
     _curved = CurvedAnimation(
       parent: widget.animation,
-      curve: kAppFadeCurve,
-      reverseCurve: kAppFadeCurve,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeOutCubic,
     );
     _scale = Tween<double>(begin: 0.96, end: 1).animate(_curved);
   }
@@ -794,13 +797,13 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: kAppFadeDuration,
-      reverseDuration: kAppFadeDuration,
+      duration: _menuEnterDuration,
+      reverseDuration: _menuExitDuration,
     )..addStatusListener(_handleAnimationStatus);
     _curved = CurvedAnimation(
       parent: _controller,
-      curve: kAppFadeCurve,
-      reverseCurve: kAppFadeCurve,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeOutCubic,
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _dismissed) return;

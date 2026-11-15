@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../ui/ui_interaction_coordinator.dart';
 import 'app_feedback.dart';
+import 'app_transitions.dart';
 import 'swipe_reveal_action_pane.dart';
 import 'unified_popup_menu.dart';
 
@@ -34,7 +35,6 @@ class SwipeRevealCard extends StatefulWidget {
     this.secondaryActionIconWidget,
     this.primaryActionIcon = Icons.delete_outline_rounded,
     this.primaryActionTooltip,
-    this.closeAfterPrimaryAction = false,
     this.onTertiaryAction,
     this.tertiaryActionLabel,
     this.tertiaryActionTooltip,
@@ -42,6 +42,7 @@ class SwipeRevealCard extends StatefulWidget {
     this.destructive = true,
     this.verticalActions = false,
     this.swipeEnabled = true,
+    this.leadingSwipeEnabled = true,
     this.enabled = true,
     this.onSelectMultiple,
     this.selectMultipleLabel,
@@ -74,7 +75,6 @@ class SwipeRevealCard extends StatefulWidget {
   final Widget? secondaryActionIconWidget;
   final IconData primaryActionIcon;
   final String? primaryActionTooltip;
-  final bool closeAfterPrimaryAction;
   final VoidCallback? onTertiaryAction;
   final String? tertiaryActionLabel;
   final String? tertiaryActionTooltip;
@@ -84,6 +84,9 @@ class SwipeRevealCard extends StatefulWidget {
 
   /// Leaves the desktop context menu available when swipe actions are absent.
   final bool swipeEnabled;
+
+  /// Leading actions can remain in the context menu without a swipe entry.
+  final bool leadingSwipeEnabled;
   final bool enabled;
   final VoidCallback? onSelectMultiple;
   final String? selectMultipleLabel;
@@ -106,7 +109,7 @@ class SwipeRevealCard extends StatefulWidget {
 }
 
 class _SwipeRevealCardState extends State<SwipeRevealCard> {
-  static const double _revealStartThreshold = 32;
+  static const double _revealStartThreshold = 4;
   static const double _verticalRejectThreshold = 8;
   static const double _acceptSlopeRatio = 2.2;
   static const double _rejectSlopeRatio = 1.35;
@@ -121,10 +124,10 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   bool _snapClosed = false;
   bool _actionPaneActive = false;
   bool _tickerModeEnabled = true;
-  bool _primaryActionPending = false;
   ValueListenable<TickerModeData>? _tickerModeNotifier;
   bool _revealedFromStart = false;
   bool _dragStartFromStart = false;
+  bool _overscrollHapticFired = false;
   double _displayedWidth = 0;
   VoidCallback? _actionAfterClose;
   final _contentKey = GlobalKey();
@@ -184,7 +187,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   void _handleTickerModeChanged() {
     final enabled = _tickerModeNotifier!.value.enabled;
     // A modal action can cover this route while retaining the revealed card.
-    if (_tickerModeEnabled && !enabled && !_primaryActionPending) {
+    if (_tickerModeEnabled && !enabled) {
       final needsRebuild =
           _revealedWidth != 0 ||
           _displayedWidth != 0 ||
@@ -223,6 +226,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     _actionPaneActive = false;
     _revealedFromStart = false;
     _dragStartFromStart = false;
+    _overscrollHapticFired = false;
   }
 
   void _closePane({bool immediate = false}) {
@@ -245,10 +249,6 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
 
   void _runActionAfterPaneClose(VoidCallback? action) {
     if (action == null || _actionAfterClose != null) return;
-    if (widget.closeAfterPrimaryAction && action == widget.onRemove) {
-      unawaited(_runPrimaryActionThenClose());
-      return;
-    }
     _actionAfterClose = action;
     if (!widget.animateLeadingActionClose ||
         action != widget.onLeadingAction ||
@@ -267,17 +267,6 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       _actionAfterClose = null;
       action?.call();
     });
-  }
-
-  Future<void> _runPrimaryActionThenClose() async {
-    if (_primaryActionPending) return;
-    _primaryActionPending = true;
-    try {
-      await widget.onRemove();
-    } finally {
-      _primaryActionPending = false;
-      if (mounted) _closePane();
-    }
   }
 
   Future<void> _showContextMenu([TapDownDetails? details]) async {
@@ -351,6 +340,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     // The target may already be zero while the closing animation is visible.
     _dragStartRevealedWidth = _displayedWidth;
     _dragStartFromStart = _revealedFromStart;
+    _overscrollHapticFired = false;
     _dragDx = 0;
     _dragDy = 0;
     _dragAccepted = _displayedWidth > 0;
@@ -380,7 +370,9 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       }
       final isIntentionalSwipe =
           ((_dragDx < 0 && _actionCount > 0) ||
-              (_dragDx > 0 && _leadingActionCount > 0)) &&
+              (_dragDx > 0 &&
+                  widget.leadingSwipeEnabled &&
+                  _leadingActionCount > 0)) &&
           horizontalDistance >= _revealStartThreshold &&
           horizontalDistance > verticalDistance * _acceptSlopeRatio;
       if (!isIntentionalSwipe) {
@@ -413,6 +405,14 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     final nextWidth =
         (_dragStartRevealedWidth + (_dragStartFromStart ? _dragDx : -_dragDx))
             .clamp(0.0, _activeActionWidth);
+    if (!_overscrollHapticFired &&
+        _dragStartRevealedWidth < _minOpenDistance &&
+        nextWidth >= _minOpenDistance) {
+      _overscrollHapticFired = true;
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    } else if (nextWidth < _minOpenDistance * 0.85) {
+      _overscrollHapticFired = false;
+    }
     if (nextWidth == _revealedWidth) return;
     setState(() {
       _actionPaneActive = true;
@@ -435,8 +435,13 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     final velocityMet = _revealedFromStart
         ? velocity >= _minOpenVelocity
         : velocity <= -_minOpenVelocity;
+    final closingVelocityMet = _revealedFromStart
+        ? velocity <= -_minOpenVelocity
+        : velocity >= _minOpenVelocity;
     final fullyRevealed = _revealedWidth >= _activeActionWidth * 0.88;
-    final shouldOpen = (distanceMet && velocityMet) || fullyRevealed;
+    final shouldOpen =
+        !closingVelocityMet &&
+        ((distanceMet && velocityMet) || fullyRevealed);
     setState(() {
       _revealedWidth = shouldOpen ? _activeActionWidth : 0;
     });
@@ -568,9 +573,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     // Lists own per-card repaint isolation. Adding it here duplicates the
     // same full-card layer for every visible library and playlist entry.
     return TapRegion(
-      onTapOutside: (_) {
-        if (!_primaryActionPending) _closePane();
-      },
+      onTapOutside: (_) => _closePane(),
       child: Padding(
         padding: widget.margin,
         child: GestureDetector(
@@ -628,8 +631,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                   duration:
                       _snapClosed || MediaQuery.disableAnimationsOf(context)
                       ? Duration.zero
-                      : const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
+                      : kAppMotionStandard,
+                  curve: _dragAccepted ? Curves.easeOut : kAppSpringCurve,
                   onEnd: () {
                     if (!mounted) return;
                     _displayedWidth = _revealedWidth;

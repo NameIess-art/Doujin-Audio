@@ -9,6 +9,7 @@ import '../ui/ui_interaction_coordinator.dart';
 import '../../app/theme/app_design_tokens.dart';
 import 'app_entry_ink_well.dart';
 import 'app_feedback.dart';
+import 'app_glass_surface.dart';
 import 'app_transitions.dart';
 import 'mobile_overlay_inset.dart';
 import 'windows_smooth_scroll_controller.dart';
@@ -21,28 +22,38 @@ class _AnchoredMenuScale extends SingleChildRenderObjectWidget {
   const _AnchoredMenuScale({
     required this.scale,
     required this.anchorInMenu,
+    this.transformHitTests = false,
     required super.child,
   });
 
   final Animation<double> scale;
   final Offset Function(Size) anchorInMenu;
+  final bool transformHitTests;
 
   @override
   RenderObject createRenderObject(BuildContext context) =>
-      _RenderAnchoredMenuScale(scale, anchorInMenu);
+      _RenderAnchoredMenuScale(scale, anchorInMenu, transformHitTests);
 
   @override
   void updateRenderObject(
     BuildContext context,
     _RenderAnchoredMenuScale renderObject,
   ) {
-    renderObject.update(scale, anchorInMenu);
+    renderObject
+      ..transformHitTests = transformHitTests
+      ..update(scale, anchorInMenu);
   }
 }
 
 class _RenderAnchoredMenuScale extends RenderTransform {
-  _RenderAnchoredMenuScale(this._scale, this._anchorInMenu)
-    : super(transform: Matrix4.identity(), transformHitTests: false);
+  _RenderAnchoredMenuScale(
+    this._scale,
+    this._anchorInMenu,
+    bool transformHitTests,
+  ) : super(
+        transform: Matrix4.identity(),
+        transformHitTests: transformHitTests,
+      );
 
   Animation<double> _scale;
   Offset Function(Size) _anchorInMenu;
@@ -177,6 +188,7 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
   final Object _interactionSource = Object();
   ValueNotifier<VoidCallback?>? _menuDismiss;
   VoidCallback? _dismissCallback;
+  VoidCallback? _stopTrackingHover;
 
   @override
   void initState() {
@@ -265,7 +277,8 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
     final maxTop = (overlayBox.size.height - 64).clamp(8.0, double.infinity);
     final top = anchorRect.top.clamp(8.0, maxTop);
 
-    _entry = OverlayEntry(
+    var hoverEnabled = false;
+    final entry = OverlayEntry(
       builder: (overlayContext) {
         return _UnifiedPopupOverlay<T>(
           animation: _controller,
@@ -273,6 +286,7 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
           anchor: anchorRect.center,
           entries: widget.entries,
           textAlign: textAlign,
+          hoverEnabled: hoverEnabled,
           onDismiss: _removeOverlay,
           onSelected: (value) async {
             if (_closing != null) return;
@@ -292,12 +306,17 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
         );
       },
     );
+    _entry = entry;
+    _stopTrackingHover = _enableMenuHoverOnMovement(() {
+      hoverEnabled = true;
+      entry.markNeedsBuild();
+    });
     UiInteractionCoordinator.instance.beginInteraction(_interactionSource);
     _menuDismiss = MobileOverlayInset.menuDismissOf(context);
     _menuDismiss?.value?.call();
     _dismissCallback = () => unawaited(_removeOverlay());
     _menuDismiss?.value = _dismissCallback;
-    overlay.insert(_entry!);
+    overlay.insert(entry);
     if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) {
       _controller.value = 1;
       UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
@@ -336,6 +355,8 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
 
   void _detachOverlay(OverlayEntry entry) {
     if (!identical(_entry, entry)) return;
+    _stopTrackingHover?.call();
+    _stopTrackingHover = null;
     if (identical(_menuDismiss?.value, _dismissCallback)) {
       _menuDismiss?.value = null;
     }
@@ -371,6 +392,7 @@ class _UnifiedPopupOverlay<T> extends StatefulWidget {
     required this.anchor,
     required this.entries,
     required this.textAlign,
+    required this.hoverEnabled,
     required this.onDismiss,
     required this.onSelected,
     this.onTrailingSelected,
@@ -381,6 +403,7 @@ class _UnifiedPopupOverlay<T> extends StatefulWidget {
   final Offset anchor;
   final List<UnifiedMenuEntry<T>> entries;
   final TextAlign textAlign;
+  final bool hoverEnabled;
   final Future<void> Function() onDismiss;
   final ValueChanged<T> onSelected;
   final ValueChanged<T>? onTrailingSelected;
@@ -391,14 +414,20 @@ class _UnifiedPopupOverlay<T> extends StatefulWidget {
 }
 
 class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
+  final _focusScope = FocusScopeNode();
   late CurvedAnimation _curved;
   late Animation<double> _scale;
+  late Animation<Offset> _slide;
 
   @override
   void initState() {
     super.initState();
     _bindAnimation();
     widget.animation.addStatusListener(_handleAnimationStatus);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || widget.animation.status == AnimationStatus.reverse) return;
+      _focusScope.requestFocus();
+    });
   }
 
   void _handleAnimationStatus(AnimationStatus status) {
@@ -412,6 +441,11 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
       reverseCurve: Curves.easeInCubic,
     );
     _scale = Tween<double>(begin: 0.86, end: 1).animate(_curved);
+    final dy = widget.anchor.dy <= widget.rect.center.dy ? -0.025 : 0.025;
+    _slide = Tween<Offset>(
+      begin: Offset(0, dy),
+      end: Offset.zero,
+    ).animate(_curved);
   }
 
   @override
@@ -429,11 +463,14 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
   void dispose() {
     widget.animation.removeStatusListener(_handleAnimationStatus);
     _curved.dispose();
+    _focusScope.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.escape): widget.onDismiss,
@@ -444,7 +481,7 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
           SingleActivator(LogicalKeyboardKey.arrowUp): PreviousFocusIntent(),
         },
         child: FocusScope(
-          autofocus: true,
+          node: _focusScope,
           child: Material(
             color: Colors.transparent,
             child: Stack(
@@ -454,7 +491,14 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: widget.onDismiss,
-                    child: const SizedBox.expand(),
+                    child: FadeTransition(
+                      opacity: _curved,
+                      child: ColoredBox(
+                        color: theme.colorScheme.scrim.withValues(
+                          alpha: isDark ? 0.16 : 0.06,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
                 Positioned(
@@ -463,25 +507,29 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
                   width: widget.rect.width,
                   child: FadeTransition(
                     opacity: _curved,
-                    child: _AnchoredMenuScale(
-                      anchorInMenu: (_) => widget.anchor - widget.rect.topLeft,
-                      scale: _scale,
-                      child: ExcludeFocus(
-                        excluding:
-                            widget.animation.status == AnimationStatus.reverse,
-                        child: ExcludeSemantics(
+                    child: SlideTransition(
+                      position: _slide,
+                      child: _AnchoredMenuScale(
+                        anchorInMenu: (_) => widget.anchor - widget.rect.topLeft,
+                        scale: _scale,
+                        child: ExcludeFocus(
                           excluding:
-                              widget.animation.status ==
-                              AnimationStatus.reverse,
-                          child: IgnorePointer(
-                            ignoring:
+                              widget.animation.status == AnimationStatus.reverse,
+                          child: ExcludeSemantics(
+                            excluding:
                                 widget.animation.status ==
                                 AnimationStatus.reverse,
-                            child: _UnifiedPopupMenuCard<T>(
-                              entries: widget.entries,
-                              textAlign: widget.textAlign,
-                              onSelected: widget.onSelected,
-                              onTrailingSelected: widget.onTrailingSelected,
+                            child: IgnorePointer(
+                              ignoring:
+                                  widget.animation.status ==
+                                  AnimationStatus.reverse,
+                              child: _UnifiedPopupMenuCard<T>(
+                                entries: widget.entries,
+                                textAlign: widget.textAlign,
+                                suppressHover: !widget.hoverEnabled,
+                                onSelected: widget.onSelected,
+                                onTrailingSelected: widget.onTrailingSelected,
+                              ),
                             ),
                           ),
                         ),
@@ -506,13 +554,11 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
     this.onTrailingSelected,
     this.compact = false,
     this.primaryIcons = false,
-    this.autofocusFirstEntry = true,
     this.suppressHover = false,
   });
 
   final bool compact;
   final bool primaryIcons;
-  final bool autofocusFirstEntry;
   final bool suppressHover;
   final List<UnifiedMenuEntry<T>> entries;
   final TextAlign textAlign;
@@ -525,9 +571,6 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final tokens = AppDesignTokens.of(context);
     final background = isDark ? cs.surfaceBright : cs.surfaceContainerHighest;
-    final firstAutofocusEntry = autofocusFirstEntry
-        ? entries.where((item) => item.enabled && !item.divider).firstOrNull
-        : null;
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -546,11 +589,14 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
           ),
         ],
       ),
-      child: ClipRRect(
+      child: AppGlassSurface(
+        enabled: tokens.barGlassEnabled,
+        blurSigma: 10,
+        backgroundColor: background,
         borderRadius: BorderRadius.circular(tokens.radiusSection),
         child: DecoratedBox(
+          position: DecorationPosition.foreground,
           decoration: BoxDecoration(
-            color: background,
             borderRadius: BorderRadius.circular(tokens.radiusSection),
             border: Border.all(
               color: cs.outlineVariant.withValues(
@@ -567,7 +613,6 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
                   textAlign: textAlign,
                   compact: compact,
                   primaryIcons: primaryIcons,
-                  autofocus: identical(entries[index], firstAutofocusEntry),
                   suppressHover: suppressHover,
                   edgePadding: EdgeInsets.only(
                     top: compact && index == 0 ? _compactMenuEdgeExtension : 0,
@@ -590,7 +635,6 @@ class _UnifiedPopupMenuRow<T> extends StatelessWidget {
   const _UnifiedPopupMenuRow({
     required this.entry,
     required this.textAlign,
-    required this.autofocus,
     required this.suppressHover,
     required this.edgePadding,
     required this.onSelected,
@@ -603,7 +647,6 @@ class _UnifiedPopupMenuRow<T> extends StatelessWidget {
   final bool primaryIcons;
   final UnifiedMenuEntry<T> entry;
   final TextAlign textAlign;
-  final bool autofocus;
   final bool suppressHover;
   final EdgeInsets edgePadding;
   final ValueChanged<T> onSelected;
@@ -627,7 +670,6 @@ class _UnifiedPopupMenuRow<T> extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: AppEntryInkWell(
-        autofocus: autofocus,
         hoverColor: suppressHover ? Colors.transparent : null,
         onTap: entry.enabled && value != null
             ? () {
@@ -774,6 +816,32 @@ class _DockMenuLayout extends SingleChildLayoutDelegate {
       position != oldDelegate.position;
 }
 
+VoidCallback _enableMenuHoverOnMovement(VoidCallback onMovement) {
+  final router = GestureBinding.instance.pointerRouter;
+  var tracking = true;
+
+  void handleMovement(PointerEvent event) {
+    final isMouseDrag =
+        event is PointerMoveEvent && event.kind == PointerDeviceKind.mouse;
+    if (event.delta == Offset.zero ||
+        (event is! PointerHoverEvent && !isMouseDrag)) {
+      return;
+    }
+    tracking = false;
+    router.removeGlobalRoute(handleMovement);
+    onMovement();
+  }
+
+  // Movement can arrive before layout or while a held mouse button still
+  // routes events to the launcher's original hit target.
+  router.addGlobalRoute(handleMovement);
+  return () {
+    if (!tracking) return;
+    tracking = false;
+    router.removeGlobalRoute(handleMovement);
+  };
+}
+
 Future<T?> showDockAwareMenu<T>({
   required BuildContext context,
   required RelativeRect position,
@@ -793,20 +861,8 @@ Future<T?> showDockAwareMenu<T>({
   final hostRoute = readAppRoute(context);
   final menuDismiss = MobileOverlayInset.menuDismissOf(context);
   final menuKey = GlobalKey<_DockMenuOverlayState<T>>();
-  final pointerRouter = GestureBinding.instance.pointerRouter;
   var hoverEnabled = false;
   late OverlayEntry entry;
-  void enableHoverOnMovement(PointerEvent event) {
-    final isMouseDrag =
-        event is PointerMoveEvent && event.kind == PointerDeviceKind.mouse;
-    if (event.delta == Offset.zero ||
-        (event is! PointerHoverEvent && !isMouseDrag)) {
-      return;
-    }
-    hoverEnabled = true;
-    pointerRouter.removeGlobalRoute(enableHoverOnMovement);
-    entry.markNeedsBuild();
-  }
 
   void removeImmediately() {
     if (completer.isCompleted) return;
@@ -852,9 +908,10 @@ Future<T?> showDockAwareMenu<T>({
   dismissOn?.addListener(removeImmediately);
   menuDismiss?.value?.call();
   menuDismiss?.value = cancelMenu;
-  // Pointer movement can arrive before the popup's first layout or while a
-  // held mouse button is still routing events to the original hit target.
-  pointerRouter.addGlobalRoute(enableHoverOnMovement);
+  final stopTrackingHover = _enableMenuHoverOnMovement(() {
+    hoverEnabled = true;
+    entry.markNeedsBuild();
+  });
   overlayState.insert(entry);
   // A root overlay outlives its launching page. Remove its menu when that
   // route completes, including a pop before the menu's first layout.
@@ -862,7 +919,7 @@ Future<T?> showDockAwareMenu<T>({
   try {
     return await completer.future;
   } finally {
-    if (!hoverEnabled) pointerRouter.removeGlobalRoute(enableHoverOnMovement);
+    stopTrackingHover();
     if (identical(menuDismiss?.value, cancelMenu)) menuDismiss?.value = null;
     tickerMode.removeListener(cancelWhenHidden);
     dismissOn?.removeListener(removeImmediately);
@@ -1010,7 +1067,16 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: () => _dismiss(null),
-                  child: const SizedBox.expand(),
+                  child: FadeTransition(
+                    opacity: _curved,
+                    child: ColoredBox(
+                      color: Theme.of(context).colorScheme.scrim.withValues(
+                        alpha: Theme.of(context).brightness == Brightness.dark
+                            ? 0.16
+                            : 0.06,
+                      ),
+                    ),
+                  ),
                 ),
                 LayoutBuilder(
                   builder: (context, constraints) {
@@ -1024,6 +1090,9 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
                       child: FadeTransition(
                         opacity: _curved,
                         child: _AnchoredMenuScale(
+                          // Follow the visible row while the menu opens,
+                          // especially when it expands upward from its anchor.
+                          transformHitTests: true,
                           anchorInMenu: (menuSize) =>
                               anchor -
                               layout.getPositionForChild(size, menuSize),
@@ -1042,7 +1111,6 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
                                         child: _UnifiedPopupMenuCard<T>(
                                           entries: widget.entries,
                                           textAlign: TextAlign.left,
-                                          autofocusFirstEntry: false,
                                           suppressHover: !widget.hoverEnabled,
                                           compact: true,
                                           primaryIcons: true,

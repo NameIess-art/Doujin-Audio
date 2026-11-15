@@ -35,7 +35,7 @@ PageRoute<void> buildSessionDetailRoute({
 
 class SessionDetailRoute extends AppPreparedPageRoute<void> {
   static const _portraitRestoreTimeout = Duration(milliseconds: 500);
-  static const _coverDuration = Duration(milliseconds: 260);
+  static const _coverDuration = Duration(milliseconds: 240);
 
   SessionDetailRoute({
     required this.sessionId,
@@ -66,7 +66,7 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
   SessionCoverAnchorState? _flightStart;
   SessionCoverAnchorState? _flightEnd;
   late final Animation<double> _progress = animation!.drive(
-    CurveTween(curve: kAppFadeCurve),
+    CurveTween(curve: kAppSpringCurve),
   );
 
   bool _reducedMotion = false;
@@ -371,6 +371,16 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
     _flightEnd = null;
     _flight.value = null;
     flight.image.dispose();
+  }
+
+  void beginInteractiveDismiss() {
+    if (!isCurrent || _closing || requiresPortraitRestore) return;
+    _setRevealBehind(true);
+  }
+
+  void endInteractiveDismiss() {
+    if (_closing) return;
+    _setRevealBehind(false);
   }
 
   void _setRevealBehind(bool value) {

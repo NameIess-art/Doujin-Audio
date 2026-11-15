@@ -21,8 +21,10 @@ class UiInteractionCoordinator extends ChangeNotifier {
   final WarmupScheduler _backgroundScheduler;
   final Set<Object> _activeSources = <Object>{};
   final Set<Object> _navigationSources = <Object>{};
+  final Set<Object> _inputLockSources = <Object>{};
   final Set<Object> _visualUpdateSources = <Object>{};
   final ValueNotifier<bool> _navigationAllowed = ValueNotifier(true);
+  final ValueNotifier<bool> _navigationInputAllowed = ValueNotifier(true);
   final Map<Object, Timer> _idleTimers = <Object, Timer>{};
   final Map<String, _PendingCommit> _pendingCommits =
       <String, _PendingCommit>{};
@@ -36,6 +38,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
   bool get isVisualUpdateDeferred =>
       _navigationSources.isNotEmpty || _visualUpdateSources.isNotEmpty;
   ValueListenable<bool> get navigationAllowed => _navigationAllowed;
+  ValueListenable<bool> get navigationInputAllowed => _navigationInputAllowed;
   int get generation => _generation;
   int get pendingCommitCount => _pendingCommits.length;
 
@@ -46,16 +49,22 @@ class UiInteractionCoordinator extends ChangeNotifier {
     return _generation;
   }
 
-  void beginNavigation(Object source) {
+  void beginNavigation(Object source, {bool lockInput = true}) {
     _navigationSources.add(source);
     _navigationAllowed.value = false;
+    if (lockInput) {
+      _inputLockSources.add(source);
+      _navigationInputAllowed.value = false;
+    }
     beginInteraction(source);
     _notifyInteractionChanged();
   }
 
   void endNavigation(Object source) {
     _navigationSources.remove(source);
+    _inputLockSources.remove(source);
     _navigationAllowed.value = _navigationSources.isEmpty;
+    _navigationInputAllowed.value = _inputLockSources.isEmpty;
     endInteraction(source);
     _notifyInteractionChanged();
     scheduleCommitFrame();
@@ -63,7 +72,9 @@ class UiInteractionCoordinator extends ChangeNotifier {
 
   void cancelNavigation(Object source) {
     _navigationSources.remove(source);
+    _inputLockSources.remove(source);
     _navigationAllowed.value = _navigationSources.isEmpty;
+    _navigationInputAllowed.value = _inputLockSources.isEmpty;
     cancelInteraction(source);
     _notifyInteractionChanged();
     scheduleCommitFrame();
@@ -250,8 +261,10 @@ class UiInteractionCoordinator extends ChangeNotifier {
     _idleTimers.clear();
     _activeSources.clear();
     _navigationSources.clear();
+    _inputLockSources.clear();
     _visualUpdateSources.clear();
     _navigationAllowed.value = true;
+    _navigationInputAllowed.value = true;
     _backgroundScheduler.setPaused(false);
     _publishedInteractionState = (false, false);
     notifyListeners();
@@ -266,8 +279,10 @@ class UiInteractionCoordinator extends ChangeNotifier {
     _idleTimers.clear();
     _activeSources.clear();
     _navigationSources.clear();
+    _inputLockSources.clear();
     _visualUpdateSources.clear();
     _navigationAllowed.value = true;
+    _navigationInputAllowed.value = true;
     _backgroundScheduler.setPaused(false);
     _backgroundScheduler.clear();
     _pendingCommits.clear();
@@ -289,6 +304,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
     _idleTimers.clear();
     _activeSources.clear();
     _navigationSources.clear();
+    _inputLockSources.clear();
     _visualUpdateSources.clear();
     _backgroundScheduler.clear();
     _pendingCommits.clear();
@@ -298,6 +314,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
     _throttleTimers.clear();
     _throttledCommits.clear();
     _navigationAllowed.dispose();
+    _navigationInputAllowed.dispose();
     super.dispose();
   }
 }

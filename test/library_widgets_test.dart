@@ -5703,11 +5703,24 @@ void main() {
         childFolderSwipeCardFinder,
       );
       expect(swipeCard.actionLabel, fixture.languageProvider.tr('remove'));
-      await tester.drag(discFolderFinder, const Offset(-200, 0));
-      await tester.pumpAndSettle();
-      final removeButtonFinder = find.byTooltip(
-        fixture.languageProvider.tr('remove_audio_folder'),
+      expect(
+        find.descendant(
+          of: childFolderSwipeCardFinder,
+          matching: find.byTooltip(fixture.languageProvider.tr('more_actions')),
+        ),
+        findsNothing,
       );
+      if (defaultTargetPlatform != TargetPlatform.windows) {
+        await finishLibraryTest(tester, fixture);
+        return;
+      }
+      await tester.tap(
+        discFolderFinder,
+        buttons: kSecondaryMouseButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      final removeButtonFinder = find.text(fixture.languageProvider.tr('remove'));
       expect(removeButtonFinder, findsOneWidget);
 
       await tester.tap(removeButtonFinder);
@@ -5724,10 +5737,14 @@ void main() {
 
       await finishLibraryTest(tester, fixture);
     },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets(
-    'root folder swipes left to remove and right to pin',
+    'library root folder ignores horizontal drags and retains menu actions',
     (WidgetTester tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -5773,20 +5790,21 @@ void main() {
         fixture.languageProvider.tr('pin_to_top'),
       );
       expect(swipeCard.leadingActionIcon, Icons.push_pin_rounded);
-      expect(swipeCard.onSecondaryAction, isNull);
 
-      await tester.drag(rootFolderFinder, const Offset(-200, 0));
-      await tester.pumpAndSettle();
-      expect(
-        find.byTooltip(fixture.languageProvider.tr('remove_audio_folder')),
-        findsOneWidget,
-      );
-      expect(
-        find.byTooltip(fixture.languageProvider.tr('download')),
-        findsNothing,
-      );
-      await tester.tapAt(tester.getCenter(swipeCardFinder));
-      await tester.pumpAndSettle();
+      final initialRect = tester.getRect(rootFolderFinder);
+      for (final dx in [-180.0, 180.0]) {
+        await tester.drag(rootFolderFinder, Offset(dx, 0));
+        await tester.pumpAndSettle();
+        expect(tester.getRect(rootFolderFinder), initialRect);
+        expect(
+          find.byTooltip(fixture.languageProvider.tr('remove_audio_folder')),
+          findsNothing,
+        );
+        expect(
+          find.byTooltip(fixture.languageProvider.tr('pin_to_top')),
+          findsNothing,
+        );
+      }
 
       // Pin badge not shown initially
       expect(
@@ -5798,9 +5816,25 @@ void main() {
         findsNothing,
       );
 
-      await tester.drag(rootFolderFinder, const Offset(180, 0));
+      expect(
+        find.descendant(
+          of: swipeCardFinder,
+          matching: find.byTooltip(fixture.languageProvider.tr('more_actions')),
+        ),
+        findsNothing,
+      );
+      if (defaultTargetPlatform != TargetPlatform.windows) {
+        await finishLibraryTest(tester, fixture);
+        return;
+      }
+      await tester.tap(
+        rootFolderFinder,
+        buttons: kSecondaryMouseButton,
+        kind: PointerDeviceKind.mouse,
+      );
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip(fixture.languageProvider.tr('pin_to_top')));
+      expect(find.text(fixture.languageProvider.tr('remove')), findsOneWidget);
+      await tester.tap(find.text(fixture.languageProvider.tr('pin_to_top')));
       await tester.pump();
       await pumpUntilFound(
         tester,
@@ -5824,17 +5858,13 @@ void main() {
         ),
         findsOneWidget,
       );
-      final rjPosition = tester.widget<Positioned>(
-        find
-            .ancestor(
-              of: find.text('RJ123456'),
-              matching: find.byType(Positioned),
-            )
-            .first,
+      final codeRow = tester.widget<LibraryLikeDetailInfoLine>(
+        find.ancestor(
+          of: find.text('RJ123456', findRichText: true),
+          matching: find.byType(LibraryLikeDetailInfoLine),
+        ),
       );
-      expect(rjPosition.left, 4);
-      expect(rjPosition.top, 4);
-      expect(rjPosition.right, isNull);
+      expect(codeRow.trailingText, 'RJ123456');
       final pinPosition = tester.widget<Positioned>(
         find
             .ancestor(
@@ -5860,6 +5890,10 @@ void main() {
 
       await finishLibraryTest(tester, fixture);
     },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets(
@@ -6182,12 +6216,14 @@ void main() {
           await tester.pumpAndSettle();
           await tester.tap(find.text(editLabel));
         } else {
-          await tester.drag(card, const Offset(-250, 0));
-          await tester.pumpAndSettle();
-          expect(find.byTooltip(editLabel), findsNothing);
           expect(
-            find.byTooltip(tester.widget<SwipeRevealCard>(card).removeTooltip),
-            findsOneWidget,
+            find.descendant(
+              of: card,
+              matching: find.byTooltip(
+                fixture.languageProvider.tr('more_actions'),
+              ),
+            ),
+            findsNothing,
           );
           await finishLibraryTest(tester, fixture);
           await tester.pump(const Duration(seconds: 1));
@@ -6354,15 +6390,12 @@ void main() {
               'library_selection_indicator_${PathMatcher.normalize(singleTrack.path)}',
             ),
           );
-          await tester.pump(kAppSelectionDuration ~/ 2);
-          expect(selectionBadge, findsNothing);
-          await tester.pump(kAppSelectionDuration ~/ 2);
           expect(selectionBadge, findsOneWidget);
           final selectionSurface = find
               .ancestor(of: trackFinder, matching: find.byType(Material))
               .first;
           final surface = tester.widget<Material>(selectionSurface);
-          expect(surface.animationDuration, const Duration(milliseconds: 80));
+          expect(surface.color, Colors.transparent);
           final paintedSurface = tester.widget<PhysicalModel>(
             find
                 .descendant(
@@ -6418,6 +6451,7 @@ void main() {
           await tester.pump(const Duration(milliseconds: 120));
           expect(pressHighlight(), hasLength(1));
           await press.up();
+          await tester.pump(const Duration(milliseconds: 180));
           expect(pressHighlight(), isEmpty);
           await tester.longPress(trackFinder);
           await tester.pumpAndSettle();

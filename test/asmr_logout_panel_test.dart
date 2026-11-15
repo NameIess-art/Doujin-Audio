@@ -120,7 +120,7 @@ void main() {
           .where((t) => !t.transformHitTests)
           .fold<double>(1.0, (p, t) => p * t.transform.entry(0, 0));
 
-      expect(readScale(), closeTo(1.14, 0.001));
+      expect(readScale(), closeTo(1.0, 0.001));
       expect(
         DefaultTextStyle.of(tester.element(logoutText)).style.color,
         isNot(equals(restColor)),

@@ -109,14 +109,16 @@ class _DetailCapsule extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final isWindows = defaultTargetPlatform == TargetPlatform.windows;
     return Material(
       color: cs.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
-        mouseCursor: WidgetStateMouseCursor.clickable,
-        onSecondaryTap: defaultTargetPlatform == TargetPlatform.windows
-            ? onCopy
-            : null,
+        mouseCursor: isWindows
+            ? MouseCursor.defer
+            : WidgetStateMouseCursor.clickable,
+        hoverColor: isWindows ? Colors.transparent : null,
+        onSecondaryTap: isWindows ? onCopy : null,
         onLongPress: defaultTargetPlatform == TargetPlatform.android
             ? onCopy
             : null,
@@ -141,16 +143,26 @@ class _DetailCapsule extends StatelessWidget {
               ),
               if (onDelete != null) ...[
                 const SizedBox(width: 4),
-                MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: GestureDetector(
-                    onTap: onDelete,
-                    child: Icon(
-                      Icons.close_rounded,
-                      size: 14,
-                      color: cs.onSurfaceVariant,
+                IconButton(
+                  onPressed: onDelete,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 20,
+                    height: 20,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                  style: appIconButtonStyle(
+                    IconButton.styleFrom(
+                      fixedSize: const Size.square(20),
+                      minimumSize: const Size.square(20),
+                      padding: EdgeInsets.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      foregroundColor: cs.onSurfaceVariant,
+                      iconSize: 14,
+                      shape: const CircleBorder(),
                     ),
                   ),
+                  icon: const Icon(Icons.close_rounded, size: 14),
                 ),
               ],
             ],

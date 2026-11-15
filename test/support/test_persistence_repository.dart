@@ -61,10 +61,12 @@ class TestPersistenceRepository extends SqliteLibraryRepository
     PersistedPlaybackSession session, {
     bool includeQueue = true,
     bool includeEffects = true,
+    Map<String, int>? queueEntryPositions,
   }) => _playback.upsertSession(
     session,
     includeQueue: includeQueue,
     includeEffects: includeEffects,
+    queueEntryPositions: queueEntryPositions,
   );
   @override
   Future<void> deleteSessions(List<String> sessionIds) =>
@@ -72,11 +74,6 @@ class TestPersistenceRepository extends SqliteLibraryRepository
   @override
   Future<void> updateSessionOrder(List<String> sessionIds) =>
       _playback.updateSessionOrder(sessionIds);
-  @override
-  Future<void> updatePlaybackQueueEntryOrder(
-    String sessionId,
-    List<String> entryIds,
-  ) => _playback.updatePlaybackQueueEntryOrder(sessionId, entryIds);
   @override
   Future<void> upsertSessionPlaybackStates(
     List<PersistedPlaybackSession> sessions,

@@ -6,6 +6,7 @@ import 'dart:ui' as ui show Image, ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/presentation/app_presentation_providers.dart';
@@ -30,6 +31,7 @@ import '../../../library/presentation/library_providers.dart';
 import '../../../../core/widgets/async_cover_image.dart';
 import 'playlist_shared_helpers.dart';
 import 'session_detail_content.dart';
+import 'session_detail_route.dart';
 import 'session_cover_transition.dart';
 
 class SessionDetailScaffold extends ConsumerStatefulWidget {
@@ -64,7 +66,10 @@ class SessionDetailScaffold extends ConsumerStatefulWidget {
 }
 
 class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
+  static const double _dragDismissThreshold = 110;
+  static const double _dragDismissVelocity = 650;
+  final Object _dragDismissInteraction = Object();
   final PermissionActionController _permissionActionController =
       PermissionActionController();
   late final PlaybackSubtitleService _subtitles;
@@ -72,11 +77,37 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
   late bool _coverOverlaysVisible;
   late final String _subtitlePresenceCommitKey =
       'detail_subtitle_presence_${identityHashCode(this)}';
+  late final AnimationController _dragResetController;
+  Animation<double>? _dragResetAnimation;
+  double _dragOffset = 0;
+  bool _dragThresholdReached = false;
+  bool _dragDismissClosing = false;
+
+  SessionDetailRoute? get _detailRoute {
+    final route = readAppRoute(context);
+    return route is SessionDetailRoute ? route : null;
+  }
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _dragResetController =
+        AnimationController(vsync: this, duration: kAppMotionStandard)
+          ..addListener(() {
+            final animation = _dragResetAnimation;
+            if (animation != null && mounted) {
+              setState(() => _dragOffset = animation.value);
+            }
+          })
+          ..addStatusListener((status) {
+            if ((status == AnimationStatus.completed ||
+                    status == AnimationStatus.dismissed) &&
+                _dragOffset == 0 &&
+                mounted) {
+              _detailRoute?.endInteractiveDismiss();
+            }
+          });
     _subtitles = ref.read(playbackSubtitleServiceProvider)
       ..addListener(_handleSubtitlePresenceChanged);
     _hasSubtitle = _subtitles.hasKnownSubtitle(widget.session.currentTrackPath);
@@ -129,12 +160,96 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
 
   @override
   void dispose() {
+    UiInteractionCoordinator.instance.cancelInteraction(_dragDismissInteraction);
+    _dragResetController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _subtitles.removeListener(_handleSubtitlePresenceChanged);
     widget.transitionActive.removeListener(_handleTransitionChanged);
     UiInteractionCoordinator.instance.cancelCommit(_subtitlePresenceCommitKey);
     _permissionActionController.dispose();
     super.dispose();
+  }
+
+  void _handleDragDismissStart(DragStartDetails details) {
+    if (widget.transitionActive.value || _dragDismissClosing) return;
+    _dragResetController.stop();
+    UiInteractionCoordinator.instance.beginInteraction(_dragDismissInteraction);
+  }
+
+  void _handleDragDismissUpdate(DragUpdateDetails details) {
+    if (widget.transitionActive.value || _dragDismissClosing) return;
+    final nextOffset = (_dragOffset + details.delta.dy).clamp(
+      0.0,
+      double.infinity,
+    );
+    if (nextOffset == _dragOffset) return;
+    if (nextOffset > 0 && _dragOffset == 0) {
+      _detailRoute?.beginInteractiveDismiss();
+    }
+    final crossed = nextOffset >= _dragDismissThreshold;
+    if (crossed != _dragThresholdReached) {
+      _dragThresholdReached = crossed;
+      if (crossed) {
+        unawaited(HapticFeedback.selectionClick());
+      }
+    }
+    setState(() => _dragOffset = nextOffset);
+  }
+
+  void _handleDragDismissEnd(DragEndDetails details) {
+    UiInteractionCoordinator.instance.endInteraction(_dragDismissInteraction);
+    if (widget.transitionActive.value || _dragDismissClosing) {
+      _animateDragDismissBack();
+      return;
+    }
+    final velocity = details.velocity.pixelsPerSecond.dy;
+    final shouldDismiss =
+        _dragOffset >= _dragDismissThreshold ||
+        (_dragOffset > 20 && velocity >= _dragDismissVelocity);
+    if (shouldDismiss) {
+      _dragDismissClosing = true;
+      if (!MediaQuery.disableAnimationsOf(context) &&
+          TickerMode.valuesOf(context).enabled) {
+        final targetOffset = math.max(
+          _dragOffset + 120.0,
+          MediaQuery.sizeOf(context).height * 0.45,
+        );
+        _dragResetAnimation = Tween<double>(begin: _dragOffset, end: targetOffset)
+            .chain(CurveTween(curve: Curves.easeOutCubic))
+            .animate(_dragResetController);
+        _dragResetController.duration = kAppMotionStandard;
+        _dragResetController.forward(from: 0);
+      }
+      widget.onClose();
+      return;
+    }
+    _animateDragDismissBack();
+  }
+
+  void _handleDragDismissCancel() {
+    UiInteractionCoordinator.instance.endInteraction(_dragDismissInteraction);
+    _animateDragDismissBack();
+  }
+
+  void _animateDragDismissBack() {
+    _dragThresholdReached = false;
+    final start = _dragOffset;
+    if (start == 0) {
+      _detailRoute?.endInteractiveDismiss();
+      return;
+    }
+    if (MediaQuery.disableAnimationsOf(context) ||
+        !TickerMode.valuesOf(context).enabled) {
+      setState(() => _dragOffset = 0);
+      _detailRoute?.endInteractiveDismiss();
+      return;
+    }
+    _dragResetAnimation = Tween<double>(
+      begin: start,
+      end: 0,
+    ).chain(CurveTween(curve: kAppSpringCurve)).animate(_dragResetController);
+    _dragResetController.duration = kAppMotionStandard;
+    _dragResetController.forward(from: 0);
   }
 
   @override
@@ -222,7 +337,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
       key: const ValueKey('session_detail_close_button'),
       onPressed: onClose,
       tooltip: i18n.tr('close'),
-      icon: const Icon(Icons.chevron_left_rounded),
+      icon: const Icon(Icons.keyboard_arrow_down_rounded),
     );
     final headerActionStyle = appIconButtonStyle(
       IconButton.styleFrom(
@@ -239,7 +354,8 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
     final track = widget.track;
     final cs = Theme.of(context).colorScheme;
     final library = ref.read(libraryFacadeProvider);
-    return Material(
+    final allowVerticalDismiss = !isWindows && !isLandscape;
+    final content = Material(
       color: cs.surface,
       animationDuration: Duration.zero,
       child: Stack(
@@ -563,6 +679,40 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
           ),
         ],
       ),
+    );
+    final dragFraction = (_dragOffset / 320.0).clamp(0.0, 1.0);
+    final Widget draggableBody = allowVerticalDismiss && _dragOffset > 0
+        ? Stack(
+            fit: StackFit.expand,
+            children: [
+              IgnorePointer(
+                child: ColoredBox(
+                  color: Colors.black.withValues(
+                    alpha: (0.28 * (1.0 - dragFraction)).clamp(0.0, 0.28),
+                  ),
+                ),
+              ),
+              Transform.translate(
+                offset: Offset(0, _dragOffset),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(24.0 * dragFraction),
+                  ),
+                  child: content,
+                ),
+              ),
+            ],
+          )
+        : content;
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onVerticalDragStart: allowVerticalDismiss ? _handleDragDismissStart : null,
+      onVerticalDragUpdate:
+          allowVerticalDismiss ? _handleDragDismissUpdate : null,
+      onVerticalDragEnd: allowVerticalDismiss ? _handleDragDismissEnd : null,
+      onVerticalDragCancel:
+          allowVerticalDismiss ? _handleDragDismissCancel : null,
+      child: draggableBody,
     );
   }
 }

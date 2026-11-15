@@ -271,16 +271,25 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
                               fillColor: cs.surface,
                               isDense: true,
                               suffixIcon: _localSearchQuery.isNotEmpty
-                                  ? MouseRegion(
-                                      cursor: SystemMouseCursors.click,
-                                      child: GestureDetector(
-                                        onTap: _onClearSearchLocally,
-                                        behavior: HitTestBehavior.opaque,
-                                        child: Icon(
-                                          Icons.cancel_rounded,
-                                          size: 14,
-                                          color: cs.onSurfaceVariant,
+                                  ? IconButton(
+                                      onPressed: _onClearSearchLocally,
+                                      padding: EdgeInsets.zero,
+                                      visualDensity: VisualDensity.compact,
+                                      style: appIconButtonStyle(
+                                        IconButton.styleFrom(
+                                          fixedSize: const Size.square(24),
+                                          minimumSize: const Size.square(24),
+                                          padding: EdgeInsets.zero,
+                                          tapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                          foregroundColor: cs.onSurfaceVariant,
+                                          iconSize: 14,
+                                          shape: const CircleBorder(),
                                         ),
+                                      ),
+                                      icon: const Icon(
+                                        Icons.cancel_rounded,
+                                        size: 14,
                                       ),
                                     )
                                   : null,
@@ -629,6 +638,7 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
         tertiaryActionTooltip: i18n.tr('open_containing_folder'),
         tertiaryActionIcon: Icons.folder_open_rounded,
         shape: cardShape,
+        swipeEnabled: false,
         enabled: !isSelectionMode,
         closedColor: cs.surface,
         actionLabel: i18n.tr(
@@ -652,7 +662,6 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
                 ),
               )
             : null,
-        animateLeadingActionClose: true,
         onLeadingAction: () => unawaited(
           saveSettingsWithFeedback(
             context,
@@ -672,19 +681,15 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
           margin: EdgeInsets.zero,
           clipBehavior: Clip.antiAlias,
           shape: cardShape,
-          color: isSelected
-              ? cs.primaryContainer.withValues(alpha: 0.25)
-              : (isAlreadyPlaying && useFeaturedCard
-                    ? Color.alphaBlend(
-                        cs.primaryContainer.withValues(alpha: 0.40),
-                        cs.surface,
-                      )
-                    : Colors.transparent),
+          color: isAlreadyPlaying && useFeaturedCard
+              ? Color.alphaBlend(
+                  cs.primaryContainer.withValues(alpha: 0.40),
+                  cs.surface,
+                )
+              : Colors.transparent,
           elevation: 0,
           shadowColor: Colors.transparent,
           surfaceTintColor: Colors.transparent,
-          // The tap surface sits inside the card so its ink highlight and
-          // ripple paint above the swipe card's closed background.
           child: AppEntryInkWell(
             canRequestFocus: isSelectionMode,
             onLongPress: onLongPress,

@@ -2173,7 +2173,7 @@ void main() {
     );
     expect(
       kPlaceholderContentTransitionDuration,
-      const Duration(milliseconds: 300),
+      const Duration(milliseconds: 160),
     );
     final fades = find.descendant(
       of: transition,
@@ -2188,12 +2188,27 @@ void main() {
       tester.widget<FadeTransition>(placeholderFade.first).opacity.value,
       1,
     );
-    await tester.pump(const Duration(milliseconds: 150));
+    final halfFade = kPlaceholderContentTransitionDuration ~/ 2;
+    final remainingFade =
+        kPlaceholderContentTransitionDuration -
+        halfFade -
+        const Duration(milliseconds: 1);
+    await tester.pump(halfFade);
     final midwayOpacity = tester
         .widget<FadeTransition>(placeholderFade.first)
         .opacity
         .value;
-    expect(midwayOpacity, closeTo(1 - kAppFadeCurve.transform(0.5), 0.001));
+    expect(
+      midwayOpacity,
+      closeTo(
+        1 -
+            kAppSpringCurve.transform(
+              halfFade.inMicroseconds /
+                  kPlaceholderContentTransitionDuration.inMicroseconds,
+            ),
+        0.001,
+      ),
+    );
     await tester.pumpWidget(
       MaterialApp(
         home: SizedBox(
@@ -2214,7 +2229,7 @@ void main() {
       tester.widget<FadeTransition>(placeholderFade.first).opacity.value,
       closeTo(midwayOpacity, 0.001),
     );
-    await tester.pump(const Duration(milliseconds: 149));
+    await tester.pump(remainingFade);
     expect(
       find.byKey(const ValueKey<String>('decoding_placeholder')),
       findsOneWidget,

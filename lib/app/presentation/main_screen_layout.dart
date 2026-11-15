@@ -1,11 +1,30 @@
 part of 'main_screen.dart';
 
+final _mainDestinationsProvider = Provider<List<MainDestination>>((ref) {
+  final repository = ref.watch(settingsRepositoryProvider);
+  final (:showLocal, :showAsmr, :showMy) = ref.watch(
+    settingsStateProvider.select((state) {
+      final settings = state.value ?? repository.slice.state;
+      return (
+        showLocal: settings.showLocalLibrary,
+        showAsmr: settings.showAsmrOne,
+        showMy: settings.showMyPage,
+      );
+    }),
+  );
+  return resolveMainDestinations(
+    showLocalLibrary: showLocal,
+    showAsmrOne: showAsmr,
+    showMyPage: showMy,
+  );
+});
+
 extension _MainScreenLayout on _MainScreenState {
   Widget _buildContentNavigator(
     BuildContext context, {
     required bool isDesktop,
     required bool isLandscapeLayout,
-    required double bottomInset,
+    required bool hasOverlaySessions,
     required bool tinyMode,
   }) {
     final body = _buildBody(
@@ -50,9 +69,9 @@ extension _MainScreenLayout on _MainScreenState {
       isLandscape: isLandscapeLayout,
       geometry: widget.playbackDockGeometry,
       // The root page keeps the main dock inset; routed pages use their host's.
-      child: MobileOverlayInset(
-        bottomInset: bottomInset,
-        menuOverlayKey: _mainMenuOverlayKey,
+      child: _wrapMobileOverlayInset(
+        isDesktop: isDesktop,
+        hasOverlaySessions: hasOverlaySessions,
         menuDismiss: navigation.menuDismiss,
         child: mainPage,
       ),
@@ -64,7 +83,6 @@ extension _MainScreenLayout on _MainScreenState {
     required bool isDesktop,
     required bool isLandscapeLayout,
   }) {
-    final fallbackSettings = ref.read(settingsRepositoryProvider).slice.state;
     final layoutSize = MediaQuery.sizeOf(context);
     final width = layoutSize.width;
     final isLargeScreen = width >= 980;
@@ -83,22 +101,7 @@ extension _MainScreenLayout on _MainScreenState {
                   AppSpacing.sm,
                 ))
         : EdgeInsets.zero;
-    final (:showLocal, :showAsmr) = ref.watch(
-      settingsStateProvider.select(
-        (s) => (
-          showLocal:
-              s.value?.showLocalLibrary ?? fallbackSettings.showLocalLibrary,
-          showAsmr: s.value?.showAsmrOne ?? fallbackSettings.showAsmrOne,
-        ),
-      ),
-    );
-    final destinations = resolveMainDestinations(
-      showLocalLibrary: showLocal,
-      showAsmrOne: showAsmr,
-    );
-    if (_activePageIndex.value >= destinations.length) {
-      _activePageIndex.value = destinations.length - 1;
-    }
+    final destinations = ref.watch(_mainDestinationsProvider);
     Widget pageShell(BuildContext context, int actualIndex) {
       final page = _buildMainPage(
         context,
@@ -157,8 +160,16 @@ extension _MainScreenLayout on _MainScreenState {
                 separateHeader: true,
                 indexListenable: _activePageIndex,
                 itemCount: destinations.length,
-                contentRevision: (showLocal, showAsmr, isLandscapeLayout),
+                contentRevision: (
+                  destinations.first.type,
+                  destinations.length,
+                  isLandscapeLayout,
+                ),
                 itemBuilder: pageShell,
+                onIndexSelected: _switchPage,
+                onDragPositionChanged: (position) {
+                  if (mounted) _pageDragPosition.value = position;
+                },
                 onTransitionCompleted: _handlePageTransitionCompleted,
               ),
             ),
@@ -187,24 +198,7 @@ extension _MainScreenLayout on _MainScreenState {
     required double availableWidth,
     required VoidCallback onCurrentTap,
   }) {
-    final fallbackSettings = ref.read(settingsRepositoryProvider).slice.state;
-    final (:showLocal, :showAsmr, :mode) = ref.watch(
-      settingsStateProvider.select(
-        (s) => (
-          showLocal:
-              s.value?.showLocalLibrary ?? fallbackSettings.showLocalLibrary,
-          showAsmr: s.value?.showAsmrOne ?? fallbackSettings.showAsmrOne,
-          mode:
-              s.value?.mySettingsPageMode ??
-              fallbackSettings.mySettingsPageMode,
-        ),
-      ),
-    );
-    final destinations = resolveMainDestinations(
-      showLocalLibrary: showLocal,
-      showAsmrOne: showAsmr,
-      mySettingsPageMode: mode,
-    );
+    final destinations = ref.watch(_mainDestinationsProvider);
 
     return ValueListenableBuilder<int>(
       valueListenable: _activePageIndex,
@@ -247,36 +241,51 @@ extension _MainScreenLayout on _MainScreenState {
       ...entries.where((entry) => entry.key != activeIndex),
       entries[activeIndex],
     ];
+
+    double navigationLeft() =>
+        MobileDockCapsuleContentState.inlinePlaybackWidth(
+          availableWidth,
+          expansion.value,
+        ) *
+        appearance.value *
+        (1 - rowProgress.value);
+
     Rect destinationRect(int index) {
       final expand = expansion.value * (1 - rowProgress.value);
       final progress = index == 0
-          ? Curves.easeInOut.transform((expand / 0.2).clamp(0.0, 1.0))
-          : Curves.easeInOut.transform(((expand - 0.2) / 0.45).clamp(0.0, 1.0));
-      final width =
-          availableWidth -
-          MobileDockCapsuleContentState.inlinePlaybackWidth(
-                availableWidth,
-                expansion.value,
-              ) *
-              appearance.value *
-              (1 - rowProgress.value);
-      final count = destinations.length;
-      final indicatorWidth = ((width - 12 - 4 * (count - 1)) / count).clamp(
-        44.0,
-        68.0,
-      );
-      final shapeProgress = Curves.easeInOut.transform(
+          ? kAppSpringCurve.transform((expand / 0.2).clamp(0.0, 1.0))
+          : kAppSpringCurve.transform(((expand - 0.2) / 0.45).clamp(0.0, 1.0));
+      const height = kActiveSessionCarouselDockHeight;
+      final inlineShare = appearance.value * (1 - rowProgress.value);
+      final width = availableWidth - navigationLeft();
+      final slotWidth = width / destinations.length;
+      // Morph from the full menu cell to the single control. The shrinking
+      // viewport would otherwise make the cell narrower than its final size.
+      final menuSlotWidth =
+          (availableWidth - height * inlineShare) / destinations.length;
+      final shapeProgress = kAppSpringCurve.transform(
         ((expand - 0.25) / 0.5).clamp(0.0, 1.0),
       );
-      final buttonWidth = 12 + lerpDouble(indicatorWidth, 44, shapeProgress)!;
-      final expandedLeft = count == 1
-          ? 0.0
-          : (width - indicatorWidth - 12) * (count - 1 - index) / (count - 1);
+      final buttonWidth = lerpDouble(menuSlotWidth, height, shapeProgress)!;
+      final distanceFromRight = (destinations.length - 1 - index) * slotWidth;
       return Rect.fromLTWH(
-        availableWidth - buttonWidth - expandedLeft * (1 - progress),
+        availableWidth - buttonWidth - distanceFromRight * (1 - progress),
         0,
         buttonWidth,
-        kActiveSessionCarouselDockHeight,
+        height,
+      );
+    }
+
+    Rect indicatorRect(int index) {
+      const inset = 6.0;
+      final destination = destinationRect(index);
+      final left = navigationLeft() + inset;
+      final right = availableWidth - inset;
+      return Rect.fromLTRB(
+        destination.left.clamp(left, right),
+        destination.top + inset,
+        destination.right.clamp(left, right),
+        destination.bottom - inset,
       );
     }
 
@@ -292,16 +301,16 @@ extension _MainScreenLayout on _MainScreenState {
       final icon = AnimatedSwitcher(
         duration: MediaQuery.disableAnimationsOf(context)
             ? Duration.zero
-            : kAppFadeDuration,
-        switchInCurve: kAppFadeCurve,
-        switchOutCurve: kAppFadeCurve,
+            : kAppMotionFast,
+        switchInCurve: kAppSpringCurve,
+        switchOutCurve: Curves.easeInCubic,
         transitionBuilder: (child, animation) =>
             MediaQuery.disableAnimationsOf(context)
             ? child
             : FadeTransition(
                 opacity: animation,
                 child: ScaleTransition(
-                  scale: animation.drive(Tween<double>(begin: 0.9, end: 1)),
+                  scale: animation.drive(Tween<double>(begin: 0.85, end: 1)),
                   child: child,
                 ),
               ),
@@ -323,7 +332,7 @@ extension _MainScreenLayout on _MainScreenState {
           child: ExcludeSemantics(
             excluding: isPlaybackExpanded && !selected,
             child: Semantics(
-              key: ValueKey<String>('main_destination_${item.navigationKey}'),
+              key: ValueKey<String>('main_destination_${item.labelKey}'),
               button: true,
               selected: selected,
               label: label,
@@ -333,7 +342,7 @@ extension _MainScreenLayout on _MainScreenState {
                   data: IconThemeData(color: selected ? activeColor : inactive),
                   child: _BottomDestinationInkResponse(
                     inkKey: ValueKey<String>(
-                      'main_destination_ink_${item.navigationKey}',
+                      'main_destination_ink_${item.labelKey}',
                     ),
                     onTap: isPlaybackExpanded && selected
                         ? onCurrentTap
@@ -346,7 +355,7 @@ extension _MainScreenLayout on _MainScreenState {
           ),
         ),
         builder: (context, child) {
-          final fadeProgress = kAppFadeCurve.transform(
+          final fadeProgress = kAppSpringCurve.transform(
             expansion.value * (1 - rowProgress.value),
           );
           if (!selected && fadeProgress == 1) return const SizedBox.shrink();
@@ -366,53 +375,70 @@ extension _MainScreenLayout on _MainScreenState {
       );
     }
 
+    final layoutKey = Object.hashAll(destinations.map((item) => item.type));
+    final stackChild = Stack(
+      children: [
+        for (final entry in layeredEntries) buildDestination(entry),
+      ],
+    );
     return Theme(
       data: Theme.of(context).copyWith(splashFactory: NoSplash.splashFactory),
-      child: SlidingSelectionIndicator(
-        index: activeIndex,
-        layoutKey: Object.hashAll(destinations.map((item) => item.type)),
-        child: Stack(
-          children: [
-            for (final entry in layeredEntries) buildDestination(entry),
-          ],
-        ),
-        builder: (context, position, child) {
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              AnimatedBuilder(
-                animation: Listenable.merge([
-                  appearance,
-                  expansion,
-                  rowProgress,
-                ]),
-                builder: (context, _) {
-                  final rect = SlidingSelectionIndicator.rectAt(
-                    position,
-                    destinationRect,
-                  )!.deflate(6);
-                  return Stack(
-                    children: [
-                      Positioned.fromRect(
-                        rect: rect,
-                        child: IgnorePointer(
-                          child: DecoratedBox(
-                            key: const ValueKey('mobile_navigation_indicator'),
-                            decoration: ShapeDecoration(
-                              color: SlidingSelectionIndicator.fill(cs.primary),
-                              shape: SlidingSelectionIndicator.shape,
+      child: _MobileBottomBarDragScrubber(
+        enabled: !isPlaybackExpanded && destinations.length > 1,
+        destinationCount: destinations.length,
+        activeIndex: activeIndex,
+        slotAt: destinationRect,
+        onSelectIndex: _switchPage,
+        builder: (context, dragPosition) => ValueListenableBuilder<double?>(
+          valueListenable: _pageDragPosition,
+          builder: (context, pageDragPosition, _) => SlidingSelectionIndicator(
+            index: activeIndex,
+            layoutKey: layoutKey,
+            overridePosition: dragPosition ?? pageDragPosition,
+            child: stackChild,
+            builder: (context, position, child) {
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  AnimatedBuilder(
+                    animation: Listenable.merge([
+                      appearance,
+                      expansion,
+                      rowProgress,
+                    ]),
+                    builder: (context, _) {
+                      final rect = SlidingSelectionIndicator.rectAt(
+                        position,
+                        indicatorRect,
+                      )!;
+                      return Stack(
+                        children: [
+                          Positioned.fromRect(
+                            rect: rect,
+                            child: IgnorePointer(
+                              child: DecoratedBox(
+                                key: const ValueKey(
+                                  'mobile_navigation_indicator',
+                                ),
+                                decoration: ShapeDecoration(
+                                  color: SlidingSelectionIndicator.fill(
+                                    cs.primary,
+                                  ),
+                                  shape: SlidingSelectionIndicator.shape,
+                                ),
+                              ),
                             ),
                           ),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-              child!,
-            ],
-          );
-        },
+                        ],
+                      );
+                    },
+                  ),
+                  child!,
+                ],
+              );
+            },
+          ),
+        ),
       ),
     );
   }
@@ -427,8 +453,10 @@ extension _MainScreenLayout on _MainScreenState {
     final isLandscape = WorkDetailNavigationScope.isLandscapeOf(context);
     final routedDockActive = widget.playbackDockGeometry?.routedDockActive;
     return ListenableBuilder(
-      listenable:
-          routedDockActive ?? detailNavigation ?? kAlwaysDismissedAnimation,
+      listenable: Listenable.merge([
+        routedDockActive ?? detailNavigation,
+        _mobilePlaybackRaised,
+      ]),
       builder: (context, _) {
         final isPlaybackHidden =
             !isLandscape &&
@@ -453,78 +481,77 @@ extension _MainScreenLayout on _MainScreenState {
     bool tinyMode = false,
     bool isPlaybackHidden = false,
   }) {
-    final systemBottom = MediaQuery.paddingOf(context).bottom;
-    final hasPlayback = overlaySessions.isNotEmpty;
-    final playbackRaised = _isMobilePlaybackRaised;
+    if (tinyMode) return SizedBox.expand(key: key);
     final maskHeight =
         kActiveSessionCarouselDockHeight +
         kMobileDockBottomMargin +
         2.0 +
-        systemBottom +
-        (hasPlayback && playbackRaised
-            ? MobileDockCapsuleContentState.rowTravel
-            : 0);
-    final playbackExpanded = hasPlayback && _isMobilePlaybackExpanded;
-    return Stack(
-      key: key,
-      fit: StackFit.expand,
-      children: [
-        if (!tinyMode)
+        MediaQuery.paddingOf(context).bottom;
+    return MobileDockCapsuleContent(
+      overlaySessions: overlaySessions,
+      isPlaybackExpanded:
+          overlaySessions.isNotEmpty && _isMobilePlaybackExpanded,
+      isPlaybackRaised: _isMobilePlaybackRaised,
+      isPlaybackHidden: isPlaybackHidden,
+      i18n: i18n,
+      mobilePlaybackGeometryKey: _mobilePlaybackGeometryKey,
+      onShowPlayback: _showMobilePlayback,
+      onShowDestinations: _showMobileDestinations,
+      onTogglePlaybackRow: _toggleMobilePlaybackRow,
+      onReportPlaybackCoverRect: _reportMobilePlaybackCoverRect,
+      buildBottomBar: _buildBottomBar,
+      wrapDock: (dock, rowProgress) => Stack(
+        key: key,
+        fit: StackFit.expand,
+        children: [
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
-            height: maskHeight,
-            child: const Listener(
-              behavior: HitTestBehavior.opaque,
-              child: AppEdgeFadeMask(
-                key: ValueKey<String>('mobile_bottom_capsule_fade_mask'),
-                direction: AppEdgeFadeDirection.towardBottom,
+            child: AnimatedBuilder(
+              animation: rowProgress,
+              builder: (context, child) => SizedBox(
+                height:
+                    maskHeight +
+                    rowProgress.value * MobileDockCapsuleContentState.rowTravel,
+                child: child,
+              ),
+              child: const Listener(
+                behavior: HitTestBehavior.opaque,
+                child: AppEdgeFadeMask(
+                  key: ValueKey<String>('mobile_bottom_capsule_fade_mask'),
+                  direction: AppEdgeFadeDirection.towardBottom,
+                ),
               ),
             ),
           ),
-        SafeArea(
-          top: false,
-          minimum: const EdgeInsets.only(bottom: kMobileDockBottomMargin),
-          child: Align(
-            alignment: Alignment.bottomCenter,
-            child: SizedBox(
-              width: double.infinity,
-              child: tinyMode
-                  ? const SizedBox.shrink()
-                  : Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.sm,
+          SafeArea(
+            top: false,
+            minimum: const EdgeInsets.only(bottom: kMobileDockBottomMargin),
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: SizedBox(
+                width: double.infinity,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                  ),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 430),
+                    child: FractionallySizedBox(
+                      key: const ValueKey<String>(
+                        'mobile_bottom_capsule_panel',
                       ),
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 430),
-                        child: FractionallySizedBox(
-                          key: const ValueKey<String>(
-                            'mobile_bottom_capsule_panel',
-                          ),
-                          widthFactor: 0.96,
-                          child: MobileDockCapsuleContent(
-                            overlaySessions: overlaySessions,
-                            isPlaybackExpanded: playbackExpanded,
-                            isPlaybackRaised: playbackRaised,
-                            isPlaybackHidden: isPlaybackHidden,
-                            i18n: i18n,
-                            mobilePlaybackGeometryKey:
-                                _mobilePlaybackGeometryKey,
-                            onShowPlayback: _showMobilePlayback,
-                            onShowDestinations: _showMobileDestinations,
-                            onTogglePlaybackRow: _toggleMobilePlaybackRow,
-                            onReportPlaybackCoverRect:
-                                _reportMobilePlaybackCoverRect,
-                            buildBottomBar: _buildBottomBar,
-                          ),
-                        ),
-                      ),
+                      widthFactor: 0.96,
+                      child: dock,
                     ),
+                  ),
+                ),
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -533,56 +560,147 @@ extension _MainScreenLayout on _MainScreenState {
     AppLanguageProvider i18n,
     List<PlaybackSessionSnapshot> overlaySessions, {
     required bool isMenuCollapsed,
-    required bool isLandscapeLayout,
   }) {
-    final fallbackSettings = ref.read(settingsRepositoryProvider).slice.state;
-    final splitMySettings = isLandscapeLayout;
-    final (:showLocal, :showAsmr, :mode) = ref.watch(
-      settingsStateProvider.select(
-        (s) => (
-          showLocal:
-              s.value?.showLocalLibrary ?? fallbackSettings.showLocalLibrary,
-          showAsmr: s.value?.showAsmrOne ?? fallbackSettings.showAsmrOne,
-          mode:
-              s.value?.mySettingsPageMode ??
-              fallbackSettings.mySettingsPageMode,
-        ),
-      ),
-    );
-    final destinations = resolveMainDestinations(
-      showLocalLibrary: showLocal,
-      showAsmrOne: showAsmr,
-      mySettingsPageMode: mode,
-      splitMySettings: splitMySettings,
-    );
+    final destinations = ref.watch(_mainDestinationsProvider);
+
     return DesktopMainNavigation(
       i18n: i18n,
       overlaySessions: overlaySessions,
       destinations: destinations,
-      mySettingsPageMode: mode,
       isMenuCollapsed: isMenuCollapsed,
       activePageIndex: _activePageIndex,
       menuIconKeys: _menuIconKeys,
       menuIconLinks: _menuIconLinks,
       collapseOffset: _menuIconCollapseOffset,
-      onSwitchPage: _switchNavigationPage,
+      onSwitchPage: _switchPage,
       onToggleMenu: _toggleMenuCollapsed,
       playbackGeometryKey: _desktopPlaybackGeometryKey,
       onReportPlaybackRect: _reportDesktopPlaybackRect,
+      pageDragPosition: _pageDragPosition,
     );
   }
 
-  double _mobileContentInset() {
-    final hasRaisedPlayback =
-        _isMobilePlaybackRaised &&
-        ref.watch(
-          mainOverlayUiProvider.select(
-            (state) => state.overlaySessions.isNotEmpty,
-          ),
-        );
+  Widget _wrapMobileOverlayInset({
+    required bool isDesktop,
+    required bool hasOverlaySessions,
+    required ValueNotifier<VoidCallback?>? menuDismiss,
+    required Widget child,
+  }) {
+    if (isDesktop) {
+      return MobileOverlayInset(
+        bottomInset: 0.0,
+        menuOverlayKey: _mainMenuOverlayKey,
+        menuDismiss: menuDismiss,
+        child: child,
+      );
+    }
+    return ValueListenableBuilder<bool?>(
+      valueListenable: _mobilePlaybackRaised,
+      child: child,
+      builder: (context, _, child) => MobileOverlayInset(
+        bottomInset: _mobileContentInset(
+          context,
+          hasOverlaySessions: hasOverlaySessions,
+        ),
+        menuOverlayKey: _mainMenuOverlayKey,
+        menuDismiss: menuDismiss,
+        child: child!,
+      ),
+    );
+  }
+
+  double _mobileContentInset(
+    BuildContext context, {
+    required bool hasOverlaySessions,
+  }) {
+    final hasRaisedPlayback = _isMobilePlaybackRaised && hasOverlaySessions;
     final systemBottom = MediaQuery.paddingOf(context).bottom;
     return max(systemBottom, kMobileDockBottomMargin) +
         kActiveSessionCarouselDockHeight +
         (hasRaisedPlayback ? MobileDockCapsuleContentState.rowTravel : 0);
+  }
+}
+
+class _MobileBottomBarDragScrubber extends StatefulWidget {
+  const _MobileBottomBarDragScrubber({
+    required this.enabled,
+    required this.destinationCount,
+    required this.activeIndex,
+    required this.slotAt,
+    required this.onSelectIndex,
+    required this.builder,
+  });
+
+  final bool enabled;
+  final int destinationCount;
+  final int activeIndex;
+  final Rect Function(int index) slotAt;
+  final ValueChanged<int> onSelectIndex;
+  final Widget Function(BuildContext context, double? dragPosition) builder;
+
+  @override
+  State<_MobileBottomBarDragScrubber> createState() =>
+      _MobileBottomBarDragScrubberState();
+}
+
+class _MobileBottomBarDragScrubberState
+    extends State<_MobileBottomBarDragScrubber> {
+  double? _dragPosition;
+  int? _lastNotifiedIndex;
+
+  @override
+  void didUpdateWidget(covariant _MobileBottomBarDragScrubber oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.enabled && _dragPosition != null) {
+      _dragPosition = null;
+      _lastNotifiedIndex = null;
+    }
+  }
+
+  double _positionForDx(double dx) {
+    final first = widget.slotAt(0).center.dx;
+    final last = widget.slotAt(widget.destinationCount - 1).center.dx;
+    final span = last - first;
+    if (span <= 0) return widget.activeIndex.toDouble();
+    final t = ((dx - first) / span).clamp(0.0, 1.0);
+    return t * (widget.destinationCount - 1);
+  }
+
+  void _updateDrag(double dx) {
+    final position = _positionForDx(dx);
+    final nearest = position.round().clamp(0, widget.destinationCount - 1);
+    setState(() => _dragPosition = position);
+    if (nearest != _lastNotifiedIndex) {
+      _lastNotifiedIndex = nearest;
+      if (nearest != widget.activeIndex) {
+        AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+        widget.onSelectIndex(nearest);
+      }
+    }
+  }
+
+  void _endDrag() {
+    if (_dragPosition == null) return;
+    setState(() => _dragPosition = null);
+    _lastNotifiedIndex = null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragStart: widget.enabled
+          ? (details) {
+              _lastNotifiedIndex = widget.activeIndex;
+              _updateDrag(details.localPosition.dx);
+            }
+          : null,
+      onHorizontalDragUpdate: widget.enabled
+          ? (details) => _updateDrag(details.localPosition.dx)
+          : null,
+      onHorizontalDragEnd: widget.enabled ? (_) => _endDrag() : null,
+      onHorizontalDragCancel: widget.enabled ? _endDrag : null,
+      child: widget.builder(context, _dragPosition),
+    );
   }
 }

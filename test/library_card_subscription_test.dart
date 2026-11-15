@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/duration_overlay.dart';
-import 'package:doujin_audio/core/widgets/rj_code_overlay.dart';
 import 'package:doujin_audio/features/library/presentation/library_card_artwork.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_tree_widgets.dart';
 import 'package:flutter/material.dart';
@@ -83,6 +82,7 @@ void main() {
           AudioDetail.empty(target).copyWith(
             workTitle: 'Updated work title',
             rjCode: 'RJ123456',
+            circleName: 'Updated circle',
             tags: ['Updated metadata'],
             duration: const Duration(minutes: 3),
           ),
@@ -99,17 +99,27 @@ void main() {
             findsOneWidget,
           );
         }
+        final circle = find.text('Updated circle', findRichText: true);
+        final code = find.text('RJ123456', findRichText: true);
+        expect(
+          tester.getCenter(code).dx,
+          greaterThan(tester.getCenter(circle).dx),
+        );
+        expect(
+          tester.getTopLeft(code).dy,
+          closeTo(tester.getTopLeft(circle).dy, 0.01),
+        );
         if (kind != 'uncovered single') {
+          final duration = find.byType(DurationOverlay);
           expect(
-            tester
-                .widget<DurationOverlay>(find.byType(DurationOverlay))
-                .duration,
+            tester.widget<DurationOverlay>(duration).duration,
             const Duration(minutes: 3),
           );
-          expect(
-            tester.widget<RjCodeOverlay>(find.byType(RjCodeOverlay)).rjCode,
-            'RJ123456',
+          final position = tester.widget<Positioned>(
+            find.ancestor(of: duration, matching: find.byType(Positioned)).first,
           );
+          expect(position.left, 4);
+          expect(position.bottom, 4);
         }
         expect(shellBuilds, 0);
         expect(artworkBuilds, 0);

@@ -52,6 +52,7 @@ import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/widgets/horizontal_edge_fade_scroll.dart';
+import 'package:doujin_audio/core/widgets/library_like_cards.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/app/theme/app_styles.dart';
@@ -340,7 +341,7 @@ void main() {
       initialPosition: Duration.zero,
     );
     final close = tester.widget<IconButton>(
-      find.widgetWithIcon(IconButton, Icons.chevron_left_rounded),
+      find.widgetWithIcon(IconButton, Icons.keyboard_arrow_down_rounded),
     );
     close.onPressed!();
     close.onPressed!();
@@ -670,7 +671,7 @@ void main() {
                     find.ancestor(of: label, matching: find.byType(Transform)),
                   )
                   .firstWhere((widget) => !widget.transformHitTests);
-              expect(scale.transform.entry(0, 0), 1.14);
+              expect(scale.transform.entry(0, 0), 1.0);
               await mouse.down(tester.getCenter(label));
               await mouse.up();
             } else {
@@ -1276,62 +1277,64 @@ void main() {
     expect(harness.coverCache.requestedPaths, isEmpty);
   });
 
-  testWidgets('Windows subtitle wheel animates to the selected cue', (
-    tester,
-  ) async {
-    final subtitleTrack = SubtitleTrack(
-      sourcePath: 'wheel.srt',
-      cues: List.generate(
-        10,
-        (index) => SubtitleCue(
-          start: Duration(seconds: index * 2),
-          end: Duration(seconds: index * 2 + 2),
-          text: 'Cue $index',
+  testWidgets(
+    'Windows subtitle wheel animates to the selected cue',
+    (tester) async {
+      final subtitleTrack = SubtitleTrack(
+        sourcePath: 'wheel.srt',
+        cues: List.generate(
+          10,
+          (index) => SubtitleCue(
+            start: Duration(seconds: index * 2),
+            end: Duration(seconds: index * 2 + 2),
+            text: 'Cue $index',
+          ),
         ),
-      ),
-    );
-    final fixture = AppRuntimeWidgetTestFixture();
-    addTearDown(fixture.dispose);
-    await tester.pumpWidget(
-      fixture.build(
-        Center(
-          child: SizedBox(
-            width: 400,
-            height: 160,
-            child: TimelineSubtitleView(
-              cues: subtitleTrack.cues,
-              playbackSubtitleIndex: 2,
-              onSeek: (_) async {},
+      );
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          Center(
+            child: SizedBox(
+              width: 400,
+              height: 160,
+              child: TimelineSubtitleView(
+                cues: subtitleTrack.cues,
+                playbackSubtitleIndex: 2,
+                onSeek: (_) async {},
+              ),
             ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    final list = find.byKey(const ValueKey('subtitle_timeline_list'));
-    final controller = tester.widget<ListView>(list).controller!;
-    final start = controller.offset;
-    Future<void> wheel() => tester.sendEventToBinding(
-      PointerScrollEvent(
-        position: tester.getCenter(list),
-        scrollDelta: const Offset(0, 80),
-      ),
-    );
-    await wheel();
-    await wheel();
-    expect(controller.offset, start);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 48));
-    expect(controller.offset, greaterThan(start));
-    final partial = controller.offset;
-    await tester.pumpAndSettle();
-    expect(controller.offset, greaterThan(partial));
-    final cue = find.byKey(const ValueKey('subtitle_timeline_cue_4'));
-    expect(tester.getCenter(cue).dy, closeTo(tester.getCenter(list).dy, 0.1));
-    await tester.pump(const Duration(seconds: 3));
-    await tester.pumpAndSettle();
-    expect(controller.offset, closeTo(start, 0.1));
-  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+      );
+      await tester.pumpAndSettle();
+      final list = find.byKey(const ValueKey('subtitle_timeline_list'));
+      final controller = tester.widget<ListView>(list).controller!;
+      final start = controller.offset;
+      Future<void> wheel() => tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: tester.getCenter(list),
+          scrollDelta: const Offset(0, 80),
+        ),
+      );
+      await wheel();
+      await wheel();
+      expect(controller.offset, start);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 48));
+      expect(controller.offset, greaterThan(start));
+      final partial = controller.offset;
+      await tester.pumpAndSettle();
+      expect(controller.offset, greaterThan(partial));
+      final cue = find.byKey(const ValueKey('subtitle_timeline_cue_4'));
+      expect(tester.getCenter(cue).dy, closeTo(tester.getCenter(list).dy, 0.1));
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+      expect(controller.offset, closeTo(start, 0.1));
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
 
   for (final cueCount in [100, 1000, 5000]) {
     testWidgets('timeline reuses measured overlap for $cueCount cues', (
@@ -1584,10 +1587,11 @@ void main() {
             initialPosition: Duration.zero,
             queueTracks: tracks,
             configureFixture: (fixture) {
-              fixture.persistenceRepository.timeSegmentLabelLoader = (key) async {
-                reads++;
-                return [labels[key]!];
-              };
+              fixture.persistenceRepository.timeSegmentLabelLoader =
+                  (key) async {
+                    reads++;
+                    return [labels[key]!];
+                  };
             },
             detailBuilder: (snapshot) {
               selected = ValueNotifier(snapshot);
@@ -3468,7 +3472,9 @@ void main() {
 
     // Start the fade clock after the loaded list's first layout frame.
     await tester.pump();
-    await tester.pump(kAppFadeDuration - const Duration(milliseconds: 1));
+    await tester.pump(
+      kPlaceholderContentTransitionDuration - const Duration(milliseconds: 1),
+    );
     expect(find.byKey(placeholderKey), findsOneWidget);
 
     await tester.pump(const Duration(milliseconds: 1));
@@ -4015,13 +4021,13 @@ void main() {
     final indicator = find.byKey(const ValueKey('console_tab_indicator'));
     RRect capsule() {
       final canvas = TestRecordingCanvas();
-      tester.widget<CustomPaint>(indicator).painter!.paint(
-        canvas,
-        tester.getSize(indicator),
-      );
-      final draw = canvas.invocations.singleWhere(
-        (call) => call.invocation.memberName == #drawRRect,
-      ).invocation;
+      tester
+          .widget<CustomPaint>(indicator)
+          .painter!
+          .paint(canvas, tester.getSize(indicator));
+      final draw = canvas.invocations
+          .singleWhere((call) => call.invocation.memberName == #drawRRect)
+          .invocation;
       expect(
         (draw.positionalArguments.last as Paint).color,
         isSameColorAs(accent.withValues(alpha: 0.19)),
@@ -5180,7 +5186,9 @@ void main() {
               ),
             )
             .borderRadius,
-        BorderRadius.circular(coverProgressInnerDimension(playlistCoverSize) / 2),
+        BorderRadius.circular(
+          coverProgressInnerDimension(playlistCoverSize) / 2,
+        ),
       );
       expect(
         tester
@@ -5193,7 +5201,9 @@ void main() {
               ),
             )
             .borderRadius,
-        BorderRadius.circular(coverProgressInnerDimension(playlistCoverSize) / 2),
+        BorderRadius.circular(
+          coverProgressInnerDimension(playlistCoverSize) / 2,
+        ),
       );
 
       workSession.setOptimisticDuration(const Duration(minutes: 2, seconds: 5));
@@ -5250,79 +5260,119 @@ void main() {
   );
 
   for (final dismissal in ['outside', 'back', 'nested editor']) {
-    testWidgets('queue stays revealed until edit menu closes via $dismissal', (
-      tester,
-    ) async {
-      final fixture = AppRuntimeWidgetTestFixture();
-      addTearDown(fixture.dispose);
-      final session = fixture.playback.createPlaybackQueue('Queue');
-      fixture.playbackService.syncSlice(
-        activeSessions: [session],
-        playingSessionCount: 0,
-        focusedSessionId: session.id,
-        coverGeneration: 0,
-        isInitialized: true,
-      );
-      await tester.pumpWidget(fixture.build(const PlaylistTab()));
-      await tester.pumpAndSettle();
-      final row = find.byKey(
-        ValueKey('playback_queue_row_surface_${session.id}'),
-        skipOffstage: false,
-      );
-      final initialLeft = tester.getTopLeft(row).dx;
-      await tester.drag(find.byType(PlaybackQueueCard), const Offset(-180, 0));
-      await tester.pumpAndSettle();
-      final revealedLeft = tester.getTopLeft(row).dx;
-      expect(revealedLeft, lessThan(initialLeft));
-      await tester.tap(
-        find.byTooltip(fixture.languageProvider.tr('edit_playback_queue')),
-      );
-      await tester.pumpAndSettle();
-      expect(find.byType(PlaybackQueueEditPage), findsOneWidget);
-      expect(tester.getTopLeft(row).dx, closeTo(revealedLeft, 0.1));
-
-      if (dismissal == 'nested editor') {
-        final i18n = fixture.languageProvider;
-        final audioEntry = find.text(i18n.tr('edit_queue_audio'));
-        final dynamic controller = Material.of(tester.element(audioEntry));
-        Iterable<InteractiveInkFeature> visibleInk() =>
-            (controller.debugInkFeatures as List<InkFeature>? ?? [])
-                .whereType<InteractiveInkFeature>()
-                .where((feature) => feature.color.a > 0);
-
-        final gesture = await tester.startGesture(tester.getCenter(audioEntry));
-        await tester.pump(const Duration(milliseconds: 120));
-        expect(visibleInk(), isNotEmpty);
-        await gesture.up();
-        expect(visibleInk(), isEmpty);
+    testWidgets(
+      'queue edit from a left swipe or context menu closes via $dismissal',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final session = fixture.playback.createPlaybackQueue('Queue');
+        fixture.playbackService.syncSlice(
+          activeSessions: [session],
+          playingSessionCount: 0,
+          focusedSessionId: session.id,
+          coverGeneration: 0,
+          isInitialized: true,
+        );
+        await tester.pumpWidget(fixture.build(const PlaylistTab()));
         await tester.pumpAndSettle();
-        expect(find.byType(PlaybackQueueAudioEditPage), findsOneWidget);
-        expect(tester.getTopLeft(row).dx, closeTo(revealedLeft, 0.1));
-        Navigator.of(
-          tester.element(find.byType(PlaybackQueueAudioEditPage)),
-        ).pop();
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 150));
-        expect(visibleInk(), isEmpty);
+        final row = find.byKey(
+          ValueKey('playback_queue_row_surface_${session.id}'),
+          skipOffstage: false,
+        );
+        final initialLeft = tester.getTopLeft(row).dx;
+        final isWindows = defaultTargetPlatform == TargetPlatform.windows;
+        final editAction = find.byTooltip(
+          fixture.languageProvider.tr('edit_playback_queue'),
+        );
+        if (isWindows) {
+          await tester.tap(
+            find.byType(PlaybackQueueCard),
+            buttons: kSecondaryMouseButton,
+            kind: PointerDeviceKind.mouse,
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.text(fixture.languageProvider.tr('edit')));
+        } else {
+          await tester.dragFrom(tester.getCenter(row), const Offset(180, 0));
+          await tester.pumpAndSettle();
+          expect(tester.getTopLeft(row).dx, closeTo(initialLeft, 0.1));
+          expect(editAction, findsNothing);
+          expect(
+            find.byTooltip(fixture.languageProvider.tr('pin_to_top')),
+            findsNothing,
+          );
+
+          await tester.dragFrom(tester.getCenter(row), const Offset(-180, 0));
+          await tester.pumpAndSettle();
+          expect(tester.getTopLeft(row).dx, lessThan(initialLeft));
+          await tester.tap(editAction);
+        }
         await tester.pumpAndSettle();
         expect(find.byType(PlaybackQueueEditPage), findsOneWidget);
-        expect(tester.getTopLeft(row).dx, closeTo(revealedLeft, 0.1));
-      }
-      if (dismissal == 'outside') {
-        await tester.tapAt(const Offset(10, 10));
-      } else {
-        await tester.binding.handlePopRoute();
-      }
-      await tester.pumpAndSettle();
-      expect(find.byType(PlaybackQueueEditPage), findsNothing);
-      expect(tester.getTopLeft(row).dx, closeTo(initialLeft, 0.1));
-      expect(tester.takeException(), isNull);
-    });
+        expect(tester.getTopLeft(row).dx, closeTo(initialLeft, 0.1));
+
+        if (dismissal == 'nested editor') {
+          final i18n = fixture.languageProvider;
+          final audioEntry = find.text(i18n.tr('edit_queue_audio'));
+          final dynamic controller = Material.of(tester.element(audioEntry));
+          Iterable<InteractiveInkFeature> visibleInk() =>
+              (controller.debugInkFeatures as List<InkFeature>? ?? [])
+                  .whereType<InteractiveInkFeature>()
+                  .where((feature) => feature.color.a > 0);
+
+          final gesture = await tester.startGesture(
+            tester.getCenter(audioEntry),
+          );
+          await tester.pump(const Duration(milliseconds: 120));
+          expect(visibleInk(), isNotEmpty);
+          await gesture.up();
+          await tester.pump(const Duration(milliseconds: 180));
+          expect(visibleInk(), isEmpty);
+          await tester.pumpAndSettle();
+          expect(find.byType(PlaybackQueueAudioEditPage), findsOneWidget);
+          expect(tester.getTopLeft(row).dx, closeTo(initialLeft, 0.1));
+          Navigator.of(
+            tester.element(find.byType(PlaybackQueueAudioEditPage)),
+          ).pop();
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 150));
+          expect(visibleInk(), isEmpty);
+          await tester.pumpAndSettle();
+          expect(find.byType(PlaybackQueueEditPage), findsOneWidget);
+          expect(tester.getTopLeft(row).dx, closeTo(initialLeft, 0.1));
+        }
+        if (dismissal == 'outside') {
+          await tester.tapAt(const Offset(10, 10));
+        } else {
+          await tester.binding.handlePopRoute();
+        }
+        await tester.pumpAndSettle();
+        expect(find.byType(PlaybackQueueEditPage), findsNothing);
+        expect(tester.getTopLeft(row).dx, closeTo(initialLeft, 0.1));
+        if (!isWindows && dismissal == 'outside') {
+          await tester.longPressAt(tester.getCenter(row));
+          await tester.pumpAndSettle();
+          expect(
+            find.byKey(const ValueKey('playlist_batch_selection_header')),
+            findsOneWidget,
+          );
+          await tester.dragFrom(tester.getCenter(row), const Offset(-180, 0));
+          await tester.pumpAndSettle();
+          expect(tester.getTopLeft(row).dx, closeTo(initialLeft, 0.1));
+          expect(editAction, findsNothing);
+        }
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
   }
 
   for (final action in ['cancel', 'save', 'submit', 'back']) {
     testWidgets(
-      'queue name menu shares edit geometry and fades on $action',
+      'queue name menu resizes from the edit menu top and fades on $action',
       (tester) async {
         final messenger =
             TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -5335,10 +5385,15 @@ void main() {
         );
         final windows = defaultTargetPlatform == TargetPlatform.windows;
         final size = windows ? const Size(960, 600) : const Size(390, 700);
+        final systemPadding = FakeViewPadding(bottom: windows ? 0 : 24);
         tester.view.devicePixelRatio = 1;
         tester.view.physicalSize = size;
+        tester.view.viewPadding = systemPadding;
+        tester.view.padding = systemPadding;
         addTearDown(tester.view.resetDevicePixelRatio);
         addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetViewPadding);
+        addTearDown(tester.view.resetPadding);
         addTearDown(tester.view.resetViewInsets);
         final fixture = AppRuntimeWidgetTestFixture();
         addTearDown(fixture.dispose);
@@ -5362,7 +5417,9 @@ void main() {
         final edit = find.byKey(const ValueKey('playback_queue_edit_panel'));
         final name = find.byKey(const ValueKey('playback_queue_name_panel'));
         final input = find.byKey(const ValueKey('playback_queue_name_input'));
+        final surface = find.byKey(const ValueKey('playback_queue_panel_surface'));
         final originalRect = tester.getRect(edit);
+        expect(tester.getRect(surface), originalRect);
         final remove = find.widgetWithText(TextButton, i18n.tr('remove_queue'));
         final originalButtonRect = tester.getRect(remove);
         final originalStyle = tester.widget<TextButton>(remove).style!;
@@ -5377,9 +5434,12 @@ void main() {
             .opacity
             .value;
         expect(opacity(), 0);
+        expect(tester.getRect(surface), originalRect);
         await tester.pump(const Duration(milliseconds: 150));
         expect(opacity(), closeTo(0.5, 0.03));
-        expect(tester.getRect(name), originalRect);
+        final intermediateRect = tester.getRect(surface);
+        expect(intermediateRect.top, originalRect.top);
+        expect(intermediateRect.bottom, lessThan(originalRect.bottom));
         expect(
           find.text(i18n.tr('edit_queue_audio')).hitTestable(),
           findsNothing,
@@ -5388,24 +5448,25 @@ void main() {
         expect(opacity(), 1);
         final save = find.widgetWithText(TextButton, i18n.tr('save'));
         final cancel = find.widgetWithText(TextButton, i18n.tr('cancel'));
-        expect(
-          tester.getRect(save).bottomRight,
-          originalButtonRect.bottomRight,
+        final header = find.byKey(
+          const ValueKey('playback_queue_name_header_icon'),
         );
+        final nameRect = tester.getRect(name);
+        final inputRect = tester.getRect(input);
+        expect(nameRect.width, originalRect.width);
+        expect(nameRect.top, originalRect.top);
+        expect(nameRect.height, lessThan(originalRect.height));
+        expect(nameRect.bottom, lessThan(intermediateRect.bottom));
+        expect(tester.getRect(surface), nameRect);
+        final primaryFade = find.ancestor(
+          of: edit,
+          matching: find.byType(Opacity),
+        ).first;
+        expect(tester.widget<Opacity>(primaryFade).opacity, 0);
+        expect(nameRect.center.dy, lessThan(size.height / 2));
+        expect(inputRect.top, closeTo(tester.getRect(header).bottom + 12, 0.5));
+        expect(tester.getRect(save).right, originalButtonRect.right);
         expect(tester.getRect(save).height, originalButtonRect.height);
-        void expectInputCentered() {
-          final header = find.byKey(
-            const ValueKey('playback_queue_name_header_icon'),
-          );
-          final contentTop = tester.getRect(header).bottom + 18;
-          final contentBottom = tester.getRect(save).top;
-          expect(
-            tester.getCenter(input).dy,
-            closeTo((contentTop + contentBottom) / 2, 0.5),
-          );
-        }
-
-        expectInputCentered();
         for (final button in [save, cancel]) {
           final style = tester.widget<TextButton>(button).style!;
           expect(style.shape!.resolve({}), originalStyle.shape!.resolve({}));
@@ -5422,14 +5483,36 @@ void main() {
         expect(session.playbackQueue!.name, 'Queue');
         await tester.enterText(input, '  New queue  ');
         final keyboardHeight = windows ? 180.0 : 320.0;
-        tester.view.viewInsets = FakeViewPadding(bottom: keyboardHeight);
-        await tester.pumpAndSettle();
-        expectInputCentered();
+        tester.view.padding = FakeViewPadding.zero;
+        for (final fraction in [0.25, 0.5, 0.75, 1.0]) {
+          tester.view.viewInsets = FakeViewPadding(
+            bottom: keyboardHeight * fraction,
+          );
+          await tester.pump();
+          expect(tester.getRect(name), nameRect);
+          expect(tester.getRect(input), inputRect);
+        }
         for (final control in [input, save, cancel]) {
           expect(
             tester.getRect(control).bottom,
             lessThan(size.height - keyboardHeight),
           );
+        }
+        if (action == 'cancel' && !windows) {
+          const tallKeyboardHeight = 430.0;
+          tester.view.viewInsets = const FakeViewPadding(
+            bottom: tallKeyboardHeight,
+          );
+          await tester.pumpAndSettle();
+          expect(tester.getRect(name).top, lessThan(nameRect.top));
+          expect(
+            tester.getRect(name).bottom,
+            lessThanOrEqualTo(size.height - tallKeyboardHeight),
+          );
+          expect(save.hitTestable(), findsOneWidget);
+          tester.view.viewInsets = FakeViewPadding(bottom: keyboardHeight);
+          await tester.pumpAndSettle();
+          expect(tester.getRect(name), nameRect);
         }
         expect(tester.takeException(), isNull);
         switch (action) {
@@ -5454,6 +5537,8 @@ void main() {
         );
         await tester.pump(const Duration(milliseconds: 150));
         expect(opacity(), closeTo(0.5, 0.03));
+        expect(tester.getRect(surface).top, originalRect.top);
+        expect(tester.getRect(surface).bottom, greaterThan(nameRect.bottom));
         await tester.pump(const Duration(milliseconds: 149));
         expect(name, findsOneWidget);
         expect(
@@ -5463,6 +5548,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 2));
         expect(name, findsNothing);
         tester.view.viewInsets = FakeViewPadding.zero;
+        tester.view.padding = systemPadding;
         await tester.pumpAndSettle();
         expect(tester.getRect(edit), originalRect);
         expect(
@@ -5520,9 +5606,24 @@ void main() {
         );
         await tester.pumpAndSettle();
         final i18n = fixture.languageProvider;
-        final editRect = tester.getRect(
-          find.byKey(const ValueKey('playback_queue_edit_panel')),
+        final editPanel = find.byKey(const ValueKey('playback_queue_edit_panel'));
+        final cardName = find.byKey(
+          ValueKey('playback_queue_name_${session.id}'),
         );
+        final editName = find.descendant(
+          of: editPanel,
+          matching: find.text('Queue'),
+        );
+        final defaultColor = Theme.of(
+          tester.element(cardName),
+        ).colorScheme.primary;
+        void expectNameColor(Color color) {
+          expect(tester.widget<Text>(cardName).style?.color, color);
+          expect(tester.widget<Text>(editName).style?.color, color);
+        }
+
+        expectNameColor(defaultColor);
+        final editRect = tester.getRect(editPanel);
         await tester.tap(find.text(i18n.tr('edit_queue_color')));
         await tester.pumpAndSettle();
         final colorRect = tester.getRect(
@@ -5538,13 +5639,13 @@ void main() {
         expect(sliders, findsNWidgets(3));
         tester.widget<Slider>(sliders.first).onChanged!(160);
         await tester.pump();
-        expect(
-          (Color(session.playbackQueue!.colorValue!).r * 255).round(),
-          160,
-        );
+        final selectedColor = Color(session.playbackQueue!.colorValue!);
+        expect((selectedColor.r * 255).round(), 160);
+        expectNameColor(selectedColor);
         await tester.tap(find.text(i18n.tr('reset_to_default')));
         await tester.pump();
         expect(session.playbackQueue!.colorValue, isNull);
+        expectNameColor(defaultColor);
         expect(tester.takeException(), isNull);
       },
       variant: const TargetPlatformVariant({
@@ -5992,7 +6093,8 @@ void main() {
         for (var pointIndex = 0; pointIndex < count; pointIndex++) {
           expect(
             path.contains(
-              sectorPoints[count]![pointIndex] * (tester.getSize(grid).width / 52),
+              sectorPoints[count]![pointIndex] *
+                  (tester.getSize(grid).width / 52),
             ),
             pointIndex == index,
           );
@@ -6366,6 +6468,13 @@ void main() {
     final queueCard = tester
         .widgetList<SwipeRevealCard>(find.byType(SwipeRevealCard))
         .singleWhere((card) => card.key == ValueKey(queueSession.id));
+    expect(
+      find.descendant(
+        of: find.byKey(ValueKey(queueSession.id)),
+        matching: find.byTooltip(fixture.languageProvider.tr('more_actions')),
+      ),
+      findsNothing,
+    );
     expect(queueCard.shape, same(playlistRowShape));
     expect(queueCard.margin, EdgeInsets.zero);
     final queueCoverGrid = find.byKey(
@@ -6389,12 +6498,7 @@ void main() {
     expect(queueName.data, queueSession.playbackQueue!.name);
     expect(queueName.style?.fontSize, 12);
     expect(queueName.style?.fontWeight, FontWeight.w600);
-    expect(
-      queueName.style?.color,
-      Theme.of(
-        tester.element(find.byType(PlaylistTab)),
-      ).colorScheme.onSurfaceVariant,
-    );
+    expect(queueName.style?.color, queueCardColor);
     expect(
       firstTrackName.textSpan!.toPlainText(includePlaceholders: false),
       queueTrack.displayName,
@@ -6555,8 +6659,9 @@ void main() {
     );
     await pumpFiniteTransitions(tester);
     expect(
-      Theme.of(tester.element(find.byType(SessionDetailContent)))
-          .colorScheme.primary,
+      Theme.of(
+        tester.element(find.byType(SessionDetailContent)),
+      ).colorScheme.primary,
       queueCardColor,
     );
     Navigator.of(tester.element(find.byType(SessionDetailPage))).pop();
@@ -6688,7 +6793,7 @@ void main() {
           )
           .where((t) => !t.transformHitTests)
           .fold<double>(1.0, (p, t) => p * t.transform.entry(0, 0));
-      expect(hoverScale, closeTo(1.14, 0.001));
+      expect(hoverScale, closeTo(1.0, 0.001));
       expect(
         DefaultTextStyle.of(tester.element(removeQueueText)).style.color,
         isNot(equals(restColor)),
@@ -6850,6 +6955,309 @@ void main() {
   });
 
   testWidgets(
+    'queue reorder reuses rows, scrolls at the edges and survives quick back',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = defaultTargetPlatform == TargetPlatform.windows
+          ? const Size(960, 600)
+          : const Size(390, 844);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final coverCache = _RecordingPlaybackCoverCacheService();
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: coverCache,
+        configureSettingsRepository: (settings) => settings
+          ..workNameDisplay = WorkNameDisplay.folderName
+          ..syncSlice(isInitialized: true),
+      );
+      addTearDown(fixture.dispose);
+      final queue = fixture.playback.createPlaybackQueue('Queue');
+      for (var index = 0; index < 24; index++) {
+        await fixture.playback.addTrackToPlaybackQueue(
+          queue.id,
+          testMusicTrack(
+            name: 'Track $index',
+            path: '/library/track$index.mp3',
+            groupKey: '/library',
+            groupTitle: 'Work',
+            isSingle: true,
+          ),
+        );
+      }
+      fixture.playbackService.syncSlice(
+        activeSessions: [queue],
+        playingSessionCount: 0,
+        focusedSessionId: queue.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      await tester.pumpWidget(
+        fixture.build(
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () => Navigator.of(context).push(
+                buildAppPageRoute<void>(
+                  context: context,
+                  child: PlaybackQueueAudioEditPage(sessionId: queue.id),
+                ),
+              ),
+              child: const Text('Open queue reorder'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open queue reorder'));
+      await tester.pumpAndSettle();
+
+      final list = find.byType(ReorderableListView);
+      final scroll = tester.widget<ReorderableListView>(list).scrollController!;
+      scroll.jumpTo(300);
+      await tester.pumpAndSettle();
+      final addedHeader = find.ancestor(
+        of: find.text(fixture.languageProvider.tr('queue_added_audio')),
+        matching: find.byType(HeaderFloatingSurface),
+      );
+      final addedHeaderRect = tester.getRect(addedHeader);
+      final headerBottom = addedHeaderRect.bottom;
+      final backCapsule = find.descendant(
+        of: find.byType(TopPageHeader),
+        matching: find.byType(HeaderFloatingButton),
+      );
+      final backRect = tester.getRect(backCapsule);
+      final cards = find.descendant(of: list, matching: find.byType(Card));
+      final scrollBounds = tester.getRect(list);
+      void expectCardsBehindFloatingCapsules() {
+        expect(tester.getRect(list), scrollBounds);
+        for (final point in [
+          Offset(backRect.right + 4, backRect.center.dy),
+          Offset(addedHeaderRect.right + 8, addedHeaderRect.center.dy),
+        ]) {
+          expect(scrollBounds.contains(point), isTrue);
+          expect(
+            cards.evaluate().any(
+              (element) =>
+                  tester.getRect(find.byWidget(element.widget)).contains(point),
+            ),
+            isTrue,
+          );
+        }
+      }
+
+      expectCardsBehindFloatingCapsules();
+      final handles = find.byType(ReorderableDragStartListener).hitTestable();
+      final handle = handles.at(handles.evaluate().length ~/ 2);
+      final start = tester.getCenter(handle);
+      final gesture = await tester.startGesture(start);
+      await tester.pump();
+      await gesture.moveBy(const Offset(0, -22));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(scroll.offset, 300);
+      expectCardsBehindFloatingCapsules();
+
+      coverCache.resolvedPlaybackPaths.clear();
+      for (var i = 0; i < 3; i++) {
+        await gesture.moveBy(const Offset(0, -2));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(coverCache.resolvedPlaybackPaths, isEmpty);
+
+      await gesture.moveTo(Offset(start.dx, headerBottom + 8));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(scroll.offset, lessThan(300));
+      expectCardsBehindFloatingCapsules();
+
+      await gesture.moveTo(start);
+      await tester.pumpAndSettle();
+      final offset = scroll.offset;
+      await gesture.moveTo(Offset(start.dx, tester.getRect(list).bottom - 4));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(scroll.offset, greaterThan(offset));
+      await gesture.cancel();
+      await tester.pumpAndSettle();
+      expect(tester.getRect(list), scrollBounds);
+
+      for (final closeAfterDrop in [false, true]) {
+        final visibleHandles = find
+            .byType(ReorderableDragStartListener)
+            .hitTestable();
+        final handleIndex = visibleHandles.evaluate().length ~/ 2;
+        final movedHandle = visibleHandles.at(handleIndex);
+        final previousHandle = visibleHandles.at(handleIndex - 1);
+        final entries = queue.playbackQueue!.entries;
+        final from = tester
+            .widget<ReorderableDragStartListener>(movedHandle)
+            .index;
+        final to = tester
+            .widget<ReorderableDragStartListener>(previousHandle)
+            .index;
+        final target = tester.getCenter(previousHandle) + const Offset(0, 12);
+        final drop = await tester.startGesture(tester.getCenter(movedHandle));
+        await tester.pump();
+        await drop.moveBy(const Offset(0, -22));
+        await tester.pump();
+        await drop.moveTo(target);
+        await tester.pump(const Duration(milliseconds: 250));
+        await drop.up();
+        if (closeAfterDrop) {
+          await tester.tap(
+            find.byTooltip(fixture.languageProvider.tr('close')),
+          );
+          await tester.pump();
+          expect(queue.playbackQueue!.entries, entries);
+        }
+        await tester.pumpAndSettle();
+        final expectedEntries = entries.toList();
+        expectedEntries.insert(to, expectedEntries.removeAt(from));
+        expect(queue.playbackQueue!.entries, expectedEntries);
+      }
+      expect(find.byType(PlaybackQueueAudioEditPage), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'closing edited queue audio page retains rows and defers removal feedback and cover scan',
+    (tester) async {
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+        notificationsChannel,
+        (_) async => <String, Object?>{'ok': true, 'value': null},
+      );
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(notificationsChannel, null),
+      );
+      final interaction = UiInteractionCoordinator.instance;
+      interaction.resetForTest();
+      addTearDown(interaction.resetForTest);
+      final observer = UiInteractionNavigatorObserver();
+      addTearDown(observer.dispose);
+      final coverCache = _RecordingPlaybackCoverCacheService();
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: coverCache,
+      );
+      addTearDown(fixture.dispose);
+
+      final initialTrack = testMusicTrack(
+        name: 'Initial queue track',
+        path: '/library/initial/01.mp3',
+        groupKey: '/library/initial',
+        groupTitle: 'Initial work',
+        isSingle: true,
+      );
+      final sourceTrack = testMusicTrack(
+        name: 'Source track to add',
+        path: '/library/source/01.mp3',
+        groupKey: '/library/source',
+        groupTitle: 'Source work',
+        isSingle: true,
+      );
+      fixture.library.addTracks([initialTrack, sourceTrack], persist: false);
+      final sourceSession = fixture.playback.createTrackSession(sourceTrack);
+      final queueSession = fixture.playback.createPlaybackQueue('Queue');
+      await fixture.playback.addTrackToPlaybackQueue(
+        queueSession.id,
+        initialTrack,
+      );
+      addTearDown(sourceSession.shutdown);
+      addTearDown(queueSession.shutdown);
+      fixture.playbackService.syncSlice(
+        activeSessions: [sourceSession, queueSession],
+        playingSessionCount: 0,
+        focusedSessionId: queueSession.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      await tester.pumpWidget(
+        fixture.build(const PlaylistTab(), navigatorObservers: [observer]),
+      );
+      await tester.pumpAndSettle();
+
+      unawaited(
+        showPlaybackQueueEditPanel(
+          tester.element(find.byType(PlaylistTab)),
+          queueSession.id,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final i18n = fixture.languageProvider;
+      await tester.tap(find.text(i18n.tr('edit_queue_audio')));
+      await tester.pumpAndSettle();
+
+      final pageFinder = find.byType(PlaybackQueueAudioEditPage);
+      expect(pageFinder, findsOneWidget);
+      final pageScaffold = tester.widget<Scaffold>(
+        find.descendant(of: pageFinder, matching: find.byType(Scaffold)).first,
+      );
+      expect(pageScaffold.backgroundColor, Colors.transparent);
+      final contentTransition = tester.widget<AppPageContentTransition>(
+        find
+            .descendant(
+              of: pageFinder,
+              matching: find.byType(AppPageContentTransition),
+            )
+            .first,
+      );
+      expect(contentTransition.backgroundColor, isNotNull);
+
+      await tester.tap(
+        find.byTooltip(i18n.tr('add_audio_to_queue')).hitTestable().first,
+      );
+      await tester.pumpAndSettle();
+      expect(queueSession.playbackQueue!.entries, hasLength(2));
+
+      final entry = queueSession.playbackQueue!.entries.first;
+      final row = find.byKey(ValueKey(entry.id));
+      final removalService = ProviderScope.containerOf(
+        tester.element(pageFinder),
+      ).read(undoableRemovalServiceProvider);
+      await tester.tap(
+        find.descendant(of: row, matching: find.byTooltip(i18n.tr('remove'))),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      final rowHeight = tester.getSize(row).height;
+      expect(rowHeight, greaterThan(0));
+
+      coverCache.resolvedPlaybackPaths.clear();
+      await tester.tap(find.byTooltip(i18n.tr('close')));
+      await tester.pump();
+      expect(interaction.isVisualUpdateDeferred, isTrue);
+      await tester.pump(const Duration(milliseconds: 160));
+      expect(tester.getSize(row).height, closeTo(rowHeight, 0.01));
+      expect(removalService.state.pendingCount, 0);
+      expect(
+        coverCache.resolvedPlaybackPaths,
+        isNot(contains(sourceTrack.path)),
+      );
+
+      await tester.pumpAndSettle();
+      expect(pageFinder, findsNothing);
+      expect(removalService.state.pendingCount, 1);
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
+      expect(coverCache.resolvedPlaybackPaths, contains(sourceTrack.path));
+      await tester.tap(find.textContaining(i18n.tr('undo')).hitTestable());
+      await tester.pumpAndSettle();
+      expect(removalService.state.pendingCount, 0);
+      expect(queueSession.playbackQueue!.entries, hasLength(2));
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
     'queue reorder maps visible entries while a removal can still be undone',
     (tester) async {
       final messenger =
@@ -6861,7 +7269,11 @@ void main() {
       addTearDown(
         () => messenger.setMockMethodCallHandler(notificationsChannel, null),
       );
-      final fixture = AppRuntimeWidgetTestFixture();
+      final fixture = AppRuntimeWidgetTestFixture(
+        configureSettingsRepository: (settings) => settings
+          ..workNameDisplay = WorkNameDisplay.folderName
+          ..syncSlice(isInitialized: true),
+      );
       addTearDown(fixture.dispose);
       final playback = fixture.runtimeGraph.playback;
       final queueSession = playback.createPlaybackQueue('Queue');
@@ -7209,7 +7621,11 @@ void main() {
             .setMockMethodCallHandler(SystemChannels.platform, null);
       });
 
-      final fixture = AppRuntimeWidgetTestFixture();
+      final fixture = AppRuntimeWidgetTestFixture(
+        configureSettingsRepository: (settings) => settings
+          ..workNameDisplay = WorkNameDisplay.folderName
+          ..syncSlice(isInitialized: true),
+      );
       addTearDown(fixture.dispose);
       final track = MusicTrack(
         path: '/library/work/track.mp3',
@@ -7299,7 +7715,7 @@ void main() {
         lessThan(tester.getCenter(dragHandle).dx),
       );
       expect(find.text('Work'), findsWidgets);
-      expect(find.text('Track'), findsWidgets);
+      expect(find.text('Track', findRichText: true), findsWidgets);
       await tester.tap(removeAudio);
       await tester.pump(const Duration(milliseconds: 300));
       await tester.pumpAndSettle();
@@ -7335,6 +7751,9 @@ void main() {
         () => messenger.setMockMethodCallHandler(notificationsChannel, null),
       );
       final fixture = AppRuntimeWidgetTestFixture(
+        configureSettingsRepository: (settings) => settings
+          ..workNameDisplay = WorkNameDisplay.folderName
+          ..syncSlice(isInitialized: true),
         coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
       );
       addTearDown(fixture.dispose);
@@ -7404,16 +7823,43 @@ void main() {
         matching: find.byType(HeaderFloatingSurface),
       );
 
+      final pageHeader = find.byType(TopPageHeader);
+      expect(tester.widget<TopPageHeader>(pageHeader).showFadeMask, isTrue);
       final titleBar = find.descendant(
-        of: find.byType(TopPageHeader),
+        of: pageHeader,
         matching: find.byType(HeaderFloatingSurface),
       );
       final leftEdge = tester.getRect(titleBar.first).left;
       final rightEdge = tester.getRect(titleBar.last).right;
       final isWindows = defaultTargetPlatform == TargetPlatform.windows;
+      final addedCapsule = sectionCapsule('queue_added_audio');
       expect(
-        tester.getRect(sectionCapsule('queue_added_audio')).left,
+        tester.getRect(addedCapsule).left,
         leftEdge,
+      );
+      for (final capsule in [titleBar.first, titleBar.last, addedCapsule]) {
+        final decoration = tester.widget<DecoratedBox>(
+          find
+              .descendant(
+                of: capsule,
+                matching: find.byWidgetPredicate(
+                  (widget) =>
+                      widget is DecoratedBox &&
+                      widget.decoration is BoxDecoration &&
+                      (widget.decoration as BoxDecoration).border != null,
+                ),
+              )
+              .first,
+        ).decoration as BoxDecoration;
+        expect(decoration.color?.a, greaterThan(0));
+        expect((decoration.border! as Border).top.color.a, greaterThan(0));
+      }
+      TextStyle? headingStyle(String key) => tester
+          .widget<Text>(find.text(fixture.languageProvider.tr(key)))
+          .style;
+      expect(
+        headingStyle('queue_added_audio'),
+        headingStyle('edit_queue_audio'),
       );
       final sourceSectionLeft = isWindows
           ? tester.getRect(find.byType(VerticalDivider)).right + leftEdge
@@ -7438,11 +7884,17 @@ void main() {
         final cover = find.byElementPredicate(
           (element) => identical(element, placeholder),
         );
-        final card = find.ancestor(of: cover, matching: find.byType(Card)).first;
+        final card = find
+            .ancestor(of: cover, matching: find.byType(Card))
+            .first;
         expect(tester.getRect(card).left, sourceSectionLeft);
         expect(tester.getRect(card).right, rightEdge);
         final labels = find.descendant(of: card, matching: find.byType(Text));
-        expect(tester.getSize(cover), const Size.square(52));
+        expect(
+          tester.getSize(cover),
+          Size.square(coverProgressInnerDimension(playlistCoverSize)),
+        );
+        expect(tester.widget<Card>(card).shape, playlistRowShape);
         expect(
           tester.getRect(cover).right,
           lessThan(tester.getRect(labels.first).left),
@@ -7515,9 +7967,11 @@ void main() {
   );
 
   testWidgets(
-    'queue audio edit page displays work title instead of folder name',
+    'queue audio edit page switches work labels with the display setting',
     (tester) async {
-      final fixture = AppRuntimeWidgetTestFixture();
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
+      );
       addTearDown(fixture.dispose);
       fixture.runtimeGraph.library.addWatchedLibrary('/library');
       final track = MusicTrack(
@@ -7531,6 +7985,8 @@ void main() {
       fixture.runtimeGraph.library.addTracks(<MusicTrack>[
         track,
       ], persist: false);
+      final library = fixture.runtimeGraph.library;
+      library.addWatchedLibrary('/library', notify: false);
       final sourceSession = PlaybackSession(
         id: 'source-session',
         currentTrackPath: track.path,
@@ -7555,14 +8011,21 @@ void main() {
       );
 
       await tester.pumpWidget(
-        fixture.build(PlaybackQueueAudioEditPage(sessionId: queueSession.id)),
+        fixture.build(
+          PlaybackQueueAudioEditPage(sessionId: queueSession.id),
+          overrides: [
+            libraryDetailForTargetProvider.overrideWith(
+              (_, target) =>
+                  AudioDetail.empty(target).copyWith(workTitle: 'Saved work title'),
+            ),
+          ],
+        ),
       );
       await tester.pumpAndSettle();
 
-      // Top line should display work title ('RJ123456_Work'), not folder name ('Disc 1')
-      expect(find.text('RJ123456_Work'), findsOneWidget);
+      expect(find.text('Saved work title'), findsOneWidget);
       expect(find.text('Disc 1'), findsNothing);
-      expect(find.text('Track 1'), findsOneWidget);
+      expect(find.text('Track 1', findRichText: true), findsOneWidget);
 
       // Add to queue and verify added entry also displays work title
       final addAudio = find.byTooltip(
@@ -7572,10 +8035,18 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
 
-      expect(find.text('RJ123456_Work'), findsWidgets);
+      expect(find.text('Saved work title'), findsNWidgets(2));
+      await fixture.settings.setWorkNameDisplay(WorkNameDisplay.folderName);
+      await tester.pumpAndSettle();
+      expect(find.text('RJ123456_Work'), findsNWidgets(2));
+      expect(find.text('Saved work title'), findsNothing);
       expect(find.text('Disc 1'), findsNothing);
       await tester.pump(const Duration(seconds: 1));
     },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets('playlist resolves ASMR metadata from the session queue', (
@@ -7769,157 +8240,149 @@ void main() {
       BoxFit.cover,
     );
 
-    final errorColor = Theme.of(
-      tester.element(find.byType(PlaylistTab)),
-    ).colorScheme.error;
-    await tester.drag(find.byType(SwipeRevealCard), const Offset(-180, 0));
-    await tester.pumpAndSettle();
-    final revealPane = tester.widget<DecoratedBox>(
-      find.byWidgetPredicate((widget) {
-        if (widget is! DecoratedBox) return false;
-        final decoration = widget.decoration;
-        return widget.child is Stack &&
-            decoration is ShapeDecoration &&
-            decoration.gradient != null;
-      }).first,
-    );
-    expect(
-      (revealPane.decoration as ShapeDecoration).gradient!.colors.last,
-      errorColor,
-    );
-
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   });
 
-  testWidgets('swiping right pins item to top and swiping right again unpins', (
-    tester,
-  ) async {
-    final fixture = AppRuntimeWidgetTestFixture();
-    addTearDown(fixture.dispose);
+  testWidgets(
+    'Windows playlist context menu pins item to top and unpins it',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
 
-    final trackA = MusicTrack(
-      path: '/library/Work A/01.mp3',
-      displayName: 'Track A',
-      groupKey: '/library/Work A',
-      groupTitle: 'Work A',
-      groupSubtitle: '/library/Work A',
-      isSingle: false,
-    );
-    final trackB = MusicTrack(
-      path: '/library/Work B/01.mp3',
-      displayName: 'Track B',
-      groupKey: '/library/Work B',
-      groupTitle: 'Work B',
-      groupSubtitle: '/library/Work B',
-      isSingle: false,
-    );
-    fixture.runtimeGraph.library.addTracks(<MusicTrack>[
-      trackA,
-      trackB,
-    ], persist: false);
-    final sessionA = fixture.runtimeGraph.playback.createTrackSession(
-      trackA,
-      customQueueTracks: <MusicTrack>[trackA],
-    );
-    final sessionB = fixture.runtimeGraph.playback.createTrackSession(
-      trackB,
-      customQueueTracks: <MusicTrack>[trackB],
-    );
-    addTearDown(sessionA.shutdown);
-    addTearDown(sessionB.shutdown);
+      final trackA = MusicTrack(
+        path: '/library/Work A/01.mp3',
+        displayName: 'Track A',
+        groupKey: '/library/Work A',
+        groupTitle: 'Work A',
+        groupSubtitle: '/library/Work A',
+        isSingle: false,
+      );
+      final trackB = MusicTrack(
+        path: '/library/Work B/01.mp3',
+        displayName: 'Track B',
+        groupKey: '/library/Work B',
+        groupTitle: 'Work B',
+        groupSubtitle: '/library/Work B',
+        isSingle: false,
+      );
+      fixture.runtimeGraph.library.addTracks(<MusicTrack>[
+        trackA,
+        trackB,
+      ], persist: false);
+      final sessionA = fixture.runtimeGraph.playback.createTrackSession(
+        trackA,
+        customQueueTracks: <MusicTrack>[trackA],
+      );
+      final sessionB = fixture.runtimeGraph.playback.createTrackSession(
+        trackB,
+        customQueueTracks: <MusicTrack>[trackB],
+      );
+      addTearDown(sessionA.shutdown);
+      addTearDown(sessionB.shutdown);
 
-    fixture.playbackService.syncSlice(
-      activeSessions: <PlaybackSession>[sessionA, sessionB],
-      playingSessionCount: 0,
-      focusedSessionId: sessionA.id,
-      coverGeneration: 0,
-      isInitialized: true,
-    );
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[sessionA, sessionB],
+        playingSessionCount: 0,
+        focusedSessionId: sessionA.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
 
-    await tester.pumpWidget(
-      fixture.build(
-        const MobileOverlayInset(bottomInset: 132, child: PlaylistTab()),
-      ),
-    );
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        fixture.build(
+          const MobileOverlayInset(bottomInset: 132, child: PlaylistTab()),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    // Initially, Work A comes before Work B alphabetically.
-    expect(find.text('Work A'), findsOneWidget);
-    expect(find.text('Work B'), findsOneWidget);
-    expect(
-      find.byKey(ValueKey<String>('playlist_session_pinned_${sessionB.id}')),
-      findsNothing,
-    );
+      // Initially, Work A comes before Work B alphabetically.
+      expect(find.text('Work A'), findsOneWidget);
+      expect(find.text('Work B'), findsOneWidget);
+      expect(
+        find.byKey(ValueKey<String>('playlist_session_pinned_${sessionB.id}')),
+        findsNothing,
+      );
 
-    // Swipe right on Work B
-    await tester.drag(find.text('Work B'), const Offset(180, 0));
-    await tester.pumpAndSettle();
+      final cardB = find.ancestor(
+        of: find.text('Work B'),
+        matching: find.byType(SwipeRevealCard),
+      );
+      Future<void> openMenu() => tester.tap(
+        cardB,
+        buttons: kSecondaryMouseButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await openMenu();
+      await tester.pumpAndSettle();
+      final pinButtonFinder = find.text(
+        fixture.languageProvider.tr('pin_to_top'),
+      );
+      expect(pinButtonFinder, findsOneWidget);
+      final pinIconFinder = find.descendant(
+        of: find
+            .ancestor(of: pinButtonFinder, matching: find.byType(InkWell))
+            .first,
+        matching: find.byIcon(Icons.push_pin_rounded),
+      );
+      expect(pinIconFinder, findsOneWidget);
 
-    // The "置顶" button should be revealed
-    final pinButtonFinder = find.byTooltip('置顶');
-    expect(pinButtonFinder, findsOneWidget);
-    final pinIconFinder = find.descendant(
-      of: pinButtonFinder,
-      matching: find.byIcon(Icons.push_pin_rounded),
-    );
-    expect(pinIconFinder, findsOneWidget);
+      // Tap "置顶"
+      await tester.tap(pinButtonFinder);
+      await tester.pumpAndSettle();
 
-    // Tap "置顶"
-    await tester.tap(pinButtonFinder);
-    await tester.pumpAndSettle();
+      // Work B should now have the pinned chip
+      expect(
+        find.byKey(ValueKey<String>('playlist_session_pinned_${sessionB.id}')),
+        findsOneWidget,
+      );
 
-    // Work B should now have the pinned chip
-    expect(
-      find.byKey(ValueKey<String>('playlist_session_pinned_${sessionB.id}')),
-      findsOneWidget,
-    );
+      // Work B is now pinned to the top (its Y position is less than Work A)
+      final topB = tester.getTopLeft(find.text('Work B')).dy;
+      final topA = tester.getTopLeft(find.text('Work A')).dy;
+      expect(topB < topA, isTrue);
 
-    // Work B is now pinned to the top (its Y position is less than Work A)
-    final topB = tester.getTopLeft(find.text('Work B')).dy;
-    final topA = tester.getTopLeft(find.text('Work A')).dy;
-    expect(topB < topA, isTrue);
+      await openMenu();
+      await tester.pumpAndSettle();
+      final unpinButtonFinder = find.text(
+        fixture.languageProvider.tr('unpin_from_top'),
+      );
+      final unpinMenuRow = find
+          .ancestor(of: unpinButtonFinder, matching: find.byType(InkWell))
+          .first;
+      expect(unpinButtonFinder, findsOneWidget);
+      expect(
+        find.descendant(
+          of: unpinMenuRow,
+          matching: find.byIcon(Icons.vertical_align_bottom_rounded),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: unpinMenuRow, matching: find.byType(CustomPaint)),
+        findsWidgets,
+      );
 
-    // Swipe right on Work B again
-    await tester.drag(find.text('Work B'), const Offset(180, 0));
-    await tester.pumpAndSettle();
+      // Tap "取消置顶"
+      await tester.tap(unpinButtonFinder);
+      await tester.pumpAndSettle();
 
-    // The "取消置顶" button should be revealed
-    final unpinButtonFinder = find.byTooltip('取消置顶');
-    expect(unpinButtonFinder, findsOneWidget);
-    expect(
-      find.descendant(
-        of: unpinButtonFinder,
-        matching: find.byIcon(Icons.vertical_align_bottom_rounded),
-      ),
-      findsNothing,
-    );
-    expect(
-      find.descendant(
-        of: unpinButtonFinder,
-        matching: find.byType(CustomPaint),
-      ),
-      findsWidgets,
-    );
+      // Pinned chip is gone
+      expect(
+        find.byKey(ValueKey<String>('playlist_session_pinned_${sessionB.id}')),
+        findsNothing,
+      );
 
-    // Tap "取消置顶"
-    await tester.tap(unpinButtonFinder);
-    await tester.pumpAndSettle();
+      // Work A is back to being before Work B
+      final topBAfter = tester.getTopLeft(find.text('Work B')).dy;
+      final topAAfter = tester.getTopLeft(find.text('Work A')).dy;
+      expect(topAAfter < topBAfter, isTrue);
 
-    // Pinned chip is gone
-    expect(
-      find.byKey(ValueKey<String>('playlist_session_pinned_${sessionB.id}')),
-      findsNothing,
-    );
-
-    // Work A is back to being before Work B
-    final topBAfter = tester.getTopLeft(find.text('Work B')).dy;
-    final topAAfter = tester.getTopLeft(find.text('Work A')).dy;
-    expect(topAAfter < topBAfter, isTrue);
-
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpAndSettle();
-  });
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
 
   testWidgets(
     'playlist pins and selection use cover corners including placeholders',
@@ -8249,12 +8712,7 @@ void main() {
       ),
     );
 
-    // The selection highlight finishes before the checkmark starts fading in.
     await tester.pump();
-    expect(checkmarkFinder, findsNothing);
-    await tester.pump(kAppSelectionDuration ~/ 2);
-    expect(checkmarkFinder, findsNothing);
-    await tester.pump(kAppSelectionDuration ~/ 2);
     expect(checkmarkFinder, findsOneWidget);
 
     await tester.pump(kAppMotionFast ~/ 2);
@@ -8625,10 +9083,7 @@ void main() {
       tester.widget<AsyncLocalCoverImage>(detailArtwork),
     );
     expect(detailKey, isNot(cardKey));
-    expect(
-      tester.widget<AsyncLocalCoverImage>(detailArtwork).cacheWidth,
-      600,
-    );
+    expect(tester.widget<AsyncLocalCoverImage>(detailArtwork).cacheWidth, 600);
     Navigator.of(tester.element(find.byType(SessionDetailPage))).pop();
     await tester.pumpAndSettle();
     await tester.pumpWidget(
@@ -8643,10 +9098,7 @@ void main() {
     final carouselCover = tester.widget<AsyncLocalCoverImage>(
       find.byType(AsyncLocalCoverImage).first,
     );
-    expect(
-      await imageKey(carouselCover),
-      await imageKey(resizedCard),
-    );
+    expect(await imageKey(carouselCover), await imageKey(resizedCard));
     await tester.runAsync(
       () => fixture.persistenceRepository.loadTimeSegmentLabels(
         TimeSegmentLabel.trackKeyFor(track),
@@ -10734,11 +11186,160 @@ void main() {
           ),
           findsOneWidget,
         );
+        await tester.longPress(firstTitle, kind: PointerDeviceKind.mouse);
+        await tester.pumpAndSettle();
+        expect(indicator(first.id), findsOneWidget);
+        expect(indicator(second.id), findsNothing);
+        expect(
+          find.text(
+            fixture.languageProvider.tr('selected_count', {'count': '1'}),
+          ),
+          findsOneWidget,
+        );
         expect(find.byType(SessionDetailLayout), findsNothing);
       },
       variant: const TargetPlatformVariant({TargetPlatform.windows}),
     );
   }
+
+  testWidgets(
+    'playlist multiselect keeps the toolbar at its scrolled position',
+    (tester) async {
+      final windows = defaultTargetPlatform == TargetPlatform.windows;
+      final dpr = windows ? 1.25 : 1.0;
+      tester.view.devicePixelRatio = dpr;
+      tester.view.physicalSize = const Size(500, 420) * dpr;
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final tracks = [
+        for (var index = 0; index < 12; index++)
+          testMusicTrack(
+            name: 'Selection track $index',
+            path: '/library/selection/track-$index.mp3',
+            groupKey: '/library/selection',
+            groupTitle: 'Selection work',
+          ),
+      ];
+      fixture.library.addTracks(tracks, persist: false);
+      final sessions = [
+        for (final track in tracks)
+          fixture.playback.createTrackSession(track)
+            ..state = const PlayerState(false, ProcessingState.ready),
+      ];
+      fixture.playbackService.markSessionStateDirty();
+      fixture.playbackService.syncSlice(
+        activeSessions: sessions,
+        playingSessionCount: 0,
+        focusedSessionId: sessions.first.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      final tabIndex = ValueNotifier(0);
+      addTearDown(tabIndex.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          AppPageTransitionHost(
+            child: Padding(
+              padding: EdgeInsets.only(
+                top: windows ? WindowsWindowTitleBar.height : 0,
+              ),
+              child: AppFadeThroughIndexedStack.lazy(
+                indexListenable: tabIndex,
+                itemCount: 1,
+                separateHeader: true,
+                itemBuilder: (_, _) => const PlaylistTab(),
+              ),
+            ),
+          ),
+        ),
+      );
+      final normalButton = find.byKey(
+        const ValueKey('playlist_clear_all_button'),
+      );
+      final batchButton = find.byKey(const ValueKey('batch_play_button'));
+      Finder titleCapsule(String titleKey) => find.byWidgetPredicate(
+        (widget) =>
+            widget is HeaderTopCapsule &&
+            widget.title == fixture.languageProvider.tr(titleKey),
+      );
+      final normalTitle = titleCapsule('playback_sessions');
+      final batchTitle = titleCapsule('multi_select');
+      final list = find.byKey(const PageStorageKey<String>('playlist_list'));
+      await pumpUntilFound(tester, list);
+      await pumpFiniteTransitions(tester);
+      final scroll = tester
+          .state<ScrollableState>(
+            find.descendant(of: list, matching: find.byType(Scrollable)),
+          )
+          .position;
+      const batchExit = ValueKey<String>('exit_selection_button');
+      for (final offset in [0.0, 24.5, 80.0]) {
+        scroll.jumpTo(offset);
+        await tester.pump();
+        final normalY = tester.getCenter(normalButton).dy;
+        final titleY = tester.getTopLeft(normalTitle).dy;
+        final listItem = find
+            .textContaining('Selection track')
+            .hitTestable()
+            .first;
+        if (windows) {
+          await tester.tap(
+            listItem,
+            buttons: kSecondaryMouseButton,
+            kind: PointerDeviceKind.mouse,
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.text(fixture.languageProvider.tr('select_multiple')),
+            kind: PointerDeviceKind.mouse,
+          );
+        } else {
+          await tester.longPress(listItem);
+        }
+        for (var frame = 0; frame < 28; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          for (final (control, expectedY) in [
+            (normalButton, normalY),
+            (batchButton, normalY),
+            (normalTitle, titleY),
+            (batchTitle, titleY),
+          ]) {
+            if (control.evaluate().isNotEmpty) {
+              final y = control == normalTitle || control == batchTitle
+                  ? tester.getTopLeft(control).dy
+                  : tester.getCenter(control).dy;
+              expect(
+                y,
+                closeTo(expectedY, 0.01),
+                reason: '$control at scroll offset $offset, frame $frame',
+              );
+            }
+          }
+        }
+        await pumpFiniteTransitions(tester);
+        expect(tester.getCenter(batchButton).dy, closeTo(normalY, 0.01));
+        expect(scroll.pixels, offset);
+        if (offset == 80) {
+          final count = find.text('1').hitTestable();
+          expect(count, findsOneWidget);
+          expect(
+            tester.widget<Text>(count).semanticsLabel,
+            fixture.languageProvider.tr('selected_count', {'count': '1'}),
+          );
+          expect(tester.getCenter(count).dy, closeTo(normalY, 0.01));
+        }
+        await tester.tap(find.byKey(batchExit));
+        await pumpFiniteTransitions(tester);
+        expect(tester.getCenter(normalButton).dy, closeTo(normalY, 0.01));
+      }
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets(
     'playlist multiselect overlays indicators and swaps batch transport actions',
@@ -10875,16 +11476,13 @@ void main() {
 
       await tester.longPress(trackTitle);
 
-      final delayedCheck = find.byKey(
+      final firstCheck = find.byKey(
         ValueKey<String>('playlist_selection_indicator_${trackSession.id}'),
       );
       await tester.pump();
-      await tester.pump(kAppSelectionDuration ~/ 2);
-      expect(delayedCheck, findsNothing);
-      await tester.pump(kAppSelectionDuration ~/ 2);
-      expect(delayedCheck, findsOneWidget);
+      expect(firstCheck, findsOneWidget);
       final checkFade = find
-          .ancestor(of: delayedCheck, matching: find.byType(FadeTransition))
+          .ancestor(of: firstCheck, matching: find.byType(FadeTransition))
           .first;
       expect(tester.widget<FadeTransition>(checkFade).opacity.value, 0);
 
@@ -10979,16 +11577,10 @@ void main() {
           indicatorContainer.decoration as BoxDecoration;
       expect(indicatorDecoration.color, const Color(0xFF4CAF50));
       expect(indicatorDecoration.shape, BoxShape.circle);
-      final colorScheme = Theme.of(
-        tester.element(find.byType(PlaylistTab)),
-      ).colorScheme;
       final trackCard = tester.widget<Material>(
         find.ancestor(of: trackContent, matching: find.byType(Material)).first,
       );
-      expect(
-        trackCard.color,
-        colorScheme.primaryContainer.withValues(alpha: 0.15),
-      );
+      expect(trackCard.color, Colors.transparent);
       expect(trackCard.shape, same(playlistRowShape));
       final trackSemantics = tester
           .widgetList<Semantics>(
@@ -11008,10 +11600,22 @@ void main() {
       final queueSurface = tester.widget<Material>(
         find.byKey(ValueKey('playback_queue_row_surface_${queueSession.id}')),
       );
-      expect(
-        queueSurface.color,
-        colorScheme.primaryContainer.withValues(alpha: 0.15),
-      );
+      expect(queueSurface.color, Colors.transparent);
+
+      await tester.longPress(trackTitle);
+      await pumpFiniteTransitions(tester);
+      expect(trackIndicator, findsOneWidget);
+      expect(queueIndicator, findsNothing);
+
+      await tester.longPress(queueTitle);
+      await pumpFiniteTransitions(tester);
+      expect(trackIndicator, findsNothing);
+      expect(queueIndicator, findsOneWidget);
+
+      await tester.tap(trackTitle);
+      await pumpFiniteTransitions(tester);
+      expect(trackIndicator, findsOneWidget);
+      expect(queueIndicator, findsOneWidget);
 
       final pauseIconButton = find.byKey(
         const ValueKey<String>('batch_pause_button'),
@@ -11960,16 +12564,19 @@ void main() {
             buttonRect.left,
             platform == TargetPlatform.windows ? AppSpacing.xl : 16,
           );
-          final originalTop = (platform == TargetPlatform.windows
+          final originalTop =
+              (platform == TargetPlatform.windows
                   ? WindowsWindowTitleBar.height
-                  : isPortrait ? 0 : topInset) +
+                  : isPortrait
+                  ? 0
+                  : topInset) +
               6;
           expect(
             buttonRect.top,
             !isPortrait &&
-                showActions &&
-                platform != TargetPlatform.windows &&
-                originalTop < 48
+                    showActions &&
+                    platform != TargetPlatform.windows &&
+                    originalTop < 48
                 ? 48
                 : originalTop,
           );
@@ -11978,8 +12585,12 @@ void main() {
             tester.getRect(find.byType(SessionDetailContent)).top,
             isPortrait ? buttonRect.bottom + 8 : 0,
           );
-          final sleep = find.byKey(const ValueKey('session_detail_sleep_button'));
-          final timer = find.byKey(const ValueKey('session_detail_timer_button'));
+          final sleep = find.byKey(
+            const ValueKey('session_detail_sleep_button'),
+          );
+          final timer = find.byKey(
+            const ValueKey('session_detail_timer_button'),
+          );
           if (showActions) {
             for (final action in [
               if (platform != TargetPlatform.windows) sleep,
@@ -11994,17 +12605,17 @@ void main() {
               expect(tester.getSize(action), const Size.square(38));
               expect(tester.getRect(action).top, buttonRect.top);
               expect(
-                tester.widget<IconButton>(action).style!.backgroundColor!
+                tester
+                    .widget<IconButton>(action)
+                    .style!
+                    .backgroundColor!
                     .resolve({}),
                 Colors.transparent,
               );
               expect(tester.widget<IconButton>(action).iconSize, 20);
             }
             final status = find.byIcon(Icons.speed_rounded);
-            expect(
-              tester.getSize(status),
-              Size.square(isPortrait ? 18 : 20),
-            );
+            expect(tester.getSize(status), Size.square(isPortrait ? 18 : 20));
             if (isPortrait) {
               final coverRect = tester.getRect(
                 find.byKey(
@@ -12028,10 +12639,7 @@ void main() {
               final title = find.byKey(
                 const ValueKey('title_marquee_subtitle-session'),
               );
-              expect(
-                tester.getRect(title).top,
-                greaterThan(buttonRect.bottom),
-              );
+              expect(tester.getRect(title).top, greaterThan(buttonRect.bottom));
             }
             if (platform == TargetPlatform.windows) {
               expect(sleep, findsNothing);
@@ -12062,7 +12670,7 @@ void main() {
                     ),
                   )
                   .firstWhere((transform) => !transform.transformHitTests);
-              expect(hoverTransform.transform.entry(0, 0), 1.16);
+              expect(hoverTransform.transform.entry(0, 0), 1.0);
               await mouse.removePointer();
               await tester.pump();
             } else {
@@ -12106,9 +12714,11 @@ void main() {
                 tester.element(capsule),
               ).colorScheme.primary;
               expect(
-                tester.widget<Icon>(
-                  find.descendant(of: capsule, matching: find.byType(Icon)),
-                ).color,
+                tester
+                    .widget<Icon>(
+                      find.descendant(of: capsule, matching: find.byType(Icon)),
+                    )
+                    .color,
                 countdownColor,
               );
               final countdownText = tester.widget<Text>(
@@ -12129,7 +12739,9 @@ void main() {
               await tester.tap(capsule);
               await tester.pumpAndSettle();
               expect(
-                tester.widget<TimerTab>(find.byType(TimerTab)).initialCompactDetail,
+                tester
+                    .widget<TimerTab>(find.byType(TimerTab))
+                    .initialCompactDetail,
                 isTrue,
               );
               Navigator.of(tester.element(find.byType(TimerTab))).pop();
@@ -12151,7 +12763,9 @@ void main() {
                 await tester.pump();
                 await tester.pump(const Duration(milliseconds: 400));
                 expect(find.byType(BedtimeCanvasPage), findsOneWidget);
-                Navigator.of(tester.element(find.byType(BedtimeCanvasPage))).pop();
+                Navigator.of(
+                  tester.element(find.byType(BedtimeCanvasPage)),
+                ).pop();
                 result.session.setOptimisticState(playing: false);
                 result.fixture.playbackService.syncSlice(
                   activeSessions: [result.session],
@@ -12169,7 +12783,7 @@ void main() {
           }
           final arrow = find.descendant(
             of: button,
-            matching: find.byIcon(Icons.chevron_left_rounded),
+            matching: find.byIcon(Icons.keyboard_arrow_down_rounded),
           );
           expect(arrow, findsOneWidget);
           expect(IconTheme.of(tester.element(arrow)).color, Colors.white);
@@ -12189,26 +12803,42 @@ void main() {
           await pointer.addPointer(location: Offset.zero);
           await pointer.moveTo(buttonRect.center);
           await tester.pumpAndSettle();
+          final closeIconButton = tester.widget<IconButton>(
+            find.descendant(of: button, matching: find.byType(IconButton)),
+          );
+          final closeMaterial = tester.widget<Material>(
+            find.descendant(of: button, matching: find.byType(Material)).last,
+          );
+          expect(IconTheme.of(tester.element(arrow)).color, Colors.white);
           expect(
-            IconTheme.of(tester.element(arrow)).color,
+            closeMaterial.color,
             Theme.of(tester.element(button)).platform == TargetPlatform.windows
-                ? Theme.of(tester.element(button)).colorScheme.primary
-                : Colors.white,
+                ? Colors.black.withValues(alpha: 0.32)
+                : Colors.transparent,
+          );
+          expect(
+            closeIconButton.style!.shape!.resolve(const {}),
+            isA<CircleBorder>(),
           );
           final iconScale = tester
               .widgetList<Transform>(
                 find.ancestor(of: arrow, matching: find.byType(Transform)),
               )
               .firstWhere((transform) => !transform.transformHitTests);
-          expect(
-            iconScale.transform.entry(0, 0),
-            Theme.of(tester.element(button)).platform == TargetPlatform.windows
-                ? 1.16
-                : 1.0,
-          );
+          expect(iconScale.transform.entry(0, 0), 1.0);
           await pointer.removePointer();
           await tester.pumpAndSettle();
           expect(IconTheme.of(tester.element(arrow)).color, Colors.white);
+          expect(
+            tester
+                .widget<Material>(
+                  find
+                      .descendant(of: button, matching: find.byType(Material))
+                      .last,
+                )
+                .color,
+            Colors.transparent,
+          );
           if (isPortrait) {
             final artwork = find.byKey(
               const ValueKey('artwork_subtitle-session'),
@@ -12801,7 +13431,7 @@ void main() {
   );
 
   testWidgets(
-    'playlist item row height is compact with semicircular ends and swipe-right underlayer is semicircular',
+    'playlist rows share the library corner radius and ignore horizontal drags',
     (tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -12841,58 +13471,57 @@ void main() {
       expect(swipeCardFinder, findsOneWidget);
       final swipeCard = tester.widget<SwipeRevealCard>(swipeCardFinder);
 
-      // Verify row height is compact (64)
-      final cardSize = tester.getSize(swipeCardFinder);
-      expect(cardSize.height, 64.0);
-
-      expect(swipeCard.shape, same(playlistRowShape));
       expect(
-        tester
-            .widgetList<ClipPath>(
-              find.descendant(
-                of: swipeCardFinder,
-                matching: find.byType(ClipPath),
-              ),
-            )
-            .any(
-              (clip) =>
-                  clip.clipper is ShapeBorderClipper &&
-                  (clip.clipper! as ShapeBorderClipper).shape ==
-                      playlistRowShape,
-            ),
-        isTrue,
-      );
-
-      // Swipe right to reveal leading action (pin)
-      await tester.drag(swipeCardFinder, const Offset(180, 0));
-      await tester.pump();
-
-      // Find the revealed underlayer DecoratedBox
-      final underlayerBoxes = tester.widgetList<DecoratedBox>(
         find.descendant(
           of: swipeCardFinder,
-          matching: find.byType(DecoratedBox),
+          matching: find.byTooltip(fixture.languageProvider.tr('more_actions')),
+        ),
+        findsNothing,
+      );
+      final cardRect = tester.getRect(swipeCardFinder);
+      expect(cardRect.height, playlistRowHeight);
+      expect(swipeCard.shape, LibraryLikeCardMetrics.cardShape);
+      final clip = find.descendant(
+        of: swipeCardFinder,
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is ClipRRect &&
+              widget.borderRadius ==
+                  LibraryLikeCardMetrics.cardShape.borderRadius,
         ),
       );
-      final revealedUnderlayer = underlayerBoxes.firstWhere(
-        (box) => box.decoration is ShapeDecoration,
+      expect(clip, findsOneWidget);
+      final content = find.byKey(
+        ValueKey<String>('playlist_card_content_${session.id}'),
       );
-      final shapeDeco = revealedUnderlayer.decoration as ShapeDecoration;
-      expect(shapeDeco.shape, same(playlistRowShape));
-    },
-  );
+      final initialRect = tester.getRect(content);
+      for (final dx in [-180.0, 180.0]) {
+        await tester.dragFrom(cardRect.center, Offset(dx, 0));
+        await tester.pumpAndSettle();
+        expect(tester.getRect(content), initialRect);
+        expect(
+          find.byTooltip(fixture.languageProvider.tr('pin_to_top')),
+          findsNothing,
+        );
+        expect(
+          find.byTooltip(fixture.languageProvider.tr('remove_audio')),
+          findsNothing,
+        );
+      }
 
-  test('playlist row ends stay semicircular at larger heights', () {
-    for (final height in <double>[64, 96]) {
-      final path = playlistRowShape.getOuterPath(
-        Rect.fromLTWH(0, 0, 300, height),
+      // This point is inside the library radius but outside the old capsule.
+      await tester.longPressAt(cardRect.topLeft + const Offset(4, 12));
+      await pumpFiniteTransitions(tester);
+      expect(
+        find.byKey(ValueKey('playlist_selection_indicator_${session.id}')),
+        findsOneWidget,
       );
-      expect(path.contains(Offset(0.5, height / 2)), isTrue);
-      expect(path.contains(Offset(0.5, height / 2 - 15)), isFalse);
-      expect(path.contains(Offset(299.5, height / 2)), isTrue);
-      expect(path.contains(Offset(299.5, height / 2 - 15)), isFalse);
-    }
-  });
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   test('formatSpeedValue formats 1, 2, and 3 to two decimal places', () {
     expect(formatSpeedValue(1.0), '1.00x');

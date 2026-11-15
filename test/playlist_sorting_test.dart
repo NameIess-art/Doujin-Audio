@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/app/application/audio_path_coordinator.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
@@ -34,10 +35,12 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late LibraryFacade library;
+  late AudioPathCoordinator paths;
 
   setUp(() {
     final graph = createTestRuntimeGraph();
     library = graph.library;
+    paths = graph.audioPaths;
   });
 
   test(
@@ -51,7 +54,7 @@ void main() {
           criterion: PlaylistSortCriterion.name,
           ascending: ascending,
           groupByLibrary: true,
-          library: library,
+          paths: paths,
           trackForSession: (session) {
             expect(session.isTemporary, isFalse);
             return null;
@@ -74,7 +77,7 @@ void main() {
       criterion: PlaylistSortCriterion.name,
       ascending: true,
       groupByLibrary: false,
-      library: library,
+      paths: paths,
       trackForSession: (session) => MusicTrack(
         path: session.currentTrackPath,
         displayName: session.id,
@@ -93,7 +96,7 @@ void main() {
       criterion: PlaylistSortCriterion.name,
       ascending: true,
       groupByLibrary: false,
-      library: library,
+      paths: paths,
       trackForSession: (session) => MusicTrack(
         path: session.currentTrackPath,
         displayName: session.id,
@@ -127,7 +130,7 @@ void main() {
         criterion: PlaylistSortCriterion.addedAt,
         ascending: true,
         groupByLibrary: false,
-        library: library,
+        paths: paths,
         trackForSession: (session) => null,
         pinnedSessionIds: {'s2', 's3'},
       );
@@ -142,7 +145,7 @@ void main() {
         criterion: PlaylistSortCriterion.addedAt,
         ascending: false,
         groupByLibrary: false,
-        library: library,
+        paths: paths,
         trackForSession: (session) => null,
         pinnedSessionIds: {'s2', 's3'},
       );
@@ -183,10 +186,63 @@ void main() {
         criterion: criterion,
         ascending: true,
         groupByLibrary: false,
-        library: library,
+        paths: paths,
         trackForSession: (_) => fail('Unused track lookup for $criterion'),
       );
       expect(sorted, hasLength(2));
+    }
+  });
+
+  test('work name sorting uses the displayed title for single sessions', () {
+    final first = _session('first', name: '01_絶望_Tr1_絶望宣言');
+    final second = _session('second', name: '02_絶望_Tr2');
+    final tracks = {
+      for (final (session, name) in [
+        (first, '01_絶望_Tr1_絶望宣言'),
+        (second, '02_絶望_Tr2'),
+      ])
+        session.id: testMusicTrack(
+          name: name,
+          path: session.currentTrackPath,
+          groupKey: '/works/絶望メイド',
+          groupTitle: '絶望メイド',
+        ),
+    };
+
+    PlaybackSessionSnapshot queue(String id, String title) {
+      final session = PlaybackSession(
+        id: id,
+        currentTrackPath: '',
+        loopMode: SessionLoopMode.folderSequential,
+        nonSingleLoopMode: SessionLoopMode.folderSequential,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(false, ProcessingState.ready),
+      )..playbackQueue = PlaybackQueueDefinition(name: title, entries: []);
+      return PlaybackSessionSnapshot.fromRuntime(session);
+    }
+
+    final sessions = [
+      queue('02', '02 舔耳'),
+      second,
+      queue('01', '01 密着助眠'),
+      first,
+    ];
+    for (final ascending in [true, false]) {
+      final sorted = sortPlaylistSessions(
+        sessions: sessions,
+        criterion: PlaylistSortCriterion.name,
+        ascending: ascending,
+        groupByLibrary: false,
+        paths: paths,
+        trackForSession: (session) => tracks[session.id],
+      );
+      expect(
+        sorted.map((session) => session.id),
+        ascending
+            ? ['01', '02', 'first', 'second']
+            : ['second', 'first', '02', '01'],
+      );
     }
   });
 
@@ -225,7 +281,7 @@ void main() {
       criterion: PlaylistSortCriterion.voiceActor,
       ascending: true,
       groupByLibrary: false,
-      library: library,
+      paths: paths,
       trackForSession: (session) =>
           session.id == 'first' ? firstTrack : secondTrack,
     ).map((session) => session.id).toList();

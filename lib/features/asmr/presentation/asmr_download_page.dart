@@ -613,43 +613,71 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                           icon: Icon(destinationIcon, size: 18),
                         ),
                       )
-                    : HeaderFloatingSurface(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: AppButtonPointerRegion(
-                          builder: (context, states) => InkWell(
-                            mouseCursor: WidgetStateMouseCursor.clickable,
-                            borderRadius: BorderRadius.circular(19),
-                            hoverColor: Colors.transparent,
-                            highlightColor: Colors.transparent,
-                            splashFactory: NoSplash.splashFactory,
-                            onTap: chooseDestination,
-                            child: Center(
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconTheme.merge(
-                                    data: IconThemeData(color: primaryColor),
-                                    child: AppButtonIcon(
-                                      states: states,
-                                      child: Icon(destinationIcon, size: 18),
+                    : AppButtonPointerRegion(
+                        enabled: chooseDestination != null,
+                        cursor: SystemMouseCursors.click,
+                        builder: (context, states) =>
+                            ValueListenableBuilder<Set<WidgetState>>(
+                              valueListenable: states,
+                              builder: (context, value, _) {
+                                final isWindows =
+                                    Theme.of(context).platform ==
+                                    TargetPlatform.windows;
+                                final hovered =
+                                    isWindows &&
+                                    value.contains(WidgetState.hovered);
+                                final pressed = value.contains(
+                                  WidgetState.pressed,
+                                );
+                                return HeaderFloatingSurface(
+                                  hovered: hovered,
+                                  pressed: pressed,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                  ),
+                                  child: InkWell(
+                                    mouseCursor: WidgetStateMouseCursor.clickable,
+                                    borderRadius: BorderRadius.circular(19),
+                                    hoverColor: Colors.transparent,
+                                    highlightColor: Colors.transparent,
+                                    splashFactory: NoSplash.splashFactory,
+                                    onTap: chooseDestination,
+                                    child: Center(
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconTheme.merge(
+                                            data: IconThemeData(
+                                              color: primaryColor,
+                                            ),
+                                            child: AppButtonIcon(
+                                              states: states,
+                                              child: Icon(
+                                                destinationIcon,
+                                                size: 18,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          AppButtonText(
+                                            states: states,
+                                            label: destinationLabel,
+                                            accentColor: primaryColor,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .labelMedium
+                                                ?.copyWith(
+                                                  color: primaryColor,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    destinationLabel,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelMedium
-                                        ?.copyWith(
-                                          color: primaryColor,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                  ),
-                                ],
-                              ),
+                                );
+                              },
                             ),
-                          ),
-                        ),
                       ),
                 additionalChild: Column(
                   mainAxisSize: MainAxisSize.min,

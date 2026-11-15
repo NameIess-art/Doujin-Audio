@@ -3,7 +3,9 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
 
 import '../ui/ui_interaction_coordinator.dart';
@@ -11,7 +13,7 @@ import 'app_edge_fade_mask.dart';
 
 const kAppFadeDuration = Duration(milliseconds: 300);
 const kAppFadeCurve = Curves.easeInOutCubic;
-const kPlaceholderContentTransitionDuration = kAppFadeDuration;
+const kPlaceholderContentTransitionDuration = Duration(milliseconds: 160);
 const kAppMotionFast = Duration(milliseconds: 180);
 const kAppMotionStandard = Duration(milliseconds: 220);
 const kAppMotionSlow = Duration(milliseconds: 300);
@@ -23,6 +25,9 @@ const kAppPlaybackIconDuration = Duration(milliseconds: 180);
 
 /// Fast-attack spring deceleration curve without overshoot for menus and overlays.
 const Curve kAppSpringCurve = Cubic(0.18, 0.9, 0.25, 1.0);
+
+/// Emphasized fast-out curve for crisp page and panel deceleration.
+const Curve kAppFastOutCurve = Cubic(0.2, 0.0, 0.0, 1.0);
 
 /// Subtle spring release curve with slight overshoot for tactile micro-interactions.
 const Curve kAppSpringBackCurve = Curves.easeOutBack;
@@ -949,7 +954,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
     // entrance curve when an unfinished push reverses, avoiding a position jump.
     _motion = CurvedAnimation(
       parent: widget.animation,
-      curve: Curves.easeOutCubic,
+      curve: kAppSpringCurve,
       reverseCurve: Curves.easeOutCubic.flipped,
     );
     _position = _motion!.drive(
@@ -1062,9 +1067,37 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
       contentBuilder: (context, content) {
         final body = RepaintBoundary(child: content);
         if (!widget.separateHeader || !animatePage) return body;
-        return widget.slide
-            ? SlideTransition(position: _position, child: body)
-            : FadeTransition(opacity: _opacity, child: body);
+        if (!widget.slide) {
+          return FadeTransition(opacity: _opacity, child: body);
+        }
+        return SlideTransition(
+          position: _position,
+          child: Stack(
+            clipBehavior: Clip.none,
+            fit: StackFit.passthrough,
+            children: [
+              Positioned(
+                left: -12,
+                top: 0,
+                bottom: 0,
+                width: 12,
+                child: IgnorePointer(
+                  child: FadeTransition(
+                    opacity: widget.animation,
+                    child: const DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0x00000000), Color(0x16000000)],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              body,
+            ],
+          ),
+        );
       },
       headerBuilder: (context, header) => AnimatedBuilder(
         animation: _headerAnimation,
@@ -1236,10 +1269,24 @@ class AppHeaderTransition extends StatelessWidget {
       duration: duration,
       switchInCurve: kAppFadeCurve,
       switchOutCurve: kAppFadeCurve,
-      transitionBuilder: (child, animation) => FadeTransition(
-        opacity: animation,
-        child: AppPageHeaderTransition(child: child),
-      ),
+      transitionBuilder: (child, animation) {
+        if (defaultTargetPlatform == TargetPlatform.windows) {
+          // Keep the fade at the header's paint origin. Skia rounds opacity
+          // layers to physical pixels while fading, so use the same alignment
+          // when the header is fully opaque.
+          return AppPageHeaderTransition(
+            child: _PreparedHeaderFadeTransition(
+              opacity: animation,
+              snapFullOpacity: true,
+              child: child,
+            ),
+          );
+        }
+        return FadeTransition(
+          opacity: animation,
+          child: AppPageHeaderTransition(child: child),
+        );
+      },
       // Only the current header sets the target height. A taller outgoing
       // header must not postpone shrinking until its fade completes.
       layoutBuilder: (currentChild, previousChildren) => Stack(
@@ -1342,7 +1389,7 @@ class _PlaceholderContentTransitionState
       duration: widget.duration,
       value: widget.showPlaceholder ? 0 : 1,
     )..addStatusListener(_handleAnimationStatus);
-    _contentOpacity = _controller.drive(CurveTween(curve: kAppFadeCurve));
+    _contentOpacity = _controller.drive(CurveTween(curve: kAppSpringCurve));
     _placeholderOpacity = ReverseAnimation(_contentOpacity);
   }
 
@@ -1469,11 +1516,11 @@ class _PlaceholderContentTransitionState
 
 class SecondaryOverlayConfig {
   const SecondaryOverlayConfig({
-    this.backgroundOpacity = 0.80,
+    this.backgroundOpacity = 0.52,
     this.transitionDuration = kAppOverlayDuration,
     this.reverseTransitionDuration = kAppOverlayDuration,
-    this.curve = kAppFadeCurve,
-    this.reverseCurve = kAppFadeCurve,
+    this.curve = kAppSpringCurve,
+    this.reverseCurve = kAppSpringCurve,
   });
 
   final double backgroundOpacity;
@@ -1555,6 +1602,7 @@ class UndoableRemovalTransition extends StatefulWidget {
     this.duration = kAppMotionFast,
     this.curve = kAppFadeCurve,
     this.reverseCurve = kAppFadeCurve,
+    this.retainFrameWhenMuted = false,
   });
 
   final bool hidden;
@@ -1562,6 +1610,9 @@ class UndoableRemovalTransition extends StatefulWidget {
   final Duration duration;
   final Curve curve;
   final Curve reverseCurve;
+
+  /// Keeps the current visual state when the enclosing route starts exiting.
+  final bool retainFrameWhenMuted;
 
   @override
   State<UndoableRemovalTransition> createState() =>
@@ -1573,15 +1624,20 @@ class _UndoableRemovalTransitionState extends State<UndoableRemovalTransition>
   late final AnimationController _controller;
   late final CurvedAnimation _animation;
 
-  bool get _skipMotion =>
+  bool get _instantMotion =>
       MediaQuery.disableAnimationsOf(context) ||
-      !TickerMode.valuesOf(context).enabled ||
       widget.duration == Duration.zero;
+
+  bool get _skipMotion =>
+      _instantMotion || !TickerMode.valuesOf(context).enabled;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_skipMotion) _controller.value = widget.hidden ? 0 : 1;
+    if (_instantMotion ||
+        (!widget.retainFrameWhenMuted && !TickerMode.valuesOf(context).enabled)) {
+      _controller.value = widget.hidden ? 0 : 1;
+    }
   }
 
   @override
@@ -1690,11 +1746,16 @@ Widget buildAppFadeTransition({
   );
 }
 
-/// Shared by the playback dock, session cards, and playback detail.
+/// Shared by the playback dock, session cards, and playback detail controls.
 class AppPlaybackIconTransition extends StatelessWidget {
-  const AppPlaybackIconTransition({super.key, required this.child});
+  const AppPlaybackIconTransition({
+    super.key,
+    required this.child,
+    this.beginScale = 0.68,
+  });
 
   final Widget child;
+  final double beginScale;
 
   @override
   Widget build(BuildContext context) {
@@ -1704,18 +1765,21 @@ class AppPlaybackIconTransition extends StatelessWidget {
     }
     return AnimatedSwitcher(
       duration: kAppPlaybackIconDuration,
-      switchInCurve: kAppSpringBackCurve,
       switchOutCurve: Curves.easeInCubic,
       transitionBuilder: _buildTransition,
       child: child,
     );
   }
 
-  static Widget _buildTransition(Widget child, Animation<double> animation) {
+  Widget _buildTransition(Widget child, Animation<double> animation) {
     return FadeTransition(
       opacity: animation,
       child: ScaleTransition(
-        scale: Tween<double>(begin: 0.62, end: 1).animate(animation),
+        // Only scale can overshoot. The switcher progress also drives opacity.
+        scale: Tween<double>(
+          begin: beginScale,
+          end: 1,
+        ).chain(CurveTween(curve: kAppSpringBackCurve)).animate(animation),
         child: child,
       ),
     );
@@ -1746,8 +1810,8 @@ class AppPressScale extends StatefulWidget {
 
 class _AppPressScaleState extends State<AppPressScale>
     with SingleTickerProviderStateMixin {
-  static const _pressDuration = Duration(milliseconds: 85);
-  static const _releaseDuration = Duration(milliseconds: 220);
+  static const _pressDuration = Duration(milliseconds: 65);
+  static const _releaseDuration = Duration(milliseconds: 180);
   static const _cancelMoveDistance = 12.0;
 
   late final AnimationController _controller;
@@ -1957,6 +2021,8 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
     this.contentRevision,
     this.separateHeader = false,
     this.duration = kAppFadeDuration,
+    this.onIndexSelected,
+    this.onDragPositionChanged,
     this.onTransitionCompleted,
   });
 
@@ -1971,6 +2037,8 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
   final bool separateHeader;
 
   final Duration duration;
+  final ValueChanged<int>? onIndexSelected;
+  final ValueChanged<double?>? onDragPositionChanged;
   final ValueChanged<int>? onTransitionCompleted;
 
   @override
@@ -1980,8 +2048,11 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
 
 class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     with SingleTickerProviderStateMixin {
+  static final SpringDescription _swipeSpring =
+      SpringDescription.withDampingRatio(mass: 1.0, stiffness: 520.0);
+
   late final AnimationController _controller;
-  late final Animation<double> _progress;
+  final ProxyAnimation _progress = ProxyAnimation();
   late Animation<double> _headerProgress;
   late Animation<double> _reverseProgress;
   late final List<Animation<Offset>> _incomingPositions;
@@ -1990,6 +2061,12 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   late int _targetIndex;
   int _transitionDirection = 1;
   bool _isAnimating = false;
+  bool _isDragging = false;
+  double _dragDeltaPx = 0.0;
+  double _rubberBandFraction = 0.0;
+  double _rubberBandStart = 0.0;
+  int? _completingSwipeTarget;
+  double? _lastNotifiedDragPosition;
   late List<Widget?> _lazyChildren;
   final Set<int> _dirtyChildren = {};
   late List<GlobalKey> _pageKeys;
@@ -2014,8 +2091,8 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       reverseDuration: widget.duration,
     )..addStatusListener(_handleStatusChanged);
     _controller.value = 1;
-    _progress = _controller.drive(CurveTween(curve: Curves.decelerate));
-    _headerProgress = _controller.drive(CurveTween(curve: kAppFadeCurve));
+    _progress.parent = _controller.drive(CurveTween(curve: kAppSpringCurve));
+    _headerProgress = _controller.drive(CurveTween(curve: kAppSpringCurve));
     _reverseProgress = ReverseAnimation(_headerProgress);
     _incomingPositions = [
       for (final direction in [-1.0, 1.0])
@@ -2069,8 +2146,24 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     }
   }
 
+  void _notifyDragPosition(double? value) {
+    if (_lastNotifiedDragPosition == value) return;
+    _lastNotifiedDragPosition = value;
+    widget.onDragPositionChanged?.call(value);
+  }
+
+  void _clearSwipeState() {
+    _isDragging = false;
+    _dragDeltaPx = 0.0;
+    _rubberBandFraction = 0.0;
+    _rubberBandStart = 0.0;
+    _completingSwipeTarget = null;
+    _notifyDragPosition(null);
+  }
+
   void _switchImmediately(int index) {
     _controller.stop();
+    _clearSwipeState();
     setState(() {
       _pendingIndex = null;
       _currentIndex = index;
@@ -2098,6 +2191,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
           index < previousKeys.length ? previousKeys[index] : GlobalKey(),
     );
     _controller.stop();
+    _clearSwipeState();
     _dirtyChildren.clear();
     _pendingIndex = null;
     _preparedPages.removeWhere((index) => index >= _itemCount);
@@ -2114,9 +2208,206 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     return index.clamp(0, _itemCount - 1);
   }
 
+  bool get _animateSwipeEnabled =>
+      widget.duration > Duration.zero &&
+      TickerMode.getValuesNotifier(context).value.enabled &&
+      !MediaQuery.disableAnimationsOf(context);
+
+  double get _viewportWidth {
+    final renderObject = context.findRenderObject();
+    return renderObject is RenderBox && renderObject.hasSize
+        ? renderObject.size.width
+        : 0.0;
+  }
+
+  bool _canStartHorizontalSwipe() =>
+      mounted &&
+      widget.onIndexSelected != null &&
+      _itemCount > 1 &&
+      !_isAnimating &&
+      !_isDragging &&
+      _pendingIndex == null &&
+      UiInteractionCoordinator.instance.navigationInputAllowed.value;
+
+  void _handleHorizontalSwipeStart() {
+    if (!_canStartHorizontalSwipe()) return;
+    _completingSwipeTarget = null;
+    _dragDeltaPx = 0.0;
+    _rubberBandFraction = 0.0;
+    _rubberBandStart = 0.0;
+    if (!_animateSwipeEnabled) {
+      setState(() => _isDragging = true);
+      return;
+    }
+    _progress.parent = _controller;
+    _headerProgress = _controller;
+    _reverseProgress = ReverseAnimation(_headerProgress);
+    _controller.value = 0;
+    UiInteractionCoordinator.instance.beginNavigation(
+      _transitionInteraction,
+      lockInput: false,
+    );
+    setState(() {
+      _isDragging = true;
+      _targetIndex = _currentIndex;
+    });
+  }
+
+  void _handleHorizontalSwipeUpdate(double deltaDx) {
+    if (!_isDragging || !mounted) return;
+    _dragDeltaPx += deltaDx;
+    if (!_animateSwipeEnabled) return;
+    final width = _viewportWidth;
+    if (width <= 0) return;
+
+    final rawFraction = -_dragDeltaPx / width;
+    final direction = rawFraction >= 0 ? 1 : -1;
+    final candidate = _currentIndex + direction;
+    if (candidate < 0 || candidate >= _itemCount) {
+      final overscroll = rawFraction.abs();
+      final damped = -direction * 0.16 * (1.0 - math.exp(-overscroll * 3.5));
+      _notifyDragPosition(_currentIndex.toDouble());
+      _controller.value = 0;
+      if (_targetIndex != _currentIndex || _rubberBandFraction != damped) {
+        setState(() {
+          _targetIndex = _currentIndex;
+          _rubberBandFraction = damped;
+        });
+      }
+      return;
+    }
+
+    final progress = rawFraction.abs().clamp(0.0, 1.0);
+    final needsStateUpdate =
+        _targetIndex != candidate ||
+        _transitionDirection != direction ||
+        _rubberBandFraction != 0.0;
+    _rubberBandFraction = 0.0;
+    _notifyDragPosition(
+      (_currentIndex + direction * progress).clamp(
+        0.0,
+        (_itemCount - 1).toDouble(),
+      ),
+    );
+    _controller.value = progress;
+    if (needsStateUpdate) {
+      setState(() {
+        _targetIndex = candidate;
+        _transitionDirection = direction;
+      });
+    }
+  }
+
+  void _handleHorizontalSwipeEnd(double velocityPxPerSec) {
+    if (!_isDragging || !mounted) return;
+    _notifyDragPosition(null);
+    final width = _viewportWidth;
+    if (!_animateSwipeEnabled || width <= 0) {
+      final rawFraction = width > 0 ? -_dragDeltaPx / width : 0.0;
+      final vFraction = width > 0 ? -velocityPxPerSec / width : 0.0;
+      var direction = 0;
+      if (vFraction.abs() >= 1.2) {
+        direction = vFraction > 0 ? 1 : -1;
+      } else if (rawFraction.abs() >= 0.35) {
+        direction = rawFraction > 0 ? 1 : -1;
+      }
+      final next = (_currentIndex + direction).clamp(0, _itemCount - 1);
+      setState(() {
+        _isDragging = false;
+        _dragDeltaPx = 0.0;
+        _rubberBandFraction = 0.0;
+        _targetIndex = _currentIndex;
+      });
+      if (next != _currentIndex) {
+        widget.onIndexSelected?.call(next);
+      }
+      return;
+    }
+
+    if (_targetIndex == _currentIndex) {
+      if (_rubberBandFraction.abs() < 0.001) {
+        setState(() {
+          _isDragging = false;
+          _dragDeltaPx = 0.0;
+          _rubberBandFraction = 0.0;
+          _controller.value = 1;
+        });
+        UiInteractionCoordinator.instance.endNavigation(_transitionInteraction);
+        return;
+      }
+      _rubberBandStart = _rubberBandFraction;
+      _completingSwipeTarget = _currentIndex;
+      setState(() {
+        _isDragging = false;
+        _dragDeltaPx = 0.0;
+        _rubberBandFraction = 0.0;
+        _isAnimating = true;
+      });
+      _controller.animateWith(
+        SpringSimulation(
+          _swipeSpring,
+          1.0,
+          0.0,
+          0.0,
+          tolerance: const Tolerance(velocity: 0.01),
+        ),
+      );
+      return;
+    }
+
+    final p = _controller.value.clamp(0.0, 1.0);
+    final vProgress = (-velocityPxPerSec * _transitionDirection) / width;
+    final shouldCommit = vProgress >= 1.2 || (p >= 0.35 && vProgress > -0.6);
+    var commitTarget = shouldCommit ? _targetIndex : _currentIndex;
+    setState(() {
+      _isDragging = false;
+      _dragDeltaPx = 0.0;
+      _rubberBandFraction = 0.0;
+      _rubberBandStart = 0.0;
+      _isAnimating = true;
+      _completingSwipeTarget = commitTarget;
+    });
+    if (shouldCommit && widget.onIndexSelected != null) {
+      widget.onIndexSelected!(commitTarget);
+      if (!mounted) return;
+      if (widget.indexListenable.value != commitTarget) {
+        commitTarget = _currentIndex;
+        _completingSwipeTarget = _currentIndex;
+      }
+    }
+    final endValue = commitTarget == _targetIndex ? 1.0 : 0.0;
+    _controller.animateWith(
+      SpringSimulation(
+        _swipeSpring,
+        p,
+        endValue,
+        vProgress.clamp(-8.0, 8.0),
+        tolerance: const Tolerance(velocity: 0.01),
+      ),
+    );
+  }
+
+  void _handleHorizontalSwipeCancel() => _handleHorizontalSwipeEnd(0.0);
+
   void _handleIndexChanged() {
     if (!mounted || _itemCount == 0) return;
     final nextIndex = _safeIndex(widget.indexListenable.value);
+    if (_isDragging) {
+      _clearSwipeState();
+      _controller.stop();
+    }
+    if (_completingSwipeTarget != null) {
+      if (nextIndex == _completingSwipeTarget) {
+        return;
+      }
+      _completingSwipeTarget = null;
+      _rubberBandStart = 0.0;
+      if (_isAnimating && _currentIndex == _targetIndex) {
+        _controller.stop();
+        _isAnimating = false;
+        _controller.value = 1;
+      }
+    }
     if (_pendingIndex != null) setState(() => _pendingIndex = null);
     if (nextIndex == _targetIndex) {
       if (_isAnimating && _preparedPages.contains(nextIndex)) {
@@ -2124,7 +2415,10 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       }
       return;
     }
-    UiInteractionCoordinator.instance.beginNavigation(_transitionInteraction);
+    UiInteractionCoordinator.instance.beginNavigation(
+      _transitionInteraction,
+      lockInput: false,
+    );
     if (widget.duration == Duration.zero ||
         !TickerMode.getValuesNotifier(context).value.enabled ||
         MediaQuery.disableAnimationsOf(context)) {
@@ -2160,31 +2454,20 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         return;
       }
       // Swap the visible source when the new destination is on the other side.
-      // Invert decelerate so its position survives the direction change.
-      final progress = Curves.decelerate.transform(_controller.value);
-      final nextValue = 1 - math.sqrt(progress);
-      final fadeAnchor = 1 - _headerProgress.value;
-      // Header fade and body slide use different curves. Preserve the visible
-      // header's opacity when its incoming role becomes outgoing.
+      // Re-anchor slide and header animations from their exact current values.
+      final slideAnchor = (1.0 - _progress.value).clamp(0.0, 1.0);
+      final fadeAnchor = (1.0 - _headerProgress.value).clamp(0.0, 1.0);
+      _progress.parent = _controller.drive(
+        Tween<double>(
+          begin: slideAnchor,
+          end: 1.0,
+        ).chain(CurveTween(curve: kAppSpringCurve)),
+      );
       _headerProgress = _controller.drive(
-        nextValue > 0 && nextValue < 1
-            ? TweenSequence<double>([
-                TweenSequenceItem(
-                  tween: Tween(
-                    begin: 0.0,
-                    end: fadeAnchor,
-                  ).chain(CurveTween(curve: kAppFadeCurve)),
-                  weight: nextValue,
-                ),
-                TweenSequenceItem(
-                  tween: Tween(
-                    begin: fadeAnchor,
-                    end: 1.0,
-                  ).chain(CurveTween(curve: kAppFadeCurve)),
-                  weight: 1 - nextValue,
-                ),
-              ])
-            : CurveTween(curve: kAppFadeCurve),
+        Tween<double>(
+          begin: fadeAnchor,
+          end: 1.0,
+        ).chain(CurveTween(curve: kAppSpringCurve)),
       );
       _reverseProgress = ReverseAnimation(_headerProgress);
       setState(() {
@@ -2192,7 +2475,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         _targetIndex = nextIndex;
         _transitionDirection = direction;
       });
-      _controller.forward(from: nextValue);
+      _controller.forward(from: 0);
       return;
     }
 
@@ -2207,7 +2490,8 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       return;
     }
 
-    _headerProgress = _controller.drive(CurveTween(curve: kAppFadeCurve));
+    _progress.parent = _controller.drive(CurveTween(curve: kAppSpringCurve));
+    _headerProgress = _controller.drive(CurveTween(curve: kAppSpringCurve));
     _reverseProgress = ReverseAnimation(_headerProgress);
     setState(() {
       _targetIndex = nextIndex;
@@ -2227,7 +2511,9 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   }
 
   void _handleStatusChanged(AnimationStatus status) {
-    if (status == AnimationStatus.completed) _completeTransition(_targetIndex);
+    if (status == AnimationStatus.completed) {
+      _completeTransition(_completingSwipeTarget ?? _targetIndex);
+    }
   }
 
   void _completeTransition(int index) {
@@ -2236,6 +2522,10 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       _currentIndex = index;
       _targetIndex = index;
       _isAnimating = false;
+      _rubberBandFraction = 0.0;
+      _rubberBandStart = 0.0;
+      _completingSwipeTarget = null;
+      _controller.value = 1;
     });
     widget.onTransitionCompleted?.call(_currentIndex);
     UiInteractionCoordinator.instance.endNavigation(_transitionInteraction);
@@ -2271,7 +2561,11 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     required bool preparing,
   }) {
     final interactive =
-        visible && !preparing && !_isAnimating && _pendingIndex == null;
+        visible &&
+        !preparing &&
+        !_isDragging &&
+        !_isAnimating &&
+        _pendingIndex == null;
     return _AppPageOffstage(
       offstage: !visible,
       onVisibleLayout: _handleVisiblePageLayout,
@@ -2294,11 +2588,16 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     required bool incoming,
   }) {
     final preparing = index == _pendingIndex;
+    final transitioning =
+        (_isDragging || _isAnimating) && _targetIndex != _currentIndex;
+    final rubberBanding =
+        (_isDragging && _rubberBandFraction != 0.0) ||
+        (_isAnimating && _rubberBandStart != 0.0);
     final visible =
         preparing ||
         outgoing ||
         incoming ||
-        (!_isAnimating && index == _currentIndex);
+        (!transitioning && index == _currentIndex);
     if (visible && !_preparedPages.contains(index)) {
       final pageKey = _pageKeys[index];
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2342,6 +2641,15 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       position = _transitionDirection < 0
           ? const AlwaysStoppedAnimation<Offset>(Offset(-1, 0))
           : const AlwaysStoppedAnimation<Offset>(Offset(1, 0));
+    } else if (rubberBanding && index == _currentIndex) {
+      position = _isDragging
+          ? AlwaysStoppedAnimation<Offset>(Offset(_rubberBandFraction, 0))
+          : _controller.drive(
+              Tween<Offset>(
+                begin: Offset.zero,
+                end: Offset(_rubberBandStart, 0),
+              ),
+            );
     } else if (incoming) {
       position = _incomingPositions[directionIndex];
     } else if (outgoing) {
@@ -2405,6 +2713,8 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   @override
   Widget build(BuildContext context) {
     if (_itemCount == 0) return const SizedBox.shrink();
+    final transitioning =
+        (_isDragging || _isAnimating) && _targetIndex != _currentIndex;
     final paintOrder = <int>[
       for (var index = 0; index < _itemCount; index++)
         if (index != _currentIndex &&
@@ -2413,14 +2723,14 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
             _lazyChildren[index] != null)
           index,
       _currentIndex,
-      if (_isAnimating && _targetIndex != _currentIndex) _targetIndex,
+      if (transitioning) _targetIndex,
       if (_pendingIndex != null &&
           _pendingIndex != _targetIndex &&
           _pendingIndex != _currentIndex)
         _pendingIndex!,
     ];
     final pages = IgnorePointer(
-      ignoring: _isAnimating || _pendingIndex != null,
+      ignoring: _isDragging || _isAnimating || _pendingIndex != null,
       child: ClipRect(
         key: _headerViewport,
         child: Stack(
@@ -2429,19 +2739,47 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
               .map(
                 (index) => _animatedPage(
                   index: index,
-                  outgoing: _isAnimating && index == _currentIndex,
-                  incoming: _isAnimating && index == _targetIndex,
+                  outgoing: transitioning && index == _currentIndex,
+                  incoming: transitioning && index == _targetIndex,
                 ),
               )
               .toList(growable: false),
         ),
       ),
     );
+    final interactivePages = widget.onIndexSelected != null && _itemCount > 1
+        ? RawGestureDetector(
+            behavior: HitTestBehavior.translucent,
+            gestures: <Type, GestureRecognizerFactory>{
+              _AppHorizontalPageSwipeRecognizer:
+                  GestureRecognizerFactoryWithHandlers<
+                    _AppHorizontalPageSwipeRecognizer
+                  >(
+                    () => _AppHorizontalPageSwipeRecognizer(
+                      canStart: _canStartHorizontalSwipe,
+                      onStart: _handleHorizontalSwipeStart,
+                      onUpdate: _handleHorizontalSwipeUpdate,
+                      onEnd: _handleHorizontalSwipeEnd,
+                      onCancel: _handleHorizontalSwipeCancel,
+                    ),
+                    (instance) {
+                      instance
+                        ..canStart = _canStartHorizontalSwipe
+                        ..onStart = _handleHorizontalSwipeStart
+                        ..onUpdate = _handleHorizontalSwipeUpdate
+                        ..onEnd = _handleHorizontalSwipeEnd
+                        ..onCancel = _handleHorizontalSwipeCancel;
+                    },
+                  ),
+            },
+            child: pages,
+          )
+        : pages;
     return context
                 .findAncestorRenderObjectOfType<_RenderPageTransitionHost>() ==
             null
-        ? AppPageTransitionHost(child: pages)
-        : pages;
+        ? AppPageTransitionHost(child: interactivePages)
+        : interactivePages;
   }
 
   void _handleVisiblePageLayout(BoxConstraints constraints) {
@@ -2457,6 +2795,161 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       );
     }
   }
+}
+
+class _AppHorizontalPageSwipeRecognizer extends OneSequenceGestureRecognizer {
+  _AppHorizontalPageSwipeRecognizer({
+    required this.canStart,
+    required this.onStart,
+    required this.onUpdate,
+    required this.onEnd,
+    required this.onCancel,
+  }) : super(
+         supportedDevices: const <PointerDeviceKind>{
+           PointerDeviceKind.touch,
+           PointerDeviceKind.stylus,
+           PointerDeviceKind.invertedStylus,
+         },
+       );
+
+  bool Function() canStart;
+  VoidCallback onStart;
+  ValueChanged<double> onUpdate;
+  ValueChanged<double> onEnd;
+  VoidCallback onCancel;
+
+  int? _pointer;
+  Offset _startPosition = Offset.zero;
+  Offset _lastPosition = Offset.zero;
+  bool _wonArena = false;
+  bool _dragStarted = false;
+  double _touchSlop = kTouchSlop;
+  VelocityTracker? _velocityTracker;
+
+  bool get _hasHorizontalThreshold {
+    final total = _lastPosition - _startPosition;
+    final absDx = total.dx.abs();
+    final absDy = total.dy.abs();
+    return absDx >= _touchSlop * 1.25 && absDx > absDy * 1.5;
+  }
+
+  void _beginDrag(double initialDeltaDx) {
+    if (_dragStarted || !_wonArena) return;
+    if (!canStart()) {
+      stopTrackingPointer(_pointer!);
+      return;
+    }
+    _dragStarted = true;
+    onStart();
+    if (initialDeltaDx != 0.0) {
+      onUpdate(initialDeltaDx);
+    }
+  }
+
+  @override
+  bool isPointerAllowed(PointerDownEvent event) {
+    if (!super.isPointerAllowed(event)) return false;
+    if (_pointer != null) return false;
+    return canStart();
+  }
+
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    super.addAllowedPointer(event);
+    _pointer = event.pointer;
+    _startPosition = event.position;
+    _lastPosition = event.position;
+    _wonArena = false;
+    _dragStarted = false;
+    _touchSlop = computeHitSlop(event.kind, gestureSettings);
+    _velocityTracker = VelocityTracker.withKind(event.kind)
+      ..addPosition(event.timeStamp, event.position);
+  }
+
+  @override
+  void handleEvent(PointerEvent event) {
+    if (event.pointer != _pointer) return;
+    if (event is PointerMoveEvent) {
+      _velocityTracker?.addPosition(event.timeStamp, event.position);
+      final delta = event.position - _lastPosition;
+      _lastPosition = event.position;
+      if (_dragStarted) {
+        onUpdate(delta.dx);
+        return;
+      }
+      final total = event.position - _startPosition;
+      final absDx = total.dx.abs();
+      final absDy = total.dy.abs();
+      if (absDy >= _touchSlop && absDy >= absDx * 1.15) {
+        if (!_wonArena) {
+          resolve(GestureDisposition.rejected);
+        }
+        stopTrackingPointer(event.pointer);
+        return;
+      }
+      // Require slightly more horizontal travel than standard touch slop so
+      // child horizontal scrollables and sliders always claim their arena first.
+      if (absDx >= _touchSlop * 1.25 && absDx > absDy * 1.5) {
+        if (!_wonArena) {
+          resolve(GestureDisposition.accepted);
+        } else {
+          _beginDrag(total.dx);
+        }
+      }
+    } else if (event is PointerUpEvent) {
+      final wasStarted = _dragStarted;
+      final velocity = wasStarted
+          ? (_velocityTracker?.getVelocity().pixelsPerSecond.dx ?? 0.0)
+          : 0.0;
+      if (!_wonArena) {
+        resolve(GestureDisposition.rejected);
+      }
+      stopTrackingPointer(event.pointer);
+      if (wasStarted) onEnd(velocity);
+    } else if (event is PointerCancelEvent) {
+      final wasStarted = _dragStarted;
+      if (!_wonArena) {
+        resolve(GestureDisposition.rejected);
+      }
+      stopTrackingPointer(event.pointer);
+      if (wasStarted) onCancel();
+    }
+  }
+
+  @override
+  void acceptGesture(int pointer) {
+    if (pointer != _pointer || _wonArena) return;
+    _wonArena = true;
+    if (_hasHorizontalThreshold) {
+      _beginDrag(_lastPosition.dx - _startPosition.dx);
+    }
+  }
+
+  @override
+  void rejectGesture(int pointer) {
+    if (pointer != _pointer) return;
+    final wasStarted = _dragStarted;
+    stopTrackingPointer(pointer);
+    if (wasStarted) onCancel();
+  }
+
+  @override
+  void didStopTrackingLastPointer(int pointer) {
+    _pointer = null;
+    _wonArena = false;
+    _dragStarted = false;
+    _velocityTracker = null;
+  }
+
+  @override
+  void dispose() {
+    _pointer = null;
+    _velocityTracker = null;
+    super.dispose();
+  }
+
+  @override
+  String get debugDescription => 'app horizontal page swipe';
 }
 
 class _AppPageOffstage extends Offstage {
@@ -2741,9 +3234,17 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (isActive) _prepared = true;
     });
+    final page = super.buildPage(context, animation, secondaryAnimation);
+    final enableEdgeSwipe =
+        defaultTargetPlatform != TargetPlatform.windows &&
+        !fullscreenDialog &&
+        !isFirst &&
+        !reducedMotion;
     return _AppRouteReference(
       route: this,
-      child: super.buildPage(context, animation, secondaryAnimation),
+      child: enableEdgeSwipe
+          ? _EdgeSwipeBackLayer(route: this, child: page)
+          : page,
     );
   }
 
@@ -2781,6 +3282,103 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
     _disposed = true;
     _exitCompletionTimer?.cancel();
     super.dispose();
+  }
+
+  bool _startInteractivePop() {
+    if (_disposed ||
+        !isCurrent ||
+        fullscreenDialog ||
+        isFirst ||
+        popDisposition != RoutePopDisposition.pop ||
+        navigator == null) {
+      return false;
+    }
+    navigator!.didStartUserGesture();
+    return true;
+  }
+
+  void _updateInteractivePop(double deltaFraction) {
+    if (_disposed || controller == null) return;
+    controller!.value = (controller!.value - deltaFraction).clamp(0.0, 1.0);
+  }
+
+  void _endInteractivePop(double velocityFraction) {
+    final nav = navigator;
+    if (!_disposed && controller != null && nav != null) {
+      if (velocityFraction >= 0.65 || controller!.value <= 0.68) {
+        if (isCurrent) {
+          nav.pop();
+        }
+      } else {
+        controller!.fling(velocity: 2.0);
+      }
+    }
+    if (nav != null && nav.userGestureInProgress) {
+      nav.didStopUserGesture();
+    }
+  }
+}
+
+class _EdgeSwipeBackLayer extends StatefulWidget {
+  const _EdgeSwipeBackLayer({required this.route, required this.child});
+
+  final AppPreparedPageRoute<dynamic> route;
+  final Widget child;
+
+  @override
+  State<_EdgeSwipeBackLayer> createState() => _EdgeSwipeBackLayerState();
+}
+
+class _EdgeSwipeBackLayerState extends State<_EdgeSwipeBackLayer> {
+  static const double _edgeWidth = 32;
+  bool _dragging = false;
+
+  void _handleDragStart(DragStartDetails details) {
+    _dragging = widget.route._startInteractivePop();
+  }
+
+  void _handleDragUpdate(DragUpdateDetails details) {
+    if (!_dragging) return;
+    final width = context.size?.width ?? 0;
+    if (width <= 0) return;
+    widget.route._updateInteractivePop(details.delta.dx / width);
+  }
+
+  void _handleDragEnd(DragEndDetails details) {
+    if (!_dragging) return;
+    _dragging = false;
+    final width = context.size?.width ?? 0;
+    final velocity = width > 0 ? details.velocity.pixelsPerSecond.dx / width : 0.0;
+    widget.route._endInteractivePop(velocity);
+  }
+
+  void _handleDragCancel() {
+    if (!_dragging) return;
+    _dragging = false;
+    widget.route._endInteractivePop(0.0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        widget.child,
+        Positioned(
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: _edgeWidth,
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onHorizontalDragStart: _handleDragStart,
+            onHorizontalDragUpdate: _handleDragUpdate,
+            onHorizontalDragEnd: _handleDragEnd,
+            onHorizontalDragCancel: _handleDragCancel,
+          ),
+        ),
+      ],
+    );
   }
 }
 

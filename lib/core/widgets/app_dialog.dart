@@ -15,13 +15,18 @@ class _AppAnimatedScrim extends StatelessWidget {
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: animation,
-      builder: (context, _) => ColoredBox(
-        key: scrimKey,
-        color: kSecondaryOverlayConfig.scrimColor(
-          context,
-          kAppFadeCurve.transform(animation.value),
-        ),
-      ),
+      builder: (context, _) {
+        final curve = animation.status == AnimationStatus.reverse
+            ? kSecondaryOverlayConfig.reverseCurve
+            : kSecondaryOverlayConfig.curve;
+        return ColoredBox(
+          key: scrimKey,
+          color: kSecondaryOverlayConfig.scrimColor(
+            context,
+            curve.transform(animation.value),
+          ),
+        );
+      },
     );
   }
 }
@@ -123,7 +128,9 @@ class _AppOverlayPanelShell extends StatelessWidget {
                   child: buildAppScaleFadeTransition(
                     context: context,
                     animation: animation,
-                    beginScale: 0.90,
+                    beginScale: 0.88,
+                    curve: kSecondaryOverlayConfig.curve,
+                    reverseCurve: kSecondaryOverlayConfig.reverseCurve,
                     // Ink must paint inside the transition so tile backgrounds
                     // and splashes fade and scale with the panel content.
                     child: Material(
@@ -203,7 +210,9 @@ Future<T?> showAppDialog<T>({
                           child: buildAppScaleFadeTransition(
                             context: dialogContext,
                             animation: animation,
-                            beginScale: 0.90,
+                            beginScale: 0.88,
+                            curve: kSecondaryOverlayConfig.curve,
+                            reverseCurve: kSecondaryOverlayConfig.reverseCurve,
                             child: Material(
                               color: Colors.transparent,
                               child: Builder(builder: builder),

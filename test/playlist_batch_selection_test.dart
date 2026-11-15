@@ -2,7 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
+import 'package:doujin_audio/features/library/presentation/library_tab_ui_helpers.dart';
+import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
+
+import 'support/app_runtime_test_fixture.dart';
 
 void main() {
   group('Playlist batch selection rules', () {
@@ -36,6 +41,111 @@ void main() {
   });
 
   group('Playlist batch selection header rendering and transitions', () {
+    testWidgets(
+      'playlist multi-select top capsule stays expanded when scrolling',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(500, 700);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+
+        final tracks = [
+          for (var i = 1; i <= 16; i++)
+            testMusicTrack(
+              name: 'Track $i',
+              path: PathMatcher.normalize('/library/work$i/01.mp3'),
+              groupKey: PathMatcher.normalize('/library/work$i'),
+              groupTitle: 'Work $i',
+            ),
+        ];
+        fixture.runtimeGraph.library.addTracks(tracks, persist: false);
+        final sessions = [
+          for (final track in tracks)
+            fixture.runtimeGraph.playback.createTrackSession(track),
+        ];
+        fixture.playbackService.syncSlice(
+          activeSessions: sessions,
+          playingSessionCount: 0,
+          focusedSessionId: sessions.first.id,
+          coverGeneration: 0,
+          isInitialized: true,
+        );
+
+        await tester.pumpWidget(fixture.build(const PlaylistTab()));
+        await tester.pumpAndSettle();
+
+        await tester.longPress(find.text('Track 1'));
+        await tester.pumpAndSettle();
+
+        final headerFinder = find.byKey(
+          const ValueKey('playlist_batch_selection_header'),
+        );
+        expect(headerFinder, findsOneWidget);
+        expect(
+          tester.widget<TopPageHeader>(headerFinder).collapseController,
+          isNull,
+        );
+        final initialCapsuleRect = tester.getRect(find.byType(HeaderTopCapsule));
+
+        final scrollable = find.byWidgetPredicate(
+          (widget) =>
+              widget is Scrollable && widget.axisDirection == AxisDirection.down,
+        );
+        await tester.drag(scrollable.first, const Offset(0, -320));
+        await tester.pumpAndSettle();
+
+        expect(
+          tester.getRect(find.byType(HeaderTopCapsule)),
+          initialCapsuleRect,
+        );
+        expect(
+          find.text(fixture.languageProvider.tr('multi_select')),
+          findsOneWidget,
+        );
+        expect(
+          find.text(
+            fixture.languageProvider.tr('selected_count', {'count': '1'}),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'LibraryBatchSelectionHeader keeps top capsule non-collapsible',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+
+        await tester.pumpWidget(
+          fixture.build(
+            LibraryBatchSelectionHeader(
+              keyPrefix: 'library',
+              i18n: fixture.languageProvider,
+              selectedCount: 2,
+              onAddToPlaylist: null,
+              onCompleteMetadata: null,
+              onRemove: null,
+              onExit: () {},
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final header = tester.widget<TopPageHeader>(
+          find.byKey(const ValueKey('library_batch_selection_header')),
+        );
+        expect(header.collapseController, isNull);
+        expect(find.byType(HeaderTopCapsule), findsOneWidget);
+        expect(
+          find.text(fixture.languageProvider.tr('multi_select')),
+          findsOneWidget,
+        );
+      },
+    );
     testWidgets('selection header renders AppRollingNumber and leading close button', (
       tester,
     ) async {

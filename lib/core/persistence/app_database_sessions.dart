@@ -83,7 +83,9 @@ extension AppDatabaseSessions on AppDatabase {
     PlaybackSessionRecord session, {
     bool includeQueue = true,
     bool includeEffects = true,
+    Map<String, int>? queueEntryPositions,
   }) async {
+    assert(!includeQueue || queueEntryPositions == null);
     final queueRows = includeQueue
         ? await compute(_playbackQueueRows, session)
         : null;
@@ -103,6 +105,17 @@ extension AppDatabaseSessions on AppDatabase {
         includeEffects: includeEffects,
         queueRows: queueRows,
       );
+      if (queueEntryPositions != null) {
+        for (final MapEntry(key: id, value: index)
+            in queueEntryPositions.entries) {
+          batch.update(
+            'playback_queue_entries',
+            {'sort_order': index},
+            where: 'session_id = ? AND entry_id = ?',
+            whereArgs: [session.id, id],
+          );
+        }
+      }
       await batch.commit(noResult: true);
     });
   }
@@ -123,24 +136,6 @@ extension AppDatabaseSessions on AppDatabase {
           batch.delete(table, where: 'session_id = ?', whereArgs: [id]);
         }
         batch.delete('sessions', where: 'id = ?', whereArgs: [id]);
-      }
-      await batch.commit(noResult: true);
-    });
-  }
-
-  Future<void> updatePlaybackQueueEntryOrder(
-    String sessionId,
-    List<String> entryIds,
-  ) async {
-    await _runDatabaseWrite((db) async {
-      final batch = db.batch();
-      for (var i = 0; i < entryIds.length; i++) {
-        batch.update(
-          'playback_queue_entries',
-          {'sort_order': i},
-          where: 'session_id = ? AND entry_id = ?',
-          whereArgs: [sessionId, entryIds[i]],
-        );
       }
       await batch.commit(noResult: true);
     });

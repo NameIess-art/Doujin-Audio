@@ -20,6 +20,64 @@ void main() {
   setUp(coordinator.resetForTest);
   tearDown(coordinator.resetForTest);
 
+  testWidgets('button menu opens without highlighting the row under the mouse', (
+    tester,
+  ) async {
+    int? selected;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: TargetPlatform.windows),
+        home: Scaffold(
+          body: Center(
+            child: UnifiedPopupMenuButton<int>(
+              icon: Icons.add,
+              tooltip: 'Add',
+              entries: const [
+                UnifiedMenuEntry.action(value: 1, label: 'Add folder'),
+                UnifiedMenuEntry.action(value: 2, label: 'Add file'),
+              ],
+              onSelected: (value) => selected = value,
+            ),
+          ),
+        ),
+      ),
+    );
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    final anchor = tester.getCenter(find.byTooltip('Add'));
+    await mouse.addPointer(location: anchor);
+    await mouse.down(anchor);
+    await mouse.up();
+    await tester.pumpAndSettle();
+
+    final first = find.text('Add folder');
+    final second = find.text('Add file');
+    bool isHighlighted(Finder row) {
+      final dynamic material = Material.of(tester.element(row));
+      final features = material.debugInkFeatures as Iterable<InkFeature>?;
+      return features?.whereType<InkHighlight>().any((ink) => ink.color.a > 0) ??
+          false;
+    }
+
+    expect(Focus.of(tester.element(first)).hasFocus, isFalse);
+    expect(isHighlighted(first), isFalse);
+
+    await mouse.moveTo(tester.getCenter(second));
+    await tester.pumpAndSettle();
+    expect(isHighlighted(second), isTrue);
+    await mouse.moveTo(const Offset(10, 10));
+    await tester.pumpAndSettle();
+    expect(isHighlighted(second), isFalse);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(Focus.of(tester.element(first)).hasFocus, isTrue);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(selected, 1);
+    expect(first, findsNothing);
+  });
+
   for (final atLeft in [false, true]) {
     testWidgets('context menu scales around its clamped pointer (left: $atLeft)', (
       tester,
@@ -59,6 +117,58 @@ void main() {
       expect(await result, isNull);
     });
   }
+
+  testWidgets('first hover follows the painted row during menu expansion', (
+    tester,
+  ) async {
+    late BuildContext hostContext;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: TargetPlatform.windows),
+        home: Builder(
+          builder: (context) {
+            hostContext = context;
+            return const Scaffold();
+          },
+        ),
+      ),
+    );
+    const anchor = Offset(780, 590);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: anchor);
+    final menu = showUnifiedContextMenu<int>(
+      context: hostContext,
+      globalPosition: anchor,
+      entries: [
+        for (var i = 1; i <= 11; i++)
+          UnifiedMenuEntry.action(value: i, label: 'Action $i'),
+      ],
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 8));
+
+    final first = find.text('Action 1');
+    final second = find.text('Action 2');
+    await mouse.moveTo(tester.getCenter(first));
+    await tester.pump();
+
+    Iterable<InkHighlight> highlights(Finder label) {
+      final dynamic material = Material.of(tester.element(label));
+      final features = material.debugInkFeatures as Iterable<InkFeature>?;
+      return features?.whereType<InkHighlight>().where(
+            (ink) => ink.color.a > 0,
+          ) ??
+          const <InkHighlight>[];
+    }
+
+    expect(highlights(first), isNotEmpty);
+    expect(highlights(second), isEmpty);
+    await mouse.down(tester.getCenter(first));
+    await mouse.up();
+    await tester.pumpAndSettle();
+    expect(await menu, 1);
+  });
 
   for (final side in [Alignment.centerLeft, Alignment.centerRight]) {
     for (final mode in ['button', 'dock', 'context']) {
@@ -260,7 +370,8 @@ void main() {
             tester.element(find.byIcon(Icons.folder)),
           );
           final textStyle = tester.widget<Text>(label).style;
-          expect(tester.getSize(row).height, mode == 'add' ? 48 : 40);
+          // A single compact row owns both 6 px menu edges.
+          expect(tester.getSize(row).height, mode == 'add' ? 48 : 52);
           expect(
             textStyle,
             Theme.of(tester.element(label)).textTheme.bodyMedium!.copyWith(

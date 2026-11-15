@@ -95,13 +95,13 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     }
   }
 
-  void _enterSelectionMode(String initialSessionId) {
+  void _selectOnlySession(String sessionId) {
     if (_creatingQueue) return;
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     setState(() {
       _isSelectionMode = true;
       _selectedSessionIds.clear();
-      _selectedSessionIds.add(initialSessionId);
+      _selectedSessionIds.add(sessionId);
     });
   }
 
@@ -329,7 +329,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       options: [
         SortOption(
           value: PlaylistSortCriterion.name,
-          label: i18n.tr('sort_name'),
+          label: i18n.tr('work_name_display_workTitle'),
         ),
         SortOption(
           value: PlaylistSortCriterion.voiceActor,
@@ -748,7 +748,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 isPinned: isPinned,
                 onLongPress: isTemporary
                     ? null
-                    : () => _enterSelectionMode(session.id),
+                    : () => _selectOnlySession(session.id),
                 onToggleSelect: () => _toggleSessionSelection(session.id),
                 onTogglePin: isTemporary
                     ? null
@@ -781,7 +781,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 isPinned: isPinned,
                 onLongPress: isTemporary
                     ? null
-                    : () => _enterSelectionMode(session.id),
+                    : () => _selectOnlySession(session.id),
                 onToggleSelect: () => _toggleSessionSelection(session.id),
                 onTogglePin: isTemporary
                     ? null

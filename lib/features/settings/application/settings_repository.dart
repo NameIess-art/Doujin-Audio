@@ -60,9 +60,9 @@ class SettingsRepository {
   bool hapticFeedbackEnabled = true;
   bool showLocalLibrary = true;
   bool showAsmrOne = true;
+  bool showMyPage = true;
   WorkNameDisplay workNameDisplay = WorkNameDisplay.workTitle;
   ListeningChartStyle listeningChartStyle = ListeningChartStyle.bar;
-  MySettingsPageMode mySettingsPageMode = MySettingsPageMode.settings;
   StartupPage startupPage = StartupPage.library;
   CoverImageResolution coverImageResolution = CoverImageResolution.balanced;
   bool preferEmbeddedCover = false;
@@ -107,6 +107,11 @@ class SettingsRepository {
         (value) => value.name == playback['startupPage'],
         orElse: () => StartupPage.library,
       );
+      // Older builds used "my" for the combined tab and stored its active page.
+      if (startupPage == StartupPage.my &&
+          playback['mySettingsPageMode'] == 'settings') {
+        startupPage = StartupPage.settings;
+      }
       autoCheckUpdates = playback['autoCheckUpdates'] as bool? ?? false;
       recordPlaybackProgress =
           playback['recordPlaybackProgress'] as bool? ?? true;
@@ -119,6 +124,10 @@ class SettingsRepository {
           hapticFeedbackEnabled;
       showLocalLibrary = playback['showLocalLibrary'] as bool? ?? true;
       showAsmrOne = playback['showAsmrOne'] as bool? ?? true;
+      showMyPage = playback['showMyPage'] as bool? ?? true;
+      if (!showMyPage && startupPage == StartupPage.my) {
+        startupPage = StartupPage.playlist;
+      }
       workNameDisplay = WorkNameDisplay.values.firstWhere(
         (value) => value.name == playback['workNameDisplay'],
         orElse: () => WorkNameDisplay.workTitle,
@@ -126,10 +135,6 @@ class SettingsRepository {
       listeningChartStyle = ListeningChartStyle.values.firstWhere(
         (value) => value.name == playback['listeningChartStyle'],
         orElse: () => ListeningChartStyle.bar,
-      );
-      mySettingsPageMode = MySettingsPageMode.values.firstWhere(
-        (value) => value.name == playback['mySettingsPageMode'],
-        orElse: () => MySettingsPageMode.settings,
       );
       if (!showLocalLibrary && !showAsmrOne) {
         showLocalLibrary = true;
@@ -261,9 +266,9 @@ class SettingsRepository {
         'hapticFeedbackEnabled': hapticFeedbackEnabled,
         'showLocalLibrary': showLocalLibrary,
         'showAsmrOne': showAsmrOne,
+        'showMyPage': showMyPage,
         'workNameDisplay': workNameDisplay.name,
         'listeningChartStyle': listeningChartStyle.name,
-        'mySettingsPageMode': mySettingsPageMode.name,
         'coverImageResolution': coverImageResolution.name,
         'preferEmbeddedCover': preferEmbeddedCover,
         'asmrDownloadDestinationRoot': asmrDownloadDestinationRoot,
@@ -586,10 +591,16 @@ class SettingsRepository {
     }
   });
 
-  Future<void> setStartupPage(StartupPage page) => _setValue(
-    unchanged: () => startupPage == page,
-    update: () => startupPage = page,
-  );
+  Future<void> setShowMyPage(bool enabled) => _change(() async {
+    showMyPage = enabled;
+    if (!enabled && startupPage == StartupPage.my) {
+      startupPage = StartupPage.playlist;
+    }
+  });
+
+  Future<void> setStartupPage(StartupPage page) => _change(() async {
+    if (page != StartupPage.my || showMyPage) startupPage = page;
+  });
 
   Future<void> setCoverImageResolution(
     CoverImageResolution resolution, {
@@ -608,11 +619,6 @@ class SettingsRepository {
   Future<void> setListeningChartStyle(ListeningChartStyle style) => _setValue(
     unchanged: () => listeningChartStyle == style,
     update: () => listeningChartStyle = style,
-  );
-
-  Future<void> setMySettingsPageMode(MySettingsPageMode mode) => _setValue(
-    unchanged: () => mySettingsPageMode == mode,
-    update: () => mySettingsPageMode = mode,
   );
 
   Future<void> setPreferEmbeddedCover(
@@ -786,9 +792,9 @@ class SettingsRepository {
     hapticFeedbackEnabled = snapshot.hapticFeedbackEnabled;
     showLocalLibrary = snapshot.showLocalLibrary;
     showAsmrOne = snapshot.showAsmrOne;
+    showMyPage = snapshot.showMyPage;
     workNameDisplay = snapshot.workNameDisplay;
     listeningChartStyle = snapshot.listeningChartStyle;
-    mySettingsPageMode = snapshot.mySettingsPageMode;
     startupPage = snapshot.startupPage;
     coverImageResolution = snapshot.coverImageResolution;
     preferEmbeddedCover = snapshot.preferEmbeddedCover;
@@ -833,9 +839,9 @@ class SettingsRepository {
     AppInteractionFeedbackSettings.hapticFeedbackEnabled = true;
     showLocalLibrary = true;
     showAsmrOne = true;
+    showMyPage = true;
     workNameDisplay = WorkNameDisplay.workTitle;
     listeningChartStyle = ListeningChartStyle.bar;
-    mySettingsPageMode = MySettingsPageMode.settings;
     startupPage = StartupPage.library;
     coverImageResolution = CoverImageResolution.balanced;
     preferEmbeddedCover = false;
@@ -926,9 +932,9 @@ class SettingsRepository {
       hapticFeedbackEnabled: hapticFeedbackEnabled,
       showLocalLibrary: showLocalLibrary,
       showAsmrOne: showAsmrOne,
+      showMyPage: showMyPage,
       workNameDisplay: workNameDisplay,
       listeningChartStyle: listeningChartStyle,
-      mySettingsPageMode: mySettingsPageMode,
       startupPage: startupPage,
       coverImageResolution: coverImageResolution,
       preferEmbeddedCover: preferEmbeddedCover,

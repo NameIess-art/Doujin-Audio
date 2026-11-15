@@ -29,6 +29,57 @@ void main() {
   setUp(interaction.resetForTest);
   tearDown(interaction.resetForTest);
 
+  testWidgets(
+    'expanded playback card opens on tap and ignores upward swipes',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final track = testMusicTrack(
+        name: 'Playback card',
+        path: '/music/playback-card.mp3',
+        groupKey: '/music',
+        groupTitle: 'Music',
+      );
+      fixture.library.addTracks([track], persist: false);
+      final session = fixture.playback.createTrackSession(track);
+      final opened = <String>[];
+      await tester.pumpWidget(
+        fixture.build(
+          Center(
+            child: SizedBox(
+              width: 320,
+              child: ActiveSessionCarousel(
+                sessions: [PlaybackSessionSnapshot.fromRuntime(session)],
+                presentation: ActiveSessionCarouselPresentation.embedded,
+                onOpenSession: (id, _) => opened.add(id),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final card = find
+          .byKey(ValueKey('active_session_card_${session.id}'))
+          .hitTestable();
+
+      await tester.drag(card, const Offset(0, -120));
+      await tester.pumpAndSettle();
+      expect(opened, isEmpty);
+
+      await tester.fling(card, const Offset(0, -40), 900);
+      await tester.pumpAndSettle();
+      expect(opened, isEmpty);
+
+      await tester.tap(card);
+      await tester.pumpAndSettle();
+      expect(opened, [session.id]);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   for (final (desktop, platform) in [
     (false, TargetPlatform.android),
     (true, TargetPlatform.android),
@@ -260,7 +311,7 @@ void main() {
         }
         await sampleFrames(24);
         await tester.pumpAndSettle();
-        expect(paragraph(firstCue), findsNothing);
+        expect(paragraph(firstCue).hitTestable(), findsNothing);
         if (!desktop) {
           await tester.tap(
             find.byKey(

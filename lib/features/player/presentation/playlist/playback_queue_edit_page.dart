@@ -32,25 +32,12 @@ Future<void> showPlaybackQueueEditPanel(
       horizontal: 20,
       vertical: 24,
     ),
-    builder: (context) => AnimatedPadding(
-      padding: MediaQuery.viewInsetsOf(context),
-      duration: MediaQuery.disableAnimationsOf(context)
-          ? Duration.zero
-          : const Duration(milliseconds: 100),
-      curve: Curves.decelerate,
-      child: MediaQuery.removeViewInsets(
-        context: context,
-        removeLeft: true,
-        removeTop: true,
-        removeRight: true,
-        removeBottom: true,
-        child: PlaybackQueueEditPage(sessionId: sessionId),
-      ),
-    ),
+    builder: (_) => PlaybackQueueEditPage(sessionId: sessionId),
   );
 }
 
 const double _playbackQueueEditPanelHeight = 350;
+const double _playbackQueueNamePanelHeight = 192;
 
 class PlaybackQueueEditPage extends ConsumerStatefulWidget {
   const PlaybackQueueEditPage({super.key, required this.sessionId});
@@ -82,7 +69,15 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
     final queue = ref.watch(
       playbackSessionProvider(
         sessionId,
-      ).select((session) => session?.playbackQueue),
+      ).select((session) {
+        final queue = session?.playbackQueue;
+        if (queue == null) return null;
+        return (
+          name: queue.name,
+          colorValue: queue.colorValue,
+          trackCount: queue.expandedTracks.length,
+        );
+      }),
     );
     final i18n = ProviderScope.containerOf(
       context,
@@ -112,214 +107,295 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
       }
     }
 
-    Widget buildPanel({required bool editingName}) => SizedBox(
-      width: double.infinity,
-      height: _playbackQueueEditPanelHeight,
-      child: DecoratedBox(
-        key: ValueKey(
-          editingName
-              ? 'playback_queue_name_panel'
-              : 'playback_queue_edit_panel',
-        ),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          color: cs.surfaceContainerLow,
-          boxShadow: [
-            BoxShadow(
-              color: cs.shadow.withValues(alpha: 0.22),
-              blurRadius: 32,
-              offset: const Offset(0, 18),
+    Widget buildContent({required bool editingName}) {
+      final header = Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: queueColor.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(tokens.radiusSmall),
             ),
-          ],
-        ),
-        child: Material(
-          color: Colors.transparent,
-          borderRadius: BorderRadius.circular(24),
-          clipBehavior: Clip.antiAlias,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: queueColor.withValues(alpha: 0.14),
-                        borderRadius: BorderRadius.circular(tokens.radiusSmall),
-                      ),
-                      child: Icon(
-                        editingName
-                            ? Icons.drive_file_rename_outline_rounded
-                            : Icons.edit_note_rounded,
-                        key: ValueKey(
-                          editingName
-                              ? 'playback_queue_name_header_icon'
-                              : 'playback_queue_edit_header_icon',
-                        ),
-                        color: queueColor,
-                        size: 22,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        editingName ? i18n.tr('edit_queue_name') : queue.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w800),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                Expanded(
-                  child: Align(
-                    alignment: editingName
-                        ? Alignment.center
-                        : Alignment.topCenter,
+            child: Icon(
+              editingName
+                  ? Icons.drive_file_rename_outline_rounded
+                  : Icons.edit_note_rounded,
+              key: ValueKey(
+                editingName
+                    ? 'playback_queue_name_header_icon'
+                    : 'playback_queue_edit_header_icon',
+              ),
+              color: queueColor,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              editingName ? i18n.tr('edit_queue_name') : queue.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: editingName ? null : queueColor,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      );
+      final actions = Align(
+        alignment: Alignment.centerRight,
+        child: editingName
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextButton(
+                    style: actionStyle,
+                    onPressed: _finishEditingName,
+                    child: Text(i18n.tr('cancel')),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    style: actionStyle,
+                    onPressed: saveName,
+                    child: Text(i18n.tr('save')),
+                  ),
+                ],
+              )
+            : TextButton(
+                style: buildActionStyle(foregroundColor: cs.error),
+                onPressed: () => _removeQueue(context, ref),
+                child: Text(i18n.tr('remove_queue')),
+              ),
+      );
+
+      return editingName
+          ? SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  header,
+                  const SizedBox(height: 12),
+                  TextField(
+                    key: const ValueKey('playback_queue_name_input'),
+                    controller: _nameController,
+                    autofocus: true,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => saveName(),
+                  ),
+                  const SizedBox(height: 4),
+                  actions,
+                ],
+              ),
+            )
+          : Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  header,
+                  const SizedBox(height: 18),
+                  Expanded(
                     child: SingleChildScrollView(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          if (editingName)
-                            TextField(
-                              key: const ValueKey('playback_queue_name_input'),
-                              controller: _nameController,
-                              autofocus: true,
-                              textInputAction: TextInputAction.done,
-                              onSubmitted: (_) => saveName(),
-                            )
-                          else ...[
-                            _queueEditTile(
-                              context,
-                              Icons.playlist_play_rounded,
-                              i18n.tr('edit_queue_audio'),
-                              () => Navigator.of(context).push(
-                                buildAppPageRoute<void>(
-                                  context: context,
-                                  child: PlaybackQueueAudioEditPage(
-                                    sessionId: sessionId,
-                                  ),
-                                ),
-                              ),
-                              trailing: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: cs.surfaceContainerHighest,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Text(
-                                  '${queue.expandedTracks.length}',
-                                  style: Theme.of(context).textTheme.labelSmall
-                                      ?.copyWith(
-                                        color: cs.onSurfaceVariant,
-                                        fontWeight: FontWeight.w700,
-                                      ),
+                          _queueEditTile(
+                            context,
+                            Icons.playlist_play_rounded,
+                            i18n.tr('edit_queue_audio'),
+                            () => Navigator.of(context).push(
+                              buildAppPageRoute<void>(
+                                context: context,
+                                separateHeader: true,
+                                child: PlaybackQueueAudioEditPage(
+                                  sessionId: sessionId,
+                                  returnContext: context,
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 12),
-                            _queueEditTile(
-                              context,
-                              Icons.drive_file_rename_outline_rounded,
-                              i18n.tr('edit_queue_name'),
-                              () {
-                                _nameController.text = queue.name;
-                                setState(() => _editingName = true);
-                              },
-                            ),
-                            const SizedBox(height: 12),
-                            _queueEditTile(
-                              context,
-                              Icons.palette_outlined,
-                              i18n.tr('edit_queue_color'),
-                              () => setState(() => _editingColor = true),
-                              trailing: Container(
-                                width: 20,
-                                height: 20,
-                                decoration: BoxDecoration(
-                                  color: queueColor,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: cs.outlineVariant.withValues(
-                                      alpha: 0.8,
+                            trailing: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: cs.surfaceContainerHighest,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                '${queue.trackCount}',
+                                style: Theme.of(context).textTheme.labelSmall
+                                    ?.copyWith(
+                                      color: cs.onSurfaceVariant,
+                                      fontWeight: FontWeight.w700,
                                     ),
-                                    width: 1.5,
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: queueColor.withValues(alpha: 0.35),
-                                      blurRadius: 4,
-                                      offset: const Offset(0, 1),
-                                    ),
-                                  ],
-                                ),
                               ),
                             ),
-                          ],
+                          ),
+                          const SizedBox(height: 12),
+                          _queueEditTile(
+                            context,
+                            Icons.drive_file_rename_outline_rounded,
+                            i18n.tr('edit_queue_name'),
+                            () {
+                              _nameController.text = queue.name;
+                              setState(() => _editingName = true);
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          _queueEditTile(
+                            context,
+                            Icons.palette_outlined,
+                            i18n.tr('edit_queue_color'),
+                            () => setState(() => _editingColor = true),
+                            trailing: Container(
+                              width: 20,
+                              height: 20,
+                              decoration: BoxDecoration(
+                                color: queueColor,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: cs.outlineVariant.withValues(
+                                    alpha: 0.8,
+                                  ),
+                                  width: 1.5,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: queueColor.withValues(alpha: 0.35),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 1),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ).withWindowsSmoothScroll(),
                   ),
-                ),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: editingName
-                      ? Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            TextButton(
-                              style: actionStyle,
-                              onPressed: _finishEditingName,
-                              child: Text(i18n.tr('cancel')),
-                            ),
-                            const SizedBox(width: 8),
-                            TextButton(
-                              style: actionStyle,
-                              onPressed: saveName,
-                              child: Text(i18n.tr('save')),
-                            ),
-                          ],
-                        )
-                      : TextButton(
-                          style: buildActionStyle(foregroundColor: cs.error),
-                          onPressed: () => _removeQueue(context, ref),
-                          child: Text(i18n.tr('remove_queue')),
-                        ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-    Widget? secondary;
-    if (_editingName) {
-      secondary = buildPanel(editingName: true);
-    } else if (_editingColor) {
-      secondary = PlaybackQueueColorPanel(
-        colorValue: queue.colorValue,
-        height: _playbackQueueEditPanelHeight,
-        onColorChanged: (value) =>
-            playback.setPlaybackQueueColorValue(sessionId, value),
-        onBack: () => setState(() => _editingColor = false),
-      );
+                  actions,
+                ],
+              ),
+            );
     }
+
     return PopScope(
       canPop: !_editingName,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop && _editingName) _finishEditingName();
       },
-      child: AppMenuContentTransition(
-        primary: buildPanel(editingName: false),
-        secondary: secondary,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final height = constraints.maxHeight;
+          final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
+          // Base the anchor on the safe height before the keyboard changes
+          // the system bar inset.
+          final anchorHeight =
+              (height - MediaQuery.viewPaddingOf(context).bottom).clamp(
+                0.0,
+                height,
+              );
+          final usableHeight = (height - keyboardHeight).clamp(
+            0.0,
+            anchorHeight,
+          );
+          final editHeight = anchorHeight.clamp(
+            0.0,
+            _playbackQueueEditPanelHeight,
+          );
+          final nameHeight = usableHeight.clamp(
+            0.0,
+            _playbackQueueNamePanelHeight,
+          );
+          final editTop = (anchorHeight - editHeight) / 2;
+          final top = _editingName
+              ? editTop.clamp(0.0, usableHeight - nameHeight)
+              : editTop;
+          final duration = MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : kAppFadeDuration;
+
+          Widget? secondary;
+          if (_editingName) {
+            secondary = Align(
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                key: const ValueKey('playback_queue_name_panel'),
+                width: double.infinity,
+                height: nameHeight,
+                child: buildContent(editingName: true),
+              ),
+            );
+          } else if (_editingColor) {
+            secondary = PlaybackQueueColorPanel(
+              colorValue: queue.colorValue,
+              height: editHeight,
+              onColorChanged: (value) =>
+                  playback.setPlaybackQueueColorValue(sessionId, value),
+              onBack: () => setState(() => _editingColor = false),
+            );
+          }
+
+          final radius = BorderRadius.circular(24);
+          return Padding(
+            padding: EdgeInsets.only(top: top),
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: DecoratedBox(
+                key: const ValueKey('playback_queue_panel_surface'),
+                decoration: BoxDecoration(
+                  borderRadius: radius,
+                  boxShadow: [
+                    BoxShadow(
+                      color: cs.shadow.withValues(alpha: 0.22),
+                      blurRadius: 32,
+                      offset: const Offset(0, 18),
+                    ),
+                  ],
+                ),
+                child: Material(
+                  color: cs.surfaceContainerLow,
+                  borderRadius: radius,
+                  clipBehavior: Clip.antiAlias,
+                  child: AnimatedSize(
+                    alignment: Alignment.topCenter,
+                    duration: duration,
+                    curve: kAppFadeCurve,
+                    // Run this tween outside the transition's inactive page,
+                    // where tickers stop as soon as the name editor opens.
+                    child: TweenAnimationBuilder<double>(
+                      tween: Tween(end: _editingName ? 0 : 1),
+                      duration: duration,
+                      curve: kAppFadeCurve,
+                      child: OverflowBox(
+                        alignment: Alignment.topCenter,
+                        minHeight: editHeight,
+                        maxHeight: editHeight,
+                        child: SizedBox.expand(
+                          key: const ValueKey('playback_queue_edit_panel'),
+                          child: buildContent(editingName: false),
+                        ),
+                      ),
+                      builder: (context, opacity, primary) =>
+                          AppMenuContentTransition(
+                            primary: SizedBox(
+                              width: double.infinity,
+                              height: _editingName ? nameHeight : editHeight,
+                              child: Opacity(opacity: opacity, child: primary),
+                            ),
+                            secondary: secondary,
+                          ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

@@ -2,56 +2,50 @@ import '../../../library/presentation/library_providers.dart';
 import '../playback_providers.dart';
 import '../../../settings/presentation/settings_providers.dart';
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/theme/app_styles.dart';
-import '../../../../core/media/cover_image_resolution.dart';
+import '../../../../core/app_language.dart';
 import '../../../../core/media/music_track.dart';
+import '../../../../core/media/path_display.dart';
+import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/ui/undoable_removal_service.dart';
 import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_edge_fade_mask.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/async_cover_image.dart';
+import '../../../../core/widgets/marquee_text.dart';
 import '../../../../core/widgets/page_header_inset.dart';
+import '../../../../core/widgets/scroll_activity_gate.dart';
 import '../../../../core/widgets/top_page_header.dart';
 import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../domain/playback_queue.dart';
+import '../../../settings/application/settings_state.dart';
+import 'playlist_list_view.dart';
+import 'playlist_media_widgets.dart';
 import 'playlist_shared_helpers.dart';
 
 import 'playback_queue_cover.dart';
 
-Future<void> _stagePlaybackQueueEntryRemoval(
-  BuildContext context,
-  WidgetRef ref, {
-  required String sessionId,
-  required String entryId,
-}) async {
-  final playback = ref.read(playbackFacadeProvider);
-  final service = ref.read(undoableRemovalServiceProvider);
-  final staged = await service.stage(
-    UndoableRemovalAction(
-      key: playbackQueueEntryRemovalKey(sessionId, entryId),
-      commit: () => playback.removePlaybackQueueEntry(sessionId, entryId),
-      undo: () {},
-    ),
-  );
-  if (staged && context.mounted) {
-    showPlaybackRemovalFeedback(context, service);
-  } else if (staged) {
-    await service.commitPending();
-  }
-}
+const _queueEntryRemovalDuration = Duration(milliseconds: 250);
 
 class PlaybackQueueAudioEditPage extends ConsumerStatefulWidget {
-  const PlaybackQueueAudioEditPage({super.key, required this.sessionId});
+  const PlaybackQueueAudioEditPage({
+    super.key,
+    required this.sessionId,
+    this.returnContext,
+  });
   final String sessionId;
+  final BuildContext? returnContext;
 
   @override
   ConsumerState<PlaybackQueueAudioEditPage> createState() =>
@@ -61,9 +55,140 @@ class PlaybackQueueAudioEditPage extends ConsumerStatefulWidget {
 class _PlaybackQueueAudioEditPageState
     extends ConsumerState<PlaybackQueueAudioEditPage> {
   final _addedQueueScrollController = WindowsSmoothScrollController();
+  final _addedQueueSectionKey = GlobalKey();
+  int? _draggedIndex;
+  VoidCallback? _pendingDrop;
+  bool _didPop = false;
+  int? _dragPointerId;
+  double? _latestDragPointerY;
+  double _dragHandleTopOffset = 0;
+  double _addedQueueTopInset = 0;
+  bool _isTopAutoScrolling = false;
+
+  void _startQueueDrag(PointerDownEvent event, BuildContext itemContext) {
+    if (_dragPointerId != null || event.buttons != kPrimaryButton) return;
+    _dragPointerId = event.pointer;
+    _latestDragPointerY = event.position.dy;
+    final box = itemContext.findRenderObject() as RenderBox?;
+    if (box != null && box.hasSize) {
+      _dragHandleTopOffset =
+          event.position.dy - box.localToGlobal(Offset.zero).dy;
+    } else {
+      _dragHandleTopOffset = 0;
+    }
+    UiInteractionCoordinator.instance.beginInteraction(this);
+  }
+
+  void _updateQueueDrag(PointerMoveEvent event) {
+    if (event.pointer != _dragPointerId) return;
+    _latestDragPointerY = event.position.dy;
+    if (!_isTopAutoScrolling && _computeTopOverDrag() > 0) {
+      unawaited(_runTopAutoScroll());
+    }
+  }
+
+  double _computeTopOverDrag() {
+    final pointerY = _latestDragPointerY;
+    if (pointerY == null ||
+        !_addedQueueScrollController.hasClients ||
+        _addedQueueScrollController.offset <=
+            _addedQueueScrollController.position.minScrollExtent) {
+      return 0;
+    }
+    final sectionBox =
+        _addedQueueSectionKey.currentContext?.findRenderObject() as RenderBox?;
+    if (sectionBox == null || !sectionBox.hasSize) return 0;
+    // Keep scrolled rows extending behind the floating capsules while driving
+    // upward auto-scroll from the boundary below the section heading capsule.
+    final triggerY = sectionBox
+        .localToGlobal(Offset(0, _addedQueueTopInset))
+        .dy;
+    final proxyTop = pointerY - _dragHandleTopOffset;
+    return math.max(0.0, triggerY - proxyTop);
+  }
+
+  Future<void> _runTopAutoScroll() async {
+    if (_isTopAutoScrolling) return;
+    _isTopAutoScrolling = true;
+    try {
+      while (mounted && !_didPop && _dragPointerId != null) {
+        final overDrag = _computeTopOverDrag();
+        if (overDrag <= 0 || !_addedQueueScrollController.hasClients) break;
+        final position = _addedQueueScrollController.position;
+        final step = math.min(overDrag, 20.0);
+        final target = math.max(
+          position.minScrollExtent,
+          _addedQueueScrollController.offset - step,
+        );
+        if ((_addedQueueScrollController.offset - target).abs() < 0.5) break;
+        await _addedQueueScrollController.animateTo(
+          target,
+          duration: const Duration(milliseconds: 20),
+          curve: Curves.linear,
+        );
+      }
+    } finally {
+      _isTopAutoScrolling = false;
+    }
+  }
+
+  void _finishQueueDrag(PointerEvent event) {
+    if (mounted && _dragPointerId == event.pointer) {
+      _dragPointerId = null;
+      _latestDragPointerY = null;
+      UiInteractionCoordinator.instance.endInteraction(this);
+    }
+  }
+
+  void _handlePop(bool didPop, Object? _) {
+    if (!didPop) return;
+    _didPop = true;
+    if (_dragPointerId != null) {
+      _dragPointerId = null;
+      _latestDragPointerY = null;
+      UiInteractionCoordinator.instance.cancelInteraction(this);
+    }
+    final pendingDrop = _pendingDrop;
+    _pendingDrop = null;
+    if (pendingDrop == null) return;
+    // The outgoing route still owns the drag proxy during its exit animation.
+    final route = ModalRoute.of(context)!;
+    unawaited(route.completed.then((_) => pendingDrop()));
+  }
+
+  Future<void> _removeEntry(String entryId) async {
+    final route = ModalRoute.of(context);
+    final returnContext = widget.returnContext;
+    final playback = ref.read(playbackFacadeProvider);
+    final service = ref.read(undoableRemovalServiceProvider);
+    final sessionId = widget.sessionId;
+
+    await Future<void>.delayed(_queueEntryRemovalDuration);
+    // Updating the sliver and mounting undo feedback would change the frame
+    // being animated out. The removal still needs to be staged after disposal.
+    if (_didPop) await route?.completed;
+    if (!await service.stage(
+      UndoableRemovalAction(
+        key: playbackQueueEntryRemovalKey(sessionId, entryId),
+        commit: () => playback.removePlaybackQueueEntry(sessionId, entryId),
+        undo: () {},
+      ),
+    )) {
+      return;
+    }
+    final feedbackContext = mounted && !_didPop ? context : returnContext;
+    if (feedbackContext != null && feedbackContext.mounted) {
+      showPlaybackRemovalFeedback(feedbackContext, service);
+    } else {
+      await service.commitPending();
+    }
+  }
 
   @override
   void dispose() {
+    _dragPointerId = null;
+    _latestDragPointerY = null;
+    UiInteractionCoordinator.instance.cancelInteraction(this);
     _addedQueueScrollController.dispose();
     super.dispose();
   }
@@ -72,9 +197,19 @@ class _PlaybackQueueAudioEditPageState
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final sessionId = widget.sessionId;
-    final structure = ref.watch(playlistStructureUiProvider);
+    final ordinarySessions = ref
+        .watch(
+          playlistStructureUiProvider.select(
+            (structure) => _OrdinarySourceSessions(
+              structure.entries
+                  .where((entry) => !entry.isPlaybackQueue)
+                  .map((entry) => entry.session)
+                  .toList(growable: false),
+            ),
+          ),
+        )
+        .sessions;
     final playback = ref.read(playbackFacadeProvider);
-    final paths = ref.read(audioPathCoordinatorProvider);
 
     ref.listen(
       playbackSessionProvider(
@@ -83,7 +218,7 @@ class _PlaybackQueueAudioEditPageState
       (previous, next) {
         if (previous != null && next > previous) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (_addedQueueScrollController.hasClients) {
+            if (!_didPop && _addedQueueScrollController.hasClients) {
               _addedQueueScrollController.jumpTo(
                 _addedQueueScrollController.position.maxScrollExtent,
               );
@@ -98,10 +233,6 @@ class _PlaybackQueueAudioEditPageState
         sessionId,
       ).select((session) => session?.playbackQueue),
     );
-    final ordinarySessions = structure.entries
-        .where((entry) => !entry.isPlaybackQueue)
-        .map((entry) => entry.session)
-        .toList(growable: false);
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -115,16 +246,47 @@ class _PlaybackQueueAudioEditPageState
         : cs.surfaceContainer;
 
     final headerHeight = AppPageHeaderMetrics.contentTopInset(context);
+    final addedQueueTop = headerHeight + 44;
     final horizontalPadding = AppPageHeaderMetrics.padding.copyWith(top: 0);
 
-    return Scaffold(
-      backgroundColor: cs.surface,
+    Widget sectionHeading(String label) {
+      return Listener(
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: horizontalPadding.copyWith(bottom: AppSpacing.xs),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: HeaderFloatingSurface(
+              height: 32,
+              radius: 16,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.playlist_play_rounded,
+                    size: 18,
+                    color: cs.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(label, style: appPageHeaderTitleStyle(context)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final page = Scaffold(
+      backgroundColor: Colors.transparent,
       body: PageHeaderInset(
         topInset: headerHeight,
         child: Stack(
           children: [
             Positioned.fill(
               child: AppPageContentTransition(
+                backgroundColor: cs.surface,
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final isLandscape =
@@ -141,13 +303,44 @@ class _PlaybackQueueAudioEditPageState
                         )
                         .toList(growable: false);
 
+                    void reorder(int oldIndex, int newIndex) {
+                      if (oldIndex == newIndex || oldIndex + 1 == newIndex) {
+                        return;
+                      }
+                      // Pending removals remain in the queue until committed.
+                      final entries = playback
+                          .sessionById(sessionId)
+                          ?.playbackQueue
+                          ?.entries;
+                      if (entries == null) return;
+                      final sourceId = queueEntries[oldIndex].id;
+                      final sourceIndex = entries.indexWhere(
+                        (entry) => entry.id == sourceId,
+                      );
+                      final targetIndex = newIndex == queueEntries.length
+                          ? entries.length
+                          : entries.indexWhere(
+                              (entry) => entry.id == queueEntries[newIndex].id,
+                            );
+                      if (sourceIndex < 0 || targetIndex < 0) return;
+                      unawaited(
+                        playback.reorderPlaybackQueueEntry(
+                          sessionId,
+                          sourceIndex,
+                          targetIndex,
+                        ),
+                      );
+                    }
+
+                    _addedQueueTopInset = addedQueueTop;
                     final addedToQueueSection = Stack(
+                      key: _addedQueueSectionKey,
                       children: [
                         Positioned.fill(
                           child: queueEntries.isEmpty
                               ? Padding(
                                   padding: EdgeInsets.only(
-                                    top: headerHeight + 48,
+                                    top: addedQueueTop + 4,
                                   ),
                                   child: ListTile(
                                     contentPadding: horizontalPadding,
@@ -159,65 +352,46 @@ class _PlaybackQueueAudioEditPageState
                               : ReorderableListView.builder(
                                   scrollController: _addedQueueScrollController,
                                   padding: horizontalPadding.copyWith(
-                                    top: headerHeight + 44,
+                                    top: addedQueueTop,
                                     bottom: AppSpacing.xs,
                                   ),
                                   buildDefaultDragHandles: false,
                                   proxyDecorator: (child, index, animation) =>
-                                      child,
+                                      RepaintBoundary(child: child),
                                   itemCount: queueEntries.length,
-                                  onReorder: (oldIndex, newIndex) {
-                                    if (oldIndex == newIndex ||
-                                        oldIndex + 1 == newIndex) {
-                                      return;
-                                    }
-                                    // Pending removals remain in the queue until
-                                    // committed, so visible indices need mapping.
-                                    final entries = playback
-                                        .sessionById(sessionId)
-                                        ?.playbackQueue
-                                        ?.entries;
-                                    if (entries == null) return;
-                                    final sourceIndex = entries.indexWhere(
-                                      (entry) =>
-                                          entry.id == queueEntries[oldIndex].id,
-                                    );
-                                    final targetIndex =
-                                        newIndex == queueEntries.length
-                                        ? entries.length
-                                        : entries.indexWhere(
-                                            (entry) =>
-                                                entry.id ==
-                                                queueEntries[newIndex].id,
-                                          );
-                                    if (sourceIndex < 0 || targetIndex < 0) {
-                                      return;
-                                    }
-                                    playback.reorderPlaybackQueueEntry(
-                                      sessionId,
-                                      sourceIndex,
-                                      targetIndex,
-                                    );
+                                  onReorderStart: (index) {
+                                    _draggedIndex = index;
+                                    _pendingDrop = null;
                                   },
-                                  itemBuilder: (context, index) {
+                                  onReorderEnd: (index) {
+                                    final from = _draggedIndex!;
+                                    if (from == index || from + 1 == index) {
+                                      return;
+                                    }
+                                    // Flutter commits after the drop animation.
+                                    // Popping the route can mute its ticker first.
+                                    _pendingDrop = () => reorder(from, index);
+                                  },
+                                  onReorder: (oldIndex, newIndex) {
+                                    if (_didPop) return;
+                                    final pendingDrop = _pendingDrop;
+                                    _pendingDrop = null;
+                                    if (pendingDrop != null) {
+                                      pendingDrop();
+                                    } else {
+                                      reorder(oldIndex, newIndex);
+                                    }
+                                  },
+                                  itemBuilder: (itemContext, index) {
                                     final entry = queueEntries[index];
                                     return _AnimatedQueueEntryCard(
                                       key: ValueKey(entry.id),
+                                      content: (entry, index, i18n.language),
                                       onRemove: () =>
-                                          _stagePlaybackQueueEntryRemoval(
-                                            context,
-                                            ref,
-                                            sessionId: sessionId,
-                                            entryId: entry.id,
-                                          ),
-                                      builder: (context, triggerRemove) {
+                                          unawaited(_removeEntry(entry.id)),
+                                      builder: (cardContext, triggerRemove) {
                                         final firstTrack =
                                             entry.tracks.firstOrNull;
-                                        final workTitle = firstTrack != null
-                                            ? paths.workTitleForTrack(
-                                                firstTrack,
-                                              )
-                                            : entry.title;
                                         final itemTitle =
                                             entry.kind ==
                                                 PlaybackQueueEntryKind.work
@@ -228,7 +402,7 @@ class _PlaybackQueueAudioEditPageState
                                         return _QueueAudioEditCard(
                                           track: firstTrack,
                                           title: itemTitle,
-                                          workTitle: workTitle,
+                                          fallbackWorkTitle: entry.title,
                                           trailing: Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
@@ -251,13 +425,24 @@ class _PlaybackQueueAudioEditPageState
                                               ),
                                               ReorderableDragStartListener(
                                                 index: index,
-                                                child: Container(
-                                                  width: 40,
-                                                  height: 40,
-                                                  alignment: Alignment.center,
-                                                  child: const Icon(
-                                                    Icons.drag_handle_rounded,
-                                                    size: 22,
+                                                child: Listener(
+                                                  behavior:
+                                                      HitTestBehavior.opaque,
+                                                  onPointerDown: (event) =>
+                                                      _startQueueDrag(
+                                                        event,
+                                                        cardContext,
+                                                      ),
+                                                  child: const SizedBox(
+                                                    width: 40,
+                                                    height: 40,
+                                                    child: Center(
+                                                      child: Icon(
+                                                        Icons
+                                                            .drag_handle_rounded,
+                                                        size: 22,
+                                                      ),
+                                                    ),
                                                   ),
                                                 ),
                                               ),
@@ -273,48 +458,18 @@ class _PlaybackQueueAudioEditPageState
                           top: headerHeight,
                           left: 0,
                           right: 0,
-                          child: Listener(
-                            behavior: HitTestBehavior.opaque,
-                            child: Padding(
-                              padding: horizontalPadding.copyWith(
-                                bottom: AppSpacing.xs,
-                              ),
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: HeaderFloatingSurface(
-                                  height: 32,
-                                  radius: 16,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.playlist_play_rounded,
-                                        size: 16,
-                                        color: cs.primary,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        i18n.tr('queue_added_audio'),
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .titleSmall
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.w700,
-                                              color: cs.onSurface,
-                                              fontSize: 13,
-                                            ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
+                          child: sectionHeading(i18n.tr('queue_added_audio')),
                         ),
                       ],
+                    );
+                    final addedToQueuePane = PageHeaderInset(
+                      topInset: 0,
+                      child: Listener(
+                        onPointerMove: _updateQueueDrag,
+                        onPointerUp: _finishQueueDrag,
+                        onPointerCancel: _finishQueueDrag,
+                        child: ScrollActivityGate(child: addedToQueueSection),
+                      ),
                     );
 
                     final sectionTopOffset = isLandscape
@@ -355,45 +510,8 @@ class _PlaybackQueueAudioEditPageState
                             top: sectionTopOffset,
                             left: 0,
                             right: 0,
-                            child: Listener(
-                              behavior: HitTestBehavior.opaque,
-                              child: Padding(
-                                padding: horizontalPadding.copyWith(
-                                  bottom: AppSpacing.xs,
-                                ),
-                                child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: HeaderFloatingSurface(
-                                    height: 32,
-                                    radius: 16,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          Icons.playlist_play_rounded,
-                                          size: 17,
-                                          color: cs.primary,
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          i18n.tr('playback_list_audio'),
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .titleSmall
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.w700,
-                                                color: cs.onSurface,
-                                                fontSize: 13,
-                                              ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
+                            child: sectionHeading(
+                              i18n.tr('playback_list_audio'),
                             ),
                           ),
                         ],
@@ -404,7 +522,7 @@ class _PlaybackQueueAudioEditPageState
                       return Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(child: addedToQueueSection),
+                          Expanded(child: addedToQueuePane),
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             child: VerticalDivider(
@@ -420,7 +538,7 @@ class _PlaybackQueueAudioEditPageState
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Expanded(child: addedToQueueSection),
+                          Expanded(child: addedToQueuePane),
                           Expanded(child: playlistAudioSection),
                         ],
                       );
@@ -447,6 +565,7 @@ class _PlaybackQueueAudioEditPageState
         ),
       ),
     );
+    return PopScope<void>(onPopInvokedWithResult: _handlePop, child: page);
   }
 }
 
@@ -473,11 +592,10 @@ class _QueueSourceAudioTile extends ConsumerWidget {
     final playlistAreaBackground = isDark
         ? cs.surfaceContainerLowest
         : cs.surfaceContainer;
-    final workTitle = paths.workTitleForTrack(track);
     return _QueueAudioEditCard(
       track: track,
       title: track.displayName,
-      workTitle: workTitle,
+      fallbackWorkTitle: track.displayName,
       color: playlistAreaBackground,
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -533,14 +651,14 @@ class _QueueAudioEditCard extends ConsumerWidget {
   const _QueueAudioEditCard({
     required this.track,
     required this.title,
-    required this.workTitle,
+    required this.fallbackWorkTitle,
     required this.trailing,
     this.color,
   });
 
   final MusicTrack? track;
   final String title;
-  final String workTitle;
+  final String fallbackWorkTitle;
   final Widget trailing;
   final Color? color;
 
@@ -552,6 +670,11 @@ class _QueueAudioEditCard extends ConsumerWidget {
     final resolvedCoverPath = resolvedTrack == null
         ? null
         : library.resolvedPlaybackCoverPathForTrack(resolvedTrack);
+    final workTitle = switch (resolvedTrack) {
+      null => fallbackWorkTitle,
+      final track => _workTitle(ref, track),
+    };
+    final coverSize = coverProgressInnerDimension(playlistCoverSize);
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
@@ -560,98 +683,92 @@ class _QueueAudioEditCard extends ConsumerWidget {
       surfaceTintColor: Colors.transparent,
       shape: playlistRowShape,
       clipBehavior: Clip.antiAlias,
-      child: SizedBox(
-        height: playlistRowHeight,
-        child: Row(
-          children: [
-            Expanded(
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  AppSpacing.xs,
-                  playlistRowPadding.top,
-                  0,
-                  playlistRowPadding.bottom,
-                ),
-                child: Row(
-                  children: [
-                    CoverArtworkFrame(
-                      borderRadius: BorderRadius.circular(
-                        playlistCoverSize / 2,
-                      ),
-                      child: SizedBox.square(
-                        dimension: playlistCoverSize,
-                        child: resolvedTrack == null
-                            ? const CoverFallbackArtwork()
-                            : QueueTrackCover(
-                                track: resolvedTrack,
-                                coverPath: resolvedCoverPath,
-                                coverCacheWidth: coverCacheWidthForResolution(
-                                  ref.watch(
-                                    settingsStateProvider.select(
-                                      (state) =>
-                                          state.value?.coverImageResolution ??
-                                          CoverImageResolution.balanced,
-                                    ),
-                                  ),
-                                ),
-                              ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: playlistRowHeight),
+        child: PlaylistAudioRow(
+          cover: SessionCoverProgressRing(
+            size: playlistCoverSize,
+            child: CoverArtworkFrame(
+              borderRadius: BorderRadius.circular(coverSize / 2),
+              child: resolvedTrack == null
+                  ? const CoverFallbackArtwork()
+                  : QueueTrackCover(
+                      track: resolvedTrack,
+                      coverPath: resolvedCoverPath,
+                      coverCacheWidth: coverCacheWidthForResolution(
+                        ref.watch(
+                          settingsStateProvider.select(
+                            (state) =>
+                                state.value?.coverImageResolution ??
+                                CoverImageResolution.balanced,
+                          ),
+                        ),
                       ),
                     ),
-                    const SizedBox(width: AppSpacing.xs),
-                    Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            workTitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: cs.onSurfaceVariant,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 12,
-                                ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 14,
-                                  height: 1.12,
-                                ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             ),
-            const SizedBox(width: AppSpacing.xxs),
-            Padding(
-              padding: const EdgeInsets.only(right: AppSpacing.xs),
-              child: trailing,
+          ),
+          labels: MarqueePauseScope(
+            isPaused: false,
+            hoverToRun: defaultTargetPlatform == TargetPlatform.windows,
+            child: PlaylistAudioLabels(
+              workTitle: workTitle,
+              title: TextSpan(text: title),
+              semanticsLabel: title,
             ),
-          ],
+          ),
+          actions: trailing,
         ),
       ),
     );
   }
+
+  String _workTitle(WidgetRef ref, MusicTrack track) {
+    final paths = ref.read(audioPathCoordinatorProvider);
+    if (track.isRemoteAsmr) return paths.workTitleForTrack(track);
+
+    final settings = ref.read(settingsRepositoryProvider);
+    final mode = ref.watch(
+      settingsStateProvider.select(
+        (state) =>
+            state.value?.workNameDisplay ??
+            settings.slice.state.workNameDisplay,
+      ),
+    );
+    final target = ref
+        .read(libraryFacadeProvider)
+        .audioDetailTargetForTrack(track);
+    if (mode == WorkNameDisplay.workTitle) {
+      final title = ref.watch(
+        libraryDetailForTargetProvider(
+          target,
+        ).select((detail) => detail.value?.workTitle.trim() ?? ''),
+      );
+      if (title.isNotEmpty) return title;
+    }
+
+    if (track.isSingle) {
+      return PathDisplay.fileName(track.path, withoutExtension: true);
+    }
+    final folder = PathDisplay.folderName(target.targetPath);
+    final groupTitle = track.groupTitle.trim();
+    if (folder.isNotEmpty) {
+      return groupTitle.toLowerCase() == folder.toLowerCase()
+          ? groupTitle
+          : folder;
+    }
+    return groupTitle.isNotEmpty ? groupTitle : track.displayName;
+  }
 }
 
 class _AnimatedQueueEntryCard extends StatefulWidget {
+  final (PlaybackQueueEntry, int, AppLanguage) content;
   final Widget Function(BuildContext context, VoidCallback triggerRemove)
   builder;
   final VoidCallback onRemove;
 
   const _AnimatedQueueEntryCard({
     super.key,
+    required this.content,
     required this.builder,
     required this.onRemove,
   });
@@ -663,6 +780,17 @@ class _AnimatedQueueEntryCard extends StatefulWidget {
 
 class _AnimatedQueueEntryCardState extends State<_AnimatedQueueEntryCard> {
   bool _isRemoving = false;
+  late Widget _card = widget.builder(context, _triggerRemove);
+
+  @override
+  void didUpdateWidget(covariant _AnimatedQueueEntryCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The reorderable sliver calls its builder on pointer moves. Reuse the
+    // artwork and labels while the entry data, index and language are stable.
+    if (oldWidget.content != widget.content) {
+      _card = widget.builder(context, _triggerRemove);
+    }
+  }
 
   void _triggerRemove() {
     if (_isRemoving) return;
@@ -672,17 +800,43 @@ class _AnimatedQueueEntryCardState extends State<_AnimatedQueueEntryCard> {
     setState(() {
       _isRemoving = true;
     });
-    Future.delayed(const Duration(milliseconds: 250), () {
-      if (mounted) widget.onRemove();
-    });
+    widget.onRemove();
   }
 
   @override
   Widget build(BuildContext context) {
     return UndoableRemovalTransition(
       hidden: _isRemoving,
-      duration: const Duration(milliseconds: 250),
-      child: widget.builder(context, _triggerRemove),
+      duration: _queueEntryRemovalDuration,
+      retainFrameWhenMuted: true,
+      child: _card,
     );
   }
+}
+
+class _OrdinarySourceSessions {
+  const _OrdinarySourceSessions(this.sessions);
+
+  final List<PlaybackSessionSnapshot> sessions;
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other is! _OrdinarySourceSessions ||
+        other.sessions.length != sessions.length) {
+      return false;
+    }
+    for (var i = 0; i < sessions.length; i++) {
+      if (sessions[i].id != other.sessions[i].id ||
+          sessions[i].currentTrackPath != other.sessions[i].currentTrackPath) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode => Object.hashAll(
+    sessions.map((session) => Object.hash(session.id, session.currentTrackPath)),
+  );
 }

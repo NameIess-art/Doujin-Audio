@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/theme/app_styles.dart';
 import 'app_tap_highlight.dart';
+import 'app_transitions.dart';
 
 /// Removes pointer ink while letting Material paint keyboard focus.
 ButtonStyle appButtonStyle([ButtonStyle? style]) =>
@@ -28,7 +29,12 @@ ButtonStyle appButtonStyle([ButtonStyle? style]) =>
 ButtonStyle appIconButtonStyle([
   ButtonStyle? style,
   WidgetStatesController? pointerStates,
-]) => _iconButtonStyle(style, pointerStates);
+  bool allowThemeHighlight = true,
+]) => _iconButtonStyle(
+  style,
+  pointerStates,
+  allowThemeHighlight: allowThemeHighlight,
+);
 
 ButtonStyle appTransportIconButtonStyle(ButtonStyle style) =>
     _iconButtonStyle(style, null, isTransportControl: true);
@@ -37,6 +43,7 @@ ButtonStyle _iconButtonStyle(
   ButtonStyle? style,
   WidgetStatesController? pointerStates, {
   bool isTransportControl = false,
+  bool allowThemeHighlight = true,
 }) => appButtonStyle(style).copyWith(
   backgroundBuilder: pointerStates == null && !isTransportControl
       ? _touchButtonLayer(style)
@@ -47,6 +54,7 @@ ButtonStyle _iconButtonStyle(
       return AppButtonIcon(
         states: pointerStates,
         backgroundColor: backgroundColor,
+        allowThemeHighlight: allowThemeHighlight,
         child: icon!,
       );
     }
@@ -54,6 +62,7 @@ ButtonStyle _iconButtonStyle(
       pressed: states.contains(WidgetState.pressed),
       hovered: states.contains(WidgetState.hovered),
       enabled: !states.contains(WidgetState.disabled),
+      allowThemeHighlight: allowThemeHighlight,
       isTransportControl: isTransportControl,
       backgroundColor: backgroundColor,
       child: icon!,
@@ -105,13 +114,11 @@ resolveAppButtonIconFeedback({
     color = cs.primary;
   }
   return (
-    scale: switch ((reduceMotion, isPressed, isHovered, isTransportControl)) {
-      (false, true, _, true) => isWindows ? 0.90 : 0.92,
-      (false, true, _, false) => isWindows ? 0.82 : 0.84,
-      (false, false, true, true) => 1.08,
-      (false, false, true, false) => 1.16,
-      _ => 1.0,
-    },
+    scale: !reduceMotion && isPressed
+        ? (isTransportControl
+              ? (isWindows ? 0.90 : 0.92)
+              : (isWindows ? 0.82 : 0.84))
+        : 1.0,
     opacity: reduceMotion && isPressed
         ? 0.72
         : reduceMotion && isHovered
@@ -155,11 +162,7 @@ resolveAppTextButtonFeedback({
       ? Color.lerp(accent, isDark ? Colors.white : cs.onPrimaryContainer, 0.35)
       : accent;
   return (
-    scale: switch ((reduceMotion, isPressed, isHovered)) {
-      (false, true, _) => 0.94,
-      (false, false, true) => 1.14,
-      _ => 1.0,
-    },
+    scale: !reduceMotion && isPressed ? 0.94 : 1.0,
     opacity: reduceMotion && isPressed
         ? 0.72
         : reduceMotion && isHovered
@@ -198,11 +201,7 @@ resolveAppSurfaceButtonFeedback({
   final isPressed = visible && enabled && pressed;
   final isHovered = visible && enabled && hovered && isWindows;
   return (
-    scale: switch ((reduceMotion, isPressed, isHovered)) {
-      (false, true, _) => isWindows ? 0.975 : 0.98,
-      (false, false, true) => 1.025,
-      _ => 1.0,
-    },
+    scale: !reduceMotion && isPressed ? (isWindows ? 0.975 : 0.98) : 1.0,
     pressed: isPressed,
     hovered: isHovered,
     duration: !visible || reduceMotion || !enabled
@@ -270,6 +269,7 @@ ButtonStyle appSurfaceButtonStyle({
   required ColorScheme colorScheme,
   required TargetPlatform platform,
   Color defaultBackgroundColor = Colors.transparent,
+  Duration animationDuration = const Duration(milliseconds: 90),
 }) {
   final base = appButtonStyle(style);
   final android = platform == TargetPlatform.android;
@@ -277,7 +277,7 @@ ButtonStyle appSurfaceButtonStyle({
       style?.backgroundColor?.resolve(_restingStates(states));
 
   return base.copyWith(
-    animationDuration: Duration.zero,
+    animationDuration: android ? Duration.zero : animationDuration,
     foregroundBuilder: _identityForegroundBuilder,
     splashFactory: android
         ? AppTapHighlightFactory.forPlatform(platform)
@@ -493,7 +493,9 @@ class _AnimatedForegroundFeedback extends StatelessWidget {
     return TweenAnimationBuilder<double>(
       tween: Tween(end: scale),
       duration: duration,
-      curve: isWindows ? Curves.easeOutQuad : Curves.easeOutCubic,
+      curve: isWindows
+          ? Curves.easeOutQuad
+          : (scale == 1.0 ? kAppSpringBackCurve : Curves.easeOutCubic),
       child: Opacity(opacity: opacity, child: tintedChild),
       // Paint the glyph directly so glass toolbars can composite it while scaled.
       builder: (context, value, child) =>
@@ -782,7 +784,10 @@ Widget appNoPointerInkTheme({
     splashFactory:
         androidPressHighlight &&
             Theme.of(context).platform == TargetPlatform.android
-        ? AppTapHighlightFactory.forPlatform(TargetPlatform.android)
+        ? AppTapHighlightFactory.forPlatform(
+            TargetPlatform.android,
+            animateRipple: false,
+          )
         : NoSplash.splashFactory,
   ),
   child: child,
@@ -920,7 +925,11 @@ class AppSurfaceButtonShell extends StatelessWidget {
         return TweenAnimationBuilder<double>(
           tween: Tween(end: feedback.scale),
           duration: feedback.duration,
-          curve: Curves.easeOutQuad,
+          curve: Theme.of(context).platform == TargetPlatform.windows
+              ? Curves.easeOutQuad
+              : (feedback.scale == 1.0
+                    ? kAppSpringBackCurve
+                    : Curves.easeOutCubic),
           child: builder(context, feedback),
           builder: (context, scale, child) => Transform.scale(
             scale: scale,
@@ -990,6 +999,9 @@ class AppLabelledButton extends StatelessWidget {
       colorScheme: cs,
       platform: theme.platform,
       defaultBackgroundColor: defaultBg,
+      animationDuration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 90),
     );
     return AppSurfaceButtonShell(
       enabled: onPressed != null,
@@ -1050,7 +1062,10 @@ class AppOverlayIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isWindows = theme.platform == TargetPlatform.windows;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final size = Size.square(buttonSize);
     return IconButton(
       key: buttonKey,
@@ -1065,19 +1080,32 @@ class AppOverlayIconButton extends StatelessWidget {
           visualDensity: VisualDensity.standard,
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           iconSize: 32,
-          backgroundColor: Colors.transparent,
-          shape: const RoundedRectangleBorder(),
+          shape: const CircleBorder(),
         ).copyWith(
+          animationDuration: reduceMotion
+              ? Duration.zero
+              : const Duration(milliseconds: 90),
+          backgroundColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.disabled)) {
+              return Colors.transparent;
+            }
+            if (states.contains(WidgetState.pressed)) {
+              return Colors.black.withValues(alpha: 0.48);
+            }
+            if (isWindows && states.contains(WidgetState.hovered)) {
+              return Colors.black.withValues(alpha: 0.32);
+            }
+            return Colors.transparent;
+          }),
           foregroundColor: WidgetStateProperty.resolveWith((states) {
             if (states.contains(WidgetState.disabled)) {
               return colors.onSurface.withValues(alpha: 0.38);
             }
-            if (states.contains(WidgetState.focused)) {
-              return colors.primary;
-            }
             return foregroundColor;
           }),
         ),
+        null,
+        false,
       ),
       icon: IconTheme.merge(
         data: const IconThemeData(shadows: iconShadows),
@@ -1117,6 +1145,9 @@ class AppPillButton extends StatelessWidget {
       defaultBackgroundColor: _outlined
           ? Colors.transparent
           : theme.colorScheme.primary,
+      animationDuration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 90),
     );
     return AppSurfaceButtonShell(
       enabled: onPressed != null,

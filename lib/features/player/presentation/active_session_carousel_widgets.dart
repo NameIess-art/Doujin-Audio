@@ -10,6 +10,7 @@ class _ActiveSessionCard extends ConsumerWidget {
     this.compact = false,
     this.embedded = false,
     this.expandedDockWidth,
+    this.retainDockPages = false,
     this.dockCollapsed = false,
     this.circularCover = false,
     this.isPlaybackRaised = false,
@@ -24,6 +25,7 @@ class _ActiveSessionCard extends ConsumerWidget {
   final bool compact;
   final bool embedded;
   final double? expandedDockWidth;
+  final bool retainDockPages;
   final bool dockCollapsed;
   final bool circularCover;
   final bool isPlaybackRaised;
@@ -131,24 +133,11 @@ class _ActiveSessionCard extends ConsumerWidget {
               )
             : null,
         excludeFromSemantics: true,
+        // The home dock's ink follows its capsule, while the raised routed
+        // dock has its own clipped surface.
         customBorder: embedded
-            ? (isPlaybackRaised
-                  ? const RoundedRectangleBorder(
-                      borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(
-                          LibraryLikeCardMetrics.cardRadius,
-                        ),
-                        bottomLeft: Radius.circular(
-                          LibraryLikeCardMetrics.cardRadius,
-                        ),
-                        topRight: Radius.circular(
-                          kActiveSessionCarouselDockHeight / 2,
-                        ),
-                        bottomRight: Radius.circular(
-                          kActiveSessionCarouselDockHeight / 2,
-                        ),
-                      ),
-                    )
+            ? (isRoutedDock && isPlaybackRaised
+                  ? RoundedRectangleBorder(borderRadius: cardBorderRadius)
                   : const StadiumBorder())
             : null,
         borderRadius: embedded ? null : BorderRadius.circular(cardRadius),
@@ -324,7 +313,7 @@ class _ActiveSessionCard extends ConsumerWidget {
       );
     }
 
-    return Padding(
+    final content = Padding(
       padding: contentPadding,
       child: Row(
         children: [
@@ -397,6 +386,22 @@ class _ActiveSessionCard extends ConsumerWidget {
           ),
         ],
       ),
+    );
+    if (!retainDockPages) return content;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // The capsule clips the controls as it narrows. Give the same
+        // mounted content enough room for the cover and play button.
+        final width = constraints.maxWidth < _expandedDockThreshold
+            ? _expandedDockThreshold
+            : constraints.maxWidth;
+        return OverflowBox(
+          alignment: Alignment.centerLeft,
+          minWidth: width,
+          maxWidth: width,
+          child: content,
+        );
+      },
     );
   }
 }

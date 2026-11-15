@@ -375,7 +375,7 @@ void main() {
           .color
           .a,
       closeTo(
-        kAppFadeCurve.transform(0.5) *
+        kSecondaryOverlayConfig.curve.transform(0.5) *
             kSecondaryOverlayConfig.backgroundOpacity,
         0.001,
       ),
@@ -498,7 +498,7 @@ void main() {
     expect(
       beforeClose,
       closeTo(
-        kAppFadeCurve.transform(110 / 200) *
+        kSecondaryOverlayConfig.curve.transform(110 / 200) *
             kSecondaryOverlayConfig.backgroundOpacity,
         0.001,
       ),
@@ -654,7 +654,7 @@ void main() {
         .color
         .a;
     await tester.pump(const Duration(milliseconds: 100));
-    final middleOpacity = Curves.easeInOutCubic.transform(0.5);
+    final middleOpacity = kSecondaryOverlayConfig.curve.transform(0.5);
     expect(panelOpacity(), closeTo(middleOpacity, 0.001));
     expect(
       scrimOpacity(),

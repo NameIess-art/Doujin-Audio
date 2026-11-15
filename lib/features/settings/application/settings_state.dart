@@ -12,11 +12,9 @@ export '../../../core/media/cover_image_resolution.dart';
 export '../../library/domain/library_node.dart'
     show LibrarySortCriterion, WorkNameDisplay;
 
-enum StartupPage { asmrOne, library, playlist, my }
+enum StartupPage { asmrOne, library, playlist, my, settings }
 
 enum ListeningChartStyle { bar, heatmap }
-
-enum MySettingsPageMode { settings, my }
 
 enum AudioDeviceDisconnectBehavior { pause, continuePlayback }
 
@@ -61,9 +59,9 @@ class SettingsState {
     this.hapticFeedbackEnabled = true,
     this.showLocalLibrary = true,
     this.showAsmrOne = true,
+    this.showMyPage = true,
     this.workNameDisplay = WorkNameDisplay.workTitle,
     this.listeningChartStyle = ListeningChartStyle.bar,
-    this.mySettingsPageMode = MySettingsPageMode.settings,
     this.startupPage = StartupPage.library,
     this.coverImageResolution = CoverImageResolution.balanced,
     this.preferEmbeddedCover = false,
@@ -113,9 +111,9 @@ class SettingsState {
   final bool hapticFeedbackEnabled;
   final bool showLocalLibrary;
   final bool showAsmrOne;
+  final bool showMyPage;
   final WorkNameDisplay workNameDisplay;
   final ListeningChartStyle listeningChartStyle;
-  final MySettingsPageMode mySettingsPageMode;
   final StartupPage startupPage;
   final CoverImageResolution coverImageResolution;
   final bool preferEmbeddedCover;
@@ -159,9 +157,9 @@ class SettingsState {
         other.hapticFeedbackEnabled == hapticFeedbackEnabled &&
         other.showLocalLibrary == showLocalLibrary &&
         other.showAsmrOne == showAsmrOne &&
+        other.showMyPage == showMyPage &&
         other.workNameDisplay == workNameDisplay &&
         other.listeningChartStyle == listeningChartStyle &&
-        other.mySettingsPageMode == mySettingsPageMode &&
         other.startupPage == startupPage &&
         other.coverImageResolution == coverImageResolution &&
         other.preferEmbeddedCover == preferEmbeddedCover &&
@@ -209,9 +207,9 @@ class SettingsState {
     hapticFeedbackEnabled,
     showLocalLibrary,
     showAsmrOne,
+    showMyPage,
     workNameDisplay,
     listeningChartStyle,
-    mySettingsPageMode,
     startupPage,
     coverImageResolution,
     preferEmbeddedCover,

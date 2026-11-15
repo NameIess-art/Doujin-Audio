@@ -81,111 +81,62 @@ void main() {
     },
   );
 
-  test('merged page mode is persisted and restored on restart', () async {
-    expect(
-      settings.slice.state.mySettingsPageMode,
-      MySettingsPageMode.settings,
-    );
-    expect(settings.startupPage, StartupPage.library);
-    await settings.setMySettingsPageMode(MySettingsPageMode.my);
-    expect(settings.slice.state.mySettingsPageMode, MySettingsPageMode.my);
-    expect(preferences.writes.single['mySettingsPageMode'], 'my');
+  for (final (storedMode, expected) in [
+    ('my', StartupPage.my),
+    ('settings', StartupPage.settings),
+    (null, StartupPage.my),
+  ]) {
+    test('legacy startup mode $storedMode resolves to $expected', () async {
+      await AppPreferences.writeJson('playback_settings_v1', {
+        'mySettingsPageMode': ?storedMode,
+        'startupPage': 'my',
+      });
+      await settings.loadPersistedState(enforceCacheLimit: false);
+      expect(settings.slice.state.startupPage, expected);
+      expect(settings.slice.state.showMyPage, isTrue);
 
-    final restarted = SettingsRepository();
-    addTearDown(restarted.dispose);
-    await restarted.loadPersistedState(enforceCacheLimit: false);
-    expect(restarted.slice.state.mySettingsPageMode, MySettingsPageMode.my);
-    expect(restarted.slice.state.isInitialized, isTrue);
-    await restarted.setMySettingsPageMode(MySettingsPageMode.my);
-    expect(preferences.writes, hasLength(1));
-  });
+      await settings.setAllowVideoPlayback(false);
+      expect(preferences.writes.last['startupPage'], expected.name);
+      expect(preferences.writes.last, isNot(contains('mySettingsPageMode')));
 
-  for (final stored in <Object?>[null, 'unknown', 2]) {
-    test(
-      'legacy or unknown merged page mode $stored defaults to settings',
-      () async {
-        await AppPreferences.writeJson('playback_settings_v1', {
-          'mySettingsPageMode': ?stored,
-          'startupPage': 'my',
-        });
-        settings.mySettingsPageMode = MySettingsPageMode.my;
-        await settings.loadPersistedState(enforceCacheLimit: false);
-        expect(settings.mySettingsPageMode, MySettingsPageMode.settings);
-        expect(
-          settings.slice.state.mySettingsPageMode,
-          MySettingsPageMode.settings,
-        );
-        expect(settings.startupPage, StartupPage.my);
-      },
-    );
+      final restarted = SettingsRepository();
+      addTearDown(restarted.dispose);
+      await restarted.loadPersistedState(enforceCacheLimit: false);
+      expect(restarted.slice.state.startupPage, expected);
+    });
   }
 
   test(
-    'merged page mode follows preference backup restore and reset',
+    'My page visibility and startup fallback persist across restart',
     () async {
-      await settings.setMySettingsPageMode(MySettingsPageMode.my);
-      final backup = await AppPreferences.snapshot();
-      await settings.setMySettingsPageMode(MySettingsPageMode.settings);
-      await AppPreferences.replaceSnapshot(backup);
-      await settings.loadPersistedState(enforceCacheLimit: false);
-      expect(settings.slice.state.mySettingsPageMode, MySettingsPageMode.my);
+      await settings.setStartupPage(StartupPage.my);
+      await settings.setShowMyPage(false);
+      await settings.setStartupPage(StartupPage.my);
+      expect(settings.slice.state.showMyPage, isFalse);
+      expect(settings.slice.state.startupPage, StartupPage.playlist);
+      expect(preferences.writes.last['showMyPage'], isFalse);
+      expect(preferences.writes.last['startupPage'], 'playlist');
 
-      await settings.resetPersistedState();
-      expect(settings.mySettingsPageMode, MySettingsPageMode.settings);
-      expect(
-        settings.slice.state.mySettingsPageMode,
-        MySettingsPageMode.settings,
-      );
-      await AppPreferences.replaceSnapshot({});
-      await settings.loadPersistedState(enforceCacheLimit: false);
-      expect(
-        settings.slice.state.mySettingsPageMode,
-        MySettingsPageMode.settings,
-      );
+      final restarted = SettingsRepository();
+      addTearDown(restarted.dispose);
+      await restarted.loadPersistedState(enforceCacheLimit: false);
+      expect(restarted.slice.state.showMyPage, isFalse);
+      expect(restarted.slice.state.startupPage, StartupPage.playlist);
+      await restarted.resetPersistedState();
+      expect(restarted.slice.state.showMyPage, isTrue);
     },
   );
 
   test(
-    'failed merged page mode save retains the last committed mode',
+    'failed My page visibility change keeps the original startup page',
     () async {
-      await settings.setMySettingsPageMode(MySettingsPageMode.my);
-      final original = settings.slice.state;
+      await settings.setStartupPage(StartupPage.my);
       preferences.beforeSave = () async => false;
-      await expectLater(
-        settings.setMySettingsPageMode(MySettingsPageMode.settings),
-        throwsStateError,
-      );
-      expect(settings.mySettingsPageMode, MySettingsPageMode.my);
-      expect(settings.slice.state, original);
-      preferences.beforeSave = null;
-      await settings.setAllowVideoPlayback(false);
-      expect(preferences.writes.last['mySettingsPageMode'], 'my');
+      await expectLater(settings.setShowMyPage(false), throwsStateError);
+      expect(settings.showMyPage, isTrue);
+      expect(settings.startupPage, StartupPage.my);
     },
   );
-
-  test('merged page mode changes publish only after serial saves', () async {
-    final blocked = Completer<bool>();
-    preferences.beforeSave = () => preferences.writes.length == 1
-        ? blocked.future
-        : Future<bool>.value(true);
-    final first = settings.setMySettingsPageMode(MySettingsPageMode.my);
-    final second = settings.setMySettingsPageMode(MySettingsPageMode.settings);
-    final last = settings.setMySettingsPageMode(MySettingsPageMode.my);
-    await Future<void>.delayed(Duration.zero);
-    expect(preferences.writes, hasLength(1));
-    expect(
-      settings.slice.state.mySettingsPageMode,
-      MySettingsPageMode.settings,
-    );
-    blocked.complete(true);
-    await Future.wait([first, second, last]);
-    expect(preferences.writes.map((write) => write['mySettingsPageMode']), [
-      'my',
-      'settings',
-      'my',
-    ]);
-    expect(settings.slice.state.mySettingsPageMode, MySettingsPageMode.my);
-  });
 
   test('listening chart style is persisted and restored on restart', () async {
     expect(settings.slice.state.listeningChartStyle, ListeningChartStyle.bar);

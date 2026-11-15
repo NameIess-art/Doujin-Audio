@@ -217,7 +217,7 @@ class _WheelScrollSimulation extends Simulation {
   _WheelScrollSimulation(this._from, this.target);
 
   static const _seconds = 0.2;
-  static const _startingSlope = 1.25;
+  static const _startingSlope = 1.35;
   double _from;
   double target;
   double _initialSlope = _startingSlope;

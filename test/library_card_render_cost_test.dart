@@ -94,21 +94,18 @@ void main() {
         final center = tester.getCenter(action);
         await mouse.moveTo(center);
         await tester.pump();
-        var previousScale = 1.0;
         for (var frame = 0; frame < 6; frame++) {
           await tester.pump(const Duration(milliseconds: 15));
-          final scale = scaleOf(tester, activeIcon);
-          expect(scale, inInclusiveRange(previousScale, 1.16));
-          previousScale = scale;
+          expect(scaleOf(tester, activeIcon), 1.0);
           if (frame == 2) {
             hoverColor.value = hoverColor.value == Colors.black26
                 ? Colors.black12
                 : Colors.black26;
             await tester.pump();
-            expect(scaleOf(tester, activeIcon), scale);
+            expect(scaleOf(tester, activeIcon), 1.0);
           }
         }
-        expect(scaleOf(tester, activeIcon), 1.16);
+        expect(scaleOf(tester, activeIcon), 1.0);
         expect(scaleOf(tester, otherIcon), 1.0);
         expect(iconColor(activeIcon), cs.primary);
         expect(iconColor(otherIcon), cs.onSurfaceVariant);
@@ -122,16 +119,13 @@ void main() {
         await mouse.up();
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 90));
-        expect(scaleOf(tester, activeIcon), 1.16);
+        expect(scaleOf(tester, activeIcon), 1.0);
       }
       await mouse.moveTo(Offset.zero);
       await tester.pump();
-      var previousScale = 1.16;
       for (var frame = 0; frame < 8; frame++) {
         await tester.pump(const Duration(milliseconds: 15));
-        final scale = scaleOf(tester, Icons.play_arrow_rounded);
-        expect(scale, inInclusiveRange(1.0, previousScale));
-        previousScale = scale;
+        expect(scaleOf(tester, Icons.play_arrow_rounded), 1.0);
       }
       expect(scaleOf(tester, Icons.add_circle_rounded), 1.0);
       expect(scaleOf(tester, Icons.play_arrow_rounded), 1.0);

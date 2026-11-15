@@ -193,74 +193,28 @@ void main() {
     },
   );
 
-  test(
-    'landscape keeps separate My and settings entries in all visibility combinations',
-    () {
-      for (final local in [false, true]) {
-        for (final remote in [false, true]) {
-          for (final mode in MySettingsPageMode.values) {
-            final destinations = resolveMainDestinations(
-              showLocalLibrary: local,
-              showAsmrOne: remote,
-              mySettingsPageMode: mode,
-              splitMySettings: true,
-            );
-            expect(
-              destinations
-                  .sublist(destinations.length - 3)
-                  .map((item) => item.type),
-              [
-                MainDestinationType.playlist,
-                MainDestinationType.my,
-                MainDestinationType.settings,
-              ],
-            );
-            expect(
-              destinations[destinations.length - 2].navigationKey,
-              'nav_my',
-            );
-            expect(destinations.last.navigationKey, 'nav_settings');
-            expect(destinations.last.selectedIcon, Icons.settings_rounded);
-          }
-        }
+  test('My and settings always follow the playlist in navigation', () {
+    for (final local in [false, true]) {
+      for (final remote in [false, true]) {
+        final destinations = resolveMainDestinations(
+          showLocalLibrary: local,
+          showAsmrOne: remote,
+        );
+        expect(destinations.length, 3 + (local ? 1 : 0) + (remote ? 1 : 0));
+        expect(
+          destinations.skip(destinations.length - 3).map((item) => item.type),
+          [
+            MainDestinationType.playlist,
+            MainDestinationType.my,
+            MainDestinationType.settings,
+          ],
+        );
+        expect(destinations[destinations.length - 2].labelKey, 'nav_my');
+        expect(destinations.last.labelKey, 'nav_settings');
+        expect(destinations.last.selectedIcon, Icons.settings_rounded);
       }
-    },
-  );
-
-  test(
-    'merged My and settings is permanent after playlist in all visibility combinations',
-    () {
-      for (final local in [false, true]) {
-        for (final remote in [false, true]) {
-          for (final mode in MySettingsPageMode.values) {
-            final destinations = resolveMainDestinations(
-              showLocalLibrary: local,
-              showAsmrOne: remote,
-              mySettingsPageMode: mode,
-            );
-            expect(destinations.length, 2 + (local ? 1 : 0) + (remote ? 1 : 0));
-            expect(
-              destinations
-                  .map((e) => e.type)
-                  .toList()
-                  .sublist(destinations.length - 2),
-              [MainDestinationType.playlist, MainDestinationType.settings],
-            );
-            expect(
-              destinations.last.labelKey,
-              mode == MySettingsPageMode.my ? 'nav_my' : 'nav_settings',
-            );
-            expect(
-              destinations.last.selectedIcon,
-              mode == MySettingsPageMode.my
-                  ? Icons.person_rounded
-                  : Icons.settings_rounded,
-            );
-          }
-        }
-      }
-    },
-  );
+    }
+  });
 
   test('daily columns fill missing dates without inferring listening', () {
     final periods = aggregateListeningPeriods(

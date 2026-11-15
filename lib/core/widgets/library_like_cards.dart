@@ -204,18 +204,21 @@ class LibraryLikeInfoLineData {
     this.text, {
     required this.icon,
     this.isSecondary = false,
+    this.trailingText = '',
   });
 
   final String label;
   final String text;
   final IconData icon;
   final bool isSecondary;
+  final String trailingText;
 }
 
 class LibraryLikeInfoMetadata {
   const LibraryLikeInfoMetadata({
     this.voiceActors = const <String>[],
     this.circleName = '',
+    this.workCode = '',
     this.tags = const <String>[],
     this.releaseDate,
     this.rating,
@@ -223,6 +226,7 @@ class LibraryLikeInfoMetadata {
 
   final List<String> voiceActors;
   final String circleName;
+  final String workCode;
   final List<String> tags;
   final DateTime? releaseDate;
   final double? rating;
@@ -249,12 +253,14 @@ List<LibraryLikeInfoLineData> buildLibraryLikeInfoLines({
     );
   }
   final circle = metadata.circleName.trim();
-  if (circle.isNotEmpty) {
+  final workCode = metadata.workCode.trim();
+  if (circle.isNotEmpty || workCode.isNotEmpty) {
     result.add(
       LibraryLikeInfoLineData(
         circleLabel,
         circle,
         icon: Icons.storefront_outlined,
+        trailingText: workCode,
       ),
     );
   }
@@ -429,6 +435,7 @@ class _LibraryLikeCardInfo extends StatelessWidget {
             label: line.label,
             icon: line.icon,
             text: line.text,
+            trailingText: line.trailingText,
             style: infoStyle,
             loading: false,
             accentColor: accentColor,
@@ -853,24 +860,25 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
       texts: [parts.source, if (!loading) ...metadata.tags],
       builder: (context, translate, _) => LibraryLikeWorkCardContent(
         title: '${translate(parts.source)}${parts.suffix}',
-        lines: loading
-            ? const <LibraryLikeInfoLineData>[]
-            : buildLibraryLikeInfoLines(
-                metadata: LibraryLikeInfoMetadata(
+        lines: buildLibraryLikeInfoLines(
+          metadata: loading
+              ? LibraryLikeInfoMetadata(workCode: metadata.workCode)
+              : LibraryLikeInfoMetadata(
                   voiceActors: metadata.voiceActors,
                   circleName: metadata.circleName,
+                  workCode: metadata.workCode,
                   tags: metadata.tags.map(translate).toList(),
                   releaseDate: metadata.releaseDate,
                   rating: metadata.rating,
                 ),
-                voiceActorLabel: voiceActorLabel,
-                circleLabel: circleLabel,
-                tagsLabel: tagsLabel,
-                releaseDateLabel: releaseDateLabel,
-                ratingLabel: ratingLabel,
-                listSeparator: listSeparator,
-                tagSeparator: tagSeparator,
-              ),
+          voiceActorLabel: voiceActorLabel,
+          circleLabel: circleLabel,
+          tagsLabel: tagsLabel,
+          releaseDateLabel: releaseDateLabel,
+          ratingLabel: ratingLabel,
+          listSeparator: listSeparator,
+          tagSeparator: tagSeparator,
+        ),
         coverBuilder: coverBuilder,
         accentColor: accentColor,
         trailingActions: trailingActions,
@@ -927,6 +935,7 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
     this.lines = 1,
     this.accentColor,
     this.enableMarquee = true,
+    this.trailingText = '',
   });
 
   final String label;
@@ -937,11 +946,13 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
   final int lines;
   final Color? accentColor;
   final bool enableMarquee;
+  final String trailingText;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final lineCount = lines.clamp(1, _maxLines);
+    final hasRjPrefix = trailingText.toUpperCase().startsWith('RJ');
     final fixedStyle = _libraryLikeFixedLineStyle(
       icon == Icons.local_offer_rounded
           ? style.copyWith(
@@ -974,18 +985,40 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: 11,
-          height: _libraryLikeInfoLineHeight,
-          child: Tooltip(
-            message: label,
-            child: Center(
-              child: Icon(icon, size: 11, color: accentColor ?? cs.primary),
+        if (text.isNotEmpty || trailingText.isEmpty || loading) ...[
+          SizedBox(
+            width: 11,
+            height: _libraryLikeInfoLineHeight,
+            child: Tooltip(
+              message: label,
+              child: Center(
+                child: Icon(icon, size: 11, color: accentColor ?? cs.primary),
+              ),
             ),
           ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(child: buildValue(text)),
+          const SizedBox(width: 8),
+          Expanded(flex: 2, child: buildValue(text)),
+        ],
+        if (!loading && trailingText.isNotEmpty) ...[
+          if (text.isNotEmpty) const SizedBox(width: 8),
+          Expanded(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.topRight,
+              child: SearchHighlightedText(
+                text: trailingText,
+                terms: hasRjPrefix
+                    ? ['RJ', ...SearchHighlightScope.termsOf(context)]
+                    : null,
+                showBackground: !hasRjPrefix,
+                maxLines: 1,
+                softWrap: false,
+                style: fixedStyle.copyWith(color: cs.onSurfaceVariant),
+                strutStyle: _libraryLikeFixedLineStrut(fixedStyle),
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }

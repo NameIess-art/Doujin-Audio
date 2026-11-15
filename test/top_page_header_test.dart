@@ -437,7 +437,7 @@ void main() {
         ),
       ),
     );
-    expect(find.byType(AppGlassSurface), findsNWidgets(3));
+    expect(find.byType(AppGlassSurface), findsNWidgets(2));
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('body-capsule')),
@@ -446,15 +446,11 @@ void main() {
       findsNothing,
     );
     expect(
-      tester
-          .widget<BackdropFilter>(
-            find.descendant(
-              of: find.byKey(const ValueKey('transparent-header')),
-              matching: find.byType(BackdropFilter),
-            ),
-          )
-          .enabled,
-      isFalse,
+      find.descendant(
+        of: find.byKey(const ValueKey('transparent-header')),
+        matching: find.byType(BackdropFilter),
+      ),
+      findsNothing,
     );
     expect(
       tester

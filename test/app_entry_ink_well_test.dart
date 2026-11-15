@@ -67,9 +67,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 120));
       expect(visibleInk(), isNotEmpty);
       await gesture.up();
-      expect(visibleInk().where((ink) => ink is! InkHighlight), isEmpty);
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 100));
+      expect(visibleInk(), isNotEmpty);
+      await tester.pump(const Duration(milliseconds: 180));
       expect(visibleInk(), isEmpty);
       await tester.pumpAndSettle();
 
@@ -135,16 +135,15 @@ void main() {
       final held = await tester.startGesture(tester.getCenter(entry));
       await tester.pump(kLongPressTimeout + const Duration(milliseconds: 1));
       expect(longPresses, 1);
+      await tester.pump(const Duration(milliseconds: 160));
       expect(splashes(), isEmpty);
       await held.up();
       expect(taps, 0);
       await tester.tap(entry);
       expect(taps, 1);
-      if (platform == TargetPlatform.android) {
-        await tester.pump();
-        expect(splashes(), hasLength(1));
-        await tester.pump(const Duration(milliseconds: 60));
-      }
+      await tester.pump();
+      expect(splashes(), hasLength(1));
+      await tester.pump(const Duration(milliseconds: 180));
       expect(splashes(), isEmpty);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
@@ -194,5 +193,80 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
     expect(taps, 0);
+  });
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets('quick tap fades smoothly after release on $platform', (
+      tester,
+    ) async {
+      const entryKey = ValueKey('quick-tap-entry');
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(platform: platform),
+          home: Scaffold(
+            body: Center(
+              child: Material(
+                child: AppEntryInkWell(
+                  key: entryKey,
+                  onTap: () {},
+                  child: const SizedBox(width: 160, height: 48),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final dynamic ink = Material.of(tester.element(find.byKey(entryKey)));
+      Iterable<InteractiveInkFeature> visibleInk() =>
+          ((ink.debugInkFeatures as List<InkFeature>?) ?? [])
+              .whereType<InteractiveInkFeature>()
+              .where((feature) => feature.color.a > 0);
+
+      await tester.tap(find.byKey(entryKey));
+      await tester.pump(const Duration(milliseconds: 24));
+      expect(visibleInk(), isNotEmpty);
+
+      await tester.pump(const Duration(milliseconds: 220));
+      expect(visibleInk(), isEmpty);
+    });
+  }
+
+  testWidgets('honors MediaQuery disableAnimations for entry tap feedback', (
+    tester,
+  ) async {
+    const entryKey = ValueKey('reduced-motion-entry');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: Scaffold(
+            body: Center(
+              child: Material(
+                child: AppEntryInkWell(
+                  key: entryKey,
+                  onTap: () {},
+                  child: const SizedBox(width: 160, height: 48),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final dynamic ink = Material.of(tester.element(find.byKey(entryKey)));
+    Iterable<InteractiveInkFeature> visibleInk() =>
+        ((ink.debugInkFeatures as List<InkFeature>?) ?? [])
+            .whereType<InteractiveInkFeature>()
+            .where((feature) => feature.color.a > 0);
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byKey(entryKey)),
+    );
+    await tester.pump();
+    expect(visibleInk(), isNotEmpty);
+
+    await gesture.up();
+    await tester.pump();
+    expect(visibleInk(), isEmpty);
   });
 }

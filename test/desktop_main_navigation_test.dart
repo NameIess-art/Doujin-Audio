@@ -399,11 +399,11 @@ void main() {
           SystemMouseCursors.click,
         );
         expect(labelColor(), windows ? primary : idleLabelColor);
-        expect(labelScale(), windows ? 1.14 : 1.0);
+        expect(labelScale(), 1.0);
         expect(tester.getRect(labelFinder), labelRect);
         expect(activePage.value, 0);
         expect(await capsulePixels(), idlePixels);
-        expect(iconScale(), platform == TargetPlatform.windows ? 1.16 : 1.0);
+        expect(iconScale(), 1.0);
         await mouse.down(
           tester.getCenter(find.byWidget(rail.destinations[1].label)),
         );
@@ -418,9 +418,9 @@ void main() {
         await mouse.moveTo(center);
         await tester.pumpAndSettle();
         expect(labelColor(), windows ? primary : idleLabelColor);
-        expect(labelScale(), windows ? 1.14 : 1.0);
+        expect(labelScale(), 1.0);
         expect(await capsulePixels(), idlePixels);
-        expect(iconScale(), platform == TargetPlatform.windows ? 1.16 : 1.0);
+        expect(iconScale(), 1.0);
         await mouse.down(center);
         await tester.pumpAndSettle();
         expect(await capsulePixels(), idlePixels);
@@ -428,11 +428,12 @@ void main() {
         await mouse.cancel();
         await tester.pumpAndSettle();
         await mouse.moveTo(center + const Offset(25, 0));
-        await tester.pump();
+        await tester.pumpAndSettle();
         expect(
           RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
           SystemMouseCursors.basic,
         );
+        expect(labelColor(), idleLabelColor);
         await mouse.removePointer();
         await tester.pumpAndSettle();
         expect(await capsulePixels(), idlePixels);
@@ -460,7 +461,7 @@ void main() {
             .map(
               (destination) => find.byKey(
                 ValueKey<String>(
-                  'main_destination_${destination.navigationKey}',
+                  'main_destination_${destination.labelKey}',
                 ),
               ),
             )

@@ -107,9 +107,8 @@ const Map<String, String> appLanguageEn = {
   'my_duration': '{hours} h {minutes} min {seconds} s',
   'my_load_more': 'Load more',
   'my_retry': 'Retry',
-  'startup_page_my': 'My / Settings',
-  'switch_to_my': 'Switch to My',
-  'switch_to_settings': 'Switch to Settings',
+  'startup_page_my': 'My',
+  'startup_page_settings': 'Settings',
 
   'open_containing_folder': 'Show in folder',
   'keyboard_shortcuts_title': 'Keyboard shortcuts',

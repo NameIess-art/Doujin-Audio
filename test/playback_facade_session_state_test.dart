@@ -2870,12 +2870,11 @@ void main() {
   });
 
   test(
-    'queue reorder publishes its new order before native synchronization',
+    'queue reorder publishes immediately and persists order with playback index',
     () async {
       final database = _RecordingTestPersistenceRepository();
       final library = LibraryFacade.create(databaseRepository: database);
-      final playback = PlaybackFacade.create(databaseRepository: database)
-        ..configurePersistence(enabled: false);
+      final playback = PlaybackFacade.create(databaseRepository: database);
       final first = MusicTrack(
         path: '/tracks/first.mp3',
         displayName: 'First',
@@ -2893,6 +2892,8 @@ void main() {
         isSingle: true,
       );
       final session = _session('queue-reorder')
+        ..currentTrackPath = first.path
+        ..currentQueueIndex = 0
         ..playbackQueue = PlaybackQueueDefinition(
           name: 'Queue',
           entries: <PlaybackQueueEntry>[
@@ -2907,6 +2908,12 @@ void main() {
               kind: PlaybackQueueEntryKind.track,
               title: second.displayName,
               tracks: <MusicTrack>[second],
+            ),
+            PlaybackQueueEntry(
+              id: 'third',
+              kind: PlaybackQueueEntryKind.track,
+              title: first.displayName,
+              tracks: <MusicTrack>[first],
             ),
           ],
         );
@@ -2925,10 +2932,13 @@ void main() {
           onSessionStateChanged: () => stateChanges++,
         )
         ..attachPlaybackQueueSynchronizer((_, {selectFirst = false}) async {
-          synchronizationStarted.complete();
+          if (!synchronizationStarted.isCompleted) {
+            synchronizationStarted.complete();
+          }
           await synchronizationFinished.future;
         })
         ..registerSession(session);
+      await playback.flushSessionStatePersistence(sessionId: session.id);
 
       final reorder = playback.reorderPlaybackQueueEntry(session.id, 0, 2);
       await synchronizationStarted.future;
@@ -2936,11 +2946,21 @@ void main() {
       expect(session.playbackQueue?.entries.map((entry) => entry.id), <String>[
         'second',
         'first',
+        'third',
       ]);
       expect(stateChanges, 1);
 
       synchronizationFinished.complete();
       await reorder;
+      await playback.flushSessionStatePersistence(sessionId: session.id);
+      expect(database.lastQueueEntryPositions, {'second': 0, 'first': 1});
+      expect(database.sessionUpsertOptions.last.includeQueue, isFalse);
+      expect(database.lastPlaybackState?.currentQueueIndex, 1);
+
+      await playback.addTrackToPlaybackQueue(session.id, first);
+      await playback.flushSessionStatePersistence(sessionId: session.id);
+      expect(database.lastQueueEntryPositions, isNull);
+      expect(database.sessionUpsertOptions.last.includeQueue, isTrue);
     },
   );
 
@@ -2952,6 +2972,7 @@ final class _RecordingTestPersistenceRepository
   final sessionUpserts = <String>[];
   final deletedSessionIds = <String>[];
   final sessionUpsertOptions = <({bool includeQueue, bool includeEffects})>[];
+  Map<String, int>? lastQueueEntryPositions;
   int sessionStateUpserts = 0;
   int trackUpserts = 0;
   int orderSaves = 0;
@@ -2963,6 +2984,7 @@ final class _RecordingTestPersistenceRepository
     PersistedPlaybackSession session, {
     bool includeQueue = true,
     bool includeEffects = true,
+    Map<String, int>? queueEntryPositions,
   }) async {
     sessionUpserts.add(session.id);
     sessionUpsertOptions.add((
@@ -2970,6 +2992,7 @@ final class _RecordingTestPersistenceRepository
       includeEffects: includeEffects,
     ));
     lastPlaybackState = session;
+    lastQueueEntryPositions = queueEntryPositions;
   }
 
   @override
@@ -2996,11 +3019,6 @@ final class _RecordingTestPersistenceRepository
     orderSaves++;
   }
 
-  @override
-  Future<void> updatePlaybackQueueEntryOrder(
-    String sessionId,
-    List<String> entryIds,
-  ) async {}
 }
 
 LibraryFacade _createLibraryFacade() {

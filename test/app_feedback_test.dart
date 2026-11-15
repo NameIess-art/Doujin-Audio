@@ -748,7 +748,9 @@ void main() {
     },
   );
 
-  testWidgets('top feedback fades without moving its surface', (tester) async {
+  testWidgets('top feedback slides and fades into its settled surface bounds', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _feedbackApp(
         barGlassEnabled: true,
@@ -778,13 +780,21 @@ void main() {
       findsOneWidget,
     );
     expect(
+      find.ancestor(of: surface, matching: find.byType(SlideTransition)),
+      findsAtLeastNWidgets(1),
+    );
+    expect(
       find.descendant(of: surface, matching: find.byType(BackdropFilter)),
       findsOneWidget,
     );
 
-    final initialTopLeft = tester.getTopLeft(surface);
-    await tester.pump(const Duration(milliseconds: 110));
-    expect(tester.getTopLeft(surface), initialTopLeft);
+    final entranceTopLeft = tester.getTopLeft(surface);
+    final entranceCenter = tester.getCenter(surface);
+    await tester.pumpAndSettle();
+    final settledTopLeft = tester.getTopLeft(surface);
+    final settledCenter = tester.getCenter(surface);
+    expect(entranceTopLeft.dy, lessThan(settledTopLeft.dy));
+    expect(settledCenter.dx, closeTo(entranceCenter.dx, 1.0));
   });
 
   testWidgets(

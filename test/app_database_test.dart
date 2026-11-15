@@ -2828,7 +2828,7 @@ void main() {
   });
 
   test(
-    'updatePlaybackQueueEntryOrder only changes queue entry order',
+    'queue reorder stores entry order and playback index together',
     () async {
       final firstTrack = MusicTrack(
         path: '/library/work/01.mp3',
@@ -2879,21 +2879,31 @@ void main() {
         ),
       ]);
 
-      await repository.updatePlaybackQueueEntryOrder('queue_1', [
-        'entry_2',
-        'entry_1',
-      ]);
-
-      final loaded = (await repository.loadAllSessions()).single;
-      expect(loaded.playbackQueue?.entries.map((entry) => entry.id), [
-        'entry_2',
-        'entry_1',
-      ]);
-      expect(
-        loaded.playbackQueue?.entries.first.tracks.single.path,
-        secondTrack.path,
+      await repository.upsertSession(
+        PersistedPlaybackSession(
+          id: 'queue_1',
+          trackPath: firstTrack.path,
+          loopModeIndex: 1,
+          volume: 1,
+          positionMs: 1200,
+          durationMs: 0,
+          customQueueTracks: null,
+          currentQueueIndex: 1,
+          channelSwapEnabled: false,
+          sortOrder: 0,
+        ),
+        includeQueue: false,
+        includeEffects: false,
+        queueEntryPositions: {'entry_2': 0, 'entry_1': 1},
       );
-      expect(loaded.volume, closeTo(1, 0.001));
+      final reordered = (await repository.loadAllSessions()).single;
+      expect(
+        reordered.playbackQueue,
+        queue.copyWith(entries: queue.entries.reversed.toList()),
+      );
+      expect(reordered.trackPath, firstTrack.path);
+      expect(reordered.currentQueueIndex, 1);
+      expect(reordered.positionMs, 1200);
     },
   );
 

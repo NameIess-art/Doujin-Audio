@@ -1,13 +1,16 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../app/theme/app_design_tokens.dart';
+import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_glass_surface.dart';
@@ -58,9 +61,12 @@ class WorkImageViewerPage extends ConsumerStatefulWidget {
 }
 
 class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
-    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
+    with WidgetsBindingObserver, TickerProviderStateMixin {
   static const int _loopPageSeed = 100000;
   static const double _imageSwitcherGap = 20;
+  static const double _dismissThreshold = 110;
+  static const double _dismissVelocity = 700;
+  final Object _dragDismissInteraction = Object();
   final GlobalKey _headerKey = GlobalKey();
   final GlobalKey _switcherKey = GlobalKey();
   final GlobalKey _viewerKey = GlobalKey();
@@ -75,6 +81,14 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
   bool _isCurrentZoomed = false;
   late final AnimationController _fullscreenFade;
   late final Animation<double> _viewerOpacity;
+  late final AnimationController _chromeController;
+  late final Animation<double> _chromeOpacity;
+  late final AnimationController _dragResetController;
+  Animation<double>? _dragResetAnimation;
+  double _dragOffset = 0;
+  bool _dismissThresholdReached = false;
+  bool _chromeVisible = true;
+  bool _isDismissing = false;
   bool _fullscreenTarget = false;
   bool _movingFullscreen = false;
 
@@ -102,6 +116,23 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
       parent: _fullscreenFade,
       curve: kAppFadeCurve,
     );
+    _chromeController = AnimationController(
+      vsync: this,
+      duration: kAppMotionFast,
+      value: 1,
+    );
+    _chromeOpacity = CurvedAnimation(
+      parent: _chromeController,
+      curve: kAppSpringCurve,
+    );
+    _dragResetController =
+        AnimationController(vsync: this, duration: kAppMotionStandard)
+          ..addListener(() {
+            final animation = _dragResetAnimation;
+            if (animation != null && mounted) {
+              setState(() => _dragOffset = animation.value);
+            }
+          });
     WidgetsBinding.instance.addObserver(this);
     final count = widget.images.length;
     _currentIndex = widget.initialIndex.clamp(0, count == 0 ? 0 : count - 1);
@@ -111,10 +142,112 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
 
   @override
   void dispose() {
+    UiInteractionCoordinator.instance.cancelInteraction(_dragDismissInteraction);
     WidgetsBinding.instance.removeObserver(this);
     _pageController.dispose();
     _fullscreenFade.dispose();
+    _chromeController.dispose();
+    _dragResetController.dispose();
     super.dispose();
+  }
+
+  void _toggleChrome() {
+    if (_dragOffset != 0 || _isDismissing) return;
+    _chromeVisible = !_chromeVisible;
+    final duration =
+        MediaQuery.disableAnimationsOf(context) ||
+            !TickerMode.valuesOf(context).enabled
+        ? Duration.zero
+        : kAppMotionFast;
+    _chromeController.duration = duration;
+    if (_chromeVisible) {
+      _chromeController.forward();
+    } else {
+      _chromeController.reverse();
+    }
+    setState(() {});
+  }
+
+  void _handleDragDismissStart(DragStartDetails details) {
+    if (_isCurrentZoomed || _isDismissing) return;
+    if (!Navigator.of(context).canPop()) return;
+    _dragResetController.stop();
+    UiInteractionCoordinator.instance.beginInteraction(_dragDismissInteraction);
+  }
+
+  void _handleDragDismissUpdate(DragUpdateDetails details) {
+    if (_isCurrentZoomed || _isDismissing) return;
+    if (!Navigator.of(context).canPop()) return;
+    _dragOffset += details.delta.dy;
+    final crossed = _dragOffset.abs() >= _dismissThreshold;
+    if (crossed != _dismissThresholdReached) {
+      _dismissThresholdReached = crossed;
+      if (crossed) {
+        unawaited(HapticFeedback.selectionClick());
+      }
+    }
+    setState(() {});
+  }
+
+  void _handleDragDismissEnd(DragEndDetails details) {
+    UiInteractionCoordinator.instance.endInteraction(_dragDismissInteraction);
+    if (_isCurrentZoomed || _isDismissing) {
+      _animateDragBack();
+      return;
+    }
+    final velocity = details.velocity.pixelsPerSecond.dy;
+    final shouldDismiss =
+        _dragOffset.abs() >= _dismissThreshold ||
+        (velocity.abs() >= _dismissVelocity &&
+            (_dragOffset == 0 || velocity.sign == _dragOffset.sign));
+    if (shouldDismiss && Navigator.of(context).canPop()) {
+      if (_fullscreenController.isShowing) {
+        _fullscreenTarget = false;
+        unawaited(_moveFullscreen());
+        _animateDragBack();
+        return;
+      }
+      _isDismissing = true;
+      if (!MediaQuery.disableAnimationsOf(context) &&
+          TickerMode.valuesOf(context).enabled) {
+        final direction = _dragOffset != 0
+            ? _dragOffset.sign
+            : (velocity == 0 ? 1.0 : velocity.sign);
+        final travel = MediaQuery.sizeOf(context).height * 0.45;
+        final targetOffset = direction * math.max(_dragOffset.abs() + 120.0, travel);
+        _dragResetAnimation = Tween<double>(
+          begin: _dragOffset,
+          end: targetOffset,
+        ).chain(CurveTween(curve: Curves.easeOutCubic)).animate(_dragResetController);
+        _dragResetController.duration = kAppMotionStandard;
+        _dragResetController.forward(from: 0);
+      }
+      unawaited(Navigator.of(context).maybePop());
+      return;
+    }
+    _animateDragBack();
+  }
+
+  void _handleDragDismissCancel() {
+    UiInteractionCoordinator.instance.endInteraction(_dragDismissInteraction);
+    _animateDragBack();
+  }
+
+  void _animateDragBack() {
+    _dismissThresholdReached = false;
+    final start = _dragOffset;
+    if (start == 0) return;
+    if (MediaQuery.disableAnimationsOf(context) ||
+        !TickerMode.valuesOf(context).enabled) {
+      setState(() => _dragOffset = 0);
+      return;
+    }
+    _dragResetAnimation = Tween<double>(
+      begin: start,
+      end: 0,
+    ).chain(CurveTween(curve: kAppSpringCurve)).animate(_dragResetController);
+    _dragResetController.duration = kAppMotionStandard;
+    _dragResetController.forward(from: 0);
   }
 
   @override
@@ -160,14 +293,14 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
     });
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
-        : kAppMotionSlow;
+        : kAppMotionStandard;
     if (duration == Duration.zero) {
       _pageController.jumpToPage(targetPage);
     } else {
       _pageController.animateToPage(
         targetPage,
         duration: duration,
-        curve: Curves.easeInOutCubic,
+        curve: kAppSpringCurve,
       );
     }
   }
@@ -320,7 +453,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
         if (!mounted) return;
         _fullscreenFade.duration = MediaQuery.disableAnimationsOf(context)
             ? Duration.zero
-            : kAppFadeDuration;
+            : kAppMotionStandard;
         try {
           if (_fullscreenTarget == _fullscreenController.isShowing) {
             await _fullscreenFade.forward().orCancel;
@@ -417,53 +550,116 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
         ? bottomInset + 20.0 + switcherHeight + _imageSwitcherGap
         : bottomInset + 20.0;
 
+    final dragFraction = (_dragOffset.abs() / 260.0).clamp(0.0, 1.0);
+    final backdropOpacity = (1.0 - 0.65 * dragFraction).clamp(0.0, 1.0);
+    final viewportScale = 1.0 - 0.14 * dragFraction;
+    final dragChromeOpacity = (1.0 - dragFraction * 1.8).clamp(0.0, 1.0);
+
+    Widget wrapChrome(Widget child, {double slideOffsetY = 0}) {
+      return AnimatedBuilder(
+        animation: _chromeOpacity,
+        child: child,
+        builder: (context, inner) {
+          final visibleFraction = _chromeOpacity.value;
+          final effectiveOpacity = (visibleFraction * dragChromeOpacity).clamp(
+            0.0,
+            1.0,
+          );
+          final dy = slideOffsetY * (1.0 - visibleFraction);
+          Widget result = inner!;
+          if (dy != 0) {
+            result = Transform.translate(offset: Offset(0, dy), child: result);
+          }
+          if (effectiveOpacity < 1.0) {
+            result = Opacity(opacity: effectiveOpacity, child: result);
+          }
+          return IgnorePointer(
+            ignoring: !_chromeVisible || effectiveOpacity < 0.05,
+            child: result,
+          );
+        },
+      );
+    }
+
     return Scaffold(
       // Reparent this same subtree so paging and image zoom survive the toggle.
       key: _viewerKey,
-      backgroundColor: cs.surface,
+      backgroundColor: Colors.transparent,
       body: ClipRect(
         child: Stack(
           children: [
             Positioned.fill(
+              child: ColoredBox(
+                color: cs.surface.withValues(alpha: backdropOpacity),
+              ),
+            ),
+            Positioned.fill(
               top: imageTop,
               bottom: imageBottom,
-              child: AppPageContentTransition(
-                child: ScrollConfiguration(
-                  behavior: ScrollConfiguration.of(context).copyWith(
-                    dragDevices: {
-                      PointerDeviceKind.touch,
-                      PointerDeviceKind.mouse,
-                      PointerDeviceKind.trackpad,
-                      PointerDeviceKind.stylus,
-                    },
-                  ),
-                  child: NotificationListener<ScrollNotification>(
-                    onNotification: _handlePageScroll,
-                    child: PageView.builder(
-                      key: const ValueKey<String>('work_image_viewport'),
-                      clipBehavior: Clip.none,
-                      controller: _pageController,
-                      physics: _isCurrentZoomed
-                          ? const NeverScrollableScrollPhysics()
-                          : (widget.images.length > 1
-                                ? const PageScrollPhysics()
-                                : const NeverScrollableScrollPhysics()),
-                      onPageChanged: _onPageChanged,
-                      itemCount: widget.images.length > 1
-                          ? null
-                          : widget.images.length,
-                      itemBuilder: (context, page) {
-                        final index = _indexForPage(page, widget.images.length);
-                        final img = widget.images[index];
-                        return _WorkImageViewerItem(
-                          key: ValueKey<String>('image_item_${img.path}_$page'),
-                          isActive: index == _currentIndex,
-                          onZoomChanged: (zoomed) {
-                            setState(() => _isCurrentZoomed = zoomed);
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onVerticalDragStart: _isCurrentZoomed
+                    ? null
+                    : _handleDragDismissStart,
+                onVerticalDragUpdate: _isCurrentZoomed
+                    ? null
+                    : _handleDragDismissUpdate,
+                onVerticalDragEnd: _isCurrentZoomed
+                    ? null
+                    : _handleDragDismissEnd,
+                onVerticalDragCancel: _isCurrentZoomed
+                    ? null
+                    : _handleDragDismissCancel,
+                child: Transform.translate(
+                  offset: Offset(0, _dragOffset),
+                  child: Transform.scale(
+                    scale: viewportScale,
+                    child: AppPageContentTransition(
+                      child: ScrollConfiguration(
+                        behavior: ScrollConfiguration.of(context).copyWith(
+                          dragDevices: {
+                            PointerDeviceKind.touch,
+                            PointerDeviceKind.mouse,
+                            PointerDeviceKind.trackpad,
+                            PointerDeviceKind.stylus,
                           },
-                          child: _buildImage(img, cs),
-                        );
-                      },
+                        ),
+                        child: NotificationListener<ScrollNotification>(
+                          onNotification: _handlePageScroll,
+                          child: PageView.builder(
+                            key: const ValueKey<String>('work_image_viewport'),
+                            clipBehavior: Clip.none,
+                            controller: _pageController,
+                            physics: _isCurrentZoomed || _dragOffset != 0
+                                ? const NeverScrollableScrollPhysics()
+                                : (widget.images.length > 1
+                                      ? const PageScrollPhysics()
+                                      : const NeverScrollableScrollPhysics()),
+                            onPageChanged: _onPageChanged,
+                            itemCount: widget.images.length > 1
+                                ? null
+                                : widget.images.length,
+                            itemBuilder: (context, page) {
+                              final index = _indexForPage(
+                                page,
+                                widget.images.length,
+                              );
+                              final img = widget.images[index];
+                              return _WorkImageViewerItem(
+                                key: ValueKey<String>(
+                                  'image_item_${img.path}_$page',
+                                ),
+                                isActive: index == _currentIndex,
+                                onToggleChrome: _toggleChrome,
+                                onZoomChanged: (zoomed) {
+                                  setState(() => _isCurrentZoomed = zoomed);
+                                },
+                                child: _buildImage(img, cs),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -475,78 +671,88 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
               top: 0,
               left: 0,
               right: 0,
-              child: TopPageHeader(
-                key: const ValueKey<String>('work_image_header'),
-                icon: AppDesignTokens.imageFileIcon,
-                iconColor: AppDesignTokens.imageFileIconColor,
-                title: currentImage.name,
-                leading: IconButton(
-                  icon: const Icon(Icons.arrow_back_rounded),
-                  tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-                  onPressed: () => Navigator.of(this.context).maybePop(),
-                ),
-                trailing: widget.onSetAsCover != null
-                    ? HeaderFloatingSurface(
-                        padding: EdgeInsets.zero,
-                        child: TextButton.icon(
-                          key: const ValueKey<String>(
-                            'viewer_set_as_cover_button',
-                          ),
-                          onPressed: _isSettingCover ? null : _handleSetAsCover,
-                          style: appTextButtonStyle(
-                            style: TextButton.styleFrom(
-                              foregroundColor: Theme.of(
-                                context,
-                              ).colorScheme.onSurface,
-                              disabledForegroundColor: Theme.of(
-                                context,
-                              ).colorScheme.onSurface,
-                              minimumSize: Size.zero,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                              ),
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              textStyle: Theme.of(context).textTheme.labelMedium
-                                  ?.copyWith(fontWeight: FontWeight.w600),
+              child: wrapChrome(
+                slideOffsetY: -16,
+                TopPageHeader(
+                  key: const ValueKey<String>('work_image_header'),
+                  icon: AppDesignTokens.imageFileIcon,
+                  iconColor: AppDesignTokens.imageFileIconColor,
+                  title: currentImage.name,
+                  leading: IconButton(
+                    icon: const Icon(Icons.arrow_back_rounded),
+                    tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                    onPressed: () => Navigator.of(this.context).maybePop(),
+                  ),
+                  trailing: widget.onSetAsCover != null
+                      ? HeaderFloatingSurface(
+                          padding: EdgeInsets.zero,
+                          child: TextButton.icon(
+                            key: const ValueKey<String>(
+                              'viewer_set_as_cover_button',
                             ),
-                          ),
-                          icon: _isSettingCover
-                              ? const SizedBox.square(
-                                  dimension: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(
-                                  Icons.photo_size_select_actual_outlined,
-                                  size: 18,
+                            onPressed: _isSettingCover
+                                ? null
+                                : _handleSetAsCover,
+                            style: appTextButtonStyle(
+                              style: TextButton.styleFrom(
+                                foregroundColor: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface,
+                                disabledForegroundColor: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface,
+                                minimumSize: Size.zero,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
                                 ),
-                          label: Text(i18n.tr('audio_detail_set_cover')),
-                        ),
-                      )
-                    : null,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                textStyle: Theme.of(context)
+                                    .textTheme
+                                    .labelMedium
+                                    ?.copyWith(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            icon: _isSettingCover
+                                ? const SizedBox.square(
+                                    dimension: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.photo_size_select_actual_outlined,
+                                    size: 18,
+                                  ),
+                            label: Text(i18n.tr('audio_detail_set_cover')),
+                          ),
+                        )
+                      : null,
+                ),
               ),
             ),
             if (View.of(context).physicalSize.aspectRatio > 1)
               Positioned(
                 left: MediaQuery.paddingOf(context).left + 16,
                 bottom: bottomInset + 20,
-                child: AppPageContentTransition(
-                  child: HeaderFloatingButton(
-                    followBarGlass: true,
-                    child: IconButton(
-                      key: const ValueKey('image_viewer_fullscreen_button'),
-                      icon: Icon(
-                        _fullscreenController.isShowing
-                            ? Icons.fullscreen_exit_rounded
-                            : Icons.fullscreen_rounded,
+                child: wrapChrome(
+                  slideOffsetY: 16,
+                  AppPageContentTransition(
+                    child: HeaderFloatingButton(
+                      followBarGlass: true,
+                      child: IconButton(
+                        key: const ValueKey('image_viewer_fullscreen_button'),
+                        icon: Icon(
+                          _fullscreenController.isShowing
+                              ? Icons.fullscreen_exit_rounded
+                              : Icons.fullscreen_rounded,
+                        ),
+                        tooltip: i18n.tr(
+                          _fullscreenController.isShowing
+                              ? 'exit_fullscreen'
+                              : 'fullscreen',
+                        ),
+                        onPressed: _toggleFullscreen,
                       ),
-                      tooltip: i18n.tr(
-                        _fullscreenController.isShowing
-                            ? 'exit_fullscreen'
-                            : 'fullscreen',
-                      ),
-                      onPressed: _toggleFullscreen,
                     ),
                   ),
                 ),
@@ -557,57 +763,60 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
                 key: _switcherKey,
                 right: 16,
                 bottom: MediaQuery.paddingOf(context).bottom + 20,
-                child: AppPageContentTransition(
-                  child: HeaderFloatingSurface(
-                    followBarGlass: true,
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          key: const ValueKey<String>(
-                            'image_viewer_prev_button',
+                child: wrapChrome(
+                  slideOffsetY: 16,
+                  AppPageContentTransition(
+                    child: HeaderFloatingSurface(
+                      followBarGlass: true,
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            key: const ValueKey<String>(
+                              'image_viewer_prev_button',
+                            ),
+                            iconSize: 18,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 32,
+                              height: 32,
+                            ),
+                            icon: const Icon(Icons.chevron_left_rounded),
+                            tooltip: i18n.tr('previous'),
+                            onPressed: _goToPrevious,
                           ),
-                          iconSize: 18,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 32,
-                            height: 32,
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            child: Text(
+                              '${_currentIndex + 1} / ${widget.images.length}',
+                              style: Theme.of(context).textTheme.titleSmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.5,
+                                    fontSize: 12.5,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface,
+                                  ),
+                            ),
                           ),
-                          icon: const Icon(Icons.chevron_left_rounded),
-                          tooltip: i18n.tr('previous'),
-                          onPressed: _goToPrevious,
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                          child: Text(
-                            '${_currentIndex + 1} / ${widget.images.length}',
-                            style: Theme.of(context).textTheme.titleSmall
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 0.5,
-                                  fontSize: 12.5,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurface,
-                                ),
+                          IconButton(
+                            key: const ValueKey<String>(
+                              'image_viewer_next_button',
+                            ),
+                            iconSize: 18,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 32,
+                              height: 32,
+                            ),
+                            icon: const Icon(Icons.chevron_right_rounded),
+                            tooltip: i18n.tr('next'),
+                            onPressed: _goToNext,
                           ),
-                        ),
-                        IconButton(
-                          key: const ValueKey<String>(
-                            'image_viewer_next_button',
-                          ),
-                          iconSize: 18,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 32,
-                            height: 32,
-                          ),
-                          icon: const Icon(Icons.chevron_right_rounded),
-                          tooltip: i18n.tr('next'),
-                          onPressed: _goToNext,
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -623,11 +832,13 @@ class _WorkImageViewerItem extends StatefulWidget {
   const _WorkImageViewerItem({
     super.key,
     required this.isActive,
+    required this.onToggleChrome,
     required this.onZoomChanged,
     required this.child,
   });
 
   final bool isActive;
+  final VoidCallback onToggleChrome;
   final ValueChanged<bool> onZoomChanged;
   final Widget child;
 
@@ -635,8 +846,11 @@ class _WorkImageViewerItem extends StatefulWidget {
   State<_WorkImageViewerItem> createState() => _WorkImageViewerItemState();
 }
 
-class _WorkImageViewerItemState extends State<_WorkImageViewerItem> {
+class _WorkImageViewerItemState extends State<_WorkImageViewerItem>
+    with SingleTickerProviderStateMixin {
   late final TransformationController _controller = TransformationController();
+  late final AnimationController _zoomController;
+  Animation<Matrix4>? _zoomAnimation;
   TapDownDetails? _doubleTapDetails;
   bool _isZoomed = false;
 
@@ -644,18 +858,29 @@ class _WorkImageViewerItemState extends State<_WorkImageViewerItem> {
   void initState() {
     super.initState();
     _controller.addListener(_onTransformationChanged);
+    _zoomController = AnimationController(
+      vsync: this,
+      duration: kAppMotionStandard,
+    )..addListener(() {
+        final anim = _zoomAnimation;
+        if (anim != null) {
+          _controller.value = anim.value;
+        }
+      });
   }
 
   @override
   void didUpdateWidget(covariant _WorkImageViewerItem oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!widget.isActive && oldWidget.isActive && _isZoomed) {
+      _zoomController.stop();
       _controller.value = Matrix4.identity();
     }
   }
 
   @override
   void dispose() {
+    _zoomController.dispose();
     _controller.removeListener(_onTransformationChanged);
     _controller.dispose();
     super.dispose();
@@ -673,21 +898,36 @@ class _WorkImageViewerItemState extends State<_WorkImageViewerItem> {
   }
 
   void _handleDoubleTap() {
+    final Matrix4 target;
     if (_isZoomed) {
-      _controller.value = Matrix4.identity();
+      target = Matrix4.identity();
     } else {
       final position = _doubleTapDetails?.localPosition ?? Offset.zero;
       final x = -position.dx * 1.5;
       final y = -position.dy * 1.5;
-      _controller.value = Matrix4.identity()
+      target = Matrix4.identity()
         ..translateByDouble(x, y, 0, 1)
         ..scaleByDouble(2.5, 2.5, 1.0, 1);
     }
+    if (MediaQuery.disableAnimationsOf(context) ||
+        !TickerMode.valuesOf(context).enabled) {
+      _zoomController.stop();
+      _controller.value = target;
+      return;
+    }
+    _zoomAnimation = Matrix4Tween(
+      begin: _controller.value.clone(),
+      end: target,
+    ).chain(CurveTween(curve: kAppSpringCurve)).animate(_zoomController);
+    _zoomController.duration = kAppMotionStandard;
+    _zoomController.forward(from: 0);
   }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: widget.onToggleChrome,
       onDoubleTapDown: (details) => _doubleTapDetails = details,
       onDoubleTap: _handleDoubleTap,
       child: InteractiveViewer(
@@ -697,6 +937,7 @@ class _WorkImageViewerItemState extends State<_WorkImageViewerItem> {
         panEnabled: _isZoomed,
         minScale: 1.0,
         maxScale: 4.0,
+        onInteractionStart: (_) => _zoomController.stop(),
         child: SizedBox.expand(child: widget.child),
       ),
     );

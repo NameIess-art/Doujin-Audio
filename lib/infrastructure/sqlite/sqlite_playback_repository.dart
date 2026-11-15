@@ -24,6 +24,7 @@ class SqlitePlaybackRepository implements PlaybackPersistenceRepository {
     PersistedPlaybackSession session, {
     bool includeQueue = true,
     bool includeEffects = true,
+    Map<String, int>? queueEntryPositions,
   }) async {
     final record = includeQueue
         ? await compute(
@@ -39,6 +40,7 @@ class SqlitePlaybackRepository implements PlaybackPersistenceRepository {
       record,
       includeQueue: includeQueue,
       includeEffects: includeEffects,
+      queueEntryPositions: queueEntryPositions,
     );
   }
 
@@ -48,11 +50,6 @@ class SqlitePlaybackRepository implements PlaybackPersistenceRepository {
   @override
   Future<void> updateSessionOrder(List<String> sessionIds) =>
       _database.updateSessionOrder(sessionIds);
-  @override
-  Future<void> updatePlaybackQueueEntryOrder(
-    String sessionId,
-    List<String> entryIds,
-  ) => _database.updatePlaybackQueueEntryOrder(sessionId, entryIds);
   @override
   Future<void> upsertSessionPlaybackStates(
     List<PersistedPlaybackSession> sessions,

@@ -9,7 +9,6 @@ import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/audio_detail.dart';
-import '../../../core/widgets/rj_code_overlay.dart';
 import '../../settings/application/settings_state.dart';
 import '../../../core/ui/visual_settings_providers.dart';
 import 'library_cover_ui_controller.dart';
@@ -137,7 +136,7 @@ class _LibraryCoverThumbnailState extends ConsumerState<LibraryCoverThumbnail> {
           ),
           if (widget.duration != null && widget.duration! > Duration.zero)
             Positioned(
-              right: 4,
+              left: 4,
               bottom: 4,
               child: DurationOverlay(duration: widget.duration!),
             ),
@@ -241,7 +240,7 @@ class _LibraryTrackCoverThumbnailState
         ),
         if (widget.duration != null && widget.duration! > Duration.zero)
           Positioned(
-            right: 4,
+            left: 4,
             bottom: 4,
             child: DurationOverlay(duration: widget.duration!),
           ),
@@ -286,42 +285,28 @@ class RootFolderCardContent extends StatelessWidget {
     );
     return AudioDetailWorkCardContent(
       title: folderName,
+      path: folderPath,
       useWorkTitle: true,
       detailTarget: detailTarget,
       detail: detail,
       detailLoading: detailLoading,
       index: index,
       trailingActions: trailingActions,
-      coverBuilder: (coverWidth, detail) {
-        final rj = detail?.rjCode.trim() ?? '';
-        final rjCode = rj.isNotEmpty
-            ? rj
-            : (AudioDetail.findRjCodeInText(folderName) ??
-                  AudioDetail.findRjCodeInText(folderPath) ??
-                  '');
+      coverBuilder: (detail) {
         return Stack(
           clipBehavior: Clip.none,
           children: [
             cover,
             if ((detail?.duration ?? folderDuration) > Duration.zero)
               Positioned(
-                right: 4,
+                left: 4,
                 bottom: 4,
                 child: DurationOverlay(
                   duration: detail?.duration ?? folderDuration,
                 ),
               ),
-            if (rjCode.isNotEmpty)
-              Positioned(
-                left: 4,
-                top: 4,
-                child: RjCodeOverlay(
-                  rjCode: rjCode,
-                  maxWidth: isPinned ? (coverWidth - 32) : (coverWidth - 8),
-                ),
-              ),
             Positioned(
-              left: -2,
+              right: -2,
               bottom: -2,
               child: LibrarySelectionIndicator(
                 path: folderPath,
@@ -334,7 +319,6 @@ class RootFolderCardContent extends StatelessWidget {
               child: LibraryPinnedIndicator(
                 isPinned: isPinned,
                 path: folderPath,
-                isSelected: isSelected,
               ),
             ),
           ],
@@ -348,6 +332,7 @@ class AudioDetailWorkCardContent extends ConsumerWidget {
   const AudioDetailWorkCardContent({
     super.key,
     required this.title,
+    required this.path,
     this.titleFileName = false,
     this.useWorkTitle = false,
     this.detailTarget,
@@ -359,12 +344,13 @@ class AudioDetailWorkCardContent extends ConsumerWidget {
   });
 
   final String title;
+  final String path;
   final bool titleFileName;
   final bool useWorkTitle;
   final AudioDetailTarget? detailTarget;
   final AudioDetail? detail;
   final bool detailLoading;
-  final Widget Function(double coverWidth, AudioDetail? detail) coverBuilder;
+  final Widget Function(AudioDetail? detail) coverBuilder;
   final int? index;
   final Widget? trailingActions;
 
@@ -398,7 +384,7 @@ class AudioDetailWorkCardContent extends ConsumerWidget {
           ? workTitle
           : title,
       titleFileName: titleFileName,
-      metadata: _audioDetailMetadata(detail),
+      metadata: _audioDetailMetadata(detail, title: title, path: path),
       voiceActorLabel: i18n.tr('card_info_voice_actors'),
       circleLabel: i18n.tr('library_category_circles'),
       tagsLabel: i18n.tr('library_category_tags'),
@@ -406,7 +392,7 @@ class AudioDetailWorkCardContent extends ConsumerWidget {
       ratingLabel: i18n.tr('card_info_rating'),
       loading: detailLoading || detail == null,
       trailingActions: trailingActions,
-      coverBuilder: (width) => coverBuilder(width, detail),
+      coverBuilder: (_) => coverBuilder(detail),
     );
   }
 }
@@ -445,7 +431,7 @@ class SingleAudioFileCardContent extends ConsumerWidget {
         : ref.watch(libraryDetailForTargetProvider(detailTarget!));
     final detail = detailState?.value ?? this.detail;
     final detailLoading = detailState?.isLoading ?? this.detailLoading;
-    final metadata = _audioDetailMetadata(detail);
+    final metadata = _audioDetailMetadata(detail, title: title, path: path);
     final parts = textTranslationText(title, fileName: true);
     return WorkPageTranslationBuilder(
       texts: [
@@ -453,22 +439,23 @@ class SingleAudioFileCardContent extends ConsumerWidget {
         if (!detailLoading && detail != null) ...metadata.tags,
       ],
       builder: (context, translate, _) {
-        final lines = (detailLoading || detail == null)
-            ? const <LibraryLikeInfoLineData>[]
-            : buildLibraryLikeInfoLines(
-                metadata: LibraryLikeInfoMetadata(
+        final lines = buildLibraryLikeInfoLines(
+          metadata: detailLoading
+              ? LibraryLikeInfoMetadata(workCode: metadata.workCode)
+              : LibraryLikeInfoMetadata(
                   voiceActors: metadata.voiceActors,
                   circleName: metadata.circleName,
+                  workCode: metadata.workCode,
                   tags: metadata.tags.map(translate).toList(),
                   releaseDate: metadata.releaseDate,
                   rating: metadata.rating,
                 ),
-                voiceActorLabel: i18n.tr('card_info_voice_actors'),
-                circleLabel: i18n.tr('library_category_circles'),
-                tagsLabel: i18n.tr('library_category_tags'),
-                releaseDateLabel: i18n.tr('card_info_release_date'),
-                ratingLabel: i18n.tr('card_info_rating'),
-              );
+          voiceActorLabel: i18n.tr('card_info_voice_actors'),
+          circleLabel: i18n.tr('library_category_circles'),
+          tagsLabel: i18n.tr('library_category_tags'),
+          releaseDateLabel: i18n.tr('card_info_release_date'),
+          ratingLabel: i18n.tr('card_info_rating'),
+        );
         // The text content bounds the selection overlay inside lazy lists.
         return Stack(
           clipBehavior: Clip.none,
@@ -491,7 +478,6 @@ class SingleAudioFileCardContent extends ConsumerWidget {
                     child: LibraryPinnedIndicator(
                       path: path,
                       isPinned: isPinned,
-                      isSelected: isSelected,
                     ),
                   ),
                 ),
@@ -546,42 +532,28 @@ class SingleMediaFileCardContent extends StatelessWidget {
     );
     return AudioDetailWorkCardContent(
       title: title,
+      path: track.path,
       titleFileName: true,
       detailTarget: detailTarget,
       detail: detail,
       detailLoading: detailLoading,
       index: index,
       trailingActions: trailingActions,
-      coverBuilder: (coverWidth, detail) {
-        final rj = detail?.rjCode.trim() ?? '';
-        final rjCode = rj.isNotEmpty
-            ? rj
-            : (AudioDetail.findRjCodeInText(title) ??
-                  AudioDetail.findRjCodeInText(track.path) ??
-                  '');
+      coverBuilder: (detail) {
         return Stack(
           clipBehavior: Clip.none,
           children: [
             cover,
             if ((detail?.duration ?? track.duration) > Duration.zero)
               Positioned(
-                right: 4,
+                left: 4,
                 bottom: 4,
                 child: DurationOverlay(
                   duration: detail?.duration ?? track.duration,
                 ),
               ),
-            if (rjCode.isNotEmpty)
-              Positioned(
-                left: 4,
-                top: 4,
-                child: RjCodeOverlay(
-                  rjCode: rjCode,
-                  maxWidth: isPinned ? (coverWidth - 32) : (coverWidth - 8),
-                ),
-              ),
             Positioned(
-              left: -2,
+              right: -2,
               bottom: -2,
               child: LibrarySelectionIndicator(
                 path: track.path,
@@ -594,7 +566,6 @@ class SingleMediaFileCardContent extends StatelessWidget {
               child: LibraryPinnedIndicator(
                 isPinned: isPinned,
                 path: track.path,
-                isSelected: isSelected,
               ),
             ),
           ],
@@ -604,14 +575,22 @@ class SingleMediaFileCardContent extends StatelessWidget {
   }
 }
 
-LibraryLikeInfoMetadata _audioDetailMetadata(AudioDetail? detail) {
-  final d = detail;
-  if (d == null) return const LibraryLikeInfoMetadata();
+LibraryLikeInfoMetadata _audioDetailMetadata(
+  AudioDetail? detail, {
+  required String title,
+  required String path,
+}) {
+  final savedCode = detail?.rjCode.trim() ?? '';
   return LibraryLikeInfoMetadata(
-    voiceActors: d.voiceActors,
-    circleName: d.circleName,
-    tags: d.tags,
-    releaseDate: d.releaseDate,
-    rating: d.rating,
+    voiceActors: detail?.voiceActors ?? const [],
+    circleName: detail?.circleName ?? '',
+    workCode: savedCode.isNotEmpty
+        ? savedCode
+        : AudioDetail.findRjCodeInText(title) ??
+              AudioDetail.findRjCodeInText(path) ??
+              '',
+    tags: detail?.tags ?? const [],
+    releaseDate: detail?.releaseDate,
+    rating: detail?.rating,
   );
 }

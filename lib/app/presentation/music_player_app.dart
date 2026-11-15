@@ -480,7 +480,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
                         : AppNavigationInputLock(
                             navigationAllowed: UiInteractionCoordinator
                                 .instance
-                                .navigationAllowed,
+                                .navigationInputAllowed,
                             child: child!,
                           ),
                   ),

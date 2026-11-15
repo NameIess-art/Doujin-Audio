@@ -14,6 +14,7 @@ import '../../../../app/theme/app_styles.dart';
 import '../../../../core/ui/undoable_removal_service.dart';
 import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/library_like_cards.dart';
 
 const double sessionVolumeDisplayMaximum = 1.5;
 const int sessionVolumeDisplayMaximumPercent = 150;
@@ -32,56 +33,7 @@ const EdgeInsets playlistRowPadding = EdgeInsets.symmetric(
   horizontal: AppSpacing.xs,
   vertical: 6,
 );
-const double playlistRowRadius = playlistRowHeight / 2;
-const BorderRadius playlistRowBorderRadius = BorderRadius.all(
-  Radius.circular(playlistRowRadius),
-);
-const RoundedRectangleBorder playlistRowShape = _PlaylistRowShape();
-
-class _PlaylistRowShape extends RoundedRectangleBorder {
-  const _PlaylistRowShape({super.side})
-    : super(borderRadius: playlistRowBorderRadius);
-
-  @override
-  RoundedRectangleBorder copyWith({
-    BorderSide? side,
-    BorderRadiusGeometry? borderRadius,
-  }) {
-    if ((side == null || side == this.side) && borderRadius == null) {
-      return this;
-    }
-    return _PlaylistRowShape(side: side ?? this.side);
-  }
-
-  @override
-  Path getInnerPath(Rect rect, {TextDirection? textDirection}) =>
-      getOuterPath(rect, textDirection: textDirection);
-
-  @override
-  Path getOuterPath(Rect rect, {TextDirection? textDirection}) {
-    return Path()..addRRect(
-      RRect.fromRectAndRadius(rect, Radius.circular(rect.height / 2)),
-    );
-  }
-
-  @override
-  void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) {
-    switch (side.style) {
-      case BorderStyle.none:
-        break;
-      case BorderStyle.solid:
-        final radius = Radius.circular(rect.height / 2);
-        final borderRRect = RRect.fromRectAndRadius(rect, radius);
-        if (side.width == 0.0) {
-          canvas.drawRRect(borderRRect, side.toPaint());
-        } else {
-          final inner = borderRRect.deflate(side.strokeInset);
-          final outer = borderRRect.inflate(side.strokeOutset);
-          canvas.drawDRRect(outer, inner, side.toPaint());
-        }
-    }
-  }
-}
+const RoundedRectangleBorder playlistRowShape = LibraryLikeCardMetrics.cardShape;
 
 Color playlistTemporaryCardColor(BuildContext context) {
   final cs = Theme.of(context).colorScheme;

@@ -96,9 +96,8 @@ const Map<String, String> appLanguageZh = {
   'my_duration': '{hours} 小时 {minutes} 分 {seconds} 秒',
   'my_load_more': '加载更多',
   'my_retry': '重试',
-  'startup_page_my': '我的／设置',
-  'switch_to_my': '切换到我的',
-  'switch_to_settings': '切换到设置',
+  'startup_page_my': '我的',
+  'startup_page_settings': '设置',
 
   'open_containing_folder': '打开所在文件夹',
   'keyboard_shortcuts_title': '键盘快捷键',

@@ -1,5 +1,4 @@
 import 'package:doujin_audio/app/application/browse_page_state_store.dart';
-import 'package:doujin_audio/app/presentation/my_settings_page.dart';
 import 'package:doujin_audio/app/presentation/my_page.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_tab.dart';
 import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
@@ -36,6 +35,7 @@ import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart'
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:doujin_audio/features/library/presentation/library_cover_ui_controller.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
+import 'package:doujin_audio/features/library/presentation/library_tab_empty_scan.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:doujin_audio/features/player/application/playback_facade.dart';
@@ -117,66 +117,47 @@ void main() {
 
   tearDown(UiInteractionCoordinator.instance.resetForTest);
 
-  for (final reduceMotion in [false, true]) {
-    testWidgets('bottom menu highlight expands in 300ms with reduced motion $reduceMotion',
-        (tester) async {
-      _setLogicalTestViewSize(tester, const Size(390, 820));
-      tester.platformDispatcher.accessibilityFeaturesTestValue =
-          FakeAccessibilityFeatures(disableAnimations: reduceMotion);
-      addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
-      await _pumpAppShell(tester, includePlaybackSession: false);
-      double indicatorScale(String destination) => tester.widget<Transform>(
-        find.descendant(
-          of: find.byKey(ValueKey<String>('main_destination_indicator_$destination')),
-          matching: find.byType(Transform),
-        ),
-      ).transform.entry(0, 0);
-      for (final destination in ['nav_sessions', 'nav_settings', 'nav_sessions']) {
-        final icon = find.byKey(ValueKey<String>('main_destination_$destination'));
-        final size = tester.getSize(icon);
-        await tester.tap(icon);
-        await tester.pump();
-        expect(indicatorScale(destination), reduceMotion ? 1 : 0);
-        await tester.pump(const Duration(milliseconds: 150));
-        expect(indicatorScale(destination), reduceMotion ? 1 : inExclusiveRange(0, 1));
-        expect(tester.getSize(icon), size);
-        await tester.pump(const Duration(milliseconds: 149));
-        expect(indicatorScale(destination), reduceMotion ? 1 : lessThan(1));
-        await tester.pump(const Duration(milliseconds: 1));
-        expect(indicatorScale(destination), 1);
-        await _pumpMainScreenAnimations(tester);
-      }
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox.shrink());
-    });
-  }
-
-  testWidgets('portrait merged destination retains both pages', (tester) async {
+  testWidgets('portrait My and settings keep separate retained pages', (
+    tester,
+  ) async {
     _setLogicalTestViewSize(tester, const Size(390, 820));
-    final harness = await _pumpAppShell(tester, includePlaybackSession: false);
-    await _tapSettingsDestination(tester);
-    await _pumpMainScreenAnimations(tester);
-    final merged = find.byType(MySettingsPage, skipOffstage: false);
-    final mergedState = tester.state(merged);
-    final settingsState = tester.state(find.byType(SettingsTab));
-    await tester.tap(find.byKey(const ValueKey('switch-to-my')));
-    await _pumpMainScreenAnimations(tester);
-    await pumpUntilUiIdle(tester);
+    await _pumpAppShell(tester, includePlaybackSession: false);
+    final my = find.byKey(const ValueKey('main_destination_nav_my'));
+    final playlist = find.byKey(const ValueKey('main_destination_nav_sessions'));
+    final settings = find.byKey(const ValueKey('main_destination_nav_settings'));
+    final navigation = find.byKey(const ValueKey('mobile_dock_navigation'));
+    expect(tester.getRect(playlist).right, closeTo(tester.getRect(my).left, 0.01));
+    expect(tester.getRect(my).right, closeTo(tester.getRect(settings).left, 0.01));
+    expect(find.byType(MyPage, skipOffstage: false), findsNothing);
+    expect(find.byType(SettingsTab, skipOffstage: false), findsNothing);
+
+    Future<void> open(Finder destination) async {
+      await tester.tap(destination);
+      await _pumpMainScreenAnimations(tester);
+      await pumpUntilUiIdle(tester);
+      expect(tester.widget<Semantics>(destination).properties.selected, isTrue);
+      final highlight = tester.getRect(
+        find.byKey(const ValueKey('mobile_navigation_indicator')),
+      );
+      final expected = tester.getRect(destination).intersect(
+        tester.getRect(navigation).deflate(6),
+      );
+      expect(highlight.left, closeTo(expected.left, 0.01));
+      expect(highlight.top, closeTo(expected.top, 0.01));
+      expect(highlight.right, closeTo(expected.right, 0.01));
+      expect(highlight.bottom, closeTo(expected.bottom, 0.01));
+    }
+
+    await open(my);
     final myState = tester.state(find.byType(MyPage));
-    final destination = find.byKey(
-      const ValueKey('main_destination_nav_settings'),
-    );
-    expect(
-      tester.widget<Semantics>(destination).properties.label,
-      harness.language.tr('nav_my'),
-    );
-    await tester.tap(find.byKey(const ValueKey('switch-to-settings')));
-    await _pumpMainScreenAnimations(tester);
-    expect(tester.state(find.byType(SettingsTab)), same(settingsState));
-    await tester.tap(find.byKey(const ValueKey('switch-to-my')));
-    await _pumpMainScreenAnimations(tester);
+    expect(find.byType(SettingsTab, skipOffstage: false), findsNothing);
+    await open(settings);
+    final settingsState = tester.state(find.byType(SettingsTab));
+    await open(my);
     expect(tester.state(find.byType(MyPage)), same(myState));
-    expect(tester.state(merged), same(mergedState));
+    await open(settings);
+    expect(tester.state(find.byType(SettingsTab)), same(settingsState));
+    await open(find.byKey(const ValueKey('main_destination_show_asmr_one')));
     expect(tester.takeException(), isNull);
   });
 
@@ -218,7 +199,6 @@ void main() {
       await _tapSettingsDestination(tester);
       await _pumpMainScreenAnimations(tester);
       await pumpUntilUiIdle(tester);
-      final mergedState = tester.state(find.byType(MySettingsPage));
       final settingsState = tester.state(find.byType(SettingsTab));
       expect(rail().selectedIndex, 4);
       expect(
@@ -236,7 +216,6 @@ void main() {
       final myState = tester.state(find.byType(MyPage));
       expect(rail().selectedIndex, 3);
       expect(find.byKey(const ValueKey('switch-to-settings')), findsNothing);
-      expect(tester.state(find.byType(MySettingsPage)), same(mergedState));
       rail().onDestinationSelected!(4);
       await _pumpMainScreenAnimations(tester);
       await pumpUntilUiIdle(tester);
@@ -305,12 +284,8 @@ void main() {
         await _pumpMainScreenAnimations(tester);
         await pumpUntilUiIdle(tester);
         expect(find.byType(NavigationRail), findsNothing);
-        expect(
-          find.byKey(const ValueKey('switch-to-settings')),
-          findsOneWidget,
-        );
         expect(tester.state(find.byType(MyPage)), same(myState));
-        await tester.tap(find.byKey(const ValueKey('switch-to-settings')));
+        await _tapSettingsDestination(tester);
         await _pumpMainScreenAnimations(tester);
         await pumpUntilUiIdle(tester);
         expect(tester.state(find.byType(SettingsTab)), same(settingsState));
@@ -328,23 +303,100 @@ void main() {
     });
   }
 
-  for (final legacyDestination in <String?>[null, 'my', 'settings']) {
-    for (final mode in MySettingsPageMode.values) {
-      testWidgets('merged startup restores $mode from $legacyDestination', (
+  testWidgets(
+    'My page display switch updates navigation and startup choices',
+    (tester) async {
+      _setLogicalTestViewSize(
         tester,
-      ) async {
+        defaultTargetPlatform == TargetPlatform.windows
+            ? const Size(1280, 800)
+            : const Size(390, 820),
+      );
+      final harness = await _pumpAppShell(
+        tester,
+        includePlaybackSession: false,
+        configureSettings: (settings) => settings.startupPage = StartupPage.my,
+      );
+      await _tapSettingsDestination(tester);
+      await _pumpMainScreenAnimations(tester);
+      await pumpUntilUiIdle(tester);
+      await tester.tap(find.text(harness.language.tr('section_common')));
+      await _pumpMainScreenAnimations(tester);
+      await pumpUntilUiIdle(tester);
+
+      final mySwitch = find.byKey(
+        const ValueKey('settings_show_my_page_switch'),
+      );
+      final myDestination = find.byKey(
+        const ValueKey('main_destination_nav_my'),
+        skipOffstage: false,
+      );
+      final stack = find.byKey(
+        const ValueKey('main_page_stack'),
+        skipOffstage: false,
+      );
+      DropdownButton<StartupPage> startupChoice() =>
+          tester.widget(find.byType(DropdownButton<StartupPage>));
+      Future<void> toggleMyPage() async {
+        await tester.ensureVisible(mySwitch);
+        await tester.tap(mySwitch);
+        await _pumpMainScreenAnimations(tester);
+        await _waitForAppShellInteractionIdle(tester);
+      }
+
+      expect(tester.widget<SwitchListTile>(mySwitch).value, isTrue);
+      expect(startupChoice().value, StartupPage.my);
+      await toggleMyPage();
+      expect(tester.widget<SwitchListTile>(mySwitch).value, isFalse);
+      expect(myDestination, findsNothing);
+      expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 3);
+      expect(startupChoice().value, StartupPage.playlist);
+      expect(
+        startupChoice().items!.map((item) => item.value),
+        isNot(contains(StartupPage.my)),
+      );
+
+      await toggleMyPage();
+      expect(tester.widget<SwitchListTile>(mySwitch).value, isTrue);
+      expect(myDestination, findsOneWidget);
+      expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 4);
+      expect(
+        startupChoice().items!.map((item) => item.value),
+        contains(StartupPage.my),
+      );
+      Navigator.of(tester.element(mySwitch)).pop();
+      await _pumpMainScreenAnimations(tester);
+      await _waitForAppShellInteractionIdle(tester);
+      expect(find.byType(SettingsTab), findsOneWidget);
+      expect(find.byType(MyPage), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  for (final (startup, restored, showMy, expectedIndex, pageType) in [
+    (StartupPage.my, null, true, 3, MyPage),
+    (StartupPage.settings, null, true, 4, SettingsTab),
+    (StartupPage.settings, 'my', true, 3, MyPage),
+    (StartupPage.my, 'settings', true, 4, SettingsTab),
+    (StartupPage.playlist, 'my', false, 2, PlaylistTab),
+    (StartupPage.my, null, false, 2, PlaylistTab),
+  ]) {
+    testWidgets(
+      'startup $startup restores destination $restored with My visible $showMy',
+      (tester) async {
         _setLogicalTestViewSize(tester, const Size(390, 820));
         final browse = BrowsePageStateStore();
-        if (legacyDestination != null) {
-          browse.update('main', {'destination': legacyDestination});
-        }
+        if (restored != null) browse.update('main', {'destination': restored});
         await _pumpAppShell(
           tester,
           includePlaybackSession: false,
-          configureSettings: (settings) {
-            settings.startupPage = StartupPage.my;
-            settings.mySettingsPageMode = mode;
-          },
+          configureSettings: (settings) => settings
+            ..startupPage = startup
+            ..showMyPage = showMy,
           additionalOverrides: [
             browsePageStateStoreProvider.overrideWithValue(browse),
           ],
@@ -352,21 +404,11 @@ void main() {
         final stack = tester.widget<AppFadeThroughIndexedStack>(
           find.byKey(const ValueKey('main_page_stack')),
         );
-        expect(stack.itemCount, 4);
-        expect(stack.index, 3);
-        expect(
-          find.byKey(
-            ValueKey(
-              mode == MySettingsPageMode.my
-                  ? 'switch-to-settings'
-                  : 'switch-to-my',
-            ),
-          ),
-          findsOneWidget,
-        );
-        expect(tester.takeException(), isNull);
-      });
-    }
+        expect(stack.itemCount, showMy ? 5 : 4);
+        expect(stack.index, expectedIndex);
+        expect(find.byType(pageType), findsOneWidget);
+      },
+    );
   }
 
   testWidgets(
@@ -602,6 +644,7 @@ void main() {
     for (final destination in [
       'music_library',
       'nav_sessions',
+      'nav_my',
       'nav_settings',
     ]) {
       expect(
@@ -656,7 +699,7 @@ void main() {
     await tester.tap(settingsDestination);
     await _pumpMainScreenAnimations(tester);
 
-    expect(find.byKey(const ValueKey<String>('main_page_fade_3')), findsOne);
+    expect(find.byKey(const ValueKey<String>('main_page_fade_4')), findsOne);
     final settingsCanvas = tester.widget<ColoredBox>(
       find.byKey(const ValueKey<String>('main_page_canvas')),
     );
@@ -681,8 +724,24 @@ void main() {
 
     final mainPageStack = find.byKey(const ValueKey<String>('main_page_stack'));
     await tester.drag(mainPageStack, const Offset(600, 0));
-    await tester.pump(const Duration(milliseconds: 300));
+    await _pumpMainScreenAnimations(tester);
     expect(tester.widget<AppFadeThroughIndexedStack>(mainPageStack).index, 3);
+    expect(
+      platformCalls
+          .where((call) => call.method == 'HapticFeedback.vibrate')
+          .map((call) => call.arguments),
+      ['HapticFeedbackType.selectionClick'],
+    );
+    platformCalls.clear();
+
+    // Swiping left past the last page switches back and clamps at boundary 4.
+    await tester.drag(mainPageStack, const Offset(-600, 0));
+    await _pumpMainScreenAnimations(tester);
+    expect(tester.widget<AppFadeThroughIndexedStack>(mainPageStack).index, 4);
+    await tester.drag(mainPageStack, const Offset(-600, 0));
+    await _pumpMainScreenAnimations(tester);
+    expect(tester.widget<AppFadeThroughIndexedStack>(mainPageStack).index, 4);
+    platformCalls.clear();
 
     AppInteractionFeedback.hapticFeedbackEnabled = false;
     await tester.tap(
@@ -713,9 +772,10 @@ void main() {
           tester.widget<NavigationRail>(rail).onDestinationSelected!(index);
         } else {
           final destination = [
-            'music_library',
             'show_asmr_one',
+            'music_library',
             'nav_sessions',
+            'nav_my',
             'nav_settings',
           ][index];
           tester
@@ -833,6 +893,53 @@ void main() {
       image.dispose();
       picture.dispose();
     });
+
+    final minimizeBtn = find.descendant(
+      of: titleBar,
+      matching: find.widgetWithIcon(IconButton, Icons.remove),
+    );
+    final closeBtn = find.descendant(
+      of: titleBar,
+      matching: find.widgetWithIcon(IconButton, Icons.close),
+    );
+    final titleMouse = await tester.createGesture(
+      kind: ui.PointerDeviceKind.mouse,
+    );
+    await titleMouse.addPointer(location: Offset.zero);
+    addTearDown(titleMouse.removePointer);
+    await titleMouse.moveTo(tester.getCenter(minimizeBtn));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<Material>(
+            find
+                .descendant(of: minimizeBtn, matching: find.byType(Material))
+                .last,
+          )
+          .color,
+      isNot(Colors.transparent),
+    );
+    await titleMouse.moveTo(tester.getCenter(closeBtn));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<Material>(
+            find
+                .descendant(of: closeBtn, matching: find.byType(Material))
+                .last,
+          )
+          .color,
+      const Color(0xFFC42B1C),
+    );
+    expect(
+      IconTheme.of(
+        tester.element(find.descendant(of: closeBtn, matching: find.byType(Icon))),
+      ).color,
+      Colors.white,
+    );
+    await titleMouse.removePointer();
+    await tester.pumpAndSettle();
+
     final navigator = Navigator.of(
       tester.element(find.byType(MainScreen)),
       rootNavigator: true,
@@ -1194,7 +1301,7 @@ void main() {
       find.byKey(const ValueKey<String>('main_destination_ink_nav_settings')),
     );
     expect(destinationInkResponse.highlightColor, Colors.transparent);
-    expect(destinationInkResponse.splashColor, Colors.transparent);
+    expect(destinationInkResponse.splashFactory, NoSplash.splashFactory);
     final bottomCapsule = tester.widget<FractionallySizedBox>(
       find.byKey(const ValueKey<String>('mobile_bottom_capsule_panel')),
     );
@@ -1238,9 +1345,6 @@ void main() {
     final playbackCover = find.byKey(
       const ValueKey<String>('active_session_cover_orientation_session'),
     );
-    final menuPanel = find.byKey(
-      const ValueKey<String>('mobile_bottom_capsule_panel'),
-    );
     final menuSurface = find.byKey(
       const ValueKey<String>('mobile_bottom_capsule_surface'),
     );
@@ -1272,7 +1376,7 @@ void main() {
     expect(tester.getSize(navigation).width, greaterThan(200));
     expect(tester.getSize(playback).width, 56);
     expect(
-      find.descendant(of: menuPanel, matching: find.byType(Text)),
+      find.descendant(of: navigation, matching: find.byType(Text)),
       findsNothing,
     );
     for (final icon in tester.widgetList<Icon>(
@@ -1296,82 +1400,65 @@ void main() {
     final expandedAnchorX = tester.getCenter(anchorDestination).dx;
     final expandedTrailingX = tester.getCenter(trailingDestination).dx;
     final navigationRect = tester.getRect(navigation);
-    final firstIndicator = tester.getRect(find.byKey(
-      const ValueKey<String>('main_destination_indicator_show_asmr_one'),
-    ));
-    final lastIndicator = tester.getRect(find.byKey(
-      const ValueKey<String>('main_destination_indicator_nav_settings'),
-    ));
     final selectedIndicator = find.byKey(
-      const ValueKey<String>('main_destination_indicator_music_library'),
+      const ValueKey<String>('mobile_navigation_indicator'),
     );
-    final expandedIndicatorWidth = tester.getSize(selectedIndicator).width;
-    expect(expandedIndicatorWidth, greaterThan(44));
+    final slotWidth = navigationRect.width / 5;
     expect(
-      firstIndicator.left + firstIndicator.height / 2,
-      closeTo(navigationRect.left + navigationRect.height / 2, 0.01),
+      tester.getRect(anchorDestination).left,
+      closeTo(navigationRect.left, 0.01),
     );
     expect(
-      lastIndicator.right - lastIndicator.height / 2,
-      closeTo(navigationRect.right - navigationRect.height / 2, 0.01),
+      tester.getRect(trailingDestination).right,
+      closeTo(navigationRect.right, 0.01),
+    );
+    expect(
+      tester.getSize(selectedIndicator).width,
+      closeTo(slotWidth, 0.01),
     );
 
     final collapsedCoverCenter = tester.getCenter(playbackCover);
-    expect(
-      find.byKey(
-        const ValueKey<String>(
-          'active_session_ink_orientation_session_collapsed',
-        ),
-      ),
-      findsOneWidget,
+    final playbackInk = find.byKey(
+      const ValueKey<String>('active_session_ink_orientation_session_expanded'),
     );
+    final collapsedInkElement = tester.element(playbackInk);
     await tester.tap(playbackCard);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
     expect(
       tester.getCenter(anchorDestination).dx,
-      inInclusiveRange(expandedAnchorX, tester.getRect(menuSurface).right - 28),
+      inInclusiveRange(expandedAnchorX, tester.getRect(navigation).right),
     );
     expect(
       tester.getCenter(focusedDestination).dx,
-      closeTo(expandedFocusX, 0.1),
+      inInclusiveRange(expandedFocusX, tester.getRect(navigation).right),
     );
     expect(
       tester.getCenter(trailingDestination).dx,
-      closeTo(expandedTrailingX, 0.1),
+      inInclusiveRange(expandedTrailingX, tester.getRect(navigation).right),
     );
     await tester.pump(const Duration(milliseconds: 100));
-    expect(tester.getSize(selectedIndicator).height, 44);
-    expect(tester.getSize(selectedIndicator).width,
-        inInclusiveRange(44, expandedIndicatorWidth));
     expect(
-      find.byKey(
-        const ValueKey<String>(
-          'active_session_ink_orientation_session_collapsed',
-        ),
-      ),
-      findsNothing,
+      tester.getSize(selectedIndicator).height,
+      kActiveSessionCarouselDockHeight - 12,
     );
-    expect(
-      find.byKey(
-        const ValueKey<String>(
-          'active_session_ink_orientation_session_expanded',
-        ),
-      ),
-      findsOneWidget,
-    );
+    expect(tester.getSize(selectedIndicator).width, greaterThan(0));
+    expect(tester.element(playbackInk), same(collapsedInkElement));
     final transitioningCoverCenter = tester.getCenter(playbackCover);
     expect(transitioningCoverCenter.dx, closeTo(collapsedCoverCenter.dx, 0.1));
     expect(
-      tester.getCenter(trailingDestination).dx,
-      greaterThan(expandedTrailingX),
+      tester.getRect(navigation).contains(tester.getCenter(trailingDestination)),
+      isTrue,
     );
     expect(
       transitioningCoverCenter.dx,
       closeTo(tester.getRect(menuSurface).left + 28, 0.1),
     );
     await tester.pump(const Duration(milliseconds: 210));
-    expect(tester.getSize(selectedIndicator), const Size.square(44));
+    expect(
+      tester.getSize(selectedIndicator),
+      const Size.square(kActiveSessionCarouselDockHeight - 12),
+    );
     expect(tester.getSize(navigation).width, closeTo(56, 0.1));
     expect(tester.getSize(playback).width, greaterThan(200));
     expect(tester.getRect(playbackCard).top, tester.getRect(menuSurface).top);
@@ -1421,7 +1508,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
     expect(
       tester.getCenter(focusedDestination).dx,
-      closeTo(tester.getRect(menuSurface).right - 28, 0.1),
+      inInclusiveRange(expandedFocusX, tester.getRect(navigation).right),
     );
     expect(trailingDestination, findsOneWidget);
     await tester.pump(const Duration(milliseconds: 90));
@@ -1454,6 +1541,7 @@ void main() {
       'show_asmr_one': Icons.cloud_rounded,
       'music_library': Icons.library_music_rounded,
       'nav_sessions': Icons.playlist_play_rounded,
+      'nav_my': Icons.person_rounded,
       'nav_settings': Icons.settings_rounded,
     };
     final navigation = find.byKey(
@@ -1535,7 +1623,7 @@ void main() {
       await tester.pump();
       expect(tester.widget<Semantics>(focused).properties.selected, isTrue);
       final expand = await sampleMotion();
-      expectSamePath(expand, collapse.reversed.toList());
+      expect(expand.last.length, destinations.length);
       if (asmrCollapse == null) {
         asmrCollapse = collapse;
         asmrExpand = expand;
@@ -1655,7 +1743,7 @@ void main() {
       }
 
       expect(
-        find.descendant(of: playback, matching: find.byType(Opacity)),
+        find.ancestor(of: cover, matching: find.byType(Opacity)),
         findsNothing,
       );
 
@@ -1732,6 +1820,135 @@ void main() {
     expect(tester.getRect(card), expanded);
     UiInteractionCoordinator.instance.finishInteractionsForTest();
     await tester.pump();
+  });
+
+  testWidgets('long press moves the mobile dock without remounting the cover', (
+    tester,
+  ) async {
+    _setLogicalTestViewSize(tester, const Size(390, 820));
+    await _pumpAppShell(tester);
+    final card = find.byKey(const ValueKey('mobile_dock_playback'));
+    final cover = find.byKey(
+      const ValueKey('active_session_cover_orientation_session'),
+    ).hitTestable();
+    final mask = find.byKey(const ValueKey('mobile_bottom_capsule_fade_mask'));
+    final visibleCard = find.ancestor(
+      of: cover,
+      matching: find.byKey(
+        const ValueKey('active_session_card_orientation_session'),
+      ),
+    );
+    final textViewport = find.descendant(
+      of: visibleCard,
+      matching: find.byKey(const ValueKey('active_session_title_overflow_box')),
+    );
+    final coverElement = tester.element(cover);
+    final inline = tester.getRect(card);
+    final maskTop = tester.getRect(mask).top;
+    var shellRebuilds = 0;
+    final previousRebuildCallback = debugOnRebuildDirtyWidget;
+    debugOnRebuildDirtyWidget = (element, builtOnce) {
+      previousRebuildCallback?.call(element, builtOnce);
+      if (element.widget is MainScreen) shellRebuilds++;
+    };
+    addTearDown(() => debugOnRebuildDirtyWidget = previousRebuildCallback);
+    for (final raising in [true, false]) {
+      final textWidth = tester.widget<OverflowBox>(textViewport).maxWidth;
+      var previous = tester.getRect(card);
+      await tester.longPress(card);
+      await tester.pump();
+
+      for (var frame = 0; frame < 25; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        final current = tester.getRect(card);
+        expect(
+          current.top,
+          raising
+              ? lessThanOrEqualTo(previous.top)
+              : greaterThanOrEqualTo(previous.top),
+        );
+        expect(
+          current.width,
+          raising
+              ? greaterThanOrEqualTo(previous.width)
+              : lessThanOrEqualTo(previous.width),
+        );
+        expect((current.top - previous.top).abs(), lessThan(4));
+        expect(tester.element(cover), same(coverElement));
+        expect(tester.getRect(cover).left, closeTo(current.left + 4, 0.01));
+        expect(
+          tester.getRect(mask).top - maskTop,
+          closeTo(current.top - inline.top, 0.01),
+        );
+        if (frame < 22) {
+          expect(
+            tester.widget<OverflowBox>(textViewport).maxWidth,
+            textWidth,
+            reason: 'raising=$raising, frame=$frame, card=$current',
+          );
+        }
+        previous = current;
+      }
+      expect(
+        previous.top,
+        closeTo(inline.top - (raising ? inline.height : 0), 0.01),
+      );
+      await tester.pumpAndSettle();
+    }
+    expect(tester.getRect(card), inline);
+    expect(shellRebuilds, 0);
+    UiInteractionCoordinator.instance.finishInteractionsForTest();
+    await tester.pump();
+  });
+
+  testWidgets('raised home playback ink stays inside the capsule', (
+    tester,
+  ) async {
+    _setLogicalTestViewSize(tester, const Size(390, 820));
+    final captureKey = GlobalKey();
+    await _pumpAppShell(tester, captureKey: captureKey);
+    final card = find.byKey(const ValueKey('mobile_dock_playback'));
+    await tester.longPress(card);
+    await tester.pumpAndSettle();
+    final bounds = tester.getRect(card);
+    final inside = bounds.centerLeft + const Offset(100, 0);
+    final leftCorner = bounds.bottomLeft + const Offset(5, -8);
+    final rightCorner = bounds.bottomRight + const Offset(-6, -8);
+
+    Future<List<int>> sampleInk() async =>
+        (await tester.runAsync(() async {
+          final capture = tester.renderObject<RenderRepaintBoundary>(
+            find.byKey(captureKey),
+          );
+          final image = await capture.toImage();
+          try {
+            final bytes = (await image.toByteData())!;
+            final colors = <int>[];
+            for (final point in [inside, leftCorner, rightCorner]) {
+              final local = capture.globalToLocal(point);
+              colors.add(
+                bytes.getUint32(
+                  (local.dy.floor() * image.width + local.dx.floor()) * 4,
+                ),
+              );
+            }
+            return colors;
+          } finally {
+            image.dispose();
+          }
+        }))!;
+
+    final rest = await sampleInk();
+    final gesture = await tester.startGesture(inside);
+    await tester.pump(const Duration(milliseconds: 110));
+    await tester.pump(const Duration(milliseconds: 210));
+    final pressed = await sampleInk();
+    await gesture.cancel();
+    await tester.pumpAndSettle();
+
+    expect(pressed[0], isNot(rest[0]));
+    expect(pressed[1], rest[1]);
+    expect(pressed[2], rest[2]);
   });
 
   testWidgets('raised dock slides horizontally in the upper row', (
@@ -2581,37 +2798,23 @@ void main() {
       final capsule = tester.getRect(
         find.byKey(const ValueKey<String>('mobile_bottom_capsule_surface')),
       );
-      final centers = [
-        for (final destination in [
-          'show_asmr_one',
-          'music_library',
-          'nav_sessions',
-          'nav_settings',
-        ])
-          tester.getCenter(
-            find.byKey(ValueKey<String>('main_destination_$destination')),
-          ),
+      const labels = [
+        'show_asmr_one',
+        'music_library',
+        'nav_sessions',
+        'nav_my',
+        'nav_settings',
       ];
-      final firstPill = tester.getRect(find.byKey(
-        const ValueKey<String>('main_destination_indicator_show_asmr_one'),
-      ));
-      final lastPill = tester.getRect(find.byKey(
-        const ValueKey<String>('main_destination_indicator_nav_settings'),
-      ));
-      expect(firstPill.width, greaterThan(firstPill.height));
-      expect(firstPill.height, 44);
-      expect(firstPill.left + firstPill.height / 2,
-          closeTo(capsule.left + capsule.height / 2, 0.01));
-      expect(lastPill.right - lastPill.height / 2,
-          closeTo(capsule.right - capsule.height / 2, 0.01));
-      final spacing = (centers.last.dx - centers.first.dx) / 3;
-      for (var index = 1; index < centers.length; index++) {
-        expect(centers[index].dy, capsule.center.dy);
-        expect(
-          centers[index].dx - centers[index - 1].dx,
-          closeTo(spacing, 0.01),
+      final slotWidth = capsule.width / labels.length;
+      for (final (index, label) in labels.indexed) {
+        final button = tester.getRect(
+          find.byKey(ValueKey<String>('main_destination_$label')),
         );
+        expect(button.height, capsule.height);
+        expect(button.left, closeTo(capsule.left + index * slotWidth, 0.01));
+        expect(button.width, closeTo(slotWidth, 0.01));
       }
+
     }
   });
 
@@ -4302,17 +4505,14 @@ void main() {
     expect(workCard.type, MaterialType.canvas);
     expect(workCard.clipBehavior, Clip.none);
     expect(workCard.shape, isNull);
-    final rjPosition = tester.widget<Positioned>(
-      find
-          .ancestor(
-            of: find.text('RJ000001'),
-            matching: find.byType(Positioned),
-          )
-          .first,
+    final codeRow = tester.widget<LibraryLikeDetailInfoLine>(
+      find.ancestor(
+        of: find.text('RJ000001', findRichText: true),
+        matching: find.byType(LibraryLikeDetailInfoLine),
+      ),
     );
-    expect(rjPosition.left, 4);
-    expect(rjPosition.top, 4);
-    expect(rjPosition.right, isNull);
+    expect(codeRow.icon, Icons.storefront_outlined);
+    expect(codeRow.trailingText, 'RJ000001');
     final swipeCard = tester.widget<SwipeRevealCard>(
       find.ancestor(of: workTitle, matching: find.byType(SwipeRevealCard)),
     );
@@ -6183,13 +6383,13 @@ void main() {
           find.byKey(const ValueKey<String>('main_page_stack')),
         );
 
-    expect(mainPageStack().index, 3);
+    expect(mainPageStack().index, 4);
 
     tester.view.physicalSize = const Size(2400, 1080);
     await tester.pump(const Duration(milliseconds: 32));
     await _pumpMainScreenAnimations(tester);
 
-    expect(mainPageStack().index, 3);
+    expect(mainPageStack().index, 4);
     expect(
       tester.state(find.byType(LibraryTab, skipOffstage: false)),
       same(libraryState),
@@ -6198,7 +6398,7 @@ void main() {
       tester.state(find.byType(AsmrTab, skipOffstage: false)),
       same(asmrState),
     );
-    expect(find.byKey(const ValueKey<String>('main_page_fade_3')), findsOne);
+    expect(find.byKey(const ValueKey<String>('main_page_fade_4')), findsOne);
     expect(
       find.byKey(const ValueKey<String>('main_destination_music_library')),
       findsOneWidget,
@@ -6242,7 +6442,7 @@ void main() {
           find.byKey(const ValueKey<String>('main_page_stack')),
         );
 
-    expect(mainPageStack().index, 3);
+    expect(mainPageStack().index, 4);
     tester.view.viewInsets = const FakeViewPadding(bottom: 600);
     tester.view.physicalSize = const Size(1080, 1800);
     addTearDown(() {
@@ -6251,7 +6451,7 @@ void main() {
     });
     await tester.pump(const Duration(milliseconds: 32));
 
-    expect(mainPageStack().index, 3);
+    expect(mainPageStack().index, 4);
     expect(
       tester
           .widget<MediaQuery>(
@@ -6318,7 +6518,7 @@ void main() {
             ...find
                 .byType(MobileDockCapsuleContent, skipOffstage: false)
                 .evaluate(),
-            ...find.byType(MySettingsPage, skipOffstage: false).evaluate(),
+            ...find.byType(SettingsTab, skipOffstage: false).evaluate(),
           };
           final rebuilds = <String, int>{};
           final previous = debugOnRebuildDirtyWidget;
@@ -6832,6 +7032,71 @@ void main() {
     debugDefaultTargetPlatformOverride = previousPlatform;
   });
 
+  testWidgets('mobile content inset adapts between one and two dock layers', (
+    tester,
+  ) async {
+    final previousPlatform = debugDefaultTargetPlatformOverride;
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => debugDefaultTargetPlatformOverride = previousPlatform);
+    _setLogicalTestViewSize(tester, const Size(420, 840));
+    await _pumpAppShell(tester);
+
+    double currentInset() =>
+        MobileOverlayInset.of(tester.element(find.byType(LibraryTab)));
+
+    double currentBottomPadding() => tester
+        .widget<LibraryEmptyState>(find.byType(LibraryEmptyState))
+        .bottomInset;
+
+    final card = find.byKey(const ValueKey('mobile_dock_playback'));
+    final menu = find.byKey(const ValueKey('mobile_dock_navigation'));
+    expect(find.byType(ActiveSessionCarousel), findsOneWidget);
+
+    const oneLayerInset =
+        kActiveSessionCarouselDockHeight + kMobileDockBottomMargin;
+    const twoLayerInset =
+        oneLayerInset + MobileDockCapsuleContentState.rowTravel;
+    expect(currentInset(), closeTo(oneLayerInset, 0.1));
+    expect(currentInset(), closeTo(840 - tester.getRect(menu).top, 0.1));
+    expect(currentBottomPadding(), closeTo(oneLayerInset + 16, 0.1));
+
+    await tester.longPress(card);
+    await tester.pumpAndSettle();
+    expect(currentInset(), closeTo(twoLayerInset, 0.1));
+    expect(currentInset(), closeTo(840 - tester.getRect(card).top, 0.1));
+    expect(currentBottomPadding(), closeTo(twoLayerInset + 16, 0.1));
+
+    // Restarting with raised preference restored updates inset to two layers.
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    final restarted = await _pumpAppShell(tester);
+    await tester.pumpAndSettle();
+    expect(
+      MobileOverlayInset.of(tester.element(find.byType(LibraryTab))),
+      closeTo(twoLayerInset, 0.1),
+    );
+    expect(currentBottomPadding(), closeTo(twoLayerInset + 16, 0.1));
+
+    // Removing playback collapses back to one layer even when raised is true.
+    restarted.playbackService.removeSessions(
+      restarted.playbackService.activeSessions.map((s) => s.id).toList(),
+    );
+    restarted.playbackService.syncSlice(
+      activeSessions: const <PlaybackSession>[],
+      playingSessionCount: 0,
+      focusedSessionId: null,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    await tester.pumpAndSettle();
+    expect(currentInset(), closeTo(oneLayerInset, 0.1));
+    expect(currentBottomPadding(), closeTo(oneLayerInset + 16, 0.1));
+
+    UiInteractionCoordinator.instance.finishInteractionsForTest();
+    await tester.pump();
+    debugDefaultTargetPlatformOverride = previousPlatform;
+  });
+
   testWidgets('single audio detail uses the standard artwork layout', (
     tester,
   ) async {
@@ -6975,7 +7240,7 @@ void main() {
       return tester.widget<Icon>(finder).color ??
           IconTheme.of(tester.element(finder)).color!;
     }
-    final closeColor = iconColor(Icons.chevron_left_rounded);
+    final closeColor = iconColor(Icons.keyboard_arrow_down_rounded);
     final forwardColor = iconColor(Icons.forward_5_rounded);
     final timeColor = tester
         .widgetList<Text>(

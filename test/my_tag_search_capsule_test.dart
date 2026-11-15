@@ -402,6 +402,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 120));
         expect(pressHighlight(), hasLength(1));
         await press.up();
+        await tester.pump(const Duration(milliseconds: 180));
         expect(pressHighlight(), isEmpty);
         await tester.pumpAndSettle();
         expect(tester.widget<AppElementChip>(chip).selected, isTrue);

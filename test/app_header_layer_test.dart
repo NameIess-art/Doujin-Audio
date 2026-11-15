@@ -78,6 +78,75 @@ Future<List<Color>> _pixels(
 
 void main() {
   testWidgets(
+    'Windows selection header fades at its own paint origin',
+    (tester) async {
+      final selected = ValueNotifier(false);
+      final tab = ValueNotifier(0);
+      addTearDown(selected.dispose);
+      addTearDown(tab.dispose);
+      tester.view.devicePixelRatio = 1.25;
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Padding(
+            padding: const EdgeInsets.only(top: 30),
+            child: AppFadeThroughIndexedStack.lazy(
+              indexListenable: tab,
+              itemCount: 1,
+              separateHeader: true,
+              itemBuilder: (_, _) => Align(
+                alignment: Alignment.topCenter,
+                child: ValueListenableBuilder<bool>(
+                  valueListenable: selected,
+                  builder: (_, selecting, _) => AppHeaderTransition(
+                    child: SizedBox(
+                      key: ValueKey(selecting),
+                      width: 400,
+                      height: 88,
+                      child: Text(selecting ? 'Select multiple' : 'Playlist'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      OpacityLayer modeFadeLayer(bool selecting) {
+        final header = find.byKey(ValueKey(selecting));
+        expect(tester.getTopLeft(header).dy, 30);
+        final fade = find.byWidgetPredicate(
+          (widget) =>
+              widget is FadeTransition &&
+              widget.child?.key == ValueKey(selecting),
+        );
+        return tester.renderObject<RenderAnimatedOpacity>(fade).debugLayer!
+            as OpacityLayer;
+      }
+
+      expect(modeFadeLayer(false).engineLayer, isA<ui.OffsetEngineLayer>());
+      for (final selecting in [true, false]) {
+        selected.value = selecting;
+        await tester.pump();
+        await tester.pump(kAppFadeDuration ~/ 2);
+        for (final mode in [false, true]) {
+          final layer = modeFadeLayer(mode);
+          expect(layer.alpha, inExclusiveRange(0, 255));
+          expect(layer.engineLayer, isA<ui.OpacityEngineLayer>());
+        }
+        await tester.pumpAndSettle();
+        expect(
+          modeFadeLayer(selecting).engineLayer,
+          isA<ui.OffsetEngineLayer>(),
+        );
+      }
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
     'retained tabs and child routes blur content behind the header',
     (tester) async {
       final surface = GlobalKey();
@@ -1141,7 +1210,7 @@ void main() {
       const Offset(790, 50),
       const Offset(8, 140),
     ]);
-    final incoming = kAppFadeCurve.transform(0.5);
+    final incoming = kAppSpringCurve.transform(0.5);
     final expected = Color.alphaBlend(
       _oldHeader.withValues(alpha: incoming),
       Color.alphaBlend(
@@ -1153,4 +1222,85 @@ void main() {
     await tester.pumpAndSettle();
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets(
+    'multi-select top capsule blurs scrolled content behind it when bar glass is enabled',
+    (tester) async {
+      final surface = GlobalKey();
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: surface,
+          child: MaterialApp(
+            theme: ThemeData(
+              platform: defaultTargetPlatform,
+              extensions: [AppDesignTokens.light.copyWith(barGlassEnabled: true)],
+            ),
+            home: Scaffold(
+              body: Stack(
+                fit: StackFit.expand,
+                children: [
+                  const Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(child: ColoredBox(color: Colors.black)),
+                      Expanded(child: ColoredBox(color: Colors.white)),
+                    ],
+                  ),
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: AppHeaderTransition(
+                      child: TopPageHeader(
+                        key: const ValueKey('batch_header'),
+                        useSafeAreaTop: false,
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                        topCapsuleTitle: '多选模式',
+                        topCapsuleData: '已选 1 项',
+                        titleWidget: const SizedBox.shrink(),
+                        leading: HeaderActionPill(
+                          children: [
+                            IconButton(
+                              onPressed: () {},
+                              icon: const Icon(Icons.play_arrow_rounded),
+                            ),
+                          ],
+                        ),
+                        trailing: HeaderFloatingButton(
+                          child: IconButton(
+                            onPressed: () {},
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final capsuleRect = tester.getRect(find.byType(HeaderTopCapsule));
+      final pixels = await _pixels(tester, surface, [
+        Offset(380, capsuleRect.center.dy),
+        Offset(398, capsuleRect.center.dy),
+        Offset(402, capsuleRect.center.dy),
+        Offset(420, capsuleRect.center.dy),
+      ]);
+      final contrast = pixels[3].r - pixels[0].r;
+      expect(contrast, greaterThan(1 / 255));
+      expect(
+        pixels[2].r - pixels[1].r,
+        lessThan(contrast * 0.75),
+        reason: 'Top capsule must blur the seam, pixels=$pixels',
+      );
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 }

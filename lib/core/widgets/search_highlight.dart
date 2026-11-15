@@ -46,6 +46,7 @@ class SearchHighlightedText extends StatelessWidget {
     this.softWrap,
     this.strutStyle,
     this.overflow = TextOverflow.ellipsis,
+    this.showBackground = true,
   });
 
   final String text;
@@ -55,6 +56,7 @@ class SearchHighlightedText extends StatelessWidget {
   final bool? softWrap;
   final StrutStyle? strutStyle;
   final TextOverflow overflow;
+  final bool showBackground;
 
   @override
   Widget build(BuildContext context) {
@@ -72,17 +74,19 @@ class SearchHighlightedText extends StatelessWidget {
         overflow: overflow,
       );
     }
+    final highlightedText = RichText(
+      text: TextSpan(style: style, children: _buildSpans(context, ranges)),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: maxLines,
+      softWrap: softWrap ?? true,
+      strutStyle: strutStyle,
+      overflow: overflow,
+    );
+    if (!showBackground) return highlightedText;
     return _RoundedSearchHighlights(
       ranges: ranges,
       color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.18),
-      child: RichText(
-        text: TextSpan(style: style, children: _buildSpans(context, ranges)),
-        textScaler: MediaQuery.textScalerOf(context),
-        maxLines: maxLines,
-        softWrap: softWrap ?? true,
-        strutStyle: strutStyle,
-        overflow: overflow,
-      ),
+      child: highlightedText,
     );
   }
 

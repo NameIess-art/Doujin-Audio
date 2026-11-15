@@ -98,9 +98,8 @@ const Map<String, String> appLanguageJa = {
   'my_duration': '{hours} 時間 {minutes} 分 {seconds} 秒',
   'my_load_more': 'さらに読み込む',
   'my_retry': '再試行',
-  'startup_page_my': 'マイページ／設定',
-  'switch_to_my': 'マイページに切り替え',
-  'switch_to_settings': '設定に切り替え',
+  'startup_page_my': 'マイページ',
+  'startup_page_settings': '設定',
 
   'open_containing_folder': '保存先フォルダーを開く',
   'keyboard_shortcuts_title': 'ショートカット',

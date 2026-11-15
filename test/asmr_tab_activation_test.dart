@@ -5,6 +5,7 @@ import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/operation_feedback.dart';
+import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
@@ -323,6 +324,63 @@ void main() {
         findsOneWidget,
       );
       expect(fixture.playback.activeSessions, isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'ASMR multi-select top capsule stays expanded when scrolling',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      final controller = _ActivationController(createTestAsmrServices())
+        ..hasCachedWork = true
+        ..cachedWorkCount = 24;
+      addTearDown(fixture.dispose);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          const AsmrTab(),
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+          ],
+        ),
+      );
+      await _pumpFrames(tester);
+      await tester.tap(
+        find.text('Cached work'),
+        buttons: kSecondaryMouseButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.text(fixture.languageProvider.tr('select_multiple')),
+      );
+      await tester.pumpAndSettle();
+
+      final initialCapsuleRect = tester.getRect(find.byType(HeaderTopCapsule));
+      expect(
+        find.text(fixture.languageProvider.tr('multi_select')),
+        findsOneWidget,
+      );
+
+      final scrollables = find.byWidgetPredicate(
+        (widget) => widget is Scrollable && widget.axisDirection == AxisDirection.down,
+      );
+      await tester.drag(scrollables.first, const Offset(0, -320));
+      await tester.pumpAndSettle();
+
+      expect(tester.getRect(find.byType(HeaderTopCapsule)), initialCapsuleRect);
+      expect(
+        find.text(fixture.languageProvider.tr('multi_select')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          fixture.languageProvider.tr('selected_count', {'count': '1'}),
+        ),
+        findsOneWidget,
+      );
       await tester.pumpWidget(const SizedBox.shrink());
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),

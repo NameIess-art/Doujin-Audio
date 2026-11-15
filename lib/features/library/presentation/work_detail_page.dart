@@ -1864,7 +1864,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                 icon: const Icon(Icons.chevron_left_rounded),
                 onPressed: () => Navigator.of(context).maybePop(),
                 tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-                foregroundColor: cs.onSurface,
               ),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1874,7 +1873,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                       buttonKey: const ValueKey<String>('work_detail_edit'),
                       onPressed: _handleLocalEdit,
                       tooltip: i18n.tr('edit'),
-                      foregroundColor: cs.onSurface,
                       icon: const Icon(Icons.edit_rounded, size: 20),
                     ),
                     const SizedBox(width: 6),
@@ -1888,9 +1886,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                             ? null
                             : _toggleDlsiteMetadata,
                         tooltip: i18n.tr(dlsiteTooltip),
-                        foregroundColor: _showDlsiteMetadata
-                            ? cs.primary
-                            : cs.onSurface,
                         icon: _loadingDlsiteMetadata
                             ? const SizedBox.square(
                                 dimension: 20,
@@ -1899,12 +1894,21 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                                   strokeWidth: 2,
                                 ),
                               )
-                            : const Text(
-                                'DL',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.bold,
-                                  shadows: AppOverlayIconButton.iconShadows,
+                            : _showDlsiteMetadata
+                            ? const Icon(
+                                Icons.undo_rounded,
+                                key: ValueKey('work_detail_dlsite_revert'),
+                                size: 20,
+                              )
+                            : Builder(
+                                builder: (context) => Text(
+                                  'DL',
+                                  style: TextStyle(
+                                    color: IconTheme.of(context).color,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                    shadows: AppOverlayIconButton.iconShadows,
+                                  ),
                                 ),
                               ),
                       ),

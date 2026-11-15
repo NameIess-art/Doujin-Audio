@@ -10,7 +10,6 @@ import 'package:path/path.dart' as path;
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/state/subtitle_settings_provider.dart';
-import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/media/path_matcher.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
@@ -74,12 +73,27 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
   static final _coverSelections = Expando<_QueueCoverSelection>();
   final Map<String, Future<String?>> _coverFutures = {};
   late final _coverScanKey = 'queue_cover_scan:${identityHashCode(this)}';
+  late final _coverDiscoverKey =
+      'queue_cover_discover:${identityHashCode(this)}';
+  final List<String> _pendingDiscoveredPaths = [];
   _QueueCoverSelection? _coverSelection;
 
   @override
   void dispose() {
+    _pendingDiscoveredPaths.clear();
     UiInteractionCoordinator.instance.cancelCommit(_coverScanKey);
+    UiInteractionCoordinator.instance.cancelCommit(_coverDiscoverKey);
     super.dispose();
+  }
+
+  void _scheduleCoverRefresh() {
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _coverScanKey,
+      structural: true,
+      canRun: () =>
+          mounted && TickerMode.getValuesNotifier(context).value.enabled,
+      commit: () => setState(() {}),
+    );
   }
 
   void _scheduleCoverScan(_QueueCoverSelection selection) {
@@ -87,12 +101,11 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
     UiInteractionCoordinator.instance.scheduleCommit(
       key: _coverScanKey,
       structural: true,
+      canRun: () =>
+          mounted &&
+          identical(_coverSelection, selection) &&
+          TickerMode.getValuesNotifier(context).value.enabled,
       commit: () {
-        if (!mounted ||
-            !identical(_coverSelection, selection) ||
-            !TickerMode.getValuesNotifier(context).value.enabled) {
-          return;
-        }
         if (selection.scan()) setState(() {});
         _scheduleCoverScan(selection);
       },
@@ -138,19 +151,39 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final coverGeneration = ref.watch(coverGenerationProvider);
+    final coordinator = UiInteractionCoordinator.instance;
+    final tickerEnabled = TickerMode.valuesOf(context).enabled;
+    final isDeferred = coordinator.isVisualUpdateDeferred;
     var selection = _coverSelections[queue];
-    if (selection == null ||
-        !identical(selection.library, library) ||
-        selection.generation != coverGeneration) {
-      selection = _QueueCoverSelection(queue.entries, library, coverGeneration);
-      selection.scan();
-      _coverSelections[queue] = selection;
+    final hasFreshSelection =
+        selection != null &&
+        identical(selection.library, library) &&
+        selection.generation == coverGeneration;
+    if (!hasFreshSelection) {
+      if (isDeferred || !tickerEnabled) {
+        if (isDeferred && tickerEnabled) _scheduleCoverRefresh();
+        selection =
+            _coverSelection != null &&
+                identical(_coverSelection!.library, library) &&
+                _coverSelection!.generation == coverGeneration
+            ? _coverSelection
+            : null;
+      } else {
+        selection = _QueueCoverSelection(
+          queue.entries,
+          library,
+          coverGeneration,
+        );
+        selection.scan();
+        _coverSelections[queue] = selection;
+      }
     }
     if (!identical(_coverSelection, selection)) {
       _coverFutures.clear();
+      _pendingDiscoveredPaths.clear();
       _coverSelection = selection;
     }
-    if (!selection.isComplete && TickerMode.valuesOf(context).enabled) {
+    if (selection != null && !selection.isComplete && tickerEnabled) {
       _scheduleCoverScan(selection);
     }
     Future<String?> coverFuture(MusicTrack track) => _coverFutures.putIfAbsent(
@@ -163,40 +196,69 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
     final activeColor = cardState.queueColorValue == null
         ? cs.primary
         : Color(cardState.queueColorValue!);
-    final revealActionColor = cardState.queueColorValue == null
-        ? cs.primary
-        : activeColor;
     final isPlaying = cardState.isPlaying;
     final coverSelection = selection;
-    for (final probe in coverSelection.probes) {
-      final track = probe.track;
-      if (_coverFutures.containsKey(track.path)) continue;
-      final future = coverFuture(track);
-      if (coverSelection.selected.contains(probe)) continue;
-      unawaited(
-        future.then<void>((path) {
-          if (path == null || path.isEmpty) return;
-          // A cold standalone track can become eligible once its embedded art
-          // is found. Add it in queue order without repeating the candidate scan.
-          scheduleMicrotask(() {
-            if (coverSelection.addDiscoveredTrack(track.path) &&
-                mounted &&
-                identical(_coverSelection, coverSelection)) {
-              setState(() {});
+    if (coverSelection != null && !isDeferred && tickerEnabled) {
+      for (final probe in coverSelection.probes) {
+        final track = probe.track;
+        if (_coverFutures.containsKey(track.path)) continue;
+        final future = coverFuture(track);
+        if (coverSelection.selected.contains(probe)) continue;
+        unawaited(
+          future.then<void>((path) {
+            if (path == null || path.isEmpty) return;
+            // A cold standalone track can become eligible once its embedded art
+            // is found. Add it in queue order without repeating the candidate scan.
+            void applyDiscoveredCover() {
+              if (!mounted || !identical(_coverSelection, coverSelection)) {
+                return;
+              }
+              if (UiInteractionCoordinator.instance.isVisualUpdateDeferred) {
+                _pendingDiscoveredPaths.add(track.path);
+                UiInteractionCoordinator.instance.scheduleCommit(
+                  key: _coverDiscoverKey,
+                  structural: true,
+                  canRun: () =>
+                      mounted &&
+                      identical(_coverSelection, coverSelection) &&
+                      TickerMode.getValuesNotifier(context).value.enabled,
+                  commit: () {
+                    if (_pendingDiscoveredPaths.isEmpty) return;
+                    var changed = false;
+                    for (final discovered in _pendingDiscoveredPaths) {
+                      if (coverSelection.addDiscoveredTrack(discovered)) {
+                        changed = true;
+                      }
+                    }
+                    _pendingDiscoveredPaths.clear();
+                    if (changed) setState(() {});
+                  },
+                );
+                return;
+              }
+              if (coverSelection.addDiscoveredTrack(track.path)) {
+                setState(() {});
+              }
             }
-          });
-        }),
-      );
+
+            scheduleMicrotask(applyDiscoveredCover);
+          }),
+        );
+      }
     }
-    final coverItems = coverSelection.selected
-        .map(
-          (entry) => (
-            track: entry.track,
-            coverPath: library.resolvedPlaybackCoverPathForTrack(entry.track),
-            future: coverFuture(entry.track),
-          ),
-        )
-        .toList(growable: false);
+    final coverItems = coverSelection == null
+        ? const <({MusicTrack track, String? coverPath, Future<String?> future})>[]
+        : coverSelection.selected
+              .map(
+                (entry) => (
+                  track: entry.track,
+                  coverPath: library.resolvedPlaybackCoverPathForTrack(
+                    entry.track,
+                  ),
+                  future: coverFuture(entry.track),
+                ),
+              )
+              .toList(growable: false);
     final resolvedCurrentPath = playback.resolveRetargetedPath(
       cardState.trackPath,
     );
@@ -259,7 +321,9 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
       child: SwipeRevealCard(
         key: ValueKey(session.id),
         shape: playlistRowShape,
-        color: revealActionColor,
+        swipeEnabled: !isSelectionMode,
+        leadingSwipeEnabled: false,
+        color: activeColor,
         closedColor: cs.surface,
         enabled: !isSelectionMode,
         destructive: false,
@@ -267,11 +331,9 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
         actionLabel: i18n.tr('edit'),
         removeTooltip: i18n.tr('edit_playback_queue'),
         onRemove: onEdit,
-        closeAfterPrimaryAction: true,
         onLeadingAction: onTogglePin,
         onSelectMultiple: onLongPress,
         selectMultipleLabel: i18n.tr('select_multiple'),
-        animateLeadingActionClose: true,
         leadingActionLabel: i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
         leadingActionTooltip: i18n.tr(
           isPinned ? 'unpin_from_top' : 'pin_to_top',
@@ -282,10 +344,10 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
           constraints: const BoxConstraints(minHeight: playlistRowHeight),
           child: Material(
             key: ValueKey('playback_queue_row_surface_${session.id}'),
-            color: isSelected
-                ? cs.primaryContainer.withValues(alpha: 0.15)
-                : Colors.transparent,
+            shape: playlistRowShape,
+            color: Colors.transparent,
             child: AppEntryInkWell(
+              customBorder: playlistRowShape,
               excludeFromSemantics: true,
               onTap: () {
                 if (isSelectionMode) {
@@ -297,220 +359,205 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                   onOpen(context);
                 }
               },
-              onLongPress: () {
-                if (isSelectionMode) {
-                  onToggleSelect?.call();
-                } else {
-                  onLongPress?.call();
-                }
-              },
-              child: Padding(
-                key: ValueKey<String>(
+              onLongPress: onLongPress,
+              child: PlaylistAudioRow(
+                contentKey: ValueKey<String>(
                   'playback_queue_card_content_${session.id}',
                 ),
-                padding: playlistRowPadding,
-                child: Row(
+                cover: Stack(
+                  clipBehavior: Clip.none,
                   children: [
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        SessionCoverProgressRing(
-                          session: session,
-                          sessionId: session.id,
-                          activeColor: activeColor,
-                          size: playlistCoverSize,
-                          child: _QueueCoverGrid(
-                            items: coverItems,
-                            sessionId: session.id,
-                            currentCoverIndex: currentCoverIndex,
-                            coverCacheWidth: coverCacheWidth,
-                            dimension: coverProgressInnerDimension(
-                              playlistCoverSize,
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          right: -2,
-                          bottom: -2,
-                          child: PlaylistSelectionIndicator(
-                            sessionId: session.id,
-                            isSelected: isSelected,
-                          ),
-                        ),
-                        Positioned(
-                          top: -2,
-                          right: -2,
-                          child: PlaylistPinnedIndicator(
-                            isPinned: isPinned,
-                            sessionId: session.id,
-                            color: activeColor,
-                            isSelected: isSelected,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    Expanded(
-                      child: Semantics(
-                        button: true,
-                        selected: isSelectionMode ? isSelected : null,
-                        label: i18n.tr('open_playback_details'),
-                        onTap: isSelectionMode
-                            ? onToggleSelect
-                            : () => onOpen(context),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              queue.name,
-                              key: ValueKey<String>(
-                                'playback_queue_name_${session.id}',
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: cs.onSurfaceVariant,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 12,
-                                  ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text.rich(
-                              TextSpan(
-                                children: [
-                                  if (isPlaying)
-                                    WidgetSpan(
-                                      alignment: PlaceholderAlignment.middle,
-                                      child: Padding(
-                                        padding: const EdgeInsets.only(
-                                          right: 6,
-                                        ),
-                                        child: PlayingSoundWaveIndicator(
-                                          key: ValueKey<String>(
-                                            'playback_queue_sound_wave_${session.id}',
-                                          ),
-                                          color: activeColor,
-                                          isPlaying: isPlaying,
-                                        ),
-                                      ),
-                                    ),
-                                  TextSpan(text: currentTrackName),
-                                ],
-                              ),
-                              key: ValueKey<String>(
-                                'playback_queue_track_0_${session.id}',
-                              ),
-                              semanticsLabel: currentTrackName,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.titleMedium
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 14,
-                                    height: 1.12,
-                                    color: isPlaying ? activeColor : null,
-                                  ),
-                            ),
-                          ],
+                    SessionCoverProgressRing(
+                      session: session,
+                      sessionId: session.id,
+                      activeColor: activeColor,
+                      size: playlistCoverSize,
+                      child: _QueueCoverGrid(
+                        items: coverItems,
+                        sessionId: session.id,
+                        currentCoverIndex: currentCoverIndex,
+                        coverCacheWidth: coverCacheWidth,
+                        dimension: coverProgressInnerDimension(
+                          playlistCoverSize,
                         ),
                       ),
                     ),
-                    const SizedBox(width: AppSpacing.xxs),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
+                    Positioned(
+                      right: -2,
+                      bottom: -2,
+                      child: PlaylistSelectionIndicator(
+                        sessionId: session.id,
+                        isSelected: isSelected,
+                      ),
+                    ),
+                    Positioned(
+                      top: -2,
+                      right: -2,
+                      child: PlaylistPinnedIndicator(
+                        isPinned: isPinned,
+                        sessionId: session.id,
+                        color: activeColor,
+                      ),
+                    ),
+                  ],
+                ),
+                labels: Semantics(
+                  button: true,
+                  selected: isSelectionMode ? isSelected : null,
+                  label: i18n.tr('open_playback_details'),
+                  onTap: isSelectionMode
+                      ? onToggleSelect
+                      : () => onOpen(context),
+                  onLongPress: onLongPress,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        queue.name,
+                        key: ValueKey<String>(
+                          'playback_queue_name_${session.id}',
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall
+                            ?.copyWith(
+                              color: activeColor,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
+                            ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text.rich(
+                        TextSpan(
                           children: [
-                            SessionFeatureBadgeStack(
-                              featureIcons: sessionFeatureBadgeIcons(
-                                showSubtitles: showSubtitles,
-                                channelSwapEnabled:
-                                    cardState.channelSwapEnabled,
-                                audioEffects: cardState.audioEffects,
-                                speed: cardState.speed,
-                              ),
-                              color: featureIconColor,
-                              child: IconButton(
-                                tooltip: cardState.isPlaying
-                                    ? i18n.tr('pause')
-                                    : i18n.tr('play'),
-                                onPressed: tracks.isEmpty
-                                    ? null
-                                    : () {
-                                        AppInteractionFeedback.trigger(
-                                          AppInteractionFeedbackType.selection,
-                                        );
-                                        playback.toggleSessionPlayPause(
-                                          session.id,
-                                        );
-                                      },
-                                style: appIconButtonStyle(
-                                  IconButton.styleFrom(
-                                    foregroundColor: isPlaying
-                                        ? activeColor
-                                        : cs.onSurface,
-                                    minimumSize: const Size(44, 44),
-                                    maximumSize: const Size(44, 44),
-                                    padding: EdgeInsets.zero,
+                            if (isPlaying)
+                              WidgetSpan(
+                                alignment: PlaceholderAlignment.middle,
+                                child: Padding(
+                                  padding: const EdgeInsets.only(
+                                    right: 6,
+                                  ),
+                                  child: PlayingSoundWaveIndicator(
+                                    key: ValueKey<String>(
+                                      'playback_queue_sound_wave_${session.id}',
+                                    ),
+                                    color: activeColor,
+                                    isPlaying: isPlaying,
                                   ),
                                 ),
-                                icon: AnimatedSwitcher(
-                                  switchOutCurve: kAppFadeCurve,
-                                  switchInCurve: kAppFadeCurve,
-                                  duration:
-                                      MediaQuery.disableAnimationsOf(context)
-                                      ? Duration.zero
-                                      : kAppFadeDuration,
-                                  transitionBuilder: (child, animation) {
-                                    return ScaleTransition(
-                                      scale: Tween<double>(begin: 0.4, end: 1.0)
-                                          .animate(
-                                            CurvedAnimation(
-                                              parent: animation,
-                                              curve: Curves.easeOutBack,
-                                            ),
-                                          ),
-                                      child: FadeTransition(
-                                        opacity: animation,
-                                        child: child,
-                                      ),
-                                    );
-                                  },
-                                  child:
-                                      cardState.isLoading ||
-                                          cardState.playbackError != null
-                                      ? const SizedBox(
-                                          key: ValueKey('loading'),
-                                          width: 22,
-                                          height: 22,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2.3,
-                                          ),
-                                        )
-                                      : Icon(
-                                          isPlaying
-                                              ? Icons.pause_rounded
-                                              : Icons.play_arrow_rounded,
-                                          key: ValueKey(isPlaying),
-                                          size: 28,
-                                        ),
-                                ),
                               ),
-                            ),
-                            if (cardState.playbackError != null)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 2),
-                                child: Icon(
-                                  Icons.error_outline_rounded,
-                                  size: 14,
-                                  color: cs.error,
-                                ),
-                              ),
+                            TextSpan(text: currentTrackName),
                           ],
                         ),
+                        key: ValueKey<String>(
+                          'playback_queue_track_0_${session.id}',
+                        ),
+                        semanticsLabel: currentTrackName,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14,
+                              height: 1.12,
+                              color: isPlaying ? activeColor : null,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+                actions: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SessionFeatureBadgeStack(
+                          featureIcons: sessionFeatureBadgeIcons(
+                            showSubtitles: showSubtitles,
+                            channelSwapEnabled:
+                                cardState.channelSwapEnabled,
+                            audioEffects: cardState.audioEffects,
+                            speed: cardState.speed,
+                          ),
+                          color: featureIconColor,
+                          child: IconButton(
+                            tooltip: cardState.isPlaying
+                                ? i18n.tr('pause')
+                                : i18n.tr('play'),
+                            onPressed: tracks.isEmpty
+                                ? null
+                                : () {
+                                    AppInteractionFeedback.trigger(
+                                      AppInteractionFeedbackType.selection,
+                                    );
+                                    playback.toggleSessionPlayPause(
+                                      session.id,
+                                    );
+                                  },
+                            style: appIconButtonStyle(
+                              IconButton.styleFrom(
+                                foregroundColor: isPlaying
+                                    ? activeColor
+                                    : cs.onSurface,
+                                minimumSize: const Size(44, 44),
+                                maximumSize: const Size(44, 44),
+                                padding: EdgeInsets.zero,
+                              ),
+                            ),
+                            icon: AnimatedSwitcher(
+                              switchOutCurve: kAppFadeCurve,
+                              switchInCurve: kAppFadeCurve,
+                              duration:
+                                  MediaQuery.disableAnimationsOf(context)
+                                  ? Duration.zero
+                                  : kAppFadeDuration,
+                              transitionBuilder: (child, animation) {
+                                return ScaleTransition(
+                                  scale: Tween<double>(begin: 0.4, end: 1.0)
+                                      .animate(
+                                        CurvedAnimation(
+                                          parent: animation,
+                                          curve: Curves.easeOutBack,
+                                        ),
+                                      ),
+                                  child: FadeTransition(
+                                    opacity: animation,
+                                    child: child,
+                                  ),
+                                );
+                              },
+                              child:
+                                  cardState.isLoading ||
+                                      cardState.playbackError != null
+                                  ? const SizedBox(
+                                      key: ValueKey('loading'),
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.3,
+                                      ),
+                                    )
+                                  : Icon(
+                                      isPlaying
+                                          ? Icons.pause_rounded
+                                          : Icons.play_arrow_rounded,
+                                      key: ValueKey(isPlaying),
+                                      size: 28,
+                                    ),
+                            ),
+                          ),
+                        ),
+                        if (cardState.playbackError != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Icon(
+                              Icons.error_outline_rounded,
+                              size: 14,
+                              color: cs.error,
+                            ),
+                          ),
                       ],
                     ),
                   ],

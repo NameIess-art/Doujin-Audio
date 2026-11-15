@@ -11,17 +11,10 @@ class _AsmrSelectionIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final surfaceBorderColor = isSelected
-        ? Color.alphaBlend(
-            cs.primaryContainer.withValues(alpha: 0.15),
-            cs.surface,
-          )
-        : cs.surface;
     return IgnorePointer(
       child: ExcludeSemantics(
         child: AppDeferredFade(
           visible: isSelected,
-          showDelay: kAppSelectionDuration,
           beginScale: 0.86,
           fadeInDuration: kAppMotionFast,
           child: Container(
@@ -33,7 +26,7 @@ class _AsmrSelectionIndicator extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: _asmrSelectionCheckmarkColor,
-              border: Border.all(color: surfaceBorderColor, width: 2),
+              border: Border.all(color: cs.surface, width: 2),
             ),
             child: const Icon(
               Icons.check_rounded,
@@ -120,10 +113,7 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
     // The card shell already clips the rounded card; keep its ink surface
     // rectangular so each scrolling row avoids another shaped physical layer.
     final cardContent = Material(
-      animationDuration: kAppSelectionDuration,
-      color: widget.isSelected
-          ? cs.primaryContainer.withValues(alpha: 0.25)
-          : Colors.transparent,
+      color: Colors.transparent,
       shadowColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
       // The tap surface sits inside the card so its ink highlight and ripple
@@ -155,7 +145,6 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
                   width: coverWidth,
                   duration: widget.work.duration,
                   isSelected: widget.isSelected,
-                  rjCode: widget.work.workCode,
                 ),
                 accentColor: cs.primary,
                 trailingActions: LibraryLikeCardActions(
@@ -207,6 +196,7 @@ LibraryLikeInfoMetadata _workMetadata(AsmrWork work) {
   return LibraryLikeInfoMetadata(
     voiceActors: work.voiceActors,
     circleName: work.circleName,
+    workCode: work.workCode,
     tags: work.tags,
     releaseDate: work.releaseDate,
     rating: work.rating,

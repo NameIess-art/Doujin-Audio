@@ -170,6 +170,9 @@ List<Widget> _buildSettingsGeneralSection({
                 .where((page) {
                   if (page == StartupPage.library) return showLocal;
                   if (page == StartupPage.asmrOne) return showAsmr;
+                  if (page == StartupPage.my) {
+                    return settingsValue?.showMyPage ?? true;
+                  }
                   return true;
                 })
                 .toList(growable: false);
@@ -306,6 +309,22 @@ List<Widget> _buildSettingsPageDisplaySection({
                       : null,
                   secondary: _settingsIcon(
                     Icons.library_music_rounded,
+                    cs.primary,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+                SwitchListTile(
+                  key: const ValueKey<String>('settings_show_my_page_switch'),
+                  title: _settingsTitle(i18n.tr('nav_my')),
+                  value: settingsState?.showMyPage ?? true,
+                  onChanged: (value) => unawaited(
+                    saveSettingsWithFeedback(
+                      context,
+                      () => settings.setShowMyPage(value),
+                    ),
+                  ),
+                  secondary: _settingsIcon(
+                    Icons.person_outline_rounded,
                     cs.primary,
                   ),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 8),

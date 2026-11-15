@@ -1,5 +1,6 @@
 import '../../features/player/presentation/playback_providers.dart';
 import '../../features/settings/presentation/settings_providers.dart';
+import '../../features/settings/presentation/settings_tab.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
@@ -41,7 +42,7 @@ import '../../features/player/presentation/bedtime_canvas_page.dart';
 
 import 'mobile_dock_capsule_content.dart';
 import 'main_destination.dart';
-import 'my_settings_page.dart';
+import 'my_page.dart';
 import 'desktop_main_navigation.dart';
 import 'work_detail_navigation.dart';
 export 'main_destination.dart' show MainDestinationType;
@@ -143,10 +144,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
   static const _mobilePlaybackExpandedKey = 'mobile_playback_expanded';
   static const _mobilePlaybackRaisedKey = 'mobile_playback_raised';
   bool? _mobilePlaybackExpanded;
-  bool? _mobilePlaybackRaised;
+  final _mobilePlaybackRaised = ValueNotifier<bool?>(null);
   bool get _isMobilePlaybackExpanded => _mobilePlaybackExpanded ?? false;
-  bool get _isMobilePlaybackRaised => _mobilePlaybackRaised ?? false;
+  bool get _isMobilePlaybackRaised => _mobilePlaybackRaised.value ?? false;
   late final ValueNotifier<int> _activePageIndex;
+  late final ValueNotifier<double?> _pageDragPosition;
   final Object _pageSwitchInteraction = Object();
   final Object _foregroundInteraction = Object();
   int _foregroundInteractionGeneration = 0;
@@ -270,6 +272,22 @@ class _MainScreenState extends ConsumerState<MainScreen>
       updateService: ref.read(appUpdateServiceProvider),
     );
     _activePageIndex = ValueNotifier<int>(0);
+    _pageDragPosition = ValueNotifier<double?>(null);
+    ref.listenManual(_mainDestinationsProvider, (previous, next) {
+      if (!_isDataReady || previous == null) return;
+      final active = previous[_activePageIndex.value].type;
+      final index = next.indexWhere((destination) => destination.type == active);
+      if (index >= 0) {
+        _activePageIndex.value = index;
+        return;
+      }
+      _activePageIndex.value = next.indexWhere(
+        (destination) => destination.type == MainDestinationType.playlist,
+      );
+      ref.read(browsePageStateStoreProvider).update('main', {
+        'destination': MainDestinationType.playlist.name,
+      });
+    });
     ref.listenManual<bool>(
       mainOverlayUiProvider.select((state) => state.startupReady),
       (_, startupReady) => _handleStartupReadyChanged(startupReady),
@@ -334,15 +352,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
     ]).then((values) {
       if (!mounted) return;
       final expanded = _mobilePlaybackExpanded ?? values[0] ?? false;
-      final raised = _mobilePlaybackRaised ?? values[1] ?? false;
-      if (expanded == _isMobilePlaybackExpanded &&
-          raised == _isMobilePlaybackRaised) {
-        return;
+      if (expanded != _isMobilePlaybackExpanded) {
+        setState(() => _mobilePlaybackExpanded = expanded);
       }
-      setState(() {
-        _mobilePlaybackExpanded = expanded;
-        _mobilePlaybackRaised = raised;
-      });
+      _mobilePlaybackRaised.value ??= values[1];
     });
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -373,10 +386,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
           ref.read(settingsRepositoryProvider).slice.state;
       final showLocal = settings.showLocalLibrary;
       final showAsmr = settings.showAsmrOne;
-      final destinations = resolveMainDestinations(
-        showLocalLibrary: showLocal,
-        showAsmrOne: showAsmr,
-      );
+      final destinations = _currentDestinations();
       final startupPage = settings.startupPage;
       final targetType = switch (startupPage) {
         StartupPage.library =>
@@ -392,15 +402,17 @@ class _MainScreenState extends ConsumerState<MainScreen>
                     ? MainDestinationType.library
                     : MainDestinationType.playlist),
         StartupPage.playlist => MainDestinationType.playlist,
-        StartupPage.my => MainDestinationType.settings,
+        StartupPage.my =>
+          settings.showMyPage
+              ? MainDestinationType.my
+              : MainDestinationType.playlist,
+        StartupPage.settings => MainDestinationType.settings,
       };
       final savedDestination = ref
           .read(browsePageStateStoreProvider)
           .stateFor('main')['destination'];
       final restoredIndex = destinations.indexWhere(
-        (d) =>
-            d.type.name ==
-            (savedDestination == 'my' ? 'settings' : savedDestination),
+        (d) => d.type.name == savedDestination,
       );
       final startupIndex = restoredIndex >= 0
           ? restoredIndex
@@ -553,7 +565,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   void _toggleMobilePlaybackRow() {
     final raised = !_isMobilePlaybackRaised;
-    setState(() => _mobilePlaybackRaised = raised);
+    _mobilePlaybackRaised.value = raised;
     unawaited(AppPreferences.setBool(_mobilePlaybackRaisedKey, raised));
   }
 
@@ -582,6 +594,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
     _metricsRecoveryTimer?.cancel();
     unawaited(_subtitleOverlay.detachRuntime());
     _permissionActionController.dispose();
+    _pageDragPosition.dispose();
+    _mobilePlaybackRaised.dispose();
     _activePageIndex.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -756,7 +770,12 @@ class _MainScreenState extends ConsumerState<MainScreen>
   }
 
   void _switchPage(int index) {
-    if (!UiInteractionCoordinator.instance.navigationAllowed.value) return;
+    final destinations = _currentDestinations();
+    if (index < 0 ||
+        index >= destinations.length ||
+        !UiInteractionCoordinator.instance.navigationInputAllowed.value) {
+      return;
+    }
     if (index == _activePageIndex.value) {
       ref.read(mainScreenControllerProvider).requestScrollToTop(index);
       return;
@@ -770,84 +789,28 @@ class _MainScreenState extends ConsumerState<MainScreen>
         .requestStopScroll(_activePageIndex.value);
 
     final coordinator = UiInteractionCoordinator.instance;
-    coordinator.beginNavigation(_pageSwitchInteraction);
+    coordinator.beginNavigation(_pageSwitchInteraction, lockInput: false);
     _pageSwitchCoordinatorGeneration = coordinator.beginGeneration();
     if (_previousNavigationLayout?.$2 == true) {
       WorkDetailNavigationScope.maybeOf(context)?.resetContent();
     }
     _activePageIndex.value = index;
-    final destinations = _currentDestinations();
-    if (index >= 0 && index < destinations.length) {
-      ref.read(browsePageStateStoreProvider).update('main', {
-        'destination': destinations[index].type.name,
-      });
-    }
-    if (index >= 0 &&
-        index < destinations.length &&
-        destinations[index].type == MainDestinationType.asmrOne) {
+    final destination = destinations[index].type;
+    ref.read(browsePageStateStoreProvider).update('main', {
+      'destination': destination.name,
+    });
+    if (destination == MainDestinationType.asmrOne) {
       unawaited(_showAsmrOnlineNoticeOnce());
     }
   }
 
-  void _switchNavigationPage(int index) {
-    final split = _previousNavigationLayout?.$2 ?? false;
-    final destinations = _currentDestinations(splitMySettings: split);
-    if (index < 0 || index >= destinations.length) return;
-    final destination = destinations[index].type;
-    if (!split ||
-        (destination != MainDestinationType.my &&
-            destination != MainDestinationType.settings)) {
-      _switchPage(index);
-      return;
-    }
-    if (!UiInteractionCoordinator.instance.navigationAllowed.value) return;
-    final hostIndex = destinations.length - 2;
-    final mode = ref.read(settingsRepositoryProvider).mySettingsPageMode;
-    final nextMode = destination == MainDestinationType.my
-        ? MySettingsPageMode.my
-        : MySettingsPageMode.settings;
-    if (nextMode != mode) {
-      ref.read(mainScreenControllerProvider).requestStopScroll(hostIndex);
-      WorkDetailNavigationScope.maybeOf(context)?.resetContent();
-      unawaited(
-        saveSettingsWithFeedback(
-          context,
-          () => ref
-              .read(settingsRepositoryProvider)
-              .setMySettingsPageMode(nextMode),
-        ),
-      );
-      if (_activePageIndex.value == hostIndex) return;
-    }
-    _switchPage(hostIndex);
-  }
-
   void _cycleNavigationPage(bool backwards) {
-    final split = _previousNavigationLayout?.$2 ?? false;
-    final destinations = _currentDestinations(splitMySettings: split);
-    var index = _activePageIndex.value;
-    if (split &&
-        index == destinations.length - 2 &&
-        ref.read(settingsRepositoryProvider).mySettingsPageMode ==
-            MySettingsPageMode.settings) {
-      index++;
-    }
-    _switchNavigationPage((index + (backwards ? -1 : 1)) % destinations.length);
+    final count = _currentDestinations().length;
+    _switchPage((_activePageIndex.value + (backwards ? -1 : 1)) % count);
   }
 
-  List<MainDestination> _currentDestinations({bool splitMySettings = false}) {
-    final settings =
-        ref.read(settingsStateProvider).value ??
-        ref.read(settingsRepositoryProvider).slice.state;
-    final showLocal = settings.showLocalLibrary;
-    final showAsmr = settings.showAsmrOne;
-    return resolveMainDestinations(
-      showLocalLibrary: showLocal,
-      showAsmrOne: showAsmr,
-      mySettingsPageMode: settings.mySettingsPageMode,
-      splitMySettings: splitMySettings,
-    );
-  }
+  List<MainDestination> _currentDestinations() =>
+      ref.read(_mainDestinationsProvider);
 
   void _openLocalLibrary() {
     final destinations = _currentDestinations();
@@ -901,10 +864,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
           activeTabIndexListenable: _activePageIndex,
         ),
       ),
-      MainDestinationType.settings || MainDestinationType.my => MySettingsPage(
-        tabIndex: index,
-        isLandscapeLayout: isLandscapeLayout,
-      ),
+      MainDestinationType.my => MyPage(tabIndex: index),
+      MainDestinationType.settings => SettingsTab(tabIndex: index),
     };
   }
 
@@ -1006,7 +967,13 @@ class _MainScreenState extends ConsumerState<MainScreen>
     _previousNavigationLayout = navigationLayout;
     final detailNavigation = WorkDetailNavigationScope.maybeOf(context);
     final isTinyWindow = width < 300 || layoutSize.height < 300;
-    final mobileContentInset = isDesktop ? 0.0 : _mobileContentInset();
+    final hasOverlaySessions =
+        !isDesktop &&
+        ref.watch(
+          mainOverlayUiProvider.select(
+            (state) => state.overlaySessions.isNotEmpty,
+          ),
+        );
 
     if (!isDesktop && rawTop > _stablePortraitTopPadding) {
       _stablePortraitTopPadding = rawTop;
@@ -1108,27 +1075,28 @@ class _MainScreenState extends ConsumerState<MainScreen>
                                         ? max(0.0, constraints.maxWidth - 1) *
                                               WorkDetailPane.mainWidthFraction
                                         : constraints.maxWidth;
-                                    final navigatorContent = Builder(
-                                      builder: (context) => MobileOverlayInset(
-                                        bottomInset: mobileContentInset,
-                                        menuOverlayKey: _mainMenuOverlayKey,
-                                        menuDismiss:
-                                            detailNavigation?.menuDismiss,
-                                        child: Stack(
-                                          fit: StackFit.expand,
-                                          children: [
-                                            _buildContentNavigator(
-                                              context,
-                                              bottomInset: mobileContentInset,
-                                              isDesktop: isDesktop,
-                                              isLandscapeLayout: isLandscape,
-                                              tinyMode: isTinyWindow,
-                                            ),
-                                            Overlay(key: _mainMenuOverlayKey),
-                                          ],
-                                        ),
-                                      ),
-                                    );
+                                    final navigatorContent =
+                                        _wrapMobileOverlayInset(
+                                          isDesktop: isDesktop,
+                                          hasOverlaySessions:
+                                              hasOverlaySessions,
+                                          menuDismiss:
+                                              detailNavigation?.menuDismiss,
+                                          child: Stack(
+                                            fit: StackFit.expand,
+                                            children: [
+                                              _buildContentNavigator(
+                                                context,
+                                                isDesktop: isDesktop,
+                                                isLandscapeLayout: isLandscape,
+                                                hasOverlaySessions:
+                                                    hasOverlaySessions,
+                                                tinyMode: isTinyWindow,
+                                              ),
+                                              Overlay(key: _mainMenuOverlayKey),
+                                            ],
+                                          ),
+                                        );
                                     return SizedBox(
                                       key: const ValueKey(
                                         'main_content_region',
@@ -1176,7 +1144,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
                                     context,
                                     i18n,
                                     overlaySessions,
-                                    isLandscapeLayout: isLandscape,
                                     isMenuCollapsed: menuCollapsed,
                                   );
                                 },
@@ -1205,7 +1172,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
                 LogicalKeyboardKey.digit5,
               ].indexed)
                 SingleActivator(key, control: true): () {
-                  _switchNavigationPage(index);
+                  _switchPage(index);
                 },
               for (final backwards in [false, true])
                 SingleActivator(

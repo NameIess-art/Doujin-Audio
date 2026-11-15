@@ -19,6 +19,7 @@ import 'support/app_runtime_test_fixture.dart';
 
 const _button = ValueKey('work_detail_dlsite');
 const _loading = ValueKey('work_detail_dlsite_loading');
+const _revert = ValueKey('work_detail_dlsite_revert');
 
 class _Request {
   _Request(this.code, this.language);
@@ -140,6 +141,15 @@ void main() {
           tester.widget<IconButton>(find.byKey(_button)).tooltip,
           '显示 DL 中信息',
         );
+        final dlLabel = find.descendant(
+          of: find.byKey(_button),
+          matching: find.text('DL'),
+        );
+        expect(
+          tester.widget<Text>(dlLabel).style?.color,
+          Colors.white,
+        );
+        expect(find.byKey(_revert), findsNothing);
         await tester.tap(find.byKey(_button));
         await tester.pump();
         expect(find.byKey(_loading), findsOneWidget);
@@ -156,6 +166,19 @@ void main() {
         expect(find.text('DL circle'), findsOneWidget);
         expect(find.text('Online title'), findsOneWidget);
         expect(tester.widget<IconButton>(find.byKey(_button)).tooltip, '显示原信息');
+        expect(find.byKey(_revert), findsOneWidget);
+        expect(
+          IconTheme.of(tester.element(find.byKey(_revert))).color,
+          Colors.white,
+        );
+        expect(
+          tester.widget<Icon>(find.byKey(_revert)).icon,
+          Icons.undo_rounded,
+        );
+        expect(
+          find.descendant(of: find.byKey(_button), matching: find.text('DL')),
+          findsNothing,
+        );
         // Metadata rows are lazy on the shorter Windows viewport.
         await tester.drag(find.byType(CustomScrollView), const Offset(0, -400));
         await _settle(tester);
@@ -166,11 +189,17 @@ void main() {
         expect(work.tags, ['Online tag']);
         await tester.tap(find.byKey(_button));
         await _settle(tester);
+        expect(find.byKey(_revert), findsNothing);
+        expect(
+          find.descendant(of: find.byKey(_button), matching: find.text('DL')),
+          findsOneWidget,
+        );
         expect(find.text('Online circle'), findsOneWidget);
         expect(find.text('Online actor'), findsOneWidget);
         expect(find.text('#Online tag'), findsOneWidget);
         await tester.tap(find.byKey(_button));
         await _settle(tester);
+        expect(find.byKey(_revert), findsOneWidget);
         expect(find.text('DL circle'), findsOneWidget);
         expect(service.requests, hasLength(1));
         expect(tester.takeException(), isNull);
@@ -219,6 +248,18 @@ void main() {
         await tester.tap(find.byKey(_button));
         service.requests.single.result.complete(_metadata());
         await _settle(tester);
+        expect(find.byKey(_revert), findsOneWidget);
+        expect(
+          tester.widget<Icon>(find.byKey(_revert)).icon,
+          Icons.undo_rounded,
+        );
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('work_detail_translation')),
+            matching: find.byIcon(Icons.restore_rounded),
+          ),
+          findsOneWidget,
+        );
         await tester.drag(find.byType(CustomScrollView), const Offset(0, -400));
         await _settle(tester);
         expect(find.text('Translated Online title'), findsOneWidget);

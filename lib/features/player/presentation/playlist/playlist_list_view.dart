@@ -24,6 +24,7 @@ import '../../../library/application/library_facade.dart';
 import '../../application/playback_facade.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../playback_providers.dart';
+import '../playlist_sorting.dart';
 import 'playlist_feature_icons.dart';
 import 'playlist_media_widgets.dart';
 import 'playlist_shared_helpers.dart';
@@ -45,17 +46,10 @@ class PlaylistSelectionIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final surfaceBorderColor = isSelected
-        ? Color.alphaBlend(
-            cs.primaryContainer.withValues(alpha: 0.15),
-            cs.surface,
-          )
-        : cs.surface;
     return IgnorePointer(
       child: ExcludeSemantics(
         child: AppDeferredFade(
           visible: isSelected,
-          showDelay: kAppSelectionDuration,
           beginScale: 0.86,
           fadeInDuration: kAppMotionFast,
           child: Container(
@@ -65,7 +59,7 @@ class PlaylistSelectionIndicator extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: _playlistSelectionCheckmarkColor,
-              border: Border.all(color: surfaceBorderColor, width: 2),
+              border: Border.all(color: cs.surface, width: 2),
             ),
             child: const Icon(
               Icons.check_rounded,
@@ -84,25 +78,17 @@ class PlaylistPinnedIndicator extends StatelessWidget {
     super.key,
     required this.sessionId,
     this.color,
-    this.isSelected = false,
     this.isPinned = true,
   });
 
   final String sessionId;
   final Color? color;
-  final bool isSelected;
   final bool isPinned;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final pinColor = color ?? cs.primary;
-    final surfaceBorderColor = isSelected
-        ? Color.alphaBlend(
-            cs.primaryContainer.withValues(alpha: 0.15),
-            cs.surface,
-          )
-        : cs.surface;
     return IgnorePointer(
       child: ExcludeSemantics(
         child: AppDeferredFade(
@@ -116,7 +102,7 @@ class PlaylistPinnedIndicator extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: pinColor,
-              border: Border.all(color: surfaceBorderColor, width: 2),
+              border: Border.all(color: cs.surface, width: 2),
             ),
             child: const Icon(
               Icons.push_pin_rounded,
@@ -367,6 +353,90 @@ class SessionsEmptyState extends StatelessWidget {
   }
 }
 
+class PlaylistAudioRow extends StatelessWidget {
+  const PlaylistAudioRow({
+    super.key,
+    this.contentKey,
+    required this.cover,
+    required this.labels,
+    required this.actions,
+  });
+
+  final Key? contentKey;
+  final Widget cover;
+  final Widget labels;
+  final Widget actions;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    key: contentKey,
+    padding: playlistRowPadding,
+    child: Row(
+      children: [
+        cover,
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(child: labels),
+        const SizedBox(width: AppSpacing.xxs),
+        actions,
+      ],
+    ),
+  );
+}
+
+class PlaylistAudioLabels extends StatelessWidget {
+  const PlaylistAudioLabels({
+    super.key,
+    this.workTitleKey,
+    required this.workTitle,
+    required this.title,
+    required this.semanticsLabel,
+    this.titleColor,
+  });
+
+  final Key? workTitleKey;
+  final String workTitle;
+  final InlineSpan title;
+  final String semanticsLabel;
+  final Color? titleColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        IgnorePointer(
+          child: MarqueeText(
+            key: workTitleKey,
+            text: workTitle,
+            edgePadding: 0,
+            pauseDuration: const Duration(seconds: 1),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+            ),
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text.rich(
+          title,
+          semanticsLabel: semanticsLabel,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+            fontSize: 14,
+            height: 1.12,
+            color: titleColor,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class SessionListCard extends ConsumerWidget {
   const SessionListCard({
     super.key,
@@ -421,15 +491,13 @@ class SessionListCard extends ConsumerWidget {
     final displayName =
         track?.displayName ??
         path.basenameWithoutExtension(cardState.trackPath);
-    final currentTrack = track;
-    final rootFolderName = ref
-        .read(audioPathCoordinatorProvider)
-        .rootFolderName(cardState.trackPath, knownTrack: currentTrack);
-    final folderName = rootFolderName.isNotEmpty
-        ? rootFolderName
-        : (currentTrack != null && !currentTrack.isSingle)
-        ? currentTrack.groupTitle
-        : i18n.tr('imported_files');
+    final workName =
+        playlistSessionWorkName(
+          ref.read(audioPathCoordinatorProvider),
+          cardState.trackPath,
+          track,
+        ) ??
+        i18n.tr('imported_files');
     final isPlaying = cardState.isPlaying;
 
     final activeColor = cs.primary;
@@ -441,9 +509,10 @@ class SessionListCard extends ConsumerWidget {
         ? playlistTemporaryCardColor(context)
         : cs.surface;
 
-    final swipeCard = SwipeRevealCard(
+    final card = SwipeRevealCard(
       key: ValueKey(sessionId),
       shape: playlistRowShape,
+      swipeEnabled: false,
       closedColor: cardColor,
       enabled: !isSelectionMode,
       actionLabel: i18n.tr('remove'),
@@ -452,7 +521,6 @@ class SessionListCard extends ConsumerWidget {
       onLeadingAction: onTogglePin,
       onSelectMultiple: onLongPress,
       selectMultipleLabel: i18n.tr('select_multiple'),
-      animateLeadingActionClose: true,
       leadingActionLabel: i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
       leadingActionTooltip: i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
       leadingActionIcon: Icons.push_pin_rounded,
@@ -464,14 +532,11 @@ class SessionListCard extends ConsumerWidget {
           constraints: const BoxConstraints(minHeight: playlistRowHeight),
           child: Material(
             type: MaterialType.card,
-            animationDuration: kAppSelectionDuration,
-            // SwipeRevealCard already clips the complete row to this shape.
             shape: playlistRowShape,
-            color: isSelected
-                ? cs.primaryContainer.withValues(alpha: 0.15)
-                : Colors.transparent,
+            color: Colors.transparent,
             shadowColor: Colors.transparent,
             child: AppEntryInkWell(
+              customBorder: playlistRowShape,
               excludeFromSemantics: true,
               onTap: () {
                 if (isSelectionMode) {
@@ -483,192 +548,150 @@ class SessionListCard extends ConsumerWidget {
                   onOpen(context);
                 }
               },
-              onLongPress: () {
-                if (isSelectionMode) {
-                  onToggleSelect?.call();
-                } else {
-                  onLongPress?.call();
-                }
-              },
-              child: Padding(
-                key: ValueKey<String>('playlist_card_content_$sessionId'),
-                padding: playlistRowPadding,
-                child: Row(
+              onLongPress: onLongPress,
+              child: PlaylistAudioRow(
+                contentKey: ValueKey<String>('playlist_card_content_$sessionId'),
+                cover: Stack(
+                  clipBehavior: Clip.none,
                   children: [
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        SessionCoverProgressRing(
-                          session: resolvedSession,
-                          sessionId: sessionId,
-                          activeColor: activeColor,
-                          size: playlistCoverSize,
-                          child: SessionCoverThumbnail(
-                            sessionId: sessionId,
-                            track: track,
-                            coverCacheWidth: coverCacheWidth,
-                            dimension: coverProgressInnerDimension(
-                              playlistCoverSize,
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          right: -2,
-                          bottom: -2,
-                          child: PlaylistSelectionIndicator(
-                            sessionId: sessionId,
-                            isSelected: isSelected,
-                          ),
-                        ),
-                        Positioned(
-                          top: -2,
-                          right: -2,
-                          child: PlaylistPinnedIndicator(
-                            isPinned: isPinned,
-                            sessionId: sessionId,
-                            isSelected: isSelected,
-                            color: activeColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    Expanded(
-                      child: Semantics(
-                        button: true,
-                        selected: isSelectionMode ? isSelected : null,
-                        label: i18n.tr('open_playback_details'),
-                        onTap: isSelectionMode
-                            ? onToggleSelect
-                            : () => onOpen(context),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            IgnorePointer(
-                              child: MarqueeText(
-                                key: ValueKey<String>(
-                                  'playlist_session_work_title_$sessionId',
-                                ),
-                                text: folderName,
-                                edgePadding: 0,
-                                pauseDuration: const Duration(seconds: 1),
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(
-                                      color: cs.onSurfaceVariant,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 12,
-                                    ),
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text.rich(
-                              TextSpan(
-                                children: [
-                                  if (isPlaying)
-                                    WidgetSpan(
-                                      alignment: PlaceholderAlignment.middle,
-                                      child: Padding(
-                                        padding: const EdgeInsets.only(
-                                          right: 6,
-                                        ),
-                                        child: PlayingSoundWaveIndicator(
-                                          key: ValueKey<String>(
-                                            'playlist_sound_wave_$sessionId',
-                                          ),
-                                          color: activeColor,
-                                          isPlaying: isPlaying,
-                                        ),
-                                      ),
-                                    ),
-                                  TextSpan(text: displayName),
-                                ],
-                              ),
-                              semanticsLabel: displayName,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.titleMedium
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 14,
-                                    height: 1.12,
-                                    color: isPlaying ? activeColor : null,
-                                  ),
-                            ),
-                          ],
+                    SessionCoverProgressRing(
+                      session: resolvedSession,
+                      sessionId: sessionId,
+                      activeColor: activeColor,
+                      size: playlistCoverSize,
+                      child: SessionCoverThumbnail(
+                        sessionId: sessionId,
+                        track: track,
+                        coverCacheWidth: coverCacheWidth,
+                        dimension: coverProgressInnerDimension(
+                          playlistCoverSize,
                         ),
                       ),
                     ),
-                    const SizedBox(width: AppSpacing.xxs),
-                    SessionFeatureBadgeStack(
-                      featureIcons: sessionFeatureBadgeIcons(
-                        showSubtitles: showSubtitles,
-                        channelSwapEnabled: cardState.channelSwapEnabled,
-                        audioEffects: cardState.audioEffects,
-                        speed: cardState.speed,
+                    Positioned(
+                      right: -2,
+                      bottom: -2,
+                      child: PlaylistSelectionIndicator(
+                        sessionId: sessionId,
+                        isSelected: isSelected,
                       ),
-                      color: activeColor,
-                      child: IconButton(
-                        tooltip: isPlaying ? i18n.tr('pause') : i18n.tr('play'),
-                        onPressed: () {
-                          AppInteractionFeedback.trigger(
-                            AppInteractionFeedbackType.selection,
-                          );
-                          playback.toggleSessionPlayPause(sessionId);
-                        },
-                        style: appIconButtonStyle(
-                          IconButton.styleFrom(
-                            foregroundColor: isPlaying
-                                ? activeColor
-                                : cs.onSurface,
-                            minimumSize: const Size(44, 44),
-                            maximumSize: const Size(44, 44),
-                            padding: EdgeInsets.zero,
-                          ),
-                        ),
-                        icon: AnimatedSwitcher(
-                          switchOutCurve: kAppFadeCurve,
-                          switchInCurve: kAppFadeCurve,
-                          duration: MediaQuery.disableAnimationsOf(context)
-                              ? Duration.zero
-                              : kAppFadeDuration,
-                          transitionBuilder: (child, animation) {
-                            return ScaleTransition(
-                              scale: Tween<double>(begin: 0.4, end: 1.0)
-                                  .animate(
-                                    CurvedAnimation(
-                                      parent: animation,
-                                      curve: Curves.easeOutBack,
-                                    ),
-                                  ),
-                              child: FadeTransition(
-                                opacity: animation,
-                                child: child,
-                              ),
-                            );
-                          },
-                          child:
-                              cardState.isLoading ||
-                                  cardState.playbackError != null
-                              ? const SizedBox(
-                                  key: ValueKey('loading'),
-                                  width: 22,
-                                  height: 22,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.3,
-                                  ),
-                                )
-                              : Icon(
-                                  isPlaying
-                                      ? Icons.pause_rounded
-                                      : Icons.play_arrow_rounded,
-                                  key: ValueKey(isPlaying),
-                                  size: 28,
-                                ),
-                        ),
+                    ),
+                    Positioned(
+                      top: -2,
+                      right: -2,
+                      child: PlaylistPinnedIndicator(
+                        isPinned: isPinned,
+                        sessionId: sessionId,
+                        color: activeColor,
                       ),
                     ),
                   ],
+                ),
+                labels: Semantics(
+                  button: true,
+                  selected: isSelectionMode ? isSelected : null,
+                  label: i18n.tr('open_playback_details'),
+                  onTap: isSelectionMode
+                      ? onToggleSelect
+                      : () => onOpen(context),
+                  onLongPress: onLongPress,
+                  child: PlaylistAudioLabels(
+                    workTitle: workName,
+                    workTitleKey: ValueKey<String>(
+                      'playlist_session_work_title_$sessionId',
+                    ),
+                    title: TextSpan(
+                    children: [
+                      if (isPlaying)
+                        WidgetSpan(
+                          alignment: PlaceholderAlignment.middle,
+                          child: Padding(
+                            padding: const EdgeInsets.only(
+                              right: 6,
+                            ),
+                            child: PlayingSoundWaveIndicator(
+                              key: ValueKey<String>(
+                                'playlist_sound_wave_$sessionId',
+                              ),
+                              color: activeColor,
+                              isPlaying: isPlaying,
+                            ),
+                          ),
+                        ),
+                      TextSpan(text: displayName),
+                    ],
+                  ),
+                    semanticsLabel: displayName,
+                    titleColor: isPlaying ? activeColor : null,
+                  ),
+                ),
+                actions: SessionFeatureBadgeStack(
+                  featureIcons: sessionFeatureBadgeIcons(
+                    showSubtitles: showSubtitles,
+                    channelSwapEnabled: cardState.channelSwapEnabled,
+                    audioEffects: cardState.audioEffects,
+                    speed: cardState.speed,
+                  ),
+                  color: activeColor,
+                  child: IconButton(
+                    tooltip: isPlaying ? i18n.tr('pause') : i18n.tr('play'),
+                    onPressed: () {
+                      AppInteractionFeedback.trigger(
+                        AppInteractionFeedbackType.selection,
+                      );
+                      playback.toggleSessionPlayPause(sessionId);
+                    },
+                    style: appIconButtonStyle(
+                      IconButton.styleFrom(
+                        foregroundColor: isPlaying
+                            ? activeColor
+                            : cs.onSurface,
+                        minimumSize: const Size(44, 44),
+                        maximumSize: const Size(44, 44),
+                        padding: EdgeInsets.zero,
+                      ),
+                    ),
+                    icon: AnimatedSwitcher(
+                      switchOutCurve: kAppFadeCurve,
+                      switchInCurve: kAppFadeCurve,
+                      duration: MediaQuery.disableAnimationsOf(context)
+                          ? Duration.zero
+                          : kAppFadeDuration,
+                      transitionBuilder: (child, animation) {
+                        return ScaleTransition(
+                          scale: Tween<double>(begin: 0.4, end: 1.0)
+                              .animate(
+                                CurvedAnimation(
+                                  parent: animation,
+                                  curve: Curves.easeOutBack,
+                                ),
+                              ),
+                          child: FadeTransition(
+                            opacity: animation,
+                            child: child,
+                          ),
+                        );
+                      },
+                      child:
+                          cardState.isLoading ||
+                              cardState.playbackError != null
+                          ? const SizedBox(
+                              key: ValueKey('loading'),
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.3,
+                              ),
+                            )
+                          : Icon(
+                              isPlaying
+                                  ? Icons.pause_rounded
+                                  : Icons.play_arrow_rounded,
+                              key: ValueKey(isPlaying),
+                              size: 28,
+                            ),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -676,6 +699,6 @@ class SessionListCard extends ConsumerWidget {
         ),
       ),
     );
-    return UndoableRemovalTransition(hidden: isHidden, child: swipeCard);
+    return UndoableRemovalTransition(hidden: isHidden, child: card);
   }
 }

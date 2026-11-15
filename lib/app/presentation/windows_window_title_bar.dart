@@ -58,8 +58,20 @@ class WindowsWindowTitleBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final controls = ref.watch(windowsWindowControlsProvider);
-    final colors = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     Widget button(WindowsWindowCommand command, String label, IconData icon) {
+      final isClose = command == WindowsWindowCommand.close;
+      const closeHoverColor = Color(0xFFC42B1C);
+      const closePressColor = Color(0xFFB3261E);
+      final captionHoverColor = colors.onSurface.withValues(
+        alpha: isDark ? 0.10 : 0.07,
+      );
+      final captionPressColor = colors.onSurface.withValues(
+        alpha: isDark ? 0.16 : 0.12,
+      );
       return IconButton(
         tooltip: language.tr(label),
         onPressed: () =>
@@ -73,8 +85,36 @@ class WindowsWindowTitleBar extends ConsumerWidget {
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             visualDensity: VisualDensity.standard,
             shape: const RoundedRectangleBorder(),
-            foregroundColor: colors.onSurface,
+          ).copyWith(
+            animationDuration: reduceMotion
+                ? Duration.zero
+                : const Duration(milliseconds: 90),
+            backgroundColor: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.disabled)) {
+                return Colors.transparent;
+              }
+              if (states.contains(WidgetState.pressed)) {
+                return isClose ? closePressColor : captionPressColor;
+              }
+              if (states.contains(WidgetState.hovered)) {
+                return isClose ? closeHoverColor : captionHoverColor;
+              }
+              return Colors.transparent;
+            }),
+            foregroundColor: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.disabled)) {
+                return colors.onSurface.withValues(alpha: 0.38);
+              }
+              if (isClose &&
+                  (states.contains(WidgetState.hovered) ||
+                      states.contains(WidgetState.pressed))) {
+                return Colors.white;
+              }
+              return colors.onSurface;
+            }),
           ),
+          null,
+          false,
         ),
       );
     }

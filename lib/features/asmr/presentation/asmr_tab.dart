@@ -24,7 +24,6 @@ import '../application/asmr_remote_catalog_service.dart';
 import '../application/asmr_library_controller.dart';
 import '../../../core/media/search_query_utils.dart';
 import '../../../core/media/time_text_formatters.dart';
-import '../../../core/widgets/rj_code_overlay.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/ui/visual_settings_providers.dart';
@@ -917,7 +916,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
               backgroundColor: Theme.of(context).colorScheme.surface,
               placeholder: LibrarySkeletonListView(
                 topInset: headerContentHeight,
-                bottomInset: bottomInset + 24,
+                bottomInset: bottomInset + 16,
               ),
               builder: (context) {
                 if (_activationCompleted && !_categoryContentMounted) {
@@ -936,14 +935,14 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                         ? LibrarySkeletonListView(
                             key: const ValueKey('asmr_initial_placeholder'),
                             topInset: headerContentHeight,
-                            bottomInset: bottomInset + 24,
+                            bottomInset: bottomInset + 16,
                           )
                         : ListView(
                             padding: EdgeInsets.fromLTRB(
                               16,
                               headerContentHeight,
                               16,
-                              bottomInset + 24,
+                              bottomInset + 16,
                             ),
                             children: [
                               OperationStatusBanner(

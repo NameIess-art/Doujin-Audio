@@ -17,6 +17,7 @@ import 'package:doujin_audio/core/ui/cover_image_retention.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
+import 'package:doujin_audio/core/widgets/duration_overlay.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
@@ -1382,7 +1383,11 @@ void main() {
         controller.favoriteWorks = immutableList(
           List.generate(
             count,
-            (index) => _work(id: index, title: 'Work $index'),
+            (index) => _work(
+              id: index,
+              title: 'Work $index',
+              duration: index == 0 ? const Duration(minutes: 3) : Duration.zero,
+            ),
           ),
         );
         addTearDown(controller.dispose);
@@ -1402,10 +1407,24 @@ void main() {
         final badge = find.byKey(
           ValueKey('asmr_selection_indicator_${_work(id: 0).workKey}'),
         );
-        await tester.pump(kAppSelectionDuration ~/ 2);
-        expect(badge, findsNothing);
-        await tester.pump(kAppSelectionDuration ~/ 2);
         expect(badge, findsOneWidget);
+        final workCode = _work(id: 0).workCode;
+        final row = find.byKey(ValueKey('asmr-work-${_work(id: 0).workKey}'));
+        final circle = find.descendant(of: row, matching: find.text('Test circle'));
+        final code = find.descendant(of: row, matching: find.text(workCode));
+        expect(tester.getCenter(code).dx, greaterThan(tester.getCenter(circle).dx));
+        expect(tester.getTopLeft(code).dy, closeTo(tester.getTopLeft(circle).dy, 0.01));
+        final duration = find.descendant(of: row, matching: find.byType(DurationOverlay));
+        final durationPosition = tester.widget<Positioned>(
+          find.ancestor(of: duration, matching: find.byType(Positioned)).first,
+        );
+        expect(durationPosition.left, 4);
+        expect(durationPosition.bottom, 4);
+        final badgePosition = tester.widget<Positioned>(
+          find.ancestor(of: badge, matching: find.byType(Positioned)).first,
+        );
+        expect(badgePosition.right, -2);
+        expect(badgePosition.bottom, -2);
         final badgeFade = find
             .ancestor(of: badge, matching: find.byType(FadeTransition))
             .first;
@@ -1421,12 +1440,7 @@ void main() {
               )
               .first,
         );
-        expect(
-          selectedSurface.color,
-          Theme.of(
-            tester.element(find.text('Work 0')),
-          ).colorScheme.primaryContainer.withValues(alpha: 0.25),
-        );
+        expect(selectedSurface.color, Colors.transparent);
         await tester.tap(find.text('Work 1'));
         await tester.pumpAndSettle();
         expect(find.text('已选择 2 项'), findsOneWidget);
@@ -2405,6 +2419,7 @@ AsmrWork _work({
   String coverUrl = '',
   String thumbnailUrl = '',
   String mainCoverUrl = '',
+  Duration duration = Duration.zero,
 }) => AsmrWork(
   id: id,
   title: title,
@@ -2417,7 +2432,7 @@ AsmrWork _work({
   mainCoverUrl: mainCoverUrl,
   releaseDate: null,
   createDate: null,
-  duration: Duration.zero,
+  duration: duration,
   dlCount: 0,
   reviewCount: 0,
   rating: 0,

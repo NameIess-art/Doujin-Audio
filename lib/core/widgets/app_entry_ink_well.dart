@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'app_buttons.dart';
 import 'app_tap_highlight.dart';
 
-/// Navigation can mute the source page's tickers before an ink fade finishes.
-/// End entry feedback on release so it cannot resume over the returning page.
+/// Entry touch/click ripple with ticker-mute cleanup so covered pages do not
+/// retain unfinished release ink when popped back into view.
 class AppEntryInkWell extends InkWell {
   const AppEntryInkWell({
     super.key,
@@ -24,9 +24,13 @@ class AppEntryInkWell extends InkWell {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final animate = !MediaQuery.disableAnimationsOf(context);
     return InkWell(
       mouseCursor: mouseCursor,
-      splashFactory: AppTapHighlightFactory.forPlatform(theme.platform),
+      splashFactory: AppTapHighlightFactory.forPlatform(
+        theme.platform,
+        animate: animate,
+      ),
       highlightColor: Colors.transparent,
       hoverDuration: Duration.zero,
       splashColor: splashColor ?? appPressedTint(theme.colorScheme),
@@ -45,8 +49,12 @@ class AppEntryInkWell extends InkWell {
   /// Applies entry feedback to Material controls that own their ink response.
   static ThemeData entryTheme(BuildContext context) {
     final theme = Theme.of(context);
+    final animate = !MediaQuery.disableAnimationsOf(context);
     return theme.copyWith(
-      splashFactory: AppTapHighlightFactory.forPlatform(theme.platform),
+      splashFactory: AppTapHighlightFactory.forPlatform(
+        theme.platform,
+        animate: animate,
+      ),
       splashColor: appPressedTint(theme.colorScheme),
       hoverColor: appHoverTint(theme.colorScheme),
       highlightColor: Colors.transparent,

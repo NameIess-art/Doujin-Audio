@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app_buttons.dart';
 import 'app_tap_highlight.dart';
+import 'app_transitions.dart';
 
 import '../../app/theme/app_styles.dart';
 
@@ -263,17 +264,35 @@ class _UnifiedDropdownPointerShell extends StatelessWidget {
         builder: (context, states) => ValueListenableBuilder<Set<WidgetState>>(
           valueListenable: states,
           builder: (context, value, _) {
+            final disableAnimations = MediaQuery.disableAnimationsOf(context);
+            final isWindows = theme.platform == TargetPlatform.windows;
             final hovered =
                 enabled &&
-                theme.platform == TargetPlatform.windows &&
+                isWindows &&
                 value.contains(WidgetState.hovered);
             final pressed = enabled && value.contains(WidgetState.pressed);
-            final trigger = builder(context, (
+            final innerTrigger = builder(context, (
               hovered: hovered,
               pressed: pressed,
             ));
+            final trigger = isWindows
+                ? innerTrigger
+                : AnimatedScale(
+                    scale: pressed ? 0.985 : 1.0,
+                    duration: disableAnimations
+                        ? Duration.zero
+                        : (pressed
+                              ? const Duration(milliseconds: 60)
+                              : const Duration(milliseconds: 160)),
+                    curve: kAppSpringCurve,
+                    child: innerTrigger,
+                  );
             if (!paintSurface) return trigger;
-            return DecoratedBox(
+            return AnimatedContainer(
+              duration: disableAnimations
+                  ? Duration.zero
+                  : const Duration(milliseconds: 90),
+              curve: Curves.easeOut,
               decoration: BoxDecoration(
                 borderRadius: AppRadius.borderMedium,
                 color: appSurfaceHighlight(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
+import '../../core/widgets/app_transitions.dart';
 import '../localization/app_language_provider.dart';
 import 'app_dock_panel.dart';
 import '../../features/player/application/playback_session_snapshot.dart';
@@ -20,6 +21,7 @@ class MobileDockCapsuleContent extends StatefulWidget {
     this.isPlaybackRaised = false,
     this.isPlaybackHidden = false,
     this.onTogglePlaybackRow,
+    this.wrapDock,
   });
 
   final List<PlaybackSessionSnapshot> overlaySessions;
@@ -27,6 +29,7 @@ class MobileDockCapsuleContent extends StatefulWidget {
   final bool isPlaybackRaised;
   final bool isPlaybackHidden;
   final VoidCallback? onTogglePlaybackRow;
+  final Widget Function(Widget dock, Animation<double> rowProgress)? wrapDock;
   final AppLanguageProvider i18n;
   final GlobalKey mobilePlaybackGeometryKey;
   final VoidCallback onShowPlayback;
@@ -56,12 +59,13 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
   late final AnimationController _rowController;
   late final CurvedAnimation _rowCurve;
   late final Listenable _animationListenable;
+  late bool _raisedTextLayout;
 
   static const rowTravel = kActiveSessionCarouselDockHeight;
 
   static double inlinePlaybackWidth(double width, double expansion) {
     const height = kActiveSessionCarouselDockHeight;
-    final progress = Curves.easeInOut.transform(
+    final progress = kAppSpringCurve.transform(
       ((expansion - 0.25) / 0.5).clamp(0.0, 1.0),
     );
     return height + (width - height * 2).clamp(0.0, width) * progress;
@@ -73,8 +77,8 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
   bool _tickerModeEnabled = true;
   bool _disableAnimations = false;
 
-  static const Duration _appearanceDuration = Duration(milliseconds: 280);
-  static const Duration _motionDuration = Duration(milliseconds: 300);
+  static const Duration _appearanceDuration = Duration(milliseconds: 240);
+  static const Duration _motionDuration = Duration(milliseconds: 260);
 
   @override
   void initState() {
@@ -83,6 +87,7 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
     if (hasPlayback) {
       _cachedSessions = widget.overlaySessions;
     }
+    _raisedTextLayout = hasPlayback && widget.isPlaybackRaised;
     _appearanceController = AnimationController(
       vsync: this,
       duration: _appearanceDuration,
@@ -90,8 +95,8 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
     );
     _appearanceCurve = CurvedAnimation(
       parent: _appearanceController,
-      curve: Curves.easeOutCubic,
-      reverseCurve: Curves.easeOutCubic,
+      curve: kAppSpringCurve,
+      reverseCurve: kAppSpringCurve,
     );
     _expandController = AnimationController(
       vsync: this,
@@ -101,15 +106,22 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
     _rowController =
         AnimationController(
           vsync: this,
-          duration: _motionDuration,
+          duration: const Duration(milliseconds: 400),
           value: hasPlayback && widget.isPlaybackRaised ? 1 : 0,
-        )..addStatusListener((_) {
+        )..addStatusListener((status) {
           _syncMotionInteraction();
+          if (status.isCompleted || status.isDismissed) {
+            final raised = status.isCompleted;
+            if (raised != _raisedTextLayout) {
+              // Keep the existing text layout while the clip is moving.
+              setState(() => _raisedTextLayout = raised);
+            }
+          }
           widget.onReportPlaybackCoverRect();
         });
     _rowCurve = CurvedAnimation(
       parent: _rowController,
-      curve: Curves.easeInOutCubic,
+      curve: Curves.easeInOutSine,
     );
     _animationListenable = Listenable.merge([
       _appearanceCurve,
@@ -272,13 +284,13 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
+    final dock = LayoutBuilder(
       builder: (context, constraints) {
         final availableWidth = constraints.maxWidth;
         const compactWidth = kActiveSessionCarouselDockHeight;
         final playbackChild = _buildPlaybackChild(
           context,
-          widget.isPlaybackRaised
+          _raisedTextLayout
               ? availableWidth
               : inlinePlaybackWidth(availableWidth, 1),
         );
@@ -292,6 +304,52 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
           availableWidth: availableWidth,
           onCurrentTap: widget.onShowDestinations,
         );
+        final navigationViewport = SizedBox.expand(
+          key: const ValueKey<String>('mobile_dock_navigation'),
+          child: ClipRect(
+            child: OverflowBox(
+              alignment: Alignment.centerRight,
+              minWidth: availableWidth,
+              maxWidth: availableWidth,
+              child: RepaintBoundary(child: navigationChild),
+            ),
+          ),
+        );
+        final playbackViewport = playbackChild == null
+            ? null
+            : Visibility(
+                visible: !widget.isPlaybackHidden,
+                maintainSize: true,
+                maintainAnimation: true,
+                maintainState: true,
+                child: RepaintBoundary(
+                  child: SizedBox.expand(
+                    key: const ValueKey<String>('mobile_dock_playback'),
+                    child: SizedBox.expand(
+                      key: widget.mobilePlaybackGeometryKey,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onLongPress: widget.onTogglePlaybackRow,
+                        child: AnimatedBuilder(
+                          animation: _rowCurve,
+                          child: playbackChild,
+                          builder: (context, child) => ClipRRect(
+                            key: const ValueKey<String>(
+                              'mobile_dock_playback_viewport',
+                            ),
+                            borderRadius: BorderRadius.lerp(
+                              BorderRadius.circular(compactWidth / 2),
+                              BorderRadius.zero,
+                              _rowCurve.value,
+                            )!,
+                            child: child,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
         return AppDockPanel(
           key: const ValueKey<String>('mobile_bottom_capsule_surface'),
           radius: compactWidth / 2,
@@ -319,55 +377,15 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
                       bottom: 0,
                       width: navigationWidth,
                       height: compactWidth,
-                      child: SizedBox.expand(
-                        key: const ValueKey<String>('mobile_dock_navigation'),
-                        child: ClipRect(
-                          child: OverflowBox(
-                            alignment: Alignment.centerRight,
-                            minWidth: availableWidth,
-                            maxWidth: availableWidth,
-                            child: RepaintBoundary(child: navigationChild),
-                          ),
-                        ),
-                      ),
+                      child: navigationViewport,
                     ),
-                    if (playbackChild != null)
+                    if (playbackViewport != null)
                       Positioned(
                         left: -playbackWidth * (1 - appearance),
                         bottom: lift,
                         width: playbackWidth,
                         height: compactWidth,
-                        child: Visibility(
-                          visible: !widget.isPlaybackHidden,
-                          maintainSize: true,
-                          maintainAnimation: true,
-                          maintainState: true,
-                          child: RepaintBoundary(
-                            child: SizedBox.expand(
-                              key: const ValueKey<String>(
-                                'mobile_dock_playback',
-                              ),
-                              child: SizedBox.expand(
-                                key: widget.mobilePlaybackGeometryKey,
-                                child: GestureDetector(
-                                  behavior: HitTestBehavior.opaque,
-                                  onLongPress: widget.onTogglePlaybackRow,
-                                  child: ClipRRect(
-                                    key: const ValueKey<String>(
-                                      'mobile_dock_playback_viewport',
-                                    ),
-                                    borderRadius: BorderRadius.lerp(
-                                      BorderRadius.circular(compactWidth / 2),
-                                      BorderRadius.zero,
-                                      raised,
-                                    )!,
-                                    child: playbackChild,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
+                        child: playbackViewport,
                       ),
                   ],
                 ),
@@ -377,6 +395,7 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
         );
       },
     );
+    return widget.wrapDock?.call(dock, _rowCurve) ?? dock;
   }
 
   Widget? _buildPlaybackChild(BuildContext context, double expandedWidth) {
@@ -387,6 +406,7 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
       i18n: widget.i18n,
       viewportFraction: 1,
       expandedDockWidth: expandedWidth,
+      retainDockPages: true,
       presentation: ActiveSessionCarouselPresentation.embedded,
       isPlaybackRaised: widget.isPlaybackRaised,
       onOpenSession: (sessionId, coverOrigin) {

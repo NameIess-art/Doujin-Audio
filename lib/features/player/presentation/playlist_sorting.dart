@@ -1,3 +1,4 @@
+import '../../../app/application/audio_path_coordinator.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/list_sorting_utils.dart';
 import '../../../core/media/natural_sort.dart';
@@ -11,7 +12,7 @@ List<PlaybackSessionSnapshot> sortPlaylistSessions({
   required PlaylistSortCriterion criterion,
   required bool ascending,
   required bool groupByLibrary,
-  required LibraryFacade library,
+  required AudioPathCoordinator paths,
   required MusicTrack? Function(PlaybackSessionSnapshot session)
   trackForSession,
   Set<String> pinnedSessionIds = const <String>{},
@@ -26,7 +27,7 @@ List<PlaybackSessionSnapshot> sortPlaylistSessions({
             session,
             criterion,
             groupByLibrary,
-            library,
+            paths,
             trackForSession,
           ),
           pinned: pinnedSessionIds.contains(session.id),
@@ -67,6 +68,19 @@ List<PlaybackSessionSnapshot> sortPlaylistSessions({
   ]);
 }
 
+String? playlistSessionWorkName(
+  AudioPathCoordinator paths,
+  String trackPath,
+  MusicTrack? track,
+) {
+  final folderName = paths.rootFolderName(trackPath, knownTrack: track);
+  if (folderName.isNotEmpty) return folderName;
+  if (track != null && !track.isSingle && track.groupTitle.trim().isNotEmpty) {
+    return track.groupTitle;
+  }
+  return null;
+}
+
 class PlaylistSortValue {
   const PlaylistSortValue({
     required this.name,
@@ -75,9 +89,11 @@ class PlaylistSortValue {
     required this.releaseDate,
     required this.addedAt,
     required this.lastPlayedAt,
+    this.workName,
   });
 
   final String name;
+  final String? workName;
   final String? libraryKey;
   final String? voiceActor;
   final DateTime? releaseDate;
@@ -89,7 +105,7 @@ PlaylistSortValue _playlistSortValue(
   PlaybackSessionSnapshot session,
   PlaylistSortCriterion criterion,
   bool groupByLibrary,
-  LibraryFacade library,
+  AudioPathCoordinator paths,
   MusicTrack? Function(PlaybackSessionSnapshot session) trackForSession,
 ) {
   final queue = session.playbackQueue;
@@ -102,7 +118,10 @@ PlaylistSortValue _playlistSortValue(
       ? trackForSession(session) ?? queue?.expandedTracks.firstOrNull
       : null;
   final detail = needsDetail && track != null
-      ? _detailForTrack(track, library)
+      ? _detailForTrack(track, paths.library)
+      : null;
+  final workName = criterion == PlaylistSortCriterion.name && !hasQueueName
+      ? playlistSessionWorkName(paths, session.currentTrackPath, track)
       : null;
   final voiceActors = criterion == PlaylistSortCriterion.voiceActor
       ? detail?.voiceActors ??
@@ -112,8 +131,9 @@ PlaylistSortValue _playlistSortValue(
     name: hasQueueName
         ? queue!.name
         : track?.displayName ?? session.currentTrackPath,
+    workName: workName,
     libraryKey: groupByLibrary && track != null
-        ? library.libraryRootForPath(track.path)
+        ? paths.library.libraryRootForPath(track.path)
         : null,
     voiceActor: voiceActors.isEmpty ? null : voiceActors.join('\u0000'),
     releaseDate: criterion == PlaylistSortCriterion.releaseDate
@@ -138,7 +158,10 @@ int comparePlaylistSortValues(
   bool ascending,
 ) {
   final result = switch (criterion) {
-    PlaylistSortCriterion.name => compareNatural(left.name, right.name),
+    PlaylistSortCriterion.name => compareNatural(
+      left.workName ?? left.name,
+      right.workName ?? right.name,
+    ),
     PlaylistSortCriterion.voiceActor => compareOptionalSortStrings(
       left.voiceActor,
       right.voiceActor,
@@ -156,5 +179,8 @@ int comparePlaylistSortValues(
       rightAddedAt: right.addedAt,
     ),
   };
-  return ascending ? result : -result;
+  final ordered = result == 0 && criterion == PlaylistSortCriterion.name
+      ? compareNatural(left.name, right.name)
+      : result;
+  return ascending ? ordered : -ordered;
 }

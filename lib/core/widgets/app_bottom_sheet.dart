@@ -33,8 +33,8 @@ class AppBottomSheet {
               AnimationStyle(
                 duration: kAppMotionStandard,
                 reverseDuration: reverseAnimationDurationOf(context),
-                curve: Curves.fastOutSlowIn,
-                reverseCurve: Curves.fastOutSlowIn,
+                curve: kAppSpringCurve,
+                reverseCurve: kAppSpringCurve,
               );
 
     final navigator = Navigator.of(context, rootNavigator: useRootNavigator);
@@ -155,7 +155,7 @@ class _AppBottomSheetRoute<T> extends ModalBottomSheetRoute<T> {
       builder: (context, child) {
         // Keep the opening fade, but hold its reached opacity during dragging
         // and dismissal, including a close that interrupts the entrance.
-        final openingOpacity = kAppFadeCurve.transform(animation.value);
+        final openingOpacity = kAppSpringCurve.transform(animation.value);
         if (openingOpacity > _visibleOpacity) _visibleOpacity = openingOpacity;
         return Opacity(opacity: _visibleOpacity, child: child);
       },

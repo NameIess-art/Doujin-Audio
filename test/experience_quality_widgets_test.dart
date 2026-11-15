@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:ui' show Tristate;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'package:doujin_audio/core/widgets/search_highlight.dart';
-import 'package:doujin_audio/core/widgets/rj_code_overlay.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -107,36 +107,51 @@ LibraryLikeWorkCardContent _buildFeaturedCard({
 }
 
 void main() {
-  testWidgets('RJ search highlights inherit and clear with the query', (
+  testWidgets('RJ prefix stays highlighted without a background', (
     tester,
   ) async {
     Future<void> pumpCode(String query) => tester.pumpWidget(
       _buildSurface(
-        SearchHighlightScope(
-          query: query,
-          child: const RjCodeOverlay(rjCode: 'RJ123456', maxWidth: 90),
+        Center(
+          child: SizedBox(
+            width: 140,
+            child: SearchHighlightScope(
+              query: query,
+              child: const LibraryLikeDetailInfoLine(
+                label: 'Circle',
+                icon: Icons.storefront_outlined,
+                text: 'Circle name',
+                trailingText: 'RJ123456',
+                style: TextStyle(fontSize: 11),
+                loading: false,
+              ),
+            ),
+          ),
         ),
       ),
     );
 
     await pumpCode('rj123');
-    final richText = tester.widget<RichText>(
-      find.descendant(
-        of: find.byType(RjCodeOverlay),
-        matching: find.byType(RichText),
-      ),
+    final code = find.byWidgetPredicate(
+      (widget) => widget is SearchHighlightedText && widget.text == 'RJ123456',
     );
-    final spans = (richText.text as TextSpan).children!.cast<TextSpan>();
-    expect(
-      spans
-          .where((span) => span.style?.fontWeight == FontWeight.w900)
-          .single
-          .text,
-      'RJ123',
-    );
-    expect(richText.text.toPlainText(), 'RJ123456');
+    TextSpan workCode() =>
+        tester.renderObject<RenderParagraph>(code).text as TextSpan;
+    TextSpan highlightedText() => workCode().children!
+        .cast<TextSpan>()
+        .where((span) => span.style?.fontWeight == FontWeight.w900)
+        .single;
+
+    expect(highlightedText().text, 'RJ123');
     await pumpCode('');
-    expect(find.text('RJ123456'), findsOneWidget);
+    final highlight = highlightedText();
+    expect(highlight.text, 'RJ');
+    expect(
+      highlight.style?.color,
+      Theme.of(tester.element(code)).colorScheme.primary,
+    );
+    expect(workCode().toPlainText(), 'RJ123456');
+    expect(workCode().style!.fontSize, 11);
     expect(tester.takeException(), isNull);
   });
 
@@ -1558,7 +1573,7 @@ void main() {
   });
 
   testWidgets(
-    'LibrarySelectionIndicator waits for highlight then fades with 22x22 cutout border',
+    'LibrarySelectionIndicator fades in immediately with a 22x22 cutout border',
     (tester) async {
       final checkmarkFinder = find.byKey(
         const ValueKey<String>('library_selection_indicator_lib-fade-test'),
@@ -1586,10 +1601,6 @@ void main() {
       );
 
       await tester.pump();
-      expect(checkmarkFinder, findsNothing);
-      await tester.pump(kAppSelectionDuration - const Duration(milliseconds: 1));
-      expect(checkmarkFinder, findsNothing);
-      await tester.pump(const Duration(milliseconds: 1));
       expect(checkmarkFinder, findsOneWidget);
 
       expect(tester.getSize(checkmarkFinder), const Size(22.0, 22.0));
@@ -1728,7 +1739,7 @@ void main() {
   );
 
   testWidgets(
-    'SingleMediaFileCardContent places selection checkmark at bottom-left and pin at top-right',
+    'SingleMediaFileCardContent places selection at bottom-right and pin at top-right',
     (tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -1761,7 +1772,7 @@ void main() {
             )
             .first,
       );
-      expect(selectionPosition.left, -2);
+      expect(selectionPosition.right, -2);
       expect(selectionPosition.bottom, -2);
       expect(selectionPosition.top, isNull);
 

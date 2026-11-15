@@ -325,7 +325,6 @@ class WorkPageTranslationButton extends StatelessWidget {
             onPressed: onPressed,
             tooltip: tooltip,
             icon: icon,
-            foregroundColor: Theme.of(context).colorScheme.onSurface,
           );
         }
         return HeaderFloatingButton(

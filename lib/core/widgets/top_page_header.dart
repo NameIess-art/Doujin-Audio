@@ -3,6 +3,7 @@ import 'dart:ui' as dart_ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import 'app_buttons.dart';
 
@@ -305,12 +306,7 @@ class _TopPageHeaderState extends State<TopPageHeader> {
         );
       }
 
-      final titleStyle = theme.textTheme.titleSmall?.copyWith(
-        color: cs.onSurface,
-        fontSize: isWindows ? null : 13.5,
-        fontWeight: isWindows ? null : FontWeight.w800,
-        letterSpacing: isWindows ? null : 0.1,
-      );
+      final titleStyle = appPageHeaderTitleStyle(context);
       return HeaderFloatingSurface(
         height: null,
         padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -509,22 +505,15 @@ class _TopPageHeaderState extends State<TopPageHeader> {
                   left: 0,
                   right: 0,
                   height: topCapsuleHeight,
-                  child: Opacity(
-                    // Skip the fully hidden backdrop without unmounting it.
-                    opacity: topCapsuleOpacity == 0 ? 0 : 1,
-                    // Apply alpha after the glass is composited. Inherited
-                    // opacity darkens its src-blended backdrop during collapse.
-                    child: ColorFiltered(
-                      colorFilter: ColorFilter.mode(
-                        Colors.white.withValues(alpha: topCapsuleOpacity),
-                        BlendMode.modulate,
-                      ),
-                      child: IgnorePointer(
-                        ignoring: collapseT > 0.8,
-                        child: ExcludeSemantics(
-                          excluding: collapseT > 0.8,
-                          child: topCapsuleWidget,
-                        ),
+                  // Skip offscreen ColorFilterLayer at full opacity so child
+                  // BackdropFilter blurs underlying content directly.
+                  child: _ModulateOpacity(
+                    opacity: topCapsuleOpacity,
+                    child: IgnorePointer(
+                      ignoring: collapseT > 0.8,
+                      child: ExcludeSemantics(
+                        excluding: collapseT > 0.8,
+                        child: topCapsuleWidget,
                       ),
                     ),
                   ),
@@ -626,6 +615,17 @@ class _AppHeaderSurface extends StatelessWidget {
   }
 }
 
+TextStyle? appPageHeaderTitleStyle(BuildContext context) {
+  final theme = Theme.of(context);
+  final isWindows = theme.platform == TargetPlatform.windows;
+  return theme.textTheme.titleSmall?.copyWith(
+    color: theme.colorScheme.onSurface,
+    fontSize: isWindows ? null : 13.5,
+    fontWeight: isWindows ? null : FontWeight.w800,
+    letterSpacing: isWindows ? null : 0.1,
+  );
+}
+
 class HeaderFloatingSurface extends StatelessWidget {
   const HeaderFloatingSurface({
     super.key,
@@ -636,6 +636,8 @@ class HeaderFloatingSurface extends StatelessWidget {
     this.padding,
     this.backgroundOpacity = 1,
     this.followBarGlass = false,
+    this.hovered,
+    this.pressed,
   });
 
   final Widget child;
@@ -645,35 +647,58 @@ class HeaderFloatingSurface extends StatelessWidget {
   final EdgeInsetsGeometry? padding;
   final double backgroundOpacity;
   final bool followBarGlass;
+  final bool? hovered;
+  final bool? pressed;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final isHovered = hovered ?? false;
+    final isPressed = pressed ?? false;
     final background = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
     final borderRadius = BorderRadius.circular(radius);
     // Content capsules opt in explicitly; full-width glass bars own their filter.
     final headerSurface = context
         .findAncestorWidgetOfExactType<_AppHeaderSurface>();
     final useGlass =
+        backgroundOpacity > 0 &&
         AppDesignTokens.of(context).barGlassEnabled &&
         (followBarGlass ||
             context.findAncestorWidgetOfExactType<AppPageHeaderTransition>() !=
                 null) &&
         headerSurface?.floating != false;
-    final backgroundColor = background.withValues(
+    final restBackground = background.withValues(
       alpha: background.a * backgroundOpacity * (useGlass ? 0.9 : 1),
     );
-    final surface = DecoratedBox(
-      decoration: BoxDecoration(
-        color: useGlass ? null : backgroundColor,
-        borderRadius: borderRadius,
-        border: Border.all(
-          color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
-        ),
-      ),
-      child: padding != null ? Padding(padding: padding!, child: child) : child,
+    final backgroundColor = appSurfaceHighlight(
+      cs,
+      restBackground,
+      pressed: isPressed,
+      hovered: isHovered,
     );
+    final border = Border.all(
+      color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
+    );
+    final innerChild = padding != null
+        ? Padding(padding: padding!, child: child)
+        : child;
+    final decoration = BoxDecoration(
+      color: useGlass ? null : backgroundColor,
+      borderRadius: borderRadius,
+      border: border,
+    );
+    final surface = !useGlass && (hovered != null || pressed != null)
+        ? AnimatedContainer(
+            duration: reduceMotion
+                ? Duration.zero
+                : Duration(milliseconds: isPressed ? 60 : 90),
+            curve: Curves.easeOutQuad,
+            decoration: decoration,
+            child: innerChild,
+          )
+        : DecoratedBox(decoration: decoration, child: innerChild);
 
     final content = useGlass
         ? AppGlassSurface(
@@ -1237,12 +1262,7 @@ class HeaderTopCapsule extends StatelessWidget {
       title,
       maxLines: 1,
       softWrap: false,
-      style: textTheme.titleSmall?.copyWith(
-        fontWeight: isWindows ? null : FontWeight.w800,
-        color: cs.onSurface,
-        fontSize: isWindows ? null : 13.5,
-        letterSpacing: isWindows ? null : 0.1,
-      ),
+      style: appPageHeaderTitleStyle(context),
     );
     final dataText = trailing == null && data != null && data!.isNotEmpty
         ? Text(
@@ -1293,6 +1313,68 @@ class HeaderTopCapsule extends StatelessWidget {
           if (trailing != null) ...[const SizedBox(width: 8), trailing!],
         ],
       ),
+    );
+  }
+}
+
+class _ModulateOpacity extends SingleChildRenderObjectWidget {
+  const _ModulateOpacity({required this.opacity, super.child});
+
+  final double opacity;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderModulateOpacity(opacity: opacity);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderModulateOpacity renderObject,
+  ) {
+    renderObject.opacity = opacity;
+  }
+}
+
+class _RenderModulateOpacity extends RenderProxyBox {
+  _RenderModulateOpacity({required double opacity}) : _opacity = opacity;
+
+  double _opacity;
+  double get opacity => _opacity;
+  set opacity(double value) {
+    final clamped = value.clamp(0.0, 1.0);
+    if (_opacity == clamped) return;
+    final wasOpaqueOrHidden = _opacity == 0 || _opacity == 1;
+    final isOpaqueOrHidden = clamped == 0 || clamped == 1;
+    _opacity = clamped;
+    if (wasOpaqueOrHidden != isOpaqueOrHidden) {
+      markNeedsCompositingBitsUpdate();
+    }
+    markNeedsPaint();
+  }
+
+  @override
+  bool get alwaysNeedsCompositing =>
+      child != null && _opacity > 0 && _opacity < 1;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    if (child == null || _opacity <= 0) {
+      layer = null;
+      return;
+    }
+    if (_opacity >= 1) {
+      layer = null;
+      context.paintChild(child!, offset);
+      return;
+    }
+    layer = context.pushColorFilter(
+      offset,
+      ColorFilter.mode(
+        Colors.white.withValues(alpha: _opacity),
+        BlendMode.modulate,
+      ),
+      super.paint,
+      oldLayer: layer as ColorFilterLayer?,
     );
   }
 }

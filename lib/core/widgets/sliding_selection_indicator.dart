@@ -8,12 +8,14 @@ class SlidingSelectionIndicator extends StatelessWidget {
     super.key,
     required this.index,
     required this.layoutKey,
+    this.overridePosition,
     required this.builder,
     required this.child,
   });
 
   final int index;
   final Object layoutKey;
+  final double? overridePosition;
   final ValueWidgetBuilder<double> builder;
   final Widget child;
 
@@ -34,11 +36,13 @@ class SlidingSelectionIndicator extends StatelessWidget {
     final reduceMotion =
         MediaQuery.disableAnimationsOf(context) ||
         !TickerMode.valuesOf(context).enabled;
+    final dragging = overridePosition != null;
+    final target = overridePosition ?? (index < 0 ? 0.0 : index.toDouble());
     return TweenAnimationBuilder<double>(
       key: ValueKey((layoutKey, reduceMotion)),
-      tween: Tween(end: index < 0 ? 0.0 : index.toDouble()),
-      duration: reduceMotion ? Duration.zero : kAppMotionFast,
-      curve: Curves.easeOutCubic,
+      tween: Tween(end: target),
+      duration: dragging || reduceMotion ? Duration.zero : kAppMotionFast,
+      curve: kAppSpringCurve,
       builder: builder,
       child: child,
     );

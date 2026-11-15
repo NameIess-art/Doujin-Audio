@@ -2961,6 +2961,7 @@ void main() {
           expect(tester.getSize(button), const Size.square(38));
           final icon = find.descendant(of: button, matching: find.byType(Icon));
           final iconTheme = IconTheme.of(tester.element(icon));
+          expect(iconTheme.color, Colors.white);
           expect(
             tester.getSize(icon),
             Size.square(button == backButton ? 32 : 20),
@@ -4350,7 +4351,7 @@ void main() {
           expect(tester.getRect(button), bounds);
         }
 
-        expectFeedback(1.14);
+        expectFeedback(1.0);
         await mouse.down(bounds.center);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 120));

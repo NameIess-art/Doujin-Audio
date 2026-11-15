@@ -376,7 +376,11 @@ class _ProgressSliderAndTimecodesState
   }
 
   void _showLabelsAtPosition(_ProgressTooltipState? state) {
-    if (_tooltipValue.value == state) return;
+    final previous = _tooltipValue.value;
+    if (previous == state) return;
+    if (_isDragging && !listEquals(previous?.labels, state?.labels)) {
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    }
     _tooltipValue.value = state;
   }
 
@@ -453,6 +457,10 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
   bool _disableAnimations = false;
   bool _sliderHovered = false;
   bool _sliderDragging = false;
+  double _scrubScale = 1.0;
+  bool _usedFineScrub = false;
+  double? _lastRawValueMs;
+  double? _fineValueMs;
 
   void _setSliderHovered(bool hovered) {
     if (_sliderHovered == hovered) return;
@@ -462,6 +470,31 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
   void _setSliderDragging(bool dragging) {
     if (_sliderDragging == dragging) return;
     setState(() => _sliderDragging = dragging);
+  }
+
+  double _scrubScaleForOffset(Offset localPosition) {
+    final verticalDistance = (localPosition.dy - 10.0).abs();
+    if (verticalDistance >= 96.0) return 0.25;
+    if (verticalDistance >= 48.0) return 0.5;
+    return 1.0;
+  }
+
+  void _handlePointerMoveScrub(Offset localPosition) {
+    if (!_sliderDragging) return;
+    final nextScale = _scrubScaleForOffset(localPosition);
+    if (nextScale == _scrubScale) return;
+    _scrubScale = nextScale;
+    if (nextScale < 1.0) {
+      _usedFineScrub = true;
+    }
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+  }
+
+  void _resetFineScrub() {
+    _scrubScale = 1.0;
+    _usedFineScrub = false;
+    _lastRawValueMs = null;
+    _fineValueMs = null;
   }
 
   @override
@@ -476,7 +509,8 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
           });
     _tooltipOpacity = CurvedAnimation(
       parent: _tooltipAnimation,
-      curve: kAppFadeCurve,
+      curve: kAppSpringCurve,
+      reverseCurve: Curves.easeInCubic,
     );
     widget.tooltipValue.addListener(_handleTooltipChanged);
     _syncTooltipState();
@@ -622,30 +656,68 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
                       child: ValueListenableBuilder<_ProgressSliderValue>(
                         valueListenable: widget.sliderValue,
                         builder: (context, value, child) {
-                          return Slider(
-                            max: value.maxMillis,
-                            value: value.sliderValue,
-                            secondaryTrackValue: value.bufferedValue,
-                            onChangeStart: value.canSeek
-                                ? (v) {
-                                    _setSliderDragging(true);
-                                    widget.onChangeStart(v);
-                                  }
-                                : null,
-                            onChanged: value.canSeek ? widget.onChanged : null,
-                            onChangeEnd: value.canSeek
-                                ? (v) {
-                                    _setSliderDragging(false);
-                                    widget.onChangeEnd(v);
-                                  }
-                                : null,
-                            semanticFormatterCallback: (rawValue) {
-                              final position = Duration(
-                                milliseconds: rawValue.round(),
-                              );
-                              return '${formatDurationCompact(position)} / '
-                                  '${formatDurationCompact(value.duration)}';
+                          return Listener(
+                            behavior: HitTestBehavior.translucent,
+                            onPointerDown: (event) {
+                              if (!_sliderDragging) {
+                                _resetFineScrub();
+                                _scrubScale = _scrubScaleForOffset(
+                                  event.localPosition,
+                                );
+                              }
                             },
+                            onPointerMove: (event) =>
+                                _handlePointerMoveScrub(event.localPosition),
+                            child: Slider(
+                              max: value.maxMillis,
+                              value: value.sliderValue,
+                              secondaryTrackValue: value.bufferedValue,
+                              onChangeStart: value.canSeek
+                                  ? (v) {
+                                      _setSliderDragging(true);
+                                      _lastRawValueMs = v;
+                                      _fineValueMs = v;
+                                      _usedFineScrub = _scrubScale < 1.0;
+                                      widget.onChangeStart(v);
+                                    }
+                                  : null,
+                              onChanged: value.canSeek
+                                  ? (v) {
+                                      if (!_usedFineScrub) {
+                                        _lastRawValueMs = v;
+                                        _fineValueMs = v;
+                                        widget.onChanged(v);
+                                        return;
+                                      }
+                                      final deltaMs =
+                                          v - (_lastRawValueMs ?? v);
+                                      _lastRawValueMs = v;
+                                      final nextFine =
+                                          ((_fineValueMs ?? v) +
+                                                  deltaMs * _scrubScale)
+                                              .clamp(0.0, value.maxMillis);
+                                      _fineValueMs = nextFine;
+                                      widget.onChanged(nextFine);
+                                    }
+                                  : null,
+                              onChangeEnd: value.canSeek
+                                  ? (v) {
+                                      final resolved = _usedFineScrub
+                                          ? (_fineValueMs ?? v)
+                                          : v;
+                                      _resetFineScrub();
+                                      _setSliderDragging(false);
+                                      widget.onChangeEnd(resolved);
+                                    }
+                                  : null,
+                              semanticFormatterCallback: (rawValue) {
+                                final position = Duration(
+                                  milliseconds: rawValue.round(),
+                                );
+                                return '${formatDurationCompact(position)} / '
+                                    '${formatDurationCompact(value.duration)}';
+                              },
+                            ),
                           );
                         },
                       ),
@@ -675,9 +747,16 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
                 showWhenUnlinked: false,
                 followerAnchor: Alignment.bottomLeft,
                 offset: Offset(value.left, -8),
-                child: FadeTransition(
-                  opacity: _tooltipOpacity,
-                  child: _TimeSegmentDragTooltip(labels: value.labels),
+                child: ScaleTransition(
+                  scale: Tween<double>(
+                    begin: 0.92,
+                    end: 1,
+                  ).animate(_tooltipOpacity),
+                  alignment: Alignment.bottomLeft,
+                  child: FadeTransition(
+                    opacity: _tooltipOpacity,
+                    child: _TimeSegmentDragTooltip(labels: value.labels),
+                  ),
                 ),
               ),
             );

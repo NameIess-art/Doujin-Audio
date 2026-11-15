@@ -39,9 +39,8 @@ import 'main_tab_state_mixin.dart';
 import 'my_tag_management_page.dart';
 
 class MyPage extends ConsumerStatefulWidget {
-  const MyPage({super.key, required this.tabIndex, this.onSwitchPage});
+  const MyPage({super.key, required this.tabIndex});
   final int tabIndex;
-  final VoidCallback? onSwitchPage;
 
   @override
   ConsumerState<MyPage> createState() => _MyPageState();
@@ -613,14 +612,6 @@ class _MyPageState extends ConsumerState<MyPage>
                     color: Theme.of(context).colorScheme.primary,
                   ),
                 ),
-                trailing: widget.onSwitchPage == null
-                    ? null
-                    : IconButton(
-                        key: const ValueKey('switch-to-settings'),
-                        tooltip: i18n.tr('switch_to_settings'),
-                        onPressed: widget.onSwitchPage,
-                        icon: const Icon(Icons.settings_rounded),
-                      ),
               ),
             ),
           ],

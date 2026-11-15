@@ -233,11 +233,11 @@ class _RoutedPlaybackDockHostState
             isWorkDetailRoute &&
             supportsRoutedDock &&
             hasOverlaySessions;
+        final dockBottom = padding.bottom > kMobileDockBottomMargin
+            ? padding.bottom
+            : kMobileDockBottomMargin;
         final routeDockInset = reserveWorkDetailDockInset
-            ? kActiveSessionCarouselDockHeight +
-                  kMobileDockBottomMargin +
-                  6 +
-                  padding.bottom
+            ? kActiveSessionCarouselDockHeight + dockBottom + 6
             : 0.0;
         return MobileOverlayInset(
           bottomInset: routeDockInset,

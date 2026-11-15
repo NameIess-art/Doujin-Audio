@@ -37,6 +37,7 @@ part 'active_session_carousel_widgets.dart';
 const double kActiveSessionCarouselCapsuleHeight = 56;
 const double kActiveSessionCarouselDockHeight = 56;
 const double kMobileDockBottomMargin = 12;
+const double _expandedDockThreshold = 160;
 
 enum ActiveSessionCarouselPresentation {
   card,
@@ -55,6 +56,7 @@ class ActiveSessionCarousel extends ConsumerStatefulWidget {
     this.presentation = ActiveSessionCarouselPresentation.card,
     this.viewportFraction,
     this.expandedDockWidth,
+    this.retainDockPages = false,
     this.isPlaybackRaised = false,
     this.isRoutedDock = false,
   });
@@ -69,6 +71,9 @@ class ActiveSessionCarousel extends ConsumerStatefulWidget {
 
   /// Final dock width, so animated clipping does not relayout its text.
   final double? expandedDockWidth;
+
+  /// Retains the portrait dock's pages as the visible capsule narrows.
+  final bool retainDockPages;
 
   final bool isPlaybackRaised;
   final bool isRoutedDock;
@@ -97,6 +102,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   List<PlaybackSessionSnapshot> _incomingSessions = const [];
   int _pageIndexOffset = 0;
   bool _removingFocusedSession = false;
+  bool _isNarrowDock = false;
   String? _lastCarouselSnapSessionId;
   String? _lastVisibleSessionId;
 
@@ -248,7 +254,9 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       _notifyVisibleSessionChanged();
       return;
     }
-    if (duration == Duration.zero || MediaQuery.disableAnimationsOf(context)) {
+    if (_isNarrowDock ||
+        duration == Duration.zero ||
+        MediaQuery.disableAnimationsOf(context)) {
       _pageController.jumpToPage(page);
       return;
     }
@@ -396,6 +404,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
           compact: compact,
           embedded: embedded,
           expandedDockWidth: embedded ? widget.expandedDockWidth : null,
+          retainDockPages: widget.retainDockPages,
           dockCollapsed: dockCollapsed,
           circularCover: requestsCircularCover,
           isPlaybackRaised: widget.isPlaybackRaised,
@@ -411,9 +420,23 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       builder: (context, index, _) =>
           buildSessionCard(index, dockCollapsed: embedded),
     );
-    final pages = Listener(
+    final pageChildren = SliverChildBuilderDelegate((context, index) {
+      final card = buildSessionCard(
+        _sessionIndexForPage(index, visibleSessions.length),
+      );
+      if (embedded) return card;
+      return _ActiveSessionPageTransform(
+        pageListenable: _pageNotifier,
+        index: index,
+        enabled: visibleSessions.length > 1,
+        child: card,
+      );
+    });
+    Widget buildPages({required bool canPage}) => Listener(
       onPointerSignal: (signal) {
-        if (signal is PointerScrollEvent && visibleSessions.length > 1) {
+        if (canPage &&
+            signal is PointerScrollEvent &&
+            visibleSessions.length > 1) {
           final currentPage = _pageNotifier.value.round();
           final delta = signal.scrollDelta.dy > 0
               ? 1
@@ -429,7 +452,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
         }
       },
       child: ScrollActivityGate(
-        child: PageView.builder(
+        child: PageView.custom(
           controller: _pageController,
           scrollBehavior: ScrollConfiguration.of(context).copyWith(
             dragDevices: {
@@ -438,21 +461,25 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
               PointerDeviceKind.trackpad,
             },
           ),
-          physics: visibleSessions.length == 1
+          physics: !canPage || visibleSessions.length == 1
               ? const NeverScrollableScrollPhysics()
               : const BouncingScrollPhysics(),
-          itemBuilder: (context, index) {
-            final card = buildSessionCard(
-              _sessionIndexForPage(index, visibleSessions.length),
-            );
-            if (embedded) return card;
-            return _ActiveSessionPageTransform(
-              pageListenable: _pageNotifier,
-              index: index,
-              enabled: visibleSessions.length > 1,
-              child: card,
-            );
-          },
+          childrenDelegate: pageChildren,
+        ),
+      ),
+    );
+    final pages = buildPages(canPage: true);
+    final narrowPages = widget.retainDockPages
+        ? buildPages(canPage: false)
+        : null;
+    final positionIndicator = IgnorePointer(
+      child: Center(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: _ActiveSessionIndicator(
+            sessions: visibleSessions,
+            indexListenable: _indicatorIndex,
+          ),
         ),
       ),
     );
@@ -463,30 +490,30 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final totalWidth = constraints.maxWidth;
-          // A round dock has no moving viewport; preserve its focused session.
-          if (requestsCircularCover || (embedded && totalWidth < 160)) {
+          _isNarrowDock = embedded && totalWidth < _expandedDockThreshold;
+          // Other round docks can render just their focused cover.
+          if (requestsCircularCover || (_isNarrowDock && narrowPages == null)) {
             return roundCard;
           }
+          final indicatorOpacity =
+              ((totalWidth - _expandedDockThreshold) /
+                      kActiveSessionCarouselDockHeight)
+                  .clamp(0.0, 1.0);
           return Stack(
             fit: StackFit.expand,
             children: [
-              pages,
-              if (!compact && visibleSessions.length > 1)
+              _isNarrowDock ? narrowPages! : pages,
+              if (!_isNarrowDock && !compact && visibleSessions.length > 1)
                 PositionedDirectional(
                   start: 12,
                   end: 12,
                   bottom: 7,
-                  child: IgnorePointer(
-                    child: Center(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: _ActiveSessionIndicator(
-                          sessions: visibleSessions,
-                          indexListenable: _indicatorIndex,
-                        ),
-                      ),
-                    ),
-                  ),
+                  child: widget.retainDockPages
+                      ? Opacity(
+                          opacity: indicatorOpacity,
+                          child: positionIndicator,
+                        )
+                      : positionIndicator,
                 ),
             ],
           );

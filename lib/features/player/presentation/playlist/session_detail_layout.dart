@@ -253,9 +253,9 @@ class SessionDetailLayout extends StatelessWidget {
               AnimatedSwitcher(
                 duration: MediaQuery.disableAnimationsOf(context)
                     ? Duration.zero
-                    : kAppFadeDuration,
-                switchInCurve: kAppFadeCurve,
-                switchOutCurve: kAppFadeCurve,
+                    : kAppMotionStandard,
+                switchInCurve: kAppSpringCurve,
+                switchOutCurve: Curves.easeInCubic,
                 transitionBuilder: (child, animation) {
                   return SizeTransition(
                     sizeFactor: animation,

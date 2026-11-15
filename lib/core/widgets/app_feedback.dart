@@ -542,7 +542,7 @@ void _showTopFeedback(
               duration: currentData.duration,
               transitionDuration: MediaQuery.disableAnimationsOf(context)
                   ? Duration.zero
-                  : kAppFadeDuration,
+                  : kAppMotionStandard,
               showCountdown: currentData.showCountdown,
               onRemove: () => dismissEntry(AppFeedbackDismissReason.timeout),
               builder: (wrapperContext, remainingSeconds) {
@@ -559,7 +559,10 @@ void _showTopFeedback(
                   key: ValueKey<Object>(currentData.dismissKey),
                   onDismissed: (_) =>
                       removeEntry(AppFeedbackDismissReason.swipe),
-                  child: Material(
+                  child: _VerticalSwipeDismissWrapper(
+                    onDismissed: () =>
+                        dismissEntry(AppFeedbackDismissReason.swipe),
+                    child: Material(
                     color: Colors.transparent,
                     child: AppFeedbackSurface(
                       tone: currentData.tone,
@@ -606,6 +609,7 @@ void _showTopFeedback(
                             )
                           : null,
                     ),
+                  ),
                   ),
                 );
               },
@@ -656,6 +660,8 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _opacity;
+  late final Animation<Offset> _slide;
+  late final Animation<double> _scale;
   Timer? _expiryTimer;
   Timer? _countdownTimer;
   late int _remainingSeconds;
@@ -672,7 +678,16 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
       vsync: this,
       duration: widget.transitionDuration,
     )..addStatusListener(_handleAnimationStatus);
-    _opacity = CurvedAnimation(parent: _controller, curve: kAppFadeCurve);
+    _opacity = CurvedAnimation(
+      parent: _controller,
+      curve: kAppSpringCurve,
+      reverseCurve: Curves.easeInCubic,
+    );
+    _slide = Tween<Offset>(
+      begin: const Offset(0, -0.26),
+      end: Offset.zero,
+    ).animate(_opacity);
+    _scale = Tween<double>(begin: 0.94, end: 1).animate(_opacity);
 
     _controller.forward();
     _startDuration(widget.duration, _currentShowCountdown);
@@ -782,9 +797,104 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
           excluding: _dismissing,
           child: MediaQuery.disableAnimationsOf(context)
               ? content
-              : FadeTransition(opacity: _opacity, child: content),
+              : FadeTransition(
+                  opacity: _opacity,
+                  child: SlideTransition(
+                    position: _slide,
+                    child: ScaleTransition(scale: _scale, child: content),
+                  ),
+                ),
         ),
       ),
+    );
+  }
+}
+
+class _VerticalSwipeDismissWrapper extends StatefulWidget {
+  const _VerticalSwipeDismissWrapper({
+    required this.onDismissed,
+    required this.child,
+  });
+
+  final VoidCallback onDismissed;
+  final Widget child;
+
+  @override
+  State<_VerticalSwipeDismissWrapper> createState() =>
+      _VerticalSwipeDismissWrapperState();
+}
+
+class _VerticalSwipeDismissWrapperState
+    extends State<_VerticalSwipeDismissWrapper>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _resetController;
+  Animation<double>? _resetAnimation;
+  double _offsetY = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _resetController =
+        AnimationController(vsync: this, duration: kAppMotionFast)
+          ..addListener(() {
+            final animation = _resetAnimation;
+            if (animation != null && mounted) {
+              setState(() => _offsetY = animation.value);
+            }
+          });
+  }
+
+  @override
+  void dispose() {
+    _resetController.dispose();
+    super.dispose();
+  }
+
+  void _handleDragUpdate(DragUpdateDetails details) {
+    _resetController.stop();
+    final next = (_offsetY + details.delta.dy).clamp(-120.0, 0.0);
+    if (next != _offsetY) {
+      setState(() => _offsetY = next);
+    }
+  }
+
+  void _handleDragEnd(DragEndDetails details) {
+    final velocity = details.velocity.pixelsPerSecond.dy;
+    if (_offsetY <= -28 || (_offsetY < 0 && velocity <= -350)) {
+      widget.onDismissed();
+      return;
+    }
+    if (_offsetY == 0) return;
+    if (MediaQuery.disableAnimationsOf(context) ||
+        !TickerMode.valuesOf(context).enabled) {
+      setState(() => _offsetY = 0);
+      return;
+    }
+    _resetAnimation = Tween<double>(
+      begin: _offsetY,
+      end: 0,
+    ).chain(CurveTween(curve: kAppSpringCurve)).animate(_resetController);
+    _resetController.forward(from: 0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final child = _offsetY == 0
+        ? widget.child
+        : Opacity(
+            opacity: (1.0 + _offsetY / 100.0).clamp(0.0, 1.0),
+            child: Transform.translate(
+              offset: Offset(0, _offsetY),
+              child: widget.child,
+            ),
+          );
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onVerticalDragUpdate: _handleDragUpdate,
+      onVerticalDragEnd: _handleDragEnd,
+      onVerticalDragCancel: () =>
+          _handleDragEnd(DragEndDetails()),
+      child: child,
     );
   }
 }
@@ -853,9 +963,21 @@ class AppFeedbackSurface extends StatelessWidget {
                 child: AnimatedSwitcher(
                   duration: MediaQuery.disableAnimationsOf(context)
                       ? Duration.zero
-                      : kAppFadeDuration,
-                  switchInCurve: kAppFadeCurve,
-                  switchOutCurve: kAppFadeCurve,
+                      : kAppMotionFast,
+                  switchInCurve: kAppSpringCurve,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) =>
+                      MediaQuery.disableAnimationsOf(context)
+                      ? child
+                      : FadeTransition(
+                          opacity: animation,
+                          child: ScaleTransition(
+                            scale: animation.drive(
+                              Tween<double>(begin: 0.85, end: 1),
+                            ),
+                            child: child,
+                          ),
+                        ),
                   child: Icon(
                     icon,
                     key: ValueKey<IconData>(icon),
@@ -869,14 +991,14 @@ class AppFeedbackSurface extends StatelessWidget {
             Expanded(
               child: AnimatedSize(
                 duration: tokens.motionFast,
-                curve: Curves.easeOutCubic,
+                curve: kAppSpringCurve,
                 alignment: Alignment.centerLeft,
                 child: AnimatedSwitcher(
                   duration: MediaQuery.disableAnimationsOf(context)
                       ? Duration.zero
-                      : kAppFadeDuration,
-                  switchInCurve: kAppFadeCurve,
-                  switchOutCurve: kAppFadeCurve,
+                      : kAppMotionFast,
+                  switchInCurve: kAppSpringCurve,
+                  switchOutCurve: Curves.easeInCubic,
                   layoutBuilder: _feedbackContentLayout,
                   child: Column(
                     key: ValueKey((message, title)),

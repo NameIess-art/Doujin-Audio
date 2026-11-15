@@ -301,7 +301,7 @@ void main() {
     expect(route.animation!.value, 0);
     expect(coordinator.isInteracting, isTrue);
     expect(committed, isFalse);
-    await tester.pump(const Duration(milliseconds: 299));
+    await tester.pump(kAppPagePushDuration - const Duration(milliseconds: 1));
     expect(coordinator.isInteracting, isTrue);
     expect(committed, isFalse);
     await tester.pumpAndSettle();

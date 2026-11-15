@@ -585,7 +585,6 @@ class PlaylistSortedEntriesNotifier
         libraryStateProvider.select((state) => state.value?.contentRevision),
       );
     }
-    final library = ref.watch(libraryFacadeProvider);
     final paths = ref.watch(audioPathCoordinatorProvider);
 
     final sortedSessions = sortPlaylistSessions(
@@ -595,7 +594,7 @@ class PlaylistSortedEntriesNotifier
       criterion: criterion,
       ascending: ascending,
       groupByLibrary: groupByLibrary,
-      library: library,
+      paths: paths,
       trackForSession: (session) =>
           paths.sessionTrackForPath(session.id, session.currentTrackPath),
       pinnedSessionIds: pinnedSessionIds,

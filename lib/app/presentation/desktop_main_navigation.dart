@@ -8,7 +8,6 @@ import '../localization/app_language_provider.dart';
 import '../theme/app_styles.dart';
 import '../theme/app_design_tokens.dart';
 import '../../features/player/application/playback_session_snapshot.dart';
-import '../../features/settings/application/settings_state.dart';
 import '../../features/player/presentation/active_session_carousel.dart';
 import '../../features/player/presentation/playlist/session_detail_page.dart';
 import 'main_destination.dart';
@@ -29,14 +28,14 @@ class DesktopMainNavigation extends StatefulWidget {
     required this.onToggleMenu,
     required this.playbackGeometryKey,
     required this.onReportPlaybackRect,
-    this.mySettingsPageMode = MySettingsPageMode.settings,
+    this.pageDragPosition,
   });
   final AppLanguageProvider i18n;
   final List<PlaybackSessionSnapshot> overlaySessions;
   final List<MainDestination> destinations;
-  final MySettingsPageMode mySettingsPageMode;
   final bool isMenuCollapsed;
   final ValueListenable<int> activePageIndex;
+  final ValueListenable<double?>? pageDragPosition;
   final List<GlobalKey> menuIconKeys;
   final List<LayerLink> menuIconLinks;
   final Offset Function(MainDestinationType source, MainDestinationType target)
@@ -154,7 +153,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
         ? Duration.zero
         : isLandscapeLayout
         ? kThemeAnimationDuration
-        : const Duration(milliseconds: 300);
+        : kAppMotionStandard;
     final double expandedWidth = isLandscapeLayout ? 260 : 292;
     final double collapsedWidth = isLandscapeLayout ? 80 : 92;
     final double containerWidth = isMenuCollapsed
@@ -181,7 +180,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
       // Landscape motion is confined to the rail below instead.
       duration: isLandscapeLayout ? Duration.zero : motionDuration,
       onEnd: isLandscapeLayout ? null : _finishMotion,
-      curve: Curves.easeInOut,
+      curve: kAppSpringCurve,
       width: containerWidth,
       margin: isLandscapeLayout
           ? EdgeInsets.zero
@@ -209,20 +208,10 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                 ) => ValueListenableBuilder<int>(
                   valueListenable: activePageIndex,
                   builder: (context, selectedIndex, _) {
-                    final myIndex = destinations.indexWhere(
-                      (destination) =>
-                          destination.type == MainDestinationType.my,
+                    final activeIndex = selectedIndex.clamp(
+                      0,
+                      destinations.length - 1,
                     );
-                    // Both sidebar entries reuse the retained My/settings host.
-                    var activeIndex = selectedIndex < destinations.length
-                        ? selectedIndex
-                        : 0;
-                    if (myIndex >= 0 && selectedIndex == myIndex) {
-                      activeIndex =
-                          widget.mySettingsPageMode == MySettingsPageMode.my
-                          ? myIndex
-                          : myIndex + 1;
-                    }
                     final labelOpacity = landscapeWidth == null
                         ? 1.0
                         : (4 *
@@ -231,34 +220,44 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                               .clamp(0.0, 1.0);
                     Widget withIndicator(Widget rail) {
                       if (landscapeWidth == null) return rail;
+                      Widget buildIndicator(double? dragPos) =>
+                          SlidingSelectionIndicator(
+                            index: activeIndex,
+                            layoutKey: Object.hashAll(
+                              destinations.map((item) => item.type),
+                            ),
+                            overridePosition: dragPos,
+                            child: rail,
+                            builder: (context, position, child) => CustomPaint(
+                              key: _railPaintKey,
+                              painter: SlidingSelectionPainter(
+                                containerKey: _railPaintKey,
+                                position: position,
+                                width: landscapeWidth - railMinWidth + 48,
+                                accentColor: cs.primary,
+                                scrollOffset: _railScroll,
+                                slots: [
+                                  for (final destination in destinations)
+                                    menuIconKeys[destination.type.index],
+                                ],
+                              ),
+                              child: child,
+                            ),
+                          );
+                      final pageDrag = widget.pageDragPosition;
                       return NotificationListener<ScrollNotification>(
                         key: const ValueKey('desktop_navigation_indicator'),
                         onNotification: (notification) {
                           _railScroll.value = notification.metrics.pixels;
                           return false;
                         },
-                        child: SlidingSelectionIndicator(
-                          index: activeIndex,
-                          layoutKey: Object.hashAll(
-                            destinations.map((item) => item.type),
-                          ),
-                          child: rail,
-                          builder: (context, position, child) => CustomPaint(
-                            key: _railPaintKey,
-                            painter: SlidingSelectionPainter(
-                              containerKey: _railPaintKey,
-                              position: position,
-                              width: landscapeWidth - railMinWidth + 48,
-                              accentColor: cs.primary,
-                              scrollOffset: _railScroll,
-                              slots: [
-                                for (final destination in destinations)
-                                  menuIconKeys[destination.type.index],
-                              ],
-                            ),
-                            child: child,
-                          ),
-                        ),
+                        child: pageDrag == null
+                            ? buildIndicator(null)
+                            : ValueListenableBuilder<double?>(
+                                valueListenable: pageDrag,
+                                builder: (context, dragPos, _) =>
+                                    buildIndicator(dragPos),
+                              ),
                       );
                     }
 
@@ -302,7 +301,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                               icon: Icon(
                                 glyph,
                                 key: ValueKey<String>(
-                                  'main_destination_${item.navigationKey}',
+                                  'main_destination_${item.labelKey}',
                                 ),
                                 color: landscapeWidth == null
                                     ? (selected
@@ -723,43 +722,128 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
     if (landscapeWidth == null) return icon;
     return Theme(
       data: Theme.of(context).copyWith(colorScheme: colorScheme),
-      child: AppButtonPointerRegion(
-        statesController: pointerStates,
-        cursor: SystemMouseCursors.click,
-        builder: (context, states) => SizedBox(
-          width: landscapeWidth,
-          height: 64,
-          child: Align(
-            alignment: Alignment.centerLeft,
-            // The rail handles label taps and keyboard actions. Keep the icon
-            // column's existing 48px button and consume its surrounding padding.
-            child: MouseRegion(
-              cursor: SystemMouseCursors.basic,
-              hitTestBehavior: HitTestBehavior.opaque,
-              child: SizedBox(
-                width: railMinWidth,
-                height: 64,
-                child: Center(
-                  child: SizedBox.square(
-                    dimension: 48,
-                    child: IconButton(
-                      style: appIconButtonStyle(
-                        IconButton.styleFrom(
-                          fixedSize: const Size.square(48),
-                          shape: const CircleBorder(),
-                          foregroundColor: foregroundColor,
-                        ),
-                        states,
-                      ),
-                      onPressed: onPressed,
-                      icon: icon,
-                    ),
+      child: _DestinationPointerRow(
+        landscapeWidth: landscapeWidth,
+        railMinWidth: railMinWidth,
+        pointerStates: pointerStates,
+        iconButton: IconButton(
+          style: appIconButtonStyle(
+            IconButton.styleFrom(
+              fixedSize: const Size.square(48),
+              shape: const CircleBorder(),
+              foregroundColor: foregroundColor,
+            ),
+            pointerStates,
+          ),
+          onPressed: onPressed,
+          icon: icon,
+        ),
+      ),
+    );
+  }
+}
+
+/// Splits pointer tracking between the 48px icon button and extended label so
+/// blocked rail padding stays non-interactive without triggering hover tint.
+class _DestinationPointerRow extends StatefulWidget {
+  const _DestinationPointerRow({
+    required this.landscapeWidth,
+    required this.railMinWidth,
+    required this.pointerStates,
+    required this.iconButton,
+  });
+
+  final double landscapeWidth;
+  final double railMinWidth;
+  final WidgetStatesController pointerStates;
+  final Widget iconButton;
+
+  @override
+  State<_DestinationPointerRow> createState() => _DestinationPointerRowState();
+}
+
+class _DestinationPointerRowState extends State<_DestinationPointerRow> {
+  final WidgetStatesController _iconStates = WidgetStatesController();
+  final WidgetStatesController _labelStates = WidgetStatesController();
+
+  @override
+  void initState() {
+    super.initState();
+    _iconStates.addListener(_syncStates);
+    _labelStates.addListener(_syncStates);
+  }
+
+  @override
+  void didUpdateWidget(covariant _DestinationPointerRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.pointerStates != widget.pointerStates) {
+      oldWidget.pointerStates
+        ..update(WidgetState.hovered, false)
+        ..update(WidgetState.pressed, false);
+      _syncStates();
+    }
+  }
+
+  @override
+  void dispose() {
+    _iconStates
+      ..removeListener(_syncStates)
+      ..dispose();
+    _labelStates
+      ..removeListener(_syncStates)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _syncStates() {
+    final hovered =
+        _iconStates.value.contains(WidgetState.hovered) ||
+        _labelStates.value.contains(WidgetState.hovered);
+    final pressed =
+        _iconStates.value.contains(WidgetState.pressed) ||
+        _labelStates.value.contains(WidgetState.pressed);
+    widget.pointerStates
+      ..update(WidgetState.hovered, hovered)
+      ..update(WidgetState.pressed, pressed);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasLabelArea = widget.landscapeWidth > widget.railMinWidth;
+    return SizedBox(
+      width: widget.landscapeWidth,
+      height: 64,
+      child: Row(
+        children: [
+          // Consume padding around the 48px icon so only the circular button
+          // and extended label receive hover tint and click cursors.
+          MouseRegion(
+            cursor: SystemMouseCursors.basic,
+            hitTestBehavior: HitTestBehavior.opaque,
+            child: SizedBox(
+              width: widget.railMinWidth,
+              height: 64,
+              child: Center(
+                child: SizedBox.square(
+                  dimension: 48,
+                  child: AppButtonPointerRegion(
+                    statesController: _iconStates,
+                    cursor: SystemMouseCursors.click,
+                    builder: (_, _) => widget.iconButton,
                   ),
                 ),
               ),
             ),
           ),
-        ),
+          if (hasLabelArea)
+            Expanded(
+              child: AppButtonPointerRegion(
+                statesController: _labelStates,
+                cursor: SystemMouseCursors.click,
+                builder: (_, _) => const SizedBox.expand(),
+              ),
+            ),
+        ],
       ),
     );
   }

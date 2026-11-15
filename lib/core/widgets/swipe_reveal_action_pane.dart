@@ -196,11 +196,13 @@ class SwipeRevealActionPane extends StatelessWidget {
                 right: fromStart ? 0 : (showVertical ? 10 : 14),
               ),
               child: AnimatedScale(
-                scale: 0.92 + progress * 0.08,
+                scale: progress <= 0
+                    ? 0.88
+                    : (progress < 0.6 ? 0.90 + progress * 0.08 : 1.0),
                 duration: disableAnimations
                     ? Duration.zero
-                    : const Duration(milliseconds: 180),
-                curve: Curves.easeOutBack,
+                    : const Duration(milliseconds: 170),
+                curve: progress >= 0.6 ? kAppSpringCurve : Curves.easeOut,
                 child: showVertical
                     ? SizedBox(
                         width: width - 20,

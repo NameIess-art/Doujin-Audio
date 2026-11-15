@@ -862,20 +862,8 @@ class _SecondaryControlButton extends StatelessWidget {
               onPressed!();
             }
           : null,
-      icon: AnimatedSwitcher(
-        switchOutCurve: kAppFadeCurve,
-        switchInCurve: kAppFadeCurve,
-        duration: MediaQuery.disableAnimationsOf(context)
-            ? Duration.zero
-            : kAppFadeDuration,
-        transitionBuilder: (child, animation) {
-          return ScaleTransition(
-            scale: Tween<double>(begin: 0.4, end: 1.0).animate(
-              CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
-            ),
-            child: FadeTransition(opacity: animation, child: child),
-          );
-        },
+      icon: AppPlaybackIconTransition(
+        beginScale: 0.72,
         child: Icon(icon, key: ValueKey(icon), size: 20),
       ),
     );

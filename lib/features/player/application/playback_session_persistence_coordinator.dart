@@ -412,10 +412,14 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
           }
           continue;
         }
+        final queueEntryPositions = queueChanged && previous != null
+            ? _changedPlaybackQueueEntryPositions(previous, next)
+            : null;
         await databaseRepository.upsertSession(
           next,
-          includeQueue: queueChanged,
+          includeQueue: queueChanged && queueEntryPositions == null,
           includeEffects: effectsChanged,
+          queueEntryPositions: queueEntryPositions,
         );
         await _savePausedRecovery(session);
         _persistedSessions[id] = next;
@@ -434,6 +438,42 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
       rethrow;
     }
     await _savePendingPlaybackHistory();
+  }
+
+  Map<String, int>? _changedPlaybackQueueEntryPositions(
+    PersistedPlaybackSession previous,
+    PersistedPlaybackSession next,
+  ) {
+    final previousQueue = previous.playbackQueue;
+    final nextQueue = next.playbackQueue;
+    if (previousQueue == null ||
+        nextQueue == null ||
+        previousQueue.name != nextQueue.name ||
+        previousQueue.colorValue != nextQueue.colorValue ||
+        previousQueue.entries.length != nextQueue.entries.length ||
+        identical(previousQueue.entries, nextQueue.entries)) {
+      return null;
+    }
+
+    final previousEntries = {
+      for (final entry in previousQueue.entries) entry.id: entry,
+    };
+    var trackCount = 0;
+    final positions = <String, int>{};
+    for (final (index, entry) in nextQueue.entries.indexed) {
+      if (!identical(previousEntries.remove(entry.id), entry)) return null;
+      trackCount += entry.tracks.length;
+      if (!identical(previousQueue.entries[index], entry)) {
+        positions[entry.id] = index;
+      }
+    }
+    // A detached current track also stores a copy of the runtime queue order.
+    if (positions.isEmpty ||
+        (previous.customQueueTracks?.length ?? trackCount) != trackCount ||
+        (next.customQueueTracks?.length ?? trackCount) != trackCount) {
+      return null;
+    }
+    return positions;
   }
 
   Future<void> _savePendingPlaybackStates() async {

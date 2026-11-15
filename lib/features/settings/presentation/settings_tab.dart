@@ -63,10 +63,9 @@ part 'settings_tab_update_section.dart';
 part 'settings_tab_widgets.dart';
 
 class SettingsTab extends ConsumerStatefulWidget {
-  const SettingsTab({super.key, this.tabIndex = 3, this.onSwitchPage});
+  const SettingsTab({super.key, this.tabIndex = 3});
 
   final int tabIndex;
-  final VoidCallback? onSwitchPage;
 
   @override
   ConsumerState<SettingsTab> createState() => _SettingsTabState();
@@ -267,14 +266,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                     color: Theme.of(context).colorScheme.primary,
                   ),
                 ),
-                trailing: widget.onSwitchPage == null
-                    ? null
-                    : IconButton(
-                        key: const ValueKey('switch-to-my'),
-                        tooltip: i18n.tr('switch_to_my'),
-                        onPressed: widget.onSwitchPage,
-                        icon: const Icon(Icons.person_rounded),
-                      ),
               ),
             ),
           ],

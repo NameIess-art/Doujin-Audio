@@ -577,6 +577,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 120));
       expect(visibleInk(), isNotEmpty);
       await gesture.up();
+      await tester.pump(const Duration(milliseconds: 180));
       expect(visibleInk(), isEmpty);
       await tester.pumpAndSettle();
       expect(observer.lastRoute, isNot(same(batchRoute)));

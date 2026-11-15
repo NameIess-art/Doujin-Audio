@@ -191,7 +191,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
             key: const ValueKey('session_detail_close_button'),
             onPressed: _close,
             tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-            icon: const Icon(Icons.chevron_left_rounded),
+            icon: const Icon(Icons.keyboard_arrow_down_rounded),
           ),
         ),
       );

@@ -72,18 +72,11 @@ class LibrarySelectionIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final surfaceBorderColor = isSelected
-        ? Color.alphaBlend(
-            cs.primaryContainer.withValues(alpha: 0.15),
-            cs.surface,
-          )
-        : cs.surface;
     final normalizedPath = path == null ? null : PathMatcher.normalize(path!);
     return IgnorePointer(
       child: ExcludeSemantics(
         child: AppDeferredFade(
           visible: isSelected,
-          showDelay: kAppSelectionDuration,
           beginScale: 0.86,
           fadeInDuration: kAppMotionFast,
           child: Container(
@@ -97,7 +90,7 @@ class LibrarySelectionIndicator extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: _librarySelectionCheckmarkColor,
-              border: Border.all(color: surfaceBorderColor, width: 2),
+              border: Border.all(color: cs.surface, width: 2),
             ),
             child: const Icon(
               Icons.check_rounded,
@@ -116,13 +109,11 @@ class LibraryPinnedIndicator extends StatelessWidget {
     super.key,
     this.path,
     this.color,
-    this.isSelected = false,
     this.isPinned = true,
   });
 
   final String? path;
   final Color? color;
-  final bool isSelected;
   final bool isPinned;
 
   @override
@@ -130,12 +121,6 @@ class LibraryPinnedIndicator extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final pinColor = color ?? cs.primary;
     final normalizedPath = path == null ? null : PathMatcher.normalize(path!);
-    final surfaceBorderColor = isSelected
-        ? Color.alphaBlend(
-            cs.primaryContainer.withValues(alpha: 0.15),
-            cs.surface,
-          )
-        : cs.surface;
     return IgnorePointer(
       child: ExcludeSemantics(
         child: AppDeferredFade(
@@ -151,7 +136,7 @@ class LibraryPinnedIndicator extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: pinColor,
-              border: Border.all(color: surfaceBorderColor, width: 2),
+              border: Border.all(color: cs.surface, width: 2),
             ),
             child: const Icon(
               Icons.push_pin_rounded,
@@ -464,7 +449,7 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
       );
     } else {
       content = Theme(
-        data: Theme.of(context).copyWith(
+        data: AppEntryInkWell.entryTheme(context).copyWith(
           dividerColor: Colors.transparent,
           listTileTheme: const ListTileThemeData(
             minVerticalPadding: 0,
@@ -627,15 +612,9 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
         : RoundedRectangleBorder(borderRadius: folderRadius);
     final cardContent = isRootFolder
         ? Material(
-            animationDuration: kAppSelectionDuration,
-            // The swipe surface already clips the row's rounded corners.
-            color: widget.isSelected
-                ? cs.primaryContainer.withValues(alpha: 0.25)
-                : Colors.transparent,
+            color: Colors.transparent,
             shadowColor: Colors.transparent,
             surfaceTintColor: Colors.transparent,
-            // The tap surface sits inside the card so its ink highlight and
-            // ripple paint above the swipe card's closed background.
             child: AppEntryInkWell(
               canRequestFocus: widget.isSelectionMode,
               onLongPress: widget.onLongPress,
@@ -660,7 +639,7 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
           )
         : content;
 
-    final swipeCard = SwipeRevealCard(
+    final card = SwipeRevealCard(
       onSelectMultiple: isRootFolder ? widget.onLongPress : null,
       selectMultipleLabel: i18n.tr('select_multiple'),
       onTertiaryAction: defaultTargetPlatform == TargetPlatform.windows
@@ -672,6 +651,7 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
       tertiaryActionTooltip: i18n.tr('open_containing_folder'),
       tertiaryActionIcon: Icons.folder_open_rounded,
       shape: folderShape,
+      swipeEnabled: false,
       enabled: !widget.isSelectionMode,
       closedColor: cs.surface,
       actionLabel: i18n.tr('remove'),
@@ -688,7 +668,6 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
               ),
             )
           : null,
-      animateLeadingActionClose: true,
       onLeadingAction: isRootFolder
           ? () => unawaited(
               saveSettingsWithFeedback(
@@ -715,7 +694,7 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
     // Child folder rows paint their press ink from the expansion tile material,
     // so they only need the wrapper that keeps long press and selection taps.
     final result = isRootFolder
-        ? swipeCard
+        ? card
         : InkWell(
           mouseCursor: WidgetStateMouseCursor.clickable,
             highlightColor: Colors.transparent,
@@ -723,7 +702,7 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
             onLongPress: widget.onLongPress,
             onTap: widget.isSelectionMode ? widget.onToggleSelect : null,
             borderRadius: folderShape.borderRadius as BorderRadius?,
-            child: swipeCard,
+            child: card,
           );
 
     return UndoableRemovalTransition(hidden: isHidden, child: result);
@@ -860,6 +839,7 @@ class _TrackNodeWidget extends ConsumerWidget {
         tertiaryActionTooltip: i18n.tr('open_containing_folder'),
         tertiaryActionIcon: Icons.folder_open_rounded,
         shape: cardShape,
+        swipeEnabled: false,
         enabled: !isSelectionMode,
         closedColor: cs.surface,
         actionLabel: removalLabel,
@@ -875,7 +855,6 @@ class _TrackNodeWidget extends ConsumerWidget {
                 ),
               )
             : null,
-        animateLeadingActionClose: true,
         onLeadingAction: () => unawaited(
           saveSettingsWithFeedback(
             context,
@@ -892,11 +871,7 @@ class _TrackNodeWidget extends ConsumerWidget {
         leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
         onRemove: () => _removeTrack(context, ref, track),
         child: Material(
-          animationDuration: kAppSelectionDuration,
-          // The swipe surface already clips the row's rounded corners.
-          color: isSelected
-              ? cs.primaryContainer.withValues(alpha: 0.25)
-              : (isAlreadyPlaying && !track.isVideo && useFeaturedCard)
+          color: isAlreadyPlaying && !track.isVideo && useFeaturedCard
               ? Color.alphaBlend(
                   cs.primaryContainer.withValues(alpha: 0.40),
                   cs.surface,
@@ -904,8 +879,6 @@ class _TrackNodeWidget extends ConsumerWidget {
               : Colors.transparent,
           shadowColor: Colors.transparent,
           surfaceTintColor: Colors.transparent,
-          // The tap surface sits inside the card so its ink highlight and
-          // ripple paint above the swipe card's closed background.
           child: AppEntryInkWell(
             canRequestFocus: isSelectionMode,
             onLongPress: onLongPress,
@@ -960,6 +933,7 @@ class _TrackNodeWidget extends ConsumerWidget {
             tertiaryActionTooltip: i18n.tr('open_containing_folder'),
             tertiaryActionIcon: Icons.folder_open_rounded,
             shape: cardShape,
+            swipeEnabled: false,
             actionLabel: removalLabel,
             removeTooltip: removalLabel,
             onRemove: () => _removeTrack(context, ref, track),

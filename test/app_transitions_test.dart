@@ -570,19 +570,22 @@ void main() {
         )
         .opacity
         .value;
+    final halfFade = kPlaceholderContentTransitionDuration ~/ 2;
+    final remainingFade = kPlaceholderContentTransitionDuration - halfFade;
+    final expectedHalfProgress = kAppSpringCurve.transform(
+      halfFade.inMicroseconds /
+          kPlaceholderContentTransitionDuration.inMicroseconds,
+    );
     expect(find.text('data'), findsNothing);
     update(() => loading = false);
     await tester.pump();
     expect(opacity('data'), 0);
     expect(opacity('skeleton'), 1);
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 150));
-    expect(opacity('data'), closeTo(kAppFadeCurve.transform(0.5), 0.001));
-    expect(
-      opacity('skeleton'),
-      closeTo(1 - kAppFadeCurve.transform(0.5), 0.001),
-    );
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(halfFade);
+    expect(opacity('data'), closeTo(expectedHalfProgress, 0.001));
+    expect(opacity('skeleton'), closeTo(1 - expectedHalfProgress, 0.001));
+    await tester.pump(remainingFade);
     expect(opacity('data'), closeTo(1, 0.001));
     await tester.pump(const Duration(milliseconds: 1));
     expect(find.text('skeleton'), findsNothing);
@@ -591,23 +594,20 @@ void main() {
     update(() => loading = true);
     await tester.pump();
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 150));
-    expect(opacity('data'), closeTo(kAppFadeCurve.transform(0.5), 0.001));
-    expect(
-      opacity('skeleton'),
-      closeTo(1 - kAppFadeCurve.transform(0.5), 0.001),
-    );
+    await tester.pump(halfFade);
+    expect(opacity('data'), closeTo(expectedHalfProgress, 0.001));
+    expect(opacity('skeleton'), closeTo(1 - expectedHalfProgress, 0.001));
     // A second change reverses continuously from the current opacity.
     update(() => loading = false);
     await tester.pump();
-    expect(opacity('data'), closeTo(kAppFadeCurve.transform(0.5), 0.001));
+    expect(opacity('data'), closeTo(expectedHalfProgress, 0.001));
     await tester.pumpAndSettle();
     expect(find.text('skeleton'), findsNothing);
     expect(opacity('data'), 1);
     update(() => loading = true);
     await tester.pump();
     await tester.pump();
-    await tester.pump(kAppFadeDuration);
+    await tester.pump(kPlaceholderContentTransitionDuration);
     await tester.pump(const Duration(milliseconds: 1));
     expect(find.text('data'), findsNothing);
     expect(opacity('skeleton'), 1);
@@ -3440,12 +3440,12 @@ void main() {
           await tester.pump(const Duration(milliseconds: 150));
           expect(
             _effectiveOpacity(tester, header),
-            separateHeader ? closeTo(kAppFadeCurve.transform(0.5), 0.001) : 1,
+            separateHeader ? closeTo(kAppSpringCurve.transform(0.5), 0.001) : 1,
           );
           expect(_effectiveOpacity(tester, incoming), 1);
           expect(
             tester.getRect(incoming).left / tester.getSize(incoming).width,
-            closeTo(1 - Curves.decelerate.transform(0.5), 0.001),
+            closeTo(1 - kAppSpringCurve.transform(0.5), 0.001),
           );
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull);
@@ -3649,7 +3649,7 @@ void main() {
       expect(find.text('second'), findsOneWidget);
 
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 80));
+      await tester.pump(const Duration(milliseconds: 20));
       final outgoingTranslation = _translationFor(tester, 'first');
       final incomingTranslation = _translationFor(tester, 'second');
       expect(outgoingTranslation.dx, lessThan(0));
@@ -4985,6 +4985,303 @@ void main() {
       },
     );
   });
+
+  group('AppFadeThroughIndexedStack horizontal swipe', () {
+    testWidgets(
+      'supports interactive horizontal swipe with live drag tracking, snap, flick, and reversal',
+      (tester) async {
+        final index = ValueNotifier<int>(0);
+        final dragPositions = <double?>[];
+        addTearDown(index.dispose);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: 400,
+                height: 600,
+                child: AppFadeThroughIndexedStack.lazy(
+                  indexListenable: index,
+                  itemCount: 3,
+                  separateHeader: true,
+                  onIndexSelected: (next) => index.value = next,
+                  onDragPositionChanged: dragPositions.add,
+                  itemBuilder: (_, page) => Column(
+                    children: [
+                      AppPageHeaderTransition(
+                        child: Text('swipe_header_$page'),
+                      ),
+                      Expanded(
+                        child: AppPageContentTransition(
+                          child: SizedBox.expand(
+                            child: Center(child: Text('swipe_body_$page')),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        // Partial drag (< 35%) tracks live position, crossfades headers, and snaps back.
+        final gesture1 = await tester.startGesture(const Offset(320, 300));
+        await gesture1.moveBy(const Offset(-30, 0));
+        await tester.pump();
+        await gesture1.moveBy(const Offset(-70, 0));
+        await tester.pump();
+
+        expect(index.value, 0);
+        expect(dragPositions.last, closeTo(0.25, 0.03));
+        expect(_pageFractionDx(tester, 'swipe_body_0'), closeTo(-0.25, 0.02));
+        expect(_pageFractionDx(tester, 'swipe_body_1'), closeTo(0.75, 0.02));
+        expect(
+          _effectiveOpacity(tester, find.text('swipe_header_0')),
+          closeTo(0.75, 0.05),
+        );
+        expect(
+          _effectiveOpacity(tester, find.text('swipe_header_1')),
+          closeTo(0.25, 0.05),
+        );
+
+        await gesture1.up();
+        await tester.pumpAndSettle();
+        expect(index.value, 0);
+        expect(dragPositions.last, isNull);
+        expect(_pageFractionDx(tester, 'swipe_body_0'), closeTo(0, 0.01));
+
+        // Drag > 35% commits forward (0 -> 1).
+        dragPositions.clear();
+        await tester.drag(
+          find.byType(AppFadeThroughIndexedStack),
+          const Offset(-200, 0),
+        );
+        expect(index.value, 1);
+        expect(dragPositions.last, isNull);
+        await tester.pumpAndSettle();
+        expect(find.text('swipe_body_1'), findsOneWidget);
+        expect(_pageFractionDx(tester, 'swipe_body_1'), closeTo(0, 0.01));
+
+        // Fast flick (< 35% travel) commits forward (1 -> 2).
+        await tester.fling(
+          find.byType(AppFadeThroughIndexedStack),
+          const Offset(-80, 0),
+          1400,
+        );
+        expect(index.value, 2);
+        await tester.pumpAndSettle();
+        expect(find.text('swipe_body_2'), findsOneWidget);
+
+        // Reset to middle page 1 and reverse direction across center mid-drag (1 -> 0).
+        index.value = 1;
+        await tester.pumpAndSettle();
+        dragPositions.clear();
+        final gesture2 = await tester.startGesture(const Offset(200, 300));
+        await gesture2.moveBy(const Offset(-120, 0));
+        await tester.pump();
+        expect(dragPositions.last!, greaterThan(1.1));
+        expect(_pageFractionDx(tester, 'swipe_body_2'), lessThan(1.0));
+
+        await gesture2.moveBy(const Offset(280, 0));
+        await tester.pump();
+        expect(dragPositions.last!, lessThan(0.8));
+        expect(_pageFractionDx(tester, 'swipe_body_0'), closeTo(-0.6, 0.02));
+
+        await gesture2.up();
+        await tester.pumpAndSettle();
+        expect(index.value, 0);
+        expect(dragPositions.last, isNull);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'clamps drag position and applies damped rubber band at page boundaries',
+      (tester) async {
+        final index = ValueNotifier<int>(0);
+        final dragPositions = <double?>[];
+        addTearDown(index.dispose);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: 400,
+                height: 600,
+                child: AppFadeThroughIndexedStack.lazy(
+                  indexListenable: index,
+                  itemCount: 3,
+                  onIndexSelected: (next) => index.value = next,
+                  onDragPositionChanged: dragPositions.add,
+                  itemBuilder: (_, page) => Center(child: Text('edge_$page')),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        // Overscroll past leading boundary (index 0).
+        final leadingGesture = await tester.startGesture(const Offset(100, 300));
+        await leadingGesture.moveBy(const Offset(200, 0));
+        await tester.pump();
+        final leadingDx = _pageFractionDx(tester, 'edge_0');
+        expect(leadingDx, greaterThan(0));
+        expect(leadingDx, lessThanOrEqualTo(0.16));
+        expect(dragPositions.whereType<double>(), everyElement(0.0));
+        await leadingGesture.up();
+        await tester.pumpAndSettle();
+        expect(index.value, 0);
+        expect(_pageFractionDx(tester, 'edge_0'), closeTo(0, 0.01));
+
+        // Overscroll past trailing boundary (index 2).
+        index.value = 2;
+        await tester.pumpAndSettle();
+        dragPositions.clear();
+        final trailingGesture = await tester.startGesture(const Offset(300, 300));
+        await trailingGesture.moveBy(const Offset(-200, 0));
+        await tester.pump();
+        final trailingDx = _pageFractionDx(tester, 'edge_2');
+        expect(trailingDx, lessThan(0));
+        expect(trailingDx, greaterThanOrEqualTo(-0.16));
+        expect(dragPositions.whereType<double>(), everyElement(2.0));
+        await trailingGesture.up();
+        await tester.pumpAndSettle();
+        expect(index.value, 2);
+        expect(_pageFractionDx(tester, 'edge_2'), closeTo(0, 0.01));
+      },
+    );
+
+    testWidgets(
+      'yields to vertical scrolling, child horizontal scrollables, and ignores mouse drags',
+      (tester) async {
+        final index = ValueNotifier<int>(0);
+        final verticalController = ScrollController();
+        final horizontalController = ScrollController();
+        final dragPositions = <double?>[];
+        addTearDown(() {
+          index.dispose();
+          verticalController.dispose();
+          horizontalController.dispose();
+        });
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: 400,
+                height: 600,
+                child: AppFadeThroughIndexedStack.lazy(
+                  indexListenable: index,
+                  itemCount: 2,
+                  onIndexSelected: (next) => index.value = next,
+                  onDragPositionChanged: dragPositions.add,
+                  itemBuilder: (_, page) => page == 0
+                      ? ListView(
+                          controller: verticalController,
+                          children: [
+                            SizedBox(
+                              height: 120,
+                              child: ListView(
+                                key: const ValueKey('child_horizontal_list'),
+                                controller: horizontalController,
+                                scrollDirection: Axis.horizontal,
+                                children: List<Widget>.generate(
+                                  6,
+                                  (item) => SizedBox(
+                                    width: 180,
+                                    child: Center(child: Text('h_$item')),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            ...List<Widget>.generate(
+                              12,
+                              (item) => SizedBox(
+                                height: 100,
+                                child: Center(child: Text('v_$item')),
+                              ),
+                            ),
+                          ],
+                        )
+                      : const Center(child: Text('page_1')),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        // Horizontal drag inside a child horizontal scrollable moves child, not page.
+        await tester.drag(
+          find.byKey(const ValueKey('child_horizontal_list')),
+          const Offset(-200, 0),
+        );
+        await tester.pumpAndSettle();
+        expect(index.value, 0);
+        expect(dragPositions, isEmpty);
+        expect(horizontalController.offset, greaterThan(100));
+
+        // Vertical drag scrolls the list without triggering horizontal page swipe.
+        await tester.drag(find.byType(ListView).first, const Offset(-10, -240));
+        await tester.pumpAndSettle();
+        expect(index.value, 0);
+        expect(dragPositions, isEmpty);
+        expect(verticalController.offset, greaterThan(100));
+
+        // Desktop mouse drag must not switch pages.
+        final mouseGesture = await tester.startGesture(
+          const Offset(320, 420),
+          kind: ui.PointerDeviceKind.mouse,
+        );
+        await mouseGesture.moveBy(const Offset(-240, 0));
+        await mouseGesture.up();
+        await tester.pumpAndSettle();
+        expect(index.value, 0);
+        expect(dragPositions, isEmpty);
+      },
+    );
+
+    testWidgets(
+      'supports horizontal swipe commit when disableAnimations is true',
+      (tester) async {
+        final index = ValueNotifier<int>(0);
+        addTearDown(index.dispose);
+
+        await tester.pumpWidget(
+          MediaQuery(
+            data: const MediaQueryData(disableAnimations: true),
+            child: MaterialApp(
+              home: Align(
+                alignment: Alignment.topLeft,
+                child: SizedBox(
+                  width: 400,
+                  height: 600,
+                  child: AppFadeThroughIndexedStack.lazy(
+                    indexListenable: index,
+                    itemCount: 2,
+                    onIndexSelected: (next) => index.value = next,
+                    itemBuilder: (_, page) => Center(child: Text('rm_$page')),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        await tester.drag(
+          find.byType(AppFadeThroughIndexedStack),
+          const Offset(-200, 0),
+        );
+        await tester.pump();
+        expect(index.value, 1);
+        expect(find.text('rm_1'), findsOneWidget);
+      },
+    );
+  });
 }
 
 Offset _translationFor(WidgetTester tester, String label) {
@@ -4996,6 +5293,17 @@ Offset _translationFor(WidgetTester tester, String label) {
       .widgetList<FractionalTranslation>(finder)
       .map((widget) => widget.translation)
       .firstWhere((translation) => translation.dx.abs() > 0.001);
+}
+
+double _pageFractionDx(WidgetTester tester, String label) {
+  return tester
+      .widgetList<FractionalTranslation>(
+        find.ancestor(
+          of: find.text(label),
+          matching: find.byType(FractionalTranslation),
+        ),
+      )
+      .fold(0.0, (sum, widget) => sum + widget.translation.dx);
 }
 
 double _effectiveOpacity(WidgetTester tester, Finder child) {

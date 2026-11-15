@@ -211,7 +211,7 @@ void main() {
         final center = tester.getCenter(content);
         final edge = bounds.centerRight - const Offset(0.5, 0);
         final outside = bounds.centerRight + const Offset(30, 0);
-        final hoverScale = isPill ? 1.025 : 1.16;
+        const hoverScale = 1.0;
         final pressScale = isPill ? 0.975 : 0.82;
 
         Future<List<int>> raster() async => (await tester.runAsync(() async {
@@ -310,12 +310,10 @@ void main() {
         expect(await advanceToward(hoverScale, 6), hoverScale);
         await mouse.moveTo(outside);
         await tester.pump();
-        final shrinking = await advanceToward(1, 2);
-        expect(shrinking, lessThan(hoverScale));
-        expect(shrinking, greaterThan(1));
+        expect(await advanceToward(1, 6), 1);
+        expect(await raster(), orderedEquals(idleRaster));
         await mouse.moveTo(edge);
         await tester.pump();
-        expect(sample(), shrinking);
         expect(await advanceToward(hoverScale, 6), hoverScale);
         await mouse.moveTo(outside);
         await tester.pump();
@@ -412,12 +410,7 @@ void main() {
             await mouse.moveTo(tapPoint);
             await tester.pumpAndSettle();
             if (icon != null) {
-              expect(
-                _scale(tester, icon),
-                enabled && platform == TargetPlatform.windows
-                    ? (text == null ? 1.16 : 1.14)
-                    : 1,
-              );
+              expect(_scale(tester, icon), 1);
               final windowsHighlight =
                   restColor?.toARGB32() == cs.primary.toARGB32()
                   ? Color.lerp(cs.primary, cs.onPrimaryContainer, 0.35)
@@ -429,16 +422,13 @@ void main() {
                     : restColor;
                 expect(_glyphColor(tester, icon), expectedHoverColor);
               } else if (platform == TargetPlatform.windows) {
-                expect(_scale(tester, text), 1.14);
+                expect(_scale(tester, text), 1);
                 final textColor = _glyphColor(tester, text);
                 expect(textColor, isNot(restTextColor));
                 expect(_glyphColor(tester, icon), textColor);
               }
             } else if (key == textOnly) {
-              expect(
-                _scale(tester, text!),
-                platform == TargetPlatform.windows ? 1.14 : 1.0,
-              );
+              expect(_scale(tester, text!), 1.0);
               if (platform == TargetPlatform.windows) {
                 expect(_surfaceColor(tester, button)?.a ?? 0, 0);
                 expect(_glyphColor(tester, text), isNot(equals(restTextColor)));
@@ -653,16 +643,10 @@ void main() {
 
             await mouse.moveTo(center);
             await tester.pumpAndSettle();
-            expect(
-              _scale(tester, labelFinder),
-              enabled && isWindows ? 1.025 : 1.0,
-            );
+            expect(_scale(tester, labelFinder), 1.0);
             if (iconFinder != null) {
               // Whole pill moves together; inner icon must not add a second scale.
-              expect(
-                _scale(tester, iconFinder),
-                enabled && isWindows ? 1.025 : 1.0,
-              );
+              expect(_scale(tester, iconFinder), 1.0);
             }
             if (enabled && isWindows) {
               expect(_surfaceColor(tester, target), isNot(beforeBg));
@@ -895,7 +879,7 @@ void main() {
       await mouse.moveTo(center);
       await tester.pumpAndSettle();
       if (key == customIcon) {
-        expect(_scale(tester, find.byIcon(Icons.check)), 1.16);
+        expect(_scale(tester, find.byIcon(Icons.check)), 1.0);
         expect(
           _glyphColor(tester, find.byIcon(Icons.check)),
           theme.lightTheme.colorScheme.primary,
@@ -1180,7 +1164,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(_surfaceColor(tester, tab1), restBg1);
       expect(_surfaceBorderColor(tester, tab1), isNull);
-      expect(_scale(tester, find.text('Tab 1')), 1.14);
+      expect(_scale(tester, find.text('Tab 1')), 1.0);
       expect(_glyphColor(tester, find.text('Tab 1')), cs.primary);
       expect(_visibleInk(tester, tab1), isEmpty);
 
@@ -1195,6 +1179,52 @@ void main() {
       await mouse.up();
       await tester.pumpAndSettle();
       expect(selected, 1);
+    },
+  );
+
+  testWidgets(
+    'AppOverlayIconButton keeps high-contrast icon with circular backdrop on Windows hover',
+    (tester) async {
+      final theme = ThemeProvider(loadPersistedState: false);
+      addTearDown(theme.dispose);
+      const overlayKey = ValueKey('overlay_action');
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme.darkTheme.copyWith(platform: TargetPlatform.windows),
+          home: Scaffold(
+            backgroundColor: Colors.black,
+            body: Center(
+              child: AppOverlayIconButton(
+                buttonKey: overlayKey,
+                icon: const Icon(Icons.close_rounded),
+                tooltip: 'Close',
+                onPressed: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final button = find.byKey(overlayKey);
+      final icon = find.byIcon(Icons.close_rounded);
+      expect(_surfaceColor(tester, button), Colors.transparent);
+      expect(_glyphColor(tester, icon), Colors.white);
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      addTearDown(mouse.removePointer);
+
+      await mouse.moveTo(tester.getCenter(button));
+      await tester.pumpAndSettle();
+      expect(_surfaceColor(tester, button), Colors.black.withValues(alpha: 0.32));
+      expect(_glyphColor(tester, icon), Colors.white);
+
+      await mouse.down(tester.getCenter(button));
+      await tester.pumpAndSettle();
+      expect(_surfaceColor(tester, button), Colors.black.withValues(alpha: 0.48));
+      expect(_glyphColor(tester, icon), Colors.white);
+      await mouse.up();
+      await tester.pumpAndSettle();
     },
   );
 }

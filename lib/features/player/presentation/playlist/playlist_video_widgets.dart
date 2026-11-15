@@ -583,7 +583,9 @@ class _SessionVideoFullscreenPageState
         ? max(20.0, textHeight)
         : 32 + max(24.0, textHeight);
     return timelineHeight +
-        8 + 48 + 16 +
+        8 +
+        48 +
+        16 +
         MediaQuery.viewPaddingOf(context).bottom;
   }
 
@@ -727,33 +729,36 @@ class _SessionVideoFullscreenPageState
                               ),
                             Positioned.fromRect(
                               rect: gestureRect,
-                              child: GestureDetector(
-                                key: const ValueKey<String>(
-                                  'fullscreen_video_gesture_surface',
-                                ),
-                                behavior: HitTestBehavior.opaque,
-                                onTap: _toggleControls,
-                                onDoubleTapDown: (details) =>
-                                    _doubleTapPosition = details.localPosition,
-                                onDoubleTap: _handleDoubleTap,
-                                onLongPressStart: (_) =>
-                                    unawaited(_startTemporarySpeed()),
-                                onLongPressEnd: (_) =>
-                                    unawaited(_restoreTemporarySpeed()),
-                                onLongPressCancel: () =>
-                                    unawaited(_restoreTemporarySpeed()),
-                                onPanStart: (details) => _handlePanStart(
-                                  details,
-                                  Size(
-                                    max(1, gestureRect.width),
-                                    max(1, gestureRect.height),
+                              child: MouseRegion(
+                                cursor: SystemMouseCursors.click,
+                                child: GestureDetector(
+                                  key: const ValueKey<String>(
+                                    'fullscreen_video_gesture_surface',
                                   ),
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: _toggleControls,
+                                  onDoubleTapDown: (details) =>
+                                      _doubleTapPosition = details.localPosition,
+                                  onDoubleTap: _handleDoubleTap,
+                                  onLongPressStart: (_) =>
+                                      unawaited(_startTemporarySpeed()),
+                                  onLongPressEnd: (_) =>
+                                      unawaited(_restoreTemporarySpeed()),
+                                  onLongPressCancel: () =>
+                                      unawaited(_restoreTemporarySpeed()),
+                                  onPanStart: (details) => _handlePanStart(
+                                    details,
+                                    Size(
+                                      max(1, gestureRect.width),
+                                      max(1, gestureRect.height),
+                                    ),
+                                  ),
+                                  onPanUpdate: _handlePanUpdate,
+                                  onPanEnd: (_) =>
+                                      _handlePanEnd(cancelled: false),
+                                  onPanCancel: () =>
+                                      _handlePanEnd(cancelled: true),
                                 ),
-                                onPanUpdate: _handlePanUpdate,
-                                onPanEnd: (_) =>
-                                    _handlePanEnd(cancelled: false),
-                                onPanCancel: () =>
-                                    _handlePanEnd(cancelled: true),
                               ),
                             ),
                             _buildFeedback(),
@@ -1064,11 +1069,13 @@ class _SessionVideoFullscreenPageState
                       }
                       final transport = IconButtonTheme(
                         data: IconButtonThemeData(
-                          style: IconButton.styleFrom(
-                            fixedSize: const Size(44, 44),
-                            minimumSize: const Size(44, 44),
-                            padding: EdgeInsets.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          style: appIconButtonStyle(
+                            IconButton.styleFrom(
+                              fixedSize: const Size(44, 44),
+                              minimumSize: const Size(44, 44),
+                              padding: EdgeInsets.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
                           ),
                         ),
                         child: Row(
@@ -1120,12 +1127,14 @@ class _SessionVideoFullscreenPageState
                                     ),
                                   );
                                 },
-                                style: IconButton.styleFrom(
-                                  fixedSize: const Size(48, 48),
-                                  minimumSize: const Size(48, 48),
-                                  foregroundColor: onPrimaryColor,
-                                  shape: const CircleBorder(),
-                                  padding: EdgeInsets.zero,
+                                style: appIconButtonStyle(
+                                  IconButton.styleFrom(
+                                    fixedSize: const Size(48, 48),
+                                    minimumSize: const Size(48, 48),
+                                    foregroundColor: onPrimaryColor,
+                                    shape: const CircleBorder(),
+                                    padding: EdgeInsets.zero,
+                                  ),
                                 ),
                                 iconSize: 30,
                                 constraints: const BoxConstraints.tightFor(

@@ -211,53 +211,22 @@ class _DlsiteMetadataWorkPickerPageState
                 right: 16,
                 bottom: 16 + MediaQuery.paddingOf(context).bottom,
                 child: AppPageContentTransition(
-                  child: HeaderFloatingSurface(
-                    key: const ValueKey<String>('batch_metadata_picker_done'),
-                    height: 46,
-                    radius: 23,
-                    padding: EdgeInsets.zero,
-                    child: Material(
-                      color: cs.primary,
-                      borderRadius: BorderRadius.circular(23),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(23),
-                        onTap: () {
-                          final result = widget.entries
-                              .where(
-                                (e) => _selectedIds.contains(
-                                  AudioLibraryCategorySnapshot.targetKey(
-                                    e.target,
-                                  ),
-                                ),
-                              )
-                              .toList(growable: false);
-                          Navigator.of(context).pop(result);
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 18),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.check_rounded,
-                                size: 18,
-                                color: cs.onPrimary,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                i18n.tr('batch_metadata_picker_done', {
-                                  'count': _selectedIds.length,
-                                }),
-                                style: TextStyle(
-                                  color: cs.onPrimary,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
+                  child: HeaderFloatingActionPill(
+                    pillKey: const ValueKey<String>('batch_metadata_picker_done'),
+                    icon: Icons.check_rounded,
+                    label: i18n.tr('batch_metadata_picker_done', {
+                      'count': _selectedIds.length,
+                    }),
+                    onTap: () {
+                      final result = widget.entries
+                          .where(
+                            (e) => _selectedIds.contains(
+                              AudioLibraryCategorySnapshot.targetKey(e.target),
+                            ),
+                          )
+                          .toList(growable: false);
+                      Navigator.of(context).pop(result);
+                    },
                   ),
                 ),
               ),

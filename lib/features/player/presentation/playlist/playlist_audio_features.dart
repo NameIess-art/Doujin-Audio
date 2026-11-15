@@ -161,6 +161,7 @@ class FeatureSwitchTile extends StatelessWidget {
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
+          mouseCursor: WidgetStateMouseCursor.clickable,
           onTap: () => onChanged(!value),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14),

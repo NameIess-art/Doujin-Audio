@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../core/widgets/app_buttons.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -253,20 +254,21 @@ class _MyPageState extends ConsumerState<MyPage>
               key: ValueKey(
                 'my-interest-tab-${type == MyInterestType.voiceActors ? 'voices' : type.name}',
               ),
-              style: TextButton.styleFrom(
-                minimumSize: const Size(0, 32),
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                textStyle: Theme.of(context).textTheme.titleMedium,
-                foregroundColor: _interestType == type
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context).colorScheme.onSurfaceVariant,
-                backgroundColor: _interestType == type
-                    ? Theme.of(context).colorScheme.secondaryContainer
-                    : null,
+              style: appSelectablePillButtonStyle(
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(0, 32),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  textStyle: Theme.of(context).textTheme.titleMedium,
+                ),
+                selected: _interestType == type,
+                colorScheme: Theme.of(context).colorScheme,
               ),
               onPressed: () {
                 if (_interestType == type) return;
+                AppInteractionFeedback.trigger(
+                  AppInteractionFeedbackType.selection,
+                );
                 setState(() => _interestType = type);
               },
               child: Text(i18n.tr(type.titleKey)),
@@ -349,33 +351,38 @@ class _MyPageState extends ConsumerState<MyPage>
                               ElementActionMenu(
                                 value: interest.tag.name,
                                 onCopy: () => _copyInterest(interest.tag.name),
-                                child: InputChip(
-                                  key: ValueKey(
-                                    'my-${interestKeyPrefix}interest-${interest.tag.key}',
+                                child: appNoPointerInkTheme(
+                                  context: context,
+                                  androidPressHighlight: true,
+                                  child: InputChip(
+                                    mouseCursor: WidgetStateMouseCursor.clickable,
+                                    key: ValueKey(
+                                      'my-${interestKeyPrefix}interest-${interest.tag.key}',
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                      vertical: 8,
+                                    ),
+                                    labelPadding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                    showCheckmark: false,
+                                    side: BorderSide(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.outlineVariant,
+                                    ),
+                                    label: Text(
+                                      interest.tag.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    onPressed: () =>
+                                        _copyInterest(interest.tag.name),
                                   ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 4,
-                                    vertical: 8,
-                                  ),
-                                  labelPadding: const EdgeInsets.symmetric(
-                                    horizontal: 4,
-                                  ),
-                                  visualDensity: VisualDensity.compact,
-                                  materialTapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                  showCheckmark: false,
-                                  side: BorderSide(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.outlineVariant,
-                                  ),
-                                  label: Text(
-                                    interest.tag.name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  onPressed: () =>
-                                      _copyInterest(interest.tag.name),
                                 ),
                               ),
                           ],
@@ -385,14 +392,14 @@ class _MyPageState extends ConsumerState<MyPage>
                           spacing: 8,
                           runSpacing: 4,
                           children: [
-                            OutlinedButton.icon(
-                              style: AppEntryInkWell.entryButtonStyle(context),
+                            AppLabelledButton(
+                              OutlinedButton.icon,
                               onPressed: () => _openTags(false),
                               icon: const Icon(Icons.add_rounded),
                               label: Text(i18n.tr(interestType.addKey)),
                             ),
-                            OutlinedButton.icon(
-                              style: AppEntryInkWell.entryButtonStyle(context),
+                            AppLabelledButton(
+                              OutlinedButton.icon,
                               onPressed: () => _openTags(true),
                               icon: const Icon(Icons.block_rounded),
                               label: Text(i18n.tr(interestType.excludedKey)),
@@ -610,7 +617,6 @@ class _MyPageState extends ConsumerState<MyPage>
                     ? null
                     : IconButton(
                         key: const ValueKey('switch-to-settings'),
-                        style: AppEntryInkWell.entryButtonStyle(context),
                         tooltip: i18n.tr('switch_to_settings'),
                         onPressed: widget.onSwitchPage,
                         icon: const Icon(Icons.settings_rounded),
@@ -805,7 +811,7 @@ class _HistoryWorkCard extends ConsumerWidget {
   }
 }
 
-class _WorkCoverCard extends StatefulWidget {
+class _WorkCoverCard extends StatelessWidget {
   const _WorkCoverCard({
     required this.cardKey,
     required this.titleKey,
@@ -820,18 +826,12 @@ class _WorkCoverCard extends StatefulWidget {
   final VoidCallback onOpen;
 
   @override
-  State<_WorkCoverCard> createState() => _WorkCoverCardState();
-}
-
-class _WorkCoverCardState extends State<_WorkCoverCard> {
-  bool _hovered = false;
-
-  @override
   Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(12);
     return Tooltip(
-      message: widget.title,
+      message: title,
       child: Semantics(
-        label: widget.title,
+        label: title,
         button: true,
         child: SizedBox(
           width: _HistoryWorkCard.coverWidth + 12,
@@ -839,68 +839,48 @@ class _WorkCoverCardState extends State<_WorkCoverCard> {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
               child: CoverArtworkFrame(
-                key: ValueKey(widget.cardKey),
-                borderRadius: BorderRadius.circular(12),
-                child: MouseRegion(
-                  onEnter: (_) => setState(() => _hovered = true),
-                  onExit: (_) => setState(() => _hovered = false),
-                  child: Material(
-                    child: AppEntryInkWell(
-                      onTap: widget.onOpen,
+                key: ValueKey(cardKey),
+                borderRadius: radius,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    cover,
+                    Positioned(
+                      bottom: 8,
+                      left: 8,
+                      right: 8,
                       child: ExcludeSemantics(
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            widget.cover,
-                            Positioned(
-                              bottom: 8,
-                              left: 8,
-                              right: 8,
-                              child: Text(
-                                widget.title,
-                                key: ValueKey(widget.titleKey),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  height: 1.25,
-                                  shadows: [
-                                    Shadow(
-                                      color: Colors.black87,
-                                      blurRadius: 4,
-                                      offset: Offset(0, 1),
-                                    ),
-                                  ],
-                                ),
+                        child: Text(
+                          title,
+                          key: ValueKey(titleKey),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            height: 1.25,
+                            shadows: [
+                              Shadow(
+                                color: Colors.black87,
+                                blurRadius: 4,
+                                offset: Offset(0, 1),
                               ),
-                            ),
-                            Positioned.fill(
-                              child: IgnorePointer(
-                                child: DecoratedBox(
-                                  key: ValueKey(
-                                    '${widget.cardKey}-hover-border',
-                                  ),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: _hovered
-                                        ? Border.all(
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.primary,
-                                            width: 2,
-                                          )
-                                        : null,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                    Positioned.fill(
+                      child: Material(
+                        type: MaterialType.transparency,
+                        child: AppEntryInkWell(
+                          borderRadius: radius,
+                          onTap: onOpen,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

@@ -239,29 +239,34 @@ class _NetworkSettingsControlsState
                   runSpacing: 8,
                   children: [
                     for (final mode in AppProxyMode.values)
-                      ChoiceChip(
-                        showCheckmark: false,
-                        label: Text(modeLabel(mode)),
-                        selected: _mode == mode,
-                        onSelected: _saving
-                            ? null
-                            : (_) async {
-                                if (mode == AppProxyMode.system) {
-                                  final saved = await _save(
-                                    () => _settings.setNetworkRouteSettings(
-                                      route.copyWith(proxyMode: mode),
-                                    ),
-                                  );
-                                  if (saved && mounted) {
-                                    setState(() => _mode = mode);
+                      appNoPointerInkTheme(
+                        context: context,
+                        androidPressHighlight: true,
+                        child: ChoiceChip(
+                          mouseCursor: WidgetStateMouseCursor.clickable,
+                          showCheckmark: false,
+                          label: Text(modeLabel(mode)),
+                          selected: _mode == mode,
+                          onSelected: _saving
+                              ? null
+                              : (_) async {
+                                  if (mode == AppProxyMode.system) {
+                                    final saved = await _save(
+                                      () => _settings.setNetworkRouteSettings(
+                                        route.copyWith(proxyMode: mode),
+                                      ),
+                                    );
+                                    if (saved && mounted) {
+                                      setState(() => _mode = mode);
+                                    }
+                                  } else {
+                                    setState(() {
+                                      _mode = mode;
+                                      _validateProxy = false;
+                                    });
                                   }
-                                } else {
-                                  setState(() {
-                                    _mode = mode;
-                                    _validateProxy = false;
-                                  });
-                                }
-                              },
+                                },
+                        ),
                       ),
                   ],
                 ),
@@ -308,7 +313,7 @@ class _NetworkSettingsControlsState
                     ),
                     const SizedBox(height: 12),
                   ],
-                  FilledButton(
+                  AppPillButton(
                     onPressed: _saving ? null : _applyProxy,
                     child: Text(i18n.tr('network_apply_proxy')),
                   ),
@@ -341,7 +346,7 @@ class _NetworkSettingsControlsState
                   invalid: _validateDns && dnsInvalid,
                 ),
                 const SizedBox(height: 12),
-                FilledButton(
+                AppPillButton(
                   onPressed: _saving ? null : _applyDns,
                   child: Text(i18n.tr('network_apply_dns')),
                 ),
@@ -412,9 +417,11 @@ class _NetworkSettingsControlsState
         ),
         const SizedBox(width: 8),
         FilledButton.tonal(
-          style: FilledButton.styleFrom(
-            minimumSize: const Size(64, 40),
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+          style: appButtonStyle(
+            FilledButton.styleFrom(
+              minimumSize: const Size(64, 40),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+            ),
           ),
           onPressed: testing || _saving ? null : () => _probe.test(key, uri),
           child: Text(i18n.tr('network_test')),

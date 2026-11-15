@@ -24,7 +24,7 @@ class _AmbientBackground extends StatelessWidget {
   }
 }
 
-class _BottomDestinationInkResponse extends StatelessWidget {
+class _BottomDestinationInkResponse extends StatefulWidget {
   const _BottomDestinationInkResponse({
     required this.inkKey,
     required this.onTap,
@@ -36,17 +36,38 @@ class _BottomDestinationInkResponse extends StatelessWidget {
   final Widget child;
 
   @override
+  State<_BottomDestinationInkResponse> createState() =>
+      _BottomDestinationInkResponseState();
+}
+
+class _BottomDestinationInkResponseState
+    extends State<_BottomDestinationInkResponse> {
+  final _states = WidgetStatesController();
+
+  @override
+  void dispose() {
+    _states.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return InkResponse(
-      key: inkKey,
-      onTap: onTap,
+      mouseCursor: WidgetStateMouseCursor.clickable,
+      key: widget.inkKey,
+      onTap: widget.onTap,
       // Consume long presses so they do not turn into navigation taps.
       onLongPress: () {},
       containedInkWell: true,
       radius: 32,
       highlightColor: Colors.transparent,
-      splashFactory: AppEntryInkWell.entrySplashFactory(context),
-      child: child,
+      hoverColor: Colors.transparent,
+      splashFactory: NoSplash.splashFactory,
+      statesController: _states,
+      child: AppTouchFeedback(
+        enabled: true,
+        child: AppButtonIcon(states: _states, child: widget.child),
+      ),
     );
   }
 }

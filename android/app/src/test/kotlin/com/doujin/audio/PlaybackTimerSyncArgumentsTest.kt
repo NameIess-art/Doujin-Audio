@@ -17,6 +17,22 @@ class PlaybackTimerSyncArgumentsTest {
         assertNull(parsed.durationMs)
         assertEquals(23, parsed.autoResumeHour)
         assertEquals(listOf("session-1"), parsed.pausedSessionIds)
+        assertEquals(false, parsed.stopAfterCurrentTrack)
+    }
+
+    @Test
+    fun `timer sync parser accepts track-end pause with no playing sessions`() {
+        val parsed = parsePlaybackTimerSyncArguments(
+            MethodCall(
+                "syncPlaybackTimerAlarms",
+                validTimerArguments() + mapOf(
+                    "stopAfterCurrentTrack" to true,
+                    "pausedSessionIds" to emptyList<String>()
+                )
+            )
+        )
+        assertEquals(true, parsed.stopAfterCurrentTrack)
+        assertEquals(emptyList<String>(), parsed.pausedSessionIds)
     }
 
     @Test(expected = IllegalArgumentException::class)

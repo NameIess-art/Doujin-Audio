@@ -245,6 +245,7 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
                       final speed = _speeds[index];
                       final selected = index == _selectedIndex;
                       return InkWell(
+                        mouseCursor: WidgetStateMouseCursor.clickable,
                         onTap: () {
                           _scrollToSpeedIndex(
                             index,

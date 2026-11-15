@@ -114,6 +114,7 @@ class FileTreeRow extends StatelessWidget {
           borderRadius: borderRadius,
           clipBehavior: Clip.antiAlias,
           child: inkWell(
+            mouseCursor: WidgetStateMouseCursor.clickable,
             borderRadius: borderRadius,
             onTap: onTap,
             child: SizedBox(

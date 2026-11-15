@@ -487,8 +487,11 @@ class _BedtimeTimerStatus extends ConsumerWidget {
         ref.watch(timerStateProvider).value ??
         ref.read(timerFacadeProvider).state;
     final String timerText;
-    if (timerState.stopAfterCurrentTrack) {
-      timerText = i18n.tr('stop_after_current_track');
+    final waitingForTrackEnd =
+        timerState.stopAfterCurrentTrack &&
+        timerState.remaining == Duration.zero;
+    if (waitingForTrackEnd) {
+      timerText = i18n.tr('waiting_for_track_end');
     } else if (timerState.active &&
         timerState.remaining != null &&
         timerState.remaining! > Duration.zero) {
@@ -502,7 +505,7 @@ class _BedtimeTimerStatus extends ConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(
-          timerState.stopAfterCurrentTrack
+          waitingForTrackEnd
               ? Icons.music_note_rounded
               : timerState.active
               ? Icons.timer_outlined

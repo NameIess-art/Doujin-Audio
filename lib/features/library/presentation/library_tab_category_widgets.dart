@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:flutter/services.dart';
 
+import '../../../core/widgets/app_buttons.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../core/media/music_track.dart';
@@ -270,13 +271,16 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
                               fillColor: cs.surface,
                               isDense: true,
                               suffixIcon: _localSearchQuery.isNotEmpty
-                                  ? GestureDetector(
-                                      onTap: _onClearSearchLocally,
-                                      behavior: HitTestBehavior.opaque,
-                                      child: Icon(
-                                        Icons.cancel_rounded,
-                                        size: 14,
-                                        color: cs.onSurfaceVariant,
+                                  ? MouseRegion(
+                                      cursor: SystemMouseCursors.click,
+                                      child: GestureDetector(
+                                        onTap: _onClearSearchLocally,
+                                        behavior: HitTestBehavior.opaque,
+                                        child: Icon(
+                                          Icons.cancel_rounded,
+                                          size: 14,
+                                          color: cs.onSurfaceVariant,
+                                        ),
                                       ),
                                     )
                                   : null,
@@ -302,20 +306,73 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
                       if (widget.selectedTerms.isNotEmpty) ...[
                         SizedBox(
                           height: 28,
+                          child: appNoPointerInkTheme(
+                            context: context,
+                            androidPressHighlight: true,
+                            child: ActionChip(
+                              mouseCursor: WidgetStateMouseCursor.clickable,
+                              shape: const StadiumBorder(),
+                              label: Padding(
+                                padding: const EdgeInsets.only(bottom: 2),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.close_rounded, size: 14),
+                                    const SizedBox(width: 2),
+                                    Text(widget.clearLabel),
+                                  ],
+                                ),
+                              ),
+                              onPressed: widget.onClear,
+                              visualDensity: VisualDensity.compact,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                              padding: EdgeInsets.zero,
+                              labelPadding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                              ),
+                              backgroundColor: cs.surface,
+                              side: BorderSide(color: cs.outlineVariant),
+                              labelStyle: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    color: cs.primary,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                      ],
+                      SizedBox(
+                        height: 28,
+                        child: appNoPointerInkTheme(
+                          context: context,
+                          androidPressHighlight: true,
                           child: ActionChip(
+                            mouseCursor: WidgetStateMouseCursor.clickable,
                             shape: const StadiumBorder(),
                             label: Padding(
                               padding: const EdgeInsets.only(bottom: 2),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.close_rounded, size: 14),
+                                  Icon(
+                                    _expanded
+                                        ? Icons.expand_less_rounded
+                                        : Icons.expand_more_rounded,
+                                    size: 16,
+                                    color: cs.primary,
+                                  ),
                                   const SizedBox(width: 2),
-                                  Text(widget.clearLabel),
+                                  Text(
+                                    _expanded
+                                        ? widget.collapseLabel
+                                        : widget.expandLabel,
+                                  ),
                                 ],
                               ),
                             ),
-                            onPressed: widget.onClear,
+                            onPressed: _toggleExpanded,
                             visualDensity: VisualDensity.compact,
                             materialTapTargetSize:
                                 MaterialTapTargetSize.shrinkWrap,
@@ -331,49 +388,6 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
                                   fontWeight: FontWeight.w800,
                                 ),
                           ),
-                        ),
-                        const SizedBox(width: 6),
-                      ],
-                      SizedBox(
-                        height: 28,
-                        child: ActionChip(
-                          shape: const StadiumBorder(),
-                          label: Padding(
-                            padding: const EdgeInsets.only(bottom: 2),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  _expanded
-                                      ? Icons.expand_less_rounded
-                                      : Icons.expand_more_rounded,
-                                  size: 16,
-                                  color: cs.primary,
-                                ),
-                                const SizedBox(width: 2),
-                                Text(
-                                  _expanded
-                                      ? widget.collapseLabel
-                                      : widget.expandLabel,
-                                ),
-                              ],
-                            ),
-                          ),
-                          onPressed: _toggleExpanded,
-                          visualDensity: VisualDensity.compact,
-                          materialTapTargetSize:
-                              MaterialTapTargetSize.shrinkWrap,
-                          padding: EdgeInsets.zero,
-                          labelPadding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                          ),
-                          backgroundColor: cs.surface,
-                          side: BorderSide(color: cs.outlineVariant),
-                          labelStyle: Theme.of(context).textTheme.labelSmall
-                              ?.copyWith(
-                                color: cs.primary,
-                                fontWeight: FontWeight.w800,
-                              ),
                         ),
                       ),
                     ],
@@ -402,57 +416,66 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
                                   : null,
                               child: SizedBox(
                                 height: 28,
-                                child: FilterChip(
-                                  shape: const StadiumBorder(),
-                                  selected: selected,
-                                  label: Padding(
-                                    padding: const EdgeInsets.only(bottom: 2),
-                                    child: _localSearchQuery.isNotEmpty
-                                        ? SearchHighlightedText(
-                                            text: term,
-                                            terms: highlightTerms,
-                                            style:
-                                                Theme.of(
-                                                  context,
-                                                ).textTheme.labelSmall?.copyWith(
-                                                  color: selected
-                                                      ? cs.onSecondaryContainer
-                                                      : cs.onSurfaceVariant,
-                                                  fontWeight: selected
-                                                      ? FontWeight.w800
-                                                      : FontWeight.w600,
-                                                ) ??
-                                                const TextStyle(),
-                                          )
-                                        : Text(term),
+                                child: appNoPointerInkTheme(
+                                  context: context,
+                                  androidPressHighlight: true,
+                                  child: FilterChip(
+                                    mouseCursor: WidgetStateMouseCursor.clickable,
+                                    shape: const StadiumBorder(),
+                                    selected: selected,
+                                    label: Padding(
+                                      padding: const EdgeInsets.only(bottom: 2),
+                                      child: _localSearchQuery.isNotEmpty
+                                          ? SearchHighlightedText(
+                                              text: term,
+                                              terms: highlightTerms,
+                                              style:
+                                                  Theme.of(
+                                                    context,
+                                                  ).textTheme.labelSmall?.copyWith(
+                                                    color: selected
+                                                        ? cs.onSecondaryContainer
+                                                        : cs.onSurfaceVariant,
+                                                    fontWeight: selected
+                                                        ? FontWeight.w800
+                                                        : FontWeight.w600,
+                                                  ) ??
+                                                  const TextStyle(),
+                                            )
+                                          : Text(term),
+                                    ),
+                                    onSelected: (_) => widget.onToggle(term),
+                                    showCheckmark: false,
+                                    visualDensity: VisualDensity.compact,
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                    padding: EdgeInsets.zero,
+                                    labelPadding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                    ),
+                                    color: appChipColor(
+                                      colorScheme: cs,
+                                      platform: Theme.of(context).platform,
+                                      background: cs.surface,
+                                      selectedBackground: cs.secondaryContainer,
+                                    ),
+                                    side: BorderSide(
+                                      color: selected
+                                          ? cs.secondary.withValues(alpha: 0.45)
+                                          : cs.outlineVariant,
+                                    ),
+                                    labelStyle: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(
+                                          color: selected
+                                              ? cs.onSecondaryContainer
+                                              : cs.onSurfaceVariant,
+                                          fontWeight: selected
+                                              ? FontWeight.w800
+                                              : FontWeight.w600,
+                                        ),
                                   ),
-                                  onSelected: (_) => widget.onToggle(term),
-                                  showCheckmark: false,
-                                  visualDensity: VisualDensity.compact,
-                                  materialTapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                  padding: EdgeInsets.zero,
-                                  labelPadding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                  ),
-                                  selectedColor: cs.secondaryContainer,
-                                  backgroundColor: cs.surface,
-                                  side: BorderSide(
-                                    color: selected
-                                        ? cs.secondary.withValues(alpha: 0.45)
-                                        : cs.outlineVariant,
-                                  ),
-                                  labelStyle: Theme.of(context)
-                                      .textTheme
-                                      .labelSmall
-                                      ?.copyWith(
-                                        color: selected
-                                            ? cs.onSecondaryContainer
-                                            : cs.onSurfaceVariant,
-                                        fontWeight: selected
-                                            ? FontWeight.w800
-                                            : FontWeight.w600,
-                                      ),
                                 ),
                               ),
                             );
@@ -462,7 +485,8 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
                     if (remainingTerms > 0)
                       Align(
                         alignment: AlignmentDirectional.centerStart,
-                        child: TextButton.icon(
+                        child: AppLabelledButton(
+                          TextButton.icon,
                           key: ValueKey<String>(
                             'library_category_terms_more_${widget.categoryType.name}',
                           ),
@@ -570,20 +594,24 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
     final canPlay = !isSelectionMode && firstTrack != null;
     final actions = LibraryLikeCardActions(
       onAdd: canPlay
-          ? () => unawaited(runLibraryCardAction(
-              context: context,
-              ref: ref,
-              selection: selection,
-              temporary: false,
-            ))
+          ? () => unawaited(
+              runLibraryCardAction(
+                context: context,
+                ref: ref,
+                selection: selection,
+                temporary: false,
+              ),
+            )
           : null,
       onPlay: canPlay
-          ? () => unawaited(runLibraryCardAction(
-              context: context,
-              ref: ref,
-              selection: selection,
-              temporary: true,
-            ))
+          ? () => unawaited(
+              runLibraryCardAction(
+                context: context,
+                ref: ref,
+                selection: selection,
+                temporary: true,
+              ),
+            )
           : null,
       addLabel: i18n.tr('add'),
       playLabel: i18n.tr('play'),

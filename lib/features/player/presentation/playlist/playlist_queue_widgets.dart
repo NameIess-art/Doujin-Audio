@@ -3,6 +3,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../../core/widgets/app_buttons.dart';
 import 'package:path/path.dart' as path;
 
 import '../../../../app/presentation/app_presentation_providers.dart';
@@ -284,7 +286,6 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                 ? cs.primaryContainer.withValues(alpha: 0.15)
                 : Colors.transparent,
             child: AppEntryInkWell(
-              navigationEntry: !isSelectionMode,
               excludeFromSemantics: true,
               onTap: () {
                 if (isSelectionMode) {
@@ -446,13 +447,15 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                                           session.id,
                                         );
                                       },
-                                style: IconButton.styleFrom(
-                                  foregroundColor: isPlaying
-                                      ? activeColor
-                                      : cs.onSurface,
-                                  minimumSize: const Size(44, 44),
-                                  maximumSize: const Size(44, 44),
-                                  padding: EdgeInsets.zero,
+                                style: appIconButtonStyle(
+                                  IconButton.styleFrom(
+                                    foregroundColor: isPlaying
+                                        ? activeColor
+                                        : cs.onSurface,
+                                    minimumSize: const Size(44, 44),
+                                    maximumSize: const Size(44, 44),
+                                    padding: EdgeInsets.zero,
+                                  ),
                                 ),
                                 icon: AnimatedSwitcher(
                                   switchOutCurve: kAppFadeCurve,

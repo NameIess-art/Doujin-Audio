@@ -6,6 +6,7 @@ import 'work_detail_metadata.dart';
 import 'work_detail_entries.dart';
 import 'work_detail_header.dart';
 import 'dart:async';
+import 'dart:math' as math;
 import '../application/library_facade.dart' show AudioDetailRenameException;
 
 import 'package:flutter/foundation.dart';
@@ -98,6 +99,21 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   bool get _isPageCurrent => mounted && (_route?.isCurrent ?? true);
   late final AnimationController _directoryFade;
   late final CurvedAnimation _directoryOpacity;
+  late final AnimationController _directorySlide;
+  late final CurvedAnimation _directorySlideProgress;
+  late final CurvedAnimation _directoryIncomingCurve;
+  late final Animation<double> _directoryIncomingOpacity;
+  late final CurvedAnimation _directoryOutgoingCurve;
+  late final Animation<double> _directoryOutgoingOpacity;
+  int _directorySlideDirection = 0;
+  ({
+    List<String> path,
+    String pathKey,
+    List<WorkEntryItem> entries,
+    Map<Key, int> entryIndices,
+    bool hasError,
+  })?
+  _outgoingDirectory;
   bool? _directoryWasLoading;
   Rect? _departingSkeletonRect;
   final Map<AnimationController, ({Set<String> ids, Animation<double> opacity})>
@@ -143,7 +159,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   // Breadcrumb navigation state
   // Path stack: e.g. [] for root, ['EXデータ'] for subfolder
   final List<String> _currentPathSegments = [];
-  List<String>? _pendingDirectoryPath;
 
   @override
   void initState() {
@@ -171,6 +186,27 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       parent: _directoryFade,
       curve: kAppFadeCurve,
     );
+    _directorySlide = AnimationController(
+      vsync: this,
+      duration: kAppPagePushDuration,
+      value: 1,
+    )..addStatusListener(_handleDirectorySlideStatus);
+    _directorySlideProgress = CurvedAnimation(
+      parent: _directorySlide,
+      curve: Curves.easeOutCubic,
+    );
+    _directoryIncomingCurve = CurvedAnimation(
+      parent: _directorySlide,
+      curve: const Interval(0, 0.55, curve: Curves.easeOut),
+    );
+    _directoryIncomingOpacity = _directoryIncomingCurve.drive(
+      Tween<double>(begin: 0.25, end: 1),
+    );
+    _directoryOutgoingCurve = CurvedAnimation(
+      parent: _directorySlide,
+      curve: const Interval(0, 0.85, curve: Curves.easeOutCubic),
+    );
+    _directoryOutgoingOpacity = ReverseAnimation(_directoryOutgoingCurve);
     assert(
       widget.initialDetail == null ||
           (widget.initialDetail!.target.targetType ==
@@ -483,6 +519,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
               (widget.isAsmr && !_loadingAsmr)) {
             final depth = directory.validDepth(_currentPathSegments);
             if (depth < _currentPathSegments.length) {
+              _cancelDirectorySlide();
               _currentPathSegments.removeRange(
                 depth,
                 _currentPathSegments.length,
@@ -503,16 +540,36 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     _scrollController.dispose();
     _directoryOpacity.dispose();
     _directoryFade.dispose();
+    _directorySlideProgress.dispose();
+    _directoryIncomingCurve.dispose();
+    _directoryOutgoingCurve.dispose();
+    _directorySlide.dispose();
     for (final controller in _entryLoadBatches.keys) {
       controller.dispose();
     }
     super.dispose();
   }
 
+  void _handleDirectorySlideStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    if (!mounted || _outgoingDirectory == null) return;
+    setState(() {
+      _outgoingDirectory = null;
+      _directorySlideDirection = 0;
+    });
+  }
+
+  void _cancelDirectorySlide() {
+    _outgoingDirectory = null;
+    _directorySlideDirection = 0;
+    _directorySlide.value = 1;
+  }
+
   void _updateDirectoryMotion(bool isLoading) {
     if (MediaQuery.disableAnimationsOf(context) || _route?.isCurrent == false) {
       _directoryFade.value = 1;
       _departingSkeletonRect = null;
+      _cancelDirectorySlide();
       for (final controller in _entryLoadBatches.keys) {
         controller.dispose();
       }
@@ -533,6 +590,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     } else if (isLoading && _directoryWasLoading != true) {
       _directoryFade.value = 1;
       _departingSkeletonRect = null;
+      _cancelDirectorySlide();
     }
     _directoryWasLoading = isLoading;
   }
@@ -605,46 +663,62 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   }
 
   void _enterFolder(String folderName) {
-    unawaited(_switchDirectory([..._currentPathSegments, folderName]));
+    _switchDirectory([..._currentPathSegments, folderName]);
   }
 
   // Navigate back to specific level in breadcrumbs
   void _navigateToBreadcrumbIndex(int index) {
-    unawaited(_switchDirectory(_currentPathSegments.take(index + 1).toList()));
+    _switchDirectory(_currentPathSegments.take(index + 1).toList());
   }
 
-  Future<void> _switchDirectory(List<String> nextPath) async {
-    if (listEquals(nextPath, _pendingDirectoryPath ?? _currentPathSegments)) {
-      return;
-    }
-    setState(() {
-      _pendingDirectoryPath = nextPath;
-      _departingSkeletonRect = null;
-    });
-    final animate = !MediaQuery.disableAnimationsOf(context);
-    final halfDuration = kAppFadeDuration ~/ 2;
-    try {
-      if (animate) {
-        await _directoryFade.animateTo(0, duration: halfDuration).orCancel;
-      } else {
-        _directoryFade.value = 1;
-      }
-      if (!mounted || !identical(_pendingDirectoryPath, nextPath)) return;
+  void _switchDirectory(List<String> nextPath) {
+    if (listEquals(nextPath, _currentPathSegments)) return;
+    final direction = nextPath.length < _currentPathSegments.length ? -1 : 1;
+    final animate =
+        !MediaQuery.disableAnimationsOf(context) &&
+        TickerMode.valuesOf(context).enabled &&
+        _route?.isCurrent != false &&
+        _directory != null;
+    if (!animate) {
+      _cancelDirectorySlide();
       setState(() {
         _currentPathSegments
           ..clear()
           ..addAll(nextPath);
       });
-      if (animate) {
-        await _directoryFade.animateTo(1, duration: halfDuration).orCancel;
-      }
-    } on TickerCanceled {
-      // A newer directory request or disposal supersedes the current fade.
-    } finally {
-      if (identical(_pendingDirectoryPath, nextPath)) {
-        _pendingDirectoryPath = null;
-      }
+      return;
     }
+    final currentEntries = _buildCurrentEntries(_directoryVisibilityKey(ref));
+    final currentPath = List<String>.of(_currentPathSegments);
+    final reverseToOutgoing =
+        _directorySlide.isAnimating &&
+        _outgoingDirectory != null &&
+        direction != _directorySlideDirection &&
+        listEquals(nextPath, _outgoingDirectory!.path);
+    // Match visual offset across the easeOutCubic curve when bouncing back to
+    // the departing directory mid-slide.
+    final startValue = reverseToOutgoing
+        ? (1 - math.pow(_directorySlideProgress.value.clamp(0.0, 1.0), 1 / 3))
+              .toDouble()
+              .clamp(0.0, 1.0)
+        : 0.0;
+    _directorySlide.duration = direction < 0
+        ? kAppPagePopDuration
+        : kAppPagePushDuration;
+    setState(() {
+      _outgoingDirectory = (
+        path: currentPath,
+        pathKey: currentPath.join('/'),
+        entries: List<WorkEntryItem>.of(currentEntries),
+        entryIndices: Map<Key, int>.of(_entryIndices),
+        hasError: _asmrLoadError != null,
+      );
+      _directorySlideDirection = direction;
+      _currentPathSegments
+        ..clear()
+        ..addAll(nextPath);
+    });
+    _directorySlide.forward(from: startValue);
   }
 
   List<WorkEntryItem> _buildCurrentEntries(Object? visibilityKey) {
@@ -1102,6 +1176,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     setState(() {
       _localTarget = savedDetail.target;
       _localDetail = savedDetail;
+      _cancelDirectorySlide();
       _currentPathSegments.clear();
     });
     await _loadLocalData();
@@ -1226,6 +1301,88 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       );
     }
     return visibilityKey;
+  }
+
+  static void _ignoreEntryAction(WorkEntryAction _) {}
+
+  Widget _buildDirectorySliver({
+    required List<WorkEntryItem> entries,
+    required Map<Key, int> entryIndices,
+    required bool hasError,
+    required ColorScheme cs,
+    required String emptyFolderLabel,
+    required Map<(WorkEntryType, bool), List<UnifiedMenuEntry<WorkEntryAction>>>
+    entryMenus,
+    required String moreLabel,
+    required String unknownSizeLabel,
+    required bool interactive,
+  }) {
+    if (entries.isEmpty) {
+      if (hasError) {
+        return const SliverToBoxAdapter(child: SizedBox.shrink());
+      }
+      return SliverFillRemaining(
+        hasScrollBody: false,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.folder_open_rounded,
+                size: 48,
+                color: cs.onSurfaceVariant.withValues(alpha: 0.5),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                emptyFolderLabel,
+                style: TextStyle(color: cs.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    final library = ref.read(libraryFacadeProvider);
+    return SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      sliver: SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
+            final item = entries[index];
+            final isLibraryAudio =
+                widget.isLocal &&
+                item.track != null &&
+                library.isLibraryTrack(item.track!.path);
+            final id = '${item.type.name}:${item.relativePath}';
+            final tile = FadeTransition(
+              key: ValueKey('work_detail_entry_fade_$id'),
+              opacity: interactive
+                  ? _entryLoadOpacity(id)
+                  : const AlwaysStoppedAnimation<double>(1),
+              child: WorkDetailEntryTile(
+                key: ValueKey(id),
+                item: item,
+                accentColor: cs.primary,
+                menuEntries: interactive
+                    ? entryMenus.putIfAbsent(
+                        (item.type, isLibraryAudio),
+                        () => _entryMenuItems(item, isLibraryAudio),
+                      )
+                    : const [],
+                moreLabel: moreLabel,
+                unknownSizeLabel: unknownSizeLabel,
+                onAction: interactive
+                    ? (action) => _handleEntryAction(item, action)
+                    : _ignoreEntryAction,
+              ),
+            );
+            return interactive ? tile : ExcludeFocus(child: tile);
+          },
+          childCount: entries.length,
+          findChildIndexCallback: (key) => entryIndices[key],
+        ),
+      ),
+    );
   }
 
   Widget _buildPage(BuildContext context) {
@@ -1584,79 +1741,44 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                     opacity: MediaQuery.disableAnimationsOf(context)
                         ? const AlwaysStoppedAnimation(1)
                         : _directoryOpacity,
-                    sliver: currentEntries.isEmpty
-                        ? _asmrLoadError != null
-                              ? const SliverToBoxAdapter(
-                                  child: SizedBox.shrink(),
-                                )
-                              : SliverFillRemaining(
-                                  hasScrollBody: false,
-                                  child: Center(
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          Icons.folder_open_rounded,
-                                          size: 48,
-                                          color: cs.onSurfaceVariant.withValues(
-                                            alpha: 0.5,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Text(
-                                          i18n.tr('empty_folder'),
-                                          style: TextStyle(
-                                            color: cs.onSurfaceVariant,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                )
-                        : SliverPadding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
+                    sliver: SliverHorizontalSlideSwitcher(
+                      progress: _directorySlideProgress,
+                      direction: _directorySlideDirection,
+                      currentKey: ValueKey<String>(
+                        'work_detail_dir:${_currentPathSegments.join('/')}',
+                      ),
+                      currentSliver: _buildDirectorySliver(
+                        entries: currentEntries,
+                        entryIndices: _entryIndices,
+                        hasError: _asmrLoadError != null,
+                        cs: cs,
+                        emptyFolderLabel: i18n.tr('empty_folder'),
+                        entryMenus: entryMenus,
+                        moreLabel: moreLabel,
+                        unknownSizeLabel: unknownSizeLabel,
+                        interactive: true,
+                      ),
+                      outgoingKey: _outgoingDirectory == null
+                          ? null
+                          : ValueKey<String>(
+                              'work_detail_dir:${_outgoingDirectory!.pathKey}',
                             ),
-                            sliver: SliverList(
-                              delegate: SliverChildBuilderDelegate(
-                                (context, index) {
-                                  final item = currentEntries[index];
-                                  final isLibraryAudio =
-                                      widget.isLocal &&
-                                      item.track != null &&
-                                      ref
-                                          .read(libraryFacadeProvider)
-                                          .isLibraryTrack(item.track!.path);
-                                  final id =
-                                      '${item.type.name}:${item.relativePath}';
-                                  return FadeTransition(
-                                    key: ValueKey('work_detail_entry_fade_$id'),
-                                    opacity: _entryLoadOpacity(id),
-                                    child: WorkDetailEntryTile(
-                                      key: ValueKey(id),
-                                      item: item,
-                                      accentColor: cs.primary,
-                                      menuEntries: entryMenus.putIfAbsent(
-                                        (item.type, isLibraryAudio),
-                                        () => _entryMenuItems(
-                                          item,
-                                          isLibraryAudio,
-                                        ),
-                                      ),
-                                      moreLabel: moreLabel,
-                                      unknownSizeLabel: unknownSizeLabel,
-                                      onAction: (action) =>
-                                          _handleEntryAction(item, action),
-                                    ),
-                                  );
-                                },
-                                childCount: currentEntries.length,
-                                findChildIndexCallback: (key) =>
-                                    _entryIndices[key],
-                              ),
+                      outgoingSliver: _outgoingDirectory == null
+                          ? null
+                          : _buildDirectorySliver(
+                              entries: _outgoingDirectory!.entries,
+                              entryIndices: _outgoingDirectory!.entryIndices,
+                              hasError: _outgoingDirectory!.hasError,
+                              cs: cs,
+                              emptyFolderLabel: i18n.tr('empty_folder'),
+                              entryMenus: entryMenus,
+                              moreLabel: moreLabel,
+                              unknownSizeLabel: unknownSizeLabel,
+                              interactive: false,
                             ),
-                          ),
+                      incomingOpacity: _directoryIncomingOpacity,
+                      outgoingOpacity: _directoryOutgoingOpacity,
+                    ),
                   ),
                 if (bottomOverlayInset > 0)
                   SliverToBoxAdapter(

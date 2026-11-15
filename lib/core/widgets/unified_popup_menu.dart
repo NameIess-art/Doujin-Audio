@@ -1,10 +1,13 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import '../ui/ui_interaction_coordinator.dart';
 import '../../app/theme/app_design_tokens.dart';
+import 'app_entry_ink_well.dart';
 import 'app_feedback.dart';
 import 'app_transitions.dart';
 import 'mobile_overlay_inset.dart';
@@ -12,6 +15,77 @@ import 'windows_smooth_scroll_controller.dart';
 
 const _menuEnterDuration = Duration(milliseconds: 150);
 const _menuExitDuration = Duration(milliseconds: 120);
+const _compactMenuEdgeExtension = 6.0;
+
+class _AnchoredMenuScale extends SingleChildRenderObjectWidget {
+  const _AnchoredMenuScale({
+    required this.scale,
+    required this.anchorInMenu,
+    required super.child,
+  });
+
+  final Animation<double> scale;
+  final Offset Function(Size) anchorInMenu;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderAnchoredMenuScale(scale, anchorInMenu);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderAnchoredMenuScale renderObject,
+  ) {
+    renderObject.update(scale, anchorInMenu);
+  }
+}
+
+class _RenderAnchoredMenuScale extends RenderTransform {
+  _RenderAnchoredMenuScale(this._scale, this._anchorInMenu)
+    : super(transform: Matrix4.identity(), transformHitTests: false);
+
+  Animation<double> _scale;
+  Offset Function(Size) _anchorInMenu;
+
+  void update(Animation<double> scale, Offset Function(Size) anchorInMenu) {
+    if (scale != _scale) {
+      if (attached) _scale.removeListener(_updateTransform);
+      _scale = scale;
+      if (attached) _scale.addListener(_updateTransform);
+    }
+    _anchorInMenu = anchorInMenu;
+    if (hasSize) _updateTransform();
+  }
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _scale.addListener(_updateTransform);
+  }
+
+  @override
+  void detach() {
+    _scale.removeListener(_updateTransform);
+    super.detach();
+  }
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    _updateTransform();
+  }
+
+  void _updateTransform() {
+    if (!hasSize) return;
+    final anchor = _anchorInMenu(size);
+    origin = Offset(
+      anchor.dx.clamp(0, size.width),
+      anchor.dy.clamp(0, size.height),
+    );
+    final value = _scale.value;
+    transform = Matrix4.diagonal3Values(value, value, 1);
+  }
+}
 
 TextAlign _menuTextAlign(
   BuildContext context,
@@ -196,6 +270,7 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
         return _UnifiedPopupOverlay<T>(
           animation: _controller,
           rect: Rect.fromLTWH(left, top, menuWidth, anchorRect.height),
+          anchor: anchorRect.center,
           entries: widget.entries,
           textAlign: textAlign,
           onDismiss: _removeOverlay,
@@ -293,6 +368,7 @@ class _UnifiedPopupOverlay<T> extends StatefulWidget {
   const _UnifiedPopupOverlay({
     required this.animation,
     required this.rect,
+    required this.anchor,
     required this.entries,
     required this.textAlign,
     required this.onDismiss,
@@ -302,6 +378,7 @@ class _UnifiedPopupOverlay<T> extends StatefulWidget {
 
   final Animation<double> animation;
   final Rect rect;
+  final Offset anchor;
   final List<UnifiedMenuEntry<T>> entries;
   final TextAlign textAlign;
   final Future<void> Function() onDismiss;
@@ -331,10 +408,10 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
   void _bindAnimation() {
     _curved = CurvedAnimation(
       parent: widget.animation,
-      curve: Curves.easeOutCubic,
-      reverseCurve: Curves.easeOutCubic,
+      curve: kAppSpringCurve,
+      reverseCurve: Curves.easeInCubic,
     );
-    _scale = Tween<double>(begin: 0.96, end: 1).animate(_curved);
+    _scale = Tween<double>(begin: 0.86, end: 1).animate(_curved);
   }
 
   @override
@@ -386,8 +463,8 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
                   width: widget.rect.width,
                   child: FadeTransition(
                     opacity: _curved,
-                    child: ScaleTransition(
-                      alignment: Alignment.topRight,
+                    child: _AnchoredMenuScale(
+                      anchorInMenu: (_) => widget.anchor - widget.rect.topLeft,
                       scale: _scale,
                       child: ExcludeFocus(
                         excluding:
@@ -430,11 +507,13 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
     this.compact = false,
     this.primaryIcons = false,
     this.autofocusFirstEntry = true,
+    this.suppressHover = false,
   });
 
   final bool compact;
   final bool primaryIcons;
   final bool autofocusFirstEntry;
+  final bool suppressHover;
   final List<UnifiedMenuEntry<T>> entries;
   final TextAlign textAlign;
   final ValueChanged<T> onSelected;
@@ -446,45 +525,60 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final tokens = AppDesignTokens.of(context);
     final background = isDark ? cs.surfaceBright : cs.surfaceContainerHighest;
+    final firstAutofocusEntry = autofocusFirstEntry
+        ? entries.where((item) => item.enabled && !item.divider).firstOrNull
+        : null;
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(tokens.radiusSection),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: background,
-          borderRadius: BorderRadius.circular(tokens.radiusSection),
-          border: Border.all(
-            color: cs.outlineVariant.withValues(
-              alpha: tokens.standardBorderAlpha,
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(tokens.radiusSection),
+        boxShadow: [
+          BoxShadow(
+            color: cs.shadow.withValues(alpha: isDark ? 0.34 : 0.14),
+            blurRadius: 24,
+            spreadRadius: -4,
+            offset: const Offset(0, 10),
+          ),
+          BoxShadow(
+            color: cs.shadow.withValues(alpha: isDark ? 0.18 : 0.06),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(tokens.radiusSection),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(tokens.radiusSection),
+            border: Border.all(
+              color: cs.outlineVariant.withValues(
+                alpha: tokens.standardBorderAlpha,
+              ),
             ),
           ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Builder(
-            builder: (context) {
-              final firstAutofocusEntry = entries
-                  .where((item) => item.enabled && !item.divider)
-                  .firstOrNull;
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: entries
-                    .map(
-                      (entry) => _UnifiedPopupMenuRow<T>(
-                        entry: entry,
-                        textAlign: textAlign,
-                        compact: compact,
-                        primaryIcons: primaryIcons,
-                        autofocus:
-                            autofocusFirstEntry &&
-                            identical(entry, firstAutofocusEntry),
-                        onSelected: onSelected,
-                        onTrailingSelected: onTrailingSelected,
-                      ),
-                    )
-                    .toList(growable: false),
-              );
-            },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var index = 0; index < entries.length; index++)
+                _UnifiedPopupMenuRow<T>(
+                  entry: entries[index],
+                  textAlign: textAlign,
+                  compact: compact,
+                  primaryIcons: primaryIcons,
+                  autofocus: identical(entries[index], firstAutofocusEntry),
+                  suppressHover: suppressHover,
+                  edgePadding: EdgeInsets.only(
+                    top: compact && index == 0 ? _compactMenuEdgeExtension : 0,
+                    bottom: compact && index == entries.length - 1
+                        ? _compactMenuEdgeExtension
+                        : 0,
+                  ),
+                  onSelected: onSelected,
+                  onTrailingSelected: onTrailingSelected,
+                ),
+            ],
           ),
         ),
       ),
@@ -497,6 +591,8 @@ class _UnifiedPopupMenuRow<T> extends StatelessWidget {
     required this.entry,
     required this.textAlign,
     required this.autofocus,
+    required this.suppressHover,
+    required this.edgePadding,
     required this.onSelected,
     this.onTrailingSelected,
     this.compact = false,
@@ -508,6 +604,8 @@ class _UnifiedPopupMenuRow<T> extends StatelessWidget {
   final UnifiedMenuEntry<T> entry;
   final TextAlign textAlign;
   final bool autofocus;
+  final bool suppressHover;
+  final EdgeInsets edgePadding;
   final ValueChanged<T> onSelected;
   final ValueChanged<T>? onTrailingSelected;
 
@@ -528,8 +626,9 @@ class _UnifiedPopupMenuRow<T> extends StatelessWidget {
     final value = entry.value;
     return Material(
       color: Colors.transparent,
-      child: InkWell(
+      child: AppEntryInkWell(
         autofocus: autofocus,
+        hoverColor: suppressHover ? Colors.transparent : null,
         onTap: entry.enabled && value != null
             ? () {
                 AppInteractionFeedback.trigger(
@@ -540,12 +639,15 @@ class _UnifiedPopupMenuRow<T> extends StatelessWidget {
                 onSelected(value);
               }
             : null,
-        child: _UnifiedPopupMenuContent(
-          entry: entry,
-          textAlign: textAlign,
-          compact: compact,
-          primaryIcons: primaryIcons,
-          onTrailingSelected: onTrailingSelected,
+        child: Padding(
+          padding: edgePadding,
+          child: _UnifiedPopupMenuContent(
+            entry: entry,
+            textAlign: textAlign,
+            compact: compact,
+            primaryIcons: primaryIcons,
+            onTrailingSelected: onTrailingSelected,
+          ),
         ),
       ),
     );
@@ -658,8 +760,8 @@ class _DockMenuLayout extends SingleChildLayoutDelegate {
     }
     if (x < 8) x = 8;
 
-    // Top-align to button top (covering the button).
-    double y = position.top;
+    // Keep the first row's content aligned to the original anchor.
+    double y = position.top - _compactMenuEdgeExtension;
     if (y + childSize.height > size.height - 8) {
       y = size.height - 8 - childSize.height;
     }
@@ -677,7 +779,6 @@ Future<T?> showDockAwareMenu<T>({
   required RelativeRect position,
   required List<UnifiedMenuEntry<T>> entries,
   Listenable? dismissOn,
-  bool autofocusFirstEntry = true,
 }) async {
   final overlayState =
       MobileOverlayInset.menuOverlayOf(context) ?? Overlay.maybeOf(context);
@@ -692,7 +793,21 @@ Future<T?> showDockAwareMenu<T>({
   final hostRoute = readAppRoute(context);
   final menuDismiss = MobileOverlayInset.menuDismissOf(context);
   final menuKey = GlobalKey<_DockMenuOverlayState<T>>();
+  final pointerRouter = GestureBinding.instance.pointerRouter;
+  var hoverEnabled = false;
   late OverlayEntry entry;
+  void enableHoverOnMovement(PointerEvent event) {
+    final isMouseDrag =
+        event is PointerMoveEvent && event.kind == PointerDeviceKind.mouse;
+    if (event.delta == Offset.zero ||
+        (event is! PointerHoverEvent && !isMouseDrag)) {
+      return;
+    }
+    hoverEnabled = true;
+    pointerRouter.removeGlobalRoute(enableHoverOnMovement);
+    entry.markNeedsBuild();
+  }
+
   void removeImmediately() {
     if (completer.isCompleted) return;
     UiInteractionCoordinator.instance.cancelInteraction(interactionSource);
@@ -719,10 +834,10 @@ Future<T?> showDockAwareMenu<T>({
       key: menuKey,
       position: position,
       entries: entries,
-      autofocusFirstEntry: autofocusFirstEntry,
       themes: themes,
       reducedMotion: reducedMotion,
       interactionSource: interactionSource,
+      hoverEnabled: hoverEnabled,
       onResult: (value) {
         if (!completer.isCompleted) completer.complete(value);
       },
@@ -737,6 +852,9 @@ Future<T?> showDockAwareMenu<T>({
   dismissOn?.addListener(removeImmediately);
   menuDismiss?.value?.call();
   menuDismiss?.value = cancelMenu;
+  // Pointer movement can arrive before the popup's first layout or while a
+  // held mouse button is still routing events to the original hit target.
+  pointerRouter.addGlobalRoute(enableHoverOnMovement);
   overlayState.insert(entry);
   // A root overlay outlives its launching page. Remove its menu when that
   // route completes, including a pop before the menu's first layout.
@@ -744,6 +862,7 @@ Future<T?> showDockAwareMenu<T>({
   try {
     return await completer.future;
   } finally {
+    if (!hoverEnabled) pointerRouter.removeGlobalRoute(enableHoverOnMovement);
     if (identical(menuDismiss?.value, cancelMenu)) menuDismiss?.value = null;
     tickerMode.removeListener(cancelWhenHidden);
     dismissOn?.removeListener(removeImmediately);
@@ -761,9 +880,9 @@ class _DockMenuOverlay<T> extends StatefulWidget {
     required this.themes,
     required this.reducedMotion,
     required this.interactionSource,
+    required this.hoverEnabled,
     required this.onResult,
     required this.externallyManagedDismiss,
-    required this.autofocusFirstEntry,
   });
 
   final RelativeRect position;
@@ -771,9 +890,9 @@ class _DockMenuOverlay<T> extends StatefulWidget {
   final CapturedThemes themes;
   final bool reducedMotion;
   final Object interactionSource;
+  final bool hoverEnabled;
   final ValueChanged<T?> onResult;
   final bool externallyManagedDismiss;
-  final bool autofocusFirstEntry;
 
   @override
   State<_DockMenuOverlay<T>> createState() => _DockMenuOverlayState<T>();
@@ -784,6 +903,7 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
   final _focusScope = FocusScopeNode();
   late final AnimationController _controller;
   late final CurvedAnimation _curved;
+  late final Animation<double> _scale;
   bool _dismissed = false;
   bool _started = false;
   bool _resultCompleted = false;
@@ -802,9 +922,10 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
     )..addStatusListener(_handleAnimationStatus);
     _curved = CurvedAnimation(
       parent: _controller,
-      curve: Curves.easeOutCubic,
-      reverseCurve: Curves.easeOutCubic,
+      curve: kAppSpringCurve,
+      reverseCurve: Curves.easeInCubic,
     );
+    _scale = Tween<double>(begin: 0.86, end: 1).animate(_curved);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _dismissed) return;
       _focusScope.requestFocus();
@@ -891,45 +1012,54 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
                   onTap: () => _dismiss(null),
                   child: const SizedBox.expand(),
                 ),
-                CustomSingleChildLayout(
-                  delegate: _DockMenuLayout(widget.position),
-                  child: FadeTransition(
-                    opacity: _curved,
-                    child: ScaleTransition(
-                      alignment: Alignment.topRight,
-                      scale: Tween<double>(
-                        begin: 0.96,
-                        end: 1,
-                      ).animate(_curved),
-                      child: widget.themes.wrap(
-                        Material(
-                          color: Colors.transparent,
-                          child: SingleChildScrollView(
-                            child: IntrinsicWidth(
-                              child: ExcludeFocus(
-                                excluding: _dismissed,
-                                child: ExcludeSemantics(
-                                  excluding: _dismissed,
-                                  child: IgnorePointer(
-                                    ignoring: _dismissed,
-                                    child: _UnifiedPopupMenuCard<T>(
-                                      entries: widget.entries,
-                                      textAlign: TextAlign.left,
-                                      autofocusFirstEntry:
-                                          widget.autofocusFirstEntry,
-                                      compact: true,
-                                      primaryIcons: true,
-                                      onSelected: (value) => _dismiss(value),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final size = constraints.biggest;
+                    final layout = _DockMenuLayout(widget.position);
+                    final anchor = widget.position
+                        .toRect(Offset.zero & size)
+                        .center;
+                    return CustomSingleChildLayout(
+                      delegate: layout,
+                      child: FadeTransition(
+                        opacity: _curved,
+                        child: _AnchoredMenuScale(
+                          anchorInMenu: (menuSize) =>
+                              anchor -
+                              layout.getPositionForChild(size, menuSize),
+                          scale: _scale,
+                          child: widget.themes.wrap(
+                            Material(
+                              color: Colors.transparent,
+                              child: SingleChildScrollView(
+                                child: IntrinsicWidth(
+                                  child: ExcludeFocus(
+                                    excluding: _dismissed,
+                                    child: ExcludeSemantics(
+                                      excluding: _dismissed,
+                                      child: IgnorePointer(
+                                        ignoring: _dismissed,
+                                        child: _UnifiedPopupMenuCard<T>(
+                                          entries: widget.entries,
+                                          textAlign: TextAlign.left,
+                                          autofocusFirstEntry: false,
+                                          suppressHover: !widget.hoverEnabled,
+                                          compact: true,
+                                          primaryIcons: true,
+                                          onSelected: (value) =>
+                                              _dismiss(value),
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
+                              ).withWindowsSmoothScroll(),
                             ),
-                          ).withWindowsSmoothScroll(),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 ),
               ],
             ),
@@ -957,7 +1087,5 @@ Future<T?> showUnifiedContextMenu<T>({
     context: context,
     position: position,
     entries: entries,
-    // Keep keyboard focus in the menu without preselecting a mouse action.
-    autofocusFirstEntry: false,
   );
 }

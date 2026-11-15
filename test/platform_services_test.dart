@@ -70,6 +70,7 @@ void main() {
         autoResumeAtMs: 50,
         pausedSessionIds: const <String>['s1'],
         generation: 2,
+        stopAfterCurrentTrack: true,
       );
 
       expect(calls.map((call) => call.method), [
@@ -77,6 +78,7 @@ void main() {
       ]);
       expect(calls.last.arguments, containsPair('pausedSessionIds', ['s1']));
       expect(calls.last.arguments, containsPair('generation', 2));
+      expect(calls.last.arguments, containsPair('stopAfterCurrentTrack', true));
     });
 
     test('returns conservative defaults on channel errors', () async {

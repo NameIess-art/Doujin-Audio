@@ -311,7 +311,8 @@ class LibraryScanProgressCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  TextButton.icon(
+                  AppLabelledButton(
+                    TextButton.icon,
                     onPressed: onCancel,
                     icon: Icon(Icons.close_rounded, size: 16, color: cs.error),
                     label: Text(

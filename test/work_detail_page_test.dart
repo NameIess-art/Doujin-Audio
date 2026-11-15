@@ -890,13 +890,35 @@ void main() {
   group('WorkDetailPage', () {
     for (final reducedMotion in [false, true]) {
       _detailTestWidgets(
-        'directory switches fade out and in within 300ms, reduced=$reducedMotion',
+        'directory switches slide horizontally by depth, reduced=$reducedMotion',
         (tester) async {
           final fixture = AppRuntimeWidgetTestFixture();
           _detailFixtures.add(fixture);
           addTearDown(fixture.dispose);
           final tree = [
-            for (final name in ['First', 'Second', 'Empty'])
+            AsmrTrackFile.fromJson(const {
+              'type': 'folder',
+              'title': 'First',
+              'children': [
+                {
+                  'type': 'folder',
+                  'title': 'Nested',
+                  'children': [
+                    {
+                      'type': 'audio',
+                      'title': 'Nested audio.mp3',
+                      'mediaStreamUrl': 'https://example.test/Nested.mp3',
+                    },
+                  ],
+                },
+                {
+                  'type': 'audio',
+                  'title': 'First audio.mp3',
+                  'mediaStreamUrl': 'https://example.test/First.mp3',
+                },
+              ],
+            }),
+            for (final name in ['Second', 'Empty'])
               AsmrTrackFile.fromJson({
                 'type': 'folder',
                 'title': name,
@@ -926,75 +948,93 @@ void main() {
             ),
           );
           await _settleDetail(tester);
-          double opacity() => tester.widget<SliverFadeTransition>(
-            find.byKey(const ValueKey('work_detail_entries_fade')),
-          ).opacity.value;
           final breadcrumbs = find.byType(WorkDetailBreadcrumbs);
           final breadcrumbsTop = tester.getTopLeft(breadcrumbs).dy;
           final root = find.text(fixture.languageProvider.tr('root_directory'));
+          final settledSecondX = tester.getTopLeft(find.text('Second')).dx;
 
-          Future<void> finishSwitch() async {
-            if (!reducedMotion) {
-              await tester.pump(const Duration(milliseconds: 75));
-              expect(opacity(), inExclusiveRange(0, 1));
-              expect(
-                find.byKey(const ValueKey('work_detail_entries_skeleton')),
-                findsNothing,
-              );
-              await tester.pump(const Duration(milliseconds: 75));
-              // Ticker completion is reported just after the final timestamp.
-              await tester.pump(const Duration(microseconds: 1));
-              await tester.pump();
-              expect(opacity(), 0);
-              await tester.pump(const Duration(milliseconds: 75));
-              expect(opacity(), inExclusiveRange(0, 1));
-              await tester.pump(const Duration(milliseconds: 75));
-            } else {
-              await tester.pump();
-            }
-            expect(opacity(), 1);
-            expect(tester.getTopLeft(breadcrumbs).dy, breadcrumbsTop);
-          }
-
+          // Opening a subfolder slides the new directory left into view from the right.
           await tester.tap(find.text('First'));
           await tester.pump();
           if (!reducedMotion) {
-            expect(find.text('First audio'), findsNothing);
-            expect(opacity(), 1);
-          }
-          await finishSwitch();
-          expect(find.text('First audio'), findsOneWidget);
-          await tester.tap(root);
-          await tester.pump();
-          await finishSwitch();
-          expect(find.text('First audio'), findsNothing);
-
-          // A later tap supersedes a request while the old directory fades.
-          await tester.tap(find.text('First'));
-          await tester.pump();
-          if (!reducedMotion) {
-            await tester.pump(const Duration(milliseconds: 50));
-            await tester.tap(find.text('Second'));
-          }
-          await tester.pumpAndSettle();
-          expect(
-            find.text(reducedMotion ? 'First audio' : 'Second audio'),
-            findsOneWidget,
-          );
-          await tester.tap(root);
-          await tester.pumpAndSettle();
-          if (!reducedMotion) {
-            await tester.tap(find.text('First'));
+            final startIncomingX = tester
+                .getTopLeft(find.text('First audio'))
+                .dx;
+            expect(startIncomingX, greaterThan(settledSecondX));
+            await tester.pump(const Duration(milliseconds: 60));
+            final midIncomingX = tester.getTopLeft(find.text('First audio')).dx;
+            final midOutgoingX = tester.getTopLeft(find.text('Second')).dx;
+            expect(midIncomingX, lessThan(startIncomingX));
+            expect(midIncomingX, greaterThan(settledSecondX));
+            expect(midOutgoingX, lessThan(settledSecondX));
+            expect(
+              find.byKey(const ValueKey('work_detail_entries_skeleton')),
+              findsNothing,
+            );
+            await tester.pump(kAppPagePushDuration);
             await tester.pump();
+          }
+          expect(find.text('Second'), findsNothing);
+          expect(
+            tester.getTopLeft(find.text('First audio')).dx,
+            settledSecondX,
+          );
+          expect(tester.getTopLeft(breadcrumbs).dy, breadcrumbsTop);
+
+          // Returning to a previous breadcrumb slides the target directory right into view.
+          await tester.tap(root);
+          await tester.pump();
+          if (!reducedMotion) {
+            final startBackIncomingX = tester
+                .getTopLeft(find.text('Second'))
+                .dx;
+            expect(startBackIncomingX, lessThan(settledSecondX));
+            await tester.pump(const Duration(milliseconds: 60));
+            final midBackIncomingX = tester.getTopLeft(find.text('Second')).dx;
+            final midBackOutgoingX = tester
+                .getTopLeft(find.text('First audio'))
+                .dx;
+            expect(midBackIncomingX, greaterThan(startBackIncomingX));
+            expect(midBackIncomingX, lessThan(settledSecondX));
+            expect(midBackOutgoingX, greaterThan(settledSecondX));
+            await tester.pump(kAppPagePopDuration);
+            await tester.pump();
+          }
+          expect(find.text('First audio'), findsNothing);
+          expect(tester.getTopLeft(find.text('Second')).dx, settledSecondX);
+          expect(tester.getTopLeft(breadcrumbs).dy, breadcrumbsTop);
+
+          // Navigating mid-slide cleanly supersedes or reverses without leaving stale content.
+          await tester.tap(find.text('First'));
+          await tester.pump();
+          if (!reducedMotion) {
             await tester.pump(const Duration(milliseconds: 50));
             await tester.tap(root);
             await tester.pumpAndSettle();
             expect(find.text('First audio'), findsNothing);
             expect(find.text('Second'), findsOneWidget);
+
+            await tester.tap(find.text('First'));
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 50));
+            await tester.tap(find.text('Nested'));
+            await tester.pumpAndSettle();
+            expect(find.text('Nested audio'), findsOneWidget);
+            expect(find.text('First audio'), findsNothing);
+
+            await tester.tap(root);
+            await tester.pumpAndSettle();
+          } else {
+            await tester.tap(root);
+            await tester.pump();
           }
+
           await tester.tap(find.text('Empty'));
           await tester.pump();
-          await finishSwitch();
+          if (!reducedMotion) {
+            await tester.pump(kAppPagePushDuration);
+            await tester.pump();
+          }
           expect(
             find.text(fixture.languageProvider.tr('empty_folder')),
             findsOneWidget,
@@ -3207,6 +3247,22 @@ void main() {
 
       // Title & pinned row
       expect(find.text('ASMR Remote Work Title'), findsOneWidget);
+      final titleButton = find.byKey(const ValueKey('work_detail_title_copy'));
+      final titleInk = tester.widget<InkWell>(
+        find.descendant(of: titleButton, matching: find.byType(InkWell)),
+      );
+      for (final state in [
+        WidgetState.hovered,
+        WidgetState.pressed,
+        WidgetState.focused,
+      ]) {
+        expect(titleInk.overlayColor!.resolve({state}), Colors.transparent);
+      }
+      final titleSurface = tester.widget<Material>(
+        find.descendant(of: titleButton, matching: find.byType(Material)),
+      );
+      expect(titleSurface.color, Colors.transparent);
+      expect(titleSurface.shape, const RoundedRectangleBorder());
       expect(find.text('RJ009999'), findsOneWidget);
       expect(find.text('Remote Circle'), findsOneWidget);
       expect(
@@ -3271,9 +3327,16 @@ void main() {
         tester.getRect(dlsiteButton).center,
       );
       expect(find.text('|'), findsOneWidget);
-      expect(tester.widget<Text>(find.text('RJ009999')).style?.fontSize, 13);
       expect(
-        tester.widget<Text>(find.text('Remote Circle')).style?.fontSize,
+        DefaultTextStyle.of(
+          tester.element(find.text('RJ009999')),
+        ).style.fontSize,
+        13,
+      );
+      expect(
+        DefaultTextStyle.of(
+          tester.element(find.text('Remote Circle')),
+        ).style.fontSize,
         13,
       );
       final highlightedStyle = tester.widget<Text>(subtitleStatus).style!;
@@ -3664,7 +3727,9 @@ void main() {
           () => Directory.systemTemp.createTemp('viewer_overflow_'),
         );
         addTearDown(() async {
-          if (await directory!.exists()) await directory.delete(recursive: true);
+          if (await directory!.exists()) {
+            await directory.delete(recursive: true);
+          }
         });
         final image = File('${directory!.path}/red.png');
         await tester.runAsync(
@@ -4228,6 +4293,77 @@ void main() {
         await tester.pump(const Duration(milliseconds: 100));
         expect(find.text('2 / 2'), findsOneWidget);
       },
+    );
+
+    _detailTestWidgets(
+      'set as cover animates the icon and label together',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        var coverSelections = 0;
+        await tester.pumpWidget(
+          fixture.build(
+            WorkImageViewerPage(
+              images: const [
+                WorkImageItem(name: '01.jpg', path: 'path/to/01.jpg'),
+              ],
+              onSetAsCover: (_) async {
+                coverSelections++;
+              },
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+
+        final button = find.byKey(const ValueKey('viewer_set_as_cover_button'));
+        final label = find.descendant(
+          of: button,
+          matching: find.text(
+            fixture.languageProvider.tr('audio_detail_set_cover'),
+          ),
+        );
+        final icon = find.descendant(
+          of: button,
+          matching: find.byIcon(Icons.photo_size_select_actual_outlined),
+        );
+        Transform foreground(Finder glyph) => tester
+            .widgetList<Transform>(
+              find.ancestor(of: glyph, matching: find.byType(Transform)),
+            )
+            .firstWhere((transform) => !transform.transformHitTests);
+        Color? glyphColor(Finder glyph) => glyph == icon
+            ? IconTheme.of(tester.element(glyph)).color
+            : DefaultTextStyle.of(tester.element(glyph)).style.color;
+        final restColor = glyphColor(label);
+        final bounds = tester.getRect(button);
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        await mouse.addPointer(location: bounds.center);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        void expectFeedback(double scale) {
+          expect(foreground(label), same(foreground(icon)));
+          expect(foreground(label).transform.entry(0, 0), scale);
+          expect(glyphColor(label), isNot(restColor));
+          expect(glyphColor(icon), glyphColor(label));
+          expect(tester.getRect(button), bounds);
+        }
+
+        expectFeedback(1.14);
+        await mouse.down(bounds.center);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 120));
+        expectFeedback(0.94);
+        await mouse.up();
+        await mouse.removePointer();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(foreground(label).transform.entry(0, 0), 1);
+        expect(glyphColor(label), restColor);
+        expect(coverSelections, 1);
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
     );
 
     _detailTestWidgets(
@@ -5309,8 +5445,9 @@ void main() {
           );
           expect(listTileFinder, findsOneWidget);
           final listTile = tester.widget<ListTile>(listTileFinder);
-          expect(listTile.splashColor, isNotNull);
-          expect(listTile.hoverColor, isNotNull);
+          final theme = Theme.of(tester.element(listTileFinder));
+          expect(listTile.splashColor ?? theme.splashColor, theme.splashColor);
+          expect(listTile.hoverColor ?? theme.hoverColor, theme.hoverColor);
 
           await tester.tap(listTileFinder);
           await tester.pump();
@@ -5378,8 +5515,65 @@ void main() {
         final moreButton = find.byKey(
           const ValueKey<String>('work_entry_more_Track 01.mp3'),
         );
-        await tester.tap(moreButton);
-        await tester.pump();
+        final icon = find.descendant(
+          of: moreButton,
+          matching: find.byIcon(Icons.more_vert_rounded),
+        );
+        final ink = find.descendant(
+          of: moreButton,
+          matching: find.byType(InkWell),
+        );
+        final idleColor = IconTheme.of(tester.element(icon)).color;
+        final buttonBounds = tester.getRect(moreButton);
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        await mouse.addPointer(location: buttonBounds.center);
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<InkWell>(ink).overlayColor!.resolve({
+            WidgetState.hovered,
+          }),
+          Colors.transparent,
+        );
+        expect(IconTheme.of(tester.element(icon)).color, isNot(idleColor));
+        await mouse.down(buttonBounds.center);
+        await tester.pumpAndSettle();
+        final pressedInk = tester.widget<InkWell>(ink);
+        expect(pressedInk.splashFactory, NoSplash.splashFactory);
+        expect(
+          pressedInk.overlayColor!.resolve({WidgetState.pressed}),
+          Colors.transparent,
+        );
+        expect(tester.getRect(moreButton), buttonBounds);
+        await mouse.cancel();
+        await mouse.removePointer();
+        await tester.pumpAndSettle();
+
+        await mouse.addPointer(location: buttonBounds.center);
+        await mouse.down(buttonBounds.center);
+        await mouse.up();
+        await tester.pumpAndSettle();
+
+        final play = find.text('Play');
+        final playContext = tester.element(play);
+        expect(Focus.of(playContext).hasFocus, isFalse);
+        final dynamic menuRowMaterial = Material.of(playContext);
+        Iterable<InkFeature> getInkFeatures() =>
+            (menuRowMaterial.debugInkFeatures as Iterable<InkFeature>?) ??
+            const <InkFeature>[];
+        expect(
+          getInkFeatures().whereType<InkHighlight>().map((ink) => ink.color),
+          everyElement(Colors.transparent),
+        );
+        await mouse.moveTo(tester.getCenter(play));
+        await tester.pumpAndSettle();
+        expect(
+          getInkFeatures().whereType<InkHighlight>().map((ink) => ink.color),
+          contains(isNot(Colors.transparent)),
+        );
+        await mouse.removePointer();
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(Focus.of(playContext).hasFocus, isTrue);
 
         // While menu is opened, the tile is selected and highlighted
         expect(tester.widget<ListTile>(listTileFinder).selected, isTrue);
@@ -5389,7 +5583,7 @@ void main() {
         );
 
         // Tap the menu action to close menu
-        await tester.tap(find.text('Play'));
+        await tester.tap(play);
         await tester.pumpAndSettle();
 
         // After menu closes, tile is unhighlighted and action is performed

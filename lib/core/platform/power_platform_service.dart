@@ -87,6 +87,7 @@ class PowerPlatformService implements PowerPlatformGateway {
     required int? autoResumeAtMs,
     required List<String> pausedSessionIds,
     required int generation,
+    bool stopAfterCurrentTrack = false,
   }) async {
     await _invokeBestEffort<void>(PowerMethod.syncPlaybackTimerAlarms, {
       'timerMode': timerMode,
@@ -99,6 +100,7 @@ class PowerPlatformService implements PowerPlatformGateway {
       'autoResumeAtMs': autoResumeAtMs,
       'pausedSessionIds': pausedSessionIds,
       'generation': generation,
+      'stopAfterCurrentTrack': stopAfterCurrentTrack,
     });
   }
 

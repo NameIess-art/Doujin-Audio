@@ -54,11 +54,14 @@ class _AudioDetailRow extends StatelessWidget {
                   iconSize: 18,
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
-                  style: IconButton.styleFrom(
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    minimumSize: Size.zero,
+                  style: appIconButtonStyle(
+                    IconButton.styleFrom(
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      minimumSize: Size.zero,
+                      foregroundColor: cs.onSurfaceVariant,
+                    ),
                   ),
-                  icon: Icon(Icons.edit_rounded, color: cs.onSurfaceVariant),
+                  icon: const Icon(Icons.edit_rounded),
                 ),
             ],
           ),
@@ -110,6 +113,7 @@ class _DetailCapsule extends StatelessWidget {
       color: cs.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
+        mouseCursor: WidgetStateMouseCursor.clickable,
         onSecondaryTap: defaultTargetPlatform == TargetPlatform.windows
             ? onCopy
             : null,
@@ -137,12 +141,15 @@ class _DetailCapsule extends StatelessWidget {
               ),
               if (onDelete != null) ...[
                 const SizedBox(width: 4),
-                GestureDetector(
-                  onTap: onDelete,
-                  child: Icon(
-                    Icons.close_rounded,
-                    size: 14,
-                    color: cs.onSurfaceVariant,
+                MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: onDelete,
+                    child: Icon(
+                      Icons.close_rounded,
+                      size: 14,
+                      color: cs.onSurfaceVariant,
+                    ),
                   ),
                 ),
               ],

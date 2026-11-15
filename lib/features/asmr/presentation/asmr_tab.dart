@@ -7,6 +7,10 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import '../../../core/widgets/app_buttons.dart';
+
+import '../../../core/widgets/app_entry_ink_well.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/localization/app_language_provider.dart';
@@ -28,7 +32,6 @@ import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/widgets/app_feedback.dart';
-import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_search_page.dart';
@@ -678,6 +681,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
 
   void _selectCategory(AsmrCategoryType category) {
     if (_selectedCategory == category) return;
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     stopScroll();
     if (_isSelectionMode) {
       setState(() {
@@ -1087,9 +1091,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                                     child: IconButton(
                                       key: const ValueKey<String>(
                                         'asmr_search_button',
-                                      ),
-                                      style: AppEntryInkWell.entryButtonStyle(
-                                        context,
                                       ),
                                       onPressed: _openSearchPage,
                                       icon: const Icon(Icons.search_rounded),

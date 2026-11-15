@@ -84,6 +84,7 @@ class LibrarySelectionIndicator extends StatelessWidget {
         child: AppDeferredFade(
           visible: isSelected,
           showDelay: kAppSelectionDuration,
+          beginScale: 0.86,
           fadeInDuration: kAppMotionFast,
           child: Container(
             key: normalizedPath == null
@@ -716,7 +717,7 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
     final result = isRootFolder
         ? swipeCard
         : InkWell(
-            splashFactory: InkSplash.splashFactory,
+          mouseCursor: WidgetStateMouseCursor.clickable,
             highlightColor: Colors.transparent,
             canRequestFocus: widget.isSelectionMode,
             onLongPress: widget.onLongPress,

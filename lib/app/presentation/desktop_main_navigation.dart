@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
+import '../../core/widgets/app_buttons.dart';
 import '../../core/widgets/app_transitions.dart';
+import '../../core/widgets/sliding_selection_indicator.dart';
 import '../localization/app_language_provider.dart';
 import '../theme/app_styles.dart';
 import '../theme/app_design_tokens.dart';
@@ -56,7 +58,11 @@ class DesktopMainNavigation extends StatefulWidget {
 class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
   final Object _motionInteraction = Object();
   final GlobalKey _menuToggleKey = GlobalKey();
-  final _hoveredDestination = ValueNotifier<MainDestinationType?>(null);
+  final GlobalKey _railPaintKey = GlobalKey();
+  final _railScroll = ValueNotifier(0.0);
+  final _destinationStates = {
+    for (final type in MainDestinationType.values) type: WidgetStatesController(),
+  };
   bool _motionActive = false;
   bool _tickerModeEnabled = true;
   bool _disableAnimations = false;
@@ -81,6 +87,12 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
       _motionActive = !_disableAnimations;
       _syncMotionInteraction();
     }
+    final remaining = widget.destinations.map((item) => item.type).toSet();
+    for (final item in oldWidget.destinations) {
+      if (!remaining.contains(item.type)) {
+        _clearDestinationFeedback(_destinationStates[item.type]!);
+      }
+    }
   }
 
   @override
@@ -94,6 +106,9 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
     if (_disableAnimations || _landscapeLayout != landscape) {
       _motionActive = false;
     }
+    if (_landscapeLayout == true && !landscape) {
+      _destinationStates.values.forEach(_clearDestinationFeedback);
+    }
     _landscapeLayout = landscape;
     _syncMotionInteraction();
   }
@@ -101,8 +116,16 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
   @override
   void dispose() {
     UiInteractionCoordinator.instance.cancelInteraction(_motionInteraction);
-    _hoveredDestination.dispose();
+    _railScroll.dispose();
+    for (final states in _destinationStates.values) {
+      states.dispose();
+    }
     super.dispose();
+  }
+
+  void _clearDestinationFeedback(WidgetStatesController states) {
+    states.update(WidgetState.hovered, false);
+    states.update(WidgetState.pressed, false);
   }
 
   @override
@@ -123,7 +146,6 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
     ) = widget;
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
     final isWindows = theme.platform == TargetPlatform.windows;
     final isLandscapeLayout =
         defaultTargetPlatform == TargetPlatform.windows ||
@@ -151,9 +173,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
     final sidebarColor = isLandscapeLayout
         ? landscapeNavigationBackground(cs)
         : cs.surfaceContainerLow;
-    final indicatorColor = isDark
-        ? cs.primary.withValues(alpha: 0.15)
-        : cs.primaryContainer.withValues(alpha: 0.6);
+    final indicatorColor = SlidingSelectionIndicator.fill(cs.primary);
 
     final sidebar = AnimatedContainer(
       key: ValueKey<bool>(isLandscapeLayout),
@@ -209,19 +229,104 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                                   (landscapeWidth - railMinWidth) /
                                   (railMinExtendedWidth - railMinWidth))
                               .clamp(0.0, 1.0);
+                    Widget withIndicator(Widget rail) {
+                      if (landscapeWidth == null) return rail;
+                      return NotificationListener<ScrollNotification>(
+                        key: const ValueKey('desktop_navigation_indicator'),
+                        onNotification: (notification) {
+                          _railScroll.value = notification.metrics.pixels;
+                          return false;
+                        },
+                        child: SlidingSelectionIndicator(
+                          index: activeIndex,
+                          layoutKey: Object.hashAll(
+                            destinations.map((item) => item.type),
+                          ),
+                          child: rail,
+                          builder: (context, position, child) => CustomPaint(
+                            key: _railPaintKey,
+                            painter: SlidingSelectionPainter(
+                              containerKey: _railPaintKey,
+                              position: position,
+                              width: landscapeWidth - railMinWidth + 48,
+                              accentColor: cs.primary,
+                              scrollOffset: _railScroll,
+                              slots: [
+                                for (final destination in destinations)
+                                  menuIconKeys[destination.type.index],
+                              ],
+                            ),
+                            child: child,
+                          ),
+                        ),
+                      );
+                    }
+
+                    Widget buildDestinationFollower(
+                      int index,
+                      double collapse,
+                    ) {
+                      final item = destinations[index];
+                      final selected = index == activeIndex;
+                      final glyph = selected ? item.selectedIcon : item.icon;
+                      final iconOffset = isLandscapeLayout
+                          ? Offset(-(railMinWidth - 48) / 2, -8)
+                          : Offset.zero;
+                      final offset = selected
+                          ? iconOffset
+                          : collapseOffset(
+                                      item.type,
+                                      destinations[activeIndex].type,
+                                    ) *
+                                    collapse +
+                                iconOffset;
+                      return Positioned(
+                        key: ValueKey(item.type),
+                        left: 0,
+                        top: 0,
+                        child: CompositedTransformFollower(
+                          link: menuIconLinks[item.type.index],
+                          showWhenUnlinked: false,
+                          offset: offset,
+                          child: Opacity(
+                            opacity: selected ? 1 : 1 - collapse,
+                            child: _buildDestinationIcon(
+                              landscapeWidth: landscapeWidth,
+                              railMinWidth: railMinWidth,
+                              onPressed: () => onSwitchPage(index),
+                              colorScheme: cs,
+                              pointerStates: _destinationStates[item.type]!,
+                              foregroundColor: selected
+                                  ? cs.primary
+                                  : cs.onSurfaceVariant,
+                              icon: Icon(
+                                glyph,
+                                key: ValueKey<String>(
+                                  'main_destination_${item.navigationKey}',
+                                ),
+                                color: landscapeWidth == null
+                                    ? (selected
+                                          ? cs.primary
+                                          : cs.onSurfaceVariant)
+                                    : null,
+                                size: AppDesignTokens.opticalIconSize(
+                                  glyph,
+                                  selected ? 22 : 21,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+
                     return Theme(
                       data: Theme.of(context).copyWith(
                         splashFactory: NoSplash.splashFactory,
-                        highlightColor: isLandscapeLayout
-                            ? Colors.transparent
-                            : Theme.of(context).highlightColor,
-                        // NavigationRail derives its ink colors directly from
-                        // primary; landscape pointer feedback belongs to buttons.
-                        colorScheme: isLandscapeLayout
-                            ? cs.copyWith(
-                                primary: cs.primary.withValues(alpha: 0),
-                              )
-                            : cs,
+                        highlightColor: Colors.transparent,
+                        // The rail uses primary for its pointer ink. The
+                        // theme's focus color still applies to keyboard focus.
+                        colorScheme: cs.copyWith(primary: Colors.transparent),
                         navigationRailTheme: Theme.of(context)
                             .navigationRailTheme
                             .copyWith(
@@ -231,207 +336,222 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                       ),
                       child: Stack(
                         children: [
-                          NavigationRail(
-                            scrollable: isLandscapeLayout,
-                            // Its internal controllers have no duration option.
-                            // Recreate only reduced motion states at their final
-                            // layout so they stay aligned with the snapped shell.
-                            key: _disableAnimations
-                                ? ValueKey((isMenuCollapsed, activeIndex))
-                                : null,
-                            backgroundColor: Colors.transparent,
-                            selectedIndex: activeIndex,
-                            onDestinationSelected: (index) {
-                              final iconKey =
-                                  menuIconKeys[destinations[index].type.index];
-                              final iconContext = iconKey.currentContext;
-                              final restoreFocus =
-                                  _disableAnimations &&
-                                  iconContext != null &&
-                                  Focus.of(iconContext).hasPrimaryFocus;
-                              onSwitchPage(index);
-                              if (restoreFocus) {
-                                // Recreating the rail disposes its internal focus nodes.
-                                WidgetsBinding.instance.addPostFrameCallback((
-                                  _,
-                                ) {
-                                  final nextContext = iconKey.currentContext;
-                                  if (mounted && nextContext != null) {
-                                    Focus.of(nextContext).requestFocus();
-                                  }
-                                });
-                              }
-                            },
-                            extended: isLandscapeLayout || !isMenuCollapsed,
-                            minWidth: railMinWidth,
-                            minExtendedWidth: railMinExtendedWidth,
-                            useIndicator: !isLandscapeLayout,
-                            groupAlignment: -1.0,
-                            leading: isLandscapeLayout
-                                ? Container(
-                                    alignment: Alignment.centerLeft,
-                                    child: SizedBox(
-                                      width: railMinWidth,
-                                      child: Center(
-                                        child: IconButton(
-                                          key: _menuToggleKey,
-                                          style: IconButton.styleFrom(
-                                            shape: const CircleBorder(),
-                                            fixedSize: const Size.square(48),
-                                            overlayColor: cs.primary,
-                                          ),
-                                          icon: Icon(
-                                            isMenuCollapsed
-                                                ? Icons.menu_rounded
-                                                : Icons.menu_open_rounded,
-                                          ),
-                                          onPressed: onToggleMenu,
-                                        ),
-                                      ),
-                                    ),
-                                  )
-                                : Container(
-                                    alignment: isMenuCollapsed
-                                        ? Alignment.center
-                                        : Alignment.centerLeft,
-                                    child: Padding(
-                                      padding: EdgeInsets.only(
-                                        left: isMenuCollapsed ? 0 : 6,
-                                      ),
-                                      child: isMenuCollapsed
-                                          ? IconButton(
+                          withIndicator(
+                            NavigationRail(
+                              scrollable: isLandscapeLayout,
+                              // Its internal controllers have no duration option.
+                              // Recreate only reduced motion states at their final
+                              // layout so they stay aligned with the snapped shell.
+                              key: _disableAnimations
+                                  ? ValueKey((isMenuCollapsed, activeIndex))
+                                  : null,
+                              backgroundColor: Colors.transparent,
+                              selectedIndex: activeIndex,
+                              onDestinationSelected: (index) {
+                                final iconKey =
+                                    menuIconKeys[destinations[index]
+                                        .type
+                                        .index];
+                                final iconContext = iconKey.currentContext;
+                                final restoreFocus =
+                                    _disableAnimations &&
+                                    iconContext != null &&
+                                    Focus.of(iconContext).hasPrimaryFocus;
+                                onSwitchPage(index);
+                                if (restoreFocus) {
+                                  // Recreating the rail disposes its internal focus nodes.
+                                  WidgetsBinding.instance.addPostFrameCallback((
+                                    _,
+                                  ) {
+                                    final nextContext = iconKey.currentContext;
+                                    if (mounted && nextContext != null) {
+                                      Focus.of(nextContext).requestFocus();
+                                    }
+                                  });
+                                }
+                              },
+                              extended: isLandscapeLayout || !isMenuCollapsed,
+                              minWidth: railMinWidth,
+                              minExtendedWidth: railMinExtendedWidth,
+                              useIndicator: !isLandscapeLayout,
+                              groupAlignment: -1.0,
+                              leading: isLandscapeLayout
+                                  ? Container(
+                                      alignment: Alignment.centerLeft,
+                                      child: SizedBox(
+                                        width: railMinWidth,
+                                        child: Center(
+                                          child: Theme(
+                                            data: Theme.of(
+                                              context,
+                                            ).copyWith(colorScheme: cs),
+                                            child: IconButton(
                                               key: _menuToggleKey,
-                                              style: IconButton.styleFrom(
-                                                shape: const CircleBorder(),
+                                              style: appIconButtonStyle(
+                                                IconButton.styleFrom(
+                                                  shape: const CircleBorder(),
+                                                  fixedSize: const Size.square(
+                                                    48,
+                                                  ),
+                                                ),
                                               ),
-                                              icon: const Icon(
-                                                Icons.menu_rounded,
+                                              icon: Icon(
+                                                isMenuCollapsed
+                                                    ? Icons.menu_rounded
+                                                    : Icons.menu_open_rounded,
                                               ),
                                               onPressed: onToggleMenu,
-                                            )
-                                          : Row(
-                                              children: [
-                                                Container(
-                                                  width: 38,
-                                                  height: 38,
-                                                  decoration: BoxDecoration(
-                                                    color: cs.primaryContainer,
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          AppRadius.medium,
-                                                        ),
-                                                  ),
-                                                  child: Icon(
-                                                    Icons.graphic_eq_rounded,
-                                                    color:
-                                                        cs.onPrimaryContainer,
-                                                  ),
-                                                ),
-                                                const SizedBox(
-                                                  width: AppSpacing.sm,
-                                                ),
-                                                Expanded(
-                                                  child: Text(
-                                                    i18n.tr('asmr_player'),
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style: Theme.of(context)
-                                                        .textTheme
-                                                        .titleMedium
-                                                        ?.copyWith(
-                                                          fontWeight:
-                                                              FontWeight.w800,
-                                                        ),
-                                                  ),
-                                                ),
-                                                IconButton(
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                  : Container(
+                                      alignment: isMenuCollapsed
+                                          ? Alignment.center
+                                          : Alignment.centerLeft,
+                                      child: Padding(
+                                        padding: EdgeInsets.only(
+                                          left: isMenuCollapsed ? 0 : 6,
+                                        ),
+                                        child: isMenuCollapsed
+                                            ? Theme(
+                                                data: Theme.of(
+                                                  context,
+                                                ).copyWith(colorScheme: cs),
+                                                child: IconButton(
                                                   key: _menuToggleKey,
-                                                  style: IconButton.styleFrom(
-                                                    shape: const CircleBorder(),
+                                                  style: appIconButtonStyle(
+                                                    IconButton.styleFrom(
+                                                      shape:
+                                                          const CircleBorder(),
+                                                    ),
                                                   ),
                                                   icon: const Icon(
-                                                    Icons.menu_open_rounded,
+                                                    Icons.menu_rounded,
                                                   ),
                                                   onPressed: onToggleMenu,
                                                 ),
-                                              ],
-                                            ),
+                                              )
+                                            : Row(
+                                                children: [
+                                                  Container(
+                                                    width: 38,
+                                                    height: 38,
+                                                    decoration: BoxDecoration(
+                                                      color:
+                                                          cs.primaryContainer,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            AppRadius.medium,
+                                                          ),
+                                                    ),
+                                                    child: Icon(
+                                                      Icons.graphic_eq_rounded,
+                                                      color:
+                                                          cs.onPrimaryContainer,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(
+                                                    width: AppSpacing.sm,
+                                                  ),
+                                                  Expanded(
+                                                    child: Text(
+                                                      i18n.tr('asmr_player'),
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: Theme.of(context)
+                                                          .textTheme
+                                                          .titleMedium
+                                                          ?.copyWith(
+                                                            fontWeight:
+                                                                FontWeight.w800,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                  Theme(
+                                                    data: Theme.of(
+                                                      context,
+                                                    ).copyWith(colorScheme: cs),
+                                                    child: IconButton(
+                                                      key: _menuToggleKey,
+                                                      style: appIconButtonStyle(
+                                                        IconButton.styleFrom(
+                                                          shape:
+                                                              const CircleBorder(),
+                                                        ),
+                                                      ),
+                                                      icon: const Icon(
+                                                        Icons.menu_open_rounded,
+                                                      ),
+                                                      onPressed: onToggleMenu,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                      ),
                                     ),
-                                  ),
-                            destinations: destinations.asMap().entries.map((
-                              entry,
-                            ) {
-                              final index = entry.key;
-                              final item = entry.value;
-                              final isSelected = activeIndex == index;
-                              final label = i18n.tr(item.labelKey);
-                              final labelWidget = Text(
-                                label,
-                                style: isSelected
+                              destinations: destinations.asMap().entries.map((
+                                entry,
+                              ) {
+                                final index = entry.key;
+                                final item = entry.value;
+                                final isSelected = activeIndex == index;
+                                final label = i18n.tr(item.labelKey);
+                                final labelStyle = isSelected
                                     ? TextStyle(
                                         color: cs.primary,
                                         fontWeight: isWindows
                                             ? FontWeight.w600
                                             : FontWeight.w700,
                                       )
-                                    : null,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              );
+                                    : null;
 
-                              Widget iconTarget(bool selected) =>
-                                  CompositedTransformTarget(
-                                    key: menuIconKeys[item.type.index],
-                                    link: menuIconLinks[item.type.index],
-                                    child: SizedBox.square(
-                                      dimension: isLandscapeLayout
-                                          ? 48
-                                          : (selected ? 22 : 21),
-                                      child: landscapeWidth == null
-                                          ? null
-                                          : _buildDestinationHighlight(
-                                              item,
-                                              width:
-                                                  landscapeWidth -
-                                                  railMinWidth +
-                                                  48,
-                                              selected: selected,
-                                              selectedColor: indicatorColor,
-                                              hoverColor: cs.primary.withValues(
-                                                alpha: 0.08,
+                                Widget iconTarget(bool selected) =>
+                                    CompositedTransformTarget(
+                                      key: menuIconKeys[item.type.index],
+                                      link: menuIconLinks[item.type.index],
+                                      child: SizedBox.square(
+                                        dimension: isLandscapeLayout
+                                            ? 48
+                                            : (selected ? 22 : 21),
+                                      ),
+                                    );
+                                return NavigationRailDestination(
+                                  icon: iconTarget(false),
+                                  selectedIcon: iconTarget(true),
+                                  label: landscapeWidth != null
+                                      ? SizedBox(
+                                          height: 48,
+                                          child: Align(
+                                            alignment: AlignmentDirectional
+                                                .centerStart,
+                                            widthFactor: 1,
+                                            child: Opacity(
+                                              alwaysIncludeSemantics: true,
+                                              opacity: labelOpacity,
+                                              child: AppButtonText(
+                                                states:
+                                                    _destinationStates[item.type]!,
+                                                label: label,
+                                                style: labelStyle,
+                                                accentColor: cs.primary,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
                                               ),
                                             ),
-                                    ),
-                                  );
-                              final styledLabel =
-                                  defaultTargetPlatform ==
-                                      TargetPlatform.windows
-                                  ? _WindowsNavigationLabel(
-                                      hoverColor: cs.primary,
-                                      child: labelWidget,
-                                    )
-                                  : labelWidget;
-                              return NavigationRailDestination(
-                                icon: iconTarget(false),
-                                selectedIcon: iconTarget(true),
-                                label: landscapeWidth != null
-                                    ? SizedBox(
-                                        height: 48,
-                                        child: Align(
-                                          alignment:
-                                              AlignmentDirectional.centerStart,
-                                          widthFactor: 1,
-                                          child: Opacity(
-                                            alwaysIncludeSemantics: true,
-                                            opacity: labelOpacity,
-                                            child: styledLabel,
                                           ),
+                                        )
+                                      : Text(
+                                          label,
+                                          style: labelStyle,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
-                                      )
-                                    : styledLabel,
-                              );
-                            }).toList(),
+                                );
+                              }).toList(),
+                            ),
                           ),
                           Positioned.fill(
                             child: IgnorePointer(
@@ -450,101 +570,19 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                                     curve: kAppFadeCurve,
                                     builder: (context, collapse, _) => Stack(
                                       children: [
-                                        for (final entry
-                                            in destinations.asMap().entries)
-                                          if (entry.key != activeIndex)
-                                            Positioned(
-                                              left: 0,
-                                              top: 0,
-                                              child: CompositedTransformFollower(
-                                                link:
-                                                    menuIconLinks[entry
-                                                        .value
-                                                        .type
-                                                        .index],
-                                                showWhenUnlinked: false,
-                                                offset:
-                                                    collapseOffset(
-                                                          entry.value.type,
-                                                          destinations[activeIndex]
-                                                              .type,
-                                                        ) *
-                                                        collapse +
-                                                    (isLandscapeLayout
-                                                        ? Offset(
-                                                            -(railMinWidth -
-                                                                    48) /
-                                                                2,
-                                                            -8,
-                                                          )
-                                                        : Offset.zero),
-                                                child: Opacity(
-                                                  opacity: 1 - collapse,
-                                                  child: _buildDestinationIcon(
-                                                    landscapeWidth:
-                                                        landscapeWidth,
-                                                    destination:
-                                                        entry.value.type,
-                                                    railMinWidth: railMinWidth,
-                                                    onPressed: () =>
-                                                        onSwitchPage(entry.key),
-                                                    icon: Icon(
-                                                      entry.value.icon,
-                                                      key: ValueKey<String>(
-                                                        'main_destination_${entry.value.navigationKey}',
-                                                      ),
-                                                      color:
-                                                          cs.onSurfaceVariant,
-                                                      size:
-                                                          AppDesignTokens.opticalIconSize(
-                                                            entry.value.icon,
-                                                            21,
-                                                          ),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                        Positioned(
-                                          left: 0,
-                                          top: 0,
-                                          child: CompositedTransformFollower(
-                                            link:
-                                                menuIconLinks[destinations[activeIndex]
-                                                    .type
-                                                    .index],
-                                            showWhenUnlinked: false,
-                                            offset: isLandscapeLayout
-                                                ? Offset(
-                                                    -(railMinWidth - 48) / 2,
-                                                    -8,
-                                                  )
-                                                : Offset.zero,
-                                            child: _buildDestinationIcon(
-                                              landscapeWidth: landscapeWidth,
-                                              destination:
-                                                  destinations[activeIndex]
-                                                      .type,
-                                              railMinWidth: railMinWidth,
-                                              onPressed: () =>
-                                                  onSwitchPage(activeIndex),
-                                              icon: Icon(
-                                                destinations[activeIndex]
-                                                    .selectedIcon,
-                                                key: ValueKey<String>(
-                                                  'main_destination_${destinations[activeIndex].navigationKey}',
-                                                ),
-                                                color: cs.primary,
-                                                size:
-                                                    AppDesignTokens.opticalIconSize(
-                                                      destinations[activeIndex]
-                                                          .selectedIcon,
-                                                      22,
-                                                    ),
-                                              ),
-                                            ),
+                                        for (final index in [
+                                          for (
+                                            var i = 0;
+                                            i < destinations.length;
+                                            i++
+                                          )
+                                            if (i != activeIndex) i,
+                                          activeIndex,
+                                        ])
+                                          buildDestinationFollower(
+                                            index,
+                                            collapse,
                                           ),
-                                        ),
                                       ],
                                     ),
                                   ),
@@ -673,90 +711,49 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
     _syncMotionInteraction();
   }
 
-  Widget _buildDestinationHighlight(
-    MainDestination destination, {
-    required double width,
-    required bool selected,
-    required Color selectedColor,
-    required Color hoverColor,
-  }) {
-    Widget background(Color color) => DecoratedBox(
-      decoration: ShapeDecoration(color: color, shape: const StadiumBorder()),
-    );
-    // The icon slot stays square. Paint from its left edge under the label as
-    // the rail widens, leaving both the icon and label above the highlight.
-    return OverflowBox(
-      alignment: Alignment.centerLeft,
-      minWidth: width,
-      maxWidth: width,
-      child: ValueListenableBuilder<MainDestinationType?>(
-        valueListenable: _hoveredDestination,
-        child: selected
-            ? TweenAnimationBuilder<double>(
-                key: ValueKey<String>(
-                  'main_destination_indicator_${destination.navigationKey}',
-                ),
-                tween: Tween(begin: 0, end: 1),
-                duration: _disableAnimations ? Duration.zero : kAppMotionSlow,
-                curve: Curves.easeOutCubic,
-                builder: (context, scale, child) => Transform.scale(
-                  alignment: Alignment(48 / width - 1, 0),
-                  scale: scale,
-                  child: child,
-                ),
-                child: background(selectedColor),
-              )
-            : null,
-        builder: (context, hovered, indicator) => Stack(
-          fit: StackFit.expand,
-          children: [
-            ?indicator,
-            if (hovered == destination.type) background(hoverColor),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildDestinationIcon({
     required double? landscapeWidth,
-    required MainDestinationType destination,
     required double railMinWidth,
+    required ColorScheme colorScheme,
+    required WidgetStatesController pointerStates,
+    required Color foregroundColor,
     required Widget icon,
     required VoidCallback onPressed,
   }) {
     if (landscapeWidth == null) return icon;
-    return MouseRegion(
-      hitTestBehavior: HitTestBehavior.translucent,
-      onEnter: (_) => _hoveredDestination.value = destination,
-      onExit: (_) {
-        if (_hoveredDestination.value == destination) {
-          _hoveredDestination.value = null;
-        }
-      },
-      child: SizedBox(
-        width: landscapeWidth,
-        height: 64,
-        child: Align(
-          alignment: Alignment.centerLeft,
-          // The rail handles label taps and keyboard actions. Keep the icon
-          // column's existing 48px button and consume its surrounding padding.
-          child: Listener(
-            behavior: HitTestBehavior.opaque,
-            child: SizedBox(
-              width: railMinWidth,
-              height: 64,
-              child: Center(
-                child: SizedBox.square(
-                  dimension: 48,
-                  child: IconButton(
-                    style: IconButton.styleFrom(
-                      fixedSize: const Size.square(48),
-                      shape: const CircleBorder(),
-                      overlayColor: Colors.transparent,
+    return Theme(
+      data: Theme.of(context).copyWith(colorScheme: colorScheme),
+      child: AppButtonPointerRegion(
+        statesController: pointerStates,
+        cursor: SystemMouseCursors.click,
+        builder: (context, states) => SizedBox(
+          width: landscapeWidth,
+          height: 64,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            // The rail handles label taps and keyboard actions. Keep the icon
+            // column's existing 48px button and consume its surrounding padding.
+            child: MouseRegion(
+              cursor: SystemMouseCursors.basic,
+              hitTestBehavior: HitTestBehavior.opaque,
+              child: SizedBox(
+                width: railMinWidth,
+                height: 64,
+                child: Center(
+                  child: SizedBox.square(
+                    dimension: 48,
+                    child: IconButton(
+                      style: appIconButtonStyle(
+                        IconButton.styleFrom(
+                          fixedSize: const Size.square(48),
+                          shape: const CircleBorder(),
+                          foregroundColor: foregroundColor,
+                        ),
+                        states,
+                      ),
+                      onPressed: onPressed,
+                      icon: icon,
                     ),
-                    onPressed: onPressed,
-                    icon: icon,
                   ),
                 ),
               ),
@@ -766,32 +763,4 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
       ),
     );
   }
-}
-
-class _WindowsNavigationLabel extends StatefulWidget {
-  const _WindowsNavigationLabel({
-    required this.hoverColor,
-    required this.child,
-  });
-
-  final Color hoverColor;
-  final Widget child;
-
-  @override
-  State<_WindowsNavigationLabel> createState() =>
-      _WindowsNavigationLabelState();
-}
-
-class _WindowsNavigationLabelState extends State<_WindowsNavigationLabel> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) => MouseRegion(
-    onEnter: (_) => setState(() => _hovered = true),
-    onExit: (_) => setState(() => _hovered = false),
-    child: DefaultTextStyle.merge(
-      style: TextStyle(color: _hovered ? widget.hoverColor : null),
-      child: widget.child,
-    ),
-  );
 }

@@ -54,7 +54,11 @@ extension _TimerTabDetailBody on _TimerTabState {
                         title: showAutoResumeCountdown
                             ? i18n.tr('waiting_for_auto_resume')
                             : timerExpired
-                            ? i18n.tr('countdown_finished')
+                            ? i18n.tr(
+                                timerState.stopAfterCurrentTrack
+                                    ? 'waiting_for_track_end'
+                                    : 'countdown_finished',
+                              )
                             : timerWaitingTrigger
                             ? i18n.tr('waiting_to_start_countdown')
                             : i18n.tr('counting_down'),
@@ -145,6 +149,7 @@ extension _TimerTabDetailBody on _TimerTabState {
                           ),
                           clipBehavior: Clip.antiAlias,
                           child: InkWell(
+                            mouseCursor: WidgetStateMouseCursor.clickable,
                             onTap: pickAutoResumeTime,
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
@@ -261,7 +266,8 @@ extension _TimerTabDetailBody on _TimerTabState {
             ),
             const SizedBox(height: 12),
             if (timerConfigured)
-              OutlinedButton.icon(
+              AppLabelledButton(
+                OutlinedButton.icon,
                 onPressed: () {
                   AppInteractionFeedback.trigger(
                     AppInteractionFeedbackType.destructive,

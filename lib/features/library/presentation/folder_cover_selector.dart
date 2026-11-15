@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../../core/widgets/app_buttons.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -321,6 +322,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
       color: Colors.black.withValues(alpha: isCurrent ? 0.42 : 0.62),
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
+        mouseCursor: WidgetStateMouseCursor.clickable,
         borderRadius: BorderRadius.circular(999),
         onTap: isCurrent || _saving ? null : _commitSelection,
         child: SizedBox(
@@ -580,12 +582,14 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
           const SizedBox(height: 12),
           Center(
             child: _currentCoverPath == _images[_currentIndex]
-                ? TextButton.icon(
+                ? AppLabelledButton(
+                    TextButton.icon,
                     onPressed: null,
                     icon: const Icon(Icons.check_circle_rounded),
                     label: Text(i18n.tr('audio_detail_current_cover')),
                   )
-                : FilledButton.icon(
+                : AppLabelledButton(
+                    FilledButton.icon,
                     onPressed: _saving ? null : _commitSelection,
                     icon: const Icon(Icons.image_rounded),
                     label: Text(i18n.tr('audio_detail_set_cover')),

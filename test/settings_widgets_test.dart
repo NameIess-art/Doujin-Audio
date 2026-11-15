@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -967,7 +968,8 @@ void main() {
     (tester) async {
       final harness = AppRuntimeWidgetTestFixture();
       addTearDown(harness.dispose);
-      final original = harness.settingsRepository.asmrDownloadFolderNameFields.toList();
+      final original = harness.settingsRepository.asmrDownloadFolderNameFields
+          .toList();
       await tester.pumpWidget(harness.build(const SettingsTab()));
       await tester.pumpAndSettle();
       final i18n = harness.languageProvider;
@@ -1128,7 +1130,9 @@ void main() {
         for (final element in settingsCards.evaluate()) {
           final settingsCard = find.byWidget(element.widget);
           final card = tester.widget<Card>(
-            find.descendant(of: settingsCard, matching: find.byType(Card)).first,
+            find
+                .descendant(of: settingsCard, matching: find.byType(Card))
+                .first,
           );
           expect(card.color, Colors.transparent);
           expect(card.surfaceTintColor, Colors.transparent);
@@ -1139,10 +1143,12 @@ void main() {
           );
           for (final tileElement in tiles.evaluate()) {
             final ink = tester.widget<InkWell>(
-              find.descendant(
-                of: find.byWidget(tileElement.widget),
-                matching: find.byType(InkWell),
-              ).first,
+              find
+                  .descendant(
+                    of: find.byWidget(tileElement.widget),
+                    matching: find.byType(InkWell),
+                  )
+                  .first,
             );
             expect(ink.customBorder, isA<RoundedRectangleBorder>());
             expect(
@@ -1397,6 +1403,62 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'subtitle font uses a full-width labeled field and updates the preview',
+    (tester) async {
+      final harness = AppRuntimeWidgetTestFixture();
+      addTearDown(harness.dispose);
+      await tester.pumpWidget(
+        harness.build(const SubtitleWindowSettingsSheet()),
+      );
+      await tester.pumpAndSettle();
+
+      final field = find.byType(UnifiedDropdownButtonFormField<String>);
+      final dropdown = tester.widget<UnifiedDropdownButtonFormField<String>>(
+        field,
+      );
+      expect(dropdown.expandWidth, isTrue);
+      expect(
+        dropdown.decoration.labelText,
+        harness.languageProvider.tr('font_setting'),
+      );
+      expect(
+        (dropdown.decoration.border! as OutlineInputBorder).borderRadius,
+        BorderRadius.circular(16),
+      );
+      expect(
+        dropdown.decoration.contentPadding,
+        const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      );
+      final label = find.text(harness.languageProvider.tr('system_default'));
+      await tester.tap(find.descendant(of: field, matching: label));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('monospace'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(of: field, matching: find.text('monospace')),
+        findsOneWidget,
+      );
+      final preview = tester.widget<Text>(
+        find.text(harness.languageProvider.tr('subtitle_preview_sample')),
+      );
+      expect(preview.style?.fontFamily, 'monospace');
+      final container = ProviderScope.containerOf(
+        tester.element(field),
+        listen: false,
+      );
+      final notifier = container.read(subtitleSettingsProvider.notifier);
+      await notifier.flushAppearancePersistence();
+      final preferences = await SharedPreferences.getInstance();
+      expect(preferences.getString('subtitle_font_family'), 'monospace');
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   for (final finish in ['release', 'close', 'background']) {
     testWidgets(
@@ -2063,46 +2125,50 @@ void main() {
     },
   );
 
-  testWidgets('playback settings right-align the trailing dropdowns', (tester) async {
-    final harness = AppRuntimeWidgetTestFixture();
-    addTearDown(harness.dispose);
-    await tester.pumpWidget(harness.build(const SettingsTab()));
-    await tester.pump();
-    final i18n = harness.languageProvider;
-    await tester.tap(find.text(i18n.tr('section_playback')));
-    await tester.pumpAndSettle();
+  testWidgets(
+    'playback settings right-align the trailing dropdowns',
+    (tester) async {
+      final harness = AppRuntimeWidgetTestFixture();
+      addTearDown(harness.dispose);
+      await tester.pumpWidget(harness.build(const SettingsTab()));
+      await tester.pump();
+      final i18n = harness.languageProvider;
+      await tester.tap(find.text(i18n.tr('section_playback')));
+      await tester.pumpAndSettle();
 
-    expect(find.text('多线程播放'), findsNothing);
-    final keys = [
-      if (defaultTargetPlatform == TargetPlatform.android)
-        'sleep_mode_auto_trigger',
-      'audio_device_disconnect_behavior',
-      if (defaultTargetPlatform == TargetPlatform.android) ...[
-        'audio_focus_strategy',
-        'transient_audio_focus_loss_behavior',
-      ],
-      'interruption_resume_behavior',
-    ];
-    for (final key in keys) {
-      final tile = find.widgetWithText(ListTile, i18n.tr(key));
-      await tester.scrollUntilVisible(tile, 200);
-      final dropdown = tester.widget<UnifiedDropdownButton<dynamic>>(
-        find.descendant(
-          of: tile,
-          matching: find.byWidgetPredicate(
-            (widget) => widget is UnifiedDropdownButton<dynamic>,
+      expect(find.text('多线程播放'), findsNothing);
+      final keys = [
+        if (defaultTargetPlatform == TargetPlatform.android)
+          'sleep_mode_auto_trigger',
+        'audio_device_disconnect_behavior',
+        if (defaultTargetPlatform == TargetPlatform.android) ...[
+          'audio_focus_strategy',
+          'transient_audio_focus_loss_behavior',
+        ],
+        'interruption_resume_behavior',
+      ];
+      for (final key in keys) {
+        final tile = find.widgetWithText(ListTile, i18n.tr(key));
+        await tester.scrollUntilVisible(tile, 200);
+        final dropdown = tester.widget<UnifiedDropdownButton<dynamic>>(
+          find.descendant(
+            of: tile,
+            matching: find.byWidgetPredicate(
+              (widget) => widget is UnifiedDropdownButton<dynamic>,
+            ),
           ),
-        ),
-      );
-      expect(dropdown.alignment, Alignment.centerRight, reason: key);
-      for (final item in dropdown.items) {
-        expect((item.child as Text).textAlign, TextAlign.right, reason: key);
+        );
+        expect(dropdown.alignment, Alignment.centerRight, reason: key);
+        for (final item in dropdown.items) {
+          expect((item.child as Text).textAlign, TextAlign.right, reason: key);
+        }
       }
-    }
-  }, variant: const TargetPlatformVariant({
-    TargetPlatform.android,
-    TargetPlatform.windows,
-  }));
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets('playback setting reports a rejected save', (tester) async {
     final harness = AppRuntimeWidgetTestFixture(
@@ -2281,6 +2347,62 @@ void main() {
     await download;
     await tester.pump();
   });
+
+  testWidgets(
+    'Windows settings subpage back button avoids hover disc and dropdowns highlight on hover',
+    (tester) async {
+      final harness = AppRuntimeWidgetTestFixture();
+      addTearDown(harness.dispose);
+      await tester.pumpWidget(harness.build(const SettingsTab()));
+      await tester.pump();
+
+      final i18n = harness.languageProvider;
+      await tester.tap(find.text(i18n.tr('section_common')));
+      await tester.pumpAndSettle();
+
+      final backButtonFinder = find.descendant(
+        of: find.byType(TopPageHeader),
+        matching: find.byType(IconButton),
+      );
+      expect(backButtonFinder, findsOneWidget);
+      expect(tester.widget<IconButton>(backButtonFinder).color, isNull);
+
+      final backIconFinder = find.byIcon(Icons.arrow_back_rounded);
+      final backTheme = Theme.of(tester.element(backIconFinder));
+      expect(backTheme.hoverColor, Colors.transparent);
+      expect(backTheme.highlightColor, Colors.transparent);
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: tester.getCenter(backButtonFinder));
+      await tester.pumpAndSettle();
+      expect(
+        IconTheme.of(tester.element(backIconFinder)).color,
+        backTheme.colorScheme.primary,
+      );
+
+      final firstDropdown = find
+          .byWidgetPredicate((widget) => widget is UnifiedDropdownButton)
+          .first;
+      final arrowFinder = find.descendant(
+        of: firstDropdown,
+        matching: find.byIcon(Icons.arrow_drop_down),
+      );
+      final restArrow = IconTheme.of(tester.element(arrowFinder)).color;
+      final surface = find
+          .descendant(of: firstDropdown, matching: find.byType(DecoratedBox))
+          .first;
+      Color? fill() =>
+          (tester.widget<DecoratedBox>(surface).decoration as BoxDecoration)
+              .color;
+      final restFill = fill();
+      await mouse.moveTo(tester.getCenter(firstDropdown));
+      await tester.pumpAndSettle();
+      expect(fill(), isNot(restFill));
+      expect(IconTheme.of(tester.element(arrowFinder)).color, restArrow);
+      await mouse.removePointer();
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
 }
 
 class _DeferredDestinationDownloadManager extends AsmrDownloadManager {

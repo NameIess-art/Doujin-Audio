@@ -13,6 +13,7 @@ import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/cover_image_resolution.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/ui/undoable_removal_service.dart';
+import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_edge_fade_mask.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_transitions.dart';
@@ -483,11 +484,13 @@ class _QueueSourceAudioTile extends ConsumerWidget {
         children: [
           IconButton(
             tooltip: i18n.tr('add_audio_to_queue'),
-            style: IconButton.styleFrom(
-              minimumSize: const Size.square(44),
-              maximumSize: const Size.square(44),
-              padding: EdgeInsets.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            style: appIconButtonStyle(
+              IconButton.styleFrom(
+                minimumSize: const Size.square(44),
+                maximumSize: const Size.square(44),
+                padding: EdgeInsets.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
             ),
             icon: const Icon(Icons.add_circle_outline_rounded, size: 22),
             onPressed: () {
@@ -502,11 +505,13 @@ class _QueueSourceAudioTile extends ConsumerWidget {
           if (!track.isSingle)
             IconButton(
               tooltip: i18n.tr('add_work_to_queue'),
-              style: IconButton.styleFrom(
-                minimumSize: const Size.square(44),
-                maximumSize: const Size.square(44),
-                padding: EdgeInsets.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              style: appIconButtonStyle(
+                IconButton.styleFrom(
+                  minimumSize: const Size.square(44),
+                  maximumSize: const Size.square(44),
+                  padding: EdgeInsets.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
               ),
               icon: const Icon(Icons.library_add_rounded, size: 22),
               onPressed: () {

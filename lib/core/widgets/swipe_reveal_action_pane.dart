@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'app_buttons.dart';
+
 import 'app_feedback.dart';
 import 'app_transitions.dart';
 
@@ -279,15 +281,16 @@ class SwipeRevealActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = IconButton.styleFrom(
-      animationDuration: kAppSelectionDuration,
-      splashFactory: InkSplash.splashFactory,
-      backgroundColor: backgroundColor,
-      foregroundColor: foregroundColor,
-      minimumSize: Size.square(size),
-      maximumSize: Size.square(size),
-      padding: EdgeInsets.zero,
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    final style = appIconButtonStyle(
+      IconButton.styleFrom(
+        animationDuration: kAppSelectionDuration,
+        backgroundColor: backgroundColor,
+        foregroundColor: foregroundColor,
+        minimumSize: Size.square(size),
+        maximumSize: Size.square(size),
+        padding: EdgeInsets.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
     );
     final iconSize = (size * 0.46).clamp(16.0, 22.0);
     final effectiveIcon = iconWidget != null

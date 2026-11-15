@@ -333,57 +333,17 @@ class _DlsiteMetadataBatchResultsPageState
               child: AppPageContentTransition(
                 child: AnimatedBuilder(
                   animation: widget.session,
-                  builder: (context, _) => HeaderFloatingSurface(
-                    key: const ValueKey<String>('batch_metadata_results_done'),
-                    height: 46,
-                    radius: 23,
-                    padding: EdgeInsets.zero,
-                    child: Material(
-                      color: Theme.of(context).colorScheme.primary,
-                      borderRadius: BorderRadius.circular(23),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(23),
-                        onTap: _savingAll || widget.session.hasPendingLookups
-                            ? null
-                            : _saveAll,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _savingAll
-                                  ? SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onPrimary,
-                                      ),
-                                    )
-                                  : Icon(
-                                      Icons.check_rounded,
-                                      size: 18,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onPrimary,
-                                    ),
-                              const SizedBox(width: 6),
-                              Text(
-                                i18n.tr('confirm'),
-                                style: TextStyle(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onPrimary,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
+                  builder: (context, _) => HeaderFloatingActionPill(
+                    pillKey: const ValueKey<String>(
+                      'batch_metadata_results_done',
                     ),
+                    icon: Icons.check_rounded,
+                    label: i18n.tr('confirm'),
+                    loading: _savingAll,
+                    horizontalPadding: 20,
+                    onTap: _savingAll || widget.session.hasPendingLookups
+                        ? null
+                        : _saveAll,
                   ),
                 ),
               ),

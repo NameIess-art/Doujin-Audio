@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/media/time_text_formatters.dart';
+import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
@@ -162,8 +163,6 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
       minLeadingWidth: 40,
       contentPadding: const EdgeInsets.only(left: 16),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      splashColor: color.withValues(alpha: 0.16),
-      hoverColor: color.withValues(alpha: 0.08),
       selected: isHighlighted,
       selectedTileColor: widget.accentColor.withValues(alpha: 0.16),
       selectedColor: widget.accentColor,
@@ -202,7 +201,11 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
             // Match the skeleton action center without shrinking its target.
             padding: const EdgeInsets.only(left: 4),
             iconSize: 20,
-            color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+            style: appIconButtonStyle(
+              IconButton.styleFrom(
+                foregroundColor: cs.onSurfaceVariant.withValues(alpha: 0.7),
+              ),
+            ),
             icon: const Icon(Icons.more_vert_rounded),
             tooltip: widget.moreLabel,
             onPressed: () => _showButtonMenu(buttonContext),
@@ -243,8 +246,6 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
         child: opensPage
             ? AppEntryInkWell(
                 borderRadius: BorderRadius.circular(8),
-                splashColor: color.withValues(alpha: 0.16),
-                hoverColor: color.withValues(alpha: 0.08),
                 onTap: onTap,
                 onLongPress: onLongPress,
                 child: tile,

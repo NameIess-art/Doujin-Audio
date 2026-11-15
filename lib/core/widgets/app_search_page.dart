@@ -7,10 +7,12 @@ import '../../app/theme/app_design_tokens.dart';
 import '../../app/theme/app_styles.dart';
 import '../ui/ui_interaction_coordinator.dart';
 import '../media/search_query_utils.dart';
+import 'app_buttons.dart';
 import 'app_edge_fade_mask.dart';
 import 'app_glass_surface.dart';
 import 'app_transitions.dart';
 import 'page_header_inset.dart';
+import 'top_page_header.dart';
 import 'windows_horizontal_wheel_scroll.dart';
 
 export 'app_search_suggestions.dart';
@@ -255,7 +257,6 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final tokens = AppDesignTokens.of(context);
     final accent = widget.accentColor ?? cs.primary;
     final confirmEnabled = widget.onConfirm != null || _editingElements;
     final confirmForeground = confirmEnabled
@@ -296,7 +297,14 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                           excluding: hasResults,
                           child: FadeTransition(
                             opacity: _suggestionsOpacity,
-                            child: widget.body,
+                            child: AnimatedBuilder(
+                              animation: _resultsOpacity,
+                              child: widget.body,
+                              builder: (context, child) => Transform.translate(
+                                offset: Offset(0, -6 * _resultsOpacity.value),
+                                child: child,
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -316,7 +324,17 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                           excluding: !hasResults,
                           child: FadeTransition(
                             opacity: _resultsOpacity,
-                            child: resultsBody,
+                            child: AnimatedBuilder(
+                              animation: _suggestionsOpacity,
+                              child: resultsBody,
+                              builder: (context, child) => Transform.translate(
+                                offset: Offset(
+                                  0,
+                                  6 * _suggestionsOpacity.value,
+                                ),
+                                child: child,
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -520,12 +538,14 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                                         iconSize: 20,
                                         padding: EdgeInsets.zero,
                                         visualDensity: VisualDensity.compact,
-                                        style: IconButton.styleFrom(
-                                          minimumSize: const Size(38, 38),
-                                          maximumSize: const Size(38, 38),
-                                          padding: EdgeInsets.zero,
-                                          tapTargetSize:
-                                              MaterialTapTargetSize.shrinkWrap,
+                                        style: appIconButtonStyle(
+                                          IconButton.styleFrom(
+                                            minimumSize: const Size(38, 38),
+                                            maximumSize: const Size(38, 38),
+                                            padding: EdgeInsets.zero,
+                                            tapTargetSize:
+                                                MaterialTapTargetSize.shrinkWrap,
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -549,12 +569,14 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                                     color: cs.onSurfaceVariant,
                                     padding: EdgeInsets.zero,
                                     visualDensity: VisualDensity.compact,
-                                    style: IconButton.styleFrom(
-                                      minimumSize: const Size(38, 38),
-                                      maximumSize: const Size(38, 38),
-                                      padding: EdgeInsets.zero,
-                                      tapTargetSize:
-                                          MaterialTapTargetSize.shrinkWrap,
+                                    style: appIconButtonStyle(
+                                      IconButton.styleFrom(
+                                        minimumSize: const Size(38, 38),
+                                        maximumSize: const Size(38, 38),
+                                        padding: EdgeInsets.zero,
+                                        tapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -567,81 +589,35 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                               key: const ValueKey<String>(
                                 'app_search_category_shell',
                               ),
+                              width: double.infinity,
                               height: 38,
                               child: _SearchFloatingCapsule(
                                 radius: 19,
-                                child: WindowsHorizontalWheelScroll(
-                                  builder: (scrollController) => ListView.separated(
-                                    key: const ValueKey<String>(
-                                      'app_search_categories',
-                                    ),
-                                    controller: scrollController,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 4,
-                                      vertical: 3,
-                                    ),
-                                    scrollDirection: Axis.horizontal,
-                                    physics: const ClampingScrollPhysics(),
-                                    itemCount: widget.categories.length,
-                                    separatorBuilder: (_, _) =>
-                                        const SizedBox(width: 2),
-                                    itemBuilder: (context, index) {
-                                      final category = widget.categories[index];
-                                      final selected =
-                                          category.value ==
-                                          widget.selectedCategory;
-                                      return Semantics(
-                                        button: true,
-                                        selected: selected,
-                                        child: InkWell(
-                                          key: ValueKey<String>(
-                                            'app_search_category_${category.value}',
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            15,
-                                          ),
-                                          onTap:
-                                              widget.onCategorySelected == null
-                                              ? null
-                                              : () =>
-                                                    widget.onCategorySelected!(
-                                                      category.value,
-                                                    ),
-                                          child: AnimatedContainer(
-                                            duration: tokens.motionFast,
-                                            alignment: Alignment.center,
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: selected
-                                                  ? accent.withValues(
-                                                      alpha: 0.19,
-                                                    )
-                                                  : Colors.transparent,
-                                              borderRadius:
-                                                  BorderRadius.circular(15),
-                                            ),
-                                            child: Text(
-                                              category.label,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: theme.textTheme.labelMedium
-                                                  ?.copyWith(
-                                                    color: selected
-                                                        ? accent
-                                                        : cs.onSurfaceVariant,
-                                                    fontWeight: selected
-                                                        ? FontWeight.w700
-                                                        : FontWeight.w600,
-                                                    fontSize: 12.5,
-                                                  ),
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    },
+                                child: SegmentedCategoryPillStrip<T>(
+                                  scrollViewKey: const ValueKey<String>(
+                                    'app_search_categories',
                                   ),
+                                  indicatorKey: const ValueKey<String>(
+                                    'app_search_category_indicator',
+                                  ),
+                                  items: [
+                                    for (final category in widget.categories)
+                                      category.value,
+                                  ],
+                                  selected: widget.selectedCategory,
+                                  onSelected: widget.onCategorySelected,
+                                  labelBuilder: (value) {
+                                    for (final category in widget.categories) {
+                                      if (category.value == value) {
+                                        return category.label;
+                                      }
+                                    }
+                                    return '$value';
+                                  },
+                                  itemKeyBuilder: (value) => ValueKey<String>(
+                                    'app_search_category_$value',
+                                  ),
+                                  accentColor: accent,
                                 ),
                               ),
                             ),
@@ -667,6 +643,7 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
 
     final tr = widget.translate!;
     return InkWell(
+      mouseCursor: WidgetStateMouseCursor.clickable,
       key: const ValueKey('app_search_element_summary'),
       onTap: edit,
       borderRadius: BorderRadius.circular(19),
@@ -691,6 +668,11 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                     padding: const EdgeInsets.only(right: 4),
                     child: Center(
                       child: InputChip(
+                        mouseCursor: WidgetStateMouseCursor.clickable,
+                        deleteIcon: const MouseRegion(
+                          cursor: SystemMouseCursors.click,
+                          child: Icon(Icons.clear, size: 18),
+                        ),
                         shape: const StadiumBorder(),
                         label: ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 200),

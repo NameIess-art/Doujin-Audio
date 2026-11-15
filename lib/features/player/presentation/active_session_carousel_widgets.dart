@@ -260,13 +260,18 @@ class _ActiveSessionCard extends ConsumerWidget {
     return Semantics(
       container: true,
       value: '${position + 1} / $count',
-      child: ClipRRect(
-        key: ValueKey<String>('active_session_card_${session.id}'),
-        borderRadius: cardBorderRadius,
-        child: MarqueePauseScope(
-          isPaused: false,
-          hoverToRun: defaultTargetPlatform == TargetPlatform.windows,
-          child: cardBody,
+      child: AppPressScale(
+        enabled: !embedded,
+        pressedScale: 0.985,
+        releaseCurve: kAppSpringCurve,
+        child: ClipRRect(
+          key: ValueKey<String>('active_session_card_${session.id}'),
+          borderRadius: cardBorderRadius,
+          child: MarqueePauseScope(
+            isPaused: false,
+            hoverToRun: defaultTargetPlatform == TargetPlatform.windows,
+            child: cardBody,
+          ),
         ),
       ),
     );
@@ -446,7 +451,10 @@ class _ActiveSessionIndicator extends StatelessWidget {
               dots!,
               Positioned.fill(
                 child: AnimatedAlign(
-                  alignment: AlignmentDirectional(2 * active / (count - 1) - 1, 0),
+                  alignment: AlignmentDirectional(
+                    2 * active / (count - 1) - 1,
+                    0,
+                  ),
                   duration: duration,
                   curve: Curves.easeInOut,
                   child: AnimatedContainer(
@@ -494,40 +502,34 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final button = SizedBox.square(
-      dimension: dimension,
-      child: Material(
-        color: Colors.transparent,
-        child: InkResponse(
-          onTap: enabled ? onPressed : null,
-          containedInkWell: true,
-          radius: 20,
-          customBorder: const CircleBorder(),
-          splashFactory: AppEntryInkWell.entrySplashFactory(context),
-          highlightColor: Colors.transparent,
-          child: Center(
-            child: AppPlaybackIconTransition(
-              child: isLoading
-                  ? SizedBox(
-                      key: const ValueKey('loading'),
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.2,
-                        color: activeColor,
-                      ),
-                    )
-                  : Icon(
-                      showPauseIcon
-                          ? Icons.pause_rounded
-                          : Icons.play_arrow_rounded,
-                      key: ValueKey(showPauseIcon),
-                      size: 30,
-                      color: showPauseIcon ? activeColor : cs.onSurface,
-                    ),
-            ),
-          ),
+    final button = IconButton(
+      onPressed: enabled ? onPressed : null,
+      style: appIconButtonStyle(
+        IconButton.styleFrom(
+          fixedSize: const Size.square(dimension),
+          minimumSize: const Size.square(dimension),
+          maximumSize: const Size.square(dimension),
+          padding: EdgeInsets.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          foregroundColor: showPauseIcon ? activeColor : cs.onSurface,
         ),
+      ),
+      icon: AppPlaybackIconTransition(
+        child: isLoading
+            ? SizedBox(
+                key: const ValueKey('loading'),
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.2,
+                  color: activeColor,
+                ),
+              )
+            : Icon(
+                showPauseIcon ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                key: ValueKey(showPauseIcon),
+                size: 30,
+              ),
       ),
     );
     return Semantics(

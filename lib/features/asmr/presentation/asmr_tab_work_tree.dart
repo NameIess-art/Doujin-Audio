@@ -22,6 +22,7 @@ class _AsmrSelectionIndicator extends StatelessWidget {
         child: AppDeferredFade(
           visible: isSelected,
           showDelay: kAppSelectionDuration,
+          beginScale: 0.86,
           fadeInDuration: kAppMotionFast,
           child: Container(
             key: workId == null

@@ -2770,8 +2770,11 @@ void main() {
       await tester.ensureVisible(disc);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Disc', findRichText: true));
-      await pumpUntilFound(tester, find.text('Chapter', findRichText: true));
-      await tester.tap(find.text('Chapter', findRichText: true));
+      final chapter = find.text('Chapter', findRichText: true);
+      await pumpUntilFound(tester, chapter);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(chapter);
+      await tester.tap(chapter);
       await pumpUntilFound(tester, find.text('Deep track', findRichText: true));
       expect(find.text('Deep track', findRichText: true), findsOneWidget);
     },
@@ -4218,7 +4221,7 @@ void main() {
     expect(tester.widget<FadeTransition>(headerFade).opacity.value, 1);
     await tester.tap(batchBackButton);
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 225));
+    await tester.pump(const Duration(milliseconds: 150));
     expect(tester.getRect(batchBackButton), headerRect);
     expect(
       tester.widget<FadeTransition>(headerFade).opacity.value,
@@ -4388,7 +4391,8 @@ void main() {
           .widget<TextButton>(
             find.widgetWithText(TextButton, languageProvider.tr('restore')),
           )
-          .style,
+          .style
+          ?.foregroundColor,
       isNull,
     );
 
@@ -5026,7 +5030,7 @@ void main() {
         tester.widget<Icon>(audioIcon).color,
         Theme.of(tester.element(tileFinder)).colorScheme.onSurfaceVariant,
       );
-      expect(tester.widget<TextButton>(restoreFinder).style, isNull);
+      expect(tester.widget<TextButton>(restoreFinder).style?.foregroundColor, isNull);
       expect(tester.getSize(restoreFinder).height, greaterThanOrEqualTo(44));
       final restoreHighlight = find.descendant(
         of: restoreFinder,
@@ -6254,7 +6258,7 @@ void main() {
           buttons: kSecondaryMouseButton,
           kind: PointerDeviceKind.mouse,
         );
-        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
         await tester.tap(
           find.text(fixture.languageProvider.tr('select_multiple')),
         );
@@ -6406,17 +6410,15 @@ void main() {
               ),
             ).first),
           );
+          Iterable<InteractiveInkFeature> pressHighlight() =>
+              (inkController.debugInkFeatures as List<InkFeature>? ?? [])
+                  .whereType<InteractiveInkFeature>()
+                  .where((ink) => ink is! InkHighlight && ink.color.a > 0);
           final press = await tester.startGesture(tester.getCenter(trackFinder));
           await tester.pump(const Duration(milliseconds: 120));
-          expect(
-            inkController.debugInkFeatures.whereType<InkSplash>(),
-            isNotEmpty,
-          );
+          expect(pressHighlight(), hasLength(1));
           await press.up();
-          expect(
-            inkController.debugInkFeatures.whereType<InkSplash>(),
-            isEmpty,
-          );
+          expect(pressHighlight(), isEmpty);
           await tester.longPress(trackFinder);
           await tester.pumpAndSettle();
           expect(cardRect.contains(selectionRect.topLeft), isTrue);

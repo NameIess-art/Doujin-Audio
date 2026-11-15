@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/widgets/app_buttons.dart';
 import '../../../app/presentation/element_action_menu.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/page_translation_scope.dart';
@@ -61,17 +62,23 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
     child: TextButton(
       key: const ValueKey<String>('work_detail_title_copy'),
       onPressed: title.isEmpty ? null : () => onCopyMetadata(title),
-      style: ButtonStyle(
-        foregroundColor: WidgetStateProperty.resolveWith(
-          (states) =>
-              states.contains(WidgetState.hovered) ? accentColor : Colors.white,
+      clipBehavior: Clip.none,
+      style: appTextButtonStyle(
+        style: ButtonStyle(
+          foregroundColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.focused)
+                ? accentColor
+                : Colors.white,
+          ),
+          backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
+          overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+          shape: const WidgetStatePropertyAll(RoundedRectangleBorder()),
+          textStyle: WidgetStatePropertyAll(DefaultTextStyle.of(context).style),
+          padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+          minimumSize: const WidgetStatePropertyAll(Size.zero),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          alignment: Alignment.centerLeft,
         ),
-        overlayColor: const WidgetStatePropertyAll(Colors.transparent),
-        textStyle: WidgetStatePropertyAll(DefaultTextStyle.of(context).style),
-        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-        minimumSize: const WidgetStatePropertyAll(Size.zero),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        alignment: Alignment.centerLeft,
       ),
       child: WorkPageTranslationText(
         title,
@@ -105,21 +112,15 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
               child: ElementActionMenu(
                 value: rjCode,
                 onCopy: () => onCopyMetadata(rjCode),
-                child: InkWell(
+                child: AppTextLink(
                   key: const ValueKey<String>('work_detail_rj_copy'),
                   onTap: () => onCopyMetadata(rjCode),
-                  borderRadius: BorderRadius.circular(4),
-                  hoverColor: accentColor.withValues(alpha: 0.16),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Text(
-                      rjCode,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                        color: accentColor,
-                      ),
-                    ),
+                  label: rjCode,
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: accentColor,
                   ),
                 ),
               ),
@@ -150,26 +151,18 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
                 child: ElementActionMenu(
                   value: circleName,
                   onCopy: () => onCopyMetadata(circleName),
-                  child: InkWell(
+                  child: AppTextLink(
                     key: const ValueKey<String>('work_detail_circle_copy'),
+                    label: circleName.isNotEmpty ? circleName : '--',
                     onTap: circleName.isEmpty
                         ? null
                         : () => onCopyMetadata(circleName),
-                    borderRadius: BorderRadius.circular(4),
-                    hoverColor: Theme.of(
-                      context,
-                    ).textTheme.bodyMedium?.color?.withValues(alpha: 0.16),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Text(
-                        circleName.isNotEmpty ? circleName : '--',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),

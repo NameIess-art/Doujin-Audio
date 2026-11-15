@@ -229,63 +229,28 @@ void main() {
       expect(powerService.keepScreenOnCalls, equals([true, false]));
     });
 
-    testWidgets(
-      'shows correct timer text for stopAfterCurrentTrack and active timer',
-      (tester) async {
-        final i18n = fixture.languageProvider;
+    testWidgets('shows the active countdown with track-end pause enabled', (
+      tester,
+    ) async {
+      final i18n = fixture.languageProvider;
+      await tester.pumpWidget(fixture.build(const BedtimeCanvasPage()));
+      await tester.pump();
+      expect(find.text(i18n.tr('no_timer_set')), findsOneWidget);
 
-        // 1. Initially no timer set
-        await tester.pumpWidget(fixture.build(const BedtimeCanvasPage()));
-        await tester.pump();
+      fixture.timer.configureTimer(
+        TimerMode.manual,
+        const Duration(minutes: 30),
+      );
+      fixture.timer.startCountdown();
+      fixture.timer.setStopAfterCurrentTrack(true);
+      await tester.pump();
 
-        expect(find.text(i18n.tr('no_timer_set')), findsOneWidget);
+      expect(find.textContaining(i18n.tr('sleep_countdown')), findsOneWidget);
+      expect(find.text(i18n.tr('waiting_for_track_end')), findsNothing);
 
-        // 2. stopAfterCurrentTrack enabled
-        final session = PlaybackSession(
-          id: 'timer-target',
-          currentTrackPath: '/timer-target.mp3',
-          loopMode: SessionLoopMode.single,
-          nonSingleLoopMode: SessionLoopMode.folderSequential,
-          volume: 1,
-          createdAt: DateTime(2026),
-          state: const PlayerState(true, ProcessingState.buffering),
-        );
-        fixture.playback.registerSession(session);
-        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
-              if (call.method == 'setStopAfterCurrentTrack') {
-                return {
-                  'ok': true,
-                  'value': {
-                    'sessionId': session.id,
-                    'playWhenReady': true,
-                    'processingState': 'buffering',
-                    'stopAfterCurrentTrack': (call.arguments as Map)['enabled'],
-                  },
-                };
-              }
-              return {'ok': true, 'value': null};
-            });
-        fixture.timer.setStopAfterCurrentTrack(true);
-        await tester.pump();
-
-        expect(find.text(i18n.tr('stop_after_current_track')), findsOneWidget);
-
-        // 3. active countdown timer
-        fixture.timer.setStopAfterCurrentTrack(false);
-        fixture.timer.configureTimer(
-          TimerMode.manual,
-          const Duration(minutes: 30),
-        );
-        fixture.timer.startCountdown();
-        await tester.pump();
-
-        expect(find.textContaining(i18n.tr('sleep_countdown')), findsOneWidget);
-
-        fixture.timer.cancelTimer();
-        await tester.pump();
-      },
-    );
+      fixture.timer.cancelTimer();
+      await tester.pump();
+    });
 
     testWidgets(
       'double tap pauses and resumes multiple selected/playing sessions (not first in playlist)',

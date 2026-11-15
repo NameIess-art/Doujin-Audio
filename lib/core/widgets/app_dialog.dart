@@ -123,7 +123,7 @@ class _AppOverlayPanelShell extends StatelessWidget {
                   child: buildAppScaleFadeTransition(
                     context: context,
                     animation: animation,
-                    beginScale: 0.98,
+                    beginScale: 0.90,
                     // Ink must paint inside the transition so tile backgrounds
                     // and splashes fade and scale with the panel content.
                     child: Material(
@@ -203,7 +203,7 @@ Future<T?> showAppDialog<T>({
                           child: buildAppScaleFadeTransition(
                             context: dialogContext,
                             animation: animation,
-                            beginScale: 0.98,
+                            beginScale: 0.90,
                             child: Material(
                               color: Colors.transparent,
                               child: Builder(builder: builder),

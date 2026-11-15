@@ -312,6 +312,47 @@ void main() {
     }, variant: TargetPlatformVariant.only(platform));
   }
 
+  testWidgets('mobile navigation indicator slides between its icon slots', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(400, 800);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final fixture = AppRuntimeWidgetTestFixture(
+      configureSettingsRepository: (settings) {
+        settings.showAsmrOne = false;
+        settings.showLocalLibrary = true;
+      },
+    );
+    addTearDown(fixture.dispose);
+    fixture.settings.syncSlice(isInitialized: true);
+    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+    fixture.playbackService.syncSlice(
+      activeSessions: [],
+      playingSessionCount: 0,
+      focusedSessionId: null,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    await tester.pumpWidget(fixture.build(const MainScreen()));
+    await tester.pumpAndSettle();
+    final indicator = find.byKey(const ValueKey('mobile_navigation_indicator'));
+    final playlist = find.byKey(const ValueKey('main_destination_ink_nav_sessions'));
+    final start = tester.getCenter(indicator).dx;
+    final end = tester.getCenter(playlist).dx;
+    await tester.tap(playlist);
+    await tester.pump();
+    expect(tester.getCenter(indicator).dx, closeTo(start, 0.01));
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(tester.getCenter(indicator).dx, inExclusiveRange(start, end));
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(tester.getCenter(indicator).dx, closeTo(end, 0.01));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  }, variant: const TargetPlatformVariant({TargetPlatform.android}));
+
   testWidgets(
     'sidebar animation reuses main navigation while content keeps resizing',
     (tester) async {

@@ -253,11 +253,14 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
             ),
           if (widget.videoReady)
             Positioned.fill(
-              child: GestureDetector(
-                key: const ValueKey<String>('session_video_tap_target'),
-                behavior: HitTestBehavior.opaque,
-                onTap: _toggleControls,
-                child: const ColoredBox(color: Colors.transparent),
+              child: MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  key: const ValueKey<String>('session_video_tap_target'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _toggleControls,
+                  child: const ColoredBox(color: Colors.transparent),
+                ),
               ),
             ),
           if (widget.videoReady)

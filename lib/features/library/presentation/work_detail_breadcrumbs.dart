@@ -71,6 +71,7 @@ class _WorkDetailBreadcrumbsState extends State<WorkDetailBreadcrumbs> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     InkWell(
+                      mouseCursor: WidgetStateMouseCursor.clickable,
                       borderRadius: BorderRadius.circular(8),
                       onTap: () {
                         unawaited(
@@ -119,6 +120,7 @@ class _WorkDetailBreadcrumbsState extends State<WorkDetailBreadcrumbs> {
                         ),
                       ),
                       InkWell(
+                        mouseCursor: WidgetStateMouseCursor.clickable,
                         borderRadius: BorderRadius.circular(8),
                         onTap: () {
                           unawaited(

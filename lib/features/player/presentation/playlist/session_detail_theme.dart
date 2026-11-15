@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/cache/app_cache_service.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 
@@ -312,9 +313,9 @@ ThemeData _applyDetailColorScheme(ThemeData base, ColorScheme scheme) {
     scaffoldBackgroundColor: scheme.surface,
     canvasColor: scheme.surface,
     dividerColor: scheme.outlineVariant,
-    hoverColor: scheme.primary.withValues(alpha: 0.08),
+    hoverColor: appHoverTint(scheme),
     focusColor: scheme.primary.withValues(alpha: 0.12),
-    highlightColor: scheme.primary.withValues(alpha: 0.12),
+    splashColor: appPressedTint(scheme),
     textTheme: base.textTheme.apply(
       bodyColor: scheme.onSurface,
       displayColor: scheme.onSurface,
@@ -370,28 +371,48 @@ ThemeData _applyDetailColorScheme(ThemeData base, ColorScheme scheme) {
       overlayColor: scheme.primary.withValues(alpha: 0.15),
     ),
     textButtonTheme: TextButtonThemeData(
-      style: (base.textButtonTheme.style ?? const ButtonStyle()).merge(
-        TextButton.styleFrom(
-          foregroundColor: scheme.primary,
-          disabledForegroundColor: scheme.onSurface.withValues(alpha: 0.38),
+      style: appTextButtonStyle(
+        style: (base.textButtonTheme.style ?? const ButtonStyle()).merge(
+          TextButton.styleFrom(
+            foregroundColor: scheme.primary,
+            disabledForegroundColor: scheme.onSurface.withValues(alpha: 0.38),
+          ),
         ),
       ),
     ),
     filledButtonTheme: FilledButtonThemeData(
-      style: (base.filledButtonTheme.style ?? const ButtonStyle()).merge(
-        FilledButton.styleFrom(
-          backgroundColor: scheme.primary,
-          foregroundColor: scheme.onPrimary,
-          disabledForegroundColor: scheme.onSurface.withValues(alpha: 0.38),
-          disabledBackgroundColor: scheme.onSurface.withValues(alpha: 0.12),
+      style: appSurfaceButtonStyle(
+        style: (base.filledButtonTheme.style ?? const ButtonStyle()).merge(
+          FilledButton.styleFrom(
+            backgroundColor: scheme.primary,
+            foregroundColor: scheme.onPrimary,
+            disabledForegroundColor: scheme.onSurface.withValues(alpha: 0.38),
+            disabledBackgroundColor: scheme.onSurface.withValues(alpha: 0.12),
+          ),
         ),
+        colorScheme: scheme,
+        platform: base.platform,
+        defaultBackgroundColor: scheme.primary,
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
-      style: (base.outlinedButtonTheme.style ?? const ButtonStyle()).merge(
-        OutlinedButton.styleFrom(
-          side: BorderSide(color: scheme.outlineVariant),
+      style: appSurfaceButtonStyle(
+        style: (base.outlinedButtonTheme.style ?? const ButtonStyle()).merge(
+          OutlinedButton.styleFrom(
+            side: BorderSide(color: scheme.outlineVariant),
+          ),
         ),
+        colorScheme: scheme,
+        platform: base.platform,
+      ),
+    ),
+    chipTheme: base.chipTheme.copyWith(
+      color: appChipColor(colorScheme: scheme, platform: base.platform),
+    ),
+    segmentedButtonTheme: SegmentedButtonThemeData(
+      style: appSegmentedButtonStyle(
+        colorScheme: scheme,
+        platform: base.platform,
       ),
     ),
     listTileTheme: base.listTileTheme.copyWith(

@@ -26,9 +26,7 @@ extension _MainScreenLayout on _MainScreenState {
               context,
               i18n: ref.read(appLanguageProviderInstanceProvider),
               overlaySessions: ref.watch(
-                mainOverlayUiProvider.select(
-                  (state) => state.overlaySessions,
-                ),
+                mainOverlayUiProvider.select((state) => state.overlaySessions),
               ),
               tinyMode: tinyMode,
             ),
@@ -249,7 +247,40 @@ extension _MainScreenLayout on _MainScreenState {
       ...entries.where((entry) => entry.key != activeIndex),
       entries[activeIndex],
     ];
-    final items = layeredEntries.map((entry) {
+    Rect destinationRect(int index) {
+      final expand = expansion.value * (1 - rowProgress.value);
+      final progress = index == 0
+          ? Curves.easeInOut.transform((expand / 0.2).clamp(0.0, 1.0))
+          : Curves.easeInOut.transform(((expand - 0.2) / 0.45).clamp(0.0, 1.0));
+      final width =
+          availableWidth -
+          MobileDockCapsuleContentState.inlinePlaybackWidth(
+                availableWidth,
+                expansion.value,
+              ) *
+              appearance.value *
+              (1 - rowProgress.value);
+      final count = destinations.length;
+      final indicatorWidth = ((width - 12 - 4 * (count - 1)) / count).clamp(
+        44.0,
+        68.0,
+      );
+      final shapeProgress = Curves.easeInOut.transform(
+        ((expand - 0.25) / 0.5).clamp(0.0, 1.0),
+      );
+      final buttonWidth = 12 + lerpDouble(indicatorWidth, 44, shapeProgress)!;
+      final expandedLeft = count == 1
+          ? 0.0
+          : (width - indicatorWidth - 12) * (count - 1 - index) / (count - 1);
+      return Rect.fromLTWH(
+        availableWidth - buttonWidth - expandedLeft * (1 - progress),
+        0,
+        buttonWidth,
+        kActiveSessionCarouselDockHeight,
+      );
+    }
+
+    Widget buildDestination(MapEntry<int, MainDestination> entry) {
       final index = entry.key;
       final item = destinations[index];
       final selected = index == activeIndex;
@@ -258,70 +289,34 @@ extension _MainScreenLayout on _MainScreenState {
 
       final activeColor = cs.primary;
 
-      final iconStack = Stack(
-        alignment: Alignment.center,
-        children: [
-          Positioned.fill(
-            left: 6,
-            right: 6,
-            top: 6,
-            bottom: 6,
-            child: SizedBox.expand(
-              key: ValueKey<String>(
-                'main_destination_indicator_${item.navigationKey}',
+      final icon = AnimatedSwitcher(
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : kAppFadeDuration,
+        switchInCurve: kAppFadeCurve,
+        switchOutCurve: kAppFadeCurve,
+        transitionBuilder: (child, animation) =>
+            MediaQuery.disableAnimationsOf(context)
+            ? child
+            : FadeTransition(
+                opacity: animation,
+                child: ScaleTransition(
+                  scale: animation.drive(Tween<double>(begin: 0.9, end: 1)),
+                  child: child,
+                ),
               ),
-              child: selected
-                  ? TweenAnimationBuilder<double>(
-                      key: ValueKey(item.type),
-                      tween: Tween(begin: 0, end: 1),
-                      duration: MediaQuery.disableAnimationsOf(context)
-                          ? Duration.zero
-                          : kAppMotionSlow,
-                      curve: Curves.easeOutCubic,
-                      builder: (context, scale, child) => Transform.scale(
-                        scale: scale,
-                        child: child,
-                      ),
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: activeColor.withValues(alpha: 0.11),
-                          borderRadius: BorderRadius.circular(22),
-                        ),
-                      ),
-                    )
-                  : null,
-            ),
+        child: Icon(
+          selected ? item.selectedIcon : item.icon,
+          key: ValueKey<bool>(selected),
+          size: AppDesignTokens.opticalIconSize(
+            selected ? item.selectedIcon : item.icon,
+            28,
           ),
-          AnimatedSwitcher(
-            duration: MediaQuery.disableAnimationsOf(context)
-                ? Duration.zero
-                : kAppFadeDuration,
-            switchInCurve: kAppFadeCurve,
-            switchOutCurve: kAppFadeCurve,
-            transitionBuilder: (child, animation) =>
-                MediaQuery.disableAnimationsOf(context)
-                ? child
-                : FadeTransition(
-                    opacity: animation,
-                    child: ScaleTransition(
-                      scale: animation.drive(Tween<double>(begin: 0.9, end: 1)),
-                      child: child,
-                    ),
-                  ),
-            child: Icon(
-              selected ? item.selectedIcon : item.icon,
-              key: ValueKey<bool>(selected),
-              size: AppDesignTokens.opticalIconSize(
-                selected ? item.selectedIcon : item.icon,
-                28,
-              ),
-              color: selected ? activeColor : inactive,
-            ),
-          ),
-        ],
+        ),
       );
 
       return AnimatedBuilder(
+        key: ValueKey(item.type),
         animation: Listenable.merge([appearance, expansion, rowProgress]),
         child: IgnorePointer(
           ignoring: isPlaybackExpanded && !selected,
@@ -334,77 +329,91 @@ extension _MainScreenLayout on _MainScreenState {
               label: label,
               child: Material(
                 type: MaterialType.transparency,
-                child: _BottomDestinationInkResponse(
-                  inkKey: ValueKey<String>(
-                    'main_destination_ink_${item.navigationKey}',
+                child: IconTheme.merge(
+                  data: IconThemeData(color: selected ? activeColor : inactive),
+                  child: _BottomDestinationInkResponse(
+                    inkKey: ValueKey<String>(
+                      'main_destination_ink_${item.navigationKey}',
+                    ),
+                    onTap: isPlaybackExpanded && selected
+                        ? onCurrentTap
+                        : () => _switchPage(index),
+                    child: RepaintBoundary(child: icon),
                   ),
-                  onTap: isPlaybackExpanded && selected
-                      ? onCurrentTap
-                      : () => _switchPage(index),
-                  child: RepaintBoundary(child: iconStack),
                 ),
               ),
             ),
           ),
         ),
         builder: (context, child) {
-          final expand = expansion.value * (1 - rowProgress.value);
-          final fadeProgress = kAppFadeCurve.transform(expand);
-          if (!selected && fadeProgress == 1) {
-            return const SizedBox.shrink();
-          }
-          final progress = index == 0
-              ? Curves.easeInOut.transform((expand / 0.2).clamp(0.0, 1.0))
-              : Curves.easeInOut.transform(
-                  ((expand - 0.2) / 0.45).clamp(0.0, 1.0),
-                );
-          final expandedWidth =
-              availableWidth -
-              MobileDockCapsuleContentState.inlinePlaybackWidth(
-                    availableWidth,
-                    expansion.value,
-                  ) *
-                  appearance.value *
-                  (1 - rowProgress.value);
-          final indicatorWidth =
-              ((expandedWidth - 12 - 4 * (destinations.length - 1)) /
-                      destinations.length)
-                  .clamp(44.0, 68.0);
-          final shapeProgress = Curves.easeInOut.transform(
-            ((expand - 0.25) / 0.5).clamp(0.0, 1.0),
+          final fadeProgress = kAppFadeCurve.transform(
+            expansion.value * (1 - rowProgress.value),
           );
-          final buttonWidth =
-              12 + lerpDouble(indicatorWidth, 44, shapeProgress)!;
-          // Six pixels of inset put the 44px pill arcs on the 56px dock arcs.
-          final expandedLeft =
-              (expandedWidth - indicatorWidth - 12) *
-              (destinations.length - 1 - index) /
-              (destinations.length - 1);
-          return Positioned(
-            right: 0,
-            top: 0,
-            width: buttonWidth,
-            height: kActiveSessionCarouselDockHeight,
-            child: Transform.translate(
-              offset: Offset(-expandedLeft * (1 - progress), 0),
-              child: selected
-                  ? child
-                  : Opacity(
-                      opacity: 1 - fadeProgress,
-                      child: Transform.scale(
-                        scale: 1 - 0.15 * fadeProgress,
-                        child: child,
-                      ),
+          if (!selected && fadeProgress == 1) return const SizedBox.shrink();
+          return Positioned.fromRect(
+            rect: destinationRect(index),
+            child: selected
+                ? child!
+                : Opacity(
+                    opacity: 1 - fadeProgress,
+                    child: Transform.scale(
+                      scale: 1 - 0.15 * fadeProgress,
+                      child: child,
                     ),
-            ),
+                  ),
           );
         },
       );
-    }).toList();
+    }
 
     return Theme(
       data: Theme.of(context).copyWith(splashFactory: NoSplash.splashFactory),
-      child: Stack(children: items),
+      child: SlidingSelectionIndicator(
+        index: activeIndex,
+        layoutKey: Object.hashAll(destinations.map((item) => item.type)),
+        child: Stack(
+          children: [
+            for (final entry in layeredEntries) buildDestination(entry),
+          ],
+        ),
+        builder: (context, position, child) {
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              AnimatedBuilder(
+                animation: Listenable.merge([
+                  appearance,
+                  expansion,
+                  rowProgress,
+                ]),
+                builder: (context, _) {
+                  final rect = SlidingSelectionIndicator.rectAt(
+                    position,
+                    destinationRect,
+                  )!.deflate(6);
+                  return Stack(
+                    children: [
+                      Positioned.fromRect(
+                        rect: rect,
+                        child: IgnorePointer(
+                          child: DecoratedBox(
+                            key: const ValueKey('mobile_navigation_indicator'),
+                            decoration: ShapeDecoration(
+                              color: SlidingSelectionIndicator.fill(cs.primary),
+                              shape: SlidingSelectionIndicator.shape,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+              child!,
+            ],
+          );
+        },
+      ),
     );
   }
 

@@ -180,6 +180,7 @@ void main() {
     bool visible, {
     bool disableAnimations = false,
     Animation<double>? waitFor,
+    double beginScale = 1,
   }) => MaterialApp(
     home: MediaQuery(
       data: MediaQueryData(disableAnimations: disableAnimations),
@@ -187,10 +188,28 @@ void main() {
         visible: visible,
         showDelay: kThemeChangeDuration,
         waitFor: waitFor,
+        beginScale: beginScale,
         child: const Text('badge'),
       ),
     ),
   );
+
+  testWidgets('selection badge scales with its fade and snaps for reduced motion', (
+    tester,
+  ) async {
+    await tester.pumpWidget(deferredBadge(false, beginScale: 0.86));
+    await tester.pumpWidget(deferredBadge(true, beginScale: 0.86));
+    await tester.pump(kThemeChangeDuration);
+    final badge = find.byType(ScaleTransition);
+    double scale() => tester.widget<ScaleTransition>(badge).scale.value;
+    expect(scale(), closeTo(0.86, 0.001));
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(scale(), inExclusiveRange(0.86, 1));
+    await tester.pumpWidget(
+      deferredBadge(true, beginScale: 0.86, disableAnimations: true),
+    );
+    expect(scale(), 1);
+  });
 
   testWidgets('cancelled selection and disposal cancel the pending badge', (
     tester,
@@ -4673,6 +4692,298 @@ void main() {
         findsNothing,
       );
     });
+  });
+
+  group('AppPressScale', () {
+    for (final kind in [ui.PointerDeviceKind.touch, ui.PointerDeviceKind.mouse]) {
+      testWidgets('button keeps its tap target throughout a $kind press', (
+        tester,
+      ) async {
+        var presses = 0;
+        const buttonKey = ValueKey('press_scale_button');
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: AppPressScale(
+                  pressedScale: 0.90,
+                  child: IconButton(
+                    key: buttonKey,
+                    onPressed: () => presses++,
+                    icon: const Icon(Icons.play_arrow_rounded),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        final button = find.byKey(buttonKey);
+        final target = tester.getRect(button);
+        final originalElement = tester.element(button);
+        final gesture = await tester.startGesture(target.center, kind: kind);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 85));
+        expect(tester.element(button), same(originalElement));
+        final edge = Offset(target.center.dx, target.top + 1);
+        expect(
+          tester.hitTestOnBinding(edge).path.any(
+            (entry) => identical(entry.target, tester.renderObject(button)),
+          ),
+          isTrue,
+        );
+        await gesture.up();
+        expect(presses, 1);
+
+        // A second tap can arrive while the button is still springing back.
+        await tester.tapAt(edge, kind: kind);
+        expect(presses, 2);
+        await tester.pumpAndSettle();
+        expect(tester.element(button), same(originalElement));
+      });
+    }
+
+    testWidgets('scales down on press and springs back on release', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: AppPressScale(
+                pressedScale: 0.90,
+                child: SizedBox(
+                  key: ValueKey('press_target'),
+                  width: 80,
+                  height: 44,
+                  child: ColoredBox(color: Colors.blue),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final target = find.byKey(const ValueKey('press_target'));
+      final gesture = await tester.startGesture(tester.getCenter(target));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 85));
+
+      final pressedTransform = tester.widget<Transform>(
+        find.ancestor(of: target, matching: find.byType(Transform)).first,
+      );
+      expect(pressedTransform.transform.entry(0, 0), closeTo(0.90, 0.01));
+
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<Transform>(find.ancestor(
+          of: target,
+          matching: find.byType(Transform),
+        ).first).transform.entry(0, 0),
+        1,
+      );
+    });
+
+    testWidgets('cancels press scale when pointer drags past threshold', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: AppPressScale(
+                pressedScale: 0.90,
+                child: SizedBox(
+                  key: ValueKey('drag_target'),
+                  width: 80,
+                  height: 44,
+                  child: ColoredBox(color: Colors.blue),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final target = find.byKey(const ValueKey('drag_target'));
+      final gesture = await tester.startGesture(tester.getCenter(target));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 85));
+      expect(
+        find.ancestor(of: target, matching: find.byType(Transform)),
+        findsOneWidget,
+      );
+
+      await gesture.moveBy(const Offset(0, 24));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<Transform>(find.ancestor(
+          of: target,
+          matching: find.byType(Transform),
+        ).first).transform.entry(0, 0),
+        1,
+      );
+      await gesture.up();
+    });
+
+    testWidgets('skips scaling when disabled or reduced motion is enabled', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        const MediaQuery(
+          data: MediaQueryData(disableAnimations: true),
+          child: MaterialApp(
+            home: Scaffold(
+              body: Column(
+                children: [
+                  AppPressScale(
+                    pressedScale: 0.90,
+                    child: SizedBox(
+                      key: ValueKey('reduced_target'),
+                      width: 60,
+                      height: 36,
+                      child: ColoredBox(color: Colors.blue),
+                    ),
+                  ),
+                  AppPressScale(
+                    enabled: false,
+                    pressedScale: 0.90,
+                    child: SizedBox(
+                      key: ValueKey('disabled_target'),
+                      width: 60,
+                      height: 36,
+                      child: ColoredBox(color: Colors.blue),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      for (final key in const [
+        ValueKey('reduced_target'),
+        ValueKey('disabled_target'),
+      ]) {
+        final target = find.byKey(key);
+        final gesture = await tester.startGesture(tester.getCenter(target));
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(
+          tester.widget<Transform>(find.ancestor(
+            of: target,
+            matching: find.byType(Transform),
+          ).first).transform.entry(0, 0),
+          1,
+        );
+        await gesture.up();
+      }
+    });
+  });
+
+  group('SliverHorizontalSlideSwitcher', () {
+    testWidgets(
+      'positions incoming/outgoing slivers by direction and routes hits only to incoming',
+      (tester) async {
+        final controller = AnimationController(
+          vsync: const TestVSync(),
+          duration: const Duration(milliseconds: 240),
+          value: 0.25,
+        );
+        addTearDown(controller.dispose);
+        var incomingTapped = 0;
+        var outgoingTapped = 0;
+
+        Widget buildHarness(int direction) => MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 400,
+                height: 200,
+                child: CustomScrollView(
+                  slivers: [
+                    SliverHorizontalSlideSwitcher(
+                      progress: controller,
+                      direction: direction,
+                      currentKey: const ValueKey('incoming'),
+                      currentSliver: SliverToBoxAdapter(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => incomingTapped++,
+                          child: const SizedBox(
+                            height: 48,
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text('incoming_row'),
+                            ),
+                          ),
+                        ),
+                      ),
+                      outgoingKey: const ValueKey('outgoing'),
+                      outgoingSliver: SliverToBoxAdapter(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => outgoingTapped++,
+                          child: const SizedBox(
+                            height: 48,
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text('outgoing_row'),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+
+        await tester.pumpWidget(buildHarness(1));
+        final containerLeft = tester.getTopLeft(find.byType(CustomScrollView)).dx;
+        expect(
+          tester.getTopLeft(find.text('incoming_row')).dx - containerLeft,
+          closeTo(300, 0.01),
+        );
+        expect(
+          tester.getTopLeft(find.text('outgoing_row')).dx - containerLeft,
+          closeTo(-100, 0.01),
+        );
+
+        // Tapping where outgoing is still partially visible must not hit outgoing.
+        await tester.tapAt(
+          Offset(containerLeft + 20, tester.getCenter(find.text('outgoing_row')).dy),
+        );
+        await tester.pump();
+        expect(outgoingTapped, 0);
+
+        // Tapping inside the translated incoming sliver hits incoming.
+        await tester.tapAt(
+          Offset(
+            containerLeft + 320,
+            tester.getCenter(find.text('incoming_row')).dy,
+          ),
+        );
+        await tester.pump();
+        expect(incomingTapped, 1);
+
+        // Negative direction reverses positions (incoming enters from left -> right).
+        await tester.pumpWidget(buildHarness(-1));
+        expect(
+          tester.getTopLeft(find.text('incoming_row')).dx - containerLeft,
+          closeTo(-300, 0.01),
+        );
+        expect(
+          tester.getTopLeft(find.text('outgoing_row')).dx - containerLeft,
+          closeTo(100, 0.01),
+        );
+      },
+    );
   });
 }
 

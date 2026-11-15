@@ -18,13 +18,11 @@ import '../../../../core/ui/permission_action_controller.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/app_buttons.dart';
-import '../../../../core/widgets/app_entry_ink_well.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../application/playback_subtitle_service.dart';
 import '../../application/subtitle_overlay_controller.dart';
 import '../bedtime_canvas_page.dart';
 import '../timer_tab.dart';
-import 'playlist_feature_icons.dart';
 import 'playlist_media_widgets.dart';
 import 'playlist_volume_timer_widgets.dart';
 import '../../../../core/media/music_track.dart';
@@ -226,7 +224,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
       tooltip: i18n.tr('close'),
       icon: const Icon(Icons.chevron_left_rounded),
     );
-    final headerActionStyle = AppEntryInkWell.entryButtonStyle(context).merge(
+    final headerActionStyle = appIconButtonStyle(
       IconButton.styleFrom(
         fixedSize: const Size.square(38),
         minimumSize: const Size.square(38),
@@ -251,6 +249,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
             requestKey: (session.id, track?.path ?? session.currentTrackPath),
             coverPathFuture: coverPathFuture,
             initialCoverPath: widget.initialCoverPath,
+            coverPreview: widget.coverPreview,
             onImageError:
                 library.coverArtworkCacheService.reportArtworkReadFailure,
           ),
@@ -275,6 +274,34 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                               ),
                             ),
                           );
+                          final transport = ref.watch(
+                            sessionDetailTransportProvider(session.id),
+                          );
+                          final badges = sessionFeatureBadgeVisibility(
+                            showSubtitles:
+                                _hasSubtitle && settings.$1 && settings.$2,
+                            channelSwapEnabled:
+                                transport?.channelSwapEnabled ??
+                                session.channelSwapEnabled,
+                            audioEffects:
+                                transport?.audioEffects ?? session.audioEffects,
+                            speed: transport?.speed ?? session.speed,
+                          );
+                          final reducedMotion = MediaQuery.disableAnimationsOf(
+                            context,
+                          );
+                          final iconSize = isLandscape ? 20.0 : 18.0;
+                          final spacing = isLandscape ? 8.0 : 6.0;
+                          final color = isLandscape
+                              ? sessionDetailForeground(
+                                  cs,
+                                  SessionDetailForegroundLevel.muted,
+                                )
+                              : Colors.white;
+                          Widget badgeIcon(IconData icon) => Padding(
+                            padding: EdgeInsets.only(right: spacing),
+                            child: Icon(icon, size: iconSize, color: color),
+                          );
 
                           return Row(
                             children: [
@@ -283,60 +310,36 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                                   height: isLandscape ? topBarHeight : 18,
                                 ),
                               ),
-                              if (_hasSubtitle &&
-                                  settings.$1 &&
-                                  settings.$2) ...[
-                                Icon(
-                                  Icons.subtitles_rounded,
-                                  color: isLandscape
-                                      ? sessionDetailForeground(
-                                          cs,
-                                          SessionDetailForegroundLevel.muted,
-                                        )
-                                      : Colors.white,
-                                  size: isLandscape ? 20 : 18,
-                                ),
-                                SizedBox(width: isLandscape ? 8 : 6),
-                              ],
-                              Consumer(
-                                builder: (context, ref, child) {
-                                  final transport = ref.watch(
-                                    sessionDetailTransportProvider(session.id),
-                                  );
-                                  final featureIcons = sessionFeatureBadgeIcons(
-                                    showSubtitles: false,
-                                    channelSwapEnabled:
-                                        transport?.channelSwapEnabled ??
-                                        session.channelSwapEnabled,
-                                    audioEffects:
-                                        transport?.audioEffects ??
-                                        session.audioEffects,
-                                    speed: transport?.speed ?? session.speed,
-                                  );
-                                  if (featureIcons.isEmpty) {
-                                    return const SizedBox.shrink();
-                                  }
-                                  return Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      SessionFeatureIconRow(
-                                        featureIcons: featureIcons,
-                                        color: isLandscape
-                                            ? sessionDetailForeground(
-                                                cs,
-                                                SessionDetailForegroundLevel
-                                                    .muted,
-                                              )
-                                            : Colors.white,
-                                        iconSize: isLandscape ? 20 : 18,
-                                        spacing: isLandscape ? 8 : 6,
-                                        alignment: WrapAlignment.end,
-                                      ),
-                                      SizedBox(width: isLandscape ? 8 : 6),
-                                    ],
-                                  );
-                                },
-                              ),
+                              for (final badge in badges.entries)
+                                if (reducedMotion) ...[
+                                  if (badge.value) badgeIcon(badge.key),
+                                ] else
+                                  TweenAnimationBuilder<double>(
+                                    key: ValueKey(badge.key),
+                                    tween: Tween(
+                                      begin: 0,
+                                      end: badge.value ? 1 : 0,
+                                    ),
+                                    duration: kAppFadeDuration,
+                                    curve: kAppFadeCurve,
+                                    child: badgeIcon(badge.key),
+                                    builder: (context, progress, child) {
+                                      if (progress == 0) {
+                                        return const SizedBox.shrink();
+                                      }
+                                      return ClipRect(
+                                        child: Align(
+                                          alignment: Alignment.centerRight,
+                                          widthFactor: progress,
+                                          heightFactor: 1,
+                                          child: Opacity(
+                                            opacity: progress,
+                                            child: child,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
                             ],
                           );
                         },
@@ -569,12 +572,14 @@ class _SessionDetailBlurredCoverBackground extends StatelessWidget {
     required this.requestKey,
     required this.coverPathFuture,
     required this.initialCoverPath,
+    required this.coverPreview,
     required this.onImageError,
   });
 
   final Object requestKey;
   final Future<String?> coverPathFuture;
   final String? initialCoverPath;
+  final ui.Image? coverPreview;
   final ValueChanged<String>? onImageError;
 
   static final _lightBlur = ui.ImageFilter.blur(
@@ -594,62 +599,71 @@ class _SessionDetailBlurredCoverBackground extends StatelessWidget {
     final surface = theme.colorScheme.surface;
     final isDark = theme.brightness == Brightness.dark;
 
+    Widget buildBackground(Widget image) => ClipRect(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          RepaintBoundary(
+            // Palette changes repaint the tint without invalidating the artwork.
+            child: Transform.scale(
+              scale: isDark ? 1.12 : 1.08,
+              child: ImageFiltered(
+                imageFilter: isDark ? _darkBlur : _lightBlur,
+                child: image,
+              ),
+            ),
+          ),
+          ColoredBox(color: surface.withValues(alpha: isDark ? 0.70 : 0.80)),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  surface.withValues(alpha: isDark ? 0.35 : 0.25),
+                  Colors.transparent,
+                  surface.withValues(alpha: isDark ? 0.50 : 0.40),
+                ],
+                stops: const [0.0, 0.45, 1.0],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    Widget buildPreview(BuildContext context) {
+      final preview = coverPreview;
+      if (preview == null) return const SizedBox.shrink();
+      // The route owns this decoded cover and only supplies it for its track.
+      return buildBackground(RawImage(image: preview, fit: BoxFit.cover));
+    }
+
     return Positioned.fill(
       child: IgnorePointer(
         child: AsyncCoverImage(
+          key: ValueKey(requestKey),
           future: coverPathFuture,
           requestKey: requestKey,
           initialPath: initialCoverPath,
-          fallbackBuilder: _emptyBackground,
-          loadingBuilder: _emptyBackground,
-          imageBuilder: (_, path) => ClipRect(
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                RepaintBoundary(
-                  // Palette changes repaint the tint without invalidating
-                  // the filtered artwork layer.
-                  child: Transform.scale(
-                    scale: isDark ? 1.12 : 1.08,
-                    child: ImageFiltered(
-                      imageFilter: isDark ? _darkBlur : _lightBlur,
-                      child: RetryingFileImage(
-                        path: path,
-                        deferLoadDuringInteraction: true,
-                        onImageError: onImageError,
-                        cacheWidth: 200,
-                        useDefaultCacheWidth: false,
-                        fit: BoxFit.cover,
-                        fallbackBuilder: _emptyBackground,
-                        loadingBuilder: _emptyBackground,
-                      ),
-                    ),
-                  ),
-                ),
-                ColoredBox(
-                  color: surface.withValues(alpha: isDark ? 0.70 : 0.80),
-                ),
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        surface.withValues(alpha: isDark ? 0.35 : 0.25),
-                        Colors.transparent,
-                        surface.withValues(alpha: isDark ? 0.50 : 0.40),
-                      ],
-                      stops: const [0.0, 0.45, 1.0],
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          fallbackBuilder: buildPreview,
+          loadingBuilder: buildPreview,
+          imageBuilder: (_, path) => RetryingFileImage(
+            key: ValueKey(path),
+            path: path,
+            onImageError: onImageError,
+            cacheWidth: 200,
+            useDefaultCacheWidth: false,
+            gaplessPlayback: false,
+            fit: BoxFit.cover,
+            fallbackBuilder: buildPreview,
+            resolvedFrameBuilder: (context, image, frame, synchronous) =>
+                frame == null && !synchronous
+                ? buildPreview(context)
+                : buildBackground(image),
           ),
         ),
       ),
     );
   }
-
-  static Widget _emptyBackground(BuildContext _) => const SizedBox.shrink();
 }

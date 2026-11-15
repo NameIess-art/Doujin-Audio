@@ -332,6 +332,7 @@ class _ThemeColorPickerMenu extends StatelessWidget {
             child: Tooltip(
               message: label,
               child: InkWell(
+                mouseCursor: WidgetStateMouseCursor.clickable,
                 key: ValueKey<String>('theme_color_${preset.name}'),
                 customBorder: const CircleBorder(),
                 onTap: () => onSelected(preset),

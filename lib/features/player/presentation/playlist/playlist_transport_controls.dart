@@ -11,7 +11,6 @@ import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/widgets/app_feedback.dart';
-import '../../../../core/widgets/app_entry_ink_well.dart';
 import '../../../../core/widgets/app_glass_surface.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/windows_horizontal_wheel_scroll.dart';
@@ -22,8 +21,9 @@ import 'playlist_shared_helpers.dart';
 import 'session_detail_theme.dart';
 
 const double _kPlaybackPrimaryControlsWidth = 366;
-// Six 44px buttons, five 4px gaps, and the scroll view's 8px horizontal insets.
-const double _kPlaybackSecondaryControlsWidth = 292;
+// Six 46x40px capsule buttons and 3px concentric insets on each side
+// yield a 46px-tall (23px-radius) bar around the 20px-radius end caps.
+const double _kPlaybackSecondaryControlsWidth = 282;
 
 class TransportPlaybackControlPanel extends StatelessWidget {
   const TransportPlaybackControlPanel({
@@ -180,6 +180,7 @@ class PrimaryPlaybackControls extends ConsumerWidget {
                 enabled: canPrevious,
                 icon: Icons.skip_previous_rounded,
                 iconSize: skipIconSize,
+                nudgeX: -4,
                 onPressed: () {
                   AppInteractionFeedback.trigger(
                     AppInteractionFeedbackType.selection,
@@ -192,6 +193,7 @@ class PrimaryPlaybackControls extends ConsumerWidget {
                 enabled: enabled,
                 icon: Icons.replay_5_rounded,
                 iconSize: skipIconSize * 0.85,
+                nudgeX: -4,
                 onPressed: () {
                   AppInteractionFeedback.trigger(
                     AppInteractionFeedbackType.selection,
@@ -209,16 +211,18 @@ class PrimaryPlaybackControls extends ConsumerWidget {
                   enabled: enabled,
                 ),
                 child: IconButton(
+                  key: const ValueKey('session_detail_play_pause_button'),
                   tooltip: showPauseIcon ? i18n.tr('pause') : i18n.tr('play'),
                   constraints: BoxConstraints.tightFor(
                     width: playButtonSize,
                     height: playButtonSize,
                   ),
                   padding: EdgeInsets.zero,
-                  style: AppEntryInkWell.entryButtonStyle(
-                    context,
-                    foregroundColor: onPrimaryColor,
-                  ).copyWith(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                  style: appTransportIconButtonStyle(
+                    const ButtonStyle(
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
                   onPressed: enabled
                       ? () {
                           AppInteractionFeedback.trigger(
@@ -259,6 +263,7 @@ class PrimaryPlaybackControls extends ConsumerWidget {
                 enabled: enabled,
                 icon: Icons.forward_5_rounded,
                 iconSize: skipIconSize * 0.8,
+                nudgeX: 4,
                 onPressed: () {
                   AppInteractionFeedback.trigger(
                     AppInteractionFeedbackType.selection,
@@ -275,6 +280,7 @@ class PrimaryPlaybackControls extends ConsumerWidget {
                 enabled: canNext,
                 icon: Icons.skip_next_rounded,
                 iconSize: skipIconSize,
+                nudgeX: 4,
                 onPressed: () {
                   AppInteractionFeedback.trigger(
                     AppInteractionFeedbackType.selection,
@@ -358,7 +364,6 @@ class _PlaybackSecondaryControlsState
   }
 
   void _toggleMute() {
-    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     final currentVolume = (_dragVolume ?? _currentVolume)
         .clamp(0.0, PlaybackFacade.maxSessionVolume)
         .toDouble();
@@ -458,49 +463,30 @@ class _PlaybackSecondaryControlsState
     Widget buildVolumeBar() {
       return Padding(
         key: const ValueKey('playback_volume_controls_row'),
-        padding: const EdgeInsets.symmetric(horizontal: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 3),
         child: Row(
           children: [
-            IconButton(
-              key: const ValueKey('session_volume_exit_button'),
-              constraints: const BoxConstraints.tightFor(width: 44, height: 44),
-              padding: EdgeInsets.zero,
-              tooltip: i18n.tr('back'),
-              icon: Icon(
-                Icons.arrow_back_rounded,
-                size: 20,
-                color: sessionDetailForeground(
-                  cs,
-                  SessionDetailForegroundLevel.muted,
-                ),
+            _buildSecondaryControlSlot(
+              _SecondaryControlButton(
+                buttonKey: const ValueKey('session_volume_exit_button'),
+                icon: Icons.arrow_back_rounded,
+                tooltip: i18n.tr('back'),
+                onPressed: () {
+                  setState(() {
+                    _volumeMode = false;
+                    _dragVolume = null;
+                  });
+                },
               ),
-              onPressed: () {
-                AppInteractionFeedback.trigger(
-                  AppInteractionFeedbackType.selection,
-                );
-                setState(() {
-                  _volumeMode = false;
-                  _dragVolume = null;
-                });
-              },
             ),
-            IconButton(
-              key: const ValueKey('session_volume_mute_button'),
-              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-              padding: EdgeInsets.zero,
-              tooltip: volumeGain == 0 ? i18n.tr('unmute') : i18n.tr('mute'),
-              icon: Icon(
-                _getIconForVolume(volumeGain),
-                key: ValueKey(_getIconForVolume(volumeGain)),
-                size: 18,
-                color: isBoosted
-                    ? cs.primary
-                    : sessionDetailForeground(
-                        cs,
-                        SessionDetailForegroundLevel.muted,
-                      ),
+            _buildSecondaryControlSlot(
+              _SecondaryControlButton(
+                buttonKey: const ValueKey('session_volume_mute_button'),
+                icon: _getIconForVolume(volumeGain),
+                tooltip: volumeGain == 0 ? i18n.tr('unmute') : i18n.tr('mute'),
+                foregroundColor: isBoosted ? cs.primary : null,
+                onPressed: _toggleMute,
               ),
-              onPressed: _toggleMute,
             ),
             Expanded(
               child: SliderTheme(
@@ -547,6 +533,7 @@ class _PlaybackSecondaryControlsState
               ),
             ),
             InkWell(
+              mouseCursor: WidgetStateMouseCursor.clickable,
               key: const ValueKey('session_volume_percent_text'),
               onTap: () => _showVolumeInputDialog(context),
               child: Padding(
@@ -570,6 +557,44 @@ class _PlaybackSecondaryControlsState
     }
 
     Widget buildButtonsRow() {
+      final buttons = <Widget>[
+        SessionLoopModeButton(
+          session: widget.session,
+          playback: widget.playback,
+        ),
+        _SecondaryControlButton(
+          key: const ValueKey('session_volume_button_anchor'),
+          icon: _getIconForVolume(_currentVolume),
+          tooltip: i18n.tr('volume'),
+          onPressed: () {
+            setState(() => _volumeMode = true);
+          },
+        ),
+        _SecondaryControlButton(
+          key: const ValueKey('session_subtitle_menu_button'),
+          icon: Icons.subtitles_rounded,
+          tooltip: i18n.tr('subtitles'),
+          active: widget.subtitleEnabled && widget.hasSubtitle,
+          onPressed: widget.onShowSubtitleMenu,
+        ),
+        _SecondaryControlButton(
+          icon: Icons.tune_rounded,
+          tooltip: i18n.tr('audio_features'),
+          active: widget.segmentPanelExpanded,
+          onPressed: widget.onToggleSegments,
+        ),
+        _SecondaryControlButton(
+          icon: Icons.queue_music_rounded,
+          tooltip: i18n.tr('switch_audio'),
+          onPressed: widget.hasSiblings ? widget.onShowTrackSwitcher : null,
+        ),
+        _SecondaryControlButton(
+          key: const ValueKey('session_work_detail_button'),
+          icon: Icons.info_outline_rounded,
+          tooltip: i18n.tr('audio_detail'),
+          onPressed: widget.onShowWorkDetail,
+        ),
+      ];
       return LayoutBuilder(
         key: const ValueKey('playback_buttons_row'),
         builder: (context, constraints) => WindowsHorizontalWheelScroll(
@@ -580,52 +605,16 @@ class _PlaybackSecondaryControlsState
             controller: scrollController,
             scrollDirection: Axis.horizontal,
             physics: const ClampingScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 3),
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                minWidth: max(0.0, constraints.maxWidth - 8),
+                minWidth: max(0.0, constraints.maxWidth - 6),
               ),
               child: Row(
-                spacing: 4,
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  SessionLoopModeButton(
-                    session: widget.session,
-                    playback: widget.playback,
-                  ),
-                  _SecondaryControlButton(
-                    key: const ValueKey('session_volume_button_anchor'),
-                    icon: _getIconForVolume(_currentVolume),
-                    tooltip: i18n.tr('volume'),
-                    onPressed: () {
-                      setState(() => _volumeMode = true);
-                    },
-                  ),
-                  _SecondaryControlButton(
-                    key: const ValueKey('session_subtitle_menu_button'),
-                    icon: Icons.subtitles_rounded,
-                    tooltip: i18n.tr('subtitles'),
-                    active: widget.subtitleEnabled && widget.hasSubtitle,
-                    onPressed: widget.onShowSubtitleMenu,
-                  ),
-                  _SecondaryControlButton(
-                    icon: Icons.tune_rounded,
-                    tooltip: i18n.tr('audio_features'),
-                    active: widget.segmentPanelExpanded,
-                    onPressed: widget.onToggleSegments,
-                  ),
-                  _SecondaryControlButton(
-                    icon: Icons.queue_music_rounded,
-                    tooltip: i18n.tr('switch_audio'),
-                    onPressed: widget.hasSiblings
-                        ? widget.onShowTrackSwitcher
-                        : null,
-                  ),
-                  _SecondaryControlButton(
-                    key: const ValueKey('session_work_detail_button'),
-                    icon: Icons.info_outline_rounded,
-                    tooltip: i18n.tr('audio_detail'),
-                    onPressed: widget.onShowWorkDetail,
-                  ),
+                  for (final button in buttons) _buildSecondaryControlSlot(button),
                 ],
               ),
             ),
@@ -637,7 +626,7 @@ class _PlaybackSecondaryControlsState
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final background = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
     final glassEnabled = AppDesignTokens.of(context).barGlassEnabled;
-    const double capsuleHeight = 52;
+    const double capsuleHeight = 46;
     final borderRadius = BorderRadius.circular(capsuleHeight / 2);
 
     final capsuleSurface = DecoratedBox(
@@ -677,7 +666,7 @@ class _PlaybackSecondaryControlsState
   }
 }
 
-class PrimaryTransportButton extends StatelessWidget {
+class PrimaryTransportButton extends StatefulWidget {
   const PrimaryTransportButton({
     super.key,
     required this.constraints,
@@ -686,6 +675,7 @@ class PrimaryTransportButton extends StatelessWidget {
     required this.iconSize,
     required this.onPressed,
     this.tooltip,
+    this.nudgeX = 0,
   });
 
   final BoxConstraints constraints;
@@ -694,6 +684,75 @@ class PrimaryTransportButton extends StatelessWidget {
   final double iconSize;
   final VoidCallback onPressed;
   final String? tooltip;
+  final double nudgeX;
+
+  @override
+  State<PrimaryTransportButton> createState() => _PrimaryTransportButtonState();
+}
+
+class _PrimaryTransportButtonState extends State<PrimaryTransportButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _nudgeController;
+  late Animation<double> _nudgeOffset;
+
+  @override
+  void initState() {
+    super.initState();
+    _nudgeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 240),
+    );
+    _rebuildNudgeAnimation();
+  }
+
+  @override
+  void didUpdateWidget(covariant PrimaryTransportButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.nudgeX != widget.nudgeX) {
+      _rebuildNudgeAnimation();
+    }
+    if (!widget.enabled && oldWidget.enabled) {
+      _nudgeController.reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    _nudgeController.dispose();
+    super.dispose();
+  }
+
+  void _rebuildNudgeAnimation() {
+    if (widget.nudgeX == 0) {
+      _nudgeOffset = const AlwaysStoppedAnimation<double>(0);
+      return;
+    }
+    _nudgeOffset = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 0,
+          end: widget.nudgeX,
+        ).chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 35,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: widget.nudgeX,
+          end: 0,
+        ).chain(CurveTween(curve: kAppSpringBackCurve)),
+        weight: 65,
+      ),
+    ]).animate(_nudgeController);
+  }
+
+  void _handlePressed() {
+    if (widget.nudgeX != 0 &&
+        !MediaQuery.disableAnimationsOf(context) &&
+        TickerMode.valuesOf(context).enabled) {
+      _nudgeController.forward(from: 0);
+    }
+    widget.onPressed();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -704,77 +763,97 @@ class PrimaryTransportButton extends StatelessWidget {
       SessionDetailForegroundLevel.strong,
     );
     final plateColor = isDark
-        ? cs.surfaceContainerHighest.withValues(alpha: enabled ? 0.35 : 0.15)
-        : cs.surfaceContainerHighest.withValues(alpha: enabled ? 0.50 : 0.20);
+        ? cs.surfaceContainerHighest.withValues(
+            alpha: widget.enabled ? 0.35 : 0.15,
+          )
+        : cs.surfaceContainerHighest.withValues(
+            alpha: widget.enabled ? 0.50 : 0.20,
+          );
+
+    final iconWidget = Icon(widget.icon, size: widget.iconSize);
 
     return Container(
-      constraints: constraints,
+      constraints: widget.constraints,
       decoration: BoxDecoration(shape: BoxShape.circle, color: plateColor),
       child: IconButton(
-        tooltip: tooltip,
-        constraints: constraints,
+        tooltip: widget.tooltip,
+        constraints: widget.constraints,
         padding: EdgeInsets.zero,
-        style: IconButton.styleFrom(
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        style: appTransportIconButtonStyle(
+          IconButton.styleFrom(
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            foregroundColor: iconColor,
+            disabledForegroundColor: iconColor.withValues(alpha: 0.35),
+          ),
         ),
-        onPressed: enabled ? onPressed : null,
-        icon: Icon(
-          icon,
-          size: iconSize,
-          color: enabled ? iconColor : iconColor.withValues(alpha: 0.35),
-        ),
+        onPressed: widget.enabled ? _handlePressed : null,
+        icon: widget.nudgeX == 0
+            ? iconWidget
+            : AnimatedBuilder(
+                animation: _nudgeController,
+                child: iconWidget,
+                builder: (context, child) {
+                  final dx = _nudgeOffset.value;
+                  if (dx == 0) return child!;
+                  return Transform.translate(
+                    offset: Offset(dx, 0),
+                    child: child,
+                  );
+                },
+              ),
       ),
     );
   }
 }
 
+Widget _buildSecondaryControlSlot(Widget child) => SizedBox(
+  width: playbackSecondaryControlButtonWidth,
+  height: playbackSecondaryControlButtonHeight,
+  child: ClipPath(
+    clipper: const ShapeBorderClipper(shape: StadiumBorder()),
+    child: child,
+  ),
+);
+
 class _SecondaryControlButton extends StatelessWidget {
   const _SecondaryControlButton({
     super.key,
+    this.buttonKey,
     required this.icon,
     required this.tooltip,
     this.active = false,
+    this.foregroundColor,
     this.onPressed,
   });
 
+  final Key? buttonKey;
   final IconData icon;
   final String tooltip;
   final bool active;
+  final Color? foregroundColor;
   final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final enabled = onPressed != null;
     return IconButton(
-      constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+      key: buttonKey,
+      constraints: playbackSecondaryControlButtonConstraints,
       padding: EdgeInsets.zero,
       tooltip: tooltip,
-      style:
-          AppEntryInkWell.entryButtonStyle(
-            context,
-            foregroundColor: active
-                ? cs.onPrimaryContainer
-                : sessionDetailForeground(
+      style: playbackSecondaryControlButtonStyle(
+        backgroundColor: active
+            ? cs.primaryContainer.withValues(alpha: 0.65)
+            : Colors.transparent,
+        foregroundColor: active
+            ? cs.onPrimaryContainer
+            : foregroundColor ??
+                  sessionDetailForeground(
                     cs,
                     SessionDetailForegroundLevel.muted,
                   ),
-          ).merge(
-            IconButton.styleFrom(
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              shape: const CircleBorder(),
-              backgroundColor: active
-                  ? cs.primaryContainer.withValues(alpha: 0.65)
-                  : Colors.transparent,
-              foregroundColor: active
-                  ? cs.onPrimaryContainer
-                  : sessionDetailForeground(
-                      cs,
-                      SessionDetailForegroundLevel.muted,
-                    ),
-              disabledForegroundColor: cs.onSurface.withValues(alpha: 0.35),
-            ),
-          ),
+        disabledForegroundColor: cs.onSurface.withValues(alpha: 0.35),
+      ),
       onPressed: onPressed != null
           ? () {
               AppInteractionFeedback.trigger(
@@ -797,12 +876,7 @@ class _SecondaryControlButton extends StatelessWidget {
             child: FadeTransition(opacity: animation, child: child),
           );
         },
-        child: Icon(
-          icon,
-          key: ValueKey(icon),
-          size: 20,
-          color: enabled ? null : null,
-        ),
+        child: Icon(icon, key: ValueKey(icon), size: 20),
       ),
     );
   }

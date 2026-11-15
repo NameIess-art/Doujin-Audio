@@ -4,12 +4,16 @@ import 'dart:ui' as dart_ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'app_buttons.dart';
+
 import '../../app/theme/app_design_tokens.dart';
 import '../../app/theme/app_styles.dart';
 import 'app_edge_fade_mask.dart';
 import 'app_glass_surface.dart';
 import 'app_transitions.dart';
 import 'marquee_text.dart';
+import 'sliding_selection_indicator.dart';
+import 'unified_popup_menu.dart';
 import 'windows_horizontal_wheel_scroll.dart';
 
 class AppPageAppBar extends StatelessWidget implements PreferredSizeWidget {
@@ -432,7 +436,9 @@ class _TopPageHeaderState extends State<TopPageHeader> {
                             widget.icon,
                             size: AppDesignTokens.opticalIconSize(
                               widget.icon,
-                              AppDesignTokens.fileTypeIcons.contains(widget.icon)
+                              AppDesignTokens.fileTypeIcons.contains(
+                                    widget.icon,
+                                  )
                                   ? AppDesignTokens.fileEntryIconSize
                                   : 16,
                             ),
@@ -582,16 +588,15 @@ class _AppHeaderSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     if (floating) {
       if (!showFadeMask ||
-          context.findAncestorWidgetOfExactType<AppHeaderTransition>() != null) {
+          context.findAncestorWidgetOfExactType<AppHeaderTransition>() !=
+              null) {
         return child;
       }
       return Stack(
         fit: StackFit.passthrough,
         children: [
           const Positioned.fill(
-            child: AppEdgeFadeMask(
-              direction: AppEdgeFadeDirection.towardTop,
-            ),
+            child: AppEdgeFadeMask(direction: AppEdgeFadeDirection.towardTop),
           ),
           child,
         ],
@@ -690,6 +695,107 @@ class HeaderFloatingSurface extends StatelessWidget {
   }
 }
 
+/// Shared floating bottom-right primary capsule button.
+class HeaderFloatingActionPill extends StatelessWidget {
+  const HeaderFloatingActionPill({
+    super.key,
+    this.pillKey,
+    required this.icon,
+    this.iconKey,
+    required this.label,
+    required this.onTap,
+    this.loading = false,
+    this.horizontalPadding = 18,
+    this.backgroundColor,
+    this.foregroundColor,
+  });
+
+  final Key? pillKey;
+  final IconData icon;
+  final Key? iconKey;
+  final String label;
+  final VoidCallback? onTap;
+  final bool loading;
+  final double horizontalPadding;
+  final Color? backgroundColor;
+  final Color? foregroundColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final enabled = !loading && onTap != null;
+    final baseBg = backgroundColor ?? cs.primary;
+    final effectiveFg = foregroundColor ?? cs.onPrimary;
+    final borderRadius = BorderRadius.circular(23);
+
+    return AppSurfaceButtonShell(
+      enabled: enabled,
+      builder: (context, feedback) {
+        final surfaceColor = appSurfaceHighlight(
+          cs,
+          baseBg,
+          pressed: feedback.pressed,
+          hovered: feedback.hovered,
+        );
+        final contentColor = feedback.pressed || feedback.hovered
+            ? appLabelledButtonHighlight(
+                cs,
+                foreground: effectiveFg,
+                background: surfaceColor,
+              )
+            : effectiveFg;
+        return HeaderFloatingSurface(
+          key: pillKey,
+          height: 46,
+          radius: 23,
+          padding: EdgeInsets.zero,
+          child: Material(
+            color: surfaceColor,
+            animationDuration: feedback.duration,
+            shape: RoundedRectangleBorder(borderRadius: borderRadius),
+            child: InkWell(
+              mouseCursor: WidgetStateMouseCursor.clickable,
+              borderRadius: borderRadius,
+              hoverColor: Colors.transparent,
+              highlightColor: Colors.transparent,
+              splashFactory: NoSplash.splashFactory,
+              onTap: loading ? null : onTap,
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (loading)
+                      SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: effectiveFg,
+                        ),
+                      )
+                    else
+                      Icon(icon, key: iconKey, size: 18, color: contentColor),
+                    const SizedBox(width: 6),
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: contentColor,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class HeaderFloatingButton extends StatelessWidget {
   const HeaderFloatingButton({
     super.key,
@@ -718,20 +824,26 @@ class HeaderFloatingButton extends StatelessWidget {
         followBarGlass: followBarGlass,
         child: IconButtonTheme(
           data: IconButtonThemeData(
-            style: IconButton.styleFrom(
-              minimumSize: Size(size, size),
-              maximumSize: Size(size, size),
-              padding: EdgeInsets.zero,
-              iconSize: 20,
-              visualDensity: VisualDensity.compact,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              shape: const CircleBorder(),
+            style: appIconButtonStyle(
+              IconButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.onSurface,
+                minimumSize: Size(size, size),
+                maximumSize: Size(size, size),
+                padding: EdgeInsets.zero,
+                iconSize: 20,
+                visualDensity: VisualDensity.standard,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                shape: const CircleBorder(),
+              ),
             ),
           ),
-          child: Center(
-            child: IconTheme.merge(
-              data: const IconThemeData(size: 20),
-              child: child,
+          child: appNoPointerInkTheme(
+            context: context,
+            child: Center(
+              child: IconTheme.merge(
+                data: const IconThemeData(size: 20),
+                child: child,
+              ),
             ),
           ),
         ),
@@ -744,14 +856,14 @@ class HeaderActionPill extends StatelessWidget {
   const HeaderActionPill({
     super.key,
     required this.children,
-    this.padding = const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+    this.padding = EdgeInsets.zero,
   });
 
-  static const double buttonWidth = 28;
-  static const double buttonHeight = 32;
+  static const double _buttonWidth = 48;
+  static const double _buttonHeight = AppPageHeaderMetrics.buttonSize;
   static const BoxConstraints buttonConstraints = BoxConstraints.tightFor(
-    width: buttonWidth,
-    height: buttonHeight,
+    width: _buttonWidth,
+    height: _buttonHeight,
   );
 
   final List<Widget> children;
@@ -759,44 +871,73 @@ class HeaderActionPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final actions = IconButtonTheme(
+      data: IconButtonThemeData(
+        style: appIconButtonStyle(
+          IconButton.styleFrom(
+            fixedSize: const Size(_buttonWidth, _buttonHeight),
+            padding: EdgeInsets.zero,
+            visualDensity: VisualDensity.standard,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            shape: const StadiumBorder(),
+          ),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final child in children)
+            if (child is IconButton || child is UnifiedPopupMenuButton<Object?>)
+              SizedBox(
+                width: _buttonWidth,
+                height: _buttonHeight,
+                child: ClipPath(
+                  clipper: const ShapeBorderClipper(shape: StadiumBorder()),
+                  child: child,
+                ),
+              )
+            else
+              child,
+        ],
+      ),
+    );
     return LayoutBuilder(
       builder: (context, constraints) {
         final horizontalPadding = padding
             .resolve(Directionality.of(context))
             .horizontal;
-        final fullWidth =
-            children.length * kMinInteractiveDimension + horizontalPadding;
-        final compact = children.isNotEmpty && constraints.maxWidth < fullWidth;
-        final actionWidth = compact
-            ? ((constraints.maxWidth - horizontalPadding) / children.length)
-                  .clamp(buttonWidth, kMinInteractiveDimension)
-            : kMinInteractiveDimension;
-        Widget actions = Row(
-          mainAxisSize: MainAxisSize.min,
-          children: compact
-              ? [
-                  for (final child in children)
-                    SizedBox(width: actionWidth, child: child),
-                ]
-              : children,
-        );
-        if (compact) {
-          actions = IconButtonTheme(
-            data: IconButtonThemeData(
-              style: IconButton.styleFrom(
-                minimumSize: const Size(buttonWidth, buttonHeight),
-                maximumSize: const Size(buttonWidth, buttonHeight),
-                padding: EdgeInsets.zero,
-                visualDensity: VisualDensity.standard,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-            ),
-            child: actions,
-          );
-        }
+        final scroll =
+            constraints.hasBoundedWidth &&
+            (constraints.maxWidth <
+                    children.length * _buttonWidth + horizontalPadding ||
+                children.any(
+                  (child) =>
+                      child is! IconButton &&
+                      child is! UnifiedPopupMenuButton<Object?>,
+                ));
         return Align(
           alignment: Alignment.centerLeft,
-          child: HeaderFloatingSurface(padding: padding, child: actions),
+          child: ClipPath(
+            clipper: const ShapeBorderClipper(shape: StadiumBorder()),
+            child: HeaderFloatingSurface(
+              padding: padding,
+              child: scroll
+                  ? WindowsHorizontalWheelScroll(
+                      builder: (controller) => ScrollConfiguration(
+                        behavior: ScrollConfiguration.of(
+                          context,
+                        ).copyWith(scrollbars: false),
+                        child: SingleChildScrollView(
+                          controller: controller,
+                          primary: false,
+                          scrollDirection: Axis.horizontal,
+                          child: actions,
+                        ),
+                      ),
+                    )
+                  : actions,
+            ),
+          ),
         );
       },
     );
@@ -821,71 +962,246 @@ class HeaderSegmentedCategoryBar<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: HeaderFloatingSurface(
+        child: SegmentedCategoryPillStrip<T>(
+          items: items,
+          selected: selected,
+          onSelected: onSelected,
+          labelBuilder: labelBuilder,
+          accentColor: accentColor,
+          indicatorKey: const ValueKey<String>('header_category_indicator'),
+        ),
+      ),
+    );
+  }
+}
+
+class SegmentedCategoryPillStrip<T> extends StatefulWidget {
+  const SegmentedCategoryPillStrip({
+    super.key,
+    required this.items,
+    required this.selected,
+    required this.onSelected,
+    required this.labelBuilder,
+    this.accentColor,
+    this.scrollViewKey,
+    this.indicatorKey,
+    this.itemKeyBuilder,
+  });
+
+  final List<T> items;
+  final T? selected;
+  final ValueChanged<T>? onSelected;
+  final String Function(T item) labelBuilder;
+  final Color? accentColor;
+  final Key? scrollViewKey;
+  final Key? indicatorKey;
+  final Key Function(T item)? itemKeyBuilder;
+
+  @override
+  State<SegmentedCategoryPillStrip<T>> createState() =>
+      _SegmentedCategoryPillStripState<T>();
+}
+
+class _SegmentedCategoryPillStripState<T>
+    extends State<SegmentedCategoryPillStrip<T>> {
+  final GlobalKey _rowKey = GlobalKey();
+  List<GlobalKey> _slotKeys = const <GlobalKey>[];
+
+  @override
+  void initState() {
+    super.initState();
+    _syncSlotKeys();
+  }
+
+  @override
+  void didUpdateWidget(covariant SegmentedCategoryPillStrip<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncSlotKeys();
+  }
+
+  void _syncSlotKeys() {
+    final targetCount = widget.items.length;
+    if (_slotKeys.length == targetCount) return;
+    _slotKeys = List<GlobalKey>.generate(
+      targetCount,
+      (index) => index < _slotKeys.length ? _slotKeys[index] : GlobalKey(),
+      growable: false,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final textTheme = theme.textTheme;
     final isWindows = theme.platform == TargetPlatform.windows;
-    final activeColor = accentColor ?? cs.primary;
+    final activeColor = widget.accentColor ?? cs.primary;
+    final reduceMotion =
+        MediaQuery.disableAnimationsOf(context) ||
+        !TickerMode.valuesOf(context).enabled;
+    final motionDuration = reduceMotion ? Duration.zero : kAppMotionFast;
+    final selectedItem = widget.selected;
+    final activeIndex = selectedItem == null
+        ? -1
+        : widget.items.indexOf(selectedItem);
+    final labelSignature = Object.hashAll(
+      widget.items.map(widget.labelBuilder),
+    );
+    final onSelected = widget.onSelected;
 
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: HeaderFloatingSurface(
-        child: WindowsHorizontalWheelScroll(
-          builder: (scrollController) => SingleChildScrollView(
-            controller: scrollController,
-            scrollDirection: Axis.horizontal,
-            physics: const ClampingScrollPhysics(),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: items
-                    .map((item) {
-                      final isSelected = item == selected;
-                      final label = labelBuilder(item);
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 1),
-                        child: Material(
-                          color: isSelected
-                              ? activeColor.withValues(alpha: 0.19)
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(15),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(15),
-                            onTap: () => onSelected(item),
-                            child: SizedBox(
-                              height: 32,
-                              child: Center(
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                  ),
-                                  child: Text(
-                                    label,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: textTheme.labelMedium?.copyWith(
-                                      color: isSelected
-                                          ? activeColor
-                                          : cs.onSurfaceVariant,
-                                      fontWeight: isWindows
-                                          ? (isSelected
-                                                ? FontWeight.w600
-                                                : null)
-                                          : (isSelected
-                                                ? FontWeight.w700
-                                                : FontWeight.w600),
-                                      fontSize: isWindows ? null : 12.5,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    })
-                    .toList(growable: false),
+    final row = Row(
+      key: _rowKey,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < widget.items.length; i++)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 1),
+            child: _HeaderCategorySegmentItem(
+              slotKey: _slotKeys[i],
+              itemKey: widget.itemKeyBuilder?.call(widget.items[i]),
+              label: widget.labelBuilder(widget.items[i]),
+              selected: i == activeIndex,
+              activeColor: activeColor,
+              inactiveColor: cs.onSurfaceVariant,
+              isWindows: isWindows,
+              motionDuration: motionDuration,
+              baseStyle: textTheme.labelMedium,
+              onTap: onSelected == null
+                  ? null
+                  : () => onSelected(widget.items[i]),
+            ),
+          ),
+      ],
+    );
+
+    return WindowsHorizontalWheelScroll(
+      builder: (scrollController) => SingleChildScrollView(
+        key: widget.scrollViewKey,
+        controller: scrollController,
+        scrollDirection: Axis.horizontal,
+        physics: const ClampingScrollPhysics(),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
+          child: SlidingSelectionIndicator(
+            index: activeIndex,
+            layoutKey: Object.hashAll(widget.items),
+            child: row,
+            builder: (context, position, child) => CustomPaint(
+              key: widget.indicatorKey,
+              painter: SlidingSelectionPainter(
+                containerKey: _rowKey,
+                position: position,
+                visible: activeIndex >= 0 && widget.items.isNotEmpty,
+                accentColor: activeColor,
+                slots: _slotKeys,
+                layoutSignature: labelSignature,
+              ),
+              child: child,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HeaderCategorySegmentItem extends StatefulWidget {
+  const _HeaderCategorySegmentItem({
+    required this.slotKey,
+    this.itemKey,
+    required this.label,
+    required this.selected,
+    required this.activeColor,
+    required this.inactiveColor,
+    required this.isWindows,
+    required this.motionDuration,
+    required this.baseStyle,
+    required this.onTap,
+  });
+
+  final GlobalKey slotKey;
+  final Key? itemKey;
+  final String label;
+  final bool selected;
+  final Color activeColor;
+  final Color inactiveColor;
+  final bool isWindows;
+  final Duration motionDuration;
+  final TextStyle? baseStyle;
+  final VoidCallback? onTap;
+
+  @override
+  State<_HeaderCategorySegmentItem> createState() =>
+      _HeaderCategorySegmentItemState();
+}
+
+class _HeaderCategorySegmentItemState
+    extends State<_HeaderCategorySegmentItem> {
+  final WidgetStatesController _states = WidgetStatesController();
+
+  @override
+  void dispose() {
+    _states.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedStyle = widget.baseStyle?.copyWith(
+      color: widget.activeColor,
+      fontWeight: widget.isWindows ? FontWeight.w600 : FontWeight.w700,
+      fontSize: widget.isWindows ? null : 12.5,
+    );
+    final unselectedStyle = widget.baseStyle?.copyWith(
+      color: widget.inactiveColor,
+      fontWeight: widget.isWindows ? null : FontWeight.w600,
+      fontSize: widget.isWindows ? null : 12.5,
+    );
+
+    return Semantics(
+      button: true,
+      selected: widget.selected,
+      child: Material(
+        key: widget.slotKey,
+        type: MaterialType.transparency,
+        borderRadius: BorderRadius.circular(15),
+        child: InkWell(
+          mouseCursor: WidgetStateMouseCursor.clickable,
+          key: widget.itemKey,
+          borderRadius: BorderRadius.circular(15),
+          hoverColor: Colors.transparent,
+          highlightColor: Colors.transparent,
+          splashFactory: NoSplash.splashFactory,
+          statesController: _states,
+          onTap: widget.onTap,
+          child: AppTouchFeedback(
+            enabled: widget.onTap != null,
+            child: SizedBox(
+              height: 32,
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween<double>(end: widget.selected ? 1.0 : 0.0),
+                    duration: widget.motionDuration,
+                    curve: Curves.easeOutCubic,
+                    builder: (context, selection, _) => AppButtonText(
+                      states: _states,
+                      label: widget.label,
+                      accentColor: widget.activeColor,
+                      style: TextStyle.lerp(
+                        unselectedStyle,
+                        selectedStyle,
+                        selection,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
               ),
             ),
           ),

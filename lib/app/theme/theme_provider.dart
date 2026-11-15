@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/widgets/app_buttons.dart';
+import '../../core/widgets/app_tap_highlight.dart';
+
 import '../../core/persistence/persisted_state_reloader.dart';
 import '../../core/persistence/app_preferences.dart';
 import '../../core/widgets/app_transitions.dart';
@@ -95,10 +98,7 @@ extension ThemeAccentPresetValue on ThemeAccentPreset {
     _ => 'theme_color_$name',
   };
 
-  Color bootstrapSurfaceColor(
-    Brightness brightness, {
-    bool pureBlack = false,
-  }) {
+  Color bootstrapSurfaceColor(Brightness brightness, {bool pureBlack = false}) {
     if (pureBlack && brightness == Brightness.dark) {
       return const Color(0xFF000000);
     }
@@ -655,21 +655,31 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
           TargetPlatform.windows: AppPageTransitionsBuilder(),
         },
       ),
-      hoverColor: scheme.primary.withValues(alpha: 0.08),
+      hoverColor: appHoverTint(scheme),
       // Switches belong to interactive option rows, which paint their own
       // hover shape. Avoid a second circular highlight around the thumb.
+      checkboxTheme: const CheckboxThemeData(
+        mouseCursor: WidgetStateMouseCursor.clickable,
+      ),
+      radioTheme: const RadioThemeData(
+        mouseCursor: WidgetStateMouseCursor.clickable,
+      ),
       switchTheme: SwitchThemeData(
+        mouseCursor: WidgetStateMouseCursor.clickable,
         overlayColor: WidgetStateProperty.resolveWith(
           (states) =>
-              states.contains(WidgetState.hovered) ? Colors.transparent : null,
+              states.contains(WidgetState.hovered) || states.contains(WidgetState.pressed)
+                ? Colors.transparent
+                : null,
         ),
       ),
       focusColor: scheme.primary.withValues(alpha: 0.12),
-      highlightColor: scheme.primary.withValues(alpha: 0.12),
+      highlightColor: Colors.transparent,
+      splashColor: appPressedTint(scheme),
       scaffoldBackgroundColor: scheme.surface,
       canvasColor: scheme.surface,
       dividerColor: scheme.outlineVariant,
-      splashFactory: InkRipple.splashFactory,
+      splashFactory: AppTapHighlightFactory.forPlatform(defaultTargetPlatform),
       cardTheme: CardThemeData(
         color: scheme.surfaceContainerLow,
         elevation: 0,
@@ -706,36 +716,60 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
         indicatorColor: scheme.primaryContainer,
       ),
       filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(52),
-          shape: buttonShape,
-          textStyle: TextStyle(
-            fontWeight: isWindows ? FontWeight.w600 : FontWeight.w700,
+        style: appSurfaceButtonStyle(
+          style: FilledButton.styleFrom(
+            minimumSize: const Size.fromHeight(52),
+            shape: buttonShape,
+            textStyle: TextStyle(
+              fontWeight: isWindows ? FontWeight.w600 : FontWeight.w700,
+            ),
           ),
+          colorScheme: scheme,
+          platform: isWindows ? TargetPlatform.windows : defaultTargetPlatform,
+          defaultBackgroundColor: scheme.primary,
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
-        style: OutlinedButton.styleFrom(
-          minimumSize: const Size.fromHeight(48),
-          shape: buttonShape,
-          side: BorderSide(color: scheme.outlineVariant),
-          textStyle: TextStyle(
-            fontWeight: isWindows ? FontWeight.w600 : FontWeight.w700,
+        style: appSurfaceButtonStyle(
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size.fromHeight(48),
+            shape: buttonShape,
+            side: BorderSide(color: scheme.outlineVariant),
+            textStyle: TextStyle(
+              fontWeight: isWindows ? FontWeight.w600 : FontWeight.w700,
+            ),
           ),
+          colorScheme: scheme,
+          platform: isWindows ? TargetPlatform.windows : defaultTargetPlatform,
         ),
       ),
       textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(
-          minimumSize: Size(tokens.minimumTapTarget, tokens.minimumTapTarget),
-          shape: buttonShape,
+        style: appTextButtonStyle(
+          style: TextButton.styleFrom(
+            minimumSize: Size(tokens.minimumTapTarget, tokens.minimumTapTarget),
+            shape: buttonShape,
+          ),
         ),
       ),
       iconButtonTheme: IconButtonThemeData(
-        style: IconButton.styleFrom(
-          minimumSize: Size(tokens.minimumTapTarget, tokens.minimumTapTarget),
-          visualDensity: VisualDensity.standard,
-          shape: const CircleBorder(),
+        style: appIconButtonStyle(
+          IconButton.styleFrom(
+            minimumSize: Size(tokens.minimumTapTarget, tokens.minimumTapTarget),
+            visualDensity: VisualDensity.standard,
+            shape: const CircleBorder(),
+          ),
         ),
+      ),
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: appSegmentedButtonStyle(
+          colorScheme: scheme,
+          platform: isWindows ? TargetPlatform.windows : defaultTargetPlatform,
+        ),
+      ),
+      chipTheme: appChipTheme(
+        colorScheme: scheme,
+        platform: isWindows ? TargetPlatform.windows : defaultTargetPlatform,
+        baseLabelStyle: textTheme.labelLarge,
       ),
       sliderTheme: SliderThemeData(
         trackHeight: 4,
@@ -747,6 +781,11 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
         overlayColor: scheme.primary.withValues(alpha: 0.12),
       ),
       listTileTheme: ListTileThemeData(
+        // A passive ListTile can be the visual child of a clickable entry.
+        mouseCursor: const WidgetStateProperty.fromMap({
+          WidgetState.disabled: MouseCursor.defer,
+          WidgetState.any: SystemMouseCursors.click,
+        }),
         dense: false,
         minLeadingWidth: 24,
         textColor: scheme.onSurface,
@@ -757,8 +796,11 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
         ),
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
+        mouseCursor: WidgetStateMouseCursor.clickable,
         backgroundColor: scheme.primaryContainer,
         foregroundColor: scheme.onPrimaryContainer,
+        hoverColor: Colors.transparent,
+        splashColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(tokens.radiusCard),
         ),
@@ -841,6 +883,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
         ),
       ),
       popupMenuTheme: PopupMenuThemeData(
+        mouseCursor: WidgetStateMouseCursor.clickable,
         color: scheme.surfaceContainerHigh,
         surfaceTintColor: Colors.transparent,
         elevation: 0,

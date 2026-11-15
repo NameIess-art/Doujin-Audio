@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/widgets/app_buttons.dart';
 import '../../../app/presentation/app_settings_group_card.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
@@ -148,7 +149,8 @@ class _PermissionSettingsControlsState
           enabledLabel: i18n.tr('permission_enabled'),
           disabledLabel: i18n.tr('permission_not_enabled'),
           onTap: () {
-            final capability = (_status != null &&
+            final capability =
+                (_status != null &&
                     _status!.backgroundRunAllowed &&
                     !_status!.exactAlarmsAllowed)
                 ? PermissionCapability.exactAlarms
@@ -296,15 +298,17 @@ class _PermissionStatusButton extends StatelessWidget {
         label: label,
         child: TextButton(
           onPressed: onPressed,
-          style: TextButton.styleFrom(
-            foregroundColor: color,
-            backgroundColor: color.withValues(alpha: 0.12),
-            minimumSize: const Size(0, 36),
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            shape: const StadiumBorder(),
-            textStyle: Theme.of(
-              context,
-            ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w800),
+          style: appButtonStyle(
+            TextButton.styleFrom(
+              foregroundColor: color,
+              backgroundColor: color.withValues(alpha: 0.12),
+              minimumSize: const Size(0, 36),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              shape: const StadiumBorder(),
+              textStyle: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w800),
+            ),
           ),
           child: Text(label),
         ),
@@ -314,9 +318,7 @@ class _PermissionStatusButton extends StatelessWidget {
 }
 
 class _PermissionStatusPlaceholder extends StatelessWidget {
-  const _PermissionStatusPlaceholder({
-    required this.label,
-  });
+  const _PermissionStatusPlaceholder({required this.label});
 
   final String label;
 
@@ -349,9 +351,9 @@ class _PermissionStatusPlaceholder extends StatelessWidget {
                 maintainState: true,
                 child: Text(
                   label,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w800),
                 ),
               ),
             ],

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/app_entry_ink_well.dart';
 import 'package:doujin_audio/core/widgets/unified_popup_menu.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/app/presentation/work_detail_navigation.dart';
@@ -18,6 +19,46 @@ void main() {
   final coordinator = UiInteractionCoordinator.instance;
   setUp(coordinator.resetForTest);
   tearDown(coordinator.resetForTest);
+
+  for (final atLeft in [false, true]) {
+    testWidgets('context menu scales around its clamped pointer (left: $atLeft)', (
+      tester,
+    ) async {
+      late BuildContext hostContext;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(builder: (context) {
+            hostContext = context;
+            return const Scaffold();
+          }),
+        ),
+      );
+      final point = Offset(atLeft ? 2 : 798, 596);
+      final result = showUnifiedContextMenu<int>(
+        context: hostContext,
+        globalPosition: point,
+        entries: const [UnifiedMenuEntry.action(value: 1, label: 'Anchored')],
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 45));
+      final menuTransform = find.ancestor(
+        of: find.text('Anchored'),
+        matching: find.byElementPredicate(
+          (element) => element is RenderObjectElement &&
+              element.renderObject is RenderTransform,
+        ),
+      ).first;
+      final box = tester.renderObject<RenderTransform>(menuTransform).child!;
+      final corner = Offset(atLeft ? 0 : box.size.width, box.size.height);
+      final pinnedPoint = box.localToGlobal(corner);
+      expect(box.getTransformTo(null).entry(0, 0), lessThan(1));
+      await tester.pumpAndSettle();
+      expect(box.localToGlobal(corner), pinnedPoint);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(await result, isNull);
+    });
+  }
 
   for (final side in [Alignment.centerLeft, Alignment.centerRight]) {
     for (final mode in ['button', 'dock', 'context']) {
@@ -98,6 +139,22 @@ void main() {
                 : find.byTooltip('Open aligned menu'),
           );
           await tester.pumpAndSettle();
+          final firstLabel = find.text('Short');
+          final card = find
+              .ancestor(of: firstLabel, matching: find.byType(ClipRRect))
+              .first;
+          final rows = find.descendant(
+            of: card,
+            matching: find.byType(AppEntryInkWell),
+          );
+          final cardBounds = tester.getRect(card);
+          final firstRow = tester.getRect(rows.first);
+          final lastRow = tester.getRect(rows.last);
+          expect(firstRow.top, cardBounds.top);
+          expect(lastRow.bottom, cardBounds.bottom);
+          expect(firstRow.height, mode == 'button' ? 48 : 46);
+          expect(lastRow.height, mode == 'button' ? 48 : 46);
+
           Rect glyphBounds(String label) {
             final paragraph = tester.renderObject<RenderParagraph>(
               find.descendant(
@@ -409,15 +466,24 @@ void main() {
         final second = find.text('Second');
         expect(Focus.of(tester.element(first)).hasFocus, isFalse);
         expect(Focus.of(tester.element(second)).hasFocus, isFalse);
-        final dynamic material = Material.of(tester.element(first));
-        expect(material.debugInkFeatures, anyOf(isNull, isEmpty));
+        bool isHighlighted(Finder rowLabel) {
+          final dynamic material = Material.of(tester.element(rowLabel));
+          final ink = material.debugInkFeatures as Iterable<InkFeature>?;
+          return ink?.whereType<InkHighlight>().any((ink) => ink.color.a > 0) ??
+              false;
+        }
+
+        expect(isHighlighted(first), isFalse);
+        expect(tester.getCenter(first).dy, 220);
+        expect(tester.getCenter(second).dy, 260);
 
         await mouse.moveTo(tester.getCenter(first));
         await tester.pumpAndSettle();
-        expect(material.debugInkFeatures, isNotEmpty);
+        expect(isHighlighted(first), isTrue);
+        final firstCenter = tester.getCenter(first);
         await mouse.moveTo(const Offset(10, 10));
         await tester.pumpAndSettle();
-        expect(material.debugInkFeatures, anyOf(isNull, isEmpty));
+        expect(isHighlighted(first), isFalse);
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
         await tester.pumpAndSettle();
         expect(Focus.of(tester.element(first)).hasFocus, isTrue);
@@ -435,11 +501,37 @@ void main() {
         await mouse.moveTo(const Offset(200, 200));
         await mouse.down(const Offset(200, 200));
         await mouse.up();
+        // The first move can arrive before Flutter lays out the popup.
+        await mouse.moveTo(firstCenter);
         await tester.pumpAndSettle();
+        expect(isHighlighted(first), isTrue);
         await tester.sendKeyEvent(LogicalKeyboardKey.escape);
         await tester.pumpAndSettle();
         expect(selected, isNull);
         expect(first, findsNothing);
+
+        for (final (label, isFirst, action) in [
+          (first, true, 1),
+          (second, false, 2),
+        ]) {
+          await mouse.moveTo(const Offset(200, 200));
+          await mouse.down(const Offset(200, 200));
+          await mouse.up();
+          await tester.pumpAndSettle();
+          final rowBounds = tester.getRect(
+            find.ancestor(of: label, matching: find.byType(AppEntryInkWell)),
+          );
+          final edge = Offset(
+            rowBounds.center.dx,
+            isFirst ? rowBounds.top + 2 : rowBounds.bottom - 2,
+          );
+          await mouse.moveTo(edge);
+          await tester.pumpAndSettle();
+          expect(isHighlighted(label), isTrue);
+          await tester.tapAt(edge);
+          await tester.pumpAndSettle();
+          expect(selected, action);
+        }
         expect(tester.takeException(), isNull);
       },
     );

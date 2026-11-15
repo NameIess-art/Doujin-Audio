@@ -4,6 +4,7 @@ import 'package:doujin_audio/core/widgets/app_glass_surface.dart';
 import 'package:doujin_audio/core/widgets/app_edge_fade_mask.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -731,7 +732,11 @@ void main() {
     }),
   );
 
-  Widget header({required int trailingButtons, int actionButtons = 4}) {
+  Widget header({
+    required int trailingButtons,
+    int actionButtons = 4,
+    ValueChanged<int>? onAction,
+  }) {
     return MaterialApp(
       home: Scaffold(
         body: TopPageHeader(
@@ -741,7 +746,7 @@ void main() {
               actionButtons,
               (index) => IconButton(
                 key: ValueKey('action_$index'),
-                onPressed: () {},
+                onPressed: () => onAction?.call(index),
                 icon: const Icon(Icons.add),
                 iconSize: 20,
                 padding: EdgeInsets.zero,
@@ -768,47 +773,82 @@ void main() {
     );
   }
 
-  testWidgets('portrait action pill keeps original button spacing', (
+  testWidgets('portrait action pill matches the circular header buttons', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(390, 820));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(header(trailingButtons: 2));
+    final taps = <int>[];
+    await tester.pumpWidget(
+      header(trailingButtons: 3, actionButtons: 3, onAction: taps.add),
+    );
 
     expect(tester.takeException(), isNull);
-    expect(tester.getSize(find.byKey(const ValueKey('action_0'))).width, 48);
-    expect(
-      tester.getTopLeft(find.byKey(const ValueKey('action_1'))).dx -
-          tester.getTopLeft(find.byKey(const ValueKey('action_0'))).dx,
-      48,
+    final first = tester.getRect(find.byKey(const ValueKey('action_0')));
+    final second = tester.getRect(find.byKey(const ValueKey('action_1')));
+    final last = tester.getRect(find.byKey(const ValueKey('action_2')));
+    final trailing = tester.getSize(find.byType(HeaderFloatingButton).first);
+    expect(trailing, const Size.square(38));
+    expect(first.height, trailing.height);
+    expect(first.size, const Size(48, 38));
+    expect(second.left - first.right, 0);
+    expect(last.left - second.right, 0);
+    final surface = find.descendant(
+      of: find.byType(HeaderActionPill),
+      matching: find.byType(HeaderFloatingSurface),
     );
+    final surfaceRect = tester.getRect(surface);
+    expect(surfaceRect.size, const Size(3 * 48, 38));
+    expect(first.left, surfaceRect.left);
+    expect(first.top, surfaceRect.top);
+    expect(first.bottom, surfaceRect.bottom);
+    expect(last.right, surfaceRect.right);
+    await tester.tapAt(first.topLeft + const Offset(2, 2));
+    await tester.tapAt(first.topRight + const Offset(-2, 2));
+    expect(taps, isEmpty);
+    await tester.tapAt(first.centerLeft + const Offset(4, 0));
+    await tester.tapAt(first.centerRight - const Offset(4, 0));
+    expect(taps, [0, 0]);
   });
 
-  for (final width in [320.0, 349.0]) {
-    testWidgets('action pill fits $width wide content and restores spacing', (
-      tester,
-    ) async {
-      await tester.binding.setSurfaceSize(Size(width, 300));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      await tester.pumpWidget(header(trailingButtons: 3));
+  for (final width in [300.0, 320.0]) {
+    testWidgets(
+      'action pill fits $width wide content without shrinking buttons',
+      (tester) async {
+        await tester.binding.setSurfaceSize(Size(width, 300));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(header(trailingButtons: 3));
 
-      expect(tester.takeException(), isNull);
-      expect(
-        tester.getSize(find.byKey(const ValueKey('action_0'))).width,
-        inExclusiveRange(28, 48),
-      );
-      final lastAction = tester.getRect(find.byKey(const ValueKey('action_3')));
-      final firstTrailing = tester.getRect(
-        find.byType(HeaderFloatingButton).first,
-      );
-      expect(lastAction.right, lessThan(firstTrailing.left));
-      expect(firstTrailing.left - lastAction.right, closeTo(12, 0.01));
+        expect(tester.takeException(), isNull);
+        expect(
+          tester.getSize(find.byKey(const ValueKey('action_0'))),
+          const Size(48, 38),
+        );
+        final viewport = find.descendant(
+          of: find.byType(HeaderActionPill),
+          matching: find.byType(SingleChildScrollView),
+        );
+        await tester.drag(viewport, const Offset(-100, 0));
+        await tester.pumpAndSettle();
+        final lastAction = tester.getRect(
+          find.byKey(const ValueKey('action_3')),
+        );
+        final firstTrailing = tester.getRect(
+          find.byType(HeaderFloatingButton).first,
+        );
+        expect(lastAction.right, lessThan(firstTrailing.left));
+        expect(firstTrailing.left - lastAction.right, closeTo(8, 0.01));
 
-      await tester.binding.setSurfaceSize(const Size(510, 600));
-      await tester.pump();
-      expect(tester.takeException(), isNull);
-      expect(tester.getSize(find.byKey(const ValueKey('action_0'))).width, 48);
-    });
+        await tester.binding.setSurfaceSize(const Size(510, 600));
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+        expect(
+          tester.getSize(find.byKey(const ValueKey('action_0'))),
+          const Size(48, 38),
+        );
+        expect(viewport, findsNothing);
+      },
+    );
   }
 
   testWidgets(
@@ -822,16 +862,86 @@ void main() {
       final first = tester.getRect(find.byKey(const ValueKey('action_0')));
       final second = tester.getRect(find.byKey(const ValueKey('action_1')));
       final last = tester.getRect(find.byKey(const ValueKey('action_2')));
+      final surface = tester.getRect(
+        find.descendant(
+          of: find.byType(HeaderActionPill),
+          matching: find.byType(HeaderFloatingSurface),
+        ),
+      );
       final trailing = tester.getRect(find.byType(HeaderFloatingButton).first);
-      expect(first.width, inExclusiveRange(28, 48));
+      expect(first.width, 48);
       expect(second.width, closeTo(first.width, 0.01));
       expect(last.width, closeTo(first.width, 0.01));
-      expect(second.left - first.left, closeTo(first.width, 0.01));
-      expect(trailing.left - last.right, closeTo(12, 0.01));
+      expect(second.left - first.right, closeTo(0, 0.01));
+      expect(last.left - second.right, closeTo(0, 0.01));
+      expect(trailing.left - surface.right, greaterThanOrEqualTo(8));
     },
     variant: const TargetPlatformVariant({
       TargetPlatform.android,
       TargetPlatform.windows,
     }),
+  );
+
+  testWidgets(
+    'TopPageHeader leading back buttons suppress hover overlay disc on Windows',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(platform: TargetPlatform.windows),
+          home: Scaffold(
+            body: TopPageHeader(
+              icon: Icons.tune_rounded,
+              title: 'Settings',
+              leading: IconButton(
+                onPressed: () {},
+                icon: const Icon(Icons.arrow_back_rounded),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final backButtonFinder = find.byType(IconButton);
+      final backIconFinder = find.byIcon(Icons.arrow_back_rounded);
+      final theme = Theme.of(tester.element(backIconFinder));
+      expect(theme.hoverColor, Colors.transparent);
+      expect(theme.highlightColor, Colors.transparent);
+      expect(theme.splashFactory, NoSplash.splashFactory);
+
+      final resolvedStyle = IconButtonTheme.of(
+        tester.element(backButtonFinder),
+      ).style!;
+      expect(
+        resolvedStyle.overlayColor?.resolve({WidgetState.hovered}),
+        Colors.transparent,
+      );
+      expect(
+        resolvedStyle.overlayColor?.resolve({WidgetState.pressed}),
+        Colors.transparent,
+      );
+
+      final iconTransform = find
+          .ancestor(of: backIconFinder, matching: find.byType(Transform))
+          .first;
+      expect(
+        tester.widget<Transform>(iconTransform).transform.getMaxScaleOnAxis(),
+        closeTo(1.0, 0.001),
+      );
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: tester.getCenter(backButtonFinder));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<Transform>(iconTransform).transform.getMaxScaleOnAxis(),
+        greaterThan(1.0),
+      );
+      expect(
+        IconTheme.of(tester.element(backIconFinder)).color,
+        theme.colorScheme.primary,
+      );
+      await mouse.removePointer();
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
 }

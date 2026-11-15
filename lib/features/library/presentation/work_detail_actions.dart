@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../core/widgets/app_buttons.dart';
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/widgets/app_feedback.dart';
-import '../../../core/widgets/app_entry_ink_well.dart';
 
 Future<void> openLocalContainingFolder(
   BuildContext context,
@@ -51,7 +52,6 @@ class WorkDetailActions extends StatelessWidget {
     required String label,
     bool isPrimary = false,
     bool favorite = false,
-    bool navigationEntry = true,
   }) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -98,16 +98,12 @@ class WorkDetailActions extends StatelessWidget {
       foregroundColor: foregroundColor,
     );
     return Expanded(
-      child: FilledButton.tonalIcon(
+      child: AppLabelledButton(
+        FilledButton.tonalIcon,
         key: ValueKey<String>(keyName),
         onPressed: onPressed,
-        style: navigationEntry
-            ? AppEntryInkWell.entryButtonStyle(
-                context,
-                foregroundColor: foregroundColor,
-              ).merge(buttonStyle)
-            : buttonStyle,
-        icon: Icon(icon, size: 18, color: foregroundColor),
+        style: buttonStyle,
+        icon: Icon(icon, size: 18),
         label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
       ),
     );
@@ -138,7 +134,6 @@ class WorkDetailActions extends StatelessWidget {
         _button(
           context,
           keyName: 'asmr_work_detail_favorite',
-          navigationEntry: false,
           onPressed: onToggleFavorite,
           icon: isFavorite
               ? Icons.favorite_rounded

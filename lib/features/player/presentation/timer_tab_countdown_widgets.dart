@@ -28,7 +28,11 @@ class _CountdownCard extends ConsumerWidget {
     final title = showAutoResumeCountdown
         ? i18n.tr('waiting_for_auto_resume')
         : timerExpired
-        ? i18n.tr('countdown_finished')
+        ? i18n.tr(
+            timerState.stopAfterCurrentTrack
+                ? 'waiting_for_track_end'
+                : 'countdown_finished',
+          )
         : waitingTrigger
         ? i18n.tr('waiting_to_start_countdown')
         : i18n.tr('counting_down');
@@ -132,7 +136,9 @@ class _CountdownCard extends ConsumerWidget {
                 },
               ),
             ),
-            if (timerExpired && !showAutoResumeCountdown) ...[
+            if (timerExpired &&
+                !showAutoResumeCountdown &&
+                !timerState.stopAfterCurrentTrack) ...[
               Builder(
                 builder: (context) {
                   final chips = <Widget>[

@@ -108,9 +108,10 @@ object PlaybackTimerAlarmScheduler {
         autoResumeAtMs: Long?,
         pausedSessionIds: List<String>,
         generation: Int,
-        timerCandidateSessionIds: List<String>
+        timerCandidateSessionIds: List<String>,
+        stopAfterCurrentTrack: Boolean
     ) {
-        if (timerEndsAtWallClockMs != null || pausedSessionIds.isEmpty()) {
+        if (timerEndsAtWallClockMs != null || pausedSessionIds.isEmpty() || !stopAfterCurrentTrack) {
             NativePlaybackService.controller()?.cancelTimerStopAfterCurrentTrack()
         }
         logInfo(
@@ -131,7 +132,8 @@ object PlaybackTimerAlarmScheduler {
             autoResumeMinute = autoResumeMinute,
             autoResumeAtMs = autoResumeAtMs,
             pausedSessionIds = pausedSessionIds,
-            generation = generation
+            generation = generation,
+            stopAfterCurrentTrack = stopAfterCurrentTrack
         )
         if (runtimeState.hasRuntime) {
             NativePlaybackStateStore.saveTimerRuntimeState(context, runtimeState)
@@ -270,6 +272,7 @@ object PlaybackTimerAlarmScheduler {
         val pausedSessionIds = runtimeState.pausedSessionIds
         if (runtimeState.autoResumeEnabled && pausedSessionIds.isNotEmpty()) {
             val nextState = runtimeState.copy(
+                stopAfterCurrentTrack = false,
                 autoResumeAtMs = nextClockTimeMillis(
                     nowWallClockMs = System.currentTimeMillis(),
                     hour = runtimeState.autoResumeHour,
@@ -290,45 +293,34 @@ object PlaybackTimerAlarmScheduler {
         service: NativePlaybackService,
         runtimeState: StoredPlaybackTimerRuntimeState?
     ) {
-        val timerStopSessionIds = service.stopPlayingSessionsAfterCurrentTrackForTimer(
-            runtimeState?.generation ?: 0
+        if (runtimeState == null) return
+        val activeSessionIds = service.pausePlayingSessionsForTimer(
+            runtimeState.generation,
+            runtimeState.stopAfterCurrentTrack
         )
-        val pausedSessionIds = timerStopSessionIds
-            .ifEmpty {
+        val pausedSessionIds = if (runtimeState.stopAfterCurrentTrack) {
+            activeSessionIds
+        } else {
+            activeSessionIds.ifEmpty {
                 NativePlaybackStateStore.loadSessions(context)
                     .filter { it.playing || it.playWhenReady }
                     .map { it.sessionId }
+                    .ifEmpty { NativePlaybackStateStore.loadTimerCandidateSessionIds(context) }
             }
-            .ifEmpty {
-                NativePlaybackStateStore.loadTimerCandidateSessionIds(context)
-            }
+        }
         NativePlaybackStateStore.storePausedSessionIds(context, pausedSessionIds)
         logInfo(
             context,
             "timer_expired pausedSessionCount=${pausedSessionIds.size} " +
                 "autoResumeEnabled=${runtimeState?.autoResumeEnabled == true}"
         )
-        // The target sessions are still playing their current items. Schedule
-        // automatic resume only after each one has paused at its item boundary.
-        val nextAutoResumeAtMs: Long? = null
-        val nextState = runtimeState?.copy(
+        // For track-end pauses, schedule auto-resume once the last target finishes.
+        val nextState = runtimeState.copy(
             waitingForPlayback = false,
             timerEndsAtWallClockMs = null,
             timerEndsElapsedRealtimeMs = null,
-            autoResumeAtMs = nextAutoResumeAtMs,
-            pausedSessionIds = pausedSessionIds
-        ) ?: StoredPlaybackTimerRuntimeState(
-            timerModeIndex = null,
-            durationMs = null,
-            waitingForPlayback = false,
-            timerEndsAtWallClockMs = null,
-            timerEndsElapsedRealtimeMs = null,
-            autoResumeEnabled = false,
-            autoResumeHour = 7,
-            autoResumeMinute = 0,
             autoResumeAtMs = null,
-            pausedSessionIds = pausedSessionIds,
-            generation = 0
+            pausedSessionIds = pausedSessionIds
         )
         if (nextState.hasRuntime) {
             NativePlaybackStateStore.saveTimerRuntimeState(context, nextState)
@@ -336,8 +328,8 @@ object PlaybackTimerAlarmScheduler {
             NativePlaybackStateStore.clearTimerRuntimeState(context)
         }
         rescheduleFromStoredState(context)
-        if (timerStopSessionIds.isEmpty()) {
-            completeTimerStopAfterCurrentTracks(context, runtimeState?.generation)
+        if (!runtimeState.stopAfterCurrentTrack || pausedSessionIds.isEmpty()) {
+            completeTimerStopAfterCurrentTracks(context, runtimeState.generation)
         }
     }
 

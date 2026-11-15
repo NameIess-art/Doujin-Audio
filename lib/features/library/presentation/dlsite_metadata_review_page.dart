@@ -722,7 +722,6 @@ class _DlsiteMetadataReviewPageState
 
     final Widget? headerTrailing = hasCandidateNavigation
         ? HeaderActionPill(
-            padding: const EdgeInsets.symmetric(horizontal: 2),
             children: [
               IconButton(
                 visualDensity: VisualDensity.compact,
@@ -733,14 +732,11 @@ class _DlsiteMetadataReviewPageState
                 tooltip: i18n.tr('previous'),
                 icon: const Icon(Icons.chevron_left_rounded),
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Text(
-                  '${_candidateIndex + 1}/${_candidates.length}',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+              Text(
+                '${_candidateIndex + 1}/${_candidates.length}',
+                style: Theme.of(
+                  context,
+                ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
               IconButton(
                 visualDensity: VisualDensity.compact,

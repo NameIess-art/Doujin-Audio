@@ -1,5 +1,6 @@
 import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/core/widgets/unified_dropdown.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -54,7 +55,6 @@ void main() {
         matching: find.byType(InkWell),
       );
       expect(tester.widget<InkWell>(trigger).focusColor, Colors.transparent);
-      expect(Theme.of(tester.element(trigger)).hoverColor, Colors.transparent);
       expect(selected, isNull);
 
       await tester.tapAt(Offset(bounds.center.dx, bounds.bottom - 2));
@@ -204,6 +204,63 @@ void main() {
     expect(tester.getRect(selected), closed);
   });
 
+  for (final isFormField in [false, true]) {
+    testWidgets(
+      'Windows ${isFormField ? 'form field' : 'dropdown'} label stays put after a mouse press',
+      (tester) async {
+        await tester.pumpWidget(
+          harness(
+            SizedBox(
+              width: 240,
+              child: isFormField
+                  ? UnifiedDropdownButtonFormField<String>(
+                      initialValue: 'c',
+                      items: items,
+                      onChanged: (_) {},
+                      expandWidth: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Choice',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                      ),
+                    )
+                  : UnifiedDropdownButton<String>(
+                      value: 'c',
+                      items: items,
+                      onChanged: (_) {},
+                      alignment: Alignment.centerRight,
+                      multilineItems: true,
+                    ),
+            ),
+          ),
+        );
+        final label = find.text('Charlie');
+        final closed = tester.getRect(label);
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        await mouse.addPointer(location: closed.center);
+        await tester.pumpAndSettle();
+        expect(tester.getRect(label), closed);
+        await mouse.down(closed.center);
+        await tester.pump(const Duration(milliseconds: 70));
+        await tester.pump(const Duration(milliseconds: 70));
+        expect(tester.getRect(label), closed);
+        await mouse.up();
+        await tester.pumpAndSettle();
+
+        final open = find.descendant(
+          of: find.byType(Scrollable),
+          matching: label,
+        );
+        expect(tester.getRect(open), closed);
+        await mouse.removePointer();
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    );
+  }
+
   testWidgets('long multiline dropdown scrolls and selects an option', (
     tester,
   ) async {
@@ -300,7 +357,97 @@ void main() {
       update(() => initial = null);
       await tester.pump();
       expect(tester.state<FormFieldState<String>>(field).value, isNull);
+      update(() => initial = null);
+      await tester.pump();
+      expect(tester.state<FormFieldState<String>>(field).value, isNull);
       expect(tester.takeException(), isNull);
     },
   );
+
+  for (final isFormField in [false, true]) {
+    testWidgets(
+      'Windows ${isFormField ? 'form field' : 'dropdown'} highlights its surface and preserves the trigger layout',
+      (tester) async {
+        await tester.pumpWidget(
+          harness(
+            SizedBox(
+              width: 240,
+              child: isFormField
+                  ? UnifiedDropdownButtonFormField<String>(
+                      initialValue: 'a',
+                      items: items,
+                      onChanged: (_) {},
+                      expandWidth: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Choice',
+                        border: OutlineInputBorder(),
+                      ),
+                    )
+                  : UnifiedDropdownButton<String>(
+                      value: 'a',
+                      items: items,
+                      onChanged: (_) {},
+                    ),
+            ),
+          ),
+        );
+
+        final trigger = isFormField
+            ? find.byType(UnifiedDropdownButtonFormField<String>)
+            : find.byType(UnifiedDropdownButton<String>);
+        final arrowFinder = find.byIcon(Icons.arrow_drop_down);
+        final bounds = tester.getRect(trigger);
+        final initialIconColor = IconTheme.of(
+          tester.element(arrowFinder),
+        ).color;
+        final initialLabelColor = DefaultTextStyle.of(
+          tester.element(find.text('Alpha')),
+        ).style.color;
+        final decorator = find.byType(InputDecorator);
+        final initialBorder = isFormField
+            ? tester.widget<InputDecorator>(decorator).decoration.enabledBorder
+            : null;
+        final plainSurface = find.descendant(
+          of: trigger,
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is DecoratedBox &&
+                widget.decoration is BoxDecoration &&
+                (widget.decoration as BoxDecoration).borderRadius ==
+                    AppRadius.borderMedium,
+          ),
+        );
+        Color? surfaceColor() => isFormField
+            ? tester.widget<InputDecorator>(decorator).decoration.fillColor
+            : (tester.widget<DecoratedBox>(plainSurface.first).decoration
+                      as BoxDecoration)
+                  .color;
+        final idleColor = surfaceColor();
+
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        await mouse.addPointer(location: bounds.center);
+        await tester.pumpAndSettle();
+
+        expect(surfaceColor(), isNot(idleColor));
+        expect(
+          IconTheme.of(tester.element(arrowFinder)).color,
+          initialIconColor,
+        );
+        expect(
+          DefaultTextStyle.of(tester.element(find.text('Alpha'))).style.color,
+          initialLabelColor,
+        );
+        expect(tester.getRect(trigger), bounds);
+        if (isFormField) {
+          expect(
+            tester.widget<InputDecorator>(decorator).decoration.enabledBorder,
+            initialBorder,
+          );
+        }
+
+        await mouse.removePointer();
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    );
+  }
 }

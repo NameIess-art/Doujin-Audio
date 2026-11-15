@@ -35,13 +35,31 @@ const _lines = [
 }
 
 void main() {
+  double scaleOf(WidgetTester tester, IconData icon) {
+    final transforms = find.ancestor(
+      of: find.byIcon(icon),
+      matching: find.byType(Transform),
+    );
+    return tester
+        .widgetList<Transform>(transforms)
+        .firstWhere((widget) => !widget.transformHitTests)
+        .transform
+        .entry(0, 0);
+  }
+
   testWidgets(
-    'Windows card actions highlight independently on hover',
+    'Windows card actions scale only their icon without pointer ink',
     (tester) async {
+      final hoverColor = ValueNotifier(Colors.black26);
+      addTearDown(hoverColor.dispose);
       await tester.pumpWidget(
-        MaterialApp(
-          theme: ThemeData(hoverColor: Colors.transparent),
-          home: Material(
+        ValueListenableBuilder(
+          valueListenable: hoverColor,
+          builder: (context, color, child) => MaterialApp(
+            theme: ThemeData(hoverColor: color),
+            home: child,
+          ),
+          child: Material(
             child: Center(
               child: LibraryLikeCardActions(
                 addLabel: 'Add',
@@ -56,26 +74,70 @@ void main() {
       final add = find.byTooltip('Add');
       final play = find.byTooltip('Play');
       final dynamic material = Material.of(tester.element(add));
-      Iterable<InkHighlight> highlights() =>
+      Iterable<InteractiveInkFeature> visibleInk() =>
           (material.debugInkFeatures as List<InkFeature>? ?? [])
-              .whereType<InkHighlight>()
-              .where((feature) => feature.active && feature.color.a > 0);
+              .whereType<InteractiveInkFeature>()
+              .where((feature) => feature.color.a > 0);
+      Color? iconColor(IconData icon) =>
+          tester.widget<Icon>(find.byIcon(icon)).color;
+
+      final cs = Theme.of(
+        tester.element(find.byType(LibraryLikeCardActions)),
+      ).colorScheme;
+
       final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
       await mouse.addPointer(location: Offset.zero);
-      for (final action in [add, play]) {
-        await mouse.moveTo(tester.getCenter(action));
+      for (final (action, activeIcon, otherIcon) in [
+        (add, Icons.add_circle_rounded, Icons.play_arrow_rounded),
+        (play, Icons.play_arrow_rounded, Icons.add_circle_rounded),
+      ]) {
+        final center = tester.getCenter(action);
+        await mouse.moveTo(center);
         await tester.pump();
-        final feature = highlights().single;
-        expect(
-          feature.referenceBox.localToGlobal(
-            feature.referenceBox.size.center(Offset.zero),
-          ),
-          tester.getCenter(action),
-        );
+        var previousScale = 1.0;
+        for (var frame = 0; frame < 6; frame++) {
+          await tester.pump(const Duration(milliseconds: 15));
+          final scale = scaleOf(tester, activeIcon);
+          expect(scale, inInclusiveRange(previousScale, 1.16));
+          previousScale = scale;
+          if (frame == 2) {
+            hoverColor.value = hoverColor.value == Colors.black26
+                ? Colors.black12
+                : Colors.black26;
+            await tester.pump();
+            expect(scaleOf(tester, activeIcon), scale);
+          }
+        }
+        expect(scaleOf(tester, activeIcon), 1.16);
+        expect(scaleOf(tester, otherIcon), 1.0);
+        expect(iconColor(activeIcon), cs.primary);
+        expect(iconColor(otherIcon), cs.onSurfaceVariant);
+        expect(visibleInk(), isEmpty);
+        await mouse.down(center);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 60));
+        expect(scaleOf(tester, activeIcon), 0.82);
+        expect(scaleOf(tester, otherIcon), 1.0);
+        expect(visibleInk(), isEmpty);
+        await mouse.up();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 90));
+        expect(scaleOf(tester, activeIcon), 1.16);
       }
       await mouse.moveTo(Offset.zero);
-      await tester.pumpAndSettle();
-      expect(highlights(), isEmpty);
+      await tester.pump();
+      var previousScale = 1.16;
+      for (var frame = 0; frame < 8; frame++) {
+        await tester.pump(const Duration(milliseconds: 15));
+        final scale = scaleOf(tester, Icons.play_arrow_rounded);
+        expect(scale, inInclusiveRange(1.0, previousScale));
+        previousScale = scale;
+      }
+      expect(scaleOf(tester, Icons.add_circle_rounded), 1.0);
+      expect(scaleOf(tester, Icons.play_arrow_rounded), 1.0);
+      expect(iconColor(Icons.add_circle_rounded), cs.onSurfaceVariant);
+      expect(iconColor(Icons.play_arrow_rounded), cs.onSurfaceVariant);
+      expect(visibleInk(), isEmpty);
       await mouse.removePointer();
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),

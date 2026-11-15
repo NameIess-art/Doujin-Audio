@@ -26,6 +26,7 @@ import 'package:doujin_audio/core/ui/cover_image_retention.dart';
 import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
+import 'package:doujin_audio/features/player/application/playback_queue_resolver.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
@@ -663,7 +664,13 @@ void main() {
               final ink = tester.widget<InkWell>(
                 find.ancestor(of: label, matching: find.byType(InkWell)).first,
               );
-              expect(ink.hoverColor!.a, greaterThan(0));
+              expect(ink.hoverColor, Colors.transparent);
+              final scale = tester
+                  .widgetList<Transform>(
+                    find.ancestor(of: label, matching: find.byType(Transform)),
+                  )
+                  .firstWhere((widget) => !widget.transformHitTests);
+              expect(scale.transform.entry(0, 0), 1.14);
               await mouse.down(tester.getCenter(label));
               await mouse.up();
             } else {
@@ -1107,9 +1114,15 @@ void main() {
           resolveAdvance: (_, {required forward}) => null,
           hasAdjacent: (_, {required forward}) => true,
         );
-        await tester.tap(
-          find.byTooltip(harness.fixture.languageProvider.tr('switch_audio')),
+        final switchButton = find.byTooltip(
+          harness.fixture.languageProvider.tr('switch_audio'),
         );
+        final switchPress = await tester.startGesture(
+          tester.getCenter(switchButton),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await switchPress.up();
         final row = find.byKey(
           ValueKey('queue_switcher_track_${tracks[1].path}'),
         );
@@ -1181,11 +1194,25 @@ void main() {
         playback.publishSessionState(session.id);
         await tester.pump();
 
-        await tester.tap(
-          find.byIcon(
-            forward ? Icons.forward_5_rounded : Icons.replay_5_rounded,
-          ),
+        final seekButton = find.byIcon(
+          forward ? Icons.forward_5_rounded : Icons.replay_5_rounded,
         );
+        final initialColor = IconTheme.of(tester.element(seekButton)).color;
+        final initialPosition = tester.getCenter(seekButton);
+        final seekPress = await tester.startGesture(initialPosition);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        final glyphTransform = tester
+            .widgetList<Transform>(
+              find.ancestor(of: seekButton, matching: find.byType(Transform)),
+            )
+            .firstWhere((widget) => !widget.transformHitTests);
+        expect(
+          glyphTransform.transform.entry(0, 0),
+          defaultTargetPlatform == TargetPlatform.windows ? 0.90 : 0.92,
+        );
+        expect(IconTheme.of(tester.element(seekButton)).color, initialColor);
+        await seekPress.up();
         await tester.pump();
         expect(session.position, Duration(seconds: forward ? 25 : 15));
         session.setOptimisticState(processingState: ProcessingState.buffering);
@@ -1195,7 +1222,12 @@ void main() {
           matching: find.byType(CircularProgressIndicator),
         );
         expect(spinner, findsNothing);
-        await tester.pump(const Duration(milliseconds: 399));
+        await tester.pump(const Duration(milliseconds: 80));
+        expect(
+          tester.getCenter(seekButton).dx - initialPosition.dx,
+          forward ? greaterThan(0) : lessThan(0),
+        );
+        await tester.pump(const Duration(milliseconds: 319));
         expect(spinner, findsNothing);
         await tester.pump(const Duration(milliseconds: 1));
         await tester.pump();
@@ -3168,10 +3200,13 @@ void main() {
   });
 
   testWidgets(
-    'session detail forward 5s and replay 5s seek relative to live position',
+    'session detail buttons accept repeated presses after first opening',
     (WidgetTester tester) async {
+      final windows = defaultTargetPlatform == TargetPlatform.windows;
       final pumped = await _pumpSubtitleDetail(
         tester: tester,
+        openDetail: false,
+        physicalSize: windows ? const Size(3840, 2400) : const Size(1080, 2400),
         initialPosition: const Duration(seconds: 30),
         subtitleTrack: SubtitleTrack(
           sourcePath: '/library/subtitles/track.vtt',
@@ -3179,34 +3214,103 @@ void main() {
         ),
       );
 
-      final forwardButton = find.ancestor(
-        of: find.byIcon(Icons.forward_5_rounded),
-        matching: find.byType(IconButton),
+      final commands = <String>[];
+      final facade = pumped.fixture.runtimeGraph.playback;
+      facade.detachCommandPort();
+      facade.attachPlaybackCommands(
+        prepareSession:
+            (
+              _, {
+              required nextPath,
+              autoPlay = true,
+              forceStartAtZero = false,
+              showLoading = true,
+              targetQueueIndex,
+            }) async {
+              commands.add(nextPath);
+              return true;
+            },
+        pauseSession: (session) async {
+          commands.add('pause');
+          session.state = const PlayerState(false, ProcessingState.ready);
+        },
+        startSession: (session, {required shouldStartTriggerCountdown}) async {
+          commands.add('play');
+          session.state = const PlayerState(true, ProcessingState.ready);
+          return true;
+        },
+        resolveAdvance: (_, {required forward}) => PlaybackAdvanceResult(
+          path: forward ? '/queue/next.mp3' : '/queue/prev.mp3',
+        ),
+        hasAdjacent: (_, {required forward}) => true,
       );
-      final replayButton = find.ancestor(
-        of: find.byIcon(Icons.replay_5_rounded),
-        matching: find.byType(IconButton),
-      );
-      expect(forwardButton, findsOneWidget);
-      expect(replayButton, findsOneWidget);
+      final navigator = Navigator.of(tester.element(find.byType(PlaylistTab)));
+      final route = buildSessionDetailRoute(sessionId: pumped.session.id);
+      unawaited(navigator.push(route));
+      await tester.pump();
+      await tester.pump(route.transitionDuration);
+      await tester.pump();
+      await tester.pump(route.transitionDuration);
+      expect(route.animation!.status, AnimationStatus.completed);
 
-      await tester.tap(forwardButton);
-      await tester.pumpAndSettle();
+      final device = windows
+          ? PointerDeviceKind.mouse
+          : PointerDeviceKind.touch;
+      Future<void> press(Finder button) async {
+        final bounds = tester.getRect(button);
+        final gesture = await tester.startGesture(
+          bounds.centerLeft + const Offset(6, 0),
+          kind: device,
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 80));
+        expect(tester.getRect(button), bounds);
+        await gesture.up();
+        await tester.pump();
+      }
+
+      Finder iconButton(IconData glyph) => find.ancestor(
+        of: find.byIcon(glyph),
+        matching: find.byType(IconButton),
+      );
+
+      await press(iconButton(Icons.forward_5_rounded));
       expect(pumped.session.position, const Duration(seconds: 35));
 
-      await tester.tap(replayButton);
-      await tester.pumpAndSettle();
+      await press(iconButton(Icons.replay_5_rounded));
       expect(pumped.session.position, const Duration(seconds: 30));
 
-      if (find.byType(SessionDetailPage).evaluate().isNotEmpty) {
-        Navigator.of(tester.element(find.byType(SessionDetailPage))).pop();
-        await tester.pumpAndSettle();
-      }
+      await press(iconButton(Icons.skip_next_rounded));
+      expect(commands, ['/queue/next.mp3']);
+      // Non-queue sessions restart the track when more than three seconds in.
+      await press(iconButton(Icons.skip_previous_rounded));
+      expect(pumped.session.position, Duration.zero);
+      await press(iconButton(Icons.skip_previous_rounded));
+      expect(commands, ['/queue/next.mp3', '/queue/prev.mp3']);
+      final toggle = find.byKey(
+        const ValueKey('session_detail_play_pause_button'),
+      );
+      await press(toggle);
+      expect(commands, ['/queue/next.mp3', '/queue/prev.mp3', 'play']);
+      await press(toggle);
+      expect(commands, ['/queue/next.mp3', '/queue/prev.mp3', 'play', 'pause']);
+      await press(iconButton(Icons.tune_rounded));
+      expect(
+        find.byKey(ValueKey(windows ? 'segments_landscape' : 'segments')),
+        findsOneWidget,
+      );
+
+      navigator.pop();
+      await tester.pumpAndSettle();
       UiInteractionCoordinator.instance.resetForTest();
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
-      await tester.pump(const Duration(seconds: 3));
+      await tester.pump(const Duration(seconds: 10));
     },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets(
@@ -3885,6 +3989,66 @@ void main() {
     }),
   );
 
+  testWidgets('playback tabs slide one selection capsule between labels', (
+    tester,
+  ) async {
+    var selected = 0;
+    const accent = Colors.deepPurple;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(colorScheme: const ColorScheme.light(primary: accent)),
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) => SegmentPanelPageHeader(
+              pageIndex: selected,
+              onSelected: (index) => setState(() => selected = index),
+              onClose: () {},
+              closeTooltip: 'Close',
+              labels: const ['EQ', 'Sound settings', 'Speed'],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final indicator = find.byKey(const ValueKey('console_tab_indicator'));
+    RRect capsule() {
+      final canvas = TestRecordingCanvas();
+      tester.widget<CustomPaint>(indicator).painter!.paint(
+        canvas,
+        tester.getSize(indicator),
+      );
+      final draw = canvas.invocations.singleWhere(
+        (call) => call.invocation.memberName == #drawRRect,
+      ).invocation;
+      expect(
+        (draw.positionalArguments.last as Paint).color,
+        isSameColorAs(accent.withValues(alpha: 0.19)),
+      );
+      return draw.positionalArguments.first as RRect;
+    }
+
+    final origin = tester.getTopLeft(indicator).dx;
+    final start = capsule();
+    final destination =
+        tester.getCenter(find.text('Sound settings')).dx - origin;
+    await tester.tap(find.text('Sound settings'));
+    await tester.pump();
+    expect(capsule(), start);
+    await tester.pump(const Duration(milliseconds: 60));
+    final intermediate = capsule();
+    expect(
+      intermediate.center.dx,
+      inExclusiveRange(start.center.dx, destination),
+    );
+    await tester.pump(const Duration(milliseconds: 120));
+    final end = capsule();
+    expect(end.center.dx, closeTo(destination, 0.01));
+    expect(end.width, greaterThan(intermediate.width));
+    expect(end.tlRadiusX, end.height / 2);
+  });
+
   testWidgets('session reset actions share style and disable at defaults', (
     WidgetTester tester,
   ) async {
@@ -4038,10 +4202,10 @@ void main() {
       find.byKey(const ValueKey<String>('console_tab_scroll_clip')),
     );
     expect(tabScrollClip.borderRadius, BorderRadius.circular(19));
-    final tabListView = tester.widget<ListView>(
-      find.descendant(of: header, matching: find.byType(ListView)),
+    final tabScrollView = tester.widget<SingleChildScrollView>(
+      find.descendant(of: header, matching: find.byType(SingleChildScrollView)),
     );
-    expect(tabListView.physics, isA<ClampingScrollPhysics>());
+    expect(tabScrollView.physics, isA<ClampingScrollPhysics>());
     final tabTaps = find.descendant(of: header, matching: find.byType(InkWell));
     expect(tabTaps, findsNWidgets(6));
     expect(
@@ -6491,15 +6655,52 @@ void main() {
 
     final removeQueueText = find.text(languageProvider.tr('remove_queue'));
     expect(removeQueueText, findsOneWidget);
-    final removeQueueButton = tester.widget<TextButton>(
-      find
-          .ancestor(of: removeQueueText, matching: find.byType(TextButton))
-          .first,
-    );
+    final removeQueueFinder = find
+        .ancestor(of: removeQueueText, matching: find.byType(TextButton))
+        .first;
+    final removeQueueButton = tester.widget<TextButton>(removeQueueFinder);
     expect(
       removeQueueButton.style?.shape?.resolve({}) is StadiumBorder,
       isTrue,
     );
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      final restColor = DefaultTextStyle.of(
+        tester.element(removeQueueText),
+      ).style.color;
+      final removeQueueMaterial = find.descendant(
+        of: removeQueueFinder,
+        matching: find.byType(Material),
+      );
+      final restBackground = tester.widget<Material>(removeQueueMaterial).color;
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      addTearDown(mouse.removePointer);
+
+      await mouse.moveTo(tester.getCenter(removeQueueFinder));
+      await tester.pumpAndSettle();
+
+      final hoverScale = tester
+          .widgetList<Transform>(
+            find.ancestor(
+              of: removeQueueText,
+              matching: find.byType(Transform),
+            ),
+          )
+          .where((t) => !t.transformHitTests)
+          .fold<double>(1.0, (p, t) => p * t.transform.entry(0, 0));
+      expect(hoverScale, closeTo(1.14, 0.001));
+      expect(
+        DefaultTextStyle.of(tester.element(removeQueueText)).style.color,
+        isNot(equals(restColor)),
+      );
+      expect(
+        tester.widget<Material>(removeQueueMaterial).color,
+        restBackground,
+      );
+
+      await mouse.moveTo(Offset.zero);
+      await tester.pumpAndSettle();
+    }
     final removeQueueCenter = tester.getCenter(removeQueueText);
     final editPanelRect = tester.getRect(
       find.byKey(const ValueKey('playback_queue_edit_panel')),
@@ -8565,7 +8766,13 @@ void main() {
       final surfaceBeforePause = tester.element(
         find.byType(NativeSessionVideoSurface),
       );
-      await tester.tap(find.byTooltip(fixture.languageProvider.tr('pause')));
+      final pauseButton = find.byTooltip(fixture.languageProvider.tr('pause'));
+      final pausePress = await tester.startGesture(
+        tester.getCenter(pauseButton),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await pausePress.up();
       await tester.pumpAndSettle();
       expect(pauseCount, 1);
       expect(session.playbackRequested, false);
@@ -9548,7 +9755,7 @@ void main() {
         tester
             .getSize(find.byKey(const ValueKey('playback_secondary_controls')))
             .width,
-        292,
+        282,
       );
       final secondaryControls = find.byKey(
         const ValueKey('playback_secondary_controls'),
@@ -10710,7 +10917,11 @@ void main() {
       expect(
         find.descendant(
           of: batchHeader,
-          matching: find.byType(TweenAnimationBuilder<double>),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is TweenAnimationBuilder<double> &&
+                widget.child is! Opacity,
+          ),
         ),
         findsNothing,
       );
@@ -11435,7 +11646,7 @@ void main() {
             expect(
               tester.getRect(buttons.at(index)).left -
                   tester.getRect(buttons.at(index - 1)).right,
-              closeTo(4, 0.5),
+              closeTo(0, 0.5),
             );
           }
 
@@ -11622,6 +11833,77 @@ void main() {
     },
   );
 
+  for (final reducedMotion in [false, true]) {
+    testWidgets(
+      'detail feature indicators fade independently (reduced: $reducedMotion)',
+      (tester) async {
+        tester.binding.platformDispatcher.accessibilityFeaturesTestValue =
+            FakeAccessibilityFeatures(disableAnimations: reducedMotion);
+        addTearDown(
+          tester.binding.platformDispatcher.clearAccessibilityFeaturesTestValue,
+        );
+        final result = await _pumpSubtitleDetail(
+          tester: tester,
+          subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+          initialPosition: Duration.zero,
+          physicalSize: defaultTargetPlatform == TargetPlatform.windows
+              ? const Size(3840, 2400)
+              : const Size(1080, 2400),
+        );
+        final playback = result.fixture.playback;
+        final sessionId = result.session.id;
+        await playback.setSessionChannelSwap(sessionId, true);
+        await tester.pumpAndSettle();
+
+        final speed = find.byIcon(Icons.speed_rounded);
+        final swap = find.byIcon(Icons.swap_horiz_rounded);
+        final swapBounds = tester.getRect(swap);
+        double opacity(IconData icon) => tester
+            .widget<Opacity>(
+              find.descendant(
+                of: find.byKey(ValueKey(icon)),
+                matching: find.byType(Opacity),
+              ),
+            )
+            .opacity;
+        expect(speed, findsNothing);
+        await playback.setSessionSpeed(sessionId, 0.75, persist: false);
+        await tester.pump();
+        if (!reducedMotion) {
+          await tester.pump(kAppFadeDuration ~/ 2);
+          expect(opacity(Icons.speed_rounded), inExclusiveRange(0, 1));
+          expect(opacity(Icons.swap_horiz_rounded), 1);
+        }
+        expect(speed, findsOneWidget);
+        expect(tester.getRect(swap), swapBounds);
+        await tester.pumpAndSettle();
+
+        await playback.setSessionSpeed(sessionId, 1, persist: false);
+        await tester.pump();
+        if (!reducedMotion) {
+          await tester.pump(kAppFadeDuration ~/ 2);
+          final fadeOut = opacity(Icons.speed_rounded);
+          expect(fadeOut, inExclusiveRange(0, 1));
+          await playback.setSessionSpeed(sessionId, 0.75, persist: false);
+          await tester.pump();
+          expect(opacity(Icons.speed_rounded), closeTo(fadeOut, 0.001));
+          await tester.pumpAndSettle();
+          expect(opacity(Icons.speed_rounded), 1);
+          await playback.setSessionSpeed(sessionId, 1, persist: false);
+          await tester.pumpAndSettle();
+        }
+        expect(speed, findsNothing);
+        expect(tester.getRect(swap), swapBounds);
+        // Let the debounced playback notification finish in reduced motion.
+        await tester.pump(kAppFadeDuration);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   for (final (platform, screenSize, isPortrait, showActions) in [
     (TargetPlatform.android, const Size(1080, 2400), true, true),
     (TargetPlatform.android, const Size(2400, 1080), false, false),
@@ -11758,7 +12040,7 @@ void main() {
               );
               await mouse.addPointer(location: Offset.zero);
               await mouse.moveTo(tester.getCenter(timer));
-              await tester.pump();
+              await tester.pumpAndSettle();
               expect(
                 find.descendant(
                   of: timer,
@@ -11770,8 +12052,17 @@ void main() {
                         (decoration.color?.a ?? 0) > 0;
                   }),
                 ),
-                findsOneWidget,
+                findsNothing,
               );
+              final hoverTransform = tester
+                  .widgetList<Transform>(
+                    find.descendant(
+                      of: timer,
+                      matching: find.byType(Transform),
+                    ),
+                  )
+                  .firstWhere((transform) => !transform.transformHitTests);
+              expect(hoverTransform.transform.entry(0, 0), 1.16);
               await mouse.removePointer();
               await tester.pump();
             } else {
@@ -11900,7 +12191,20 @@ void main() {
           await tester.pumpAndSettle();
           expect(
             IconTheme.of(tester.element(arrow)).color,
-            Theme.of(tester.element(button)).colorScheme.primary,
+            Theme.of(tester.element(button)).platform == TargetPlatform.windows
+                ? Theme.of(tester.element(button)).colorScheme.primary
+                : Colors.white,
+          );
+          final iconScale = tester
+              .widgetList<Transform>(
+                find.ancestor(of: arrow, matching: find.byType(Transform)),
+              )
+              .firstWhere((transform) => !transform.transformHitTests);
+          expect(
+            iconScale.transform.entry(0, 0),
+            Theme.of(tester.element(button)).platform == TargetPlatform.windows
+                ? 1.16
+                : 1.0,
           );
           await pointer.removePointer();
           await tester.pumpAndSettle();
@@ -12012,13 +12316,18 @@ void main() {
       final loopRect = tester.getRect(loopButton);
       final detailRect = tester.getRect(workDetailButton);
 
-      expect(loopRect.width, 44.0);
-      expect(loopRect.height, 44.0);
-      expect(detailRect.width, 44.0);
-      expect(detailRect.height, 44.0);
+      expect(capsuleRect.size, const Size(282, 46));
+      expect(loopRect.width, 46.0);
+      expect(loopRect.height, 40.0);
+      expect(detailRect.width, 46.0);
+      expect(detailRect.height, 40.0);
 
-      expect(loopRect.center.dx, closeTo(capsuleRect.left + 26, 0.5));
-      expect(detailRect.center.dx, closeTo(capsuleRect.right - 26, 0.5));
+      // End buttons share semicircle centers (23px from left/right, centered
+      // vertically) with 3px concentric inset from the 46px outer capsule.
+      expect(loopRect.left + 20, closeTo(capsuleRect.left + 23, 0.5));
+      expect(detailRect.right - 20, closeTo(capsuleRect.right - 23, 0.5));
+      expect(loopRect.top, closeTo(capsuleRect.top + 3, 0.5));
+      expect(loopRect.bottom, closeTo(capsuleRect.bottom - 3, 0.5));
       final buttons = find.descendant(
         of: capsuleFinder,
         matching: find.byType(IconButton),
@@ -12028,11 +12337,19 @@ void main() {
         expect(
           tester.getRect(buttons.at(index)).left -
               tester.getRect(buttons.at(index - 1)).right,
-          closeTo(4, 0.5),
+          closeTo(0, 0.5),
         );
       }
 
-      await tester.tap(workDetailButton);
+      await tester.tapAt(loopRect.topLeft + const Offset(2, 2));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('loop_mode_confirm')), findsNothing);
+
+      await tester.tapAt(detailRect.topRight + const Offset(-2, 2));
+      await tester.pump();
+      expect(find.byType(WorkDetailPage), findsNothing);
+
+      await tester.tapAt(detailRect.centerRight - const Offset(4, 0));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pump(const Duration(milliseconds: 400));

@@ -30,7 +30,8 @@ internal data class PlaybackTimerSyncArguments(
     val autoResumeMinute: Int,
     val autoResumeAtMs: Long?,
     val pausedSessionIds: List<String>,
-    val generation: Int
+    val generation: Int,
+    val stopAfterCurrentTrack: Boolean = false
 )
 
 internal class PlaybackTimerSyncCoordinator(
@@ -101,7 +102,8 @@ internal fun parsePlaybackTimerSyncArguments(call: MethodCall): PlaybackTimerSyn
         autoResumeMinute = arguments.requiredIntInRange("autoResumeMinute", 0..59),
         autoResumeAtMs = arguments.requiredNullableLong("autoResumeAtMs", minimum = 0L),
         pausedSessionIds = pausedSessionIds,
-        generation = arguments.requiredIntInRange("generation", 0..Int.MAX_VALUE)
+        generation = arguments.requiredIntInRange("generation", 0..Int.MAX_VALUE),
+        stopAfterCurrentTrack = arguments.optionalBoolean("stopAfterCurrentTrack", false)
     )
 }
 
@@ -130,7 +132,8 @@ internal class PowerMethodHandler(
                 autoResumeAtMs = arguments.autoResumeAtMs,
                 pausedSessionIds = arguments.pausedSessionIds,
                 generation = arguments.generation,
-                timerCandidateSessionIds = candidateIds
+                timerCandidateSessionIds = candidateIds,
+                stopAfterCurrentTrack = arguments.stopAfterCurrentTrack
             )
         }
     )
@@ -258,6 +261,7 @@ internal class PowerMethodHandler(
             "timerWaitingForPlayback" to state.waitingForPlayback,
             "timerEndsAtWallClockMs" to state.timerEndsAtWallClockMs,
             "timerEndsElapsedRealtimeMs" to state.timerEndsElapsedRealtimeMs,
+            "stopAfterCurrentTrack" to state.stopAfterCurrentTrack,
             "autoResumeEnabled" to state.autoResumeEnabled,
             "autoResumeHour" to state.autoResumeHour,
             "autoResumeMinute" to state.autoResumeMinute,

@@ -4,6 +4,8 @@ import 'package:doujin_audio/features/settings/presentation/settings_providers.d
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/operation_feedback.dart';
 import 'package:flutter/foundation.dart';
+import 'package:doujin_audio/core/widgets/app_buttons.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -49,10 +51,7 @@ void main() {
           ),
         );
         await tester.pump();
-        expect(
-          find.byType(AppBrandIcon, skipOffstage: false),
-          findsOneWidget,
-        );
+        expect(find.byType(AppBrandIcon, skipOffstage: false), findsOneWidget);
         await tester.pump();
         expect(find.byType(TopPageHeader), findsOneWidget);
         expect(find.byType(BackButton), findsOneWidget);
@@ -357,6 +356,87 @@ void main() {
     await tester.pump();
 
     expect(find.text(i18n.tr('about_reward_open_failed')), findsOneWidget);
+  });
+
+  testWidgets('about links highlight only the row on hover and press', (
+    tester,
+  ) async {
+    final harness = AppRuntimeWidgetTestFixture();
+    final updateService = _FakeAppUpdateService(openResult: true);
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(
+      harness.build(
+        Theme(
+          data: ThemeData.dark().copyWith(platform: TargetPlatform.windows),
+          child: ProviderScope(
+            overrides: [
+              appUpdateServiceProvider.overrideWithValue(updateService),
+            ],
+            child: AboutPage(
+              versionFuture: Future.value(
+                const AppVersionInfo(versionName: '1.2.3', buildNumber: 123),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final i18n = harness.languageProvider;
+    final sourceText = find.text(i18n.tr('about_source_code'));
+    final sourceTile = find.ancestor(
+      of: sourceText,
+      matching: find.byType(ListTile),
+    );
+    final sourceMaterial = find.ancestor(
+      of: sourceTile,
+      matching: find.byType(Material),
+    );
+    final cs = Theme.of(tester.element(sourceText)).colorScheme;
+
+    Material tileSurface() => tester.widget<Material>(sourceMaterial.first);
+    expect(tileSurface().color, Colors.transparent);
+    expect(
+      (tileSurface().shape! as RoundedRectangleBorder).side,
+      BorderSide.none,
+    );
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    addTearDown(mouse.removePointer);
+
+    await mouse.moveTo(tester.getCenter(sourceText));
+    await tester.pumpAndSettle();
+
+    final dynamic controller = Material.of(tester.element(sourceTile));
+    Iterable<InteractiveInkFeature> visibleInk() =>
+        (controller.debugInkFeatures as List<InkFeature>? ?? [])
+            .whereType<InteractiveInkFeature>()
+            .where((feature) => feature.color.a > 0);
+    final hover = visibleInk().single.color;
+    expect(hover, appHoverTint(cs));
+    expect(tileSurface().color, Colors.transparent);
+    expect(
+      (tileSurface().shape! as RoundedRectangleBorder).side,
+      BorderSide.none,
+    );
+    expect(tester.widget<Text>(sourceText).style?.color, cs.onSurface);
+
+    final rowBounds = tester.getRect(sourceTile);
+    await mouse.down(tester.getCenter(sourceText));
+    await tester.pumpAndSettle();
+    expect(
+      visibleInk().map((feature) => feature.color),
+      contains(appPressedTint(cs)),
+    );
+    expect(tester.getRect(sourceTile), rowBounds);
+    expect(tester.widget<Text>(sourceText).style?.color, cs.onSurface);
+
+    await mouse.up();
+    await tester.pump();
+    expect(updateService.openedUrl, AppUpdateService.repositoryPage);
   });
 }
 

@@ -1,3 +1,4 @@
+import 'package:doujin_audio/core/widgets/app_buttons.dart';
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
@@ -205,10 +206,19 @@ void main() {
               splitMySettings: true,
             );
             expect(
-              destinations.sublist(destinations.length - 3).map((item) => item.type),
-              [MainDestinationType.playlist, MainDestinationType.my, MainDestinationType.settings],
+              destinations
+                  .sublist(destinations.length - 3)
+                  .map((item) => item.type),
+              [
+                MainDestinationType.playlist,
+                MainDestinationType.my,
+                MainDestinationType.settings,
+              ],
             );
-            expect(destinations[destinations.length - 2].navigationKey, 'nav_my');
+            expect(
+              destinations[destinations.length - 2].navigationKey,
+              'nav_my',
+            );
             expect(destinations.last.navigationKey, 'nav_settings');
             expect(destinations.last.selectedIcon, Icons.settings_rounded);
           }
@@ -1322,9 +1332,21 @@ void main() {
         Iterable<InkSplash> pressedInk() =>
             (inkController.debugInkFeatures as List<InkFeature>? ?? [])
                 .whereType<InkSplash>();
+        double buttonScale() => tester
+            .widgetList<Transform>(
+              find.ancestor(of: entry, matching: find.byType(Transform)),
+            )
+            .where((t) => !t.transformHitTests)
+            .first
+            .transform
+            .entry(0, 0);
         final gesture = await tester.startGesture(tester.getCenter(addVoice));
-        await tester.pump(const Duration(milliseconds: 120));
-        expect(pressedInk(), isNotEmpty);
+        await tester.pumpAndSettle();
+        expect(pressedInk(), isEmpty);
+        expect(
+          buttonScale(),
+          platform == TargetPlatform.windows ? 0.975 : 0.98,
+        );
         await gesture.up();
         expect(pressedInk(), isEmpty);
         await pumpAndSettleWithAsync(tester);
@@ -1335,9 +1357,9 @@ void main() {
           MyInterestType.voiceActors,
         );
         await tester.pageBack();
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pumpAndSettle();
         expect(pressedInk(), isEmpty);
+        expect(buttonScale(), 1.0);
         await pumpAndSettleWithAsync(tester);
         final excluded = find.text(
           fixture.languageProvider.tr('my_excluded_voice_actors'),
@@ -1906,14 +1928,26 @@ void main() {
         );
         expect(tester.getTopLeft(card).dx - tester.getTopLeft(viewport).dx, 8);
         if (platform == TargetPlatform.windows) {
-          BoxDecoration border(String workKey) =>
-              tester.widget<DecoratedBox>(
-                find.byKey(ValueKey('my-history-card-$workKey-hover-border')),
-              ).decoration as BoxDecoration;
+          List<InteractiveInkFeature> visibleInk(Finder cover) {
+            final material = find.descendant(
+              of: cover,
+              matching: find.byType(Material),
+            );
+            late final dynamic controller = Material.of(
+              tester.element(
+                find.descendant(of: material, matching: find.byType(InkWell)),
+              ),
+            );
+            return (controller.debugInkFeatures as List<InkFeature>? ?? [])
+                .whereType<InteractiveInkFeature>()
+                .where((feature) => feature.color.a > 0)
+                .toList();
+          }
+
           await tester.pumpAndSettle();
           final colors = Theme.of(tester.element(card)).colorScheme;
           final bounds = tester.getRect(card);
-          expect(border('work').border, isNull);
+          expect(visibleInk(card), isEmpty);
           final mouse = await tester.createGesture(
             kind: PointerDeviceKind.mouse,
           );
@@ -1921,22 +1955,15 @@ void main() {
           addTearDown(mouse.removePointer);
           await mouse.moveTo(tester.getCenter(card));
           await tester.pumpAndSettle();
-          expect(
-            border('work').border,
-            Border.all(color: colors.primary, width: 2),
-          );
-          expect(border('work').borderRadius, BorderRadius.circular(12));
+          expect(visibleInk(card).single.color, appHoverTint(colors));
           expect(tester.getRect(card), bounds);
           await mouse.moveTo(tester.getCenter(nextCard));
           await tester.pumpAndSettle();
-          expect(border('work').border, isNull);
-          expect(
-            border('remote-0').border,
-            Border.all(color: colors.primary, width: 2),
-          );
+          expect(visibleInk(card), isEmpty);
+          expect(visibleInk(nextCard).single.color, appHoverTint(colors));
           await mouse.moveTo(Offset.zero);
           await tester.pumpAndSettle();
-          expect(border('remote-0').border, isNull);
+          expect(visibleInk(nextCard), isEmpty);
           expect(fixture.playback.activeSessions, isEmpty);
         }
         await pumpUntilUiIdle(tester);

@@ -163,7 +163,7 @@ class _AsmrPanelAction extends StatelessWidget {
       style: const TextStyle(fontWeight: FontWeight.w600),
     );
     if (filled) {
-      return FilledButton(onPressed: onPressed, child: child);
+      return AppPillButton(onPressed: onPressed, child: child);
     }
     return TextButton(onPressed: onPressed, child: child);
   }

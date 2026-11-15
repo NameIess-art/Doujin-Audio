@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_playback_cache_service.dart';
+import 'package:doujin_audio/features/player/application/audio_state_services.dart'
+    show TimerService;
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/application/notification_facade.dart';
@@ -30,6 +32,7 @@ void main() {
   late PlaybackFacade playback;
   late PlaybackCommandCoordinator commands;
   late TimerFacade timer;
+  late TimerService timerService;
   late NotificationFacade notifications;
   late PlaybackSubtitleService subtitles;
 
@@ -41,7 +44,8 @@ void main() {
       databaseRepository: _Persistence(),
       nativeRepository: native,
     )..configurePersistence(enabled: false);
-    timer = TimerFacade.create();
+    timerService = TimerService();
+    timer = TimerFacade.create(service: timerService);
     notifications = NotificationFacade.create(
       service: PlaybackNotificationService(),
     );
@@ -215,7 +219,7 @@ void main() {
   );
 
   test(
-    'track stop enabled during initial prepare arms before native play',
+    'track stop at countdown expiry during preparation arms before native play',
     () async {
       final session = register('preparing');
       final release = Completer<void>();
@@ -245,7 +249,11 @@ void main() {
         nextPath: session.currentTrackPath,
       );
       await native.startedFor(session.id).future;
+      timer.configureTimer(TimerMode.manual, const Duration(minutes: 5));
+      timer.startCountdown();
       timer.setStopAfterCurrentTrack(true);
+      timerService.timerEndsAt = DateTime.now();
+      await Future<void>.delayed(const Duration(milliseconds: 1100));
       await timer.pendingTrackStopSync;
       expect(timer.stopsAfterCurrentTrack(session.id), true);
       expect(calls, isEmpty);

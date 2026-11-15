@@ -394,19 +394,18 @@ void main() {
           matching: find.byType(InkWell),
         );
         final inkController = Material.of(tester.element(inkWell));
-        Iterable<InkRipple> ripples() =>
-            ((inkController as dynamic).debugInkFeatures as List<InkFeature>? ??
-                    const <InkFeature>[])
-                .whereType<InkRipple>();
-        await tester.tap(chip);
-        expect(ripples(), hasLength(1));
-        await tester.pump();
+        Iterable<InteractiveInkFeature> pressHighlight() =>
+            ((inkController as dynamic).debugInkFeatures as List<InkFeature>? ?? [])
+                .whereType<InteractiveInkFeature>()
+                .where((ink) => ink is! InkHighlight && ink.color.a > 0);
+        final press = await tester.startGesture(tester.getCenter(chip));
         await tester.pump(const Duration(milliseconds: 120));
+        expect(pressHighlight(), hasLength(1));
+        await press.up();
+        expect(pressHighlight(), isEmpty);
+        await tester.pumpAndSettle();
         expect(tester.widget<AppElementChip>(chip).selected, isTrue);
         expect(Material.of(tester.element(inkWell)), same(inkController));
-        expect(ripples(), hasLength(1));
-        await tester.pumpAndSettle();
-        expect(ripples(), isEmpty);
         expect(scroll.pixels, offset);
         expect(controller.catalogReads, reads);
         expect(controller.manualInterestTagKeys, isEmpty);

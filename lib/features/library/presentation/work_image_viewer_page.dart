@@ -8,6 +8,7 @@ import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../app/theme/app_design_tokens.dart';
+import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_glass_surface.dart';
 import '../../../core/widgets/async_cover_image.dart';
@@ -487,53 +488,40 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
                 trailing: widget.onSetAsCover != null
                     ? HeaderFloatingSurface(
                         padding: EdgeInsets.zero,
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            key: const ValueKey<String>(
-                              'viewer_set_as_cover_button',
-                            ),
-                            borderRadius: BorderRadius.circular(19),
-                            onTap: _isSettingCover ? null : _handleSetAsCover,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (_isSettingCover)
-                                    const SizedBox.square(
-                                      dimension: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  else
-                                    Icon(
-                                      Icons.photo_size_select_actual_outlined,
-                                      size: 18,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurface,
-                                    ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    ref
-                                        .watch(
-                                          appLanguageProviderInstanceProvider,
-                                        )
-                                        .tr('audio_detail_set_cover'),
-                                    style: Theme.of(context).textTheme.labelMedium
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.w600,
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.onSurface,
-                                        ),
-                                  ),
-                                ],
+                        child: TextButton.icon(
+                          key: const ValueKey<String>(
+                            'viewer_set_as_cover_button',
+                          ),
+                          onPressed: _isSettingCover ? null : _handleSetAsCover,
+                          style: appTextButtonStyle(
+                            style: TextButton.styleFrom(
+                              foregroundColor: Theme.of(
+                                context,
+                              ).colorScheme.onSurface,
+                              disabledForegroundColor: Theme.of(
+                                context,
+                              ).colorScheme.onSurface,
+                              minimumSize: Size.zero,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
                               ),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              textStyle: Theme.of(context).textTheme.labelMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600),
                             ),
                           ),
+                          icon: _isSettingCover
+                              ? const SizedBox.square(
+                                  dimension: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.photo_size_select_actual_outlined,
+                                  size: 18,
+                                ),
+                          label: Text(i18n.tr('audio_detail_set_cover')),
                         ),
                       )
                     : null,
@@ -577,7 +565,9 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
-                          key: const ValueKey<String>('image_viewer_prev_button'),
+                          key: const ValueKey<String>(
+                            'image_viewer_prev_button',
+                          ),
                           iconSize: 18,
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints.tightFor(
@@ -597,12 +587,16 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
                                   fontWeight: FontWeight.w700,
                                   letterSpacing: 0.5,
                                   fontSize: 12.5,
-                                  color: Theme.of(context).colorScheme.onSurface,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
                                 ),
                           ),
                         ),
                         IconButton(
-                          key: const ValueKey<String>('image_viewer_next_button'),
+                          key: const ValueKey<String>(
+                            'image_viewer_next_button',
+                          ),
                           iconSize: 18,
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints.tightFor(

@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import '../../../../core/widgets/app_buttons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/state/app_runtime_providers.dart';
@@ -111,7 +113,7 @@ class _SubtitleModelDownloadDialogState
               ),
             ),
             if (!downloading)
-              FilledButton(
+              AppPillButton(
                 onPressed: _observeDownload,
                 child: Text(
                   i18n.tr(

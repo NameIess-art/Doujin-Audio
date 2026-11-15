@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../../core/widgets/app_buttons.dart';
 import 'package:path/path.dart' as path;
 
 import '../../../../app/state/app_runtime_providers.dart';
@@ -386,7 +388,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                 onPressed: () => Navigator.pop(dialogContext, false),
                 child: Text(i18n.tr('cancel')),
               ),
-              FilledButton(
+              AppPillButton(
                 onPressed: () => Navigator.pop(dialogContext, true),
                 child: Text(i18n.tr('subtitle_script_continue')),
               ),
@@ -477,7 +479,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
             onPressed: () => Navigator.pop(dialogContext, false),
             child: Text(i18n.tr('cancel')),
           ),
-          FilledButton(
+          AppPillButton(
             onPressed: () => Navigator.pop(dialogContext, true),
             child: Text(i18n.tr('subtitle_import_overwrite')),
           ),
@@ -500,7 +502,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
               onPressed: () => Navigator.pop(dialogContext, false),
               child: Text(i18n.tr('cancel')),
             ),
-            FilledButton(
+            AppPillButton(
               onPressed: () => Navigator.pop(dialogContext, true),
               child: Text(i18n.tr('confirm')),
             ),
@@ -607,9 +609,8 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                       ),
                       clipBehavior: Clip.antiAlias,
                       child: InkWell(
+                        mouseCursor: WidgetStateMouseCursor.clickable,
                         borderRadius: BorderRadius.circular(14),
-                        splashColor: cs.primary.withValues(alpha: 0.16),
-                        hoverColor: cs.primary.withValues(alpha: 0.08),
                         onTap: () => Navigator.pop(dialogContext, 'zh'),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
@@ -687,9 +688,8 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                       ),
                       clipBehavior: Clip.antiAlias,
                       child: InkWell(
+                        mouseCursor: WidgetStateMouseCursor.clickable,
                         borderRadius: BorderRadius.circular(14),
-                        splashColor: cs.secondary.withValues(alpha: 0.16),
-                        hoverColor: cs.secondary.withValues(alpha: 0.08),
                         onTap: () => Navigator.pop(dialogContext, 'en'),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
@@ -1559,28 +1559,37 @@ class _SyncControlButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     final enabled = onPressed != null;
+    final isWindows = theme.platform == TargetPlatform.windows;
+    final style = OutlinedButton.styleFrom(
+      // Match the visible surface to the existing 48 px desktop tap target.
+      minimumSize: Size(0, isWindows ? 48 : 38),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      tapTargetSize: isWindows ? MaterialTapTargetSize.shrinkWrap : null,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      side: BorderSide(
+        color: enabled
+            ? (isReset
+                  ? cs.primary.withValues(alpha: 0.6)
+                  : cs.outlineVariant.withValues(alpha: 0.5))
+            : cs.outlineVariant.withValues(alpha: 0.2),
+        width: isReset && enabled ? 1.0 : 0.8,
+      ),
+      backgroundColor: isReset && enabled
+          ? cs.primaryContainer.withValues(alpha: 0.35)
+          : Colors.transparent,
+      foregroundColor: enabled
+          ? (isReset ? cs.primary : cs.onSurface)
+          : cs.onSurface.withValues(alpha: 0.38),
+    );
 
     return OutlinedButton(
-      style: OutlinedButton.styleFrom(
-        minimumSize: const Size(0, 38),
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        side: BorderSide(
-          color: enabled
-              ? (isReset
-                    ? cs.primary.withValues(alpha: 0.6)
-                    : cs.outlineVariant.withValues(alpha: 0.5))
-              : cs.outlineVariant.withValues(alpha: 0.2),
-          width: isReset && enabled ? 1.0 : 0.8,
-        ),
-        backgroundColor: isReset && enabled
-            ? cs.primaryContainer.withValues(alpha: 0.35)
-            : Colors.transparent,
-        foregroundColor: enabled
-            ? (isReset ? cs.primary : cs.onSurface)
-            : cs.onSurface.withValues(alpha: 0.38),
+      style: appSurfaceButtonStyle(
+        style: style,
+        colorScheme: cs,
+        platform: theme.platform,
       ),
       onPressed: onPressed,
       child: Text(

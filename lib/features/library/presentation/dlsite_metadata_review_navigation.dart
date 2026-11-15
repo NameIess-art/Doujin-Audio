@@ -136,52 +136,13 @@ class ReviewConfirmButton extends StatelessWidget {
   final String label;
 
   @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final labelStyle = TextStyle(
-      color: cs.onPrimary,
-      fontWeight: FontWeight.w700,
-    );
-
-    return HeaderFloatingSurface(
-      key: const ValueKey<String>('dlsite_review_confirm'),
-      height: 46,
-      radius: 23,
-      padding: EdgeInsets.zero,
-      child: Material(
-        color: cs.primary,
-        borderRadius: BorderRadius.circular(23),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(23),
-          onTap: saving ? null : onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (saving)
-                  SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: cs.onPrimary,
-                    ),
-                  )
-                else
-                  Icon(
-                    key: const ValueKey<String>('dlsite_review_confirm_icon'),
-                    Icons.check_rounded,
-                    size: 18,
-                    color: cs.onPrimary,
-                  ),
-                const SizedBox(width: 6),
-                Text(label, style: labelStyle),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => HeaderFloatingActionPill(
+    pillKey: const ValueKey<String>('dlsite_review_confirm'),
+    icon: Icons.check_rounded,
+    iconKey: const ValueKey<String>('dlsite_review_confirm_icon'),
+    label: label,
+    loading: saving,
+    horizontalPadding: 20,
+    onTap: onTap,
+  );
 }

@@ -125,10 +125,6 @@ final class TimerPersistenceCoordinator {
     }
   }
 
-  Future<void> syncRuntimeFromNative() async {
-    await loadNativeRuntime();
-  }
-
   Future<void> saveRuntime() async {
     try {
       final preferences = await _preferences;
@@ -141,6 +137,7 @@ final class TimerPersistenceCoordinator {
         'timerDurationMs': _service.timerDuration?.inMilliseconds,
         'timerWaitingForPlayback': _service.timerWaitingForPlayback,
         'timerEndsAtWallClockMs': _service.timerEndsAt?.millisecondsSinceEpoch,
+        'stopAfterCurrentTrack': _service.stopAfterCurrentTrack,
         'autoResumeEnabled': _service.autoResumeEnabled,
         'autoResumeHour': _service.autoResumeHour,
         'autoResumeMinute': _service.autoResumeMinute,
@@ -218,6 +215,7 @@ final class TimerPersistenceCoordinator {
             : null,
         pausedSessionIds: _service.pausedByTimerSessionIds,
         generation: _service.timerGeneration,
+        stopAfterCurrentTrack: _service.stopAfterCurrentTrack,
       );
     } catch (error, stackTrace) {
       AppLogService.error(
@@ -275,6 +273,8 @@ final class TimerPersistenceCoordinator {
     final durationMs = _readMillisValue(map['timerDurationMs']);
     final timerModeIndex = _readMillisValue(map['timerMode']);
     final waitingForPlayback = map['timerWaitingForPlayback'] as bool? ?? false;
+    final stopAfterCurrentTrack =
+        map['stopAfterCurrentTrack'] as bool? ?? false;
     final timerEndsAtMs =
         _readMillisValue(map['timerEndsAtWallClockMs']) ??
         _readMillisValue(map['timerEndsAtMs']);
@@ -304,6 +304,7 @@ final class TimerPersistenceCoordinator {
         );
       if (timerEndsAtMs != null &&
           timerEndsAtMs <= now.millisecondsSinceEpoch &&
+          !stopAfterCurrentTrack &&
           autoResumeEnabled &&
           _restoredCountdownSessions.isNotEmpty) {
         pausedSessionIds.addAll(_restoredCountdownSessions);
@@ -348,6 +349,7 @@ final class TimerPersistenceCoordinator {
       ..timerActive = false
       ..timerEndsAt = null
       ..timerWaitingForPlayback = false
+      ..stopAfterCurrentTrack = stopAfterCurrentTrack
       ..autoResumeAt = null
       ..timerGeneration = generation
       ..autoResumeEnabled = autoResumeEnabled

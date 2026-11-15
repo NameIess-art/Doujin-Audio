@@ -10,95 +10,12 @@ import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/core/platform/power_platform_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'support/app_runtime_test_fixture.dart';
-
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
   });
 
   group('TimerFacade', () {
-    for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
-      for (final countdown in [false, true]) {
-        test(
-          '$platform seek before track end restores ${countdown ? "countdown fade" : "full volume"}',
-          () async {
-            debugDefaultTargetPlatformOverride = platform;
-            addTearDown(() => debugDefaultTargetPlatformOverride = null);
-            final service = TimerService();
-            final graph = createTestRuntimeGraph(
-              timerService: service,
-              powerPlatformService: _RecordingPowerPlatformService(),
-            );
-            addTearDown(graph.runtime.dispose);
-            final track = testMusicTrack(
-              name: 'one',
-              path: '/work/one.mp3',
-              groupKey: 'work',
-              groupTitle: 'work',
-            );
-            final session = graph.playback.createTrackSession(track)
-              ..state = const PlayerState(true, ProcessingState.ready)
-              ..duration = const Duration(minutes: 5)
-              ..loadedPath = track.path;
-            final fades = <double>[];
-            var countdownFade = 1.0;
-            graph.timer.attachRuntime(
-              hasPlayingSession: () => true,
-              sessions: () => [session],
-              pauseSession: (_) async => true,
-              activateAudioSession: () async => true,
-              resumeSession: (_) async => true,
-              onStateChanged: () {},
-              onRuntimeRestored: () {},
-              applyFadeMultiplier: (value) => countdownFade = value,
-              setNativeTrackStop: (_, enabled) async {
-                session.nativeStopAfterCurrentTrack = enabled;
-                return true;
-              },
-              applySessionFadeMultiplier: (_, value) => fades.add(value),
-            );
-            if (countdown) {
-              graph.timer.configureTimer(
-                TimerMode.manual,
-                const Duration(minutes: 5),
-              );
-              graph.timer.startCountdown();
-              service.timerEndsAt = DateTime.now().add(
-                const Duration(seconds: 10),
-              );
-              await Future<void>.delayed(const Duration(milliseconds: 1100));
-              expect(countdownFade, inExclusiveRange(0.2, 1.0));
-            }
-            graph.timer.setStopAfterCurrentTrack(true);
-            await graph.timer.pendingTrackStopSync;
-            expect(graph.timer.stopsAfterCurrentTrack(session.id), isTrue);
-            graph.playbackCommands.handleSessionPositionChanged(
-              session,
-              const Duration(minutes: 4, seconds: 57),
-            );
-            await Future<void>.delayed(Duration.zero);
-            expect(fades.last, closeTo(0.2, 0.00001));
-
-            graph.playbackCommands.handleSessionPositionChanged(
-              session,
-              const Duration(minutes: 1),
-            );
-            await Future<void>.delayed(Duration.zero);
-            expect(fades.last, countdownFade);
-            final updates = fades.length;
-            graph.playbackCommands.handleSessionPositionChanged(
-              session,
-              const Duration(minutes: 2),
-            );
-            await Future<void>.delayed(Duration.zero);
-            expect(fades, hasLength(updates));
-            graph.timer.cancelTimer();
-          },
-        );
-      }
-    }
-
     testWidgets(
       'ordinary countdown only writes fade at transitions and during fade',
       (tester) async {
@@ -156,147 +73,144 @@ void main() {
       timer.cancelTimer();
     });
 
-    test(
-      'track end captures playback intent and fades each target independently',
-      () async {
-        final multipliers = <(String, double)>[];
-        final first = _TestSession('first')..requested = true;
-        final second = _TestSession('second')..requested = true;
-        final sessions = <PlaybackSession>[first, second];
-        final commands = <(String, bool)>[];
-        final timer = TimerFacade.create();
-        addTearDown(timer.dispose);
-        _attachNoopRuntime(
-          timer,
-          sessions: () => sessions,
-          applySessionFadeMultiplier: (id, value) =>
-              multipliers.add((id, value)),
-          setNativeTrackStop: (id, enabled) async {
-            commands.add((id, enabled));
-            return true;
-          },
-        );
-        timer.setStopAfterCurrentTrack(true);
-        await timer.pendingTrackStopSync;
-        sessions.add(_TestSession('new')..requested = true);
-        expect(commands, [('first', true), ('second', true)]);
-        timer.applyTrackEndFade('first', 0.8);
-        timer.applyTrackEndFade('first', 0.3);
-        timer.applyTrackEndFade('second', 0.6);
-        timer.applyTrackEndFade('new', 0.1);
-        expect(multipliers, isEmpty);
-        await Future<void>.delayed(Duration.zero);
-        expect(multipliers, [('first', 0.3), ('second', 0.6)]);
+    for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+      testWidgets(
+        '$platform arms only the tracks playing at expiry and resumes after the last one',
+        (tester) async {
+          final service = TimerService();
+          final power = _RecordingPowerPlatformService();
+          final timer = TimerFacade.create(
+            service: service,
+            powerPlatformService: power,
+          );
+          final first = _TestSession('first');
+          final second = _TestSession('second');
+          final late = _TestSession('late');
+          final commands = <(String, bool)>[];
+          final fade = <double>[];
+          final trackFade = <(String, double)>[];
+          _attachNoopRuntime(
+            timer,
+            sessions: () => [first, second, late],
+            applyFadeMultiplier: fade.add,
+            applySessionFadeMultiplier: (id, value) =>
+                trackFade.add((id, value)),
+            setNativeTrackStop: (id, enabled) async {
+              commands.add((id, enabled));
+              return true;
+            },
+          );
+          timer.configureTimer(TimerMode.trigger, const Duration(minutes: 5));
+          timer.setAutoResume(true, 7, 0);
+          timer.setStopAfterCurrentTrack(true);
+          await tester.pump();
+          expect(timer.stopAfterCurrentTrack, isTrue);
+          expect(service.timerWaitingForPlayback, isTrue);
+          expect(power.timerSyncs.last['stopAfterCurrentTrack'], isTrue);
+          expect(commands, isEmpty);
 
-        timer.applyTrackEndFade('first', 0.2);
-        await Future<void>.delayed(Duration.zero);
-        expect(multipliers, [('first', 0.3), ('second', 0.6), ('first', 0.2)]);
+          first.requested = true;
+          timer.maybeStartTriggerCountdown();
+          first.currentTrackPath = 'next';
+          second.requested = true;
+          fade.clear();
+          service.timerEndsAt = DateTime.now().add(const Duration(seconds: 5));
+          await tester.pump(const Duration(seconds: 1));
+          expect(commands, isEmpty);
+          service.timerEndsAt = DateTime.now();
+          await tester.pump(const Duration(seconds: 1));
+          expect(commands, [('first', true), ('second', true)]);
+          expect(fade, isEmpty);
+          expect(service.autoResumeAt, isNull);
 
-        await timer.releaseTrackStopTarget('first');
-        expect(timer.stopAfterCurrentTrack, true);
-        expect(multipliers.last, ('first', 1.0));
-        timer.applyTrackEndFade('second', 0.2);
-        timer.setStopAfterCurrentTrack(false);
-        await Future<void>.delayed(Duration.zero);
-        expect(multipliers, [
-          ('first', 0.3),
-          ('second', 0.6),
-          ('first', 0.2),
-          ('first', 1.0),
-          ('second', 1.0),
-        ]);
-      },
-    );
+          late.requested = true;
+          timer.applyTrackEndFade('first', 0.3);
+          timer.applyTrackEndFade('late', 0.2);
+          await tester.pump(Duration.zero);
+          expect(trackFade, [('first', 0.3)]);
+          timer.applyTrackEndFade('first', 1.0);
+          expect(trackFade.last, ('first', 1.0));
 
-    for (final cleanup in ['reset', 'detach', 'dispose']) {
-      test('$cleanup cancels a pending track end fade', () async {
-        final multipliers = <double>[];
-        final timer = TimerFacade.create();
-        addTearDown(timer.dispose);
-        _attachNoopRuntime(
-          timer,
-          sessions: () => [_TestSession('one')..requested = true],
-          applyFadeMultiplier: multipliers.add,
-          applySessionFadeMultiplier: (_, value) => multipliers.add(value),
-        );
-        timer.setStopAfterCurrentTrack(true);
-        timer.applyTrackEndFade('one', 0.2);
-        if (cleanup == 'reset') {
-          timer.resetRuntimeState();
-        } else if (cleanup == 'detach') {
-          timer.detachRuntime();
-        } else {
+          first.requested = false;
+          first.completedByTrackStop = true;
+          timer.reconcileTrackStopTargets();
+          expect(service.pausedByTimerSessionIds, ['first']);
+          expect(service.autoResumeAt, isNull);
+          expect(timer.stopsAfterCurrentTrack('second'), isTrue);
+
+          second.requested = false;
+          second.completedByTrackStop = true;
+          timer.reconcileTrackStopTargets();
+          await tester.pump();
+          expect(service.pausedByTimerSessionIds, ['first', 'second']);
+          expect(service.autoResumeAt, isNotNull);
+          expect(timer.stopAfterCurrentTrack, isFalse);
+          expect(commands, [
+            ('first', true),
+            ('second', true),
+            ('first', false),
+            ('second', false),
+          ]);
+          timer.cancelTimer();
+          await tester.pump();
           await timer.dispose();
-        }
-        await Future<void>.delayed(Duration.zero);
-        expect(multipliers, cleanup == 'reset' ? [1.0, 1.0] : [1.0]);
-      });
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
     }
 
-    test(
-      'failed track stop commands release targets and allow retry',
-      () async {
-        final timer = TimerFacade.create();
-        addTearDown(timer.dispose);
-        var attempt = 0;
-        _attachNoopRuntime(
-          timer,
-          sessions: () => [_TestSession('one')..requested = true],
-          setNativeTrackStop: (_, enabled) async {
-            if (!enabled) return true;
-            attempt++;
-            if (attempt == 1) return false;
-            if (attempt == 2) throw StateError('channel unavailable');
-            return true;
-          },
-        );
-        for (var index = 0; index < 2; index++) {
-          timer.setStopAfterCurrentTrack(true);
-          await timer.pendingTrackStopSync;
-          expect(timer.stopAfterCurrentTrack, false);
-        }
-        timer.setStopAfterCurrentTrack(true);
-        await timer.pendingTrackStopSync;
-        expect(timer.stopsAfterCurrentTrack('one'), true);
-        await timer.clearTimerPauseForManualStop('one');
-        expect(timer.stopAfterCurrentTrack, false);
-        expect(attempt, 3);
-      },
-    );
+    testWidgets('expiry without playback clears the track-end timer', (
+      tester,
+    ) async {
+      final service = TimerService();
+      final power = _RecordingPowerPlatformService();
+      final timer = TimerFacade.create(
+        service: service,
+        powerPlatformService: power,
+      );
+      final calls = <bool>[];
+      _attachNoopRuntime(
+        timer,
+        setNativeTrackStop: (_, enabled) async {
+          calls.add(enabled);
+          return true;
+        },
+      );
+      timer.configureTimer(TimerMode.manual, const Duration(minutes: 5));
+      timer.startCountdown();
+      timer.setStopAfterCurrentTrack(true);
+      service.timerEndsAt = DateTime.now();
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(timer.stopAfterCurrentTrack, isFalse);
+      expect(service.timerDuration, isNull);
+      expect(service.pausedByTimerSessionIds, isEmpty);
+      expect(service.autoResumeAt, isNull);
+      expect(calls, isEmpty);
+      await timer.dispose();
+    });
 
     test(
-      'stale arming skips targets and finishing every target clears toggle',
+      'Android refreshes the native timer after a track-end pause',
       () async {
-        final timer = TimerFacade.create();
-        addTearDown(timer.dispose);
-        final first = _TestSession('first')..requested = true;
-        final second = _TestSession('second')..requested = true;
-        final sessions = [first, second];
-        final calls = <(String, bool)>[];
-        _attachNoopRuntime(
-          timer,
-          sessions: () => sessions,
-          setNativeTrackStop: (id, enabled) async {
-            calls.add((id, enabled));
-            return true;
-          },
-        );
-        timer.setStopAfterCurrentTrack(true);
-        timer.setStopAfterCurrentTrack(false);
-        timer.setStopAfterCurrentTrack(true);
-        await timer.pendingTrackStopSync;
-        expect(calls.where((call) => call.$2), [
-          ('first', true),
-          ('second', true),
-        ]);
-        first.requested = false;
-        timer.reconcileTrackStopTargets();
-        expect(timer.stopsAfterCurrentTrack('first'), false);
-        expect(timer.stopAfterCurrentTrack, true);
-        sessions.clear();
-        timer.reconcileTrackStopTargets();
-        await timer.pendingTrackStopSync;
-        expect(timer.stopAfterCurrentTrack, false);
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        final service = TimerService()
+          ..timerMode = TimerMode.manual
+          ..timerDuration = const Duration(minutes: 5)
+          ..timerRemaining = Duration.zero
+          ..timerGeneration = 7
+          ..stopAfterCurrentTrack = true;
+        final power = _ControlledPowerPlatformService();
+        final timer = _createTimer(service, power);
+
+        timer.onNativePlaybackPaused();
+        await power.nativeRuntimeReadStarted.future;
+        power.nativeRuntime.complete(null);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(timer.stopAfterCurrentTrack, isFalse);
+        expect(service.timerDuration, isNull);
       },
     );
 
@@ -602,6 +516,7 @@ void main() {
           'timerMode': TimerMode.trigger.index,
           'timerDurationMs': 10 * 60 * 1000,
           'timerWaitingForPlayback': true,
+          'stopAfterCurrentTrack': true,
           'autoResumeEnabled': true,
           'autoResumeHour': 8,
           'autoResumeMinute': 15,
@@ -635,6 +550,7 @@ void main() {
       expect(timerService.timerMode, TimerMode.trigger);
       expect(timerService.timerDuration, const Duration(minutes: 10));
       expect(timerService.timerWaitingForPlayback, isTrue);
+      expect(timer.stopAfterCurrentTrack, isTrue);
       expect(timerService.timerGeneration, 4);
       expect(restoreCount, 1);
     });
@@ -750,7 +666,7 @@ void main() {
       final fadeMultipliers = <double>[];
       timer.attachRuntime(
         hasPlayingSession: () => false,
-        sessions: () => [_TestSession('one')..requested = true],
+        sessions: () => const [],
         pauseSession: (_) async => false,
         activateAudioSession: () async => false,
         resumeSession: (_) async => false,
@@ -773,7 +689,7 @@ void main() {
       timer.setStopAfterCurrentTrack(false);
       expect(timer.stopAfterCurrentTrack, isFalse);
       expect(timer.state.stopAfterCurrentTrack, isFalse);
-      expect(fadeMultipliers, isEmpty);
+      expect(fadeMultipliers, [1.0, 1.0]);
 
       timer.setStopAfterCurrentTrack(true);
       timer.cancelTimer();
@@ -870,7 +786,7 @@ void main() {
 }
 
 class _TestSession extends Fake implements PlaybackSession {
-  _TestSession(this.id);
+  _TestSession(this.id) : currentTrackPath = id;
   @override
   final String id;
   @override
@@ -879,7 +795,9 @@ class _TestSession extends Fake implements PlaybackSession {
   @override
   bool get playbackRequested => requested;
   @override
-  String get currentTrackPath => id;
+  String currentTrackPath;
+  @override
+  bool completedByTrackStop = false;
   @override
   bool get nativeStopAfterCurrentTrack => true;
   @override
@@ -991,9 +909,11 @@ final class _RecordingPowerPlatformService extends PowerPlatformService {
     required int? autoResumeAtMs,
     required List<String> pausedSessionIds,
     required int generation,
+    bool stopAfterCurrentTrack = false,
   }) async {
     timerSyncs.add(<String, Object?>{
       'timerMode': timerMode,
+      'stopAfterCurrentTrack': stopAfterCurrentTrack,
       'timerEndsAtWallClockMs': timerEndsAtWallClockMs,
       'pausedSessionIds': List<String>.from(pausedSessionIds),
       'generation': generation,

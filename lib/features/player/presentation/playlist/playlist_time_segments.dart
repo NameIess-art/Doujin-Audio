@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/state/app_runtime_providers.dart';
-import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../core/media/time_text_formatters.dart';
 import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_dialog.dart';
@@ -200,7 +199,9 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
       child: ClipRRect(
         borderRadius: panelRadius,
         child: DecoratedBox(
-          key: const ValueKey<String>('playback_expanded_control_panel_surface'),
+          key: const ValueKey<String>(
+            'playback_expanded_control_panel_surface',
+          ),
           decoration: BoxDecoration(
             color: cs.surfaceContainerHigh.withValues(alpha: 0.9),
             borderRadius: panelRadius,
@@ -349,19 +350,22 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
             Row(
               children: [
                 Expanded(
-                  child: FilledButton.tonalIcon(
-                    style: FilledButton.styleFrom(
-                      foregroundColor: loopActive
-                          ? activeColor
-                          : Theme.of(context).colorScheme.onSurface,
-                      backgroundColor: loopActive
-                          ? activeColor.withValues(alpha: 0.18)
-                          : Theme.of(context)
-                                .colorScheme
-                                .surfaceContainerHighest
-                                .withValues(alpha: 0.28),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: const StadiumBorder(),
+                  child: AppLabelledButton(
+                    FilledButton.tonalIcon,
+                    style: appButtonStyle(
+                      FilledButton.styleFrom(
+                        foregroundColor: loopActive
+                            ? activeColor
+                            : Theme.of(context).colorScheme.onSurface,
+                        backgroundColor: loopActive
+                            ? activeColor.withValues(alpha: 0.18)
+                            : Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHighest
+                                  .withValues(alpha: 0.28),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: const StadiumBorder(),
+                      ),
                     ),
                     onPressed: widget.onToggleLoop,
                     icon: Icon(
@@ -380,14 +384,17 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
                 ),
                 const SizedBox(width: 16),
                 Expanded(
-                  child: FilledButton.tonalIcon(
-                    style: FilledButton.styleFrom(
-                      foregroundColor: Theme.of(context).colorScheme.error,
-                      backgroundColor: Theme.of(
-                        context,
-                      ).colorScheme.errorContainer.withValues(alpha: 0.5),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: const StadiumBorder(),
+                  child: AppLabelledButton(
+                    FilledButton.tonalIcon,
+                    style: appButtonStyle(
+                      FilledButton.styleFrom(
+                        foregroundColor: Theme.of(context).colorScheme.error,
+                        backgroundColor: Theme.of(
+                          context,
+                        ).colorScheme.errorContainer.withValues(alpha: 0.5),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: const StadiumBorder(),
+                      ),
                     ),
                     onPressed: widget.onDelete,
                     icon: const Icon(Icons.delete_outline_rounded),
@@ -427,9 +434,6 @@ class SegmentPanelPageHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final theme = Theme.of(context);
-    final tokens = AppDesignTokens.of(context);
     return HeaderFloatingSurface(
       child: Material(
         color: Colors.transparent,
@@ -440,56 +444,12 @@ class SegmentPanelPageHeader extends StatelessWidget {
               child: ClipRRect(
                 key: const ValueKey<String>('console_tab_scroll_clip'),
                 borderRadius: BorderRadius.circular(19),
-                child: WindowsHorizontalWheelScroll(
-                  builder: (scrollController) => ListView.separated(
-                    controller: scrollController,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 4,
-                      vertical: 3,
-                    ),
-                    scrollDirection: Axis.horizontal,
-                    physics: const ClampingScrollPhysics(),
-                    itemCount: labels.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 2),
-                    itemBuilder: (context, index) {
-                      final selected = index == pageIndex;
-                      return Semantics(
-                        button: true,
-                        selected: selected,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(15),
-                          onTap: () => onSelected(index),
-                          child: AnimatedContainer(
-                            duration: MediaQuery.disableAnimationsOf(context)
-                                ? Duration.zero
-                                : tokens.motionFast,
-                            alignment: Alignment.center,
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            decoration: BoxDecoration(
-                              color: selected
-                                  ? cs.primary.withValues(alpha: 0.19)
-                                  : Colors.transparent,
-                              borderRadius: BorderRadius.circular(15),
-                            ),
-                            child: Text(
-                              labels[index],
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.labelMedium?.copyWith(
-                                color: selected
-                                    ? cs.primary
-                                    : cs.onSurfaceVariant,
-                                fontWeight: selected
-                                    ? FontWeight.w700
-                                    : FontWeight.w600,
-                                fontSize: 12.5,
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+                child: SegmentedCategoryPillStrip<int>(
+                  items: List<int>.generate(labels.length, (index) => index),
+                  selected: pageIndex,
+                  onSelected: onSelected,
+                  labelBuilder: (index) => labels[index],
+                  indicatorKey: const ValueKey('console_tab_indicator'),
                 ),
               ),
             ),
@@ -499,8 +459,10 @@ class SegmentPanelPageHeader extends StatelessWidget {
               onPressed: onClose,
               constraints: const BoxConstraints.tightFor(width: 36, height: 36),
               padding: EdgeInsets.zero,
-              style: IconButton.styleFrom(
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              style: appIconButtonStyle(
+                IconButton.styleFrom(
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
               ),
               icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 20),
             ),
@@ -527,21 +489,30 @@ class TimeSegmentChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = Color(label.colorValue);
     final cs = Theme.of(context).colorScheme;
-    return ActionChip(
-      onPressed: onTap,
-      side: BorderSide(
-        color: selected ? cs.onSurface.withValues(alpha: 0.74) : color,
-        width: selected ? 1.4 : 1,
-      ),
-      backgroundColor: color.withValues(alpha: selected ? 0.34 : 0.2),
-      label: Text(
-        label.name,
-        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-          color: cs.onSurface,
-          fontWeight: FontWeight.w800,
+    return appNoPointerInkTheme(
+      context: context,
+      androidPressHighlight: true,
+      child: ActionChip(
+        mouseCursor: WidgetStateMouseCursor.clickable,
+        onPressed: onTap,
+        side: BorderSide(
+          color: selected ? cs.onSurface.withValues(alpha: 0.74) : color,
+          width: selected ? 1.4 : 1,
         ),
+        color: appChipColor(
+          colorScheme: cs,
+          platform: Theme.of(context).platform,
+          background: color.withValues(alpha: selected ? 0.34 : 0.2),
+        ),
+        label: Text(
+          label.name,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+            color: cs.onSurface,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        shape: const StadiumBorder(),
       ),
-      shape: const StadiumBorder(),
     );
   }
 }
@@ -578,12 +549,14 @@ class SegmentTimeRow extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: FilledButton.tonal(
-                style: FilledButton.styleFrom(
-                  backgroundColor: color.withValues(alpha: 0.15),
-                  foregroundColor: color,
-                  minimumSize: const Size(48, 36),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  shape: const StadiumBorder(),
+                style: appButtonStyle(
+                  FilledButton.styleFrom(
+                    backgroundColor: color.withValues(alpha: 0.15),
+                    foregroundColor: color,
+                    minimumSize: const Size(48, 36),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    shape: const StadiumBorder(),
+                  ),
                 ),
                 onPressed: onSet,
                 child: Text(
@@ -594,6 +567,7 @@ class SegmentTimeRow extends StatelessWidget {
             ),
             Expanded(
               child: InkWell(
+                mouseCursor: WidgetStateMouseCursor.clickable,
                 borderRadius: const BorderRadius.horizontal(
                   right: Radius.circular(16),
                 ),

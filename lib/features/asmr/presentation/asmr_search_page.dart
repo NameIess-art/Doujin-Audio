@@ -223,6 +223,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
 
   void _selectCategory(AsmrCategoryType category) {
     if (_category == category) return;
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     final outgoingScroll = _scrollControllers[_category]!;
     if (outgoingScroll.hasClients) outgoingScroll.jumpTo(outgoingScroll.offset);
     if (_isSelectionMode) setState(_clearSelection);

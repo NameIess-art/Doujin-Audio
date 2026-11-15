@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+import 'app_buttons.dart';
+import 'app_entry_ink_well.dart';
 import '../media/search_query_utils.dart';
 
 /// A sliver section that folds by rendered rows, independently of item count.
@@ -152,12 +154,14 @@ class AppSearchSuggestionSection extends StatelessWidget {
       tooltip: tooltip,
       padding: EdgeInsets.zero,
       visualDensity: VisualDensity.compact,
-      style: IconButton.styleFrom(
-        foregroundColor: accent,
-        minimumSize: const Size.square(32),
-        maximumSize: const Size.square(32),
-        padding: EdgeInsets.zero,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      style: appIconButtonStyle(
+        IconButton.styleFrom(
+          foregroundColor: accent,
+          minimumSize: const Size.square(32),
+          maximumSize: const Size.square(32),
+          padding: EdgeInsets.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
       ),
       icon: Icon(icon, size: 20),
     ),
@@ -500,11 +504,9 @@ class AppElementChip extends StatelessWidget {
               ? accentColor.withValues(alpha: .16)
               : Colors.transparent,
           shape: shape,
-          child: InkWell(
+          child: AppEntryInkWell(
             onTap: onPressed,
             borderRadius: _radius,
-            splashFactory: InkRipple.splashFactory,
-            splashColor: accentColor.withValues(alpha: .24),
             child: Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: _paddingWidth / 2,
@@ -566,11 +568,16 @@ class AppSearchElementTabs extends StatelessWidget {
                 (true, 'search_elements_all', elements?.all.length ?? 0),
                 (false, 'search_elements_any', elements?.any.length ?? 0),
               ])
-                ChoiceChip(
-                  label: Text('${translate(key)} $count'),
-                  showCheckmark: false,
-                  selected: matchAll == all,
-                  onSelected: (_) => onSelected(all),
+                appNoPointerInkTheme(
+                  context: context,
+                  androidPressHighlight: true,
+                  child: ChoiceChip(
+                    mouseCursor: WidgetStateMouseCursor.clickable,
+                    label: Text('${translate(key)} $count'),
+                    showCheckmark: false,
+                    selected: matchAll == all,
+                    onSelected: (_) => onSelected(all),
+                  ),
                 ),
             ],
           ),

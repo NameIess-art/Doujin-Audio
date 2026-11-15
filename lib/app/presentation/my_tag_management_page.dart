@@ -438,52 +438,12 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                       MediaQuery.paddingOf(context).bottom +
                       MobileOverlayInset.of(context),
                   child: AppPageContentTransition(
-                    child: HeaderFloatingSurface(
-                      key: const ValueKey('my_tags_confirm'),
-                      height: 46,
-                      radius: 23,
-                      padding: EdgeInsets.zero,
-                      child: Material(
-                        color: cs.primary,
-                        borderRadius: BorderRadius.circular(23),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(23),
-                          onTap: controller == null || _saving
-                              ? null
-                              : _confirm,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 18),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (_saving)
-                                  SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: cs.onPrimary,
-                                    ),
-                                  )
-                                else
-                                  Icon(
-                                    Icons.check_rounded,
-                                    size: 18,
-                                    color: cs.onPrimary,
-                                  ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  i18n.tr('confirm'),
-                                  style: TextStyle(
-                                    color: cs.onPrimary,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
+                    child: HeaderFloatingActionPill(
+                      pillKey: const ValueKey('my_tags_confirm'),
+                      icon: Icons.check_rounded,
+                      label: i18n.tr('confirm'),
+                      loading: _saving,
+                      onTap: controller == null || _saving ? null : _confirm,
                     ),
                   ),
                 ),

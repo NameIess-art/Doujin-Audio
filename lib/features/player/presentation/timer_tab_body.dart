@@ -13,7 +13,7 @@ extension _TimerTabBody on _TimerTabState {
     final timerExpired = timerSlice.expired;
     final autoResumeCountdownTarget = _TimerTabState._timerRuntimeCalculator
         .autoResumeCountdownTarget(
-          timerExpired: timerExpired,
+          timerExpired: timerExpired && !timerSlice.stopAfterCurrentTrack,
           autoResumeEnabled: timerSlice.autoResumeEnabled,
           autoResumeAt: timerSlice.autoResumeAt,
           hour: timerSlice.autoResumeHour,
@@ -138,14 +138,14 @@ extension _TimerTabBody on _TimerTabState {
                       runSpacing: 8,
                       children: [
                         if (!resolvedStatus.exactAlarmsEnabled)
-                          OutlinedButton(
+                          AppPillButton.outlined(
                             onPressed: () {
                               unawaited(_openExactAlarmSettings());
                             },
                             child: Text(i18n.tr('open_exact_alarm_settings')),
                           ),
                         if (!resolvedStatus.backgroundRunAllowed)
-                          OutlinedButton(
+                          AppPillButton.outlined(
                             onPressed: () {
                               unawaited(_openBackgroundRunSettings());
                             },
@@ -217,7 +217,8 @@ extension _TimerTabBody on _TimerTabState {
           },
         ),
       ];
-      final confirmButton = FilledButton.icon(
+      final confirmButton = AppLabelledButton(
+        FilledButton.icon,
         onPressed: _durationIsZero
             ? null
             : () {
@@ -422,7 +423,8 @@ extension _TimerTabBody on _TimerTabState {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            OutlinedButton.icon(
+                            AppLabelledButton(
+                              OutlinedButton.icon,
                               onPressed: () {
                                 AppInteractionFeedback.trigger(
                                   AppInteractionFeedbackType.destructive,

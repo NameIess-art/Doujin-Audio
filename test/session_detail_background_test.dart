@@ -69,6 +69,17 @@ class _SubtitlePresenceService extends PlaybackSubtitleService {
   }
 }
 
+Future<void> _waitForBackgroundCover(WidgetTester tester) async {
+  for (var frame = 0; frame < 50; frame++) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 10)),
+    );
+    await tester.pump(const Duration(milliseconds: 20));
+    if (find.byType(ImageFiltered).evaluate().isNotEmpty) return;
+  }
+  fail('The decoded background did not appear');
+}
+
 void main() {
   testWidgets(
     'detail defers cold credits and reverses before laying out a coverless close',
@@ -339,6 +350,8 @@ void main() {
         final flightFinder = find.byKey(
           const ValueKey('session_detail_cover_flight'),
         );
+        final blurredBackground = find.byType(ImageFiltered);
+        expect(blurredBackground, findsOneWidget);
         final enter =
             tester.widget<CustomPaint>(flightFinder).painter!
                 as SessionCoverFlight;
@@ -371,6 +384,13 @@ void main() {
         final detailImage = detailImages.first;
         expect(enter.to, tester.getRect(detailImage));
         if (coldDetail) {
+          final blurredPreview = tester.widget<RawImage>(
+            find.descendant(
+              of: blurredBackground,
+              matching: find.byType(RawImage),
+            ),
+          );
+          expect(blurredPreview.image!.isCloneOf(enter.image), isTrue);
           final preview = tester.widget<RawImage>(
             find.byKey(const ValueKey('session_detail_cover_preview')).first,
           );
@@ -692,7 +712,7 @@ void main() {
           find.descendant(of: overlay, matching: find.byType(IconButton)),
         );
         expect(
-          overlayButton.style!.foregroundColor!.resolve({WidgetState.hovered}),
+          overlayButton.style!.foregroundColor!.resolve({WidgetState.focused}),
           expected.primary,
         );
         final slider = kind == 'fullscreen'
@@ -943,13 +963,14 @@ void main() {
   testWidgets(
     'detail renders blurred cover background and preserves original foreground size',
     (tester) async {
+      const cover = 'assets/icons/app_mark_light.png';
       final fixture = AppRuntimeWidgetTestFixture(
         providedNotificationService: PlaybackNotificationService(
           notificationsPlatformService: NotificationsPlatformService(
             isWindowsOverride: false,
           ),
         ),
-        coverArtworkCacheService: _ResolvedCoverCache(),
+        coverArtworkCacheService: _ResolvedCoverCache(cover),
         configureSettingsRepository: (settings) {
           settings.coverImageResolution = CoverImageResolution.original;
           settings.syncSlice();
@@ -978,13 +999,25 @@ void main() {
       );
 
       await tester.pumpWidget(fixture.build(const PlaylistTab()));
-      unawaited(
-        Navigator.of(
-          tester.element(find.byType(PlaylistTab)),
-        ).push(buildSessionDetailRoute(sessionId: session.id)),
+      final playlistContext = tester.element(find.byType(PlaylistTab));
+      await tester.runAsync(
+        () => precacheImage(
+          resizeFileImageIfNeeded(
+            path: cover,
+            cacheWidth: 200,
+            useDefaultCacheWidth: false,
+          ),
+          playlistContext,
+        ),
       );
+      final route = buildSessionDetailRoute(sessionId: session.id);
+      unawaited(Navigator.of(playlistContext).push(route));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 230));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(route.animation!.status, AnimationStatus.forward);
+      expect(find.byType(ImageFiltered), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 200));
 
       expect(find.byType(SessionDetailContent), findsOneWidget);
       expect(
@@ -998,6 +1031,7 @@ void main() {
       final entryContentState = tester.state<SessionDetailContentState>(
         find.byType(SessionDetailContent),
       );
+      await _waitForBackgroundCover(tester);
       await tester.pumpAndSettle();
       expect(
         tester.state<SessionDetailContentState>(
@@ -1022,7 +1056,7 @@ void main() {
         ),
       );
       final backgroundCover = tester.widget<RetryingFileImage>(
-        find.descendant(
+        find.ancestor(
           of: imageFilteredFinder,
           matching: find.byType(RetryingFileImage),
         ),
@@ -1095,8 +1129,9 @@ void main() {
   testWidgets(
     'detail blurred background reduces blur sigma in light mode and uses higher sigma in dark mode',
     (tester) async {
+      const cover = 'assets/icons/app_mark_light.png';
       final fixture = AppRuntimeWidgetTestFixture(
-        coverArtworkCacheService: _ResolvedCoverCache(),
+        coverArtworkCacheService: _ResolvedCoverCache(cover),
       );
       addTearDown(fixture.dispose);
       final track = MusicTrack(
@@ -1126,6 +1161,7 @@ void main() {
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 230));
+      await _waitForBackgroundCover(tester);
 
       final lightFiltered = tester.widget<ImageFiltered>(
         find.byType(ImageFiltered),

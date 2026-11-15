@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/widgets/app_buttons.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/shimmer_loading.dart';
@@ -104,7 +105,8 @@ class DlsiteReviewErrorView extends StatelessWidget {
             const SizedBox(height: 12),
             Text(i18n.tr('dlsite_fetch_failed'), textAlign: TextAlign.center),
             const SizedBox(height: 16),
-            FilledButton.icon(
+            AppLabelledButton(
+              FilledButton.icon,
               onPressed: onRetry,
               icon: const Icon(Icons.refresh_rounded),
               label: Text(i18n.tr('retry')),

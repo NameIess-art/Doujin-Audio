@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import '../../core/widgets/app_buttons.dart';
+import '../../core/widgets/app_feedback.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
@@ -326,6 +328,7 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
           selected: selected.start == period.start,
           button: true,
           child: InkWell(
+            mouseCursor: WidgetStateMouseCursor.clickable,
             key: ValueKey(period.start),
             onTap: () => setState(() => _selected = period.start),
             onHover: onHover,
@@ -427,7 +430,8 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: placeholderFor(
-                  TextButton.icon(
+                  AppLabelledButton(
+                    TextButton.icon,
                     key: const ValueKey('listening-date-selector'),
                     onPressed: () => _selectDate(periods, selected),
                     style: TextButton.styleFrom(
@@ -462,17 +466,19 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
                     onPressed: widget.onStyleChanged == null
                         ? null
                         : () => widget.onStyleChanged!(style),
-                    style: IconButton.styleFrom(
-                      minimumSize: const Size(28, 28),
-                      maximumSize: const Size(28, 28),
-                      padding: EdgeInsets.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      backgroundColor: widget.style == style
-                          ? Theme.of(context).colorScheme.secondaryContainer
-                          : Colors.transparent,
-                      foregroundColor: Theme.of(
-                        context,
-                      ).colorScheme.onSurfaceVariant,
+                    style: appIconButtonStyle(
+                      IconButton.styleFrom(
+                        minimumSize: const Size(28, 28),
+                        maximumSize: const Size(28, 28),
+                        padding: EdgeInsets.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        backgroundColor: widget.style == style
+                            ? Theme.of(context).colorScheme.secondaryContainer
+                            : Colors.transparent,
+                        foregroundColor: Theme.of(
+                          context,
+                        ).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                     icon: Icon(
                       style == ListeningChartStyle.bar
@@ -631,15 +637,25 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
                 children: [
                   for (final interval in ListeningInterval.values)
                     placeholderFor(
-                      ChoiceChip(
-                        showCheckmark: false,
-                        visualDensity: VisualDensity.compact,
-                        label: Text(i18n.tr('my_interval_${interval.name}')),
-                        selected: _interval == interval,
-                        onSelected: (_) {
-                          setState(() => _interval = interval);
-                          _revealSelection();
-                        },
+                      appNoPointerInkTheme(
+                        context: context,
+                        androidPressHighlight: true,
+                        child: ChoiceChip(
+                          mouseCursor: WidgetStateMouseCursor.clickable,
+                          showCheckmark: false,
+                          visualDensity: VisualDensity.compact,
+                          label: Text(i18n.tr('my_interval_${interval.name}')),
+                          selected: _interval == interval,
+                          onSelected: (_) {
+                            if (_interval != interval) {
+                              AppInteractionFeedback.trigger(
+                                AppInteractionFeedbackType.selection,
+                              );
+                            }
+                            setState(() => _interval = interval);
+                            _revealSelection();
+                          },
+                        ),
                       ),
                       radius: 12,
                       height: 32,

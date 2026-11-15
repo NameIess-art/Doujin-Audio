@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 // The plugin exposes its platform test seam from this library.
 // ignore: implementation_imports
 import 'package:file_picker/src/platform/file_picker_platform_interface.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +14,7 @@ import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/core/widgets/app_bottom_sheet.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
@@ -840,6 +842,8 @@ void main() {
       await service.load(audioPath);
 
       final session = _createSnapshot(trackPath: audioPath);
+      final theme = ThemeProvider(loadPersistedState: false);
+      addTearDown(theme.dispose);
 
       await tester.pumpWidget(
         ProviderScope(
@@ -850,6 +854,7 @@ void main() {
             playbackSubtitleServiceProvider.overrideWithValue(service),
           ],
           child: MaterialApp(
+            theme: theme.darkTheme,
             home: Scaffold(
               body: SubtitleMenuSheet(
                 session: session,
@@ -881,6 +886,46 @@ void main() {
       // buttons[2] is reset, offset is zero so reset is null
       expect(buttons[3].onPressed, isNotNull); // +0.1s
       expect(buttons[4].onPressed, isNotNull); // +0.5s
+      if (theme.darkTheme.platform == TargetPlatform.windows) {
+        final increase = find.widgetWithText(OutlinedButton, '+0.5s');
+        await tester.ensureVisible(increase);
+        await tester.pumpAndSettle();
+        final surface = find.descendant(
+          of: increase,
+          matching: find.byType(Material),
+        ).first;
+        final bounds = tester.getRect(increase);
+        expect(tester.getRect(surface), bounds);
+        final restColor = tester.widget<Material>(surface).color;
+        final restShape = tester.widget<Material>(surface).shape;
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        final outside = bounds.topCenter - const Offset(0, 1);
+        await mouse.addPointer(location: outside);
+        for (final edge in [
+          bounds.topCenter + const Offset(0, 1),
+          bounds.bottomCenter - const Offset(0, 1),
+          bounds.centerLeft + const Offset(1, 0),
+          bounds.centerRight - const Offset(1, 0),
+        ]) {
+          await mouse.moveTo(edge);
+          await tester.pumpAndSettle();
+          final material = tester.widget<Material>(surface);
+          expect(material.color, isNot(restColor), reason: 'Pointer at $edge');
+          expect(material.shape, restShape);
+          expect(tester.getRect(surface), bounds);
+
+          await mouse.moveTo(outside);
+          await tester.pumpAndSettle();
+          expect(tester.widget<Material>(surface).color, restColor);
+          expect(tester.widget<Material>(surface).shape, restShape);
+        }
+        final topEdge = bounds.topCenter + const Offset(0, 1);
+        await mouse.down(topEdge);
+        await mouse.up();
+        await tester.pumpAndSettle();
+        expect(service.getOffset(audioPath), const Duration(milliseconds: 500));
+        await mouse.removePointer();
+      }
       expect(
         tester
             .widget<ListTile>(
@@ -890,6 +935,10 @@ void main() {
         isFalse,
       );
     },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets('SubtitleMenuSheet allows translating Japanese subtitles', (

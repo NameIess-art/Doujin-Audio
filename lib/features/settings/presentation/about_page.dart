@@ -4,6 +4,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/widgets/app_buttons.dart';
+import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/app_transitions.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
@@ -164,7 +166,8 @@ class AboutPage extends ConsumerWidget {
                           padding: const EdgeInsets.symmetric(
                             horizontal: AppSpacing.xs,
                           ),
-                          child: OutlinedButton.icon(
+                          child: AppLabelledButton(
+                            OutlinedButton.icon,
                             onPressed: () =>
                                 unawaited(_openSponsor(context, ref)),
                             icon: const Icon(Icons.favorite_border_rounded),
@@ -189,9 +192,7 @@ class AboutPage extends ConsumerWidget {
               right: 0,
               child: TopPageHeader(
                 icon: Icons.info_outline_rounded,
-                leading: BackButton(
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
+                leading: const BackButton(),
                 title: i18n.tr('about'),
               ),
             ),
@@ -270,18 +271,37 @@ class _AboutLinkTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: _AboutIconContainer(icon: icon),
-      title: Text(
-        title,
-        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final tokens = AppDesignTokens.of(context);
+    final rowRadius = BorderRadius.circular(
+      (tokens.radiusCard - AppSpacing.sm).clamp(10.0, tokens.radiusCard),
+    );
+
+    return Material(
+      color: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: rowRadius),
+      child: AppEntryInkWell(
+        borderRadius: rowRadius,
+        onTap: () {
+          AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+          onTap();
+        },
+        child: ListTile(
+          shape: RoundedRectangleBorder(borderRadius: rowRadius),
+          leading: _AboutIconContainer(icon: icon),
+          title: Text(
+            title,
+            style: theme.textTheme.bodyLarge?.copyWith(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: cs.onSurface,
+            ),
+          ),
+          trailing: Icon(Icons.open_in_new_rounded, color: cs.onSurfaceVariant),
+          contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+        ),
       ),
-      trailing: Icon(
-        Icons.open_in_new_rounded,
-        color: Theme.of(context).colorScheme.onSurfaceVariant,
-      ),
-      onTap: onTap,
-      contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
     );
   }
 }

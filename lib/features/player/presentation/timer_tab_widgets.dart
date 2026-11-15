@@ -27,80 +27,90 @@ class _ModeSelector extends ConsumerWidget {
     ) {
       final selected = value == mode;
       final tokens = AppDesignTokens.of(context);
-      return InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: () {
-          AppInteractionFeedback.trigger(
-            AppInteractionFeedbackType.tap,
-            context: context,
-          );
-          onChanged(mode);
-        },
-        child: AnimatedContainer(
-          duration: MediaQuery.disableAnimationsOf(context)
-              ? Duration.zero
-              : const Duration(milliseconds: 200),
-          margin: EdgeInsets.only(bottom: compact ? 6 : 8),
-          padding: EdgeInsets.symmetric(
-            horizontal: compact ? 12 : 14,
-            vertical: compact ? 10 : 12,
+      final restColor = selected
+          ? cs.primaryContainer.withValues(alpha: 0.6)
+          : cs.surfaceContainerLow;
+      final radius = BorderRadius.circular(14);
+      final titleColor = selected ? cs.onPrimaryContainer : cs.onSurface;
+      final iconBoxColor = selected
+          ? cs.primary
+          : cs.primary.withValues(alpha: 0.12);
+
+      return Padding(
+        padding: EdgeInsets.only(bottom: compact ? 6 : 8),
+        child: Material(
+          color: restColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: radius,
+            side: selected
+                ? BorderSide(color: cs.primary, width: 1.5)
+                : BorderSide.none,
           ),
-          decoration: BoxDecoration(
-            color: selected
-                ? cs.primaryContainer.withValues(alpha: 0.6)
-                : cs.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: selected ? cs.primary : Colors.transparent,
-              width: 1.5,
-            ),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: selected
-                      ? cs.primary
-                      : cs.primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(tokens.radiusSmall),
-                ),
-                child: Icon(
-                  icon,
-                  size: 20,
-                  color: selected ? cs.onPrimary : cs.primary,
-                ),
+          clipBehavior: Clip.antiAlias,
+          child: AppEntryInkWell(
+            borderRadius: radius,
+            onTap: () {
+              AppInteractionFeedback.trigger(
+                AppInteractionFeedbackType.tap,
+                context: context,
+              );
+              onChanged(mode);
+            },
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: compact ? 12 : 14,
+                vertical: compact ? 10 : 12,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: compact ? 13 : 14,
-                        fontWeight: FontWeight.w700,
-                        color: selected ? cs.onPrimaryContainer : cs.onSurface,
-                      ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: iconBoxColor,
+                      borderRadius: BorderRadius.circular(tokens.radiusSmall),
                     ),
-                    if (showSubtitle)
-                      Text(
-                        subtitle,
-                        style: TextStyle(
-                          fontSize: compact ? 10 : 11,
-                          color: selected
-                              ? cs.onPrimaryContainer
-                              : cs.onSurfaceVariant,
+                    child: Icon(
+                      icon,
+                      size: 20,
+                      color: selected ? cs.onPrimary : cs.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: TextStyle(
+                            fontSize: compact ? 13 : 14,
+                            fontWeight: FontWeight.w700,
+                            color: titleColor,
+                          ),
                         ),
-                      ),
-                  ],
-                ),
+                        if (showSubtitle)
+                          Text(
+                            subtitle,
+                            style: TextStyle(
+                              fontSize: compact ? 10 : 11,
+                              color: selected
+                                  ? cs.onPrimaryContainer
+                                  : cs.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (selected)
+                    Icon(
+                      Icons.check_circle_rounded,
+                      color: cs.primary,
+                      size: 20,
+                    ),
+                ],
               ),
-              if (selected)
-                Icon(Icons.check_circle_rounded, color: cs.primary, size: 20),
-            ],
+            ),
           ),
         ),
       );

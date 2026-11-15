@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import '../../../../core/widgets/app_buttons.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -55,6 +56,7 @@ class PlaylistSelectionIndicator extends StatelessWidget {
         child: AppDeferredFade(
           visible: isSelected,
           showDelay: kAppSelectionDuration,
+          beginScale: 0.86,
           fadeInDuration: kAppMotionFast,
           child: Container(
             key: ValueKey<String>('playlist_selection_indicator_$sessionId'),
@@ -346,7 +348,8 @@ class SessionsEmptyState extends StatelessWidget {
                       ),
                       if (onOpenLibrary != null) ...[
                         const SizedBox(height: AppSpacing.lg),
-                        FilledButton.icon(
+                        AppLabelledButton(
+                          FilledButton.icon,
                           onPressed: onOpenLibrary,
                           icon: const Icon(Icons.library_music_rounded),
                           label: Text(i18n.tr('open_library')),
@@ -613,13 +616,15 @@ class SessionListCard extends ConsumerWidget {
                           );
                           playback.toggleSessionPlayPause(sessionId);
                         },
-                        style: IconButton.styleFrom(
-                          foregroundColor: isPlaying
-                              ? activeColor
-                              : cs.onSurface,
-                          minimumSize: const Size(44, 44),
-                          maximumSize: const Size(44, 44),
-                          padding: EdgeInsets.zero,
+                        style: appIconButtonStyle(
+                          IconButton.styleFrom(
+                            foregroundColor: isPlaying
+                                ? activeColor
+                                : cs.onSurface,
+                            minimumSize: const Size(44, 44),
+                            maximumSize: const Size(44, 44),
+                            padding: EdgeInsets.zero,
+                          ),
                         ),
                         icon: AnimatedSwitcher(
                           switchOutCurve: kAppFadeCurve,

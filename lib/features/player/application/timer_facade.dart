@@ -136,7 +136,7 @@ final class TimerFacade {
   }
 
   void detachRuntime() {
-    setStopAfterCurrentTrack(false);
+    _clearTrackEndTargets();
     _cancelPendingTrackEndFade();
     _hasPlayingSession = () => false;
     _sessions = _emptySessions;
@@ -151,6 +151,10 @@ final class TimerFacade {
   }
 
   void configureTimer(TimerMode mode, Duration duration) {
+    if (_service.timerRemaining == Duration.zero) {
+      _clearTrackEndTargets();
+      _service.stopAfterCurrentTrack = false;
+    }
     _service.timerDraftMode = mode;
     _service.timerDraftDuration = duration > Duration.zero
         ? duration
@@ -215,25 +219,24 @@ final class TimerFacade {
 
   void setStopAfterCurrentTrack(bool enabled) {
     if (_service.stopAfterCurrentTrack == enabled) return;
+    _service.stopAfterCurrentTrack = enabled;
+    if (!enabled) _clearTrackEndTargets();
+    _setFadeMultiplier(1.0);
+    _changed();
+    unawaited(saveRuntime());
+    unawaited(syncNativeAlarms());
+  }
+
+  void _clearTrackEndTargets() {
+    if (_trackEndTargets.isEmpty) return;
     final previousTargets = _trackEndTargets.keys.toList();
     for (final id in previousTargets) {
       _restoreTrackEndFade(id);
     }
     _trackEndTargets.clear();
     _armedTrackEndTargets.clear();
-    if (enabled) {
-      for (final session in _sessions()) {
-        if (session.playbackRequested) {
-          _trackEndTargets[session.id] = session.currentTrackPath;
-        }
-      }
-    }
-    _service.stopAfterCurrentTrack = enabled && _trackEndTargets.isNotEmpty;
-    final generation = ++_trackEndGeneration;
-    _queueTrackStops(previousTargets, false, generation);
-    _queueTrackStops(_trackEndTargets.keys.toList(), true, generation);
+    _queueTrackStops(previousTargets, false, ++_trackEndGeneration);
     _cancelPendingTrackEndFade();
-    _changed();
   }
 
   Future<void> get pendingTrackStopSync =>
@@ -279,12 +282,18 @@ final class TimerFacade {
           }
         }
       }
-      if (generation == _trackEndGeneration) reconcileTrackStopTargets();
+      if (enabled && generation == _trackEndGeneration) {
+        if (_trackEndTargets.isEmpty) {
+          _finishTrackEndWait();
+        } else {
+          reconcileTrackStopTargets();
+        }
+      }
     });
   }
 
   void reconcileTrackStopTargets() {
-    if (!_service.stopAfterCurrentTrack) return;
+    if (_trackEndTargets.isEmpty) return;
     final sessions = {for (final session in _sessions()) session.id: session};
     for (final entry in _trackEndTargets.entries.toList()) {
       final session = sessions[entry.key];
@@ -299,13 +308,18 @@ final class TimerFacade {
           session.currentTrackPath != entry.value ||
           (_armedTrackEndTargets.contains(entry.key) &&
               !session.nativeStopAfterCurrentTrack)) {
+        if (session != null &&
+            session.completedByTrackStop &&
+            session.currentTrackPath == entry.value) {
+          _service.pausedByTimerSessionIds.add(entry.key);
+        }
         _trackEndTargets.remove(entry.key);
         _armedTrackEndTargets.remove(entry.key);
         _restoreTrackEndFade(entry.key);
         _queueTrackStops([entry.key], false, _trackEndGeneration);
       }
     }
-    if (_trackEndTargets.isEmpty) setStopAfterCurrentTrack(false);
+    if (_trackEndTargets.isEmpty) _finishTrackEndWait();
   }
 
   Future<void> armTrackStopBeforePlayback(PlaybackSession session) async {
@@ -324,7 +338,7 @@ final class TimerFacade {
     _armedTrackEndTargets.remove(sessionId);
     _restoreTrackEndFade(sessionId);
     _queueTrackStops([sessionId], false, _trackEndGeneration);
-    if (_trackEndTargets.isEmpty) setStopAfterCurrentTrack(false);
+    if (_trackEndTargets.isEmpty) _finishTrackEndWait();
     await pendingTrackStopSync;
   }
 
@@ -391,7 +405,8 @@ final class TimerFacade {
       _service.autoResumeTimer?.cancel();
       _service.autoResumeTimer = null;
       _service.autoResumeAt = null;
-    } else if (_service.pausedByTimerSessionIds.isNotEmpty) {
+    } else if (_service.pausedByTimerSessionIds.isNotEmpty &&
+        !(stopAfterCurrentTrack && _service.timerRemaining == Duration.zero)) {
       scheduleAutoResumeTimer(
         _runtimeCalculator.nextClockTime(
           now: DateTime.now(),
@@ -446,7 +461,9 @@ final class TimerFacade {
       _service
         ..autoResumeTimer = null
         ..autoResumeAt = null;
-      if (!_service.timerActive && !_service.timerWaitingForPlayback) {
+      if (!_service.timerActive &&
+          !_service.timerWaitingForPlayback &&
+          !stopAfterCurrentTrack) {
         resetRuntimeState(clearPausedSessions: false);
       }
     }
@@ -489,8 +506,7 @@ final class TimerFacade {
     bool clearPausedSessions = true,
     bool restoreFadeMultiplier = true,
   }) {
-    setStopAfterCurrentTrack(false);
-    _cancelPendingTrackEndFade();
+    _clearTrackEndTargets();
     _cancelResumeFadeIn();
     _restoredCountdownSessions.clear();
     _service.timerGeneration++;
@@ -553,6 +569,8 @@ final class TimerFacade {
   }
 
   Future<void> _handleTimerExpiredOnPlatform(int generation) async {
+    await _persistence.pendingNativeAlarmSync;
+    if (!_isCurrentGeneration(generation)) return;
     final result = await _executeTimerAction(
       powerPlatformService.executeTimerExpiredNow,
       generation,
@@ -585,13 +603,36 @@ final class TimerFacade {
         nativeRuntime == NativeTimerRuntimeLoadResult.stale) {
       return;
     }
-    _maybeResetTimerAfterExpiry();
+    if (!stopAfterCurrentTrack ||
+        nativeRuntime == NativeTimerRuntimeLoadResult.empty) {
+      _maybeResetTimerAfterExpiry();
+    }
     _changed();
     unawaited(saveRuntime());
   }
 
   Future<void> _applyLocalTimerExpiryFallback(int generation) async {
     if (!_isCurrentGeneration(generation)) return;
+    if (stopAfterCurrentTrack) {
+      _restoredCountdownSessions.clear();
+      _service.pausedByTimerSessionIds.clear();
+      for (final session in _sessions()) {
+        if (session.playbackRequested) {
+          _trackEndTargets[session.id] = session.currentTrackPath;
+        }
+      }
+      if (_trackEndTargets.isEmpty) {
+        _finishTrackEndWait();
+      } else {
+        _queueTrackStops(
+          _trackEndTargets.keys.toList(),
+          true,
+          _trackEndGeneration,
+        );
+        unawaited(syncNativeAlarms());
+      }
+      return;
+    }
     final playingSessions = _sessions()
         .where((session) => session.effectivePlaying)
         .toList(growable: false);
@@ -640,6 +681,27 @@ final class TimerFacade {
       return;
     }
     resetRuntimeState();
+  }
+
+  void _finishTrackEndWait() {
+    if (!stopAfterCurrentTrack || _service.timerRemaining != Duration.zero) {
+      return;
+    }
+    _service.stopAfterCurrentTrack = false;
+    if (_service.autoResumeEnabled &&
+        _service.pausedByTimerSessionIds.isNotEmpty) {
+      scheduleAutoResumeTimer(
+        _runtimeCalculator.nextClockTime(
+          now: DateTime.now(),
+          hour: _service.autoResumeHour,
+          minute: _service.autoResumeMinute,
+        ),
+      );
+    }
+    _maybeResetTimerAfterExpiry();
+    _changed();
+    unawaited(saveRuntime());
+    unawaited(syncNativeAlarms());
   }
 
   Future<void> _handleAutoResumeOnPlatform(int generation) async {
@@ -771,7 +833,33 @@ final class TimerFacade {
 
   Future<void> loadRuntimeFromSystem() => _persistence.loadRuntimeFromSystem();
 
-  Future<void> syncRuntimeFromNative() => _persistence.syncRuntimeFromNative();
+  Future<void> syncRuntimeFromNative({
+    bool onlyCurrentGeneration = false,
+  }) async {
+    final generation = _service.timerGeneration;
+    final result = await _persistence.loadNativeRuntime(
+      expectedGeneration: onlyCurrentGeneration ? generation : null,
+    );
+    if (result == NativeTimerRuntimeLoadResult.empty &&
+        _isCurrentGeneration(generation) &&
+        _service.stopAfterCurrentTrack &&
+        _service.timerRemaining == Duration.zero &&
+        _trackEndTargets.isEmpty &&
+        defaultTargetPlatform == TargetPlatform.android) {
+      resetRuntimeState();
+      _changed();
+      await saveRuntime();
+    }
+  }
+
+  void onNativePlaybackPaused() {
+    if (defaultTargetPlatform == TargetPlatform.android &&
+        stopAfterCurrentTrack &&
+        _service.timerRemaining == Duration.zero &&
+        _trackEndTargets.isEmpty) {
+      unawaited(syncRuntimeFromNative(onlyCurrentGeneration: true));
+    }
+  }
 
   Future<void> saveRuntime() => _persistence.saveRuntime();
 
@@ -803,7 +891,7 @@ final class TimerFacade {
     );
     if (tick.expired) {
       _service.timerRemaining = tick.remaining;
-      _setFadeMultiplier(0.0);
+      if (!stopAfterCurrentTrack) _setFadeMultiplier(0.0);
       _changed();
       _expireTimer();
       return;
@@ -811,7 +899,7 @@ final class TimerFacade {
     if (!tick.changed) return;
     _service.timerRemaining = tick.remaining;
     final duration = _service.timerDuration;
-    if (duration != null) {
+    if (duration != null && !stopAfterCurrentTrack) {
       final remainingMs = _service.timerRemaining!.inMilliseconds;
       final fadeDurationMs = math.min(30000, duration.inMilliseconds ~/ 2);
       if (fadeDurationMs > 0 && remainingMs <= fadeDurationMs) {
@@ -840,7 +928,7 @@ final class TimerFacade {
   void _changed() => _onStateChanged();
 
   Future<void> dispose() async {
-    setStopAfterCurrentTrack(false);
+    _clearTrackEndTargets();
     if (_trackEndSync != null) await pendingTrackStopSync;
     _cancelPendingTrackEndFade();
     _cancelResumeFadeIn();

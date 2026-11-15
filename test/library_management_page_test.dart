@@ -206,15 +206,16 @@ void main() {
         matching: find.byType(AppEntryInkWell),
       );
       final dynamic controller = Material.of(tester.element(ink));
-      Iterable<InkSplash> splashes() =>
+      Iterable<InteractiveInkFeature> pressHighlight() =>
           (controller.debugInkFeatures as List<InkFeature>? ?? [])
-              .whereType<InkSplash>();
+              .whereType<InteractiveInkFeature>()
+              .where((ink) => ink is! InkHighlight && ink.color.a > 0);
 
       final gesture = await tester.startGesture(tester.getCenter(row));
       await tester.pump(const Duration(milliseconds: 120));
-      expect(splashes(), isNotEmpty);
+      expect(pressHighlight(), isNotEmpty);
       await gesture.up();
-      expect(splashes(), isEmpty);
+      expect(pressHighlight(), isEmpty);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
       expect(find.byType(LibraryEditPage), findsOneWidget);
@@ -227,10 +228,10 @@ void main() {
       Navigator.of(tester.element(find.byType(LibraryEditPage))).pop();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 150));
-      expect(splashes(), isEmpty);
+      expect(pressHighlight(), isEmpty);
       await tester.pumpAndSettle();
       expect(row, findsOneWidget);
-      expect(splashes(), isEmpty);
+      expect(pressHighlight(), isEmpty);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     },

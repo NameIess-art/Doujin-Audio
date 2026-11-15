@@ -1189,7 +1189,7 @@ class NativePlaybackService : MediaSessionService() {
         return okResult(null)
     }
 
-    fun stopPlayingSessionsAfterCurrentTrackForTimer(generation: Int): List<String> {
+    fun pausePlayingSessionsForTimer(generation: Int, stopAfterCurrentTrack: Boolean): List<String> {
         val sessionIds = sessionManager.activePlaybackSessionIds()
         if (sessionIds.isEmpty()) {
             syncForegroundState()
@@ -1200,7 +1200,11 @@ class NativePlaybackService : MediaSessionService() {
             focusRecovery.removePending(sessionId)
             clearPlaybackIntent(sessionId)
         }
-        timerExecution.arm(sessionIds, generation)
+        if (stopAfterCurrentTrack) {
+            timerExecution.arm(sessionIds, generation)
+        } else {
+            sessionIds.forEach { pause(it) }
+        }
         publishAllSessionStates()
         statePersistence.persistNow()
         syncForegroundState()

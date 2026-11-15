@@ -18,6 +18,7 @@ import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/presentation/app_settings_group_card.dart';
+import '../../../core/widgets/app_buttons.dart';
 import '../../../core/cache/app_cache_service.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../application/settings_command_controller.dart';
@@ -455,7 +456,7 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
                 title: i18n.tr(widget.category.labelKey),
                 leading: IconButton(
                   onPressed: () => Navigator.of(context).maybePop(),
-                  icon: Icon(Icons.arrow_back_rounded, color: cs.onSurface),
+                  icon: const Icon(Icons.arrow_back_rounded),
                   tooltip: i18n.tr('back'),
                 ),
               ),

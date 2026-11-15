@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../../../core/widgets/app_buttons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/state/app_runtime_providers.dart';
@@ -133,7 +135,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
             onPressed: () => Navigator.pop(context),
             child: Text(i18n.tr('cancel')),
           ),
-          FilledButton(
+          AppPillButton(
             onPressed: () {
               final source = normalizeLines(originalText);
               final translated = normalizeLines(translatedText);
@@ -214,7 +216,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
               onPressed: () => Navigator.pop(context),
               child: Text(i18n.tr('cancel')),
             ),
-            FilledButton(
+            AppPillButton(
               onPressed: () {
                 if (_saving ||
                     generation != _saveGeneration ||
@@ -351,7 +353,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
               onPressed: () => Navigator.pop(dialogContext, false),
               child: Text(i18n.tr('discard_changes')),
             ),
-            FilledButton(
+            AppPillButton(
               onPressed: _canSave
                   ? () => Navigator.pop(dialogContext, true)
                   : null,
@@ -451,6 +453,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                                   children: [
                                     Expanded(
                                       child: InkWell(
+                                        mouseCursor: WidgetStateMouseCursor.clickable,
                                         key: ValueKey('subtitle_text_$index'),
                                         borderRadius: BorderRadius.circular(12),
                                         onTap: _saving
@@ -472,6 +475,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                                       ),
                                     ),
                                     InkWell(
+                                      mouseCursor: WidgetStateMouseCursor.clickable,
                                       key: ValueKey('subtitle_time_$index'),
                                       borderRadius: BorderRadius.circular(12),
                                       onTap: _saving
@@ -526,7 +530,6 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                 icon: Icons.edit_note_rounded,
                 title: i18n.tr('subtitle_edit'),
                 leading: BackButton(
-                  color: cs.onSurface,
                   onPressed: _saving ? null : _requestExit,
                 ),
                 trailing: IconButton(

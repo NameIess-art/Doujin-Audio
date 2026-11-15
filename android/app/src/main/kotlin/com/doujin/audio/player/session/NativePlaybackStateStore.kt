@@ -87,7 +87,8 @@ data class StoredPlaybackTimerRuntimeState(
     val autoResumeMinute: Int,
     val autoResumeAtMs: Long?,
     val pausedSessionIds: List<String>,
-    val generation: Int
+    val generation: Int,
+    val stopAfterCurrentTrack: Boolean = false
 ) {
     val hasRuntime: Boolean
         get() = (timerModeIndex != null && durationMs != null && waitingForPlayback) ||
@@ -595,6 +596,7 @@ object NativePlaybackStateStore {
             .put("waitingForPlayback", state.waitingForPlayback)
             .put("timerEndsAtWallClockMs", state.timerEndsAtWallClockMs)
             .put("timerEndsElapsedRealtimeMs", state.timerEndsElapsedRealtimeMs)
+            .put("stopAfterCurrentTrack", state.stopAfterCurrentTrack)
             .put("autoResumeEnabled", state.autoResumeEnabled)
             .put("autoResumeHour", state.autoResumeHour)
             .put("autoResumeMinute", state.autoResumeMinute)
@@ -633,7 +635,13 @@ object NativePlaybackStateStore {
                 autoResumeMinute = json.optInt("autoResumeMinute", 0),
                 autoResumeAtMs = json.optNullableLong("autoResumeAtMs"),
                 pausedSessionIds = pausedSessionIds,
-                generation = json.optInt("generation", 0)
+                generation = json.optInt("generation", 0),
+                // Older Android alarms always finished the current track at expiry.
+                stopAfterCurrentTrack = json.optBoolean(
+                    "stopAfterCurrentTrack",
+                    json.optNullableLong("timerEndsAtWallClockMs") != null ||
+                        json.optNullableLong("timerEndsAtMs") != null
+                )
             )
         } catch (_: Exception) {
             null

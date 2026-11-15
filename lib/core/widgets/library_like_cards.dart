@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'app_buttons.dart';
 import '../../app/theme/app_styles.dart';
 import '../media/time_text_formatters.dart';
 import '../translation/text_translation_service.dart';
@@ -526,7 +528,7 @@ Widget _libraryLikeSecondaryInfo(
   );
 }
 
-class LibraryLikeCardActions extends StatelessWidget {
+class LibraryLikeCardActions extends StatefulWidget {
   const LibraryLikeCardActions({
     super.key,
     required this.addLabel,
@@ -541,51 +543,234 @@ class LibraryLikeCardActions extends StatelessWidget {
   final VoidCallback? onPlay;
 
   @override
+  State<LibraryLikeCardActions> createState() => _LibraryLikeCardActionsState();
+}
+
+class _LibraryLikeCardActionsState extends State<LibraryLikeCardActions>
+    with TickerProviderStateMixin {
+  late final _ActionMotion _addMotion = _ActionMotion(this, _onTick);
+  late final _ActionMotion _playMotion = _ActionMotion(this, _onTick);
+
+  void _onTick() {
+    if (mounted) setState(() {});
+  }
+
+  _ActionMotion _motionFor(int index) => index == 0 ? _addMotion : _playMotion;
+
+  void _syncMotion(int index, bool enabled) {
+    final motion = _motionFor(index);
+    if (!enabled) {
+      motion.hovered = false;
+      motion.pressed = false;
+    }
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final baseColor = !enabled
+        ? colors.onSurface.withValues(alpha: 0.38)
+        : colors.onSurfaceVariant;
+    final feedback = resolveAppButtonIconFeedback(
+      context: context,
+      pressed: motion.pressed,
+      hovered: motion.hovered,
+      enabled: enabled,
+      baseColor: baseColor,
+    );
+    motion.opacity = feedback.opacity;
+    motion.animateTo(
+      feedback.scale,
+      feedback.color ?? baseColor,
+      feedback.duration,
+      isWindows: theme.platform == TargetPlatform.windows,
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncMotion(0, widget.onAdd != null);
+    _syncMotion(1, widget.onPlay != null);
+  }
+
+  @override
+  void didUpdateWidget(covariant LibraryLikeCardActions oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if ((oldWidget.onAdd != null) != (widget.onAdd != null)) {
+      _syncMotion(0, widget.onAdd != null);
+    }
+    if ((oldWidget.onPlay != null) != (widget.onPlay != null)) {
+      _syncMotion(1, widget.onPlay != null);
+    }
+  }
+
+  @override
+  void dispose() {
+    _addMotion.dispose();
+    _playMotion.dispose();
+    super.dispose();
+  }
+
+  void _setHover(int index, bool enabled, bool value) {
+    final motion = _motionFor(index);
+    if (motion.hovered == value) return;
+    motion.hovered = value;
+    _syncMotion(index, enabled);
+    setState(() {});
+  }
+
+  void _setPressed(int index, bool enabled, bool value) {
+    final motion = _motionFor(index);
+    if (motion.pressed == value) return;
+    motion.pressed = value;
+    _syncMotion(index, enabled);
+    setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final desktop = theme.platform == TargetPlatform.windows;
-    // The card already owns an ink surface. A full Material button adds an
-    // independent surface and style-state machinery for each tiny action.
-    Widget action(IconData icon, String label, VoidCallback? onTap) => Tooltip(
-      message: label,
-      excludeFromSemantics: true,
-      child: Semantics(
-        container: true,
-        button: true,
-        enabled: onTap != null,
-        label: label,
-        child: InkResponse(
-          onTap: onTap,
-          canRequestFocus: onTap != null,
-          hoverColor: desktop ? colors.primary.withValues(alpha: 0.24) : null,
-          hoverDuration: desktop ? Duration.zero : null,
-          containedInkWell: true,
-          customBorder: const CircleBorder(),
-          radius: 12,
-          child: SizedBox(
-            width: 22,
-            height: _libraryLikeInfoLineHeight,
-            child: Center(
-              child: Icon(
-                icon,
-                size: _libraryLikeInfoLineHeight,
-                color: onTap == null
-                    ? colors.onSurface.withValues(alpha: 0.38)
-                    : colors.onSurfaceVariant,
+    // The card already owns an ink surface. Driving both icons from a single
+    // State avoids allocating extra stateful wrappers inside each scrolling row.
+    Widget action(int index, IconData icon, String label, VoidCallback? onTap) {
+      final enabled = onTap != null;
+      final motion = _motionFor(index);
+      final baseColor = !enabled
+          ? colors.onSurface.withValues(alpha: 0.38)
+          : colors.onSurfaceVariant;
+      final iconWidget = Icon(
+        icon,
+        size: _libraryLikeInfoLineHeight,
+        color: motion.resolveColor(baseColor),
+      );
+      return Tooltip(
+        message: label,
+        excludeFromSemantics: true,
+        child: Semantics(
+          container: true,
+          button: true,
+          enabled: enabled,
+          label: label,
+          child: InkResponse(
+            mouseCursor: WidgetStateMouseCursor.clickable,
+            onTap: onTap,
+            canRequestFocus: enabled,
+            hoverColor: Colors.transparent,
+            highlightColor: Colors.transparent,
+            splashFactory: NoSplash.splashFactory,
+            onHover: enabled ? (v) => _setHover(index, enabled, v) : null,
+            onHighlightChanged: enabled
+                ? (v) => _setPressed(index, enabled, v)
+                : null,
+            containedInkWell: true,
+            customBorder: const CircleBorder(),
+            radius: 12,
+            child: SizedBox(
+              width: 22,
+              height: _libraryLikeInfoLineHeight,
+              child: Center(
+                child: Transform.scale(
+                  scale: motion.controller.value,
+                  transformHitTests: false,
+                  child: motion.opacity < 1
+                      ? Opacity(opacity: motion.opacity, child: iconWidget)
+                      : iconWidget,
+                ),
               ),
             ),
           ),
         ),
-      ),
-    );
+      );
+    }
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        action(Icons.add_circle_rounded, addLabel, onAdd),
-        action(Icons.play_arrow_rounded, playLabel, onPlay),
+        action(0, Icons.add_circle_rounded, widget.addLabel, widget.onAdd),
+        action(1, Icons.play_arrow_rounded, widget.playLabel, widget.onPlay),
       ],
     );
+  }
+}
+
+class _ActionMotion {
+  _ActionMotion(TickerProvider vsync, this._onTick)
+    : controller = AnimationController.unbounded(vsync: vsync, value: 1),
+      colorController = AnimationController(vsync: vsync, value: 1) {
+    controller.addListener(_onTick);
+    colorController.addListener(_onTick);
+  }
+
+  final AnimationController controller;
+  final AnimationController colorController;
+  final VoidCallback _onTick;
+  bool hovered = false;
+  bool pressed = false;
+  double opacity = 1;
+  double _targetScale = 1;
+  Color? _fromColor;
+  Color? _targetColor;
+
+  Color resolveColor(Color fallback) {
+    final target = _targetColor ?? fallback;
+    final from = _fromColor ?? target;
+    return Color.lerp(from, target, colorController.value) ?? target;
+  }
+
+  void _setColorValueSilently(double value) {
+    colorController.removeListener(_onTick);
+    colorController.value = value;
+    colorController.addListener(_onTick);
+  }
+
+  void animateTo(
+    double targetScale,
+    Color targetColor,
+    Duration duration, {
+    required bool isWindows,
+  }) {
+    final curve = isWindows ? Curves.easeOutQuad : Curves.easeOutCubic;
+    if (_targetScale != targetScale ||
+        (controller.isAnimating && (!isWindows || duration == Duration.zero))) {
+      _targetScale = targetScale;
+      if (duration == Duration.zero) {
+        controller.removeListener(_onTick);
+        controller.value = targetScale;
+        controller.addListener(_onTick);
+      } else {
+        unawaited(
+          controller.animateTo(
+            targetScale,
+            duration: duration,
+            curve: curve,
+          ),
+        );
+      }
+    }
+    if (_targetColor == null || duration == Duration.zero) {
+      _fromColor = targetColor;
+      _targetColor = targetColor;
+      _setColorValueSilently(1);
+      return;
+    }
+    if (_targetColor == targetColor &&
+        (isWindows || !colorController.isAnimating)) {
+      return;
+    }
+    _fromColor = resolveColor(targetColor);
+    _targetColor = targetColor;
+    _setColorValueSilently(0);
+    unawaited(
+      colorController.animateTo(
+        1,
+        duration: duration,
+        curve: curve,
+      ),
+    );
+  }
+
+  void dispose() {
+    controller.dispose();
+    colorController.dispose();
   }
 }
 

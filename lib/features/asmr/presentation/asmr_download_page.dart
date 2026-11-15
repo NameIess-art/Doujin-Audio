@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/widgets/app_buttons.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
 import '../domain/asmr_models.dart';
@@ -187,7 +188,9 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
           lowQualityUrl: null,
           duration: Duration.zero,
           size: 0,
-          children: const AsmrDownloadPlanner().prepareDownloadTree(result.tree),
+          children: const AsmrDownloadPlanner().prepareDownloadTree(
+            result.tree,
+          ),
           workId: currentWork.id,
           workKey: currentWork.workKey,
           workTitle: currentWork.title,
@@ -509,6 +512,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                           color: primaryColor,
                           borderRadius: BorderRadius.circular(23),
                           child: InkWell(
+                            mouseCursor: WidgetStateMouseCursor.clickable,
                             borderRadius: BorderRadius.circular(23),
                             onTap: _starting || _choosingDestination
                                 ? null
@@ -604,38 +608,45 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                     ? HeaderFloatingButton(
                         child: IconButton(
                           tooltip: destinationLabel,
+                          color: primaryColor,
                           onPressed: chooseDestination,
-                          icon: Icon(
-                            destinationIcon,
-                            size: 18,
-                            color: primaryColor,
-                          ),
+                          icon: Icon(destinationIcon, size: 18),
                         ),
                       )
                     : HeaderFloatingSurface(
                         padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(19),
-                          onTap: chooseDestination,
-                          child: Center(
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  destinationIcon,
-                                  size: 18,
-                                  color: primaryColor,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  destinationLabel,
-                                  style: Theme.of(context).textTheme.labelMedium
-                                      ?.copyWith(
-                                        color: primaryColor,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                ),
-                              ],
+                        child: AppButtonPointerRegion(
+                          builder: (context, states) => InkWell(
+                            mouseCursor: WidgetStateMouseCursor.clickable,
+                            borderRadius: BorderRadius.circular(19),
+                            hoverColor: Colors.transparent,
+                            highlightColor: Colors.transparent,
+                            splashFactory: NoSplash.splashFactory,
+                            onTap: chooseDestination,
+                            child: Center(
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconTheme.merge(
+                                    data: IconThemeData(color: primaryColor),
+                                    child: AppButtonIcon(
+                                      states: states,
+                                      child: Icon(destinationIcon, size: 18),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    destinationLabel,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelMedium
+                                        ?.copyWith(
+                                          color: primaryColor,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -646,7 +657,8 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                     if ((widget.batchTotal ?? 0) > 1)
                       Align(
                         alignment: Alignment.centerRight,
-                        child: TextButton.icon(
+                        child: AppLabelledButton(
+                          TextButton.icon,
                           key: const ValueKey('asmr_download_skip_work'),
                           onPressed: _starting || _choosingDestination
                               ? null

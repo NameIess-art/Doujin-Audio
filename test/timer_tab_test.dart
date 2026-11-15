@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/app_buttons.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/player/presentation/timer_tab.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
@@ -36,9 +37,9 @@ void main() {
         fixture.build(
           Builder(
             builder: (context) => MediaQuery(
-              data: MediaQuery.of(context).copyWith(
-                padding: const EdgeInsets.only(top: 24),
-              ),
+              data: MediaQuery.of(
+                context,
+              ).copyWith(padding: const EdgeInsets.only(top: 24)),
               child: const TimerTab(),
             ),
           ),
@@ -502,6 +503,15 @@ void main() {
         find.text(fixture.languageProvider.tr('stop_after_current_track')),
         findsOneWidget,
       );
+      final trackEndToggle = find
+          .byWidgetPredicate(
+            (widget) => widget is Switch && widget.value == false,
+          )
+          .last;
+      await tester.ensureVisible(trackEndToggle);
+      await tester.tap(trackEndToggle);
+      await tester.pump();
+      expect(fixture.timer.stopAfterCurrentTrack, isTrue);
       final detailPanelRect = tester.getRect(panel);
       final detailTitleRect = tester.getRect(title);
       expect(detailPanelRect.size, setupPanelRect.size);
@@ -520,6 +530,82 @@ void main() {
       TargetPlatform.android,
       TargetPlatform.windows,
     }),
+  );
+
+  testWidgets(
+    'Windows timer cards highlight their existing shape and keep its size',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          const Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 420,
+                height: kTimerCompactPanelHeight,
+                child: TimerTab(showHeader: false, compactOnly: true),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final manualLabel = fixture.languageProvider.tr('manual_start');
+      final triggerLabel = fixture.languageProvider.tr('auto_start_after_play');
+      final manualText = find.text(manualLabel);
+      final triggerText = find.text(triggerLabel);
+
+      Finder card(Finder label) =>
+          find.ancestor(of: label, matching: find.byType(Material)).first;
+      final row = card(triggerText);
+      final rest = tester.widget<Material>(row);
+      final bounds = tester.getRect(row);
+      final restTextColor = tester.widget<Text>(triggerText).style?.color;
+      final dynamic controller = Material.of(tester.element(triggerText));
+      Iterable<InteractiveInkFeature> visibleInk() =>
+          (controller.debugInkFeatures as List<InkFeature>? ?? [])
+              .whereType<InteractiveInkFeature>()
+              .where((feature) => feature.color.a > 0);
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      addTearDown(mouse.removePointer);
+      await mouse.moveTo(tester.getCenter(triggerText));
+      await tester.pumpAndSettle();
+      final scheme = Theme.of(tester.element(triggerText)).colorScheme;
+      expect(visibleInk().single.color, appHoverTint(scheme));
+      expect(tester.widget<Material>(row).shape, rest.shape);
+      expect(tester.widget<Text>(triggerText).style?.color, restTextColor);
+      expect(tester.getRect(row), bounds);
+      expect(
+        tester.widget<Material>(card(manualText)).shape,
+        isNot(rest.shape),
+      );
+
+      await mouse.down(tester.getCenter(triggerText));
+      await tester.pumpAndSettle();
+      expect(
+        visibleInk().map((feature) => feature.color),
+        contains(appPressedTint(scheme)),
+      );
+      await mouse.cancel();
+      await tester.pumpAndSettle();
+      expect(
+        visibleInk().map((feature) => feature.color),
+        isNot(contains(appPressedTint(scheme))),
+      );
+      expect(fixture.timerService.timerDraftMode, TimerMode.manual);
+
+      // Clicking switches the selected timer mode.
+      await tester.tap(triggerText);
+      await tester.pumpAndSettle();
+      expect(fixture.timerService.timerDraftMode, TimerMode.trigger);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.windows}),
   );
 }
 

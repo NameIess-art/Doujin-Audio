@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/widgets/app_buttons.dart';
 import '../../../app/application/audio_path_coordinator.dart';
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
@@ -18,7 +19,6 @@ import '../../../app/theme/app_styles.dart';
 import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_feedback.dart';
-import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/animated_reorder.dart';
 import '../../../core/widgets/async_cover_image.dart';
@@ -610,9 +610,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                 key: const ValueKey<String>(
                                   'playlist_sleep_canvas_button',
                                 ),
-                                style: AppEntryInkWell.entryButtonStyle(
-                                  context,
-                                ),
                                 onPressed: headerState.hasPlayingAudioSession
                                     ? () {
                                         if (!ref
@@ -899,7 +896,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                       icon: Icons.timer_outlined,
                       title: i18n.tr('timer_title'),
                     ),
-                    if (timerState.active || timerState.duration != null) ...[
+                    if (timerState.duration != null &&
+                        (timerState.active ||
+                            timerState.remaining != Duration.zero)) ...[
                       SwitchListTile(
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14),
@@ -936,60 +935,84 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                       spacing: 8,
                       runSpacing: 8,
                       children: [
-                        ActionChip(
-                          avatar: const Icon(Icons.timer_10_rounded, size: 16),
-                          label: Text(
-                            i18n.tr('minutes_duration', {'count': 15}),
+                        appNoPointerInkTheme(
+                          context: context,
+                          androidPressHighlight: true,
+                          child: ActionChip(
+                            mouseCursor: WidgetStateMouseCursor.clickable,
+                            avatar: const Icon(
+                              Icons.timer_10_rounded,
+                              size: 16,
+                            ),
+                            label: Text(
+                              i18n.tr('minutes_duration', {'count': 15}),
+                            ),
+                            onPressed: () {
+                              timer.configureTimer(
+                                TimerMode.manual,
+                                const Duration(minutes: 15),
+                              );
+                              timer.startCountdown();
+                              Navigator.of(sheetContext).pop();
+                            },
                           ),
-                          onPressed: () {
-                            timer.configureTimer(
-                              TimerMode.manual,
-                              const Duration(minutes: 15),
-                            );
-                            timer.startCountdown();
-                            Navigator.of(sheetContext).pop();
-                          },
                         ),
-                        ActionChip(
-                          avatar: const Icon(Icons.timer_rounded, size: 16),
-                          label: Text(
-                            i18n.tr('minutes_duration', {'count': 30}),
+                        appNoPointerInkTheme(
+                          context: context,
+                          androidPressHighlight: true,
+                          child: ActionChip(
+                            mouseCursor: WidgetStateMouseCursor.clickable,
+                            avatar: const Icon(Icons.timer_rounded, size: 16),
+                            label: Text(
+                              i18n.tr('minutes_duration', {'count': 30}),
+                            ),
+                            onPressed: () {
+                              timer.configureTimer(
+                                TimerMode.manual,
+                                const Duration(minutes: 30),
+                              );
+                              timer.startCountdown();
+                              Navigator.of(sheetContext).pop();
+                            },
                           ),
-                          onPressed: () {
-                            timer.configureTimer(
-                              TimerMode.manual,
-                              const Duration(minutes: 30),
-                            );
-                            timer.startCountdown();
-                            Navigator.of(sheetContext).pop();
-                          },
                         ),
-                        ActionChip(
-                          avatar: const Icon(Icons.timer_rounded, size: 16),
-                          label: Text(
-                            i18n.tr('minutes_duration', {'count': 60}),
+                        appNoPointerInkTheme(
+                          context: context,
+                          androidPressHighlight: true,
+                          child: ActionChip(
+                            mouseCursor: WidgetStateMouseCursor.clickable,
+                            avatar: const Icon(Icons.timer_rounded, size: 16),
+                            label: Text(
+                              i18n.tr('minutes_duration', {'count': 60}),
+                            ),
+                            onPressed: () {
+                              timer.configureTimer(
+                                TimerMode.manual,
+                                const Duration(minutes: 60),
+                              );
+                              timer.startCountdown();
+                              Navigator.of(sheetContext).pop();
+                            },
                           ),
-                          onPressed: () {
-                            timer.configureTimer(
-                              TimerMode.manual,
-                              const Duration(minutes: 60),
-                            );
-                            timer.startCountdown();
-                            Navigator.of(sheetContext).pop();
-                          },
                         ),
-                        ActionChip(
-                          avatar: const Icon(Icons.tune_rounded, size: 16),
-                          label: Text(i18n.tr('set_countdown')),
-                          onPressed: () {
-                            Navigator.of(sheetContext).pop(true);
-                          },
+                        appNoPointerInkTheme(
+                          context: context,
+                          androidPressHighlight: true,
+                          child: ActionChip(
+                            mouseCursor: WidgetStateMouseCursor.clickable,
+                            avatar: const Icon(Icons.tune_rounded, size: 16),
+                            label: Text(i18n.tr('set_countdown')),
+                            onPressed: () {
+                              Navigator.of(sheetContext).pop(true);
+                            },
+                          ),
                         ),
                       ],
                     ),
                     if (timerState.active || timerState.duration != null) ...[
                       const SizedBox(height: 14),
-                      OutlinedButton.icon(
+                      AppLabelledButton(
+                        OutlinedButton.icon,
                         onPressed: () {
                           AppInteractionFeedback.trigger(
                             AppInteractionFeedbackType.destructive,

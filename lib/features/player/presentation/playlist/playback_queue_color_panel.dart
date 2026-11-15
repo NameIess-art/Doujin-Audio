@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/theme/app_design_tokens.dart';
+import '../../../../core/widgets/app_buttons.dart';
 
 const List<Color> _queuePresetColors = [
   Color(0xFF2E9C8B), // Default Mint Teal
@@ -174,9 +175,11 @@ class PlaybackQueueColorPanel extends StatelessWidget {
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    style: TextButton.styleFrom(
-                      shape: const StadiumBorder(),
-                      textStyle: const TextStyle(fontWeight: FontWeight.w600),
+                    style: appButtonStyle(
+                      TextButton.styleFrom(
+                        shape: const StadiumBorder(),
+                        textStyle: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
                     ),
                     onPressed: () => onColorChanged(null),
                     child: Text(i18n.tr('reset_to_default')),
@@ -203,6 +206,7 @@ class PlaybackQueueColorPanel extends StatelessWidget {
       button: true,
       selected: isSelected,
       child: InkWell(
+        mouseCursor: WidgetStateMouseCursor.clickable,
         onTap: () => onColorChanged(presetColor.toARGB32()),
         customBorder: const CircleBorder(),
         child: AnimatedContainer(

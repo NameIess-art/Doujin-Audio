@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'app_bottom_sheet.dart';
+import 'app_feedback.dart';
 import 'windows_smooth_scroll_controller.dart';
 
 class SortOption<T> {
@@ -112,6 +115,12 @@ class _SortOptionsSheetState<T> extends State<_SortOptionsSheet<T>> {
     } else if (hasDescending) {
       nextAscending = false;
     }
+    unawaited(
+      AppInteractionFeedback.trigger(
+        AppInteractionFeedbackType.selection,
+        context: context,
+      ),
+    );
     setState(() {
       _ascending = nextAscending;
       _groupByLibrary = values.contains(_SortControl.groupByLibrary);

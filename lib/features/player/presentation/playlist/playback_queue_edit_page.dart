@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/theme/app_design_tokens.dart';
+import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/widgets/app_entry_ink_well.dart';
 import '../../../../core/widgets/app_transitions.dart';
@@ -94,10 +95,17 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
         ? Color(queue.colorValue!)
         : cs.primary;
 
-    final actionStyle = TextButton.styleFrom(
-      shape: const StadiumBorder(),
-      textStyle: const TextStyle(fontWeight: FontWeight.w600),
-    );
+    ButtonStyle buildActionStyle({Color? foregroundColor}) {
+      return appTextButtonStyle(
+        style: TextButton.styleFrom(
+          shape: const StadiumBorder(),
+          foregroundColor: foregroundColor,
+          textStyle: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+      );
+    }
+
+    final actionStyle = buildActionStyle();
     void saveName() {
       if (playback.renamePlaybackQueue(sessionId, _nameController.text)) {
         _finishEditingName();
@@ -281,9 +289,7 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
                           ],
                         )
                       : TextButton(
-                          style: actionStyle.copyWith(
-                            foregroundColor: WidgetStatePropertyAll(cs.error),
-                          ),
+                          style: buildActionStyle(foregroundColor: cs.error),
                           onPressed: () => _removeQueue(context, ref),
                           child: Text(i18n.tr('remove_queue')),
                         ),

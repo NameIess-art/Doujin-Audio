@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/widgets/app_buttons.dart';
 import '../../core/logging/app_log_service.dart';
 import '../../core/platform/platform_channels.dart';
 import '../state/app_runtime_providers.dart';
@@ -64,14 +65,16 @@ class WindowsWindowTitleBar extends ConsumerWidget {
         onPressed: () =>
             unawaited(_runWindowCommand(controls.runCommand, command)),
         icon: Icon(icon, size: 16),
-        style: IconButton.styleFrom(
-          padding: EdgeInsets.zero,
-          fixedSize: const Size(46, 30),
-          minimumSize: const Size(46, 30),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          visualDensity: VisualDensity.standard,
-          shape: const RoundedRectangleBorder(),
-          foregroundColor: colors.onSurface,
+        style: appIconButtonStyle(
+          IconButton.styleFrom(
+            padding: EdgeInsets.zero,
+            fixedSize: const Size(46, 30),
+            minimumSize: const Size(46, 30),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            visualDensity: VisualDensity.standard,
+            shape: const RoundedRectangleBorder(),
+            foregroundColor: colors.onSurface,
+          ),
         ),
       );
     }

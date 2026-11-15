@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../app/presentation/element_action_menu.dart';
+import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/horizontal_edge_fade_scroll.dart';
 import '../../../../core/widgets/marquee_text.dart';
 import '../../../../core/widgets/async_cover_image.dart';
@@ -310,14 +311,11 @@ class SessionDetailLayout extends StatelessWidget {
         key: ValueKey(key),
         value: value,
         onCopy: () => onCopy(value),
-        child: InkWell(
+        child: AppTextLink(
           onTap: () => onCopy(value),
-          borderRadius: BorderRadius.circular(4),
-          hoverColor: style?.color?.withValues(alpha: 0.16),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Text(value, style: style),
-          ),
+          label: value,
+          style: style,
+          padding: const EdgeInsets.symmetric(vertical: 4),
         ),
       );
     }

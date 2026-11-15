@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/widgets/app_buttons.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/media/path_display.dart';
@@ -434,16 +435,19 @@ class _LibraryEditFolderTreeTile extends ConsumerWidget {
             Flexible(
               child: TextButtonTheme(
                 data: TextButtonThemeData(
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 4,
+                  style: appTextButtonStyle(
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 4,
+                      ),
+                      minimumSize: _libraryEditActionMinimumSize,
+                      tapTargetSize: MaterialTapTargetSize.padded,
                     ),
-                    minimumSize: _libraryEditActionMinimumSize,
-                    tapTargetSize: MaterialTapTargetSize.padded,
                   ),
                 ),
-                child: TextButton.icon(
+                child: AppLabelledButton(
+                  TextButton.icon,
                   onPressed: inheritedExcluded
                       ? null
                       : () {
@@ -530,13 +534,16 @@ class _LibraryEditTrackTile extends ConsumerWidget {
       ),
       trailing: TextButtonTheme(
         data: TextButtonThemeData(
-          style: TextButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            minimumSize: _libraryEditActionMinimumSize,
-            tapTargetSize: MaterialTapTargetSize.padded,
+          style: appTextButtonStyle(
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              minimumSize: _libraryEditActionMinimumSize,
+              tapTargetSize: MaterialTapTargetSize.padded,
+            ),
           ),
         ),
-        child: TextButton.icon(
+        child: AppLabelledButton(
+          TextButton.icon,
           onPressed: viewState.inheritedExcluded
               ? null
               : () {

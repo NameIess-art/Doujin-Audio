@@ -8,6 +8,7 @@ import 'package:doujin_audio/features/player/presentation/playback_providers.dar
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_transport_controls.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_detail_route.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -279,7 +280,7 @@ void main() {
           expect(glassFinder, findsOneWidget);
           final glass = tester.widget<AppGlassSurface>(glassFinder);
           expect(glass.enabled, enabled);
-          expect(glass.borderRadius, BorderRadius.circular(26));
+          expect(glass.borderRadius, BorderRadius.circular(23));
           expect(filterFinder, enabled ? findsOneWidget : findsNothing);
           if (enabled) {
             expect(tester.widget<BackdropFilter>(filterFinder).enabled, isTrue);
@@ -303,4 +304,147 @@ void main() {
       }),
     );
   }
+
+  testWidgets(
+    'volume exit and mute buttons match first two bar button slots and icon-only feedback',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+        notificationsChannel,
+        (_) async => <String, Object?>{'ok': true, 'value': null},
+      );
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(notificationsChannel, null),
+      );
+
+      final track = testMusicTrack(
+        name: 'Volume alignment test',
+        path: '/music/align.mp3',
+        groupKey: '/music',
+        groupTitle: 'Music',
+      );
+      fixture.library.addTracks([track], persist: false);
+      final session = fixture.playback.createTrackSession(track)
+        ..loadedPath = track.path;
+      fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      await tester.pumpWidget(
+        fixture.build(
+          TransportPlaybackControlPanel(
+            session: fixture.playback.sessionSnapshotById(session.id)!,
+            playback: fixture.playback,
+            hasSiblings: false,
+            segmentPanelExpanded: false,
+            hasSubtitle: false,
+            subtitleEnabled: false,
+            subtitleGlobalEnabled: false,
+            onShowTrackSwitcher: () {},
+            onToggleSegments: () {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final slot0Rect = tester.getRect(
+        find.byKey(const ValueKey('session_loop_button_anchor')),
+      );
+      final slot1Rect = tester.getRect(
+        find.byKey(const ValueKey('session_volume_button_anchor')),
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey('session_volume_button_anchor')),
+      );
+      await tester.pumpAndSettle();
+
+      final exitFinder = find.byKey(
+        const ValueKey('session_volume_exit_button'),
+      );
+      final muteFinder = find.byKey(
+        const ValueKey('session_volume_mute_button'),
+      );
+
+      expect(tester.getRect(exitFinder), slot0Rect);
+      expect(tester.getRect(muteFinder), slot1Rect);
+
+      final cs = Theme.of(tester.element(exitFinder)).colorScheme;
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      addTearDown(mouse.removePointer);
+
+      for (final target in [exitFinder, muteFinder]) {
+        await mouse.moveTo(tester.getCenter(target));
+        await tester.pumpAndSettle();
+
+        final iconFinder = find.descendant(
+          of: target,
+          matching: find.byType(Icon),
+        );
+        final inkFinder = find.descendant(
+          of: target,
+          matching: find.bySubtype<InkResponse>(),
+        );
+        final dynamic controller = Material.of(tester.element(inkFinder.first));
+        final features = controller.debugInkFeatures as List<InkFeature>? ?? [];
+        expect(
+          features.whereType<InteractiveInkFeature>().where((f) => f.color.a > 0),
+          isEmpty,
+        );
+        expect(
+          tester
+              .widgetList<Transform>(
+                find.ancestor(of: iconFinder, matching: find.byType(Transform)),
+              )
+              .any((w) => !w.transformHitTests && w.transform.entry(0, 0) > 1.0),
+          isTrue,
+        );
+        expect(
+          tester
+              .widget<RichText>(
+                find.descendant(
+                  of: iconFinder,
+                  matching: find.byType(RichText),
+                ),
+              )
+              .text
+              .style
+              ?.color,
+          cs.primary,
+        );
+      }
+
+      await mouse.down(tester.getCenter(exitFinder));
+      await tester.pumpAndSettle();
+      final exitInk = find.descendant(
+        of: exitFinder,
+        matching: find.bySubtype<InkResponse>(),
+      );
+      final dynamic exitController = Material.of(tester.element(exitInk.first));
+      final exitFeatures =
+          exitController.debugInkFeatures as List<InkFeature>? ?? [];
+      expect(
+        exitFeatures.whereType<InteractiveInkFeature>().where(
+          (f) => f.color.a > 0,
+        ),
+        isEmpty,
+      );
+      await mouse.up();
+      await tester.pumpAndSettle();
+      expect(exitFinder, findsNothing);
+      expect(
+        find.byKey(const ValueKey('session_volume_button_anchor')),
+        findsOneWidget,
+      );
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.windows}),
+  );
 }

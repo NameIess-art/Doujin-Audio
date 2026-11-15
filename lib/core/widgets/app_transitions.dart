@@ -19,7 +19,13 @@ const kAppSelectionDuration = Duration(milliseconds: 80);
 const kAppPagePushDuration = Duration(milliseconds: 240);
 const kAppPagePopDuration = Duration(milliseconds: 200);
 const kAppOverlayDuration = Duration(milliseconds: 200);
-const kAppPlaybackIconDuration = Duration(milliseconds: 120);
+const kAppPlaybackIconDuration = Duration(milliseconds: 180);
+
+/// Fast-attack spring deceleration curve without overshoot for menus and overlays.
+const Curve kAppSpringCurve = Cubic(0.18, 0.9, 0.25, 1.0);
+
+/// Subtle spring release curve with slight overshoot for tactile micro-interactions.
+const Curve kAppSpringBackCurve = Curves.easeOutBack;
 
 /// Keeps the current badge until the preceding card motion has finished.
 class AppDeferredFade extends StatefulWidget {
@@ -30,6 +36,7 @@ class AppDeferredFade extends StatefulWidget {
     this.showDelay = Duration.zero,
     this.fadeInDuration = kAppFadeDuration,
     this.waitFor,
+    this.beginScale = 1,
   });
 
   final bool visible;
@@ -37,6 +44,7 @@ class AppDeferredFade extends StatefulWidget {
   final Duration showDelay;
   final Duration fadeInDuration;
   final Animation<double>? waitFor;
+  final double beginScale;
 
   @override
   State<AppDeferredFade> createState() => _AppDeferredFadeState();
@@ -161,7 +169,18 @@ class _AppDeferredFadeState extends State<AppDeferredFade>
       child: ExcludeSemantics(
         excluding: !widget.visible,
         child: _retained
-            ? FadeTransition(opacity: _opacity, child: widget.child)
+            ? FadeTransition(
+                opacity: _opacity,
+                child: widget.beginScale == 1
+                    ? widget.child
+                    : ScaleTransition(
+                        scale: Tween<double>(
+                          begin: widget.beginScale,
+                          end: 1,
+                        ).animate(_opacity),
+                        child: widget.child,
+                      ),
+              )
             : const SizedBox.shrink(),
       ),
     ),
@@ -1685,7 +1704,7 @@ class AppPlaybackIconTransition extends StatelessWidget {
     }
     return AnimatedSwitcher(
       duration: kAppPlaybackIconDuration,
-      switchInCurve: Curves.easeOutCubic,
+      switchInCurve: kAppSpringBackCurve,
       switchOutCurve: Curves.easeInCubic,
       transitionBuilder: _buildTransition,
       child: child,
@@ -1696,8 +1715,147 @@ class AppPlaybackIconTransition extends StatelessWidget {
     return FadeTransition(
       opacity: animation,
       child: ScaleTransition(
-        scale: Tween<double>(begin: 0.92, end: 1).animate(animation),
+        scale: Tween<double>(begin: 0.62, end: 1).animate(animation),
         child: child,
+      ),
+    );
+  }
+}
+
+/// Tactile press-down and spring-back scale feedback without altering gesture
+/// arenas or resting layout geometry.
+class AppPressScale extends StatefulWidget {
+  const AppPressScale({
+    super.key,
+    required this.child,
+    this.pressedScale = 0.96,
+    this.enabled = true,
+    this.alignment = Alignment.center,
+    this.releaseCurve = kAppSpringBackCurve,
+  });
+
+  final Widget child;
+  final double pressedScale;
+  final bool enabled;
+  final Alignment alignment;
+  final Curve releaseCurve;
+
+  @override
+  State<AppPressScale> createState() => _AppPressScaleState();
+}
+
+class _AppPressScaleState extends State<AppPressScale>
+    with SingleTickerProviderStateMixin {
+  static const _pressDuration = Duration(milliseconds: 85);
+  static const _releaseDuration = Duration(milliseconds: 220);
+  static const _cancelMoveDistance = 12.0;
+
+  late final AnimationController _controller;
+  Animation<double> _scaleAnimation = const AlwaysStoppedAnimation<double>(1.0);
+  int? _downPointer;
+  Offset? _downPosition;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: _pressDuration);
+  }
+
+  @override
+  void didUpdateWidget(covariant AppPressScale oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.enabled && oldWidget.enabled) {
+      _snapToRest();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _snapToRest() {
+    _downPointer = null;
+    _downPosition = null;
+    _controller.stop();
+    _scaleAnimation = const AlwaysStoppedAnimation<double>(1.0);
+  }
+
+  void _animateScale({
+    required double to,
+    required Duration duration,
+    required Curve curve,
+  }) {
+    final current = _scaleAnimation.value;
+    _scaleAnimation = Tween<double>(
+      begin: current,
+      end: to,
+    ).chain(CurveTween(curve: curve)).animate(_controller);
+    _controller.duration = duration;
+    _controller.forward(from: 0);
+  }
+
+  void _handlePointerDown(PointerDownEvent event) {
+    if (!widget.enabled || _downPointer != null) return;
+    _downPointer = event.pointer;
+    _downPosition = event.position;
+    _animateScale(
+      to: widget.pressedScale,
+      duration: _pressDuration,
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _handlePointerMove(PointerMoveEvent event) {
+    if (_downPointer != event.pointer || _downPosition == null) return;
+    if ((event.position - _downPosition!).distance > _cancelMoveDistance) {
+      _releasePress();
+    }
+  }
+
+  void _handlePointerEnd(PointerEvent event) {
+    if (_downPointer != event.pointer) return;
+    _releasePress();
+  }
+
+  void _releasePress() {
+    _downPointer = null;
+    _downPosition = null;
+    _animateScale(
+      to: 1.0,
+      duration: _releaseDuration,
+      curve: widget.releaseCurve,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final animationsDisabled =
+        MediaQuery.disableAnimationsOf(context) ||
+        !TickerMode.valuesOf(context).enabled;
+    if (!widget.enabled || animationsDisabled) {
+      if (_downPointer != null || _scaleAnimation.value != 1.0) {
+        _snapToRest();
+      }
+    }
+    return Listener(
+      onPointerDown: widget.enabled && !animationsDisabled
+          ? _handlePointerDown
+          : null,
+      onPointerMove: _handlePointerMove,
+      onPointerUp: _handlePointerEnd,
+      onPointerCancel: _handlePointerEnd,
+      child: AnimatedBuilder(
+        animation: _controller,
+        child: widget.child,
+        // Keep the recognizer mounted from pointer-down through pointer-up.
+        builder: (context, child) => Transform.scale(
+          scale: _scaleAnimation.value,
+          alignment: widget.alignment,
+          transformHitTests: false,
+          child: child,
+        ),
       ),
     );
   }
@@ -2792,6 +2950,283 @@ class _AppRollingNumberState extends State<AppRollingNumber>
           ),
         );
       },
+    );
+  }
+}
+
+/// Horizontally slides between the active [currentSliver] and an optional
+/// departing [outgoingSliver] inside a scroll view without rebuilding widgets
+/// on each animation tick.
+///
+/// Positive [direction] slides [currentSliver] in from the right edge toward
+/// the left; negative [direction] slides it in from the left edge toward the
+/// right.
+class SliverHorizontalSlideSwitcher extends StatelessWidget {
+  const SliverHorizontalSlideSwitcher({
+    super.key,
+    required this.progress,
+    required this.direction,
+    required this.currentKey,
+    required this.currentSliver,
+    this.outgoingKey,
+    this.outgoingSliver,
+    this.incomingOpacity = const AlwaysStoppedAnimation<double>(1),
+    this.outgoingOpacity = const AlwaysStoppedAnimation<double>(1),
+  });
+
+  final Animation<double> progress;
+  final int direction;
+  final Key currentKey;
+  final Widget currentSliver;
+  final Key? outgoingKey;
+  final Widget? outgoingSliver;
+  final Animation<double> incomingOpacity;
+  final Animation<double> outgoingOpacity;
+
+  @override
+  Widget build(BuildContext context) {
+    final sliding = outgoingSliver != null && direction != 0;
+    return _SliverHorizontalSlideRenderObject(
+      progress: progress,
+      direction: direction,
+      children: [
+        KeyedSubtree(
+          key: currentKey,
+          child: SliverFadeTransition(
+            opacity: sliding
+                ? incomingOpacity
+                : const AlwaysStoppedAnimation<double>(1),
+            sliver: currentSliver,
+          ),
+        ),
+        if (sliding)
+          KeyedSubtree(
+            key: outgoingKey,
+            child: SliverFadeTransition(
+              opacity: outgoingOpacity,
+              sliver: outgoingSliver!,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _SliverHorizontalSlideRenderObject extends MultiChildRenderObjectWidget {
+  const _SliverHorizontalSlideRenderObject({
+    required this.progress,
+    required this.direction,
+    required super.children,
+  });
+
+  final Animation<double> progress;
+  final int direction;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderSliverHorizontalSlideSwitcher(
+        progress: progress,
+        direction: direction,
+      );
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _RenderSliverHorizontalSlideSwitcher renderObject,
+  ) {
+    renderObject
+      ..progress = progress
+      ..direction = direction;
+  }
+}
+
+class _SliverSlideParentData extends SliverPhysicalParentData
+    with ContainerParentDataMixin<RenderSliver> {}
+
+class _RenderSliverHorizontalSlideSwitcher extends RenderSliver
+    with
+        ContainerRenderObjectMixin<RenderSliver, _SliverSlideParentData>,
+        RenderSliverHelpers {
+  _RenderSliverHorizontalSlideSwitcher({
+    required Animation<double> progress,
+    required int direction,
+  }) : _progress = progress,
+       _direction = direction;
+
+  Animation<double> _progress;
+  int _direction;
+  final LayerHandle<ClipRectLayer> _clipRectLayer =
+      LayerHandle<ClipRectLayer>();
+
+  set progress(Animation<double> value) {
+    if (_progress == value) return;
+    if (attached) _progress.removeListener(_handleTick);
+    _progress = value;
+    if (attached) _progress.addListener(_handleTick);
+    _syncPaintOffsets();
+    markNeedsPaint();
+  }
+
+  set direction(int value) {
+    if (_direction == value) return;
+    _direction = value;
+    _syncPaintOffsets();
+    markNeedsPaint();
+  }
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _progress.addListener(_handleTick);
+  }
+
+  @override
+  void detach() {
+    _progress.removeListener(_handleTick);
+    super.detach();
+  }
+
+  @override
+  void dispose() {
+    _clipRectLayer.layer = null;
+    super.dispose();
+  }
+
+  @override
+  void setupParentData(RenderObject child) {
+    if (child.parentData is! _SliverSlideParentData) {
+      child.parentData = _SliverSlideParentData();
+    }
+  }
+
+  void _handleTick() {
+    _syncPaintOffsets();
+    markNeedsPaint();
+  }
+
+  void _syncPaintOffsets() {
+    final incoming = firstChild;
+    if (incoming == null || geometry == null) return;
+    final incomingParentData = incoming.parentData! as _SliverSlideParentData;
+    final outgoing = childAfter(incoming);
+    final width = constraints.crossAxisExtent;
+    final t = _progress.value.clamp(0.0, 1.0);
+    if (outgoing == null || _direction == 0 || t >= 1.0 || width <= 0) {
+      incomingParentData.paintOffset = Offset.zero;
+      if (outgoing != null) {
+        (outgoing.parentData! as _SliverSlideParentData).paintOffset =
+            Offset.zero;
+      }
+      return;
+    }
+    final sign = _direction > 0 ? 1.0 : -1.0;
+    incomingParentData.paintOffset = Offset(sign * (1.0 - t) * width, 0);
+    (outgoing.parentData! as _SliverSlideParentData).paintOffset = Offset(
+      -sign * t * width,
+      0,
+    );
+  }
+
+  @override
+  void performLayout() {
+    final incoming = firstChild;
+    if (incoming == null) {
+      geometry = SliverGeometry.zero;
+      return;
+    }
+    incoming.layout(constraints, parentUsesSize: true);
+    geometry = incoming.geometry!;
+    final outgoing = childAfter(incoming);
+    if (outgoing != null) {
+      outgoing.layout(constraints, parentUsesSize: true);
+    }
+    _syncPaintOffsets();
+  }
+
+  @override
+  double childMainAxisPosition(RenderSliver child) => 0;
+
+  @override
+  double childCrossAxisPosition(RenderSliver child) =>
+      (child.parentData! as _SliverSlideParentData).paintOffset.dx;
+
+  @override
+  void applyPaintTransform(RenderObject child, Matrix4 transform) {
+    (child.parentData! as _SliverSlideParentData).applyPaintTransform(
+      transform,
+    );
+  }
+
+  @override
+  bool hitTestChildren(
+    SliverHitTestResult result, {
+    required double mainAxisPosition,
+    required double crossAxisPosition,
+  }) {
+    final incoming = firstChild;
+    if (incoming == null || !(incoming.geometry?.visible ?? false)) {
+      return false;
+    }
+    final parentData = incoming.parentData! as _SliverSlideParentData;
+    return result.addWithAxisOffset(
+      paintOffset: parentData.paintOffset,
+      mainAxisOffset: 0,
+      crossAxisOffset: parentData.paintOffset.dx,
+      mainAxisPosition: mainAxisPosition,
+      crossAxisPosition: crossAxisPosition,
+      hitTest: incoming.hitTest,
+    );
+  }
+
+  @override
+  void visitChildrenForSemantics(RenderObjectVisitor visitor) {
+    final incoming = firstChild;
+    if (incoming != null) visitor(incoming);
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final incoming = firstChild;
+    if (incoming == null || geometry == null) return;
+    final outgoing = childAfter(incoming);
+    final t = _progress.value.clamp(0.0, 1.0);
+    final isSliding = outgoing != null && _direction != 0 && t < 1.0;
+    if (!isSliding) {
+      _clipRectLayer.layer = null;
+      if (incoming.geometry?.visible ?? false) {
+        context.paintChild(incoming, offset);
+      }
+      return;
+    }
+    _syncPaintOffsets();
+    final width = constraints.crossAxisExtent;
+    final incomingExtent = incoming.geometry?.paintExtent ?? 0.0;
+    final outgoingExtent = outgoing.geometry?.paintExtent ?? 0.0;
+    final clipHeight = math.min(
+      constraints.remainingPaintExtent,
+      math.max(incomingExtent, outgoingExtent),
+    );
+    if (width <= 0 || clipHeight <= 0) {
+      _clipRectLayer.layer = null;
+      return;
+    }
+    _clipRectLayer.layer = context.pushClipRect(
+      needsCompositing,
+      offset,
+      Offset.zero & Size(width, clipHeight),
+      (context, offset) {
+        if (outgoing.geometry?.visible ?? false) {
+          final outgoingParentData =
+              outgoing.parentData! as _SliverSlideParentData;
+          context.paintChild(outgoing, offset + outgoingParentData.paintOffset);
+        }
+        if (incoming.geometry?.visible ?? false) {
+          final incomingParentData =
+              incoming.parentData! as _SliverSlideParentData;
+          context.paintChild(incoming, offset + incomingParentData.paintOffset);
+        }
+      },
+      oldLayer: _clipRectLayer.layer,
     );
   }
 }

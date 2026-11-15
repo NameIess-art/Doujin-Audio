@@ -48,11 +48,8 @@ class SubtitleRgbControls extends StatelessWidget {
             ),
             if (currentColor != null)
               IconButton(
-                icon: Icon(
-                  Icons.close_rounded,
-                  size: 18,
-                  color: cs.onSurfaceVariant,
-                ),
+                color: cs.onSurfaceVariant,
+                icon: const Icon(Icons.close_rounded, size: 18),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                 onPressed: onReset,

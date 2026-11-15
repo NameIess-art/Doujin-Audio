@@ -114,56 +114,40 @@ class _SubtitleWindowSettingsSheetState
                         children: [
                           Padding(
                             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  i18n.tr('font_setting'),
-                                  style: labelStyle,
+                            child: UnifiedDropdownButtonFormField<String>(
+                              initialValue: settings.fontFamily,
+                              expandWidth: true,
+                              decoration: InputDecoration(
+                                labelText: i18n.tr('font_setting'),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
                                 ),
-                                const SizedBox(height: 8),
-                                InputDecorator(
-                                  decoration: InputDecoration(
-                                    isDense: true,
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 10,
-                                    ),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(16),
-                                    ),
-                                  ),
-                                  child: UnifiedDropdownButton<String>(
-                                    value: settings.fontFamily,
-                                    isDense: true,
-                                    multilineItems: true,
-                                    items: List.generate(_fontFamilies.length, (
-                                      i,
-                                    ) {
-                                      final label = i == 0
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                              ),
+                              items: [
+                                for (final family in _fontFamilies)
+                                  DropdownMenuItem(
+                                    value: family,
+                                    child: Text(
+                                      family.isEmpty
                                           ? i18n.tr('system_default')
-                                          : _fontFamilies[i];
-                                      return DropdownMenuItem(
-                                        value: _fontFamilies[i],
-                                        child: Text(
-                                          softWrap: true,
-                                          overflow: TextOverflow.visible,
-                                          label,
-                                          textAlign: TextAlign.start,
-                                          style: TextStyle(
-                                            fontFamily: _fontFamilies[i].isEmpty
-                                                ? null
-                                                : _fontFamilies[i],
-                                          ),
-                                        ),
-                                      );
-                                    }),
-                                    onChanged: (v) {
-                                      if (v != null) notifier.setFontFamily(v);
-                                    },
+                                          : family,
+                                      style: TextStyle(
+                                        fontFamily: family.isEmpty
+                                            ? null
+                                            : family,
+                                      ),
+                                    ),
                                   ),
-                                ),
                               ],
+                              onChanged: (family) {
+                                if (family != null) {
+                                  notifier.setFontFamily(family);
+                                }
+                              },
                             ),
                           ),
                           Padding(

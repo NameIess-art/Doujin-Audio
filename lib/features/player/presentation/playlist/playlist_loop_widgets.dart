@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../../../../core/widgets/app_transitions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -48,10 +50,20 @@ class _LoopModeSheetState extends ConsumerState<LoopModeSheet> {
     _shuffle ? _PlaybackOption.shuffle : _PlaybackOption.loop,
   };
 
+  void _triggerSelectionFeedback() {
+    unawaited(
+      AppInteractionFeedback.trigger(
+        AppInteractionFeedbackType.selection,
+        context: context,
+      ),
+    );
+  }
+
   void _selectPlaybackOptions(Set<_PlaybackOption> selected) {
     final loopSelected = selected.contains(_PlaybackOption.loop);
     final shuffleSelected = selected.contains(_PlaybackOption.shuffle);
     if (!loopSelected && !shuffleSelected) return;
+    _triggerSelectionFeedback();
     setState(() {
       _shuffle = loopSelected && shuffleSelected ? !_shuffle : shuffleSelected;
     });
@@ -114,6 +126,7 @@ class _LoopModeSheetState extends ConsumerState<LoopModeSheet> {
                                 ? const <bool>{true}
                                 : const <bool>{},
                             onSelectionChanged: (selected) {
+                              _triggerSelectionFeedback();
                               setState(() {
                                 _single = selected.isNotEmpty;
                               });
@@ -151,6 +164,7 @@ class _LoopModeSheetState extends ConsumerState<LoopModeSheet> {
                                         ? const <bool>{true}
                                         : const <bool>{},
                                     onSelectionChanged: (selected) {
+                                      _triggerSelectionFeedback();
                                       setState(() {
                                         _pauseAfterPlay = selected.isNotEmpty;
                                       });
@@ -175,6 +189,7 @@ class _LoopModeSheetState extends ConsumerState<LoopModeSheet> {
                                     ],
                                     selected: {_crossFolder},
                                     onSelectionChanged: (selected) {
+                                      _triggerSelectionFeedback();
                                       setState(() {
                                         _crossFolder = selected.first;
                                       });
@@ -360,13 +375,10 @@ class SessionLoopModeButton extends ConsumerWidget {
 
     return IconButton(
       key: const ValueKey('session_loop_button_anchor'),
-      constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+      constraints: playbackSecondaryControlButtonConstraints,
       padding: EdgeInsets.zero,
       tooltip: i18n.tr('loop_mode_title'),
-      style: IconButton.styleFrom(
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        shape: const CircleBorder(),
-        backgroundColor: Colors.transparent,
+      style: playbackSecondaryControlButtonStyle(
         foregroundColor: sessionDetailForeground(
           Theme.of(context).colorScheme,
           SessionDetailForegroundLevel.muted,

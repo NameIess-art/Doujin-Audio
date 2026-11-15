@@ -22,7 +22,6 @@ import '../application/library_scan_coordinator.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_search_page.dart';
-import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
@@ -836,103 +835,123 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               right: 0,
               child: AppHeaderTransition(
                 child: _isSelectionMode
-                  ? Consumer(
-                      builder: (context, ref, _) {
-                        final selectedSelections =
-                            selectedLibraryNodeSelections(
-                              ref.watch(librarySortedTreeUiProvider),
-                              _selectedLibraryPaths,
-                            );
-                        return LibraryBatchSelectionHeader(
-                          keyPrefix: 'library',
-                          i18n: i18n,
-                          selectedCount: selectedSelections.length,
-                          onAddToPlaylist:
-                              selectedSelections.isEmpty ||
-                                  !ref.watch(coreRuntimeReadyProvider)
-                              ? null
-                              : () => addLibraryBatchSelectionsToPlaylist(
-                                  context: context,
-                                  ref: ref,
-                                  selections: selectedSelections,
-                                  exitSelectionMode: _exitSelectionMode,
+                    ? Consumer(
+                        builder: (context, ref, _) {
+                          final selectedSelections =
+                              selectedLibraryNodeSelections(
+                                ref.watch(librarySortedTreeUiProvider),
+                                _selectedLibraryPaths,
+                              );
+                          return LibraryBatchSelectionHeader(
+                            keyPrefix: 'library',
+                            i18n: i18n,
+                            selectedCount: selectedSelections.length,
+                            onAddToPlaylist:
+                                selectedSelections.isEmpty ||
+                                    !ref.watch(coreRuntimeReadyProvider)
+                                ? null
+                                : () => addLibraryBatchSelectionsToPlaylist(
+                                    context: context,
+                                    ref: ref,
+                                    selections: selectedSelections,
+                                    exitSelectionMode: _exitSelectionMode,
+                                  ),
+                            onCompleteMetadata: selectedSelections.isEmpty
+                                ? null
+                                : () => completeLibraryBatchSelectionsMetadata(
+                                    context: context,
+                                    ref: ref,
+                                    selections: selectedSelections,
+                                    exitSelectionMode: _exitSelectionMode,
+                                  ),
+                            onTogglePin: selectedSelections.isEmpty
+                                ? null
+                                : () => toggleLibraryBatchSelectionsPinned(
+                                    context: context,
+                                    ref: ref,
+                                    selections: selectedSelections,
+                                    exitSelectionMode: _exitSelectionMode,
+                                  ),
+                            isPinned:
+                                selectedSelections.isNotEmpty &&
+                                selectedSelections.every(
+                                  (s) => pinnedLibraryPaths.contains(
+                                    PathMatcher.normalize(s.path),
+                                  ),
                                 ),
-                          onCompleteMetadata: selectedSelections.isEmpty
-                              ? null
-                              : () => completeLibraryBatchSelectionsMetadata(
-                                  context: context,
-                                  ref: ref,
-                                  selections: selectedSelections,
-                                  exitSelectionMode: _exitSelectionMode,
+                            onRemove: selectedSelections.isEmpty
+                                ? null
+                                : () => removeLibraryBatchSelections(
+                                    context: context,
+                                    ref: ref,
+                                    selections: selectedSelections,
+                                    exitSelectionMode: _exitSelectionMode,
+                                  ),
+                            onExit: _exitSelectionMode,
+                          );
+                        },
+                      )
+                    : TopPageHeader(
+                        key: headerKey,
+                        icon: Icons.library_music_rounded,
+                        collapseController: _scrollController,
+                        topCapsuleTitle: i18n.tr('music_library'),
+                        topCapsuleData: i18n.tr('library_header_stats', {
+                          'works': libraryFacade.libraryCards.length.toString(),
+                          'sessions': libraryHeaderAudioCount.toString(),
+                        }),
+                        title: i18n.tr('music_library'),
+                        titleWidget: _buildHeaderLeftActions(
+                          i18n,
+                          libraryRefreshBusy,
+                        ),
+                        trailing: SizedBox(
+                          height: 38,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              if (isLandscape) ...[
+                                HeaderFloatingButton(
+                                  child: IconButton(
+                                    key: const ValueKey(
+                                      'library_refresh_button',
+                                    ),
+                                    onPressed:
+                                        canPullRefresh && !libraryRefreshBusy
+                                        ? () => unawaited(
+                                            _runLibraryPullRefresh(
+                                              showSnackbar: true,
+                                            ),
+                                          )
+                                        : null,
+                                    icon: libraryRefreshBusy
+                                        ? const SizedBox.square(
+                                            dimension: 18,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2.2,
+                                            ),
+                                          )
+                                        : const Icon(Icons.refresh_rounded),
+                                    tooltip: i18n.tr('refresh_watched_folder'),
+                                    iconSize: 20,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints.tightFor(
+                                      width: 38,
+                                      height: 38,
+                                    ),
+                                  ),
                                 ),
-                          onTogglePin: selectedSelections.isEmpty
-                              ? null
-                              : () => toggleLibraryBatchSelectionsPinned(
-                                  context: context,
-                                  ref: ref,
-                                  selections: selectedSelections,
-                                  exitSelectionMode: _exitSelectionMode,
-                                ),
-                          isPinned:
-                              selectedSelections.isNotEmpty &&
-                              selectedSelections.every(
-                                (s) => pinnedLibraryPaths.contains(
-                                  PathMatcher.normalize(s.path),
-                                ),
-                              ),
-                          onRemove: selectedSelections.isEmpty
-                              ? null
-                              : () => removeLibraryBatchSelections(
-                                  context: context,
-                                  ref: ref,
-                                  selections: selectedSelections,
-                                  exitSelectionMode: _exitSelectionMode,
-                                ),
-                          onExit: _exitSelectionMode,
-                        );
-                      },
-                    )
-                  : TopPageHeader(
-                      key: headerKey,
-                      icon: Icons.library_music_rounded,
-                      collapseController: _scrollController,
-                      topCapsuleTitle: i18n.tr('music_library'),
-                      topCapsuleData: i18n.tr('library_header_stats', {
-                        'works': libraryFacade.libraryCards.length.toString(),
-                        'sessions': libraryHeaderAudioCount.toString(),
-                      }),
-                      title: i18n.tr('music_library'),
-                      titleWidget: _buildHeaderLeftActions(
-                        i18n,
-                        libraryRefreshBusy,
-                      ),
-                      trailing: SizedBox(
-                        height: 38,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            if (isLandscape) ...[
+                                const SizedBox(width: 8),
+                              ],
                               HeaderFloatingButton(
                                 child: IconButton(
-                                  key: const ValueKey('library_refresh_button'),
-                                  onPressed:
-                                      canPullRefresh && !libraryRefreshBusy
-                                      ? () => unawaited(
-                                          _runLibraryPullRefresh(
-                                            showSnackbar: true,
-                                          ),
-                                        )
-                                      : null,
-                                  icon: libraryRefreshBusy
-                                      ? const SizedBox.square(
-                                          dimension: 18,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2.2,
-                                          ),
-                                        )
-                                      : const Icon(Icons.refresh_rounded),
-                                  tooltip: i18n.tr('refresh_watched_folder'),
+                                  key: const ValueKey<String>(
+                                    'library_search_button',
+                                  ),
+                                  onPressed: _openSearchPage,
+                                  icon: const Icon(Icons.search_rounded),
+                                  tooltip: i18n.tr('search'),
                                   iconSize: 20,
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints.tightFor(
@@ -942,54 +961,33 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                                 ),
                               ),
                               const SizedBox(width: 8),
+                              const WorkPageTranslationButton(
+                                buttonKey: 'library_translation',
+                                compact: true,
+                              ),
+                              const SizedBox(width: 8),
+                              HeaderFloatingButton(
+                                child: IconButton(
+                                  key: const ValueKey<String>(
+                                    'library_sort_button',
+                                  ),
+                                  onPressed: libraryRefreshBusy
+                                      ? null
+                                      : _openSortOptions,
+                                  icon: const Icon(Icons.sort_rounded),
+                                  tooltip: i18n.tr('sort_by'),
+                                  iconSize: 20,
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints.tightFor(
+                                    width: 38,
+                                    height: 38,
+                                  ),
+                                ),
+                              ),
                             ],
-                            HeaderFloatingButton(
-                              child: IconButton(
-                                key: const ValueKey<String>(
-                                  'library_search_button',
-                                ),
-                                style: AppEntryInkWell.entryButtonStyle(
-                                  context,
-                                ),
-                                onPressed: _openSearchPage,
-                                icon: const Icon(Icons.search_rounded),
-                                tooltip: i18n.tr('search'),
-                                iconSize: 20,
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints.tightFor(
-                                  width: 38,
-                                  height: 38,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            const WorkPageTranslationButton(
-                              buttonKey: 'library_translation',
-                              compact: true,
-                            ),
-                            const SizedBox(width: 8),
-                            HeaderFloatingButton(
-                              child: IconButton(
-                                key: const ValueKey<String>(
-                                  'library_sort_button',
-                                ),
-                                onPressed: libraryRefreshBusy
-                                    ? null
-                                    : _openSortOptions,
-                                icon: const Icon(Icons.sort_rounded),
-                                tooltip: i18n.tr('sort_by'),
-                                iconSize: 20,
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints.tightFor(
-                                  width: 38,
-                                  height: 38,
-                                ),
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
                       ),
-                    ),
               ),
             ),
           ],
@@ -1058,7 +1056,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         ),
         IconButton(
           key: const ValueKey<String>('library_edit_button'),
-          style: AppEntryInkWell.entryButtonStyle(context),
           onPressed: libraryRefreshBusy ? null : _openLibraryManagementPage,
           icon: const Icon(Icons.edit_note_rounded),
           tooltip: i18n.tr('edit_library'),
@@ -1068,7 +1065,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         ),
         IconButton(
           key: const ValueKey<String>('library_batch_metadata_button'),
-          style: AppEntryInkWell.entryButtonStyle(context),
           onPressed: libraryRefreshBusy ? null : _openBatchMetadataPage,
           icon: const Icon(Icons.library_add_check_rounded),
           tooltip: i18n.tr('batch_metadata'),

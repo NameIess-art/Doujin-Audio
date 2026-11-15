@@ -114,7 +114,7 @@ void main() {
           final overlay = SwitchTheme.of(tester.element(toggle)).overlayColor!;
           expect(overlay.resolve({WidgetState.hovered}), Colors.transparent);
           expect(overlay.resolve({WidgetState.focused}), isNull);
-          expect(overlay.resolve({WidgetState.pressed}), isNull);
+          expect(overlay.resolve({WidgetState.pressed}), Colors.transparent);
           final mouse = await tester.createGesture(
             kind: PointerDeviceKind.mouse,
           );

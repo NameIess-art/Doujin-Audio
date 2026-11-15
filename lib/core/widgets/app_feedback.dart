@@ -11,6 +11,7 @@ import '../ui/undoable_removal_service.dart';
 import '../ui/ui_operation_service.dart';
 import '../ui/ui_interaction_coordinator.dart';
 import '../logging/app_log_service.dart';
+import 'app_buttons.dart';
 import 'app_glass_surface.dart';
 import 'app_transitions.dart';
 import 'mobile_overlay_inset.dart';
@@ -573,14 +574,17 @@ void _showTopFeedback(
                                 currentData.message,
                                 currentData.actionLabel,
                               )),
-                              style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 4,
+                              style: appTextButtonStyle(
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 4,
+                                  ),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                  shape: const StadiumBorder(),
                                 ),
-                                minimumSize: Size.zero,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                shape: const StadiumBorder(),
                               ),
                               onPressed: () {
                                 if (dismissed ||

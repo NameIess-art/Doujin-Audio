@@ -5,13 +5,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/widgets/app_buttons.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../application/dlsite_metadata_batch_session.dart';
 import '../domain/audio_library_category.dart';
-import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
@@ -227,42 +227,15 @@ class _DlsiteMetadataBatchPageState
                 right: 16,
                 bottom: 16 + MediaQuery.paddingOf(context).bottom,
                 child: AppPageContentTransition(
-                  child: HeaderFloatingSurface(
-                    key: const ValueKey<String>('batch_metadata_start'),
-                    height: 46,
-                    radius: 23,
-                    padding: EdgeInsets.zero,
-                    child: Material(
-                      color: canStart
-                          ? cs.primary
-                          : cs.onSurface.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(23),
-                      child: AppEntryInkWell(
-                        borderRadius: BorderRadius.circular(23),
-                        onTap: canStart ? _run : null,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 18),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.play_arrow_rounded,
-                                size: 18,
-                                color: startForeground,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                i18n.tr('batch_metadata_start'),
-                                style: TextStyle(
-                                  color: startForeground,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
+                  child: HeaderFloatingActionPill(
+                    pillKey: const ValueKey<String>('batch_metadata_start'),
+                    icon: Icons.play_arrow_rounded,
+                    label: i18n.tr('batch_metadata_start'),
+                    backgroundColor: canStart
+                        ? cs.primary
+                        : cs.onSurface.withValues(alpha: 0.12),
+                    foregroundColor: startForeground,
+                    onTap: canStart ? _run : null,
                   ),
                 ),
               ),
@@ -311,7 +284,8 @@ class _BatchMetadataErrorView extends StatelessWidget {
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
             const SizedBox(height: 16),
-            FilledButton.icon(
+            AppLabelledButton(
+              FilledButton.icon,
               onPressed: onRetry,
               icon: const Icon(Icons.refresh_rounded),
               label: Text(i18n.tr('retry')),

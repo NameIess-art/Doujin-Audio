@@ -451,6 +451,18 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
   _ProgressTooltipState? _lastTooltip;
   bool _tooltipVisible = false;
   bool _disableAnimations = false;
+  bool _sliderHovered = false;
+  bool _sliderDragging = false;
+
+  void _setSliderHovered(bool hovered) {
+    if (_sliderHovered == hovered) return;
+    setState(() => _sliderHovered = hovered);
+  }
+
+  void _setSliderDragging(bool dragging) {
+    if (_sliderDragging == dragging) return;
+    setState(() => _sliderDragging = dragging);
+  }
 
   @override
   void initState() {
@@ -549,50 +561,96 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
       link: _layerLink,
       child: MouseRegion(
         hitTestBehavior: HitTestBehavior.translucent,
-        onEnter: (event) => widget.onHover(event.localPosition),
+        onEnter: (event) {
+          _setSliderHovered(true);
+          widget.onHover(event.localPosition);
+        },
         onHover: (event) => widget.onHover(event.localPosition),
-        onExit: (_) => widget.onHoverExit(),
+        onExit: (_) {
+          _setSliderHovered(false);
+          widget.onHoverExit();
+        },
         child: GestureDetector(
           behavior: HitTestBehavior.translucent,
-          onLongPressStart: (details) =>
-              widget.onLongPressMove(details.localPosition),
+          onLongPressStart: (details) {
+            _setSliderDragging(true);
+            widget.onLongPressMove(details.localPosition);
+          },
           onLongPressMoveUpdate: (details) =>
               widget.onLongPressMove(details.localPosition),
-          onLongPressEnd: (_) => widget.onLongPressEnd(),
-          onLongPressCancel: widget.onLongPressEnd,
+          onLongPressEnd: (_) {
+            _setSliderDragging(false);
+            widget.onLongPressEnd();
+          },
+          onLongPressCancel: () {
+            _setSliderDragging(false);
+            widget.onLongPressEnd();
+          },
           child: SizedBox(
             height: 20,
             child: Stack(
               clipBehavior: Clip.none,
               children: [
                 Positioned.fill(child: widget.staticLayer),
-                SliderTheme(
-                  data: sessionDetailProgressSliderTheme(
-                    context,
-                    widget.primaryColor,
+                TweenAnimationBuilder<double>(
+                  tween: Tween<double>(
+                    end: (_sliderHovered || _sliderDragging) ? 1.0 : 0.0,
                   ),
-                  child: ValueListenableBuilder<_ProgressSliderValue>(
-                    valueListenable: widget.sliderValue,
-                    builder: (context, value, child) {
-                      return Slider(
-                        max: value.maxMillis,
-                        value: value.sliderValue,
-                        secondaryTrackValue: value.bufferedValue,
-                        onChangeStart: value.canSeek
-                            ? widget.onChangeStart
-                            : null,
-                        onChanged: value.canSeek ? widget.onChanged : null,
-                        onChangeEnd: value.canSeek ? widget.onChangeEnd : null,
-                        semanticFormatterCallback: (rawValue) {
-                          final position = Duration(
-                            milliseconds: rawValue.round(),
+                  duration:
+                      (_disableAnimations ||
+                          !TickerMode.valuesOf(context).enabled)
+                      ? Duration.zero
+                      : kAppMotionFast,
+                  curve: kAppSpringCurve,
+                  builder: (context, engagement, _) {
+                    final baseTheme = sessionDetailProgressSliderTheme(
+                      context,
+                      widget.primaryColor,
+                    );
+                    final sliderTheme = engagement == 0.0
+                        ? baseTheme
+                        : baseTheme.copyWith(
+                            trackHeight: 3.0 + 2.0 * engagement,
+                            thumbShape: RoundSliderThumbShape(
+                              enabledThumbRadius: 6.0 + 2.0 * engagement,
+                              elevation: 2,
+                              pressedElevation: 5,
+                            ),
                           );
-                          return '${formatDurationCompact(position)} / '
-                              '${formatDurationCompact(value.duration)}';
+                    return SliderTheme(
+                      data: sliderTheme,
+                      child: ValueListenableBuilder<_ProgressSliderValue>(
+                        valueListenable: widget.sliderValue,
+                        builder: (context, value, child) {
+                          return Slider(
+                            max: value.maxMillis,
+                            value: value.sliderValue,
+                            secondaryTrackValue: value.bufferedValue,
+                            onChangeStart: value.canSeek
+                                ? (v) {
+                                    _setSliderDragging(true);
+                                    widget.onChangeStart(v);
+                                  }
+                                : null,
+                            onChanged: value.canSeek ? widget.onChanged : null,
+                            onChangeEnd: value.canSeek
+                                ? (v) {
+                                    _setSliderDragging(false);
+                                    widget.onChangeEnd(v);
+                                  }
+                                : null,
+                            semanticFormatterCallback: (rawValue) {
+                              final position = Duration(
+                                milliseconds: rawValue.round(),
+                              );
+                              return '${formatDurationCompact(position)} / '
+                                  '${formatDurationCompact(value.duration)}';
+                            },
+                          );
                         },
-                      );
-                    },
-                  ),
+                      ),
+                    );
+                  },
                 ),
               ],
             ),

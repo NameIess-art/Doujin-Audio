@@ -75,12 +75,10 @@ class WorkDetailMetadata extends StatelessWidget {
           value: voiceActor,
           onCopy: () => onCopy(voiceActor),
           child: InkWell(
+            mouseCursor: WidgetStateMouseCursor.clickable,
             key: ValueKey<String>('work_detail_voice_actor_$voiceActor'),
             onTap: () => onCopy(voiceActor),
             borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
-            hoverColor: (isDark ? cs.primary : cs.onSurface).withValues(
-              alpha: 0.16,
-            ),
             child: Ink(
               padding: _workMetadataCapsulePadding,
               decoration: BoxDecoration(
@@ -124,10 +122,10 @@ class WorkDetailMetadata extends StatelessWidget {
         value: value,
         onCopy: () => onCopy(value),
         child: InkWell(
+          mouseCursor: WidgetStateMouseCursor.clickable,
           key: ValueKey<String>('work_detail_tag_$displayLabel'),
           onTap: () => onCopy(value),
           borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
-          hoverColor: cs.onSurfaceVariant.withValues(alpha: 0.16),
           child: Ink(
             padding: _workMetadataCapsulePadding,
             decoration: BoxDecoration(

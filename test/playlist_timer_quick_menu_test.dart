@@ -107,8 +107,14 @@ void main() {
       final add = tester.getRect(
         find.byKey(const ValueKey('playlist_add_queue_button')),
       );
-      expect(clear.center.dx - pause.center.dx, 48);
-      expect(add.center.dx - clear.center.dx, 48);
+      final timer = tester.getSize(
+        find.byTooltip(fixture.languageProvider.tr('timer')),
+      );
+      expect(pause.size, timer);
+      expect(clear.size, timer);
+      expect(add.size, timer);
+      expect(clear.center.dx - pause.center.dx, timer.width);
+      expect(add.center.dx - clear.center.dx, timer.width);
 
       final quickMenuTrigger = find.ancestor(
         of: find.byTooltip(fixture.languageProvider.tr('timer')),
@@ -133,10 +139,10 @@ void main() {
       await tester.pump();
 
       expect(openedTimerSettings, 0);
-      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump(const Duration(milliseconds: 179));
       expect(openedTimerSettings, 0);
 
-      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 1));
       await tester.pump();
       expect(openedTimerSettings, 1);
       expect(tester.takeException(), isNull);

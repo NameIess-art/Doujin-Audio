@@ -12,12 +12,20 @@ import '../../application/playback_facade.dart';
 import '../../domain/audio_effects.dart';
 import '../../../../app/theme/app_styles.dart';
 import '../../../../core/ui/undoable_removal_service.dart';
+import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_feedback.dart';
 
 const double sessionVolumeDisplayMaximum = 1.5;
 const int sessionVolumeDisplayMaximumPercent = 150;
 const double playlistCoverSize = 52;
 const double playlistActionContainerWidth = 48;
+const double playbackSecondaryControlButtonWidth = 46;
+const double playbackSecondaryControlButtonHeight = 40;
+const BoxConstraints playbackSecondaryControlButtonConstraints =
+    BoxConstraints.tightFor(
+      width: playbackSecondaryControlButtonWidth,
+      height: playbackSecondaryControlButtonHeight,
+    );
 const double playlistRowHeight = 64;
 const double landscapeDetailTextInset = 4;
 const EdgeInsets playlistRowPadding = EdgeInsets.symmetric(
@@ -220,19 +228,33 @@ List<IconData> sessionFeatureBadgeIcons({
   required bool channelSwapEnabled,
   required AudioEffectsState audioEffects,
   required double speed,
+}) => [
+  for (final badge in sessionFeatureBadgeVisibility(
+    showSubtitles: showSubtitles,
+    channelSwapEnabled: channelSwapEnabled,
+    audioEffects: audioEffects,
+    speed: speed,
+  ).entries)
+    if (badge.value) badge.key,
+];
+
+Map<IconData, bool> sessionFeatureBadgeVisibility({
+  required bool showSubtitles,
+  required bool channelSwapEnabled,
+  required AudioEffectsState audioEffects,
+  required double speed,
 }) {
-  return <IconData>[
-    if (showSubtitles) Icons.subtitles_rounded,
-    if ((speed - 1.0).abs() >= 0.001) Icons.speed_rounded,
-    if (audioEffects.eqEnabled) Icons.tune_rounded,
-    if (audioEffects.skipSilenceEnabled)
-      Icons.keyboard_double_arrow_right_rounded,
-    if (audioEffects.noiseReductionEnabled) Icons.graphic_eq_rounded,
-    if (audioEffects.volumeNormalizationEnabled)
-      Icons.vertical_align_center_rounded,
-    if (audioEffects.panning.abs() >= 0.001) Icons.compare_arrows_rounded,
-    if (channelSwapEnabled) Icons.swap_horiz_rounded,
-  ];
+  return {
+    Icons.subtitles_rounded: showSubtitles,
+    Icons.speed_rounded: (speed - 1.0).abs() >= 0.001,
+    Icons.tune_rounded: audioEffects.eqEnabled,
+    Icons.keyboard_double_arrow_right_rounded: audioEffects.skipSilenceEnabled,
+    Icons.graphic_eq_rounded: audioEffects.noiseReductionEnabled,
+    Icons.vertical_align_center_rounded:
+        audioEffects.volumeNormalizationEnabled,
+    Icons.compare_arrows_rounded: audioEffects.panning.abs() >= 0.001,
+    Icons.swap_horiz_rounded: channelSwapEnabled,
+  };
 }
 
 ({List<IconData> top, List<IconData> bottom}) splitSessionFeatureBadgeIcons(
@@ -252,15 +274,43 @@ String formatSpeedValue(double value) {
 }
 
 ButtonStyle sessionDetailResetButtonStyle(BuildContext context) {
-  final cs = Theme.of(context).colorScheme;
-  return FilledButton.styleFrom(
-    backgroundColor: cs.primary.withValues(alpha: 0.12),
-    foregroundColor: cs.primary,
-    elevation: 0,
-    minimumSize: const Size.fromHeight(48),
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-    visualDensity: VisualDensity.standard,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+  final theme = Theme.of(context);
+  final cs = theme.colorScheme;
+  return appSurfaceButtonStyle(
+    colorScheme: cs,
+    platform: theme.platform,
+    defaultBackgroundColor: cs.secondaryContainer,
+    style: FilledButton.styleFrom(
+      backgroundColor: cs.primary.withValues(alpha: 0.12),
+      foregroundColor: cs.primary,
+      elevation: 0,
+      minimumSize: const Size.fromHeight(48),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      visualDensity: VisualDensity.standard,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+    ),
+  );
+}
+
+ButtonStyle playbackSecondaryControlButtonStyle({
+  required Color foregroundColor,
+  Color backgroundColor = Colors.transparent,
+  Color? disabledForegroundColor,
+}) {
+  return appIconButtonStyle(
+    IconButton.styleFrom(
+      fixedSize: const Size(
+        playbackSecondaryControlButtonWidth,
+        playbackSecondaryControlButtonHeight,
+      ),
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.standard,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      shape: const StadiumBorder(),
+      backgroundColor: backgroundColor,
+      foregroundColor: foregroundColor,
+      disabledForegroundColor: disabledForegroundColor,
+    ),
   );
 }

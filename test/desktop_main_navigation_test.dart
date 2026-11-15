@@ -87,19 +87,32 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.byIcon(Icons.playlist_play_rounded), findsOneWidget);
-        double indicatorScale(int index) => tester
-            .widget<Transform>(
-              find.descendant(
-                of: find.byKey(
-                  ValueKey<String>(
-                    'main_destination_indicator_${destinations[index].navigationKey}',
-                  ),
-                ),
-                matching: find.byType(Transform),
-              ),
-            )
-            .transform
-            .entry(0, 0);
+        final indicator = find.byKey(
+          const ValueKey('desktop_navigation_indicator'),
+        );
+        RRect indicatorShape() {
+          final paint = tester.widget<CustomPaint>(
+            find
+                .descendant(of: indicator, matching: find.byType(CustomPaint))
+                .first,
+          );
+          final canvas = TestRecordingCanvas();
+          paint.painter!.paint(canvas, tester.getSize(indicator));
+          return canvas.invocations
+                  .singleWhere(
+                    (call) => call.invocation.memberName == #drawRRect,
+                  )
+                  .invocation
+                  .positionalArguments
+                  .first
+              as RRect;
+        }
+
+        double iconCenter(int index) =>
+            tester
+                .getCenter(find.byKey(iconKeys[destinations[index].type.index]))
+                .dy -
+            tester.getTopLeft(indicator).dy;
         expect(
           tester.widget<Icon>(find.byIcon(Icons.playlist_play_rounded)).size,
           closeTo(24.15, 0.001),
@@ -121,19 +134,27 @@ void main() {
           expect(backgroundEvents, previousEvents);
           await tester.tapAt(Offset(bounds.right + 1, bounds.center.dy));
           expect(backgroundEvents, previousEvents + 1);
+          final previousCenter = indicatorShape().outerRect.center.dy;
           await tester.tapAt(
             tester.getCenter(
               find.byKey(iconKeys[destinations[state + 1].type.index]),
             ),
           );
           await tester.pump();
-          expect(indicatorScale(state + 1), 0);
-          await tester.pump(const Duration(milliseconds: 150));
-          expect(indicatorScale(state + 1), inExclusiveRange(0, 1));
-          await tester.pump(const Duration(milliseconds: 149));
-          expect(indicatorScale(state + 1), lessThan(1));
-          await tester.pump(const Duration(milliseconds: 1));
-          expect(indicatorScale(state + 1), 1);
+          expect(
+            indicatorShape().outerRect.center.dy,
+            closeTo(previousCenter, 0.01),
+          );
+          await tester.pump(const Duration(milliseconds: 60));
+          expect(
+            indicatorShape().outerRect.center.dy,
+            inExclusiveRange(previousCenter, iconCenter(state + 1)),
+          );
+          await tester.pump(const Duration(milliseconds: 120));
+          expect(
+            indicatorShape().outerRect.center.dy,
+            closeTo(iconCenter(state + 1), 0.01),
+          );
           await tester.pumpAndSettle();
           expect(activePage.value, state + 1);
           if (!collapsed) {
@@ -147,13 +168,19 @@ void main() {
         );
         activePage.value = 0;
         await tester.pump();
-        expect(indicatorScale(0), 0);
-        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 60));
+        final reversingAt = indicatorShape().outerRect.center.dy;
         activePage.value = 1;
         await tester.pump();
-        expect(indicatorScale(1), 0);
-        await tester.pump(const Duration(milliseconds: 300));
-        expect(indicatorScale(1), 1);
+        expect(
+          indicatorShape().outerRect.center.dy,
+          closeTo(reversingAt, 0.01),
+        );
+        await tester.pump(const Duration(milliseconds: 180));
+        expect(
+          indicatorShape().outerRect.center.dy,
+          closeTo(iconCenter(1), 0.01),
+        );
         tester.platformDispatcher.accessibilityFeaturesTestValue =
             const FakeAccessibilityFeatures(disableAnimations: true);
         addTearDown(
@@ -162,7 +189,10 @@ void main() {
         await tester.pump();
         activePage.value = 0;
         await tester.pump();
-        expect(indicatorScale(0), 1);
+        expect(
+          indicatorShape().outerRect.center.dy,
+          closeTo(iconCenter(0), 0.01),
+        );
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump(const Duration(milliseconds: 200));
         expect(tester.takeException(), isNull);
@@ -297,7 +327,7 @@ void main() {
         );
         final samples = [
           Offset(capsule.left + 8, capsule.center.dy),
-          Offset(capsule.right - 8, capsule.center.dy),
+          Offset(capsule.right - 12, capsule.center.dy + 15),
           capsule.topLeft + const Offset(2, 2),
           capsule.topRight + const Offset(-2, 2),
         ];
@@ -323,11 +353,16 @@ void main() {
         await mouse.addPointer(location: const Offset(1000, 400));
         await tester.pumpAndSettle();
         final idlePixels = await capsulePixels();
-        void expectCapsule(List<int> pixels) {
-          expect(pixels[0], isNot(idlePixels[0]));
-          expect(pixels[1], isNot(idlePixels[1]));
-          expect(pixels.skip(2), idlePixels.skip(2));
-        }
+        final targetIcon = find.byKey(
+          const ValueKey<String>('main_destination_music_library'),
+        );
+        double iconScale() => tester
+            .widgetList<Transform>(
+              find.ancestor(of: targetIcon, matching: find.byType(Transform)),
+            )
+            .firstWhere((transform) => !transform.transformHitTests)
+            .transform
+            .entry(0, 0);
 
         final rail = tester.widget<NavigationRail>(find.byType(NavigationRail));
         final labelFinder = find.byWidget(rail.destinations[1].label);
@@ -340,6 +375,19 @@ void main() {
             ?.color;
         final idleLabelColor = labelColor();
         final labelRect = tester.getRect(labelFinder);
+        double labelScale() {
+          final glyph = find.descendant(
+            of: labelFinder,
+            matching: find.byType(RichText),
+          );
+          final scales = tester
+              .widgetList<Transform>(
+                find.ancestor(of: glyph, matching: find.byType(Transform)),
+              )
+              .where((transform) => !transform.transformHitTests);
+          return scales.isEmpty ? 1.0 : scales.first.transform.entry(0, 0);
+        }
+        final windows = platform == TargetPlatform.windows;
         final primary = Theme.of(
           tester.element(find.byType(DesktopMainNavigation)),
         ).colorScheme.primary;
@@ -347,32 +395,49 @@ void main() {
         await mouse.moveTo(tester.getCenter(labelFinder));
         await tester.pumpAndSettle();
         expect(
-          labelColor(),
-          platform == TargetPlatform.windows ? primary : idleLabelColor,
+          RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
+          SystemMouseCursors.click,
         );
+        expect(labelColor(), windows ? primary : idleLabelColor);
+        expect(labelScale(), windows ? 1.14 : 1.0);
         expect(tester.getRect(labelFinder), labelRect);
         expect(activePage.value, 0);
-        expectCapsule(await capsulePixels());
+        expect(await capsulePixels(), idlePixels);
+        expect(iconScale(), platform == TargetPlatform.windows ? 1.16 : 1.0);
         await mouse.down(
           tester.getCenter(find.byWidget(rail.destinations[1].label)),
         );
         await tester.pumpAndSettle();
-        expectCapsule(await capsulePixels());
+        expect(await capsulePixels(), idlePixels);
+        expect(iconScale(), platform == TargetPlatform.windows ? 0.82 : 0.84);
+        expect(labelColor(), primary);
+        expect(labelScale(), 0.94);
         expect(activePage.value, 0);
         await mouse.cancel();
         await tester.pumpAndSettle();
         await mouse.moveTo(center);
         await tester.pumpAndSettle();
-        expect(labelColor(), idleLabelColor);
-        expectCapsule(await capsulePixels());
+        expect(labelColor(), windows ? primary : idleLabelColor);
+        expect(labelScale(), windows ? 1.14 : 1.0);
+        expect(await capsulePixels(), idlePixels);
+        expect(iconScale(), platform == TargetPlatform.windows ? 1.16 : 1.0);
         await mouse.down(center);
         await tester.pumpAndSettle();
-        expectCapsule(await capsulePixels());
+        expect(await capsulePixels(), idlePixels);
+        expect(iconScale(), platform == TargetPlatform.windows ? 0.82 : 0.84);
         await mouse.cancel();
         await tester.pumpAndSettle();
+        await mouse.moveTo(center + const Offset(25, 0));
+        await tester.pump();
+        expect(
+          RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
+          SystemMouseCursors.basic,
+        );
         await mouse.removePointer();
         await tester.pumpAndSettle();
         expect(await capsulePixels(), idlePixels);
+        expect(labelColor(), idleLabelColor);
+        expect(labelScale(), 1.0);
         for (final offset in [
           const Offset(25, 0),
           const Offset(-25, 0),
@@ -381,12 +446,14 @@ void main() {
         ]) {
           await tester.tapAt(center + offset);
           await tester.pumpAndSettle();
-          expect(activePage.value, 0);
+          expect(activePage.value, 0, reason: 'outside the icon at $offset');
         }
         await tester.tapAt(center + const Offset(23, 23));
         await tester.pumpAndSettle();
         expect(activePage.value, 1);
-        expectCapsule(await capsulePixels());
+        final selectedPixels = await capsulePixels();
+        expect(selectedPixels.take(2), isNot(idlePixels.take(2)));
+        expect(selectedPixels.skip(2), idlePixels.skip(2));
 
         final toggleCenter = tester.getCenter(toggle);
         final destinationIcons = destinations
@@ -400,26 +467,47 @@ void main() {
             .toList();
         final iconCenters = destinationIcons.map(tester.getCenter).toList();
         final selectedIndicator = find.byKey(
-          ValueKey<String>(
-            'main_destination_indicator_${destinations[1].navigationKey}',
-          ),
+          const ValueKey('desktop_navigation_indicator'),
         );
+        Rect selectedShape() {
+          final paint = tester.widget<CustomPaint>(
+            find
+                .descendant(
+                  of: selectedIndicator,
+                  matching: find.byType(CustomPaint),
+                )
+                .first,
+          );
+          final canvas = TestRecordingCanvas();
+          paint.painter!.paint(canvas, tester.getSize(selectedIndicator));
+          final shape =
+              canvas.invocations
+                      .singleWhere(
+                        (call) => call.invocation.memberName == #drawRRect,
+                      )
+                      .invocation
+                      .positionalArguments
+                      .first
+                  as RRect;
+          return shape.outerRect.shift(tester.getTopLeft(selectedIndicator));
+        }
+
         for (final icon in [Icons.menu_open_rounded, Icons.menu_rounded]) {
           await tester.tap(find.byIcon(icon));
           await tester.pump();
           expect(destinationIcons.map(tester.getCenter), iconCenters);
-          expect(tester.getSize(selectedIndicator).width, collapsed ? 228 : 48);
+          expect(selectedShape().width, collapsed ? 228 : 48);
           final transitionLayouts = contentLayouts;
           final contentWidth = tester
               .getSize(find.byKey(const ValueKey('content')))
               .width;
           expect(contentWidth, collapsed ? 1200 : 1020);
           expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
-          var previousWidth = tester.getSize(selectedIndicator).width;
+          var previousWidth = selectedShape().width;
           for (final step in [1, 15, 30, 30, 30, 30, 30]) {
             await tester.pump(Duration(milliseconds: step));
             expect(destinationIcons.map(tester.getCenter), iconCenters);
-            final indicator = tester.getRect(selectedIndicator);
+            final indicator = selectedShape();
             expect(indicator.left, center.dx - 24);
             expect(indicator.height, 48);
             expect(
@@ -443,10 +531,7 @@ void main() {
             );
           }
           await tester.pumpAndSettle();
-          expect(
-            tester.getSize(selectedIndicator),
-            Size(collapsed ? 48 : 228, 48),
-          );
+          expect(selectedShape().size, Size(collapsed ? 48 : 228, 48));
           await expectSidebarBackgroundAtEdges();
           final otherTarget = find.byKey(
             iconKeys[MainDestinationType.settings.index],

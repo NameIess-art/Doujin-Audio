@@ -1,5 +1,6 @@
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'support/asmr_controller_test_fixture.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/app_language.dart';
@@ -65,6 +66,76 @@ void main() {
     expect(controller.logoutAttempts, 1);
     expect(logoutButton.onPressed, isNotNull);
   });
+
+  testWidgets(
+    'Windows ASMR account logout button highlights and scales on hover and press',
+    (tester) async {
+      final controller = _LogoutFailureAsmrLibraryController(
+        createTestAsmrServices(),
+      );
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(() {
+        controller.dispose();
+        fixture.dispose();
+      });
+
+      await tester.pumpWidget(
+        fixture.build(
+          const AsmrTab(),
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+          ],
+        ),
+      );
+      final i18n = fixture.languageProvider;
+      final accountButton = find.byTooltip(i18n.tr('asmr_account_menu'));
+      await pumpUntilFound(tester, accountButton);
+      await tester.tap(accountButton);
+      final logoutText = find.text(i18n.tr('asmr_logout_action'));
+      await pumpUntilFound(tester, logoutText);
+
+      final logoutFinder = find
+          .ancestor(of: logoutText, matching: find.byType(TextButton))
+          .first;
+      final restColor = DefaultTextStyle.of(
+        tester.element(logoutText),
+      ).style.color;
+      final logoutMaterial = find.descendant(
+        of: logoutFinder,
+        matching: find.byType(Material),
+      );
+      final restBackground = tester.widget<Material>(logoutMaterial).color;
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      addTearDown(mouse.removePointer);
+
+      await mouse.moveTo(tester.getCenter(logoutFinder));
+      await tester.pumpAndSettle();
+
+      double readScale() => tester
+          .widgetList<Transform>(
+            find.ancestor(of: logoutText, matching: find.byType(Transform)),
+          )
+          .where((t) => !t.transformHitTests)
+          .fold<double>(1.0, (p, t) => p * t.transform.entry(0, 0));
+
+      expect(readScale(), closeTo(1.14, 0.001));
+      expect(
+        DefaultTextStyle.of(tester.element(logoutText)).style.color,
+        isNot(equals(restColor)),
+      );
+      expect(tester.widget<Material>(logoutMaterial).color, restBackground);
+
+      await mouse.down(tester.getCenter(logoutFinder));
+      await tester.pumpAndSettle();
+      expect(readScale(), closeTo(0.94, 0.001));
+      await mouse.up();
+      await tester.pumpAndSettle();
+      await mouse.removePointer();
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
 }
 
 class _LogoutFailureAsmrLibraryController extends AsmrLibraryController {

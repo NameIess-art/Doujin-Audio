@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'app_buttons.dart';
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_design_tokens.dart';
@@ -274,7 +275,8 @@ class AppEmptyState extends StatelessWidget {
                 ),
                 if (actionLabel != null && onAction != null) ...[
                   SizedBox(height: tokens.spaceLg),
-                  FilledButton.icon(
+                  AppLabelledButton(
+                    FilledButton.icon,
                     onPressed: onAction,
                     icon: Icon(actionIcon),
                     label: Text(actionLabel!),

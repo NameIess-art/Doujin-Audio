@@ -842,8 +842,10 @@ const Map<String, String> appLanguageEn = {
   'sleep_mode_auto_trigger_afterPlayback5min': '5 min after playback starts',
   'sleep_mode_auto_trigger_afterCountdown5min': '5 min after countdown starts',
   'sleep_canvas': 'Black screen',
-  'stop_after_current_track': 'Stop after this track',
-  'stop_after_current_track_subtitle': 'Pause when this track ends.',
+  'stop_after_current_track': 'Pause sessions after playback ends',
+  'stop_after_current_track_subtitle':
+      'After the countdown, pause each session when its current track ends.',
+  'waiting_for_track_end': 'Waiting for current tracks to finish',
   'hold_to_exit_sleep_mode': 'Hold to exit',
   'no_timer_set': 'No countdown set',
   'sleep_countdown': 'Sleep timer',

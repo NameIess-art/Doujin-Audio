@@ -1162,10 +1162,84 @@ void main() {
       );
       await tester.pump();
 
-      final categoryList = tester.widget<ListView>(
+      final categoryList = tester.widget<SingleChildScrollView>(
         find.byKey(const ValueKey<String>('app_search_categories')),
       );
       expect(categoryList.physics, isA<ClampingScrollPhysics>());
+    },
+  );
+
+  testWidgets(
+    'search category selection capsule slides smoothly between categories',
+    (tester) async {
+      final controller = TextEditingController();
+      final focusNode = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focusNode.dispose);
+      var selected = 0;
+
+      RRect? readIndicatorRRect() {
+        final finder = find.byKey(
+          const ValueKey<String>('app_search_category_indicator'),
+        );
+        final paint = tester.widget<CustomPaint>(finder);
+        final canvas = TestRecordingCanvas();
+        paint.painter!.paint(canvas, tester.getSize(finder));
+        final calls = canvas.invocations
+            .where((call) => call.invocation.memberName == #drawRRect)
+            .toList(growable: false);
+        if (calls.isEmpty) return null;
+        return calls.single.invocation.positionalArguments.first as RRect;
+      }
+
+      double pillRelativeCenterX(int index) {
+        final origin = tester.getTopLeft(
+          find.byKey(const ValueKey<String>('app_search_category_indicator')),
+        );
+        final pill = find.byKey(ValueKey<String>('app_search_category_$index'));
+        return tester.getCenter(pill).dx - origin.dx;
+      }
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StatefulBuilder(
+            builder: (context, setState) => AppSearchPageScaffold<int>(
+              controller: controller,
+              focusNode: focusNode,
+              hintText: 'Search audio',
+              categories: const <AppSearchCategory<int>>[
+                AppSearchCategory(value: 0, label: 'Cat 0'),
+                AppSearchCategory(value: 1, label: 'Cat 1'),
+                AppSearchCategory(value: 2, label: 'Longer Cat 2'),
+              ],
+              selectedCategory: selected,
+              onCategorySelected: (next) => setState(() => selected = next),
+              onChanged: (_) {},
+              onSubmitted: (_) {},
+              onCloseOrClear: () {},
+              body: const SizedBox.expand(),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final startCenter = pillRelativeCenterX(0);
+      final endCenter = pillRelativeCenterX(2);
+      expect(readIndicatorRRect()!.center.dx, closeTo(startCenter, 0.01));
+
+      await tester.tap(find.byKey(const ValueKey<String>('app_search_category_2')));
+      await tester.pump();
+      expect(readIndicatorRRect()!.center.dx, closeTo(startCenter, 0.01));
+
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(
+        readIndicatorRRect()!.center.dx,
+        inExclusiveRange(startCenter, endCenter),
+      );
+
+      await tester.pump(const Duration(milliseconds: 120));
+      expect(readIndicatorRRect()!.center.dx, closeTo(endCenter, 0.01));
     },
   );
 
@@ -1234,6 +1308,7 @@ void main() {
       expect(suggestions, findsOneWidget);
       expect(results, findsOneWidget);
       expect(fadeOpacityOf(results), 0);
+      final enteringTop = tester.getTopLeft(results).dy;
       expect(interaction.isVisualUpdateDeferred, isTrue);
       expect(interaction.navigationAllowed.value, isTrue);
       var commits = 0;
@@ -1245,6 +1320,8 @@ void main() {
 
       await tester.pump(const Duration(milliseconds: 75));
       expect(commits, 0);
+      final midwayTop = tester.getTopLeft(results).dy;
+      expect(midwayTop, lessThan(enteringTop));
       expect(
         fadeOpacityOf(results),
         closeTo(kAppFadeCurve.transform(0.5), 0.001),
@@ -1257,6 +1334,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 75));
       await tester.pumpAndSettle();
       expect(results, findsOneWidget);
+      expect(enteringTop - tester.getTopLeft(results).dy, closeTo(6, 0.001));
       expect(suggestions, findsNothing);
       expect(confirm, findsNothing);
       await tester.pump(interaction.idleDelay);
@@ -1289,6 +1367,16 @@ void main() {
       await tester.pump(interaction.idleDelay);
       await tester.pumpAndSettle();
       expect(interaction.isVisualUpdateDeferred, isFalse);
+
+      showResults.value = true;
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 45));
+      final reversingTop = tester.getTopLeft(results).dy;
+      showResults.value = false;
+      await tester.pump();
+      expect(tester.getTopLeft(results).dy, closeTo(reversingTop, 0.001));
+      await tester.pumpAndSettle();
+      expect(results, findsNothing);
 
       showResults.value = true;
       await tester.pump();

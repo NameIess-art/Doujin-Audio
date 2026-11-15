@@ -9,6 +9,7 @@ extension PlaybackCommandNativeMapper on PlaybackCommandCoordinator {
       );
     }
     final currentSession = _sessions[snapshot.sessionId];
+    final wasPlaying = currentSession?.state.playing == true;
     final wasDetachedCurrent =
         currentSession != null &&
         _hasDetachedPlaybackQueueCurrent(currentSession);
@@ -54,6 +55,9 @@ extension PlaybackCommandNativeMapper on PlaybackCommandCoordinator {
       }
     }
     _timerFacade.reconcileTrackStopTargets();
+    if (wasPlaying && !application.snapshot.playWhenReady) {
+      _timerFacade.onNativePlaybackPaused();
+    }
     _syncActivePlaybackCacheLease(application.session!);
     final normalizedSnapshot = application.snapshot;
     final session = application.session;

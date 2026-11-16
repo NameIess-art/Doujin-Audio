@@ -387,7 +387,7 @@ class _WheelPickerState extends State<_WheelPicker> {
         if (currentLogicalIndex != targetLogicalIndex) {
           _scrollToItem(
             targetLogicalIndex,
-            duration: const Duration(milliseconds: 300),
+            duration: const Duration(milliseconds: 360),
           );
         }
       }
@@ -478,7 +478,7 @@ class _WheelPickerState extends State<_WheelPicker> {
                       final nextItem = baseItem + delta;
                       _scrollToItem(
                         nextItem,
-                        duration: const Duration(milliseconds: 150),
+                        duration: const Duration(milliseconds: 200),
                       );
                     },
                   );

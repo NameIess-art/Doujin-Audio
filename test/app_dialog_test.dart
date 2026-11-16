@@ -309,7 +309,7 @@ void main() {
     expect(initialRed, greaterThan(0));
     await tester.tapAt(const Offset(1, 1));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 225));
+    await tester.pump(const Duration(milliseconds: 248));
     expect(await redAtCenter(), lessThan(initialRed / 2));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('fading_ink')), findsNothing);
@@ -368,7 +368,7 @@ void main() {
     );
     expect(dialogScrim.color.a, closeTo(0, 0.001));
 
-    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(kAppOverlayDuration ~/ 2);
     expect(
       tester
           .widget<ColoredBox>(find.byKey(const ValueKey('app_dialog_scrim')))
@@ -380,7 +380,7 @@ void main() {
         0.001,
       ),
     );
-    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(kAppOverlayDuration ~/ 2);
 
     expect(find.byType(AppDialog), findsOneWidget);
     expect(find.byKey(const ValueKey('app_dialog_surface')), findsOneWidget);
@@ -498,7 +498,9 @@ void main() {
     expect(
       beforeClose,
       closeTo(
-        kSecondaryOverlayConfig.curve.transform(110 / 200) *
+        kSecondaryOverlayConfig.curve.transform(
+              110 / kAppOverlayDuration.inMilliseconds,
+            ) *
             kSecondaryOverlayConfig.backgroundOpacity,
         0.001,
       ),
@@ -635,8 +637,8 @@ void main() {
     final route = ModalRoute.of(
       tester.element(find.byKey(const ValueKey('overlay_panel_content'))),
     )!;
-    expect(route.transitionDuration, const Duration(milliseconds: 200));
-    expect(route.reverseTransitionDuration, const Duration(milliseconds: 200));
+    expect(route.transitionDuration, kAppOverlayDuration);
+    expect(route.reverseTransitionDuration, kAppOverlayDuration);
 
     double panelOpacity() => tester
         .widget<FadeTransition>(
@@ -653,7 +655,7 @@ void main() {
         )
         .color
         .a;
-    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(kAppOverlayDuration ~/ 2);
     final middleOpacity = kSecondaryOverlayConfig.curve.transform(0.5);
     expect(panelOpacity(), closeTo(middleOpacity, 0.001));
     expect(
@@ -663,7 +665,7 @@ void main() {
         0.001,
       ),
     );
-    await tester.pump(const Duration(milliseconds: 99));
+    await tester.pump(kAppOverlayDuration ~/ 2 - const Duration(milliseconds: 1));
     expect(panelOpacity(), lessThan(1));
     await tester.pump(const Duration(milliseconds: 1));
     expect(panelOpacity(), 1);
@@ -690,7 +692,7 @@ void main() {
 
     await tester.tapAt(const Offset(1, 1));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(kAppOverlayDuration ~/ 2);
 
     final fadingPanelScrim = tester.widget<ColoredBox>(
       find.byKey(const ValueKey('app_overlay_panel_scrim')),
@@ -701,7 +703,7 @@ void main() {
     );
     expect(panelOpacity(), closeTo(middleOpacity, 0.001));
 
-    await tester.pump(const Duration(milliseconds: 99));
+    await tester.pump(kAppOverlayDuration ~/ 2 - const Duration(milliseconds: 1));
     expect(find.text('Overlay content'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 1));
     expect(panelOpacity(), closeTo(0, 0.001));

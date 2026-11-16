@@ -1400,14 +1400,14 @@ void main() {
         expect(opacity.value, 1);
         expect(opacity, isA<AlwaysStoppedAnimation<double>>());
       }
-      final halfFadeDuration = kPlaceholderContentTransitionDuration ~/ 2;
+      final halfFadeDuration = kAppFadeDuration ~/ 2;
       await tester.pump(halfFadeDuration);
       expect(
         tester.widget<FadeTransition>(rowFade()).opacity.value,
         closeTo(0.5, 0.05),
       );
       await tester.pump(
-        kPlaceholderContentTransitionDuration - halfFadeDuration +
+        kAppFadeDuration - halfFadeDuration +
             const Duration(milliseconds: 1),
       );
       expectCompletedFade(rowFade());
@@ -1702,14 +1702,14 @@ void main() {
         .height;
     expect(scrolledHeaderHeight, lessThan(initialHeaderHeight));
 
-    final capsuleOpacity = tester.widget<Opacity>(
-      find
-          .ancestor(
-            of: find.byType(HeaderTopCapsule),
-            matching: find.byType(Opacity),
-          )
-          .first,
-    );
+    final capsuleIgnore = find
+        .ancestor(
+          of: find.byType(HeaderTopCapsule),
+          matching: find.byType(IgnorePointer),
+        )
+        .first;
+    expect(tester.widget<IgnorePointer>(capsuleIgnore).ignoring, isTrue);
+    final dynamic capsuleOpacity = tester.renderObject(capsuleIgnore).parent!;
     expect(capsuleOpacity.opacity, 0.0);
 
     expect(find.text('Library Title'), findsOneWidget);
@@ -4221,7 +4221,7 @@ void main() {
     expect(tester.widget<FadeTransition>(headerFade).opacity.value, 1);
     await tester.tap(batchBackButton);
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 180));
     expect(tester.getRect(batchBackButton), headerRect);
     expect(
       tester.widget<FadeTransition>(headerFade).opacity.value,
@@ -4543,11 +4543,11 @@ void main() {
       expect(skeleton, findsOneWidget);
       expect(
         tester.widget<FadeTransition>(placeholderFade).opacity.value,
-        closeTo(0.5, 0.05),
+        closeTo(1 - kAppSpringCurve.transform(0.5), 0.05),
       );
       expect(
         tester.widget<FadeTransition>(contentFade).opacity.value,
-        closeTo(0.5, 0.05),
+        closeTo(kAppSpringCurve.transform(0.5), 0.05),
       );
       await tester.pump(
         kPlaceholderContentTransitionDuration - halfFadeDuration +
@@ -5177,7 +5177,7 @@ void main() {
           expect(tester.getSize(reveal).height, greaterThan(0));
           expect(tester.getSize(reveal).height, lessThan(expandedHeight));
         }
-        await tester.pump(const Duration(milliseconds: 250));
+        await tester.pump(const Duration(milliseconds: 315));
         expect(find.text(title), findsNothing);
         expect(tester.getSize(folderRow).height, collapsedHeight);
         await tester.tap(find.text('work'));
@@ -6451,7 +6451,7 @@ void main() {
           await tester.pump(const Duration(milliseconds: 120));
           expect(pressHighlight(), hasLength(1));
           await press.up();
-          await tester.pump(const Duration(milliseconds: 180));
+          await tester.pump(const Duration(milliseconds: 260));
           expect(pressHighlight(), isEmpty);
           await tester.longPress(trackFinder);
           await tester.pumpAndSettle();

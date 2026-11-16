@@ -12,17 +12,17 @@ import 'package:flutter/services.dart';
 import '../ui/ui_interaction_coordinator.dart';
 import 'app_edge_fade_mask.dart';
 
-const kAppFadeDuration = Duration(milliseconds: 300);
+const kAppFadeDuration = Duration(milliseconds: 360);
 const kAppFadeCurve = Curves.easeInOutCubic;
-const kPlaceholderContentTransitionDuration = Duration(milliseconds: 160);
-const kAppMotionFast = Duration(milliseconds: 180);
-const kAppMotionStandard = Duration(milliseconds: 220);
-const kAppMotionSlow = Duration(milliseconds: 300);
-const kAppSelectionDuration = Duration(milliseconds: 80);
-const kAppPagePushDuration = Duration(milliseconds: 240);
-const kAppPagePopDuration = Duration(milliseconds: 200);
-const kAppOverlayDuration = Duration(milliseconds: 200);
-const kAppPlaybackIconDuration = Duration(milliseconds: 180);
+const kPlaceholderContentTransitionDuration = Duration(milliseconds: 220);
+const kAppMotionFast = Duration(milliseconds: 220);
+const kAppMotionStandard = Duration(milliseconds: 280);
+const kAppMotionSlow = Duration(milliseconds: 380);
+const kAppSelectionDuration = Duration(milliseconds: 120);
+const kAppPagePushDuration = Duration(milliseconds: 320);
+const kAppPagePopDuration = Duration(milliseconds: 260);
+const kAppOverlayDuration = Duration(milliseconds: 260);
+const kAppPlaybackIconDuration = Duration(milliseconds: 240);
 
 /// Fast-attack spring deceleration curve without overshoot for menus and overlays.
 const Curve kAppSpringCurve = Cubic(0.18, 0.9, 0.25, 1.0);
@@ -62,9 +62,14 @@ class _AppDeferredFadeState extends State<AppDeferredFade>
   late bool _retained;
   late final AnimationController _controller;
   late final Animation<double> _opacity;
+  late Animation<double> _scale;
   bool _delayComplete = true;
   bool _disableAnimations = false;
   Timer? _timer;
+
+  Animation<double> _buildScaleAnimation() => widget.beginScale == 1
+      ? kAlwaysCompleteAnimation
+      : Tween<double>(begin: widget.beginScale, end: 1).animate(_opacity);
 
   @override
   void initState() {
@@ -78,6 +83,7 @@ class _AppDeferredFadeState extends State<AppDeferredFade>
       value: _visible ? 1 : 0,
     )..addStatusListener(_handleFadeStatus);
     _opacity = _controller.drive(CurveTween(curve: kAppFadeCurve));
+    _scale = _buildScaleAnimation();
     widget.waitFor?.addStatusListener(_handleMotionStatus);
   }
 
@@ -104,6 +110,9 @@ class _AppDeferredFadeState extends State<AppDeferredFade>
       if (_visible && widget.fadeInDuration == Duration.zero) {
         _controller.value = 1;
       }
+    }
+    if (oldWidget.beginScale != widget.beginScale) {
+      _scale = _buildScaleAnimation();
     }
     if (oldWidget.waitFor != widget.waitFor) {
       oldWidget.waitFor?.removeStatusListener(_handleMotionStatus);
@@ -168,29 +177,25 @@ class _AppDeferredFadeState extends State<AppDeferredFade>
   }
 
   @override
-  Widget build(BuildContext context) => IgnorePointer(
-    ignoring: !widget.visible,
-    child: ExcludeFocus(
-      excluding: !widget.visible,
-      child: ExcludeSemantics(
+  Widget build(BuildContext context) {
+    if (!_retained) return const SizedBox.shrink();
+    final animated = FadeTransition(
+      opacity: _opacity,
+      child: widget.beginScale == 1
+          ? widget.child
+          : ScaleTransition(scale: _scale, child: widget.child),
+    );
+    return IgnorePointer(
+      ignoring: !widget.visible,
+      child: ExcludeFocus(
         excluding: !widget.visible,
-        child: _retained
-            ? FadeTransition(
-                opacity: _opacity,
-                child: widget.beginScale == 1
-                    ? widget.child
-                    : ScaleTransition(
-                        scale: Tween<double>(
-                          begin: widget.beginScale,
-                          end: 1,
-                        ).animate(_opacity),
-                        child: widget.child,
-                      ),
-              )
-            : const SizedBox.shrink(),
+        child: ExcludeSemantics(
+          excluding: !widget.visible,
+          child: RepaintBoundary(child: animated),
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 typedef _PageTransitionBuilder = Widget Function(BuildContext, Widget);
@@ -1832,8 +1837,8 @@ class AppPressScale extends StatefulWidget {
 
 class _AppPressScaleState extends State<AppPressScale>
     with SingleTickerProviderStateMixin {
-  static const _pressDuration = Duration(milliseconds: 65);
-  static const _releaseDuration = Duration(milliseconds: 180);
+  static const _pressDuration = Duration(milliseconds: 90);
+  static const _releaseDuration = Duration(milliseconds: 240);
   static const _cancelMoveDistance = 12.0;
 
   late final AnimationController _controller;
@@ -3301,15 +3306,18 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
       if (isActive) _prepared = true;
     });
     final page = super.buildPage(context, animation, secondaryAnimation);
-    final enableEdgeSwipe =
+    final supportsEdgeSwipe =
         defaultTargetPlatform != TargetPlatform.windows &&
         !fullscreenDialog &&
-        !isFirst &&
-        !reducedMotion;
+        !isFirst;
     return _AppRouteReference(
       route: this,
-      child: enableEdgeSwipe
-          ? _EdgeSwipeBackLayer(route: this, child: page)
+      child: supportsEdgeSwipe
+          ? _EdgeSwipeBackLayer(
+              route: this,
+              enabled: !reducedMotion,
+              child: page,
+            )
           : page,
     );
   }
@@ -3399,9 +3407,14 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
 }
 
 class _EdgeSwipeBackLayer extends StatefulWidget {
-  const _EdgeSwipeBackLayer({required this.route, required this.child});
+  const _EdgeSwipeBackLayer({
+    required this.route,
+    this.enabled = true,
+    required this.child,
+  });
 
   final AppPreparedPageRoute<dynamic> route;
+  final bool enabled;
   final Widget child;
 
   @override
@@ -3454,19 +3467,20 @@ class _EdgeSwipeBackLayerState extends State<_EdgeSwipeBackLayer> {
       fit: StackFit.expand,
       children: [
         widget.child,
-        Positioned(
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: _edgeWidth,
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onHorizontalDragStart: _handleDragStart,
-            onHorizontalDragUpdate: _handleDragUpdate,
-            onHorizontalDragEnd: _handleDragEnd,
-            onHorizontalDragCancel: _handleDragCancel,
+        if (widget.enabled)
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: _edgeWidth,
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onHorizontalDragStart: _handleDragStart,
+              onHorizontalDragUpdate: _handleDragUpdate,
+              onHorizontalDragEnd: _handleDragEnd,
+              onHorizontalDragCancel: _handleDragCancel,
+            ),
           ),
-        ),
       ],
     );
   }

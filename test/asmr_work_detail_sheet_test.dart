@@ -1608,9 +1608,12 @@ void main() {
       findsOneWidget,
     );
     await tester.pump(const Duration(milliseconds: 1));
-    await tester.pump(const Duration(milliseconds: 150));
+    const halfFade = Duration(milliseconds: 180);
+    await tester.pump(halfFade);
     expect(summarySkeleton, findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 148));
+    await tester.pump(
+      kAppFadeDuration - halfFade - const Duration(milliseconds: 2),
+    );
     expect(summarySkeleton, findsOneWidget);
     await tester.pump(const Duration(milliseconds: 2));
     expect(summarySkeleton, findsNothing);

@@ -493,9 +493,13 @@ class SettingsRepository {
     final ids = sessionIds.toList(growable: false);
     return _change(() async {
       if (ids.isEmpty) return;
-      final allPinned = ids.every(pinnedPlaylistSessionIds.contains);
+      final pinnedSet = pinnedPlaylistSessionIds.toSet();
+      final allPinned = ids.every(pinnedSet.contains);
+      final idSet = ids.toSet();
       pinnedPlaylistSessionIds = allPinned
-          ? pinnedPlaylistSessionIds.where((id) => !ids.contains(id)).toList()
+          ? pinnedPlaylistSessionIds
+                .where((id) => !idSet.contains(id))
+                .toList()
           : <String>{...pinnedPlaylistSessionIds, ...ids}.toList();
     });
   }

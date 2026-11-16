@@ -150,7 +150,7 @@ void main() {
             indicatorShape().outerRect.center.dy,
             inExclusiveRange(previousCenter, iconCenter(state + 1)),
           );
-          await tester.pump(const Duration(milliseconds: 120));
+          await tester.pump(const Duration(milliseconds: 160));
           expect(
             indicatorShape().outerRect.center.dy,
             closeTo(iconCenter(state + 1), 0.01),
@@ -176,7 +176,7 @@ void main() {
           indicatorShape().outerRect.center.dy,
           closeTo(reversingAt, 0.01),
         );
-        await tester.pump(const Duration(milliseconds: 180));
+        await tester.pump(const Duration(milliseconds: 220));
         expect(
           indicatorShape().outerRect.center.dy,
           closeTo(iconCenter(1), 0.01),

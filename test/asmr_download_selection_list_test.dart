@@ -393,10 +393,10 @@ void main() {
         await _pumpList(tester, model);
         await tester.tap(find.text('disc'));
         await tester.pump();
-        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(const Duration(milliseconds: 185));
         await tester.tap(find.text('nested'));
         await tester.pump();
-        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(const Duration(milliseconds: 185));
         await tester.tap(find.text('other'));
         await tester.pumpAndSettle();
         expect(find.text('leaf'), findsOneWidget);

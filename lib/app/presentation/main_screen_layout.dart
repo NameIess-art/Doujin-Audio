@@ -243,6 +243,13 @@ extension _MainScreenLayout on _MainScreenState {
       entries[activeIndex],
     ];
 
+    const indicatorInset = 6.0;
+    final motionListenable = Listenable.merge([
+      appearance,
+      expansion,
+      rowProgress,
+    ]);
+
     double navigationLeft() =>
         MobileDockCapsuleContentState.inlinePlaybackWidth(
           availableWidth,
@@ -259,16 +266,29 @@ extension _MainScreenLayout on _MainScreenState {
       const height = kActiveSessionCarouselDockHeight;
       final inlineShare = appearance.value * (1 - rowProgress.value);
       final width = availableWidth - navigationLeft();
-      final slotWidth = width / destinations.length;
+      final innerWidth = (width - indicatorInset * 2).clamp(0.0, width);
+      final slotWidth = innerWidth / destinations.length;
+      // Reserve outer capsule insets so every indicator slot shares the same
+      // width while outer destinations keep full-edge hit targets.
+      final menuInnerWidth =
+          (availableWidth - height * inlineShare - indicatorInset * 2).clamp(
+            0.0,
+            availableWidth,
+          );
+      final isFirst = index == 0;
+      final isLast = index == destinations.length - 1;
+      final outerEdgeInset =
+          (isFirst ? indicatorInset : 0.0) + (isLast ? indicatorInset : 0.0);
       // Morph from the full menu cell to the single control. The shrinking
       // viewport would otherwise make the cell narrower than its final size.
-      final menuSlotWidth =
-          (availableWidth - height * inlineShare) / destinations.length;
+      final menuSlotWidth = menuInnerWidth / destinations.length + outerEdgeInset;
       final shapeProgress = kAppSpringCurve.transform(
         ((expand - 0.25) / 0.5).clamp(0.0, 1.0),
       );
       final buttonWidth = lerpDouble(menuSlotWidth, height, shapeProgress)!;
-      final distanceFromRight = (destinations.length - 1 - index) * slotWidth;
+      final distanceFromRight = isLast
+          ? 0.0
+          : indicatorInset + (destinations.length - 1 - index) * slotWidth;
       return Rect.fromLTWH(
         availableWidth - buttonWidth - distanceFromRight * (1 - progress),
         0,
@@ -278,15 +298,14 @@ extension _MainScreenLayout on _MainScreenState {
     }
 
     Rect indicatorRect(int index) {
-      const inset = 6.0;
       final destination = destinationRect(index);
-      final left = navigationLeft() + inset;
-      final right = availableWidth - inset;
+      final left = navigationLeft() + indicatorInset;
+      final right = availableWidth - indicatorInset;
       return Rect.fromLTRB(
         destination.left.clamp(left, right),
-        destination.top + inset,
+        destination.top + indicatorInset,
         destination.right.clamp(left, right),
-        destination.bottom - inset,
+        destination.bottom - indicatorInset,
       );
     }
 
@@ -327,7 +346,7 @@ extension _MainScreenLayout on _MainScreenState {
 
       return AnimatedBuilder(
         key: ValueKey(item.type),
-        animation: Listenable.merge([appearance, expansion, rowProgress]),
+        animation: motionListenable,
         child: IgnorePointer(
           ignoring: isPlaybackExpanded && !selected,
           child: ExcludeSemantics(
@@ -348,7 +367,21 @@ extension _MainScreenLayout on _MainScreenState {
                     onTap: isPlaybackExpanded && selected
                         ? onCurrentTap
                         : () => _switchPage(index),
-                    child: RepaintBoundary(child: icon),
+                    child: AnimatedBuilder(
+                      animation: motionListenable,
+                      child: RepaintBoundary(child: icon),
+                      builder: (context, child) {
+                        final destination = destinationRect(index);
+                        final indicator = indicatorRect(index);
+                        final dx = indicator.width > 0
+                            ? indicator.center.dx - destination.center.dx
+                            : 0.0;
+                        return Transform.translate(
+                          offset: Offset(dx, 0),
+                          child: child,
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),
@@ -388,7 +421,7 @@ extension _MainScreenLayout on _MainScreenState {
         enabled: !isPlaybackExpanded && destinations.length > 1,
         destinationCount: destinations.length,
         activeIndex: activeIndex,
-        slotAt: destinationRect,
+        slotAt: indicatorRect,
         onSelectIndex: _switchPage,
         builder: (context, dragPosition) => ValueListenableBuilder<double?>(
           valueListenable: _pageDragPosition,
@@ -402,11 +435,7 @@ extension _MainScreenLayout on _MainScreenState {
                 fit: StackFit.expand,
                 children: [
                   AnimatedBuilder(
-                    animation: Listenable.merge([
-                      appearance,
-                      expansion,
-                      rowProgress,
-                    ]),
+                    animation: motionListenable,
                     builder: (context, _) {
                       final rect = SlidingSelectionIndicator.rectAt(
                         position,

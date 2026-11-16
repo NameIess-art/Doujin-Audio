@@ -1,6 +1,7 @@
 import 'settings_providers.dart';
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -24,6 +25,7 @@ class AboutPage extends ConsumerWidget {
   final Future<AppVersionInfo> versionFuture;
 
   static const _repositoryUrl = AppUpdateService.repositoryPage;
+  static const _feedbackPageUrl = '$_repositoryUrl/issues';
   static const _feedbackEmail = 'likenshonameless@gmail.com';
   static const _readmeUrl =
       'https://github.com/NameIess-art/Doujin-Audio/blob/main/README.md';
@@ -46,13 +48,19 @@ class AboutPage extends ConsumerWidget {
 
   Future<void> _openFeedback(BuildContext context, WidgetRef ref) async {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final isWindows = defaultTargetPlatform == TargetPlatform.windows;
     final opened = await ref
         .read(appUpdateServiceProvider)
-        .openReleasePage('mailto:$_feedbackEmail');
+        .openReleasePage(
+          isWindows ? _feedbackPageUrl : 'mailto:$_feedbackEmail',
+        );
     if (!context.mounted || opened) return;
+    final failureKey = isWindows
+        ? 'about_feedback_page_open_failed'
+        : 'about_feedback_open_failed';
     showAppSnackBar(
       context,
-      '${i18n.tr('about_feedback_open_failed')} $_feedbackEmail',
+      '${i18n.tr(failureKey)} $_feedbackEmail',
       tone: AppFeedbackTone.warning,
       icon: Icons.mail_outline_rounded,
     );

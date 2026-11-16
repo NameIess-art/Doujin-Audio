@@ -70,7 +70,7 @@ void main() {
     await tester.tap(option);
     await tester.pump();
     expect(_visibleInk(tester, option), isNotEmpty);
-    await tester.pump(const Duration(milliseconds: 60));
+    await tester.pump(const Duration(milliseconds: 80));
     expect(_visibleInk(tester, option), isEmpty);
 
     final text = find.text('Text');
@@ -264,7 +264,7 @@ void main() {
         await mouse.moveTo(edge);
         await tester.pump();
         expect(sample(), 1);
-        expect(await advanceToward(hoverScale, 6), hoverScale);
+        expect(await advanceToward(hoverScale, 9), hoverScale);
         if (!isPill) {
           await tester.pump(const Duration(milliseconds: 600));
           final pixels = await raster();
@@ -293,31 +293,31 @@ void main() {
           await advanceToward(hoverScale, 1);
           expect(taps, click + 1);
         }
-        expect(await advanceToward(hoverScale, 5), hoverScale);
+        expect(await advanceToward(hoverScale, 8), hoverScale);
 
         await mouse.down(edge);
         await tester.pump();
-        expect(await advanceToward(pressScale, 4), pressScale);
+        expect(await advanceToward(pressScale, 6), pressScale);
         await mouse.moveTo(outside);
         await tester.pump();
         expect(sample(), pressScale);
-        expect(await advanceToward(1, 6), 1);
+        expect(await advanceToward(1, 9), 1);
         await mouse.up();
         expect(taps, 2);
 
         await mouse.moveTo(edge);
         await tester.pump();
-        expect(await advanceToward(hoverScale, 6), hoverScale);
+        expect(await advanceToward(hoverScale, 9), hoverScale);
         await mouse.moveTo(outside);
         await tester.pump();
-        expect(await advanceToward(1, 6), 1);
+        expect(await advanceToward(1, 9), 1);
         expect(await raster(), orderedEquals(idleRaster));
         await mouse.moveTo(edge);
         await tester.pump();
-        expect(await advanceToward(hoverScale, 6), hoverScale);
+        expect(await advanceToward(hoverScale, 9), hoverScale);
         await mouse.moveTo(outside);
         await tester.pump();
-        expect(await advanceToward(1, 6), 1);
+        expect(await advanceToward(1, 9), 1);
         expect(await raster(), orderedEquals(idleRaster));
         expect(await advanceToward(1, 2), 1);
         expect(await raster(), orderedEquals(idleRaster));

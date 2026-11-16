@@ -272,7 +272,7 @@ void main() {
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 80));
           expect(controller.offset, inExclusiveRange(0, start));
-          for (var frame = 0; frame < 26; frame++) {
+          for (var frame = 0; frame < 32; frame++) {
             await tester.pump(const Duration(milliseconds: 16));
           }
 

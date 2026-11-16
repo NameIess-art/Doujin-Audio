@@ -256,11 +256,7 @@ class _ActiveSessionCard extends ConsumerWidget {
         child: ClipRRect(
           key: ValueKey<String>('active_session_card_${session.id}'),
           borderRadius: cardBorderRadius,
-          child: MarqueePauseScope(
-            isPaused: false,
-            hoverToRun: defaultTargetPlatform == TargetPlatform.windows,
-            child: cardBody,
-          ),
+          child: cardBody,
         ),
       ),
     );
@@ -299,8 +295,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                   4 -
                   _ActiveSessionPlayPauseButton.dimension)
               .clamp(0.0, double.infinity);
-      // Ellipsis and desktop marquee measurement otherwise repeat at every
-      // animated width. Keep text layout stable while controls and progress resize.
+      // Keep the marquee viewport stable while the dock animates its width.
       titleSubtitle = ClipRect(
         child: OverflowBox(
           key: const ValueKey('active_session_title_overflow_box'),
@@ -399,7 +394,10 @@ class _ActiveSessionCard extends ConsumerWidget {
           alignment: Alignment.centerLeft,
           minWidth: width,
           maxWidth: width,
-          child: content,
+          child: MarqueePauseScope(
+            isPaused: constraints.maxWidth <= kActiveSessionCarouselDockHeight,
+            child: content,
+          ),
         );
       },
     );
@@ -680,7 +678,8 @@ class _ActiveSessionTitleSubtitleState
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final secondaryText = widget.playbackError == null
@@ -692,55 +691,54 @@ class _ActiveSessionTitleSubtitleState
             useAsmrOneText: true,
           )
         : localizedPlaybackErrorText(i18n, widget.playbackError);
+    final title = MarqueeText(
+      text: widget.displayName.replaceAll('\n', ' '),
+      style: theme.textTheme.titleSmall?.copyWith(
+        fontWeight: FontWeight.w800,
+        fontSize: 13.5,
+        height: 1.12,
+      ),
+      animateOnAndroid: true,
+      edgePadding: theme.platform == TargetPlatform.android ? 0 : 8,
+      scrollSpeed: 26,
+    );
+    final showSecondary = secondaryText != null && secondaryText.isNotEmpty;
+    final secondaryStyle = theme.textTheme.bodySmall?.copyWith(
+      color: widget.playbackError == null ? cs.onSurfaceVariant : cs.error,
+      fontWeight: FontWeight.w600,
+      fontSize: 10.5,
+      height: 1.15,
+    );
+    final showCue =
+        showSecondary && widget.playbackError == null && !widget.isLoading;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Theme.of(context).platform == TargetPlatform.android
-            ? Text(
-                widget.displayName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style:
-                    Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13.5,
-                      height: 1.12,
-                    ) ??
-                    const TextStyle(),
-              )
-            : LibraryLikeMarqueeLine(
-                text: widget.displayName,
-                style:
-                    Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13.5,
-                      height: 1.12,
-                    ) ??
-                    const TextStyle(),
-              ),
+        if (theme.platform == TargetPlatform.android)
+          title
+        else
+          SizedBox(width: double.infinity, height: 16, child: title),
         const SizedBox(height: 1.5),
         ExcludeSemantics(
-          excluding: secondaryText == null || secondaryText.isEmpty,
+          excluding: !showSecondary,
           child: Opacity(
-            opacity: (secondaryText != null && secondaryText.isNotEmpty)
-                ? 1.0
-                : 0.0,
-            child: Text(
-              (secondaryText != null && secondaryText.isNotEmpty)
-                  ? secondaryText
-                  : ' ',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: widget.playbackError == null
-                    ? cs.onSurfaceVariant
-                    : cs.error,
-                fontWeight: FontWeight.w600,
-                fontSize: 10.5,
-                height: 1.15,
-              ),
-            ),
+            opacity: showSecondary ? 1 : 0,
+            child: showCue
+                ? MarqueeText(
+                    text: secondaryText.replaceAll('\n', ' '),
+                    style: secondaryStyle,
+                    animateOnAndroid: true,
+                    pauseDuration: const Duration(milliseconds: 450),
+                    scrollSpeed: 26,
+                    edgePadding: 0,
+                  )
+                : Text(
+                    showSecondary ? secondaryText : ' ',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: secondaryStyle,
+                  ),
           ),
         ),
       ],

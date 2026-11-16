@@ -1702,9 +1702,9 @@ void main() {
       await tester.pump();
       expect(pin, findsOneWidget);
       expect(opacity(), 1);
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(kAppFadeDuration ~/ 2);
       expect(opacity(), closeTo(kAppFadeCurve.transform(0.5), 0.001));
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(kAppFadeDuration ~/ 2);
       await tester.pump(const Duration(milliseconds: 1));
       expect(pin, findsNothing);
       expect(tester.takeException(), isNull);

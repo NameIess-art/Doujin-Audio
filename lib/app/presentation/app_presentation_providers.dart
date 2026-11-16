@@ -530,6 +530,60 @@ final playlistSortedEntriesUiProvider =
       List<PlaybackDirectoryEntry>
     >(PlaylistSortedEntriesNotifier.new);
 
+// Pinning repartitions this order without resolving sorting metadata again.
+final _playlistBaseSortProvider = Provider((ref) {
+  final structureState = ref.watch(playlistStructureUiProvider);
+  final criterion = ref.watch(
+    settingsStateProvider.select(
+      (state) =>
+          state.value?.playlistSortCriterion ?? PlaylistSortCriterion.name,
+    ),
+  );
+  final ascending = ref.watch(
+    settingsStateProvider.select(
+      (state) => state.value?.playlistSortAscending ?? true,
+    ),
+  );
+  final groupByLibrary = ref.watch(
+    settingsStateProvider.select(
+      (state) => state.value?.playlistGroupByLibrary ?? false,
+    ),
+  );
+  if (criterion == PlaylistSortCriterion.voiceActor ||
+      criterion == PlaylistSortCriterion.releaseDate) {
+    ref.watch(libraryDetailRevisionProvider);
+  }
+  final needsLibraryTrack =
+      groupByLibrary ||
+      criterion == PlaylistSortCriterion.voiceActor ||
+      criterion == PlaylistSortCriterion.releaseDate ||
+      structureState.entries.any(
+        (entry) =>
+            !entry.isTemporary && entry.queueName?.trim().isNotEmpty != true,
+      );
+  if (needsLibraryTrack) {
+    ref.watch(
+      libraryStateProvider.select((state) => state.value?.contentRevision),
+    );
+  }
+  final paths = ref.watch(audioPathCoordinatorProvider);
+
+  final sortedSessions = sortPlaylistSessions(
+    sessions: structureState.entries,
+    criterion: criterion,
+    ascending: ascending,
+    groupByLibrary: groupByLibrary,
+    paths: paths,
+    trackForSession: (session) =>
+        paths.sessionTrackForPath(session.id, session.currentTrackPath),
+  );
+  return (
+    structure: structureState,
+    entries: sortedSessions,
+    options: (criterion, ascending, groupByLibrary),
+  );
+});
+
 class PlaylistSortedEntriesNotifier
     extends Notifier<List<PlaybackDirectoryEntry>> {
   Set<String>? _knownSessionIds;
@@ -539,66 +593,23 @@ class PlaylistSortedEntriesNotifier
 
   void applySort() {
     _newQueueIds.clear();
+    ref.invalidate(_playlistBaseSortProvider);
     ref.invalidateSelf();
   }
 
   @override
   List<PlaybackDirectoryEntry> build() {
-    final structureState = ref.watch(playlistStructureUiProvider);
-    final criterion = ref.watch(
-      settingsStateProvider.select(
-        (state) =>
-            state.value?.playlistSortCriterion ?? PlaylistSortCriterion.name,
-      ),
-    );
-    final ascending = ref.watch(
-      settingsStateProvider.select(
-        (state) => state.value?.playlistSortAscending ?? true,
-      ),
-    );
-    final groupByLibrary = ref.watch(
-      settingsStateProvider.select(
-        (state) => state.value?.playlistGroupByLibrary ?? false,
-      ),
-    );
+    final base = ref.watch(_playlistBaseSortProvider);
+    final structureState = base.structure;
     final pinnedSessionIds = ref.watch(
       settingsStateProvider.select(
         (state) => state.value?.pinnedPlaylistSessionIds ?? const <String>[],
       ),
     );
-    if (criterion == PlaylistSortCriterion.voiceActor ||
-        criterion == PlaylistSortCriterion.releaseDate) {
-      ref.watch(libraryDetailRevisionProvider);
-    }
-    final needsLibraryTrack =
-        groupByLibrary ||
-        criterion == PlaylistSortCriterion.voiceActor ||
-        criterion == PlaylistSortCriterion.releaseDate ||
-        structureState.entries.any(
-          (entry) =>
-              !entry.isTemporary && entry.queueName?.trim().isNotEmpty != true,
-        );
-    if (needsLibraryTrack) {
-      ref.watch(
-        libraryStateProvider.select((state) => state.value?.contentRevision),
-      );
-    }
-    final paths = ref.watch(audioPathCoordinatorProvider);
-
-    final sortedSessions = sortPlaylistSessions(
-      sessions: structureState.entries,
-      criterion: criterion,
-      ascending: ascending,
-      groupByLibrary: groupByLibrary,
-      paths: paths,
-      trackForSession: (session) =>
-          paths.sessionTrackForPath(session.id, session.currentTrackPath),
-      pinnedSessionIds: pinnedSessionIds.toSet(),
-    );
     final entriesBySessionId = <String, PlaybackDirectoryEntry>{
       for (final entry in structureState.entries) entry.id: entry,
     };
-    final sortOptions = (criterion, ascending, groupByLibrary);
+    final sortOptions = base.options;
     if (_sortOptions != sortOptions ||
         !listEquals(_pinnedSessionIds, pinnedSessionIds)) {
       _newQueueIds.clear();
@@ -619,13 +630,26 @@ class PlaylistSortedEntriesNotifier
       _knownSessionIds = entriesBySessionId.keys.toSet();
     }
     _newQueueIds.retainWhere(entriesBySessionId.containsKey);
-    if (_newQueueIds.isEmpty) return sortedSessions;
+    if (_newQueueIds.isEmpty && pinnedSessionIds.isEmpty) return base.entries;
     final newQueueIds = _newQueueIds.toSet();
+    final pinned = pinnedSessionIds.toSet();
+    final temporaryEntries = <PlaybackDirectoryEntry>[];
+    final pinnedEntries = <PlaybackDirectoryEntry>[];
+    final ordinaryEntries = <PlaybackDirectoryEntry>[];
+    for (final entry in base.entries) {
+      if (entry.isTemporary) {
+        temporaryEntries.add(entry);
+      } else if (!newQueueIds.contains(entry.id)) {
+        (pinned.contains(entry.id) ? pinnedEntries : ordinaryEntries).add(
+          entry,
+        );
+      }
+    }
     return List<PlaybackDirectoryEntry>.unmodifiable([
-      ...sortedSessions.where((session) => session.isTemporary),
+      ...temporaryEntries,
       for (final id in _newQueueIds) entriesBySessionId[id]!,
-      for (final session in sortedSessions)
-        if (!session.isTemporary && !newQueueIds.contains(session.id)) session,
+      ...pinnedEntries,
+      ...ordinaryEntries,
     ]);
   }
 }

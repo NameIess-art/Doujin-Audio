@@ -163,7 +163,7 @@ void main() {
         final card = find.byKey(key);
         cardElements[key] = tester.element(card);
         inkElements[key] = tester.element(
-          find.descendant(of: card, matching: find.byType(InkWell)),
+          find.descendant(of: card, matching: find.byType(InkWell)).last,
         );
         cardOffsets[key] = tester.getTopLeft(card);
       }
@@ -203,7 +203,7 @@ void main() {
           expect(tester.element(card), same(cardElements[key]));
           expect(
             tester.element(
-              find.descendant(of: card, matching: find.byType(InkWell)),
+              find.descendant(of: card, matching: find.byType(InkWell)).last,
             ),
             same(inkElements[key]),
           );

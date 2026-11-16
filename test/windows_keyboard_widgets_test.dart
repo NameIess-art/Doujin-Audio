@@ -92,6 +92,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('First'), findsOneWidget);
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
       expect(selected, 2);

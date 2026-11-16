@@ -643,7 +643,7 @@ void main() {
         expect(_dock, findsNothing);
         await tester.pump(const Duration(milliseconds: 150));
         expect(_dock, findsNothing);
-        await tester.pump(const Duration(milliseconds: 160));
+        await tester.pump(const Duration(milliseconds: 180));
         await tester.pump();
         expectDock();
         final bounds = tester.getRect(_dock);

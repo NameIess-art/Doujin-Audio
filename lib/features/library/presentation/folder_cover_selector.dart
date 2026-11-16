@@ -171,7 +171,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
     setState(() => _currentIndex = _indexForPage(targetPage, _images.length));
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
-        : const Duration(milliseconds: 250);
+        : const Duration(milliseconds: 320);
     if (duration == Duration.zero) {
       controller.jumpToPage(targetPage);
     } else {

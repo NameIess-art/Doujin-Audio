@@ -58,9 +58,9 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     this.radiusOverlay = 20,
     this.radiusCapsule = 999,
     this.iconContainerSize = 36,
-    this.motionFast = const Duration(milliseconds: 180),
-    this.motionStandard = const Duration(milliseconds: 220),
-    this.motionSlow = const Duration(milliseconds: 300),
+    this.motionFast = const Duration(milliseconds: 220),
+    this.motionStandard = const Duration(milliseconds: 280),
+    this.motionSlow = const Duration(milliseconds: 380),
   });
 
   static const light = AppDesignTokens(

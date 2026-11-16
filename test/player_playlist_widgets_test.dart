@@ -1,3 +1,4 @@
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/unified_dropdown.dart';
 import 'package:doujin_audio/features/player/presentation/playback_providers.dart';
 import 'dart:async';
@@ -45,7 +46,6 @@ import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
-import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/app_brand_icon.dart';
 import 'package:doujin_audio/core/widgets/duration_overlay.dart';
@@ -844,7 +844,7 @@ void main() {
         final beforeDrag = tester.getTopLeft(content);
         await tester.dragFrom(
           beforeDrag + const Offset(100, 150),
-          const Offset(0, 320),
+          const Offset(320, 0),
         );
         await tester.pumpAndSettle();
         expect(find.byType(SessionDetailPage), findsOneWidget);
@@ -1232,7 +1232,7 @@ void main() {
         final initialPosition = tester.getCenter(seekButton);
         final seekPress = await tester.startGesture(initialPosition);
         await tester.pump();
-        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 110));
         final glyphTransform = tester
             .widgetList<Transform>(
               find.ancestor(of: seekButton, matching: find.byType(Transform)),
@@ -2298,7 +2298,7 @@ void main() {
             .widget<FadeTransition>(fadeFinder)
             .opacity;
         expect(tooltipOpacity.value, 0);
-        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(kAppFadeDuration ~/ 2);
         expect(tooltipOpacity.value, inExclusiveRange(0, 1));
         final capsule = find
             .ancestor(
@@ -2327,14 +2327,14 @@ void main() {
           isTrue,
         );
         expect(tooltipOpacity.value, inExclusiveRange(0, 1));
-        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(kAppFadeDuration - (kAppFadeDuration ~/ 2));
         expect(tooltipOpacity.value, 1);
         tester.widget<Slider>(find.byType(Slider)).onChangeEnd!(35000);
         await tester.pump();
         expect(find.text('Middle section'), findsOneWidget);
-        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(kAppFadeDuration ~/ 2);
         expect(tooltipOpacity.value, inExclusiveRange(0, 1));
-        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(kAppFadeDuration - (kAppFadeDuration ~/ 2));
         expect(tooltipOpacity.value, closeTo(0, 0.001));
         await tester.pump(const Duration(milliseconds: 1));
         await tester.pump();
@@ -3796,7 +3796,7 @@ void main() {
         final speedWidget = tester.widget(speed);
         expect(
           tester.widget<AppFadeThroughIndexedStack>(stack).duration,
-          const Duration(milliseconds: 300),
+          kAppFadeDuration,
         );
         expect(find.byType(EqualizerPage, skipOffstage: false), findsNothing);
         expect(
@@ -3843,11 +3843,11 @@ void main() {
           findsNothing,
         );
         await tester.pump();
-        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(kAppFadeDuration ~/ 2);
         expect(translation(0).dx, allOf(greaterThan(-1), lessThan(0)));
         expect(tester.widget(equalizer), same(equalizerWidget));
         expect(tester.widget(speed), same(speedWidget));
-        await tester.pump(const Duration(milliseconds: 149));
+        await tester.pump(kAppFadeDuration ~/ 2 - const Duration(milliseconds: 1));
         expect(excludesSemantics(equalizer), isTrue);
         await tester.pump(const Duration(milliseconds: 2));
         expect(translation(0), Offset.zero);
@@ -3857,9 +3857,9 @@ void main() {
         tester.widget<SegmentPanelPageHeader>(header).onSelected(2);
         await tester.pump();
         await tester.pump();
-        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(kAppFadeDuration ~/ 2);
         expect(excludesSemantics(speed), isTrue);
-        await tester.pump(const Duration(milliseconds: 151));
+        await tester.pump(kAppFadeDuration ~/ 2 + const Duration(milliseconds: 1));
         expect(translation(2), Offset.zero);
         expect(tester.state(speed), same(speedState));
         expect(excludesSemantics(speed), isFalse);
@@ -4141,7 +4141,7 @@ void main() {
       intermediate.center.dx,
       inExclusiveRange(start.center.dx, destination),
     );
-    await tester.pump(const Duration(milliseconds: 120));
+    await tester.pump(const Duration(milliseconds: 160));
     final end = capsule();
     expect(end.center.dx, closeTo(destination, 0.01));
     expect(end.width, greaterThan(intermediate.width));
@@ -5060,6 +5060,8 @@ void main() {
       covers.requestedPaths.clear();
       await tester.pumpWidget(fixture.build(const PlaylistTab()));
       await tester.pumpAndSettle();
+      await pumpUntilUiIdle(tester);
+      await tester.pumpAndSettle();
       final list = find.byKey(const PageStorageKey<String>('playlist_list'));
       final controller = tester.widget<ListView>(list).controller!;
       final viewportHeight = tester.getSize(list).height;
@@ -5419,7 +5421,7 @@ void main() {
           await tester.pump(const Duration(milliseconds: 120));
           expect(visibleInk(), isNotEmpty);
           await gesture.up();
-          await tester.pump(const Duration(milliseconds: 180));
+          await tester.pump(const Duration(milliseconds: 220));
           expect(visibleInk(), isEmpty);
           await tester.pumpAndSettle();
           expect(find.byType(PlaybackQueueAudioEditPage), findsOneWidget);
@@ -5528,7 +5530,7 @@ void main() {
             .value;
         expect(opacity(), 0);
         expect(tester.getRect(surface), originalRect);
-        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(kAppFadeDuration ~/ 2);
         expect(opacity(), closeTo(0.5, 0.03));
         final intermediateRect = tester.getRect(surface);
         expect(intermediateRect.top, originalRect.top);
@@ -5537,7 +5539,7 @@ void main() {
           find.text(i18n.tr('edit_queue_audio')).hitTestable(),
           findsNothing,
         );
-        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(kAppFadeDuration ~/ 2);
         expect(opacity(), 1);
         final save = find.widgetWithText(TextButton, i18n.tr('save'));
         final cancel = find.widgetWithText(TextButton, i18n.tr('cancel'));
@@ -5628,11 +5630,11 @@ void main() {
           tester.widget<TextField>(input).controller!.text,
           '  New queue  ',
         );
-        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(kAppFadeDuration ~/ 2);
         expect(opacity(), closeTo(0.5, 0.03));
         expect(tester.getRect(surface).top, originalRect.top);
         expect(tester.getRect(surface).bottom, greaterThan(nameRect.bottom));
-        await tester.pump(const Duration(milliseconds: 149));
+        await tester.pump(kAppFadeDuration ~/ 2 - const Duration(milliseconds: 1));
         expect(name, findsOneWidget);
         expect(
           find.text(i18n.tr('edit_queue_audio')).hitTestable(),
@@ -6300,7 +6302,7 @@ void main() {
         );
         expect(opacityOf(existing.id), 1);
         expect(opacityOf(created.id), reducedMotion ? 1 : 0);
-        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(kAppFadeDuration ~/ 2);
         expect(
           opacityOf(created.id),
           reducedMotion
@@ -6308,7 +6310,7 @@ void main() {
               : closeTo(kAppFadeCurve.transform(0.5), 0.001),
         );
         expect(tester.getRect(card), initialRect);
-        await tester.pump(const Duration(milliseconds: 149));
+        await tester.pump(kAppFadeDuration ~/ 2 - const Duration(milliseconds: 1));
         expect(opacityOf(created.id), reducedMotion ? equals(1) : lessThan(1));
         await tester.pump(const Duration(milliseconds: 1));
         expect(opacityOf(created.id), 1);
@@ -6948,7 +6950,7 @@ void main() {
 
     await tester.tap(find.text(languageProvider.tr('edit_queue_color')));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(kAppFadeDuration ~/ 2);
     expect(find.text(languageProvider.tr('edit_queue_audio')), findsOneWidget);
     final colorFade = find
         .ancestor(
@@ -7046,7 +7048,7 @@ void main() {
     await tester.pump();
     expect(find.text(languageProvider.tr('edit_queue_audio')), findsOneWidget);
     expect(colorPanelFinder, findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(kAppFadeDuration);
     await tester.pump(const Duration(milliseconds: 1));
     expect(colorPanelFinder, findsNothing);
     await tester.tap(find.text(languageProvider.tr('edit_queue_audio')));
@@ -8894,9 +8896,9 @@ void main() {
       ),
     );
 
-    // Mid reverse-animation: at 150ms, checkmark is still present and fading out
+    // Mid reverse-animation: checkmark is still present and fading out
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(kAppFadeDuration ~/ 2);
     expect(checkmarkFinder, findsOneWidget);
     final fadeOutOpacity = tester
         .widget<FadeTransition>(fadeTransitionFinder)
@@ -8905,8 +8907,8 @@ void main() {
     expect(fadeOutOpacity, greaterThan(0.0));
     expect(fadeOutOpacity, lessThan(1.0));
 
-    // After remaining reverse duration (total 325ms > 300ms), checkmark finishes fading out and is removed
-    await tester.pump(const Duration(milliseconds: 175));
+    // After remaining reverse duration, checkmark finishes fading out and is removed
+    await tester.pump(kAppFadeDuration ~/ 2 + const Duration(milliseconds: 25));
     expect(checkmarkFinder, findsNothing);
 
     // Verify reduced motion uses Duration.zero
@@ -10721,6 +10723,41 @@ void main() {
   );
 
   testWidgets(
+    'subtitle placeholder shows five bars and uses white in the dark theme',
+    (tester) async {
+      for (final brightness in Brightness.values) {
+        final theme = ThemeData(brightness: brightness);
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: theme,
+            themeAnimationDuration: Duration.zero,
+            home: const SessionSubtitlePlaceholder(),
+          ),
+        );
+        final bars = find.descendant(
+          of: find.byType(SessionSubtitlePlaceholder),
+          matching: find.byType(Container),
+        );
+        expect(bars, findsNWidgets(5));
+        final barOpacities = find.descendant(
+          of: find.byType(SessionSubtitlePlaceholder),
+          matching: find.byType(Opacity),
+        );
+        expect(
+          tester.widgetList<Opacity>(barOpacities).map((bar) => bar.opacity),
+          [0.21, 0.21, 0.60, 0.21, 0.21],
+        );
+        final expectedColor = brightness == Brightness.dark
+            ? Colors.white
+            : theme.colorScheme.surfaceContainerHighest;
+        for (final bar in tester.widgetList<Container>(bars)) {
+          expect((bar.decoration as BoxDecoration).color, expectedColor);
+        }
+      }
+    },
+  );
+
+  testWidgets(
     'detail subtitle prioritizes placeholder while loading and transitions when ready',
     (tester) async {
       final pendingSubtitle = Completer<SubtitleTrack?>();
@@ -11351,7 +11388,7 @@ void main() {
   }
 
   testWidgets(
-    'playlist multiselect keeps the toolbar at its scrolled position',
+    'playlist multiselect shows expanded header without resetting scroll position',
     (tester) async {
       final windows = defaultTargetPlatform == TargetPlatform.windows;
       final dpr = windows ? 1.25 : 1.0;
@@ -11417,6 +11454,8 @@ void main() {
       final list = find.byKey(const PageStorageKey<String>('playlist_list'));
       await pumpUntilFound(tester, list);
       await pumpFiniteTransitions(tester);
+      final expandedButtonY = tester.getCenter(normalButton).dy;
+      final expandedTitleY = tester.getTopLeft(normalTitle).dy;
       final scroll = tester
           .state<ScrollableState>(
             find.descendant(of: list, matching: find.byType(Scrollable)),
@@ -11450,9 +11489,9 @@ void main() {
           await tester.pump(const Duration(milliseconds: 16));
           for (final (control, expectedY) in [
             (normalButton, normalY),
-            (batchButton, normalY),
+            (batchButton, expandedButtonY),
             (normalTitle, titleY),
-            (batchTitle, titleY),
+            (batchTitle, expandedTitleY),
           ]) {
             if (control.evaluate().isNotEmpty) {
               final y = control == normalTitle || control == batchTitle
@@ -11467,16 +11506,20 @@ void main() {
           }
         }
         await pumpFiniteTransitions(tester);
-        expect(tester.getCenter(batchButton).dy, closeTo(normalY, 0.01));
+        expect(
+          tester.getCenter(batchButton).dy,
+          closeTo(expandedButtonY, 0.01),
+        );
         expect(scroll.pixels, offset);
         if (offset == 80) {
-          final count = find.text('1').hitTestable();
-          expect(count, findsOneWidget);
-          expect(
-            tester.widget<Text>(count).semanticsLabel,
+          final count = find.text(
             fixture.languageProvider.tr('selected_count', {'count': '1'}),
           );
-          expect(tester.getCenter(count).dy, closeTo(normalY, 0.01));
+          expect(count, findsOneWidget);
+          expect(
+            tester.getCenter(find.byKey(batchExit)).dy,
+            closeTo(expandedButtonY, 0.01),
+          );
         }
         await tester.tap(find.byKey(batchExit));
         await pumpFiniteTransitions(tester);
@@ -11738,9 +11781,15 @@ void main() {
       expect(trackSemantics.properties.selected, isTrue);
       expect(trackSemantics.properties.onTap, isNotNull);
 
+      final ordinaryCard = find.byWidgetPredicate(
+        (widget) =>
+            widget is SessionListCard && widget.sessionId == trackSession.id,
+      );
+      final retainedCard = tester.widget<SessionListCard>(ordinaryCard);
       await tester.tap(queueTitle);
       await pumpFiniteTransitions(tester);
 
+      expect(tester.widget<SessionListCard>(ordinaryCard), same(retainedCard));
       expect(trackIndicator, findsOneWidget);
       expect(queueIndicator, findsOneWidget);
       expect(tester.getTopLeft(trackTitle).dx, trackTitleX);
@@ -13304,9 +13353,9 @@ void main() {
       await tester.pump();
       expect(menuOpacity(), 0);
       expect(cover, findsNothing);
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(kAppFadeDuration ~/ 2);
       expect(menuOpacity(), allOf(greaterThan(0), lessThan(1)));
-      await tester.pump(const Duration(milliseconds: 149));
+      await tester.pump(kAppFadeDuration ~/ 2 - const Duration(milliseconds: 1));
       expect(menuOpacity(), lessThan(1));
       await tester.pump(const Duration(milliseconds: 1));
       expect(menuOpacity(), 1);

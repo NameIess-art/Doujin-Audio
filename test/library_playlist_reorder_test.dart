@@ -130,22 +130,12 @@ void main() {
             );
             if (pin) {
               if (platform == TargetPlatform.android) {
-                await tester.drag(moved, const Offset(180, 0));
+                await tester.longPress(moved);
                 await pumpAndSettleWithAsync(tester);
                 await tester.tap(
                   find.byTooltip(fixture.languageProvider.tr('pin_to_top')),
                 );
                 await tester.pump();
-                await tester.pump(const Duration(milliseconds: 110));
-                expect(tester.getTopLeft(moved).dy, before);
-                expect(pinBadge, findsNothing);
-                expect(
-                  libraryPage
-                      ? fixture.settings.pinnedLibraryPaths
-                      : fixture.settings.pinnedPlaylistSessionIds,
-                  isEmpty,
-                );
-                await tester.pump(const Duration(milliseconds: 111));
               } else {
                 await tester.tap(moved, buttons: 2);
                 await pumpAndSettleWithAsync(tester);
@@ -168,7 +158,7 @@ void main() {
                 ? PathMatcher.equivalenceKey(tracks.last.path)
                 : sessions.last.id;
             for (var i = 0; i < 100; i++) {
-              await tester.pump(const Duration(milliseconds: 16));
+              await tester.pump();
               if (tester
                       .widget<AnimatedReorder>(find.byType(AnimatedReorder))
                       .order
@@ -176,6 +166,7 @@ void main() {
                   movedId) {
                 break;
               }
+              await tester.pump(const Duration(milliseconds: 16));
               await tester.runAsync(
                 () => Future<void>.delayed(const Duration(milliseconds: 10)),
               );

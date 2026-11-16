@@ -5,7 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
-const kAppQuickTapFeedback = Duration(milliseconds: 60);
+const kAppQuickTapFeedback = Duration(milliseconds: 80);
 
 class AppTapHighlightFactory extends InteractiveInkFeatureFactory {
   const AppTapHighlightFactory({
@@ -124,7 +124,7 @@ class _EntrySplash extends InteractiveInkFeature {
   Timer? _release;
 
   Duration get _expandDuration => Duration(
-    milliseconds: showQuickTap ? 190 : 145,
+    milliseconds: showQuickTap ? 240 : 185,
   );
 
   void _handleTick() {
@@ -269,8 +269,8 @@ class _EntrySplash extends InteractiveInkFeature {
     _quickTapConfirm = !_painted || _confirmStartExpand < 0.65;
     final fadeDuration = Duration(
       milliseconds: _quickTapConfirm
-          ? (showQuickTap ? 160 : 120)
-          : (showQuickTap ? 125 : 105),
+          ? (showQuickTap ? 200 : 155)
+          : (showQuickTap ? 165 : 135),
     );
     _fadeController =
         AnimationController(vsync: controller.vsync, duration: fadeDuration)

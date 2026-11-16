@@ -274,11 +274,11 @@ void main() {
       () => ColorScheme.fromImageProvider(provider: FileImage(file)),
     ))!.primary;
     expect(_theme(tester).colorScheme.primary, original);
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 190));
     final halfway = _theme(tester).colorScheme.primary;
     expect(halfway, isNot(original));
     expect(halfway, isNot(destination));
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 190));
     expect(_theme(tester).colorScheme.primary, destination);
     expect(tester.element(find.byKey(_probeKey)), same(originalElement));
   });
@@ -436,7 +436,7 @@ void main() {
         isNot(paused.colorScheme.primary),
       );
       expect(_paletteAnimation(tester).status, AnimationStatus.forward);
-      await tester.pump(const Duration(milliseconds: 101));
+      await tester.pump(const Duration(milliseconds: 181));
       expect(_paletteAnimation(tester).status, AnimationStatus.completed);
       await tester.pumpAndSettle();
     },

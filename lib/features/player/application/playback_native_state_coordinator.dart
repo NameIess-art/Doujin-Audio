@@ -473,4 +473,70 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
     if (sessionId.isEmpty || _sessionActivations.isClosed) return;
     _sessionActivations.add(sessionId);
   }
+
+  Future<bool> _pauseAllSessions() async {
+    final candidates = _captureActivePlayback();
+    final sequence = ++_pauseSequence;
+    final confirmed = <String, String>{};
+    final requestedSessions = <PlaybackSession, (int, int)>{};
+    for (final session in _service.sessions.values) {
+      session.invalidatePreparation();
+      session.failTransportCommand(session.transportCommandId);
+      requestedSessions[session] = (
+        session.loadGeneration,
+        session.playbackCommandGeneration,
+      );
+      _service.publishSession(session);
+    }
+    final response = await nativeRepository.pauseAll();
+    if (response.isFailure) {
+      _logNativeCommandFailure('pauseAllSessions', response);
+    }
+    final snapshotResult = await nativeRepository.snapshot();
+    if (snapshotResult.isFailure) {
+      _logNativeCommandFailure('pauseAllSessions.snapshot', snapshotResult);
+    }
+    final nativeSessions = {
+      for (final snapshot
+          in snapshotResult.valueOrNull?.sessions ??
+              const <NativePlaybackSnapshot>[])
+        snapshot.sessionId: snapshot,
+    };
+    for (final entry in requestedSessions.entries) {
+      final session = entry.key;
+      if (!isRegisteredSession(session) ||
+          session.loadGeneration != entry.value.$1 ||
+          session.playbackCommandGeneration != entry.value.$2) {
+        continue;
+      }
+      final snapshot = nativeSessions[session.id];
+      if (snapshot == null && response.isFailure) continue;
+      if (snapshot != null) {
+        final commandId = snapshot.transportCommandId;
+        if (commandId != null && commandId < session.transportCommandId) {
+          continue;
+        }
+        _applyPauseSnapshot(snapshot);
+      } else {
+        session.loadedPath = null;
+        if (session.state.processingState != ProcessingState.completed) {
+          session.setOptimisticState(processingState: ProcessingState.idle);
+        }
+      }
+      if (snapshot != null && (snapshot.playWhenReady || snapshot.playing)) {
+        continue;
+      }
+      session.confirmPaused();
+      if (candidates.containsKey(session.id)) {
+        confirmed[session.id] = session.currentTrackPath;
+      }
+    }
+    // A successful pause can retire the native runtime before the snapshot.
+    // After a failure, only sessions confirmed by a snapshot enter the batch.
+    _rememberPausedBatch(confirmed, sequence: sequence);
+    _notifySessionStateChanged();
+    _onRuntimeStateChanged?.call();
+    scheduleSessionStatePersistence();
+    return response.isOk;
+  }
 }

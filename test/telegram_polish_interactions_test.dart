@@ -580,8 +580,8 @@ void main() {
         final dragTween = tester.widget<TweenAnimationBuilder<double>>(
           find.byType(TweenAnimationBuilder<double>),
         );
-        expect(dragTween.duration, const Duration(milliseconds: 55));
-        expect(dragTween.curve, Curves.easeOutCubic);
+        expect(dragTween.duration, Duration.zero);
+        expect(dragTween.curve, Curves.linear);
 
         await gesture.moveBy(const Offset(-52, 0));
         await tester.pump(const Duration(milliseconds: 60));
@@ -592,11 +592,19 @@ void main() {
             matching: find.byType(AnimatedScale),
           ),
         );
-        expect(paneScale.duration, kAppMotionStandard);
+        expect(paneScale.duration, Duration.zero);
         expect(paneScale.curve, kAppSpringBackCurve);
 
         await gesture.up();
         await tester.pump();
+
+        final releasedPaneScale = tester.widget<AnimatedScale>(
+          find.descendant(
+            of: find.byType(SwipeRevealActionPane),
+            matching: find.byType(AnimatedScale),
+          ),
+        );
+        expect(releasedPaneScale.duration, kAppMotionStandard);
 
         final releaseTween = tester.widget<TweenAnimationBuilder<double>>(
           find.byType(TweenAnimationBuilder<double>),

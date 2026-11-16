@@ -218,14 +218,14 @@ void main() {
       commit: () => commits++,
     );
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 250));
     expect(commits, 0);
     refresh.complete();
     await tester.pump();
     await future;
     await tester.pump(const Duration(milliseconds: 100));
     expect(commits, 0);
-    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump(const Duration(milliseconds: 310));
     await tester.pump(const Duration(milliseconds: 180));
     await tester.pump();
     expect(commits, 1);

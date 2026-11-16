@@ -142,7 +142,7 @@ class SwipeRevealActionPane extends StatelessWidget {
                       opacity: 0.24 + progress * 0.76,
                       duration: disableAnimations
                           ? Duration.zero
-                          : const Duration(milliseconds: 160),
+                          : const Duration(milliseconds: 220),
                       curve: Curves.easeOutCubic,
                       child: LayoutBuilder(
                         builder: (context, constraints) => Column(

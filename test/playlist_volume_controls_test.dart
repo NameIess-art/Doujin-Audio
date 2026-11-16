@@ -404,7 +404,11 @@ void main() {
               .widgetList<Transform>(
                 find.ancestor(of: iconFinder, matching: find.byType(Transform)),
               )
-              .any((w) => !w.transformHitTests && w.transform.entry(0, 0) > 1.0),
+              .every(
+                (w) =>
+                    w.transformHitTests ||
+                    (w.transform.entry(0, 0) - 1.0).abs() < 0.001,
+              ),
           isTrue,
         );
         expect(

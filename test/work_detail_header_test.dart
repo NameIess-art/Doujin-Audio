@@ -13,57 +13,38 @@ void main() {
       'RJ and circle support tap, action menus and hover in $brightness',
       (tester) async {
         final copied = <String>[];
-        final capture = GlobalKey();
         final theme = ThemeData(brightness: brightness);
         await tester.pumpWidget(
           MaterialApp(
             theme: theme,
             home: Scaffold(
-              body: RepaintBoundary(
-                key: capture,
-                child: SizedBox(
-                  width: 400,
-                  height: 300,
-                  child: CustomScrollView(
-                    slivers: [
-                      SliverPersistentHeader(
-                        delegate: WorkDetailHeaderDelegate(
-                          topSafeArea: 0,
-                          coverMaxHeight: 240,
-                          coverMinHeight: 120,
-                          rjBarHeight: 44,
-                          title: 'Title',
-                          rjCode: 'RJ123456',
-                          circleName: 'Circle',
-                          coverWidget: const ColoredBox(color: Colors.blue),
-                          accentColor: theme.colorScheme.primary,
-                          surfaceColor: theme.colorScheme.surface,
-                          onCopyMetadata: copied.add,
-                        ),
+              body: SizedBox(
+                width: 400,
+                height: 300,
+                child: CustomScrollView(
+                  slivers: [
+                    SliverPersistentHeader(
+                      delegate: WorkDetailHeaderDelegate(
+                        topSafeArea: 0,
+                        coverMaxHeight: 240,
+                        coverMinHeight: 120,
+                        rjBarHeight: 44,
+                        title: 'Title',
+                        rjCode: 'RJ123456',
+                        circleName: 'Circle',
+                        coverWidget: const ColoredBox(color: Colors.blue),
+                        accentColor: theme.colorScheme.primary,
+                        surfaceColor: theme.colorScheme.surface,
+                        onCopyMetadata: copied.add,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
         );
         await tester.pumpAndSettle();
-        Future<List<int>> pixel(Offset point) async =>
-            (await tester.runAsync(() async {
-              final boundary = tester.renderObject<RenderRepaintBoundary>(
-                find.byKey(capture),
-              );
-              final image = await boundary.toImage();
-              final bytes = (await image.toByteData())!;
-              final offset =
-                  (point.dy.floor() * image.width + point.dx.floor()) * 4;
-              final result = bytes.buffer
-                  .asUint8List(bytes.offsetInBytes + offset, 4)
-                  .toList();
-              image.dispose();
-              return result;
-            }))!;
         final isWindows = defaultTargetPlatform == TargetPlatform.windows;
         final mouse = isWindows
             ? await tester.createGesture(kind: PointerDeviceKind.mouse)
@@ -80,14 +61,18 @@ void main() {
           expect(targetRect.height, closeTo(textRect.height + 4, 0.01));
           if (mouse != null) {
             final rect = tester.getRect(target);
-            final point = Offset(rect.center.dx, rect.top + 3);
-            final before = await pixel(point);
+            Color? linkColor() => DefaultTextStyle.of(
+              tester.element(
+                find.descendant(of: target, matching: find.byType(Text)),
+              ),
+            ).style.color;
+            final beforeColor = linkColor();
             await mouse.moveTo(rect.center);
             await tester.pumpAndSettle();
-            expect(await pixel(point), isNot(before), reason: entry.key);
+            expect(linkColor(), isNot(beforeColor), reason: entry.key);
             await mouse.moveTo(const Offset(500, 500));
             await tester.pumpAndSettle();
-            expect(await pixel(point), before, reason: entry.key);
+            expect(linkColor(), beforeColor, reason: entry.key);
           }
           await tester.tap(target);
           await tester.pumpAndSettle();

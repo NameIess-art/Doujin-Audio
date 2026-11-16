@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_buttons.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/player/presentation/timer_tab.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
@@ -484,7 +485,8 @@ void main() {
 
       expect(find.text('倒计时进行中'), findsOneWidget);
       expect(find.text('确认并立即开始'), findsOneWidget);
-      await tester.pump(const Duration(milliseconds: 150));
+      final halfFade = kAppFadeDuration ~/ 2;
+      await tester.pump(halfFade);
       final detailFade = find
           .ancestor(
             of: find.text('倒计时进行中'),
@@ -495,7 +497,7 @@ void main() {
         tester.widget<FadeTransition>(detailFade).opacity.value,
         closeTo(0.5, 0.03),
       );
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(kAppFadeDuration - halfFade);
       await tester.pump(const Duration(milliseconds: 1));
       expect(find.text('确认并立即开始'), findsOneWidget);
       expect(find.text('确认并立即开始').hitTestable(), findsNothing);
@@ -521,7 +523,7 @@ void main() {
       await tester.pump();
       await tester.pump();
       expect(find.text('倒计时进行中'), findsOneWidget);
-      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(kAppFadeDuration);
       await tester.pump(const Duration(milliseconds: 1));
       expect(find.text('倒计时进行中'), findsNothing);
       expect(tester.getRect(panel).size, setupPanelRect.size);

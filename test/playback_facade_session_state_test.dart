@@ -2861,9 +2861,9 @@ void main() {
       queueSession.playbackQueue?.entries.single.tracks.single.displayName,
       'Updated',
     );
-    // Adding publishes the definition before synchronization, then its expanded
-    // track snapshots after synchronization.
-    expect(changeCount, 6);
+    // Metadata-only queue edits publish session snapshots without firing
+    // full runtime change notifications; adding publishes before and after sync.
+    expect(changeCount, 4);
     expect(synchronizeCount, 2);
     expect(addedEntry.id, startsWith('queue_entry_'));
     expect(queueSession.playbackQueue?.entries, hasLength(1));

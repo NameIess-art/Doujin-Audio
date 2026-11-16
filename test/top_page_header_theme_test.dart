@@ -284,7 +284,7 @@ void main() {
         expect(midRRect.center.dx, inExclusiveRange(startCenter, endCenter));
         expect(midRRect.width, inExclusiveRange(startWidth, endWidth));
 
-        await tester.pump(const Duration(milliseconds: 120));
+        await tester.pump(const Duration(milliseconds: 160));
         final endRRect = readIndicatorRRect()!;
         expect(endRRect.center.dx, closeTo(endCenter, 0.01));
         expect(endRRect.width, closeTo(endWidth, 0.01));

@@ -37,7 +37,7 @@ class _WorkDetailBreadcrumbsState extends State<WorkDetailBreadcrumbs> {
         } else {
           _scrollController.animateTo(
             target,
-            duration: const Duration(milliseconds: 200),
+            duration: const Duration(milliseconds: 260),
             curve: Curves.easeOut,
           );
         }

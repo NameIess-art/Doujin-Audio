@@ -128,8 +128,8 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
     _retainedResultsBody = widget.resultsBody;
     _resultsController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 150),
-      reverseDuration: const Duration(milliseconds: 150),
+      duration: const Duration(milliseconds: 200),
+      reverseDuration: const Duration(milliseconds: 200),
       value: widget.resultsBody == null ? 0.0 : 1.0,
     )..addStatusListener(_handleResultsAnimationStatus);
     _resultsOpacity = _resultsController.drive(

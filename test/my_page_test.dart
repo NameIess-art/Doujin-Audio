@@ -469,7 +469,7 @@ void main() {
           await tester.pump();
           expect(
             tester.widget<AnimatedSwitcher>(transition).duration,
-            reducedMotion ? Duration.zero : const Duration(milliseconds: 300),
+            reducedMotion ? Duration.zero : kAppFadeDuration,
           );
           if (!reducedMotion) {
             expect(opacity(MyInterestType.tags), 1);
@@ -483,10 +483,13 @@ void main() {
               ),
               findsWidgets,
             );
-            await tester.pump(const Duration(milliseconds: 150));
+            final halfFade = kAppFadeDuration ~/ 2;
+            await tester.pump(halfFade);
             expect(opacity(MyInterestType.tags), closeTo(.5, .05));
             expect(opacity(MyInterestType.voiceActors), closeTo(.5, .05));
-            await tester.pump(const Duration(milliseconds: 149));
+            await tester.pump(
+              kAppFadeDuration - halfFade - const Duration(milliseconds: 1),
+            );
             expect(panel(MyInterestType.tags), findsOneWidget);
             await tester.pump(const Duration(milliseconds: 1));
             expect(opacity(MyInterestType.tags), closeTo(0, .001));
@@ -968,16 +971,21 @@ void main() {
                 tester.widget<FadeTransition>(contentFade).opacity.value,
                 0,
               );
-              await tester.pump(const Duration(milliseconds: 150));
+              final halfTransition = kPlaceholderContentTransitionDuration ~/ 2;
+              await tester.pump(halfTransition);
               expect(
                 tester.widget<FadeTransition>(skeletonFade).opacity.value,
-                closeTo(1 - kAppFadeCurve.transform(0.5), 0.001),
+                closeTo(1 - kAppSpringCurve.transform(0.5), 0.001),
               );
               expect(
                 tester.widget<FadeTransition>(contentFade).opacity.value,
-                closeTo(kAppFadeCurve.transform(0.5), 0.001),
+                closeTo(kAppSpringCurve.transform(0.5), 0.001),
               );
-              await tester.pump(const Duration(milliseconds: 149));
+              await tester.pump(
+                kPlaceholderContentTransitionDuration -
+                    halfTransition -
+                    const Duration(milliseconds: 1),
+              );
               expect(skeleton, findsOneWidget);
               expect(
                 tester.widget<FadeTransition>(skeletonFade).opacity.value,

@@ -215,7 +215,7 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
       } else {
         controller.animateTo(
           offset,
-          duration: const Duration(milliseconds: 220),
+          duration: const Duration(milliseconds: 280),
           curve: Curves.easeOut,
         );
       }

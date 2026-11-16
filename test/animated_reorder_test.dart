@@ -111,7 +111,7 @@ void main() {
     void onTap(int id) => tapped = id;
     await tester.pumpWidget(list([0, 1, 2, 3], onTap: onTap));
     await tester.pumpWidget(list([3, 0, 1, 2], onTap: onTap));
-    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 130));
     await tester.tapAt(
       tester.getTopLeft(find.text('entry-3')) + const Offset(4, 4),
     );

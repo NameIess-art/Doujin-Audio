@@ -130,6 +130,7 @@ class MarqueeText extends StatefulWidget {
     this.scrollSpeed = 30.0,
     this.edgePadding = 8.0,
     this.forceMarquee = false,
+    this.animateOnAndroid = false,
     this.child,
   });
 
@@ -139,6 +140,7 @@ class MarqueeText extends StatefulWidget {
   final double scrollSpeed;
   final double edgePadding;
   final bool forceMarquee;
+  final bool animateOnAndroid;
   final Widget? child;
 
   @override
@@ -164,7 +166,11 @@ class _MarqueeTextState extends State<MarqueeText>
   ValueListenable<bool>? _scrollActivity;
   ValueListenable<TickerModeData>? _tickerMode;
 
-  bool get _pauseRequested => !_canAnimate || (_scrollActivity?.value ?? false);
+  bool get _usesStaticAndroidText =>
+      defaultTargetPlatform == TargetPlatform.android && !widget.animateOnAndroid;
+
+  bool get _pauseRequested =>
+      _usesStaticAndroidText || !_canAnimate || (_scrollActivity?.value ?? false);
   bool get _animationAllowed =>
       !_pauseRequested && (_tickerMode?.value.enabled ?? true);
 
@@ -180,7 +186,6 @@ class _MarqueeTextState extends State<MarqueeText>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _canAnimate =
-        defaultTargetPlatform != TargetPlatform.android &&
         !MediaQuery.disableAnimationsOf(context) &&
         !MarqueePauseScope.isPausedOf(context);
     final tickerMode = TickerMode.getValuesNotifier(context);
@@ -339,7 +344,7 @@ class _MarqueeTextState extends State<MarqueeText>
 
   @override
   Widget build(BuildContext context) {
-    if (defaultTargetPlatform == TargetPlatform.android) {
+    if (_usesStaticAndroidText) {
       return widget.child ??
           Text(
             widget.text,

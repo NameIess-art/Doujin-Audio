@@ -282,8 +282,8 @@ class _UnifiedDropdownPointerShell extends StatelessWidget {
                     duration: disableAnimations
                         ? Duration.zero
                         : (pressed
-                              ? const Duration(milliseconds: 60)
-                              : const Duration(milliseconds: 160)),
+                              ? const Duration(milliseconds: 85)
+                              : const Duration(milliseconds: 210)),
                     curve: kAppSpringCurve,
                     child: innerTrigger,
                   );
@@ -291,7 +291,7 @@ class _UnifiedDropdownPointerShell extends StatelessWidget {
             return AnimatedContainer(
               duration: disableAnimations
                   ? Duration.zero
-                  : const Duration(milliseconds: 90),
+                  : const Duration(milliseconds: 130),
               curve: Curves.easeOut,
               decoration: BoxDecoration(
                 borderRadius: AppRadius.borderMedium,

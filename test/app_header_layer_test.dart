@@ -946,7 +946,7 @@ void main() {
       );
       visible.value = true;
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(kAppFadeDuration ~/ 2);
       final middle = (await _pixels(tester, surface, [
         const Offset(8, 50),
       ])).single;
@@ -1200,7 +1200,7 @@ void main() {
     selected.value = 0;
     await tester.pump();
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(kAppFadeDuration ~/ 2);
     final returningRect = tester.getRect(
       find.byKey(const ValueKey('0-header')),
     );

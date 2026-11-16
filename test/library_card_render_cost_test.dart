@@ -94,7 +94,7 @@ void main() {
         final center = tester.getCenter(action);
         await mouse.moveTo(center);
         await tester.pump();
-        for (var frame = 0; frame < 6; frame++) {
+        for (var frame = 0; frame < 10; frame++) {
           await tester.pump(const Duration(milliseconds: 15));
           expect(scaleOf(tester, activeIcon), 1.0);
           if (frame == 2) {
@@ -112,18 +112,18 @@ void main() {
         expect(visibleInk(), isEmpty);
         await mouse.down(center);
         await tester.pump();
-        await tester.pump(const Duration(milliseconds: 60));
+        await tester.pump(const Duration(milliseconds: 90));
         expect(scaleOf(tester, activeIcon), 0.82);
         expect(scaleOf(tester, otherIcon), 1.0);
         expect(visibleInk(), isEmpty);
         await mouse.up();
         await tester.pump();
-        await tester.pump(const Duration(milliseconds: 90));
+        await tester.pump(const Duration(milliseconds: 140));
         expect(scaleOf(tester, activeIcon), 1.0);
       }
       await mouse.moveTo(Offset.zero);
       await tester.pump();
-      for (var frame = 0; frame < 8; frame++) {
+      for (var frame = 0; frame < 10; frame++) {
         await tester.pump(const Duration(milliseconds: 15));
         expect(scaleOf(tester, Icons.play_arrow_rounded), 1.0);
       }

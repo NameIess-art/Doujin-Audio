@@ -188,7 +188,7 @@ Future<T?> showAppDialog<T>({
                 padding: MediaQuery.viewInsetsOf(dialogContext),
                 duration: MediaQuery.disableAnimationsOf(dialogContext)
                     ? Duration.zero
-                    : const Duration(milliseconds: 100),
+                    : const Duration(milliseconds: 140),
                 curve: Curves.decelerate,
                 // The host consumes IME insets once, including for Material
                 // dialogs that would otherwise apply the same insets again.

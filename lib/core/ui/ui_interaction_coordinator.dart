@@ -208,11 +208,21 @@ class UiInteractionCoordinator extends ChangeNotifier {
   void scheduleCommitFrame() {
     if (_frameScheduled || !_hasRunnableCommits) return;
     _frameScheduled = true;
-    SchedulerBinding.instance.scheduleFrameCallback((_) {
+    final scheduler = SchedulerBinding.instance;
+    scheduler.scheduleFrameCallback((_) {
       _frameScheduled = false;
       _flushCommitFrame();
     });
-    SchedulerBinding.instance.scheduleFrame();
+    if (scheduler.schedulerPhase == SchedulerPhase.transientCallbacks ||
+        scheduler.schedulerPhase == SchedulerPhase.midFrameMicrotasks) {
+      // hasScheduledFrame stays true until handleDrawFrame, so request the
+      // follow-up commit frame once this frame finishes drawing.
+      scheduler.addPostFrameCallback((_) {
+        if (_frameScheduled) scheduler.scheduleFrame();
+      });
+    } else {
+      scheduler.scheduleFrame();
+    }
   }
 
   void _flushCommitFrame() {

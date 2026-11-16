@@ -693,7 +693,7 @@ class HeaderFloatingSurface extends StatelessWidget {
         ? AnimatedContainer(
             duration: reduceMotion
                 ? Duration.zero
-                : Duration(milliseconds: isPressed ? 60 : 90),
+                : Duration(milliseconds: isPressed ? 85 : 130),
             curve: Curves.easeOutQuad,
             decoration: decoration,
             child: innerChild,

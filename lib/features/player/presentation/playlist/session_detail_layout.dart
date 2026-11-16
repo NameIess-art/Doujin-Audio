@@ -216,8 +216,10 @@ class SessionDetailLayout extends StatelessWidget {
               AnimatedContainer(
                 duration: MediaQuery.disableAnimationsOf(context)
                     ? Duration.zero
-                    : const Duration(milliseconds: 280),
-                curve: Curves.easeInOutCubic,
+                    : kAppMotionStandard,
+                curve: segmentPanelExpanded
+                    ? kAppSpringCurve
+                    : Curves.easeOutCubic,
                 margin: EdgeInsets.symmetric(horizontal: coverHorizontalMargin),
                 height: coverHeight,
                 width: double.infinity,

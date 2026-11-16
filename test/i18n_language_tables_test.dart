@@ -95,6 +95,7 @@ void main() {
       'about_wiki',
       'about_feedback',
       'about_feedback_open_failed',
+      'about_feedback_page_open_failed',
       'about_wiki_open_failed',
       'about_author',
       'about_reward',

@@ -384,6 +384,13 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
           if (bindingSynchronously) {
             applyPath();
           } else {
+            final alreadyApplied =
+                _isResolved &&
+                path != null &&
+                path.isNotEmpty &&
+                _resolvedPath == path &&
+                _retryAttempt == 0;
+            if (alreadyApplied) return;
             UiInteractionCoordinator.instance.scheduleCommit(
               key: _commitKey,
               priority: 20,

@@ -299,7 +299,8 @@ void main() {
       expect(opacities(), everyElement(0));
       expect(shimmerFinders, findsNWidgets(4));
 
-      await tester.pump(const Duration(milliseconds: 150));
+      final halfFade = kPlaceholderContentTransitionDuration ~/ 2;
+      await tester.pump(halfFade);
       expect(opacities(), everyElement(inExclusiveRange(0, 1)));
       expect(shimmerFinders, findsNWidgets(4));
       expect(
@@ -307,7 +308,11 @@ void main() {
         closeTo(firstPlaceholderRect.right, 0.5),
       );
 
-      await tester.pump(const Duration(milliseconds: 149));
+      await tester.pump(
+        kPlaceholderContentTransitionDuration -
+            halfFade -
+            const Duration(milliseconds: 1),
+      );
       expect(shimmerFinders, findsNWidgets(4));
       await tester.pump(const Duration(milliseconds: 1));
       expect(opacities(), everyElement(1));

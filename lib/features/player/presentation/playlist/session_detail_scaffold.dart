@@ -172,13 +172,21 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
   }
 
   void _handleDragDismissStart(DragStartDetails details) {
-    if (widget.transitionActive.value || _dragDismissClosing) return;
+    if (widget.transitionActive.value ||
+        _dragDismissClosing ||
+        widget.segmentPanelExpandedNotifier.value) {
+      return;
+    }
     _dragResetController.stop();
     UiInteractionCoordinator.instance.beginInteraction(_dragDismissInteraction);
   }
 
   void _handleDragDismissUpdate(DragUpdateDetails details) {
-    if (widget.transitionActive.value || _dragDismissClosing) return;
+    if (widget.transitionActive.value ||
+        _dragDismissClosing ||
+        (_dragOffset.value == 0 && widget.segmentPanelExpandedNotifier.value)) {
+      return;
+    }
     final delta = details.delta.dy;
     final offset = _dragOffset.value;
     final maxOffset = MediaQuery.sizeOf(context).height * 0.65;
@@ -488,6 +496,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                     children: [
                       if (isLandscape) statusIndicators,
                       Positioned.fill(
+                        key: const ValueKey('session_detail_content_layer'),
                         top: isLandscape
                             ? 0
                             : headerTop + AppPageHeaderMetrics.buttonSize + 8,
@@ -709,42 +718,44 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
       onVerticalDragEnd: allowVerticalDismiss ? _handleDragDismissEnd : null,
       onVerticalDragCancel:
           allowVerticalDismiss ? _handleDragDismissCancel : null,
-      child: allowVerticalDismiss
-          ? ValueListenableBuilder<double>(
-              valueListenable: _dragOffset,
-              // Keep the subtitle scroll position when the page starts moving.
-              child: content,
-              builder: (context, offset, child) {
-                final dragFraction = (offset / 320.0).clamp(0.0, 1.0);
-                return Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    IgnorePointer(
-                      child: ColoredBox(
-                        color: Colors.black.withValues(
-                          alpha: offset > 0 ? 0.28 * (1.0 - dragFraction) : 0,
-                        ),
-                      ),
-                    ),
-                    Transform.translate(
-                      offset: Offset(0, offset),
-                      child: Transform.scale(
-                        scale: 1.0 - (0.045 * dragFraction),
-                        alignment: Alignment.topCenter,
-                        child: ClipRRect(
-                          clipBehavior: offset > 0 ? Clip.antiAlias : Clip.none,
-                          borderRadius: BorderRadius.circular(
-                            24.0 * dragFraction,
-                          ),
-                          child: child,
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            )
-          : content,
+      child: ValueListenableBuilder<double>(
+        valueListenable: _dragOffset,
+        // Keep the subtitle scroll position and console state across drags and
+        // orientation changes.
+        child: content,
+        builder: (context, offset, child) {
+          final effectiveOffset = allowVerticalDismiss ? offset : 0.0;
+          final dragFraction = (effectiveOffset / 320.0).clamp(0.0, 1.0);
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              IgnorePointer(
+                child: ColoredBox(
+                  color: Colors.black.withValues(
+                    alpha: effectiveOffset > 0
+                        ? 0.28 * (1.0 - dragFraction)
+                        : 0,
+                  ),
+                ),
+              ),
+              Transform.translate(
+                offset: Offset(0, effectiveOffset),
+                child: Transform.scale(
+                  scale: 1.0 - (0.045 * dragFraction),
+                  alignment: Alignment.topCenter,
+                  child: ClipRRect(
+                    clipBehavior: effectiveOffset > 0
+                        ? Clip.antiAlias
+                        : Clip.none,
+                    borderRadius: BorderRadius.circular(24.0 * dragFraction),
+                    child: child,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }

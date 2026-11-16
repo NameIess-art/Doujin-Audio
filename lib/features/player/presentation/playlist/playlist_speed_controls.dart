@@ -136,7 +136,7 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
 
   void _resetSpeed() {
     final index = _nearestSpeedIndex(1.0);
-    _scrollToSpeedIndex(index, duration: const Duration(milliseconds: 180));
+    _scrollToSpeedIndex(index, duration: const Duration(milliseconds: 240));
   }
 
   void _scrollToSpeedIndex(int index, {required Duration duration}) {
@@ -249,14 +249,14 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
                         onTap: () {
                           _scrollToSpeedIndex(
                             index,
-                            duration: const Duration(milliseconds: 300),
+                            duration: const Duration(milliseconds: 360),
                           );
                         },
                         child: Center(
                           child: AnimatedDefaultTextStyle(
                             duration: MediaQuery.disableAnimationsOf(context)
                                 ? Duration.zero
-                                : const Duration(milliseconds: 140),
+                                : const Duration(milliseconds: 190),
                             curve: Curves.easeOutCubic,
                             style: selected
                                 ? Theme.of(
@@ -314,7 +314,7 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
                                 _wheelTargetIndex != nextIndex) {
                               _scrollToSpeedIndex(
                                 nextIndex,
-                                duration: const Duration(milliseconds: 150),
+                                duration: const Duration(milliseconds: 200),
                               );
                             }
                           },

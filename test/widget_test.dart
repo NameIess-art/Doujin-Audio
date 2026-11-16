@@ -146,6 +146,12 @@ void main() {
       expect(highlight.top, closeTo(expected.top, 0.01));
       expect(highlight.right, closeTo(expected.right, 0.01));
       expect(highlight.bottom, closeTo(expected.bottom, 0.01));
+      final icon = find.descendant(
+        of: destination,
+        matching: find.byType(Icon),
+      );
+      expect(tester.getCenter(icon).dx, closeTo(highlight.center.dx, 0.01));
+      expect(tester.getCenter(icon).dy, closeTo(highlight.center.dy, 0.01));
     }
 
     await open(my);
@@ -1301,10 +1307,19 @@ void main() {
       );
       await tester.pump();
       for (var frame = 0; frame < 22; frame++) {
+        if (frame == 11) {
+          expect(
+            rebuilds['Icon'] ?? 0,
+            lessThanOrEqualTo(18),
+            reason:
+                'Icon rebuilt excessively during tap tint / branch change (expanding: $expanding)',
+          );
+          rebuilds['Icon'] = 0;
+        }
         await tester.pump(const Duration(milliseconds: 16));
       }
-      // Allow the collapsed/expanded branch change, but no per-frame rebuilds
-      // of the icons, paging delegate, cover or playback text.
+      // After the tapped destination's release tint finishes (160 ms), dock
+      // motion must not rebuild icons or static playback subtree every frame.
       for (final type in [
         'Icon',
         'PageView',
@@ -1441,7 +1456,7 @@ void main() {
     final selectedIndicator = find.byKey(
       const ValueKey<String>('mobile_navigation_indicator'),
     );
-    final slotWidth = navigationRect.width / 5;
+    final slotWidth = (navigationRect.width - 12) / 5;
     expect(
       tester.getRect(anchorDestination).left,
       closeTo(navigationRect.left, 0.01),
@@ -1453,6 +1468,28 @@ void main() {
     expect(
       tester.getSize(selectedIndicator).width,
       closeTo(slotWidth, 0.01),
+    );
+    expect(
+      tester
+          .getCenter(
+            find.descendant(
+              of: anchorDestination,
+              matching: find.byType(Icon),
+            ),
+          )
+          .dx,
+      closeTo(navigationRect.left + 6 + slotWidth / 2, 0.01),
+    );
+    expect(
+      tester
+          .getCenter(
+            find.descendant(
+              of: trailingDestination,
+              matching: find.byType(Icon),
+            ),
+          )
+          .dx,
+      closeTo(navigationRect.right - 6 - slotWidth / 2, 0.01),
     );
 
     final collapsedCoverCenter = tester.getCenter(playbackCover);
@@ -1473,7 +1510,10 @@ void main() {
     );
     expect(
       tester.getCenter(trailingDestination).dx,
-      inInclusiveRange(expandedTrailingX, tester.getRect(navigation).right),
+      inInclusiveRange(
+        expandedTrailingX - 0.01,
+        tester.getRect(navigation).right,
+      ),
     );
     await tester.pump(const Duration(milliseconds: 100));
     expect(
@@ -1602,7 +1642,7 @@ void main() {
 
     Future<List<List<double>>> sampleMotion() async {
       final frames = [iconPositions()];
-      for (var frame = 0; frame < 10; frame++) {
+      for (var frame = 0; frame < 12; frame++) {
         await tester.pump(const Duration(milliseconds: 30));
         frames.add(iconPositions());
       }
@@ -1809,9 +1849,9 @@ void main() {
       expect(playback, findsOneWidget);
 
       previousCoverX = tester.getCenter(cover).dx;
-      for (var frame = 0; frame < 18; frame++) {
+      for (var frame = 0; frame < 19; frame++) {
         await tester.pump(const Duration(milliseconds: 16));
-        if (frame == 17) break;
+        if (frame == 18) break;
         final coverRect = tester.getRect(cover);
         final playbackRect = tester.getRect(playback);
         expect(tester.getSize(playback), const Size.square(56));
@@ -1896,7 +1936,7 @@ void main() {
       await tester.longPress(card);
       await tester.pump();
 
-      for (var frame = 0; frame < 25; frame++) {
+      for (var frame = 0; frame < 29; frame++) {
         await tester.pump(const Duration(milliseconds: 16));
         final current = tester.getRect(card);
         expect(
@@ -1918,7 +1958,7 @@ void main() {
           tester.getRect(mask).top - maskTop,
           closeTo(current.top - inline.top, 0.01),
         );
-        if (frame < 22) {
+        if (frame < 26) {
           expect(
             tester.widget<OverflowBox>(textViewport).maxWidth,
             textWidth,
@@ -2843,14 +2883,21 @@ void main() {
         'nav_my',
         'nav_settings',
       ];
-      final slotWidth = capsule.width / labels.length;
+      const inset = 6.0;
+      final innerSlotWidth = (capsule.width - inset * 2) / labels.length;
       for (final (index, label) in labels.indexed) {
         final button = tester.getRect(
           find.byKey(ValueKey<String>('main_destination_$label')),
         );
+        final expectedLeft = index == 0
+            ? capsule.left
+            : capsule.left + inset + index * innerSlotWidth;
+        final expectedWidth =
+            innerSlotWidth +
+            (index == 0 || index == labels.length - 1 ? inset : 0.0);
         expect(button.height, capsule.height);
-        expect(button.left, closeTo(capsule.left + index * slotWidth, 0.01));
-        expect(button.width, closeTo(slotWidth, 0.01));
+        expect(button.left, closeTo(expectedLeft, 0.01));
+        expect(button.width, closeTo(expectedWidth, 0.01));
       }
 
     }
@@ -2939,7 +2986,7 @@ void main() {
     openDetail();
     await tester.pump();
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(kAppPagePushDuration ~/ 2);
     final midpoint = tester.getRect(routedCard);
     expect(midpoint.height, closeTo(homeRect.height / 2, 0.1));
     expect(midpoint.top, lessThan(homeRect.bottom));
@@ -3222,7 +3269,7 @@ void main() {
     for (final key in controls) {
       expect(opacity(find.byKey(ValueKey(key))), 0, reason: key);
     }
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(kAppMotionStandard ~/ 2);
     expect(route.animation!.value, closeTo(0.5, 0.001));
     for (final key in controls) {
       expect(
@@ -3234,7 +3281,7 @@ void main() {
     await _waitForSearchRoute(tester);
     await tester.tap(find.byKey(const ValueKey('app_search_close')));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(kAppMotionFast ~/ 2);
     expect(opacity(field), closeTo(kAppFadeCurve.transform(0.5), 0.001));
     await tester.pumpAndSettle();
     await pumpUntilUiIdle(tester);
@@ -4106,7 +4153,7 @@ void main() {
     await pumpUntilFound(tester, find.text('Local work', findRichText: true));
     activePageIndex.value = 0;
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(kAppFadeDuration);
     await pumpUntilFound(tester, find.text('Loaded work', findRichText: true));
 
     final localCard = find
@@ -4125,7 +4172,7 @@ void main() {
             const ValueKey<String>('audio_library_asmr_page'),
             skipOffstage: false,
           ),
-          matching: find.byType(Card, skipOffstage: false),
+          matching: find.byType(SwipeRevealCard, skipOffstage: false),
           skipOffstage: false,
         )
         .first;
@@ -5204,7 +5251,7 @@ void main() {
       ),
     );
     expect(retryHint, findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(kAppFadeDuration ~/ 2);
     final fade = find.ancestor(
       of: retryHint,
       matching: find.byType(FadeTransition),
@@ -5213,7 +5260,11 @@ void main() {
       tester.widget<FadeTransition>(fade.first).opacity.value,
       inExclusiveRange(0, 1),
     );
-    await tester.pump(const Duration(milliseconds: 151));
+    await tester.pump(
+      kAppFadeDuration -
+          (kAppFadeDuration ~/ 2) +
+          const Duration(milliseconds: 1),
+    );
     await tester.pump();
     expect(retryHint, findsNothing);
   });
@@ -5276,6 +5327,7 @@ void main() {
             Future.wait<void>([downloads.future, asmrLibrary.future]),
         configureSettings: (settings) {
           settings.showLocalLibrary = false;
+          settings.showMyPage = false;
           settings.startupPage = StartupPage.playlist;
         },
         onBootstrapSettled: () => settledCalls++,
@@ -5595,7 +5647,7 @@ void main() {
     );
     expect(
       tester.widget<AnimatedContainer>(animatedShell).curve,
-      Curves.easeInOut,
+      kAppSpringCurve,
     );
     expect(
       tester
@@ -5686,14 +5738,14 @@ void main() {
             image.dispose();
           }
         }))!;
-    final indicator = find.byWidgetPredicate((widget) {
-      final key = widget.key;
-      return key is ValueKey<String> &&
-          key.value.startsWith('main_destination_indicator_');
-    });
-    final highlightBounds = tester.getRect(indicator);
-    final outerHighlight = highlightBounds.bottomRight - const Offset(48, 8);
-    final background = await railPixel(outerHighlight + const Offset(0, 16));
+    final viewportRect = tester.getRect(viewport);
+    final outerHighlight = Offset(
+      viewportRect.right - 48,
+      tester.getCenter(focusedIcon).dy,
+    );
+    final background = await railPixel(
+      Offset(viewportRect.right - 48, tester.getCenter(settingsIcon).dy),
+    );
     final highlight = await railPixel(outerHighlight);
     expect(highlight, isNot(background));
 
@@ -7328,10 +7380,10 @@ void main() {
       await _pumpAppShell(tester);
       final navigator = Navigator.of(tester.element(find.byType(MainScreen)));
       final route = buildSessionDetailRoute(sessionId: 'orientation_session');
-      expect(route.transitionDuration, const Duration(milliseconds: 300));
+      expect(route.transitionDuration, const Duration(milliseconds: 320));
       expect(
         route.reverseTransitionDuration,
-        const Duration(milliseconds: 300),
+        const Duration(milliseconds: 320),
       );
       unawaited(navigator.push(route));
       await tester.pump(const Duration(milliseconds: 500));
@@ -7346,11 +7398,11 @@ void main() {
       );
       expect(tester.getTopLeft(content).dy, closeTo(0, 0.1));
       expect(fade.opacity.value, 0);
-      await tester.pump(const Duration(milliseconds: 75));
+      await tester.pump(const Duration(milliseconds: 80));
       expect(route.animation!.value, closeTo(0.25, 0.001));
       expect(tester.getTopLeft(content).dy, closeTo(0, 0.1));
-      expect(fade.opacity.value, closeTo(kAppFadeCurve.transform(0.25), 0.001));
-      await tester.pump(const Duration(milliseconds: 226));
+      expect(fade.opacity.value, closeTo(kAppSpringCurve.transform(0.25), 0.001));
+      await tester.pump(const Duration(milliseconds: 241));
       expect(route.animation!.status, AnimationStatus.completed);
       expect(tester.getTopLeft(content).dy, closeTo(0, 0.1));
 
@@ -7363,7 +7415,7 @@ void main() {
             route.animation!.status == AnimationStatus.reverse &&
             content.evaluate().isNotEmpty;
       });
-      await tester.pump(const Duration(milliseconds: 301));
+      await tester.pump(const Duration(milliseconds: 321));
       expect(finalFrameRetained, isTrue);
       await tester.pumpAndSettle();
       expect(find.byType(SessionDetailPage), findsNothing);
@@ -7806,7 +7858,7 @@ void main() {
       final detail = find.byType(SessionDetailPage);
       await tester.dragFrom(
         tester.getTopLeft(detail) + const Offset(48, 72),
-        const Offset(0, 420),
+        const Offset(420, 0),
       );
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
@@ -7817,7 +7869,6 @@ void main() {
         await tester.pumpAndSettle();
         expect(detail, findsOneWidget);
         final close = find.byKey(const ValueKey('session_detail_close_button'));
-        await tester.tap(close);
         await tester.tap(close);
       }
       await tester.pumpAndSettle();

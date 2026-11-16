@@ -696,7 +696,7 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
                                                 )
                                                 ? Duration.zero
                                                 : const Duration(
-                                                    milliseconds: 120,
+                                                    milliseconds: 180,
                                                   ),
                                             curve: Curves.easeOutCubic,
                                             child: SizedBox(

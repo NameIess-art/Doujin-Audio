@@ -7,6 +7,7 @@ import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/visual_settings_providers.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
+import 'package:doujin_audio/core/widgets/marquee_text.dart';
 import 'package:doujin_audio/core/widgets/scroll_activity_gate.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
@@ -215,15 +216,18 @@ void main() {
         Finder paragraph(String text) => find.byWidgetPredicate(
           (widget) => widget is RichText && widget.text.toPlainText() == text,
         );
+        Finder marqueeViewport(String text) => find.descendant(
+          of: find.byWidgetPredicate(
+            (widget) => widget is MarqueeText && widget.text == text,
+          ),
+          matching: find.byType(Scrollable),
+        );
         final overflowBox = find.byKey(
           const ValueKey('active_session_title_overflow_box'),
         );
         void expectSettledTextWidth() {
-          final subtitle = tester.renderObject<RenderParagraph>(
-            paragraph(firstCue).first,
-          );
           expect(
-            subtitle.constraints.maxWidth,
+            tester.getSize(marqueeViewport(firstCue).first).width,
             closeTo(tester.getSize(overflowBox.first).width, 0.001),
           );
           if (desktop) {
@@ -270,7 +274,6 @@ void main() {
                   if (text == title) {
                     expect(render.size.width, closeTo(titlePaintWidth, 0.001));
                   }
-                  if (text == firstCue) expect(render.maxLines, 1);
                 }
               }
               progressWidths.add(tester.getSize(overflowBox.first).width);
@@ -328,6 +331,19 @@ void main() {
         expect(progressWidths.length, greaterThan(3));
         expect(paragraph(firstCue), findsWidgets);
         expectSettledTextWidth();
+        final titleScroll = tester
+            .state<ScrollableState>(marqueeViewport(title).first)
+            .position;
+        final subtitleScroll = tester
+            .state<ScrollableState>(marqueeViewport(firstCue).first)
+            .position;
+        final titleOffset = titleScroll.pixels;
+        final subtitleOffset = subtitleScroll.pixels;
+        for (var frame = 0; frame < 20; frame++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(titleScroll.pixels, greaterThan(titleOffset));
+        expect(subtitleScroll.pixels, greaterThan(subtitleOffset));
         await tester.pump(interaction.idleDelay);
         session.setOptimisticPosition(const Duration(seconds: 90));
         await tester.pump();

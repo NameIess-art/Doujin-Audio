@@ -35,7 +35,7 @@ PageRoute<void> buildSessionDetailRoute({
 
 class SessionDetailRoute extends AppPreparedPageRoute<void> {
   static const _portraitRestoreTimeout = Duration(milliseconds: 500);
-  static const _coverDuration = Duration(milliseconds: 240);
+  static const _coverDuration = Duration(milliseconds: 320);
 
   SessionDetailRoute({
     required this.sessionId,

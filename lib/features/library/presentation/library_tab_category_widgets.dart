@@ -229,13 +229,9 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
                 fontWeight: FontWeight.w600,
               ),
             )
-          : AnimatedSize(
-              duration: widget.terms.length > 48
-                  ? Duration.zero
-                  : motionStandard,
-              curve: Curves.easeOutCubic,
-              alignment: Alignment.topCenter,
-              child: Column(
+          : Builder(
+              builder: (context) {
+                final content = Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -510,7 +506,18 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
                       ),
                   ],
                 ],
-              ),
+                );
+                if (widget.terms.length > 48 ||
+                    motionStandard == Duration.zero) {
+                  return content;
+                }
+                return AnimatedSize(
+                  duration: motionStandard,
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment.topCenter,
+                  child: content,
+                );
+              },
             ),
     );
   }

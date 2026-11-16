@@ -129,12 +129,15 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   void initState() {
     super.initState();
     _timeSegments = ref.read(playbackTimeSegmentServiceProvider);
-    widget.segmentPanelExpandedNotifier?.value = _segmentPanelExpanded;
     widget.transitionActive?.addListener(_scheduleSegmentResult);
     widget.transitionActive?.addListener(_scheduleSiblingQuery);
     _segmentNameController = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
+        if (widget.segmentPanelExpandedNotifier?.value !=
+            _segmentPanelExpanded) {
+          widget.segmentPanelExpandedNotifier?.value = _segmentPanelExpanded;
+        }
         _syncSegmentTrack();
         _syncSiblingQuery();
       }

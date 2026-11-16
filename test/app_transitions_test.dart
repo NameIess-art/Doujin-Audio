@@ -252,16 +252,16 @@ void main() {
         .value;
     await tester.pumpWidget(badge(false));
     await tester.pumpWidget(badge(true));
-    await tester.pump(const Duration(milliseconds: 79));
+    await tester.pump(kAppSelectionDuration - const Duration(milliseconds: 1));
     expect(find.text('fast badge'), findsNothing);
     await tester.pump(const Duration(milliseconds: 1));
     expect(opacity(), 0);
-    await tester.pump(const Duration(milliseconds: 90));
+    await tester.pump(kAppMotionFast ~/ 2);
     expect(opacity(), closeTo(kAppFadeCurve.transform(0.5), 0.001));
-    await tester.pump(const Duration(milliseconds: 90));
+    await tester.pump(kAppMotionFast ~/ 2);
     expect(opacity(), 1);
     await tester.pumpWidget(badge(false));
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(kAppFadeDuration ~/ 2);
     expect(opacity(), closeTo(kAppFadeCurve.transform(0.5), 0.001));
     await tester.pumpAndSettle();
     expect(find.text('fast badge'), findsNothing);
@@ -300,18 +300,18 @@ void main() {
           .value;
       update(() => visible = false);
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(kAppFadeDuration ~/ 2);
       final departingOpacity = opacity();
       expect(departingOpacity, closeTo(kAppFadeCurve.transform(0.5), 0.001));
       update(() => visible = true);
       await tester.pump();
       expect(opacity(), departingOpacity);
       expect(tester.state(find.byType(_StateProbe)), same(state));
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(kAppFadeDuration ~/ 2);
       expect(opacity(), 1);
       update(() => visible = false);
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 299));
+      await tester.pump(kAppFadeDuration - const Duration(milliseconds: 1));
       expect(find.text('retained badge'), findsOneWidget);
       await tester.pump(const Duration(milliseconds: 1));
       expect(opacity(), 0);
@@ -1056,7 +1056,7 @@ void main() {
       update(() => selected = next);
       await tester.pump();
       expect(secondaryOpacity(), next ? 0 : 1);
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(kAppFadeDuration ~/ 2);
       expect(secondaryOpacity(), closeTo(0.5, 0.03));
       expect(tester.state(find.byType(_StateProbe)), same(primaryState));
       final menuFade = find.descendant(
@@ -1069,7 +1069,7 @@ void main() {
         findsNothing,
       );
       expect(find.text('Menu').hitTestable(), findsNothing);
-      await tester.pump(const Duration(milliseconds: 149));
+      await tester.pump(kAppFadeDuration ~/ 2 - const Duration(milliseconds: 1));
       expect(find.text('Detail'), findsOneWidget);
       await tester.pump(const Duration(milliseconds: 1));
       expect(secondaryOpacity(), next ? 1 : 0);
@@ -1255,15 +1255,15 @@ void main() {
     expect(route.animation!.status, AnimationStatus.forward);
     await tester.pump(const Duration(milliseconds: 500));
     expect(route.animation!.value, 0);
-    await tester.pump(const Duration(milliseconds: 120));
+    await tester.pump(kAppPagePushDuration ~/ 2);
     expect(route.animation!.value, closeTo(0.5, 0.001));
-    await tester.pump(const Duration(milliseconds: 119));
+    await tester.pump(kAppPagePushDuration ~/ 2 - const Duration(milliseconds: 2));
     expect(route.animation!.status, AnimationStatus.forward);
-    await tester.pump(const Duration(milliseconds: 1));
+    await tester.pump(const Duration(milliseconds: 3));
     expect(route.animation!.status, AnimationStatus.completed);
     navigatorKey.currentState!.pop();
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 201));
+    await tester.pump(kAppPagePopDuration + const Duration(milliseconds: 1));
     expect(route.animation!.value, 0);
     expect(route.animation!.status, AnimationStatus.reverse);
     await tester.pumpAndSettle();
@@ -1315,7 +1315,7 @@ void main() {
         expect(find.bySemanticsLabel('detail-destination'), findsNothing);
         expect(focus.canRequestFocus, isFalse);
 
-        await tester.pump(const Duration(milliseconds: 201));
+        await tester.pump(kAppPagePushDuration - const Duration(milliseconds: 99));
         await tester.pump();
         expect(find.byType(ShaderMask), findsOneWidget);
         expect(find.bySemanticsLabel('detail-destination'), findsOneWidget);
@@ -1329,7 +1329,7 @@ void main() {
         expect(find.bySemanticsLabel('detail-origin'), findsNothing);
         expect(find.bySemanticsLabel('detail-destination'), findsNothing);
         expect(focus.canRequestFocus, isFalse);
-        await tester.pump(const Duration(milliseconds: 201));
+        await tester.pump(kAppPagePopDuration - const Duration(milliseconds: 99));
         await tester.pump(const Duration(milliseconds: 1));
         await tester.pump();
         await tester.pump();
@@ -1430,16 +1430,16 @@ void main() {
     expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
     await tester.pump(const Duration(milliseconds: 500));
     expect(completed, isEmpty);
-    await tester.pump(const Duration(milliseconds: 299));
+    await tester.pump(kAppFadeDuration - const Duration(milliseconds: 1));
     expect(completed, isEmpty);
     await tester.pump(const Duration(milliseconds: 1));
     expect(completed, [1]);
     await tester.pumpAndSettle();
     index.value = 0;
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(kAppFadeDuration ~/ 2);
     expect(_translationFor(tester, 'prepared-0'), isNot(Offset.zero));
-    await tester.pump(const Duration(milliseconds: 151));
+    await tester.pump(kAppFadeDuration ~/ 2 + const Duration(milliseconds: 1));
     expect(completed, [1, 0]);
     await tester.pump(UiInteractionCoordinator.instance.idleDelay);
     await tester.pumpAndSettle();
@@ -1487,7 +1487,7 @@ void main() {
         expect(completed, isEmpty);
         await tester.pump(const Duration(milliseconds: 500));
         expect(completed, isEmpty);
-        await tester.pump(const Duration(milliseconds: 299));
+        await tester.pump(kAppFadeDuration - const Duration(milliseconds: 1));
         expect(completed, isEmpty);
         await tester.pump(const Duration(milliseconds: 1));
         expect(completed, [0]);
@@ -1883,14 +1883,14 @@ void main() {
           isFalse,
         );
         expect(tester.getRect(body).left, closeTo(origin, 0.001));
-        await tester.pump(const Duration(milliseconds: 65));
+        await tester.pump(const Duration(milliseconds: 85));
         final firstStep = tester.getRect(body).left - origin;
-        await tester.pump(const Duration(milliseconds: 65));
+        await tester.pump(const Duration(milliseconds: 85));
         final secondPosition = tester.getRect(body).left - origin;
         expect(firstStep, greaterThan(width * 0.5));
         expect(firstStep, greaterThan((width - secondPosition) * 2));
         expect(secondPosition, inExclusiveRange(firstStep, width));
-        await tester.pump(const Duration(milliseconds: 69));
+        await tester.pump(const Duration(milliseconds: 89));
         expect(route.animation!.status, AnimationStatus.reverse);
         var retainedFinalFrame = false;
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2150,7 +2150,7 @@ void main() {
         final headerLeft = tester
             .getRect(find.byKey(const ValueKey('whole-home-header')))
             .left;
-        await tester.pump(const Duration(milliseconds: 60));
+        await tester.pump(const Duration(milliseconds: 80));
         final header = find.byKey(const ValueKey('whole-detail-header'));
         final body = find.byKey(const ValueKey('whole-detail-body'));
         expect(tester.getRect(header).left, closeTo(headerLeft, 0.01));
@@ -2164,7 +2164,7 @@ void main() {
           reason: 'Header geometry stays fixed while the page moves.',
         );
         for (var i = 0; i < 3; i++) {
-          await tester.pump(const Duration(milliseconds: 60));
+          await tester.pump(const Duration(milliseconds: 80));
         }
         await tester.pump(const Duration(milliseconds: 1));
         expect(route.animation!.status, AnimationStatus.completed);
@@ -2195,7 +2195,7 @@ void main() {
                   .evaluate()
                   .isNotEmpty;
         });
-        await tester.pump(const Duration(milliseconds: 51));
+        await tester.pump(kAppPagePopDuration - const Duration(milliseconds: 149));
         expect(
           finalFrameRetained,
           isTrue,
@@ -2331,7 +2331,7 @@ void main() {
       unawaited(navigatorKey.currentState!.push(route));
       await tester.pump();
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pump(kAppPagePushDuration ~/ 4);
       expect(route.animation!.value, closeTo(0.25, 0.001));
       navigatorKey.currentState!.pop();
       await tester.pump();
@@ -2451,7 +2451,7 @@ void main() {
       );
       navigator.pop();
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pump(kAppPagePopDuration ~/ 4);
       expect(tester.getRect(header), settledHeader);
       expect(tester.getRect(body).left, greaterThan(settledBody.left));
       await tester.pumpAndSettle();
@@ -2595,18 +2595,18 @@ void main() {
           expect(opacity(), 0);
           expect(_effectiveOpacity(tester, body), 1);
           final left = tester.getRect(header).left;
-          await tester.pump(const Duration(milliseconds: 120));
+          await tester.pump(kAppPagePushDuration ~/ 2);
           expect(opacity(), closeTo(kAppFadeCurve.transform(0.5), 0.001));
           expect(_effectiveOpacity(tester, body), 1);
           expect(tester.getRect(header).left, closeTo(left, 0.01));
-          await tester.pump(const Duration(milliseconds: 60));
+          await tester.pump(kAppPagePushDuration ~/ 4);
           expect(opacity(), inExclusiveRange(0.5, 1));
-          await tester.pump(const Duration(milliseconds: 60));
+          await tester.pump(kAppPagePushDuration ~/ 4);
           expect(opacity(), 1);
           expect(_effectiveOpacity(tester, body), 1);
           key.currentState!.pop();
           await tester.pump();
-          await tester.pump(const Duration(milliseconds: 100));
+          await tester.pump(kAppPagePopDuration ~/ 2);
           expect(opacity(), closeTo(kAppFadeCurve.transform(0.5), 0.001));
           expect(tester.getRect(header).left, closeTo(left, 0.01));
           await tester.pumpAndSettle();
@@ -2711,7 +2711,7 @@ void main() {
             findsNothing,
           );
           if (!reduced) {
-            await tester.pump(const Duration(milliseconds: 120));
+            await tester.pump(kAppPagePushDuration ~/ 2);
             expect(
               _effectiveOpacity(tester, body),
               closeTo(kAppFadeCurve.transform(0.5), 0.001),
@@ -2721,13 +2721,13 @@ void main() {
               closeTo(kAppFadeCurve.transform(0.5), 0.001),
             );
             expect(tester.getRect(body), rect);
-            await tester.pump(const Duration(milliseconds: 120));
+            await tester.pump(kAppPagePushDuration ~/ 2);
             expect(_effectiveOpacity(tester, body), 1);
           }
           navigatorKey.currentState!.pop();
           await tester.pump();
           if (!reduced) {
-            await tester.pump(const Duration(milliseconds: 100));
+            await tester.pump(kAppPagePopDuration ~/ 2);
             expect(
               _effectiveOpacity(tester, body),
               closeTo(kAppFadeCurve.transform(0.5), 0.001),
@@ -3103,7 +3103,7 @@ void main() {
         expect(completed, isEmpty);
         expect(coordinator.isInteracting, isTrue);
         await tester.pump();
-        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(kAppFadeDuration ~/ 2);
         final outgoing = tester.getRect(body);
         final incoming = tester.getRect(
           find.byKey(const ValueKey('page-3-body')),
@@ -3124,7 +3124,7 @@ void main() {
           0,
           1,
         ], reason: 'Animation frames reuse the page subtree.');
-        await tester.pump(const Duration(milliseconds: 149));
+        await tester.pump(kAppFadeDuration ~/ 2 - const Duration(milliseconds: 1));
         expect(completed, isEmpty);
         await tester.pump(const Duration(milliseconds: 2));
         expect(completed, [3]);
@@ -3139,7 +3139,7 @@ void main() {
         index.value = 0;
         await tester.pump();
         expect(tester.getTopLeft(body).dx, -width);
-        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(kAppFadeDuration ~/ 2);
         expect(
           tester.getRect(find.byKey(const ValueKey('page-3-body'))).left,
           greaterThan(0),
@@ -3437,7 +3437,7 @@ void main() {
           // A later ordinary transition uses the standard curve again.
           index.value = 3;
           await tester.pump();
-          await tester.pump(const Duration(milliseconds: 150));
+          await tester.pump(kAppFadeDuration ~/ 2);
           expect(
             _effectiveOpacity(tester, header),
             separateHeader ? closeTo(kAppSpringCurve.transform(0.5), 0.001) : 1,

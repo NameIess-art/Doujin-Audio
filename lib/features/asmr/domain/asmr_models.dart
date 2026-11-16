@@ -701,12 +701,15 @@ class AsmrTrackFile {
       ...fullQualityPlaybackUrls,
       lowQualityUrl?.trim() ?? '',
     ].where((url) => url.isNotEmpty).toSet().toList(growable: false);
-    final playbackUrl = playbackUrls.isEmpty ? '' : playbackUrls.first;
     final metadata = Map<String, Object?>.from(
       remoteMetadata ?? const <String, Object?>{},
     );
-    metadata['playbackUrls'] = playbackUrls;
-    metadata['fullQualityPlaybackUrls'] = fullQualityPlaybackUrls;
+    metadata['playbackUrls'] ??= playbackUrls;
+    metadata['fullQualityPlaybackUrls'] ??= fullQualityPlaybackUrls;
+    final resolvedPlaybackUrls = metadata['playbackUrls'] as List<String>;
+    final playbackUrl = resolvedPlaybackUrls.isEmpty
+        ? ''
+        : resolvedPlaybackUrls.first;
     return MusicTrack(
       path: playbackUrl,
       displayName: displayTitle,

@@ -408,6 +408,9 @@ class SessionSubtitlePlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final barColor = Theme.of(context).brightness == Brightness.dark
+        ? Colors.white
+        : null;
     return LayoutBuilder(
       builder: (context, constraints) {
         final availableWidth = constraints.maxWidth.isFinite
@@ -422,33 +425,31 @@ class SessionSubtitlePlaceholder extends StatelessWidget {
           centerWidth * 0.85,
           max(70.0, availableWidth * 0.58),
         );
+        final widths = [
+          topWidth * 0.8,
+          topWidth,
+          centerWidth,
+          bottomWidth,
+          bottomWidth * 0.8,
+        ];
 
         return Center(
           child: FittedBox(
             fit: BoxFit.scaleDown,
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
+              spacing: 16,
               children: [
-                Opacity(
-                  opacity: 0.35,
-                  child: ShimmerContainer(
-                    width: topWidth,
-                    height: 14,
-                    borderRadius: 4,
+                for (final (index, width) in widths.indexed)
+                  Opacity(
+                    opacity: index == 2 ? 0.60 : 0.21,
+                    child: ShimmerContainer(
+                      width: width,
+                      height: index == 2 ? 16 : 14,
+                      borderRadius: 4,
+                      color: barColor,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                ShimmerContainer(width: centerWidth, height: 16, borderRadius: 4),
-                const SizedBox(height: 16),
-                Opacity(
-                  opacity: 0.35,
-                  child: ShimmerContainer(
-                    width: bottomWidth,
-                    height: 14,
-                    borderRadius: 4,
-                  ),
-                ),
               ],
             ),
           ),

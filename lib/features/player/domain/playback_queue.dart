@@ -84,6 +84,9 @@ class PlaybackQueueDefinition {
 
   int get entryCount => _storedEntryCount ?? entries.length;
   int get trackCount => _storedTrackCount ?? (_trackEnds.lastOrNull ?? 0);
+  bool get hasTracks => _storedTrackCount != null
+      ? _storedTrackCount > 0
+      : entries.any((entry) => entry.tracks.isNotEmpty);
 
   late final List<int> _trackEnds = () {
     var offset = 0;

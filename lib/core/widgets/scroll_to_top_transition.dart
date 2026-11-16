@@ -83,7 +83,7 @@ class ScrollToTopTransitionState extends State<ScrollToTopTransition> {
       final screens = (position.pixels - top) / position.viewportDimension;
       await position.animateTo(
         top,
-        duration: Duration(milliseconds: (240 + 120 * screens).round()),
+        duration: Duration(milliseconds: (280 + 140 * screens).round()),
         curve: Curves.easeInOutCubic,
       );
     } finally {

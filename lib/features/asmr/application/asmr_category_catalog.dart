@@ -638,7 +638,9 @@ final class AsmrCategoryCatalog {
         cursor,
       );
       if (!_isCurrent(cacheKey, request)) return;
-      final prepared = await _preparePage(result.works, cancellationToken);
+      final prepared = _syncFavoritesToCurrent(
+        await _preparePage(result.works, cancellationToken),
+      );
       if (!_isCurrent(cacheKey, request)) return;
       state.works = prepared;
       state.workIndices.clear();
@@ -743,11 +745,13 @@ final class AsmrCategoryCatalog {
         cursor,
       );
       if (!_isCurrent(key, request)) return;
-      final additions = await _preparePage(
-        result.works
-            .where((work) => !state.workIndices.containsKey(work.workKey))
-            .toList(growable: false),
-        cancellationToken,
+      final additions = _syncFavoritesToCurrent(
+        await _preparePage(
+          result.works
+              .where((work) => !state.workIndices.containsKey(work.workKey))
+              .toList(growable: false),
+          cancellationToken,
+        ),
       );
       if (!_isCurrent(key, request)) return;
       final previous = state.works!;
@@ -810,6 +814,21 @@ final class AsmrCategoryCatalog {
     cancellationToken.throwIfCancelled();
     final favorites = _favoriteIds();
     return _prepareCategoryPage((incoming: works, favoriteIds: favorites));
+  }
+
+  List<AsmrWork> _syncFavoritesToCurrent(List<AsmrWork> works) {
+    if (works.isEmpty) return works;
+    final favorites = _favoriteIds();
+    List<AsmrWork>? updated;
+    for (var i = 0; i < works.length; i++) {
+      final work = works[i];
+      final favorite = favorites.contains(work.workKey);
+      if (work.isFavorite == favorite) continue;
+      (updated ??= works.toList(growable: false))[i] = work.copyWith(
+        isFavorite: favorite,
+      );
+    }
+    return updated == null ? works : immutableList(updated);
   }
 
   void _applyPageResult(

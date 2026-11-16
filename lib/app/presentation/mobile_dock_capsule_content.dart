@@ -77,8 +77,8 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
   bool _tickerModeEnabled = true;
   bool _disableAnimations = false;
 
-  static const Duration _appearanceDuration = Duration(milliseconds: 240);
-  static const Duration _motionDuration = Duration(milliseconds: 260);
+  static const Duration _appearanceDuration = Duration(milliseconds: 300);
+  static const Duration _motionDuration = Duration(milliseconds: 340);
 
   @override
   void initState() {
@@ -106,7 +106,7 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
     _rowController =
         AnimationController(
           vsync: this,
-          duration: const Duration(milliseconds: 400),
+          duration: const Duration(milliseconds: 460),
           value: hasPlayback && widget.isPlaybackRaised ? 1 : 0,
         )..addStatusListener((status) {
           _syncMotionInteraction();

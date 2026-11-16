@@ -97,29 +97,22 @@ void main() {
     );
   }
 
-  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
-    for (final openResult in [true, false]) {
-      testWidgets('feedback on $platform with open result $openResult', (
-        tester,
-      ) async {
+  for (final openResult in [true, false]) {
+    testWidgets(
+      'feedback opens the platform destination with open result $openResult',
+      (tester) async {
         final harness = AppRuntimeWidgetTestFixture();
         final updateService = _FakeAppUpdateService(openResult: openResult);
         addTearDown(harness.dispose);
         await tester.pumpWidget(
           harness.build(
-            Theme(
-              data: ThemeData(platform: platform),
-              child: ProviderScope(
-                overrides: [
-                  appUpdateServiceProvider.overrideWithValue(updateService),
-                ],
-                child: AboutPage(
-                  versionFuture: Future.value(
-                    const AppVersionInfo(
-                      versionName: '1.2.3',
-                      buildNumber: 123,
-                    ),
-                  ),
+            ProviderScope(
+              overrides: [
+                appUpdateServiceProvider.overrideWithValue(updateService),
+              ],
+              child: AboutPage(
+                versionFuture: Future.value(
+                  const AppVersionInfo(versionName: '1.2.3', buildNumber: 123),
                 ),
               ),
             ),
@@ -131,13 +124,27 @@ void main() {
         await tester.ensureVisible(feedback);
         await tester.tap(feedback);
         await tester.pump();
-        expect(updateService.openedUrl, 'mailto:likenshonameless@gmail.com');
+        const email = 'likenshonameless@gmail.com';
+        final isWindows = defaultTargetPlatform == TargetPlatform.windows;
         expect(
-          find.textContaining(i18n.tr('about_feedback_open_failed')),
+          updateService.openedUrl,
+          isWindows
+              ? '${AppUpdateService.repositoryPage}/issues'
+              : 'mailto:$email',
+        );
+        final failureKey = isWindows
+            ? 'about_feedback_page_open_failed'
+            : 'about_feedback_open_failed';
+        expect(
+          find.text('${i18n.tr(failureKey)} $email'),
           openResult ? findsNothing : findsOneWidget,
         );
-      });
-    }
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
   }
 
   testWidgets(

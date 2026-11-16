@@ -761,6 +761,7 @@ const Map<String, String> appLanguageJa = {
   'about_wiki': 'Wiki',
   'about_feedback': 'ご意見・ご要望',
   'about_feedback_open_failed': 'メールアプリを開けません。アプリを導入・設定するか、次の宛先へ送信してください：',
+  'about_feedback_page_open_failed': 'ご意見・ご要望のページを開けません。次の宛先へメールでお送りください。',
   'about_wiki_open_failed': 'GitHub ページを開けません',
   'about_author': '開発者',
   'about_reward': '開発を支援',

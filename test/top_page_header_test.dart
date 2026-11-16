@@ -353,7 +353,8 @@ void main() {
         await tester.pump();
         if (!reducedMotion) {
           final builds = (normalBuilds, selectionBuilds);
-          await tester.pump(const Duration(milliseconds: 150));
+          final halfFade = kAppFadeDuration ~/ 2;
+          await tester.pump(halfFade);
           final fades = find.descendant(
             of: find.byType(AppHeaderTransition),
             matching: find.byWidgetPredicate(
@@ -370,7 +371,7 @@ void main() {
           expect((normalBuilds, selectionBuilds), builds);
           expect(mask, findsOneWidget);
           expect(find.ancestor(of: mask, matching: fades), findsNothing);
-          await tester.pump(const Duration(milliseconds: 150));
+          await tester.pump(kAppFadeDuration - halfFade);
         }
         await tester.pump(const Duration(milliseconds: 1));
         expect(find.text('Browse'), findsNothing);
@@ -379,7 +380,7 @@ void main() {
         // Reverse before the previous outgoing entry has finished.
         update(() => selecting = false);
         await tester.pump();
-        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(kAppFadeDuration ~/ 2);
         if (!reducedMotion) {
           expect(mask, findsOneWidget);
           expect(tester.element(mask), same(maskElement));
@@ -930,7 +931,7 @@ void main() {
 
       expect(
         tester.widget<Transform>(iconTransform).transform.getMaxScaleOnAxis(),
-        greaterThan(1.0),
+        closeTo(1.0, 0.001),
       );
       expect(
         IconTheme.of(tester.element(backIconFinder)).color,

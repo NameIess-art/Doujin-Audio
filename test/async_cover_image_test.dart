@@ -2173,7 +2173,7 @@ void main() {
     );
     expect(
       kPlaceholderContentTransitionDuration,
-      const Duration(milliseconds: 160),
+      const Duration(milliseconds: 220),
     );
     final fades = find.descendant(
       of: transition,

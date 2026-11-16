@@ -214,18 +214,18 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Unpin'));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 110));
+      await tester.pump(kAppMotionStandard ~/ 2);
       expect(pinned, isTrue);
       expect(opacity(), 1);
       expect(tester.getRect(entry), isNot(closedRect));
-      await tester.pump(const Duration(milliseconds: 111));
+      await tester.pump(kAppMotionStandard ~/ 2 + const Duration(milliseconds: 1));
       await tester.pump();
       await tester.pump();
       expect(pinned, isFalse);
       expect(tester.getRect(entry), closedRect);
       expect(pin, findsOneWidget);
       expect(opacity(), 1);
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(kAppFadeDuration ~/ 2);
       expect(opacity(), closeTo(kAppFadeCurve.transform(0.5), 0.001));
       await tester.pumpAndSettle();
       expect(pin, findsNothing);
@@ -471,7 +471,8 @@ void main() {
         final item = find
             .ancestor(of: find.text(label), matching: find.byType(InkWell))
             .first;
-        expect(tester.getSize(item).height, 40);
+        final isEdgeRow = label == actions.first || label == actions.last;
+        expect(tester.getSize(item).height, isEdgeRow ? 46 : 40);
         final iconContext = tester.element(
           find.descendant(of: item, matching: find.byType(Icon)),
         );
@@ -810,7 +811,7 @@ void main() {
       final boundary = tester.renderObject<RenderRepaintBoundary>(
         find.byKey(captureKey),
       );
-      for (var frame = 0; frame < 16; frame++) {
+      for (var frame = 0; frame < 20; frame++) {
         await tester.pump(const Duration(milliseconds: 16));
         final redPixels = await tester.runAsync(() async {
           final image = await boundary.toImage();
@@ -881,7 +882,7 @@ void main() {
       final gesture = await tester.startGesture(center);
       await gesture.moveBy(Offset(-direction * 180, 0));
       await tester.pump();
-      for (var frame = 0; frame < 16; frame++) {
+      for (var frame = 0; frame < 20; frame++) {
         final distance =
             (tester.getTopLeft(content).dx - closedLeft) * direction;
         expect(distance, inInclusiveRange(0.0, 72.0));
@@ -890,7 +891,7 @@ void main() {
       // Reversing the same gesture after reaching zero keeps its original side.
       await gesture.moveBy(Offset(direction * 400, 0));
       await tester.pump();
-      for (var frame = 0; frame < 16; frame++) {
+      for (var frame = 0; frame < 20; frame++) {
         final distance =
             (tester.getTopLeft(content).dx - closedLeft) * direction;
         expect(distance, inInclusiveRange(0.0, 72.0));

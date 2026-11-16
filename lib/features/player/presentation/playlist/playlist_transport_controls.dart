@@ -699,7 +699,7 @@ class _PrimaryTransportButtonState extends State<PrimaryTransportButton>
     super.initState();
     _nudgeController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 240),
+      duration: const Duration(milliseconds: 280),
     );
     _rebuildNudgeAnimation();
   }

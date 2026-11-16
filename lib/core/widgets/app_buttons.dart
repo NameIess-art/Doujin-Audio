@@ -131,7 +131,7 @@ resolveAppButtonIconFeedback({
         ? _windowsButtonFeedbackDuration(isPressed)
         : isPressed && !isTransportControl
         ? Duration.zero
-        : Duration(milliseconds: isPressed ? 80 : 120),
+        : Duration(milliseconds: isPressed ? 105 : 160),
   );
 }
 
@@ -175,7 +175,7 @@ resolveAppTextButtonFeedback({
         ? _windowsButtonFeedbackDuration(isPressed)
         : isPressed
         ? Duration.zero
-        : const Duration(milliseconds: 120),
+        : const Duration(milliseconds: 160),
   );
 }
 
@@ -210,12 +210,12 @@ resolveAppSurfaceButtonFeedback({
         ? _windowsButtonFeedbackDuration(isPressed)
         : isPressed
         ? Duration.zero
-        : const Duration(milliseconds: 140),
+        : const Duration(milliseconds: 180),
   );
 }
 
 Duration _windowsButtonFeedbackDuration(bool pressed) =>
-    Duration(milliseconds: pressed ? 60 : 90);
+    Duration(milliseconds: pressed ? 85 : 130);
 
 Color appHoverTint(ColorScheme colors) => colors.primary.withValues(
   alpha: colors.brightness == Brightness.dark ? 0.14 : 0.08,
@@ -269,7 +269,7 @@ ButtonStyle appSurfaceButtonStyle({
   required ColorScheme colorScheme,
   required TargetPlatform platform,
   Color defaultBackgroundColor = Colors.transparent,
-  Duration animationDuration = const Duration(milliseconds: 90),
+  Duration animationDuration = const Duration(milliseconds: 130),
 }) {
   final base = appButtonStyle(style);
   final android = platform == TargetPlatform.android;
@@ -1001,7 +1001,7 @@ class AppLabelledButton extends StatelessWidget {
       defaultBackgroundColor: defaultBg,
       animationDuration: MediaQuery.disableAnimationsOf(context)
           ? Duration.zero
-          : const Duration(milliseconds: 90),
+          : const Duration(milliseconds: 130),
     );
     return AppSurfaceButtonShell(
       enabled: onPressed != null,
@@ -1084,7 +1084,7 @@ class AppOverlayIconButton extends StatelessWidget {
         ).copyWith(
           animationDuration: reduceMotion
               ? Duration.zero
-              : const Duration(milliseconds: 90),
+              : const Duration(milliseconds: 130),
           backgroundColor: WidgetStateProperty.resolveWith((states) {
             if (states.contains(WidgetState.disabled)) {
               return Colors.transparent;
@@ -1147,7 +1147,7 @@ class AppPillButton extends StatelessWidget {
           : theme.colorScheme.primary,
       animationDuration: MediaQuery.disableAnimationsOf(context)
           ? Duration.zero
-          : const Duration(milliseconds: 90),
+          : const Duration(milliseconds: 130),
     );
     return AppSurfaceButtonShell(
       enabled: onPressed != null,

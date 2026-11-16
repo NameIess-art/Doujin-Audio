@@ -88,7 +88,7 @@ class WindowsWindowTitleBar extends ConsumerWidget {
           ).copyWith(
             animationDuration: reduceMotion
                 ? Duration.zero
-                : const Duration(milliseconds: 90),
+                : const Duration(milliseconds: 130),
             backgroundColor: WidgetStateProperty.resolveWith((states) {
               if (states.contains(WidgetState.disabled)) {
                 return Colors.transparent;

@@ -136,11 +136,13 @@ class ShimmerContainer extends StatelessWidget {
     this.width,
     this.height,
     this.borderRadius = 6.0,
+    this.color,
   });
 
   final double? width;
   final double? height;
   final double borderRadius;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
@@ -155,7 +157,7 @@ class ShimmerContainer extends StatelessWidget {
       width: width,
       height: height,
       decoration: BoxDecoration(
-        color: baseColor,
+        color: color ?? baseColor,
         borderRadius: BorderRadius.circular(borderRadius),
       ),
     );

@@ -725,13 +725,8 @@ final class CoverArtworkSourceResolver {
     );
     if (nestedImages.isNotEmpty) return nestedImages.first.displayPath;
 
-    final seenDirectories = <String>{};
     var probed = 0;
     for (final track in tracksInCompleteCoverScope(folderPath)) {
-      final parentKey = PathMatcher.equivalenceKey(
-        PathMatcher.parentPath(track.path) ?? '',
-      );
-      if (!seenDirectories.add(parentKey) && probed > 0) continue;
       probed++;
       final candidate = _isVideoTrack(track)
           ? await resolveVideoFramePathForTrack(track)

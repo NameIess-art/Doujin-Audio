@@ -92,18 +92,41 @@ class _RenderReorderViewport extends RenderProxyBox {
 
   double get remaining => 1 - Curves.easeOutCubic.transform(controller.value);
 
+  static bool _hasRelativeOrderChange(
+    List<Object> previous,
+    List<Object> next,
+  ) {
+    final nextIds = next.toSet();
+    final previousIds = previous.toSet();
+    var i = 0;
+    var j = 0;
+    while (i < previous.length && j < next.length) {
+      while (i < previous.length && !nextIds.contains(previous[i])) {
+        i++;
+      }
+      while (j < next.length && !previousIds.contains(next[j])) {
+        j++;
+      }
+      if (i < previous.length && j < next.length) {
+        if (previous[i] != next[j]) return true;
+        i++;
+        j++;
+      }
+    }
+    while (i < previous.length && !nextIds.contains(previous[i])) {
+      i++;
+    }
+    while (j < next.length && !previousIds.contains(next[j])) {
+      j++;
+    }
+    return i < previous.length || j < next.length;
+  }
+
   void update(List<Object> order, bool enabled) {
     if (!listEquals(_order, order)) {
       // Expanding a tree or adding/removing entries owns its own size motion.
       // Only changes to the relative order of surviving entries are reorders.
-      final previousIds = _order.toSet();
-      final nextIds = order.toSet();
-      _pending =
-          enabled &&
-          !listEquals(
-            _order.where(nextIds.contains).toList(),
-            order.where(previousIds.contains).toList(),
-          );
+      _pending = enabled && _hasRelativeOrderChange(_order, order);
       if (_pending) {
         // Capture before the descendants rebuild and lay out in their new order.
         // Measuring here also includes scrolling and any unfinished transition.
@@ -117,11 +140,13 @@ class _RenderReorderViewport extends RenderProxyBox {
         }
       }
       _order = List.of(order);
-      markNeedsPaint();
-      for (final item in _items) {
-        item.markNeedsPaint();
+      if (_pending) {
+        markNeedsPaint();
+        for (final item in _items) {
+          item.markNeedsPaint();
+        }
+        controller.forward(from: 0);
       }
-      if (_pending) controller.forward(from: 0);
     }
     // A tab transition mutes this list even when no reorder is running.
     // Keep the retained rows paintable without invalidating every row.
@@ -200,17 +225,27 @@ class _RenderReorderItem extends RenderProxyBox {
     _viewport = ancestor as _RenderReorderViewport?;
     _viewport?._items.add(this);
     _viewport?.controller.addListener(_tick);
+    _viewport?.controller.addStatusListener(_handleStatus);
   }
 
   void _tick() {
     if (delta == Offset.zero) return;
     markNeedsPaint();
-    markNeedsSemanticsUpdate();
+  }
+
+  void _handleStatus(AnimationStatus status) {
+    if ((status == AnimationStatus.completed ||
+            status == AnimationStatus.dismissed) &&
+        delta != Offset.zero) {
+      delta = Offset.zero;
+      markNeedsSemanticsUpdate();
+    }
   }
 
   @override
   void detach() {
     _viewport?.controller.removeListener(_tick);
+    _viewport?.controller.removeStatusListener(_handleStatus);
     _viewport?._items.remove(this);
     _viewport = null;
     super.detach();

@@ -162,8 +162,10 @@ abstract final class PlaylistBatchActions {
       if (session == null) continue;
       final queue = session.playbackQueue;
       if (queue != null
-          ? queue.trackCount > 0
-          : paths.sessionTrackForPath(id, session.currentTrackPath) != null) {
+          ? queue.hasTracks
+          : session.currentTrackPath.isNotEmpty &&
+                paths.sessionTrackForPath(id, session.currentTrackPath) !=
+                    null) {
         return true;
       }
     }

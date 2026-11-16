@@ -215,9 +215,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 120));
       expect(pressHighlight(), isNotEmpty);
       await gesture.up();
-      await tester.pump(const Duration(milliseconds: 180));
+      await tester.pump(const Duration(milliseconds: 260));
       expect(pressHighlight(), isEmpty);
-      await tester.pump(const Duration(milliseconds: 220));
+      await tester.pump(const Duration(milliseconds: 140));
       expect(find.byType(LibraryEditPage), findsOneWidget);
       expect(
         tester

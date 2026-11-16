@@ -103,7 +103,7 @@ class _SessionDetailThemeState extends State<SessionDetailTheme>
     super.initState();
     _themeController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 380),
       value: 1,
     );
     _themeProgress = CurvedAnimation(

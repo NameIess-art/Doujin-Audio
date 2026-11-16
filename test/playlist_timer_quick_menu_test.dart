@@ -1,5 +1,7 @@
 import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
@@ -110,11 +112,13 @@ void main() {
       final timer = tester.getSize(
         find.byTooltip(fixture.languageProvider.tr('timer')),
       );
-      expect(pause.size, timer);
-      expect(clear.size, timer);
-      expect(add.size, timer);
-      expect(clear.center.dx - pause.center.dx, timer.width);
-      expect(add.center.dx - clear.center.dx, timer.width);
+      final pillButton = HeaderActionPill.buttonConstraints.smallest;
+      expect(pillButton.height, timer.height);
+      expect(pause.size, pillButton);
+      expect(clear.size, pillButton);
+      expect(add.size, pillButton);
+      expect(clear.center.dx - pause.center.dx, pillButton.width);
+      expect(add.center.dx - clear.center.dx, pillButton.width);
 
       final quickMenuTrigger = find.ancestor(
         of: find.byTooltip(fixture.languageProvider.tr('timer')),
@@ -139,7 +143,7 @@ void main() {
       await tester.pump();
 
       expect(openedTimerSettings, 0);
-      await tester.pump(const Duration(milliseconds: 179));
+      await tester.pump(kAppMotionFast - const Duration(milliseconds: 1));
       expect(openedTimerSettings, 0);
 
       await tester.pump(const Duration(milliseconds: 1));

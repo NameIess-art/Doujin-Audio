@@ -69,7 +69,7 @@ void main() {
       await gesture.up();
       await tester.pump();
       expect(visibleInk(), isNotEmpty);
-      await tester.pump(const Duration(milliseconds: 180));
+      await tester.pump(const Duration(milliseconds: 220));
       expect(visibleInk(), isEmpty);
       await tester.pumpAndSettle();
 
@@ -143,7 +143,7 @@ void main() {
       expect(taps, 1);
       await tester.pump();
       expect(splashes(), hasLength(1));
-      await tester.pump(const Duration(milliseconds: 180));
+      await tester.pump(const Duration(milliseconds: 210));
       expect(splashes(), isEmpty);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);

@@ -137,7 +137,8 @@ void main() {
           priority: 0,
           task: () async => prefetchStarted = true,
         );
-        await tester.pump(const Duration(milliseconds: 150));
+        final halfTransition = kPlaceholderContentTransitionDuration ~/ 2;
+        await tester.pump(halfTransition);
         expect(metadataCommitted, isTrue);
         expect(prefetchStarted, isTrue);
         final fade = find
@@ -148,7 +149,7 @@ void main() {
             .first;
         expect(
           tester.widget<FadeTransition>(fade).opacity.value,
-          closeTo(1 - kAppFadeCurve.transform(0.5), 0.001),
+          closeTo(1 - kAppSpringCurve.transform(0.5), 0.001),
         );
         await tester.pumpAndSettle();
         expect(find.byKey(placeholderKey), findsNothing);
@@ -218,7 +219,8 @@ void main() {
       expect(tester.widget<FadeTransition>(fade).opacity.value, 1);
       expect(interaction.isVisualUpdateDeferred, isFalse);
       final imageElement = tester.element(find.byType(Image).first);
-      await tester.pump(const Duration(milliseconds: 150));
+      final halfTransition = kPlaceholderContentTransitionDuration ~/ 2;
+      await tester.pump(halfTransition);
       expect(
         second.loads,
         1,
@@ -226,14 +228,18 @@ void main() {
       );
       expect(
         tester.widget<FadeTransition>(fade).opacity.value,
-        closeTo(1 - kAppFadeCurve.transform(0.5), 0.001),
+        closeTo(1 - kAppSpringCurve.transform(0.5), 0.001),
       );
       ScrollUpdateNotification(
         metrics: metrics(100),
         context: scope,
         scrollDelta: 100,
       ).dispatch(scope);
-      await tester.pump(const Duration(milliseconds: 149));
+      await tester.pump(
+        kPlaceholderContentTransitionDuration -
+            halfTransition -
+            const Duration(milliseconds: 1),
+      );
       expect(placeholder, findsOneWidget);
       expect(tester.element(find.byType(Image).first), same(imageElement));
       await tester.pump(const Duration(milliseconds: 1));

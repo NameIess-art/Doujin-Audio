@@ -92,7 +92,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       _playlistUiController.carouselSnap;
   Duration get _snapDuration => _playlistUiController.carouselSnapImmediately
       ? Duration.zero
-      : const Duration(milliseconds: 350);
+      : const Duration(milliseconds: 420);
   late final ActiveVisibleSessionCardIdNotifier _visibleSessionNotifier;
   final ValueNotifier<double> _pageNotifier = ValueNotifier<double>(
     _loopPageSeed.toDouble(),
@@ -224,7 +224,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       return;
     }
     final targetPage = _pageNotifier.value.round() - 1;
-    await _moveToPage(targetPage, duration: const Duration(milliseconds: 350));
+    await _moveToPage(targetPage, duration: const Duration(milliseconds: 420));
     if (!mounted) return;
     setState(() {
       _currentSessions = _incomingSessions;
@@ -446,7 +446,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
           if (delta != 0) {
             _moveToPage(
               currentPage + delta,
-              duration: const Duration(milliseconds: 250),
+              duration: const Duration(milliseconds: 320),
             );
           }
         }

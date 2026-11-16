@@ -2397,18 +2397,18 @@ void main() {
           await next();
           await tester.pump();
           if (reduceMotion) expect(controller.page, initialPage + 3);
-          await tester.pump(const Duration(milliseconds: 300));
+          await tester.pump(const Duration(milliseconds: 350));
           expect(controller.page, initialPage + 3);
           expect(find.text('4/5'), findsOneWidget);
           await next();
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 20));
           await tester.drag(viewport, const Offset(220, 0));
-          await tester.pump(const Duration(milliseconds: 300));
+          await tester.pump(const Duration(milliseconds: 350));
           final draggedPage = controller.page!.round();
           await next();
           await tester.pump();
-          await tester.pump(const Duration(milliseconds: 300));
+          await tester.pump(const Duration(milliseconds: 350));
           expect(controller.page, draggedPage + 1);
           expect(tester.takeException(), isNull);
           await tester.pumpWidget(const SizedBox.shrink());
@@ -2652,9 +2652,9 @@ void main() {
         scrollDelta: const Offset(0, 120),
       ),
     );
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 350));
     expect(find.text('2 / 2'), findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 350));
     expect(pageView.controller!.page, initialPage + 1);
 
     // Wheel down again cycles from last image back to first image
@@ -2666,9 +2666,9 @@ void main() {
         scrollDelta: const Offset(0, 120),
       ),
     );
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 350));
     expect(find.text('1 / 2'), findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 350));
     expect(pageView.controller!.page, initialPage + 2);
     debugDefaultTargetPlatformOverride = null;
   });

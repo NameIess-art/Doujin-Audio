@@ -81,14 +81,24 @@ class PlaylistTab extends ConsumerStatefulWidget {
 class _PlaylistTabState extends ConsumerState<PlaylistTab>
     with MainTabStateMixin<PlaylistTab> {
   final ScrollController _scrollController = WindowsSmoothScrollController();
-  bool _isSelectionMode = false;
   bool _creatingQueue = false;
-  final Set<String> _selectedSessionIds = <String>{};
+  final _selection = ValueNotifier<Set<String>>(const {});
+  Set<String> get _selectedSessionIds => _selection.value;
   Set<String>? _knownSessionIds;
   final Set<String> _appearingQueueIds = <String>{};
   List<PlaybackDirectoryEntry>? _indexedEntries;
   List<String> _sessionOrder = const [];
   Map<String, int> _sessionIndices = const {};
+  List<String>? _cachedPinnedList;
+  Set<String> _cachedPinnedSet = const <String>{};
+
+  Set<String> _resolvePinnedSet(List<String> ids) {
+    if (!identical(_cachedPinnedList, ids)) {
+      _cachedPinnedList = ids;
+      _cachedPinnedSet = ids.isEmpty ? const <String>{} : ids.toSet();
+    }
+    return _cachedPinnedSet;
+  }
 
   void _scrollToTopOnQueueAdded() {
     if (_scrollController.hasClients && _scrollController.offset > 0) {
@@ -99,50 +109,34 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   void _selectOnlySession(String sessionId) {
     if (_creatingQueue) return;
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
-    setState(() {
-      _isSelectionMode = true;
-      _selectedSessionIds.clear();
-      _selectedSessionIds.add(sessionId);
-    });
+    if (_selectedSessionIds.length != 1 ||
+        !_selectedSessionIds.contains(sessionId)) {
+      _selection.value = {sessionId};
+    }
   }
 
   void _exitSelectionMode() {
     if (_creatingQueue) return;
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.tap);
-    setState(() {
-      _isSelectionMode = false;
-      _selectedSessionIds.clear();
-    });
+    _selection.value = const {};
   }
 
   void _toggleSessionSelection(String sessionId) {
     if (_creatingQueue) return;
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
-    setState(() {
-      if (_selectedSessionIds.contains(sessionId)) {
-        _selectedSessionIds.remove(sessionId);
-        if (_selectedSessionIds.isEmpty) {
-          _isSelectionMode = false;
-        }
-      } else {
-        _selectedSessionIds.add(sessionId);
-      }
-    });
+    final next = {..._selectedSessionIds};
+    if (!next.remove(sessionId)) next.add(sessionId);
+    _selection.value = next;
   }
 
   void _reconcileSelection(PlaylistStructureState structureState) {
-    if (!_isSelectionMode) return;
+    if (_selectedSessionIds.isEmpty) return;
     final availableSessionIds = structureState.entries
         .where((entry) => !entry.isTemporary)
         .map((entry) => entry.id)
         .toSet();
     if (_selectedSessionIds.every(availableSessionIds.contains)) return;
-    setState(() {
-      _selectedSessionIds.retainAll(availableSessionIds);
-      if (_selectedSessionIds.isEmpty) {
-        _isSelectionMode = false;
-      }
-    });
+    _selection.value = _selectedSessionIds.intersection(availableSessionIds);
   }
 
   Future<void> _handleBatchPlay() => PlaylistBatchActions.playSelected(
@@ -178,12 +172,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   }
 
   Future<void> _handleCreatePlaybackQueue(
-    List<PlaybackDirectoryEntry> visibleEntries,
     PlaybackFacade playback,
     AudioPathCoordinator paths,
   ) async {
     if (_creatingQueue) return;
     final selectedIds = Set<String>.of(_selectedSessionIds);
+    final visibleEntries = ref.read(playlistSortedEntriesUiProvider);
     setState(() => _creatingQueue = true);
     try {
       await PlaylistBatchActions.createPlaybackQueue(
@@ -377,6 +371,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   @override
   void dispose() {
     disposeTabState();
+    _selection.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -428,239 +423,337 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 ),
               ),
             ),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: Consumer(
-                builder: (context, ref, child) {
-                  final headerState = ref.watch(playlistHeaderUiProvider);
-                  if (_isSelectionMode) {
-                    final visibleEntries = ref.watch(
-                      playlistSortedEntriesUiProvider,
-                    );
-                    final pinnedPlaylistSessionIds = ref
-                        .watch(
-                          settingsStateProvider.select(
-                            (state) =>
-                                state.value?.pinnedPlaylistSessionIds ??
-                                const <String>[],
-                          ),
-                        )
-                        .toSet();
-                    final paths = ref.read(audioPathCoordinatorProvider);
-                    final playback = ref.read(playbackFacadeProvider);
-                    final count = _selectedSessionIds.length;
-                    final isPlayEnabled = count > 0 && !_creatingQueue;
-                    final isPauseEnabled = count > 0 && !_creatingQueue;
-                    final isPinEnabled = count > 0 && !_creatingQueue;
-                    final isAllPinned =
-                        count > 0 &&
-                        _selectedSessionIds.every(
-                          pinnedPlaylistSessionIds.contains,
-                        );
-                    final isRemoveEnabled = count > 0 && !_creatingQueue;
-                    final canCreateQueue =
-                        !_creatingQueue &&
-                        _hasSelectedPlaybackQueueSource(paths);
+            Positioned.fill(
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Builder(
+                  builder: (headerContext) {
+                    final isSelectionMode =
+                        PlaylistSelectionScope.maybeIsSelectionModeOf(
+                          headerContext,
+                        ) ??
+                        false;
+                    return AppHeaderTransition(
+                      child: isSelectionMode
+                          ? Consumer(
+                              key: const ValueKey<String>(
+                                'playlist_selection_header_scope',
+                              ),
+                              builder: (context, ref, _) {
+                                final selectedIds =
+                                    PlaylistSelectionScope.maybeIdsOf(
+                                      context,
+                                    ) ??
+                                    const <String>{};
+                                final pinnedPlaylistSessionIds =
+                                    _resolvePinnedSet(
+                                      ref.watch(
+                                        settingsStateProvider.select(
+                                          (state) =>
+                                              state
+                                                  .value
+                                                  ?.pinnedPlaylistSessionIds ??
+                                              const <String>[],
+                                        ),
+                                      ),
+                                    );
+                                final paths = ref.read(
+                                  audioPathCoordinatorProvider,
+                                );
+                                final playback = ref.read(
+                                  playbackFacadeProvider,
+                                );
+                                final count = selectedIds.length;
+                                final isPlayEnabled =
+                                    count > 0 && !_creatingQueue;
+                                final isPauseEnabled =
+                                    count > 0 && !_creatingQueue;
+                                final isPinEnabled =
+                                    count > 0 && !_creatingQueue;
+                                final isAllPinned =
+                                    count > 0 &&
+                                    selectedIds.every(
+                                      pinnedPlaylistSessionIds.contains,
+                                    );
+                                final isRemoveEnabled =
+                                    count > 0 && !_creatingQueue;
+                                final canCreateQueue =
+                                    !_creatingQueue &&
+                                    _hasSelectedPlaybackQueueSource(paths);
 
-                    return TopPageHeader(
-                      key: const ValueKey('playlist_batch_selection_header'),
-                      icon: Icons.playlist_play_rounded,
-                      topCapsuleTitle: i18n.tr('multi_select'),
-                      topCapsuleData: i18n.tr('selected_count', {
-                        'count': count.toString(),
-                      }),
-                      titleWidget: const SizedBox.shrink(),
-                      leading: HeaderActionPill(
-                        children: [
-                          IconButton(
-                            key: const ValueKey('batch_play_button'),
-                            onPressed: isPlayEnabled ? _handleBatchPlay : null,
-                            icon: const Icon(Icons.play_arrow_rounded),
-                            tooltip: i18n.tr('play'),
-                            iconSize: 20,
-                            padding: EdgeInsets.zero,
-                            constraints: HeaderActionPill.buttonConstraints,
-                          ),
-                          IconButton(
-                            key: const ValueKey('batch_pause_button'),
-                            onPressed: isPauseEnabled
-                                ? _handleBatchPause
-                                : null,
-                            icon: const Icon(Icons.pause_rounded),
-                            tooltip: i18n.tr('pause'),
-                            iconSize: 20,
-                            padding: EdgeInsets.zero,
-                            constraints: HeaderActionPill.buttonConstraints,
-                          ),
-                          IconButton(
-                            key: const ValueKey('batch_create_queue_button'),
-                            onPressed: canCreateQueue
-                                ? () => _handleCreatePlaybackQueue(
-                                    visibleEntries,
-                                    playback,
-                                    paths,
-                                  )
-                                : null,
-                            icon: const Icon(Icons.playlist_add_rounded),
-                            tooltip: i18n.tr('add_playback_queue'),
-                            iconSize: 20,
-                            padding: EdgeInsets.zero,
-                            constraints: HeaderActionPill.buttonConstraints,
-                          ),
-                          IconButton(
-                            key: const ValueKey('batch_pin_button'),
-                            onPressed: isPinEnabled ? _handleBatchPin : null,
-                            icon: isAllPinned
-                                ? const PushPinOffIcon()
-                                : const Icon(Icons.push_pin_rounded),
-                            tooltip: i18n.tr(
-                              isAllPinned ? 'unpin_from_top' : 'pin_to_top',
-                            ),
-                            iconSize: 20,
-                            padding: EdgeInsets.zero,
-                            constraints: HeaderActionPill.buttonConstraints,
-                          ),
-                          IconButton(
-                            key: const ValueKey('batch_remove_button'),
-                            onPressed: isRemoveEnabled
-                                ? _handleBatchRemove
-                                : null,
-                            icon: const Icon(Icons.delete_outline_rounded),
-                            tooltip: i18n.tr('remove'),
-                            iconSize: 20,
-                            padding: EdgeInsets.zero,
-                            constraints: HeaderActionPill.buttonConstraints,
-                          ),
-                        ],
-                      ),
-                      trailing: HeaderFloatingButton(
-                        child: IconButton(
-                          key: const ValueKey('exit_selection_button'),
-                          onPressed: _creatingQueue ? null : _exitSelectionMode,
-                          icon: const Icon(Icons.close_rounded),
-                          tooltip: i18n.tr('cancel'),
-                        ),
-                      ),
-                    ).withAppHeaderTransition();
-                  }
-
-                  return TopPageHeader(
-                    key: headerKey,
-                    icon: Icons.playlist_play_rounded,
-                    collapseController: _scrollController,
-                    topCapsuleTitle: i18n.tr('playback_sessions'),
-                    topCapsuleData: i18n.tr('playlist_header_stats', {
-                      'sessions': headerState.sessionCount.toString(),
-                      'playing': headerState.playingCount.toString(),
-                    }),
-                    title: i18n.tr('playback_sessions'),
-                    titleWidget: _buildHeaderLeftActions(
-                      context,
-                      i18n,
-                      headerState,
-                    ),
-                    trailing: SizedBox(
-                      height: 38,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          headerState.hasTimer
-                              ? TimerCountdownCapsule(
-                                  remaining:
-                                      headerState.timerRemaining ??
-                                      headerState.timerDuration ??
-                                      Duration.zero,
-                                  active: headerState.timerActive,
-                                  autoResumeAt: headerState.autoResumeAt,
-                                  onTap: widget.onTimerTap,
-                                  onLongPress: () =>
-                                      unawaited(_openTimerQuickMenu(context)),
-                                )
-                              : HeaderFloatingButton(
-                                  child: GestureDetector(
-                                    onLongPress: () {
-                                      AppInteractionFeedback.trigger(
-                                        AppInteractionFeedbackType.selection,
-                                      );
-                                      unawaited(_openTimerQuickMenu(context));
-                                    },
+                                return TopPageHeader(
+                                  key: const ValueKey(
+                                    'playlist_batch_selection_header',
+                                  ),
+                                  icon: Icons.playlist_play_rounded,
+                                  topCapsuleTitle: i18n.tr('multi_select'),
+                                  topCapsuleData: i18n.tr('selected_count', {
+                                    'count': count.toString(),
+                                  }),
+                                  titleWidget: const SizedBox.shrink(),
+                                  leading: HeaderActionPill(
+                                    children: [
+                                      IconButton(
+                                        key: const ValueKey('batch_play_button'),
+                                        onPressed: isPlayEnabled
+                                            ? _handleBatchPlay
+                                            : null,
+                                        icon: const Icon(
+                                          Icons.play_arrow_rounded,
+                                        ),
+                                        tooltip: i18n.tr('play'),
+                                        iconSize: 20,
+                                        padding: EdgeInsets.zero,
+                                        constraints:
+                                            HeaderActionPill.buttonConstraints,
+                                      ),
+                                      IconButton(
+                                        key: const ValueKey(
+                                          'batch_pause_button',
+                                        ),
+                                        onPressed: isPauseEnabled
+                                            ? _handleBatchPause
+                                            : null,
+                                        icon: const Icon(Icons.pause_rounded),
+                                        tooltip: i18n.tr('pause'),
+                                        iconSize: 20,
+                                        padding: EdgeInsets.zero,
+                                        constraints:
+                                            HeaderActionPill.buttonConstraints,
+                                      ),
+                                      IconButton(
+                                        key: const ValueKey(
+                                          'batch_create_queue_button',
+                                        ),
+                                        onPressed: canCreateQueue
+                                            ? () => _handleCreatePlaybackQueue(
+                                                playback,
+                                                paths,
+                                              )
+                                            : null,
+                                        icon: const Icon(
+                                          Icons.playlist_add_rounded,
+                                        ),
+                                        tooltip: i18n.tr('add_playback_queue'),
+                                        iconSize: 20,
+                                        padding: EdgeInsets.zero,
+                                        constraints:
+                                            HeaderActionPill.buttonConstraints,
+                                      ),
+                                      IconButton(
+                                        key: const ValueKey('batch_pin_button'),
+                                        onPressed: isPinEnabled
+                                            ? _handleBatchPin
+                                            : null,
+                                        icon: isAllPinned
+                                            ? const PushPinOffIcon()
+                                            : const Icon(
+                                                Icons.push_pin_rounded,
+                                              ),
+                                        tooltip: i18n.tr(
+                                          isAllPinned
+                                              ? 'unpin_from_top'
+                                              : 'pin_to_top',
+                                        ),
+                                        iconSize: 20,
+                                        padding: EdgeInsets.zero,
+                                        constraints:
+                                            HeaderActionPill.buttonConstraints,
+                                      ),
+                                      IconButton(
+                                        key: const ValueKey(
+                                          'batch_remove_button',
+                                        ),
+                                        onPressed: isRemoveEnabled
+                                            ? _handleBatchRemove
+                                            : null,
+                                        icon: const Icon(
+                                          Icons.delete_outline_rounded,
+                                        ),
+                                        tooltip: i18n.tr('remove'),
+                                        iconSize: 20,
+                                        padding: EdgeInsets.zero,
+                                        constraints:
+                                            HeaderActionPill.buttonConstraints,
+                                      ),
+                                    ],
+                                  ),
+                                  trailing: HeaderFloatingButton(
                                     child: IconButton(
-                                      onPressed: widget.onTimerTap,
-                                      icon: const Icon(Icons.alarm_rounded),
-                                      tooltip: i18n.tr('timer'),
-                                      iconSize: 20,
-                                      padding: EdgeInsets.zero,
-                                      constraints:
-                                          const BoxConstraints.tightFor(
-                                            width: 38,
-                                            height: 38,
-                                          ),
+                                      key: const ValueKey(
+                                        'exit_selection_button',
+                                      ),
+                                      onPressed: _creatingQueue
+                                          ? null
+                                          : _exitSelectionMode,
+                                      icon: const Icon(Icons.close_rounded),
+                                      tooltip: i18n.tr('cancel'),
                                     ),
                                   ),
-                                ),
-                          if (defaultTargetPlatform !=
-                              TargetPlatform.windows) ...[
-                            const SizedBox(width: 8),
-                            HeaderFloatingButton(
-                              child: IconButton(
-                                key: const ValueKey<String>(
-                                  'playlist_sleep_canvas_button',
-                                ),
-                                onPressed: headerState.hasPlayingAudioSession
-                                    ? () {
-                                        if (!ref
-                                            .read(playbackFacadeProvider)
-                                            .hasPlayingAudioSession) {
-                                          return;
-                                        }
-                                        Navigator.of(context).push(
-                                          BedtimeCanvasPage.route(context),
-                                        );
-                                      }
-                                    : null,
-                                icon: const Icon(Icons.bedtime_outlined),
-                                tooltip: i18n.tr('sleep_mode'),
-                                iconSize: 20,
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints.tightFor(
-                                  width: 38,
-                                  height: 38,
-                                ),
-                              ),
-                            ),
-                          ],
-                          const SizedBox(width: 8),
-                          HeaderFloatingButton(
-                            child: IconButton(
+                                );
+                              },
+                            )
+                          : Consumer(
                               key: const ValueKey<String>(
-                                'playlist_sort_button',
+                                'playlist_normal_header_scope',
                               ),
-                              onPressed: _openSortOptions,
-                              icon: const Icon(Icons.sort_rounded),
-                              tooltip: i18n.tr('sort_by'),
-                              iconSize: 20,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints.tightFor(
-                                width: 38,
-                                height: 38,
-                              ),
+                              builder: (context, ref, _) {
+                                final headerState = ref.watch(
+                                  playlistHeaderUiProvider,
+                                );
+                                return TopPageHeader(
+                                  key: headerKey,
+                                  icon: Icons.playlist_play_rounded,
+                                  collapseController: _scrollController,
+                                  topCapsuleTitle: i18n.tr('playback_sessions'),
+                                  topCapsuleData: i18n.tr(
+                                    'playlist_header_stats',
+                                    {
+                                      'sessions':
+                                          headerState.sessionCount.toString(),
+                                      'playing':
+                                          headerState.playingCount.toString(),
+                                    },
+                                  ),
+                                  title: i18n.tr('playback_sessions'),
+                                  titleWidget: _buildHeaderLeftActions(
+                                    context,
+                                    i18n,
+                                    headerState,
+                                  ),
+                                  trailing: SizedBox(
+                                    height: 38,
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      mainAxisAlignment: MainAxisAlignment.end,
+                                      children: [
+                                        headerState.hasTimer
+                                            ? TimerCountdownCapsule(
+                                                remaining:
+                                                    headerState
+                                                        .timerRemaining ??
+                                                    headerState.timerDuration ??
+                                                    Duration.zero,
+                                                active: headerState.timerActive,
+                                                autoResumeAt:
+                                                    headerState.autoResumeAt,
+                                                onTap: widget.onTimerTap,
+                                                onLongPress: () => unawaited(
+                                                  _openTimerQuickMenu(context),
+                                                ),
+                                              )
+                                            : HeaderFloatingButton(
+                                                child: GestureDetector(
+                                                  onLongPress: () {
+                                                    AppInteractionFeedback.trigger(
+                                                      AppInteractionFeedbackType
+                                                          .selection,
+                                                    );
+                                                    unawaited(
+                                                      _openTimerQuickMenu(
+                                                        context,
+                                                      ),
+                                                    );
+                                                  },
+                                                  child: IconButton(
+                                                    onPressed:
+                                                        widget.onTimerTap,
+                                                    icon: const Icon(
+                                                      Icons.alarm_rounded,
+                                                    ),
+                                                    tooltip: i18n.tr('timer'),
+                                                    iconSize: 20,
+                                                    padding: EdgeInsets.zero,
+                                                    constraints:
+                                                        const BoxConstraints.tightFor(
+                                                          width: 38,
+                                                          height: 38,
+                                                        ),
+                                                  ),
+                                                ),
+                                              ),
+                                        if (defaultTargetPlatform !=
+                                            TargetPlatform.windows) ...[
+                                          const SizedBox(width: 8),
+                                          HeaderFloatingButton(
+                                            child: IconButton(
+                                              key: const ValueKey<String>(
+                                                'playlist_sleep_canvas_button',
+                                              ),
+                                              onPressed: headerState
+                                                      .hasPlayingAudioSession
+                                                  ? () {
+                                                      if (!ref
+                                                          .read(
+                                                            playbackFacadeProvider,
+                                                          )
+                                                          .hasPlayingAudioSession) {
+                                                        return;
+                                                      }
+                                                      Navigator.of(
+                                                        context,
+                                                      ).push(
+                                                        BedtimeCanvasPage.route(
+                                                          context,
+                                                        ),
+                                                      );
+                                                    }
+                                                  : null,
+                                              icon: const Icon(
+                                                Icons.bedtime_outlined,
+                                              ),
+                                              tooltip: i18n.tr('sleep_mode'),
+                                              iconSize: 20,
+                                              padding: EdgeInsets.zero,
+                                              constraints:
+                                                  const BoxConstraints.tightFor(
+                                                    width: 38,
+                                                    height: 38,
+                                                  ),
+                                            ),
+                                          ),
+                                        ],
+                                        const SizedBox(width: 8),
+                                        HeaderFloatingButton(
+                                          child: IconButton(
+                                            key: const ValueKey<String>(
+                                              'playlist_sort_button',
+                                            ),
+                                            onPressed: _openSortOptions,
+                                            icon: const Icon(
+                                              Icons.sort_rounded,
+                                            ),
+                                            tooltip: i18n.tr('sort_by'),
+                                            iconSize: 20,
+                                            padding: EdgeInsets.zero,
+                                            constraints:
+                                                const BoxConstraints.tightFor(
+                                                  width: 38,
+                                                  height: 38,
+                                                ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ).withAppHeaderTransition();
-                },
+                    );
+                  },
+                ),
               ),
             ),
           ],
         ),
       ),
     );
-    return page;
+    return ValueListenableBuilder<Set<String>>(
+      valueListenable: _selection,
+      child: page,
+      builder: (context, ids, child) =>
+          PlaylistSelectionScope(ids: ids, child: child!),
+    );
   }
 
   Widget _buildPlaylistContent(
@@ -692,28 +785,17 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     }
     if (structureState.isInitialized &&
         (orderChanged || _knownSessionIds == null)) {
-      final sessionIds = _sessionIndices.keys.toSet();
       if (_knownSessionIds case final known?) {
-        _appearingQueueIds.addAll(
-          visibleEntries
-              .where(
-                (entry) => entry.queueName != null && !known.contains(entry.id),
-              )
-              .map((entry) => entry.id),
-        );
+        for (final entry in visibleEntries) {
+          if (entry.queueName != null && !known.contains(entry.id)) {
+            _appearingQueueIds.add(entry.id);
+          }
+        }
       }
-      _knownSessionIds = sessionIds;
-      _appearingQueueIds.retainAll(sessionIds);
+      _knownSessionIds = _sessionIndices.keys.toSet();
+      _appearingQueueIds.removeWhere((id) => !_sessionIndices.containsKey(id));
     }
     if (disableAnimations) _appearingQueueIds.clear();
-    final pinnedPlaylistSessionIds = ref
-        .watch(
-          settingsStateProvider.select(
-            (state) =>
-                state.value?.pinnedPlaylistSessionIds ?? const <String>[],
-          ),
-        )
-        .toSet();
     final coverImageResolution = ref.watch(coverImageResolutionProvider);
     final coverCacheWidth = coverThumbnailCacheWidth(
       logicalWidth: playlistCoverSize,
@@ -727,8 +809,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       final session = visibleEntries[index];
       final isQueue = session.queueName != null;
       final isTemporary = session.isTemporary;
-      final isPinned =
-          !isTemporary && pinnedPlaylistSessionIds.contains(session.id);
       // Queue rows resolve their own current track and cover mosaic. Only
       // ordinary sessions need the single-track artwork prepared here.
       final track = isQueue
@@ -741,9 +821,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 library: library,
                 playback: playback,
                 coverCacheWidth: coverCacheWidth,
-                isSelectionMode: _isSelectionMode && !isTemporary,
-                isSelected: _selectedSessionIds.contains(session.id),
-                isPinned: isPinned,
                 onLongPress: isTemporary
                     ? null
                     : () => _selectOnlySession(session.id),
@@ -773,15 +850,11 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
               )
             : SessionListCard(
                 sessionId: session.id,
-                session: playback.sessionSnapshotById(session.id),
                 track: track,
                 coverCacheWidth: coverCacheWidth,
                 library: library,
                 playback: playback,
                 isTemporary: isTemporary,
-                isSelectionMode: _isSelectionMode && !isTemporary,
-                isSelected: _selectedSessionIds.contains(session.id),
-                isPinned: isPinned,
                 onLongPress: isTemporary
                     ? null
                     : () => _selectOnlySession(session.id),
@@ -846,27 +919,42 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
             topInset: topPadding,
             onOpenLibrary: widget.onOpenLibrary,
           ),
-          content: AnimatedReorder(
-            order: _sessionOrder,
-            child: ScrollToTopListView.builder(
-              key: const PageStorageKey<String>('playlist_list'),
-              controller: _scrollController,
-              physics: const ClampingScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(
-                playlistListHorizontalPadding,
-                topPadding,
-                playlistListHorizontalPadding,
-                bottomPadding,
+          content: Consumer(
+            builder: (context, ref, child) {
+              final pinnedIds = _resolvePinnedSet(
+                ref.watch(
+                  settingsStateProvider.select(
+                    (state) =>
+                        state.value?.pinnedPlaylistSessionIds ??
+                        const <String>[],
+                  ),
+                ),
+              );
+              return PlaylistPinnedScope(pinnedIds: pinnedIds, child: child!);
+            },
+            child: AnimatedReorder(
+              order: _sessionOrder,
+              child: ScrollToTopListView.builder(
+                key: const PageStorageKey<String>('playlist_list'),
+                controller: _scrollController,
+                physics: const ClampingScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(
+                  playlistListHorizontalPadding,
+                  topPadding,
+                  playlistListHorizontalPadding,
+                  bottomPadding,
+                ),
+                // Match the library's small prefetch window. A wide viewport
+                // already lays out more cards without another screen of cache.
+                cacheExtent: 320,
+                clipBehavior: Clip.none,
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                itemCount: visibleEntries.length + 1,
+                itemBuilder: buildSessionItem,
+                findChildIndexCallback: (key) =>
+                    key is ValueKey<String> ? sessionIndices[key.value] : null,
               ),
-              // Match the library's small prefetch window. A wide viewport
-              // already lays out more cards without another screen of cache.
-              cacheExtent: 320,
-              clipBehavior: Clip.none,
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              itemCount: visibleEntries.length + 1,
-              itemBuilder: buildSessionItem,
-              findChildIndexCallback: (key) =>
-                  key is ValueKey<String> ? sessionIndices[key.value] : null,
             ),
           ),
         ),

@@ -17,6 +17,7 @@ import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/core/widgets/app_bottom_sheet.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
@@ -1540,7 +1541,7 @@ void main() {
             await tester.ensureVisible(scriptTile);
             await tester.tap(scriptTile);
             await tester.pump();
-            await tester.pump(const Duration(milliseconds: 150));
+            await tester.pump(kAppFadeDuration ~/ 2);
             final selectionFade = find
                 .ancestor(
                   of: find.byKey(const ValueKey('subtitle_script_selection')),

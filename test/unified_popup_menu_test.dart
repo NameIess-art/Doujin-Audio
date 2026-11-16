@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/app_buttons.dart';
 import 'package:doujin_audio/core/widgets/app_entry_ink_well.dart';
 import 'package:doujin_audio/core/widgets/unified_popup_menu.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
@@ -20,7 +21,7 @@ void main() {
   setUp(coordinator.resetForTest);
   tearDown(coordinator.resetForTest);
 
-  testWidgets('button menu opens without highlighting the row under the mouse', (
+  testWidgets('button menu highlights the first row on the initial mouse move', (
     tester,
   ) async {
     int? selected;
@@ -28,13 +29,15 @@ void main() {
       MaterialApp(
         theme: ThemeData(platform: TargetPlatform.windows),
         home: Scaffold(
-          body: Center(
+          body: Align(
+            alignment: Alignment.centerLeft,
             child: UnifiedPopupMenuButton<int>(
               icon: Icons.add,
               tooltip: 'Add',
               entries: const [
                 UnifiedMenuEntry.action(value: 1, label: 'Add folder'),
                 UnifiedMenuEntry.action(value: 2, label: 'Add file'),
+                UnifiedMenuEntry.action(value: 3, label: 'Add library'),
               ],
               onSelected: (value) => selected = value,
             ),
@@ -48,7 +51,8 @@ void main() {
     await mouse.addPointer(location: anchor);
     await mouse.down(anchor);
     await mouse.up();
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 8));
 
     final first = find.text('Add folder');
     final second = find.text('Add file');
@@ -62,6 +66,20 @@ void main() {
     expect(Focus.of(tester.element(first)).hasFocus, isFalse);
     expect(isHighlighted(first), isFalse);
 
+    final firstRow = find.ancestor(
+      of: first,
+      matching: find.byType(AppEntryInkWell),
+    );
+    final paintedRow = tester.getRect(firstRow);
+    await mouse.moveTo(Offset(paintedRow.center.dx, paintedRow.top + 0.25));
+    await tester.pump();
+    expect(isHighlighted(first), isTrue);
+    expect(
+      Material.of(tester.element(first)) as RenderObject,
+      paints..rect(
+        color: appHoverTint(Theme.of(tester.element(first)).colorScheme),
+      ),
+    );
     await mouse.moveTo(tester.getCenter(second));
     await tester.pumpAndSettle();
     expect(isHighlighted(second), isTrue);
@@ -118,7 +136,7 @@ void main() {
     });
   }
 
-  testWidgets('first hover follows the painted row during menu expansion', (
+  testWidgets('context menu highlights the first hover at its animated edge', (
     tester,
   ) async {
     late BuildContext hostContext;
@@ -146,11 +164,13 @@ void main() {
       ],
     );
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 8));
+    await tester.pump(const Duration(milliseconds: 165));
 
     final first = find.text('Action 1');
     final second = find.text('Action 2');
-    await mouse.moveTo(tester.getCenter(first));
+    final row = find.ancestor(of: first, matching: find.byType(AppEntryInkWell));
+    final bounds = tester.getRect(row);
+    await mouse.moveTo(Offset(bounds.center.dx, bounds.top + 0.02));
     await tester.pump();
 
     Iterable<InkHighlight> highlights(Finder label) {
@@ -163,6 +183,12 @@ void main() {
     }
 
     expect(highlights(first), isNotEmpty);
+    expect(
+      Material.of(tester.element(first)) as RenderObject,
+      paints..rect(
+        color: appHoverTint(Theme.of(tester.element(first)).colorScheme),
+      ),
+    );
     expect(highlights(second), isEmpty);
     await mouse.down(tester.getCenter(first));
     await mouse.up();
@@ -591,6 +617,12 @@ void main() {
         await mouse.moveTo(tester.getCenter(first));
         await tester.pumpAndSettle();
         expect(isHighlighted(first), isTrue);
+        expect(
+          Material.of(tester.element(first)) as RenderObject,
+          paints..rect(
+            color: appHoverTint(Theme.of(tester.element(first)).colorScheme),
+          ),
+        );
         final firstCenter = tester.getCenter(first);
         await mouse.moveTo(const Offset(10, 10));
         await tester.pumpAndSettle();

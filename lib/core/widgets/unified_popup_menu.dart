@@ -14,46 +14,36 @@ import 'app_transitions.dart';
 import 'mobile_overlay_inset.dart';
 import 'windows_smooth_scroll_controller.dart';
 
-const _menuEnterDuration = Duration(milliseconds: 150);
-const _menuExitDuration = Duration(milliseconds: 120);
+const _menuEnterDuration = Duration(milliseconds: 200);
+const _menuExitDuration = Duration(milliseconds: 160);
 const _compactMenuEdgeExtension = 6.0;
 
 class _AnchoredMenuScale extends SingleChildRenderObjectWidget {
   const _AnchoredMenuScale({
     required this.scale,
     required this.anchorInMenu,
-    this.transformHitTests = false,
     required super.child,
   });
 
   final Animation<double> scale;
   final Offset Function(Size) anchorInMenu;
-  final bool transformHitTests;
 
   @override
   RenderObject createRenderObject(BuildContext context) =>
-      _RenderAnchoredMenuScale(scale, anchorInMenu, transformHitTests);
+      _RenderAnchoredMenuScale(scale, anchorInMenu);
 
   @override
   void updateRenderObject(
     BuildContext context,
     _RenderAnchoredMenuScale renderObject,
   ) {
-    renderObject
-      ..transformHitTests = transformHitTests
-      ..update(scale, anchorInMenu);
+    renderObject.update(scale, anchorInMenu);
   }
 }
 
 class _RenderAnchoredMenuScale extends RenderTransform {
-  _RenderAnchoredMenuScale(
-    this._scale,
-    this._anchorInMenu,
-    bool transformHitTests,
-  ) : super(
-        transform: Matrix4.identity(),
-        transformHitTests: transformHitTests,
-      );
+  _RenderAnchoredMenuScale(this._scale, this._anchorInMenu)
+    : super(transform: Matrix4.identity());
 
   Animation<double> _scale;
   Offset Function(Size) _anchorInMenu;
@@ -513,13 +503,14 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
                   left: widget.rect.left,
                   top: widget.rect.top,
                   width: widget.rect.width,
-                  child: FadeTransition(
-                    opacity: _curved,
-                    child: SlideTransition(
-                      position: _slide,
-                      child: _AnchoredMenuScale(
-                        anchorInMenu: (_) => widget.anchor - widget.rect.topLeft,
-                        scale: _scale,
+                  // Keep the fade's hit bounds inside the animated transforms.
+                  child: SlideTransition(
+                    position: _slide,
+                    child: _AnchoredMenuScale(
+                      anchorInMenu: (_) => widget.anchor - widget.rect.topLeft,
+                      scale: _scale,
+                      child: FadeTransition(
+                        opacity: _curved,
                         child: ExcludeFocus(
                           excluding:
                               widget.animation.status == AnimationStatus.reverse,
@@ -679,6 +670,9 @@ class _UnifiedPopupMenuRow<T> extends StatelessWidget {
       color: Colors.transparent,
       child: AppEntryInkWell(
         hoverColor: suppressHover ? Colors.transparent : null,
+        // InkHighlight locks its alpha tween on creation, so changing
+        // borderRadius when hover unlocks recreates any invisible highlight.
+        borderRadius: suppressHover ? BorderRadius.zero : null,
         onTap: entry.enabled && value != null
             ? () {
                 AppInteractionFeedback.trigger(
@@ -1102,16 +1096,14 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
                         .center;
                     return CustomSingleChildLayout(
                       delegate: layout,
-                      child: FadeTransition(
-                        opacity: _curved,
-                        child: _AnchoredMenuScale(
-                          // Follow the visible row while the menu opens,
-                          // especially when it expands upward from its anchor.
-                          transformHitTests: true,
-                          anchorInMenu: (menuSize) =>
-                              anchor -
-                              layout.getPositionForChild(size, menuSize),
-                          scale: _scale,
+                      // Keep hit testing within the painted bounds, including
+                      // the brief expansion beyond the resting menu edges.
+                      child: _AnchoredMenuScale(
+                        anchorInMenu: (menuSize) =>
+                            anchor - layout.getPositionForChild(size, menuSize),
+                        scale: _scale,
+                        child: FadeTransition(
+                          opacity: _curved,
                           child: widget.themes.wrap(
                             Material(
                               color: Colors.transparent,

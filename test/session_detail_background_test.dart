@@ -404,7 +404,7 @@ void main() {
           await tester.pump();
           expect(flightFinder, findsNothing);
         }
-        await tester.pump(const Duration(milliseconds: 200));
+        await tester.pump(const Duration(milliseconds: 240));
         await tester.pump();
         expect(flightFinder, findsNothing);
         final verifyUpgrade = entry == 'dock' && exitToDock;
@@ -713,7 +713,7 @@ void main() {
         );
         expect(
           overlayButton.style!.foregroundColor!.resolve({WidgetState.focused}),
-          expected.primary,
+          Colors.white,
         );
         final slider = kind == 'fullscreen'
             ? find.byKey(const ValueKey('fullscreen_video_progress'))

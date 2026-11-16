@@ -818,6 +818,8 @@ const Map<String, String> appLanguageEn = {
   'about_feedback': 'Send feedback',
   'about_feedback_open_failed':
       'Could not open a mail app. Install or set one up, or email:',
+  'about_feedback_page_open_failed':
+      'Could not open the feedback page. Send feedback by email to',
   'about_wiki_open_failed': 'Could not open the GitHub project.',
   'about_author': 'Author',
   'about_reward': 'Support the project',

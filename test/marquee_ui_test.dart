@@ -107,6 +107,7 @@ void main() {
       final offset = position.pixels;
       expect(offset, greaterThan(0));
       enabled.value = false;
+      await tester.pump();
       await _pumpMarqueeFrames(tester, 500);
       expect(position.pixels, offset);
       enabled.value = true;
@@ -903,6 +904,7 @@ void main() {
       await _pumpMarqueeFrames(tester, 3000);
       expect(position.pixels, greaterThan(0));
       for (var mode = 0; mode < 3; mode++) {
+        final offsetBeforePause = position.pixels;
         update(() {
           visible = mode != 0;
           reducedMotion = mode == 1;
@@ -910,7 +912,13 @@ void main() {
         });
         await tester.pump();
         await _pumpMarqueeFrames(tester, 3000);
-        expect(position.pixels, 0, reason: 'Pause mode $mode');
+        // TickerMode pauses offstage marquees in place; reduced motion and
+        // scroll/pause scopes reset back to the start.
+        expect(
+          position.pixels,
+          mode == 0 ? offsetBeforePause : 0,
+          reason: 'Pause mode $mode',
+        );
         update(() {
           visible = true;
           reducedMotion = false;

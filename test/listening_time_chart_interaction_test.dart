@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/presentation/listening_time_chart.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
 import 'package:doujin_audio/features/player/domain/listening_activity.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
@@ -252,13 +253,17 @@ void main() {
               findsOneWidget,
             );
             expect(fades, findsNWidgets(2));
-            await tester.pump(const Duration(milliseconds: 150));
+            await tester.pump(kAppFadeDuration ~/ 2);
             for (final fade in tester.widgetList<FadeTransition>(fades)) {
               expect(fade.opacity.value, inExclusiveRange(0.45, 0.55));
             }
             expect(tester.getSize(area).height, height);
             expect(duration, findsOneWidget);
-            await tester.pump(const Duration(milliseconds: 149));
+            await tester.pump(
+              kAppFadeDuration -
+                  (kAppFadeDuration ~/ 2) -
+                  const Duration(milliseconds: 1),
+            );
             expect(fades, findsNWidgets(2));
             await tester.pump(const Duration(milliseconds: 1));
             final opacityValues =

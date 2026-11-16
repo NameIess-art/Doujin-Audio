@@ -336,16 +336,40 @@ void main() {
     await tester.pumpWidget(fixture.build(const MainScreen()));
     await tester.pumpAndSettle();
     final indicator = find.byKey(const ValueKey('mobile_navigation_indicator'));
+    final leftmostIcon = find.descendant(
+      of: find.byKey(const ValueKey('main_destination_music_library')),
+      matching: find.byType(Icon),
+    );
+    final leftmostIndicator = tester.getRect(indicator);
+    expect(
+      tester.getCenter(leftmostIcon).dx,
+      closeTo(leftmostIndicator.center.dx, 0.01),
+    );
     final playlist = find.byKey(const ValueKey('main_destination_ink_nav_sessions'));
-    final start = tester.getCenter(indicator).dx;
+    final start = leftmostIndicator.center.dx;
     final end = tester.getCenter(playlist).dx;
     await tester.tap(playlist);
     await tester.pump();
     expect(tester.getCenter(indicator).dx, closeTo(start, 0.01));
     await tester.pump(const Duration(milliseconds: 60));
     expect(tester.getCenter(indicator).dx, inExclusiveRange(start, end));
-    await tester.pump(const Duration(milliseconds: 120));
-    expect(tester.getCenter(indicator).dx, closeTo(end, 0.01));
+    await tester.pump(const Duration(milliseconds: 220));
+    final middleIndicator = tester.getRect(indicator);
+    expect(middleIndicator.center.dx, closeTo(end, 0.01));
+    expect(middleIndicator.width, closeTo(leftmostIndicator.width, 0.01));
+
+    await tester.tap(find.byKey(const ValueKey('main_destination_ink_nav_settings')));
+    await tester.pumpAndSettle();
+    final rightmostIcon = find.descendant(
+      of: find.byKey(const ValueKey('main_destination_nav_settings')),
+      matching: find.byType(Icon),
+    );
+    final rightmostIndicator = tester.getRect(indicator);
+    expect(
+      tester.getCenter(rightmostIcon).dx,
+      closeTo(rightmostIndicator.center.dx, 0.01),
+    );
+    expect(rightmostIndicator.width, closeTo(leftmostIndicator.width, 0.01));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));

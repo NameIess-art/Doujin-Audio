@@ -12,8 +12,10 @@ import 'package:doujin_audio/features/player/application/native_playback_bridge.
 import 'package:doujin_audio/core/platform/notifications_platform_service.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/features/player/application/playback_notification_service.dart';
+import 'package:doujin_audio/app/presentation/app_interaction_effects_controller.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/features/library/presentation/library_cover_ui_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -1586,9 +1588,11 @@ void main() {
             });
 
         await tester.runAsync(runtimeGraph.runtime.dispose);
+        final notificationStateService = NotificationCoordinatorService();
         // Settings disposal must await futures created outside FakeAsync.
         runtimeGraph = (await tester.runAsync(
           () async => createTestRuntimeGraph(
+            notificationStateService: notificationStateService,
             notificationService: PlaybackNotificationService(
               notificationsPlatformService: NotificationsPlatformService(
                 channel: notificationsChannel,
@@ -1602,6 +1606,19 @@ void main() {
           ),
         ))!;
         fixture.bindRuntimeGraph(runtimeGraph);
+        final libraryCovers = LibraryCoverUiController(
+          library: runtimeGraph.library,
+        );
+        final effectsController = AppInteractionEffectsController(
+          library: runtimeGraph.library,
+          libraryCovers: libraryCovers,
+          notifications: runtimeGraph.notifications,
+          warmup: runtimeGraph.warmup,
+        );
+        addTearDown(() {
+          effectsController.dispose();
+          unawaited(libraryCovers.dispose());
+        });
         runtimeGraph.playback.configurePersistence(enabled: false);
         final track = MusicTrack(
           path: '/music/notification-scroll.mp3',
@@ -1619,13 +1636,22 @@ void main() {
 
         await runtimeGraph.playback.spawnSession(track, autoPlay: false);
         await tester.pump(const Duration(milliseconds: 140));
-        expect(notificationSyncCalls, 0);
+        expect(notificationSyncCalls, 1);
+
+        // Non-runtime notification refreshes still defer while interacting.
+        runtimeGraph.notifications.syncPlaybackState(immediateUnifiedSync: true);
+        await tester.pump(const Duration(milliseconds: 140));
+        expect(notificationSyncCalls, 1);
 
         coordinator.endInteraction(interactionSource);
         await tester.pump(const Duration(milliseconds: 170));
         await tester.pump();
 
-        expect(notificationSyncCalls, 1);
+        expect(notificationSyncCalls, 2);
+        expect(
+          notificationStateService.synchronizationPendingWhilePaused,
+          isFalse,
+        );
         await tester.runAsync(runtimeGraph.runtime.dispose);
       },
       variant: TargetPlatformVariant.only(TargetPlatform.windows),

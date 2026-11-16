@@ -7,7 +7,7 @@ import com.doujin.audio.player.session.StoredNativePlaybackSession
 import java.util.concurrent.Executors
 
 internal interface NativePlaybackRestoreEnvironment {
-    fun loadSessions(): List<StoredNativePlaybackSession>
+    fun loadSessions(sessionIds: Set<String>? = null, activeOnly: Boolean = false): List<StoredNativePlaybackSession>
     fun executeBackground(task: () -> Unit)
     fun postMain(task: () -> Unit)
     fun shutdown()
@@ -21,8 +21,8 @@ internal class AndroidNativePlaybackRestoreEnvironment(
         Thread(runnable, "NativePlaybackRestore").apply { isDaemon = true }
     }
 
-    override fun loadSessions(): List<StoredNativePlaybackSession> =
-        NativePlaybackStateStore.loadSessions(context)
+    override fun loadSessions(sessionIds: Set<String>?, activeOnly: Boolean): List<StoredNativePlaybackSession> =
+        NativePlaybackStateStore.loadSessions(context, sessionIds, activeOnly)
 
     override fun executeBackground(task: () -> Unit) = executor.execute(task)
 
@@ -75,7 +75,7 @@ internal class NativePlaybackRestoreCoordinator(
         environment.executeBackground {
             var storedSessions = emptyList<StoredNativePlaybackSession>()
             val loaded = runCatching {
-                storedSessions = environment.loadSessions().filter { it.playing || it.playWhenReady }
+                storedSessions = environment.loadSessions(activeOnly = true)
                 prepareSessionsOnBackground(storedSessions)
             }
             environment.postMain {
@@ -130,7 +130,7 @@ internal class NativePlaybackRestoreCoordinator(
         environment.executeBackground {
             var stored = emptyList<StoredNativePlaybackSession>()
             val loaded = runCatching {
-                stored = environment.loadSessions().filter { it.sessionId in requests }
+                stored = environment.loadSessions(sessionIds = requests.keys)
                 prepareSessionsOnBackground(stored)
             }
             environment.postMain {

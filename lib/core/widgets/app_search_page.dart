@@ -25,6 +25,9 @@ PageRoute<void> buildAppSearchPageRoute({
 }) => buildAppPageRoute<void>(
   context: context,
   settings: const RouteSettings(name: appSearchRouteName),
+  duration: kAppMotionStandard,
+  reverseDuration: kAppMotionFast,
+  slide: false,
   child: child,
   separateHeader: true,
 );

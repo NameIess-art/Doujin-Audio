@@ -6,13 +6,14 @@ import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
+import 'package:doujin_audio/features/player/application/audio_state_services.dart';
 import 'package:doujin_audio/features/player/domain/playback_queue.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_sorting.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
 
 import 'support/app_runtime_test_fixture.dart';
 
-PlaybackSessionSnapshot _session(
+PlaybackDirectoryEntry _session(
   String id, {
   String? name,
   DateTime? createdAt,
@@ -28,7 +29,7 @@ PlaybackSessionSnapshot _session(
     createdAt: createdAt ?? DateTime(2026),
     state: const PlayerState(false, ProcessingState.ready),
   );
-  return PlaybackSessionSnapshot.fromRuntime(s);
+  return playbackDirectoryEntry(PlaybackSessionSnapshot.fromRuntime(s));
 }
 
 void main() {
@@ -173,8 +174,8 @@ void main() {
       state: const PlayerState(false, ProcessingState.ready),
     )..playbackQueue = PlaybackQueueDefinition(name: 'Alpha', entries: []);
     final sessions = [
-      PlaybackSessionSnapshot.fromRuntime(first),
-      PlaybackSessionSnapshot.fromRuntime(second),
+      playbackDirectoryEntry(PlaybackSessionSnapshot.fromRuntime(first)),
+      playbackDirectoryEntry(PlaybackSessionSnapshot.fromRuntime(second)),
     ];
 
     for (final criterion in [
@@ -209,7 +210,7 @@ void main() {
         ),
     };
 
-    PlaybackSessionSnapshot queue(String id, String title) {
+    PlaybackDirectoryEntry queue(String id, String title) {
       final session = PlaybackSession(
         id: id,
         currentTrackPath: '',
@@ -219,7 +220,9 @@ void main() {
         createdAt: DateTime(2026),
         state: const PlayerState(false, ProcessingState.ready),
       )..playbackQueue = PlaybackQueueDefinition(name: title, entries: []);
-      return PlaybackSessionSnapshot.fromRuntime(session);
+      return playbackDirectoryEntry(
+        PlaybackSessionSnapshot.fromRuntime(session),
+      );
     }
 
     final sessions = [

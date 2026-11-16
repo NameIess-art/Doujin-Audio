@@ -5,16 +5,15 @@ import '../../../core/media/natural_sort.dart';
 import '../../../core/media/music_track.dart';
 import '../../library/application/library_facade.dart';
 import '../../settings/application/settings_state.dart';
-import '../application/playback_session_snapshot.dart';
+import '../application/audio_state_services.dart';
 
-List<PlaybackSessionSnapshot> sortPlaylistSessions({
-  required List<PlaybackSessionSnapshot> sessions,
+List<PlaybackDirectoryEntry> sortPlaylistSessions({
+  required List<PlaybackDirectoryEntry> sessions,
   required PlaylistSortCriterion criterion,
   required bool ascending,
   required bool groupByLibrary,
   required AudioPathCoordinator paths,
-  required MusicTrack? Function(PlaybackSessionSnapshot session)
-  trackForSession,
+  required MusicTrack? Function(PlaybackDirectoryEntry session) trackForSession,
   Set<String> pinnedSessionIds = const <String>{},
 }) {
   if (sessions.length < 2) return sessions;
@@ -62,7 +61,7 @@ List<PlaybackSessionSnapshot> sortPlaylistSessions({
       caseSensitive: true,
     );
   });
-  return List<PlaybackSessionSnapshot>.unmodifiable([
+  return List<PlaybackDirectoryEntry>.unmodifiable([
     ...sessions.where((session) => session.isTemporary),
     ...items.map((e) => e.session),
   ]);
@@ -102,21 +101,19 @@ class PlaylistSortValue {
 }
 
 PlaylistSortValue _playlistSortValue(
-  PlaybackSessionSnapshot session,
+  PlaybackDirectoryEntry session,
   PlaylistSortCriterion criterion,
   bool groupByLibrary,
   AudioPathCoordinator paths,
-  MusicTrack? Function(PlaybackSessionSnapshot session) trackForSession,
+  MusicTrack? Function(PlaybackDirectoryEntry session) trackForSession,
 ) {
-  final queue = session.playbackQueue;
-  final hasQueueName = queue?.name.trim().isNotEmpty == true;
+  final queueName = session.queueName;
+  final hasQueueName = queueName?.trim().isNotEmpty == true;
   final needsDetail =
       criterion == PlaylistSortCriterion.voiceActor ||
       criterion == PlaylistSortCriterion.releaseDate;
   final needsTrack = groupByLibrary || needsDetail || !hasQueueName;
-  final track = needsTrack
-      ? trackForSession(session) ?? queue?.expandedTracks.firstOrNull
-      : null;
+  final track = needsTrack ? trackForSession(session) : null;
   final detail = needsDetail && track != null
       ? _detailForTrack(track, paths.library)
       : null;
@@ -129,7 +126,7 @@ PlaylistSortValue _playlistSortValue(
       : const <String>[];
   return PlaylistSortValue(
     name: hasQueueName
-        ? queue!.name
+        ? queueName!
         : track?.displayName ?? session.currentTrackPath,
     workName: workName,
     libraryKey: groupByLibrary && track != null

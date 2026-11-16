@@ -19,7 +19,7 @@ class PlaybackSessionService {
     sync: true,
   );
   final Map<String, PlaybackSessionSnapshot> _snapshots = {};
-  final Map<String, PlaybackSessionSnapshot> _directorySnapshots = {};
+  final Map<String, PlaybackDirectoryEntry> _directoryEntries = {};
   final Map<String, PlaybackSessionSnapshot> _overlaySnapshots = {};
   final Map<String, AudioStateSlice<PlaybackSessionSnapshot?>> _sessionSlices =
       {};
@@ -28,7 +28,8 @@ class PlaybackSessionService {
   int _playingCount = 0;
   int _playingAudioCount = 0;
   int _keepAliveCount = 0;
-  bool _catalogDirty = false;
+  bool _directoryDirty = false;
+  bool _overlayDirty = false;
   int coverGeneration = 0;
 
   List<PlaybackSession> get activeSessions {
@@ -81,15 +82,18 @@ class PlaybackSessionService {
     }
   }
 
-  static bool _sameDirectory(
+  static bool _sameOverlay(
     PlaybackSessionSnapshot a,
     PlaybackSessionSnapshot b,
   ) =>
       a.currentTrackPath == b.currentTrackPath &&
       a.queueVersion == b.queueVersion &&
       a.isTemporary == b.isTemporary &&
-      a.lastPlayedAt == b.lastPlayedAt &&
-      a.createdAt == b.createdAt;
+      a.currentQueueIndex == b.currentQueueIndex &&
+      a.playbackRequested == b.playbackRequested &&
+      a.isLoading == b.isLoading &&
+      a.isPlaybackLoading == b.isPlaybackLoading &&
+      a.playbackError == b.playbackError;
 
   // Cold preparation returns idle before play starts. The loading indicator's
   // delay must not remove a session that still has a playback request.
@@ -106,24 +110,38 @@ class PlaybackSessionService {
                   s.state.processing == PlaybackProcessingStatus.ready)));
 
   void publishSession(PlaybackSession session) {
+    _updateSession(session);
+    _publishAggregate();
+    _publishCatalog();
+  }
+
+  void publishSessions(Iterable<PlaybackSession> sessions) {
+    for (final session in sessions) {
+      _updateSession(session);
+    }
+    _publishAggregate();
+    _publishCatalog();
+  }
+
+  void _updateSession(PlaybackSession session) {
     if (session.isDisposed || !identical(sessions[session.id], session)) return;
     final id = session.id;
     final next = PlaybackSessionSnapshot.fromRuntime(session);
     _snapshots[id] = next;
     _sessionSlices[id]?.update(next);
-    final directory = _directorySnapshots[id];
-    if (directory == null || !_sameDirectory(directory, next)) {
-      _directorySnapshots[id] = next;
-      _catalogDirty = true;
+    final directory = playbackDirectoryEntry(next);
+    if (_directoryEntries[id] != directory) {
+      _directoryEntries[id] = directory;
+      _directoryDirty = true;
     }
     final previousOverlay = _overlaySnapshots[id];
     if (_showInOverlay(next)) {
-      if (previousOverlay == null || !_sameDirectory(previousOverlay, next)) {
+      if (previousOverlay == null || !_sameOverlay(previousOverlay, next)) {
         _overlaySnapshots[id] = next;
-        _catalogDirty = true;
+        _overlayDirty = true;
       }
     } else if (_overlaySnapshots.remove(id) != null) {
-      _catalogDirty = true;
+      _overlayDirty = true;
     }
     final track = session.state.playing
         ? session.trackForPath(session.currentTrackPath) ??
@@ -148,8 +166,6 @@ class PlaybackSessionService {
         (contribution.keepAlive ? 1 : 0) -
         (previous?.keepAlive == true ? 1 : 0);
     _contributions[id] = contribution;
-    _publishCatalog();
-    _publishAggregate();
   }
 
   void _publishAggregate({
@@ -172,25 +188,38 @@ class PlaybackSessionService {
   }
 
   void _publishCatalog() {
-    if (!_catalogDirty) return;
-    _catalogDirty = false;
-    final ordered = activeSessions;
+    final current = catalog.state;
+    final isInitialized = aggregate.state.isInitialized;
+    if (!_directoryDirty &&
+        !_overlayDirty &&
+        current.isInitialized == isInitialized) {
+      return;
+    }
+    final directoryDirty = _directoryDirty;
+    final overlayDirty = _overlayDirty;
+    _directoryDirty = _overlayDirty = false;
     catalog.update(
       PlaybackCatalogState(
-        sessions: [
-          for (final session in ordered) ?_directorySnapshots[session.id],
-        ],
-        nowPlayingSessions: [
-          for (final session in ordered) ?_overlaySnapshots[session.id],
-        ],
-        isInitialized: aggregate.state.isInitialized,
+        sessions: directoryDirty
+            ? [
+                for (final session in activeSessions)
+                  ?_directoryEntries[session.id],
+              ]
+            : current.sessions,
+        nowPlayingSessions: overlayDirty
+            ? [
+                for (final session in activeSessions)
+                  ?_overlaySnapshots[session.id],
+              ]
+            : current.nowPlayingSessions,
+        isInitialized: isInitialized,
       ),
     );
   }
 
   void markActiveSessionsDirty() {
     activeSessionsDirty = true;
-    _catalogDirty = true;
+    _directoryDirty = _overlayDirty = true;
     sessionStateVersion++;
   }
 
@@ -207,13 +236,14 @@ class PlaybackSessionService {
 
   List<PlaybackSession> removeSessions(Iterable<String> sessionIds) {
     final removed = <PlaybackSession>[];
+    final removedIds = <String>{};
     for (final id in LinkedHashSet<String>.from(sessionIds)) {
       final session = sessions.remove(id);
       if (session == null) continue;
       removed.add(session);
-      sessionOrder.remove(id);
+      removedIds.add(id);
       _snapshots.remove(id);
-      _directorySnapshots.remove(id);
+      _directoryEntries.remove(id);
       _overlaySnapshots.remove(id);
       final previous = _contributions.remove(id);
       _playingCount -= previous?.playing == true ? 1 : 0;
@@ -227,6 +257,7 @@ class PlaybackSessionService {
       }
     }
     if (removed.isNotEmpty) {
+      sessionOrder.removeWhere(removedIds.contains);
       markActiveSessionsDirty();
       _publishCatalog();
       _publishAggregate();
@@ -313,10 +344,9 @@ class PlaybackSessionService {
     this.coverGeneration = coverGeneration;
     if (refreshSessions) {
       for (final session in activeSessions) {
-        publishSession(session);
+        _updateSession(session);
       }
     }
-    if (aggregate.state.isInitialized != isInitialized) _catalogDirty = true;
     _publishAggregate(
       focusedSessionId: focusedSessionId,
       isInitialized: isInitialized,

@@ -5,9 +5,11 @@ import com.doujin.audio.player.service.*
 import com.doujin.audio.player.session.*
 
 import android.content.Context
+import android.database.sqlite.SQLiteException
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -49,11 +51,13 @@ class NativePlaybackBridge(
         command.dispatchBackground?.let { dispatch ->
             // The serial channel TaskQueue owns cold definition I/O. It must
             // never attach to a service running for another session.
-            result.success(dispatch(context))
+            result.success(dispatchStoredPlayback(call.method) { dispatch(context) })
             return
         }
         val inactiveResponse = if (!command.canStartService && NativePlaybackService.controller() == null) {
-            command.dispatchInactive?.invoke(context) ?: serviceUnavailable(call.method)
+            command.dispatchInactive?.let { dispatch ->
+                dispatchStoredPlayback(call.method) { dispatch(context) }
+            } ?: serviceUnavailable(call.method)
         } else null
         // Codec decoding and large queue validation run on the channel's serial
         // background TaskQueue. Player and service ownership stays on main.
@@ -236,6 +240,20 @@ class NativePlaybackBridge(
     }
 }
 
+private inline fun dispatchStoredPlayback(
+    method: String,
+    dispatch: () -> Map<String, Any?>
+): Map<String, Any?> = try {
+    dispatch()
+} catch (error: SQLiteException) {
+    Log.w("NativePlaybackBridge", "Stored playback operation failed: $method", error)
+    channelFailure(
+        code = ChannelErrorCodes.PLATFORM_ERROR,
+        message = "Unable to access stored playback state.",
+        details = mapOf("method" to method)
+    )
+}
+
 internal fun isSupportedNativePlaybackMethod(method: String): Boolean = method in setOf(
     "readUsage", "acknowledgeUsage", "resetUsage",
     NativePlaybackMethods.PREPARE_SESSION,
@@ -405,10 +423,7 @@ internal fun parsePlaybackCommand(call: MethodCall): ParsedPlaybackCommand {
             }) { service -> service.removeSession(sessionId) }
         }
         NativePlaybackMethods.PAUSE_ALL -> ParsedPlaybackCommand(cancelAllPendingStarts = true, dispatchInactive = { context ->
-            NativePlaybackStateStore.saveSessionProgress(context,
-                NativePlaybackStateStore.loadSessions(context).filterNot { it.isTemporary }.map {
-                    it.toStoredProgress().copy(playing = false, playWhenReady = false)
-                })
+            NativePlaybackStateStore.pauseStoredSessions(context)
             channelSuccess(null)
         }) { service -> service.pauseAll() }
         NativePlaybackMethods.CLEAR_ALL -> ParsedPlaybackCommand(cancelAllPendingStarts = true, dispatchInactive = { context ->

@@ -296,49 +296,31 @@ void main() {
     () {
       final playbackSession = session(id: 'structure', path: '/tracks/a.mp3');
       addTearDown(playbackSession.shutdown);
+      final service = serviceFor([playbackSession]);
 
-      final pausedStructure = playlistStructureStateFromPlaybackState(
-        PlaybackStateSliceData(
-          activeSessions: [snapshot(playbackSession)],
-          isInitialized: true,
-        ),
-      );
+      final pausedStructure = service.catalog.state.sessions;
       final pausedCard = playlistSessionCardStateFromSession(
         snapshot(playbackSession),
       );
 
       playbackSession.state = const PlayerState(true, ProcessingState.ready);
-      final playingStructure = playlistStructureStateFromPlaybackState(
-        PlaybackStateSliceData(
-          activeSessions: [snapshot(playbackSession)],
-          playingSessionCount: 1,
-          isInitialized: true,
-        ),
-      );
+      service.publishSession(playbackSession);
+      final playingStructure = service.catalog.state.sessions;
       final playingCard = playlistSessionCardStateFromSession(
         snapshot(playbackSession),
       );
 
-      expect(playingStructure, pausedStructure);
+      expect(playingStructure, same(pausedStructure));
       expect(playingCard, isNot(pausedCard));
 
       playbackSession.lastPlayedAt = DateTime(2026, 1, 2);
-      final playedStructure = playlistStructureStateFromPlaybackState(
-        PlaybackStateSliceData(
-          activeSessions: [snapshot(playbackSession)],
-          playingSessionCount: 1,
-          isInitialized: true,
-        ),
-      );
+      service.publishSession(playbackSession);
+      final playedStructure = service.catalog.state.sessions;
       expect(playedStructure, isNot(playingStructure));
 
       playbackSession.currentTrackPath = '/tracks/b.mp3';
-      final nextTrackStructure = playlistStructureStateFromPlaybackState(
-        PlaybackStateSliceData(
-          activeSessions: [snapshot(playbackSession)],
-          isInitialized: true,
-        ),
-      );
+      service.publishSession(playbackSession);
+      final nextTrackStructure = service.catalog.state.sessions;
       expect(nextTrackStructure, isNot(playingStructure));
     },
   );
@@ -480,14 +462,12 @@ void main() {
     final value = session(id: 'temporary', path: '/tracks/a.mp3');
     addTearDown(value.shutdown);
     value.isTemporary = true;
-    PlaylistStructureState structure() =>
-        playlistStructureStateFromPlaybackState(
-          PlaybackStateSliceData(activeSessions: [snapshot(value)]),
-        );
-    final temporary = structure();
-    expect(temporary.entries.single.session.isTemporary, isTrue);
+    final service = serviceFor([value]);
+    final temporary = service.catalog.state.sessions;
+    expect(temporary.single.isTemporary, isTrue);
     value.isTemporary = false;
-    expect(structure(), isNot(temporary));
+    service.publishSession(value);
+    expect(service.catalog.state.sessions.single.isTemporary, isFalse);
   });
 
   test('session detail view state tracks only detail page inputs', () {

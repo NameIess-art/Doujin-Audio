@@ -1,11 +1,6 @@
 package com.doujin.audio.player.session
 
 import android.content.Context
-import android.content.SharedPreferences
-import android.os.Looper
-import android.util.JsonReader
-import android.util.JsonToken
-import java.io.StringReader
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
@@ -19,9 +14,7 @@ data class StoredNativePlaybackProgress(
     val playWhenReady: Boolean
 )
 
-/**
- * Applies progress only after the store has matched its structural generation.
- */
+/** Applies progress associated with the same committed definition. */
 internal fun StoredNativePlaybackSession.withProgressOverlay(
     progress: StoredNativePlaybackProgress?
 ): StoredNativePlaybackSession {
@@ -116,6 +109,19 @@ object NativePlaybackStateStore {
     private val revisionLock = Any()
     @PublishedApi internal val timerStateLock = Any()
     private val temporarySessions = ConcurrentHashMap<String, StoredNativePlaybackSession>()
+    private val persistedRevisions = mutableMapOf<String, Long>()
+    private var recoveryDatabase: NativePlaybackRecoveryDatabase? = null
+
+    // Accessed under the store monitor. Separate Android data directories also
+    // isolate recovery databases used by tests and profile installations.
+    private fun database(context: Context): NativePlaybackRecoveryDatabase {
+        val owner = context.applicationContext
+        val existing = recoveryDatabase
+        if (existing?.owner === owner) return existing
+        existing?.close()
+        persistedRevisions.clear()
+        return NativePlaybackRecoveryDatabase(owner).also { recoveryDatabase = it }
+    }
 
     // Timer changes never wait for the queue JSON serialization lock.
     internal inline fun <T> withTimerState(action: () -> T): T = synchronized(timerStateLock, action)
@@ -154,13 +160,23 @@ object NativePlaybackStateStore {
         sessions: List<StoredNativePlaybackSession>,
         expectedRevisions: Map<String, Long>? = null
     ) {
-        val accepted = sessions.filter { expectedRevisions == null ||
-            expectedRevisions[it.sessionId] == sessionRevision(it.sessionId) }
-        accepted.filter { it.isTemporary }.forEach(::saveTemporarySession)
+        val accepted = sessions.mapNotNull { session ->
+            val revision = sessionRevision(session.sessionId)
+            session.copy(definitionRevision = revision).takeIf {
+                expectedRevisions == null || expectedRevisions[session.sessionId] == revision
+            }
+        }
         val persistent = accepted.filterNot { it.isTemporary }
-        if (persistent.isEmpty()) return
-        persistent.forEach { temporarySessions.remove(it.sessionId) }
-        saveSessions(context, mergeNativePlaybackDefinitions(loadSessions(context), persistent))
+        if (persistent.isNotEmpty()) {
+            database(context).upsertDefinitions(persistent)
+            persistent.forEach {
+                temporarySessions.remove(it.sessionId)
+                persistedRevisions[it.sessionId] = it.definitionRevision
+            }
+        }
+        accepted.filter { it.isTemporary }.forEach {
+            if (sessionRevision(it.sessionId) == it.definitionRevision) saveTemporarySession(it)
+        }
     }
 
     @Synchronized
@@ -170,23 +186,31 @@ object NativePlaybackStateStore {
         expectedRevisions: Map<String, Long>
     ) {
         val accepted = progress.filter { expectedRevisions[it.sessionId] == sessionRevision(it.sessionId) }
-        if (accepted.isEmpty()) return
-        val merged = loadSessionProgress(context).toMutableMap()
-        accepted.forEach { merged[it.sessionId] = it }
-        saveSessionProgress(context, merged.values.toList())
+        val durable = accepted.filter { item ->
+            val temporary = temporarySessions[item.sessionId] ?: return@filter true
+            if (temporary.definitionRevision == expectedRevisions[item.sessionId]) {
+                temporarySessions.replace(item.sessionId, temporary, temporary.withProgressOverlay(item))
+            }
+            false
+        }
+        if (durable.isNotEmpty()) database(context).updateProgress(durable)
     }
+
+    @Synchronized
+    internal fun pauseStoredSessions(context: Context) = database(context).pauseSessions()
+
+    @Synchronized
+    internal fun retainedRecoveryContentUris(context: Context): Set<String> =
+        database(context).retainedUris() +
+            loadTemporarySessions().flatMap { it.retainedContentUris() }
 
     @Synchronized
     internal fun removeSession(context: Context, sessionId: String, expectedRevision: Long? = null) {
         if (expectedRevision != null && expectedRevision != sessionRevision(sessionId)) return
         if (expectedRevision == null) invalidateSession(sessionId)
         removeTemporarySession(sessionId)
-        val sessions = loadSessions(context)
-        if (sessions.any { it.sessionId == sessionId }) {
-            saveSessions(context, sessions.filterNot { it.sessionId == sessionId })
-        } else {
-            saveSessionProgress(context, loadSessionProgress(context).values.filterNot { it.sessionId == sessionId })
-        }
+        database(context).removeSessions(listOf(sessionId))
+        persistedRevisions.remove(sessionId)
         withTimerState {
             storePausedSessionIds(context, loadPausedSessionIds(context).filterNot { it == sessionId })
             storeTimerCandidateSessionIds(context, loadTimerCandidateSessionIds(context).filterNot { it == sessionId })
@@ -197,12 +221,6 @@ object NativePlaybackStateStore {
     }
 
     private const val preferencesName = "audio_player_native_playback_state"
-    private const val progressPreferencesName = "audio_player_native_playback_progress"
-    private const val keySessions = "sessions"
-    // Separate files avoid rewriting the queue XML on every progress tick. The
-    // generation prevents an old progress file overlaying a newer queue after a crash.
-    private const val keyProgressGeneration = "progress_generation"
-    private const val keySessionProgress = "session_progress_v1"
     private const val keyPausedSessionIds = "paused_session_ids"
     private const val keyTimerCandidateSessionIds = "timer_candidate_session_ids"
     private const val keyTimerRuntimeState = "timer_runtime_state_v3"
@@ -244,298 +262,49 @@ object NativePlaybackStateStore {
     }
 
     @Synchronized
-    fun saveSessions(
-        context: Context,
-        sessions: List<StoredNativePlaybackSession>
-    ) {
-        val array = JSONArray()
-        sessions.filterNot { it.isTemporary }.forEach { session ->
-            array.put(
-                JSONObject()
-                    .put("sessionId", session.sessionId)
-                    .put("uri", session.uri)
-                    .put("path", session.path)
-                    .put("title", session.title)
-                    .put("subtitle", session.subtitle)
-                    .put("artUri", session.artUri)
-                    .put("positionMs", session.positionMs)
-                    .put("volume", session.volume.toDouble())
-                    .put("speed", session.speed.toDouble())
-                    .put("skipSilenceEnabled", session.skipSilenceEnabled)
-                    .put("noiseReductionEnabled", session.noiseReductionEnabled)
-                    .put("eqEnabled", session.eqEnabled)
-                    .put("eqPresetId", session.eqPresetId)
-                    .put("volumeNormalizationEnabled", session.volumeNormalizationEnabled)
-                    .put("panning", session.panning.toDouble())
-                    .put(
-                        "eqBandLevels",
-                        JSONArray().apply {
-                            session.eqBandLevels.forEach { (frequencyHz, gainDb) ->
-                                put(
-                                    JSONObject()
-                                        .put("frequencyHz", frequencyHz)
-                                        .put("gainDb", gainDb.toDouble())
-                                )
-                            }
-                        }
-                    )
-                    .put("repeatOne", session.repeatOne)
-                    .put("repeatAll", session.repeatAll)
-                    .put("shuffleModeEnabled", session.shuffleModeEnabled)
-                    .put("queueStartIndex", session.queueStartIndex)
-                    .put(
-                        "queue",
-                        JSONArray().apply {
-                            session.queue.forEach { queueItem ->
-                                put(
-                                    JSONObject()
-                                        .put("path", queueItem.path)
-                                        .put("uri", queueItem.uri)
-                                        .put("title", queueItem.title)
-                                        .put("subtitle", queueItem.subtitle)
-                                        .put("artUri", queueItem.artUri)
-                                        .put("usageDescriptor", queueItem.usageDescriptor?.let { JSONObject(it) })
-                                        .put("clipStartMs", queueItem.clipStartMs)
-                                        .put("clipEndMs", queueItem.clipEndMs)
-                                        .put("httpHeaders", JSONObject(queueItem.httpHeaders))
-                                        .put(
-                                            "candidateUris",
-                                            JSONArray(queueItem.candidateUris)
-                                        )
-                                )
-                            }
-                        }
-                    )
-                    .put("channelSwapEnabled", session.channelSwapEnabled)
-                    .put("playing", session.playing)
-                    .put("playWhenReady", session.playWhenReady)
-                    .put("completed", session.completed)
-            )
-        }
-        val preferences = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-        val generation = preferences.getLong(keyProgressGeneration, 0L) + 1
-        preferences
-            .edit()
-            .putString(keySessions, array.toString())
-            .putLong(keyProgressGeneration, generation)
-            .remove(keySessionProgress)
-            .apply()
-        // All positions are already in the structural snapshot.
-        saveSessionProgress(context, emptyList())
-    }
-
-    /**
-     * Persists only the fields that change every tick. Payload is a few dozen
-     * bytes per session regardless of queue size.
-     */
-    @Synchronized
-    fun saveSessionProgress(
-        context: Context,
-        progress: List<StoredNativePlaybackProgress>
-    ) {
-        val preferences = progressPreferences(context)
-        val generation = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-            .getLong(keyProgressGeneration, 0L)
-        val editor = preferences.edit().putLong(keyProgressGeneration, generation)
-        if (progress.isEmpty()) {
-            editor.remove(keySessionProgress).apply()
-            return
-        }
-        val array = JSONArray()
-        progress.forEach { item ->
-            array.put(
-                JSONObject()
-                    .put("sessionId", item.sessionId)
-                    .put("positionMs", item.positionMs)
-                    .put("playing", item.playing)
-                    .put("playWhenReady", item.playWhenReady)
-            )
-        }
-        editor.putString(keySessionProgress, array.toString()).apply()
-    }
-
-    private fun progressPreferences(context: Context): SharedPreferences {
-        val progress = context.getSharedPreferences(progressPreferencesName, Context.MODE_PRIVATE)
-        val definitions = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-        val legacy = definitions.getString(keySessionProgress, null) ?: return progress
-        // Timer expiry can read the old overlay on main before background restore
-        // finishes. Defer the durable migration until a storage/restore executor reads it.
-        if (Looper.myLooper() == Looper.getMainLooper()) return progress
-        val editor = progress.edit()
-        if (!progress.contains(keyProgressGeneration)) editor.putString(keySessionProgress, legacy)
-        val generation = progress.getLong(keyProgressGeneration,
-            definitions.getLong(keyProgressGeneration, 0L))
-        // Preserve a cleared/newer progress file if migration was interrupted. A
-        // failed commit leaves the legacy key intact for the next background read.
-        if (editor.putLong(keyProgressGeneration, generation).commit()) {
-            definitions.edit().remove(keySessionProgress).apply()
-        }
-        return progress
-    }
-
-    private fun loadSessionProgress(context: Context): Map<String, StoredNativePlaybackProgress> {
-        val progress = progressPreferences(context)
-        val definitions = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-        val overlay = if (progress.contains(keyProgressGeneration)) progress else definitions
-        if (overlay.getLong(keyProgressGeneration, 0L) != definitions.getLong(keyProgressGeneration, 0L)) {
-            return emptyMap()
-        }
-        val raw = overlay.getString(keySessionProgress, null) ?: return emptyMap()
-        return try {
-            val array = JSONArray(raw)
-            buildMap {
-                for (index in 0 until array.length()) {
-                    val item = array.optJSONObject(index) ?: continue
-                    val sessionId = item.optString("sessionId").takeIf { it.isNotBlank() }
-                        ?: continue
-                    put(
-                        sessionId,
-                        StoredNativePlaybackProgress(
-                            sessionId = sessionId,
-                            positionMs = item.optLong("positionMs", 0L).coerceAtLeast(0L),
-                            playing = item.optBoolean("playing", false),
-                            playWhenReady = item.optBoolean("playWhenReady", false)
-                        )
-                    )
-                }
-            }
-        } catch (_: Exception) {
-            emptyMap()
-        }
-    }
-
-    @Synchronized
     fun clearSessions(context: Context, expectedRevision: Long? = null) {
         val revision = expectedRevision ?: invalidateAllSessions()
-        val newer = loadSessions(context).filter { sessionRevision(it.sessionId) > revision }
-        temporarySessions.keys.toList().filter { sessionRevision(it) <= revision }.forEach(temporarySessions::remove)
-        if (newer.isNotEmpty()) {
-            saveSessions(context, newer)
-            return
-        }
-        val preferences = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-        val generation = preferences.getLong(keyProgressGeneration, 0L) + 1
-        preferences
-            .edit()
-            .remove(keySessions)
-            .putLong(keyProgressGeneration, generation)
-            .remove(keySessionProgress)
-            .apply()
-        saveSessionProgress(context, emptyList())
+        val db = database(context)
+        val retired = db.sessionIds().filter { (persistedRevisions[it] ?: 0L) <= revision }
+        db.removeSessions(retired)
+        persistedRevisions.keys.removeAll(retired.toSet())
+        temporarySessions.values.removeAll { it.definitionRevision <= revision }
     }
 
-    /** Called on the file executor; queue values are skipped without creating queue objects. */
+    /** Timer candidate discovery reads only the progress columns. */
     @Synchronized
     internal fun loadActiveSessionRevisions(context: Context): Map<String, Long> {
-        // A session can be invalidated while this background read owns the store
-        // lock. Do not attach the newer revision to its old persisted definition.
-        val readRevision = revisionSequence.get()
-        val raw = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-            .getString(keySessions, null)
-        val progress = loadSessionProgress(context)
-        val ids = try {
-            if (raw == null) emptyList() else JsonReader(StringReader(raw)).use { reader ->
-                buildList {
-                    reader.beginArray()
-                    while (reader.hasNext()) {
-                        if (reader.peek() != JsonToken.BEGIN_OBJECT) {
-                            reader.skipValue()
-                            continue
-                        }
-                        var id: String? = null
-                        var uri: String? = null
-                        var playing = false
-                        var ready = false
-                        reader.beginObject()
-                        while (reader.hasNext()) {
-                            val name = reader.nextName()
-                            when (name) {
-                                "sessionId", "uri" -> {
-                                    if (reader.peek() == JsonToken.STRING || reader.peek() == JsonToken.NUMBER) {
-                                        val value = reader.nextString()
-                                        if (name == "sessionId") id = value else uri = value
-                                    } else reader.skipValue()
-                                }
-                                "playing", "playWhenReady" -> {
-                                    val value = when (reader.peek()) {
-                                        JsonToken.BOOLEAN -> reader.nextBoolean()
-                                        JsonToken.STRING -> reader.nextString().equals("true", ignoreCase = true)
-                                        else -> { reader.skipValue(); false }
-                                    }
-                                    if (name == "playing") playing = value else ready = value
-                                }
-                                else -> reader.skipValue()
-                            }
-                        }
-                        reader.endObject()
-                        val validId = id?.takeIf(String::isNotBlank) ?: continue
-                        if (uri.isNullOrBlank()) continue
-                        val overlay = progress[validId]
-                        if (overlay?.let { it.playing || it.playWhenReady } ?: (playing || ready)) add(validId)
-                    }
-                    reader.endArray()
-                }
-            }
-        } catch (_: Exception) {
-            emptyList()
+        val ids = database(context).sessionIds(activeOnly = true)
+        val durable = ids.mapNotNull { id ->
+            val revision = persistedRevisions[id] ?: 0L
+            (id to revision).takeIf { sessionRevision(id) == revision }
         }
-        return (ids + loadTemporarySessions().filter { it.playing || it.playWhenReady }.map { it.sessionId })
-            .mapNotNull { id -> sessionRevision(id).takeIf { it <= readRevision }?.let { id to it } }
-            .toMap()
+        val temporary = loadTemporarySessions().filter {
+            (it.playing || it.playWhenReady) && sessionRevision(it.sessionId) == it.definitionRevision
+        }.map {
+            it.sessionId to it.definitionRevision
+        }
+        return (durable + temporary).toMap()
     }
 
     @Synchronized
-    fun loadSessions(context: Context): List<StoredNativePlaybackSession> {
-        val raw = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-            .getString(keySessions, null)
-            ?: return loadTemporarySessions()
-        val progressBySessionId = loadSessionProgress(context)
-        return try {
-            val array = JSONArray(raw)
-            buildList {
-                for (index in 0 until array.length()) {
-                    val item = array.optJSONObject(index) ?: continue
-                    val sessionId = item.optString("sessionId").takeIf { it.isNotBlank() }
-                        ?: continue
-                    val uri = item.optString("uri").takeIf { it.isNotBlank() }
-                        ?: continue
-                    val progress = progressBySessionId[sessionId]
-                    add(
-                        StoredNativePlaybackSession(
-                            sessionId = sessionId,
-                            uri = uri,
-                            path = item.optString("path").takeIf { it.isNotBlank() } ?: uri,
-                            title = item.optString("title", "Audio"),
-                            subtitle = item.optNullableString("subtitle"),
-                            artUri = item.optNullableString("artUri"),
-                            positionMs = item.optLong("positionMs", 0L).coerceAtLeast(0L),
-                            volume = item.optDouble("volume", 1.0).toFloat(),
-                            speed = item.optDouble("speed", 1.0).toFloat(),
-                            skipSilenceEnabled = item.optBoolean("skipSilenceEnabled", false),
-                            noiseReductionEnabled = item.optBoolean("noiseReductionEnabled", false),
-                            eqEnabled = item.optBoolean("eqEnabled", false),
-                            eqPresetId = item.optNullableString("eqPresetId"),
-                            eqBandLevels = item.optEqBandLevels(),
-                            volumeNormalizationEnabled =
-                                item.optBoolean("volumeNormalizationEnabled", false),
-                            panning = item.optDouble("panning", 0.0).toFloat(),
-                            repeatOne = item.optBoolean("repeatOne", false),
-                            repeatAll = item.optBoolean("repeatAll", false),
-                            shuffleModeEnabled = item.optBoolean("shuffleModeEnabled", false),
-                            queueStartIndex = item.optInt("queueStartIndex", 0).coerceAtLeast(0),
-                            queue = item.optQueueItems(),
-                            channelSwapEnabled = item.optBoolean("channelSwapEnabled", false),
-                            playing = item.optBoolean("playing", false),
-                            playWhenReady = item.optBoolean("playWhenReady", false),
-                            definitionRevision = sessionRevision(sessionId),
-                            completed = item.optBoolean("completed", false)
-                        ).withProgressOverlay(progress)
-                    )
-                }
-            } + loadTemporarySessions()
-        } catch (_: Exception) {
-            loadTemporarySessions()
+    internal fun loadSessions(
+        context: Context,
+        sessionIds: Set<String>? = null,
+        activeOnly: Boolean = false
+    ): List<StoredNativePlaybackSession> {
+        if (sessionIds?.isEmpty() == true) return emptyList()
+        val db = database(context)
+        val durable = db.loadSessions(sessionIds, activeOnly).mapNotNull {
+            val revision = persistedRevisions[it.sessionId] ?: 0L
+            it.copy(definitionRevision = revision).takeIf { sessionRevision(it.sessionId) == revision }
         }
+        val temporary = loadTemporarySessions().filter {
+            (sessionIds == null || it.sessionId in sessionIds) &&
+                (!activeOnly || it.playing || it.playWhenReady) &&
+                sessionRevision(it.sessionId) == it.definitionRevision
+        }
+        return durable + temporary
     }
 
     fun storePausedSessionIds(context: Context, sessionIds: List<String>) = withTimerState {
@@ -656,13 +425,6 @@ object NativePlaybackStateStore {
     }
 }
 
-internal fun mergeNativePlaybackDefinitions(
-    existing: List<StoredNativePlaybackSession>,
-    updates: List<StoredNativePlaybackSession>
-): List<StoredNativePlaybackSession> = existing.associateByTo(linkedMapOf()) { it.sessionId }.apply {
-    updates.forEach { put(it.sessionId, it) }
-}.values.toList()
-
 internal fun StoredPlaybackTimerRuntimeState.withoutSession(sessionId: String) =
     copy(pausedSessionIds = pausedSessionIds.filterNot { it == sessionId })
 
@@ -679,53 +441,4 @@ private fun JSONObject.optNullableInt(key: String): Int? {
 private fun JSONObject.optNullableLong(key: String): Long? {
     if (!has(key) || isNull(key)) return null
     return optLong(key)
-}
-
-private fun JSONObject.optEqBandLevels(): Map<Int, Float> {
-    val array = optJSONArray("eqBandLevels") ?: return emptyMap()
-    return buildMap {
-        for (index in 0 until array.length()) {
-            val item = array.optJSONObject(index) ?: continue
-            val frequencyHz = item.optInt("frequencyHz", 0)
-            if (frequencyHz <= 0) continue
-            put(frequencyHz, item.optDouble("gainDb", 0.0).toFloat())
-        }
-    }
-}
-
-private fun JSONObject.optQueueItems(): List<StoredNativePlaybackQueueItem> {
-    val array = optJSONArray("queue") ?: return emptyList()
-    return buildList {
-        for (index in 0 until array.length()) {
-            val item = array.optJSONObject(index) ?: continue
-            val uri = item.optString("uri").takeIf { it.isNotBlank() } ?: continue
-            val path = item.optString("path").takeIf { it.isNotBlank() } ?: uri
-            add(
-                StoredNativePlaybackQueueItem(
-                    path = path,
-                    uri = uri,
-                    title = item.optString("title", "Audio"),
-                    subtitle = item.optNullableString("subtitle"),
-                    artUri = item.optNullableString("artUri"),
-                    candidateUris = item.optStringList("candidateUris"),
-                    usageDescriptor = item.optJSONObject("usageDescriptor")?.let { NativePlaybackUsageLedger.jsonMap(it) },
-                    clipStartMs = item.optLong("clipStartMs", 0L).coerceAtLeast(0L),
-                    clipEndMs = if (item.has("clipEndMs") && !item.isNull("clipEndMs")) item.getLong("clipEndMs") else null,
-                    httpHeaders = item.optJSONObject("httpHeaders")?.let { headers ->
-                        headers.keys().asSequence().associateWith { headers.getString(it) }
-                    } ?: emptyMap()
-                )
-            )
-        }
-    }
-}
-
-private fun JSONObject.optStringList(key: String): List<String> {
-    val values = optJSONArray(key) ?: return emptyList()
-    return buildList {
-        for (index in 0 until values.length()) {
-            val value = values.optString(index).trim()
-            if (value.isNotEmpty() && value !in this) add(value)
-        }
-    }
 }

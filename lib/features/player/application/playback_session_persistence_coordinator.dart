@@ -134,7 +134,17 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
   }
 
   Future<void> loadPersistedState() async {
-    final persistedSessions = await databaseRepository.loadAllSessions();
+    final repository = databaseRepository;
+    final persistedSessions = repository is PlaybackQueueStorage
+        ? await (repository as PlaybackQueueStorage).loadSessionSummaries()
+        : [
+            for (final item in await repository.loadAllSessions())
+              (
+                session: item,
+                currentTrack: null as MusicTrack?,
+                requiresQueueLoad: false,
+              ),
+          ];
     if (persistedSessions.isEmpty) return;
     final legacyOrder = await AppPreferences.readJson<List<String>>(
       'session_order_v1',
@@ -149,19 +159,29 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     final restoredSessions = <PlaybackSession>[];
     final recordProgress = _recordPlaybackProgress?.call() ?? true;
 
-    for (final item in persistedSessions) {
-      final customQueueTracks = item.customQueueTracks == null
-          ? null
-          : List<MusicTrack>.unmodifiable(item.customQueueTracks!);
+    for (final summary in persistedSessions) {
+      final item = summary.session;
+      final customQueueTracks = item.customQueueTracks;
       final queueTracks =
           customQueueTracks ?? item.playbackQueue?.expandedTracks;
-      MusicTrack? track;
+      MusicTrack? track = summary.currentTrack;
       if (queueTracks != null && queueTracks.isNotEmpty) {
-        track = queueTracks.firstWhere(
-          (candidate) =>
-              PathMatcher.equalsNormalized(candidate.path, item.trackPath),
-          orElse: () => queueTracks.first,
-        );
+        final index = item.currentQueueIndex;
+        track =
+            index >= 0 &&
+                index < queueTracks.length &&
+                PathMatcher.equalsNormalized(
+                  queueTracks[index].path,
+                  item.trackPath,
+                )
+            ? queueTracks[index]
+            : queueTracks.firstWhere(
+                (candidate) => PathMatcher.equalsNormalized(
+                  candidate.path,
+                  item.trackPath,
+                ),
+                orElse: () => queueTracks.first,
+              );
       }
       track ??= _persistedTrackResolver?.call(item.trackPath);
       if (track == null && item.playbackQueue == null) continue;
@@ -194,6 +214,8 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
         state: const PlayerState(false, ProcessingState.idle),
         customQueueTracks: customQueueTracks,
         playbackQueue: item.playbackQueue,
+        queueLoadingRequired: summary.requiresQueueLoad,
+        persistedCurrentTrack: summary.currentTrack,
         currentQueueIndex: recordProgress ? item.currentQueueIndex : 0,
       );
       session
@@ -214,9 +236,9 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     final restoredIds = restoredSessions.map((session) => session.id).toSet();
     final orderedIds = (legacyOrder ?? const <String>[])
         .where(restoredIds.contains)
-        .toList(growable: true);
+        .toSet();
     for (final session in restoredSessions) {
-      if (!orderedIds.contains(session.id)) orderedIds.add(session.id);
+      orderedIds.add(session.id);
     }
     _service.sessionOrder
       ..clear()
@@ -231,6 +253,95 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
       restoredSessions,
       focusedSessionId: focusedSessionId,
     );
+  }
+
+  Future<bool> ensureSessionQueueLoaded(String sessionId) {
+    final session = _service.sessions[sessionId];
+    if (session == null) return Future.value(false);
+    if (!session.queueLoadingRequired) return Future.value(true);
+    return _deferredQueueLoads.putIfAbsent(session, () async {
+      try {
+        final storage = databaseRepository as PlaybackQueueStorage;
+        final item = await storage.loadSessionQueue(sessionId);
+        if (!identical(_service.sessions[sessionId], session)) return false;
+        if (item == null) {
+          throw StateError(
+            'Stored playback queue missing for session $sessionId',
+          );
+        }
+        final before = _persistedSessions[sessionId];
+        final previousVersion = session.queueVersion;
+        final definition = item.playbackQueue;
+        final current = session.playbackQueue;
+        session
+          ..queueLoadingRequired = false
+          ..persistedCurrentTrack = null
+          ..playbackQueue = definition != null && current != null
+              ? definition.copyWith(
+                  name: current.name,
+                  colorValue: current.colorValue,
+                  clearColor: current.colorValue == null,
+                )
+              : definition
+          ..customQueueTracks =
+              item.customQueueTracks ?? definition?.expandedTracks
+          ..hasDetachedQueueTrack =
+              definition != null &&
+              item.customQueueTracks != null &&
+              item.customQueueTracks!.length == definition.trackCount + 1;
+        if (before != null) {
+          final header = before.playbackQueue;
+          _persistedSessions[sessionId] = before.withQueue(
+            header == null || definition == null
+                ? definition
+                : definition.copyWith(
+                    name: header.name,
+                    colorValue: header.colorValue,
+                    clearColor: header.colorValue == null,
+                  ),
+            item.customQueueTracks,
+          );
+          if (_persistedQueueVersions[sessionId] == previousVersion) {
+            _persistedQueueVersions[sessionId] = session.queueVersion;
+          }
+        }
+        publishSessionState(sessionId);
+        return true;
+      } finally {
+        unawaited(_deferredQueueLoads.remove(session));
+      }
+    });
+  }
+
+  Future<List<PlaybackQueueEntryPreview>> loadQueueEntryPreviews(
+    String sessionId, {
+    required int start,
+    required int limit,
+  }) async {
+    final session = _service.sessions[sessionId];
+    if (session == null || limit <= 0 || start < 0) return const [];
+    if (session.queueLoadingRequired) {
+      final rows = await (databaseRepository as PlaybackQueueStorage)
+          .loadQueueEntryPage(sessionId, start: start, limit: limit);
+      if (!identical(_service.sessions[sessionId], session)) return const [];
+      if (session.queueLoadingRequired) return rows;
+    }
+    final entries =
+        session.playbackQueue?.entries ?? const <PlaybackQueueEntry>[];
+    return [
+      for (
+        var index = start;
+        index < entries.length && index < start + limit;
+        index++
+      )
+        (
+          id: entries[index].id,
+          title: entries[index].title,
+          kind: entries[index].kind,
+          trackCount: entries[index].tracks.length,
+          firstTrack: entries[index].tracks.firstOrNull,
+        ),
+    ];
   }
 
   Future<void> resetPersistedState() async {
@@ -386,6 +497,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     try {
       if (deletedIds.isNotEmpty) {
         await databaseRepository.deleteSessions(deletedIds.toList());
+        PlaybackQueuePathCoordinator(this)._publishQueueReferencesChanged();
         for (final id in deletedIds) {
           _persistedSessions.remove(id);
           _persistedQueueVersions.remove(id);
@@ -394,6 +506,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
       for (final id in sessionIds) {
         final session = _service.sessions[id];
         if (session == null) continue;
+        final wasDeferred = session.queueLoadingRequired;
         final queueVersion = session.queueVersion;
         final next = _persistedSessionSnapshot(
           session,
@@ -401,29 +514,61 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
           now: now,
         );
         final previous = _persistedSessions[id];
-        final queueChanged = _persistedQueueVersions[id] != queueVersion;
+        final contentChanged = _persistedQueueVersions[id] != queueVersion;
+        final headerChanged =
+            previous?.playbackQueue?.name != next.playbackQueue?.name ||
+            previous?.playbackQueue?.colorValue !=
+                next.playbackQueue?.colorValue;
+        final queueChanged = contentChanged || headerChanged;
         final effectsChanged = previous?.audioEffects != next.audioEffects;
-        if (previous != null &&
-            !queueChanged &&
-            !effectsChanged &&
-            _sameSessionDefinition(previous, next)) {
+        final stateChanged =
+            previous == null || !_sameSessionDefinition(previous, next);
+        if (!queueChanged && !effectsChanged && !stateChanged) {
           if (id == ensurePausedRecoverySessionId) {
             await _savePausedRecovery(session);
           }
           continue;
         }
-        final queueEntryPositions = queueChanged && previous != null
-            ? _changedPlaybackQueueEntryPositions(previous, next)
-            : null;
-        await databaseRepository.upsertSession(
-          next,
-          includeQueue: queueChanged && queueEntryPositions == null,
-          includeEffects: effectsChanged,
-          queueEntryPositions: queueEntryPositions,
-        );
-        await _savePausedRecovery(session);
-        _persistedSessions[id] = next;
-        _persistedQueueVersions[id] = queueVersion;
+        final repository = databaseRepository;
+        if (repository is PlaybackQueueStorage && previous != null) {
+          await (repository as PlaybackQueueStorage).upsertSessionDelta(
+            next,
+            previous: previous,
+            includeQueue: (contentChanged && !wasDeferred) || headerChanged,
+            includeEffects: effectsChanged,
+            includeSessionState: contentChanged || stateChanged,
+          );
+        } else {
+          final positions = contentChanged && previous != null
+              ? _changedPlaybackQueueEntryPositions(previous, next)
+              : null;
+          await repository.upsertSession(
+            next,
+            includeQueue: queueChanged && positions == null,
+            includeEffects: effectsChanged,
+            queueEntryPositions: positions,
+          );
+        }
+        if (contentChanged && !wasDeferred) {
+          PlaybackQueuePathCoordinator(this)._publishQueueReferencesChanged();
+        }
+        if (contentChanged || effectsChanged || stateChanged) {
+          await _savePausedRecovery(session);
+        }
+        final hydrated = wasDeferred && !session.queueLoadingRequired;
+        // Hydration can finish while the summary write is in flight.
+        final hydratedBaseline = hydrated ? _persistedSessions[id] : null;
+        _persistedSessions[id] = hydratedBaseline == null
+            ? next
+            : next.withQueue(
+                hydratedBaseline.playbackQueue?.copyWith(
+                  name: next.playbackQueue?.name,
+                  colorValue: next.playbackQueue?.colorValue,
+                  clearColor: next.playbackQueue?.colorValue == null,
+                ),
+                hydratedBaseline.customQueueTracks,
+              );
+        if (!hydrated) _persistedQueueVersions[id] = queueVersion;
         _persistedSessionSnapshot(
           session,
           sortOrder: next.sortOrder,
@@ -530,7 +675,13 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
         for (final (session, next) in writes) {
           if (!identical(_service.sessions[next.id], session)) continue;
           await _savePausedRecovery(session);
-          _persistedSessions[next.id] = next;
+          final previous = _persistedSessions[next.id];
+          _persistedSessions[next.id] = previous == null
+              ? next
+              : next.withQueue(
+                  previous.playbackQueue,
+                  previous.customQueueTracks,
+                );
         }
       }
       if (_pendingSessionDefinitionIds.isNotEmpty) {
@@ -552,7 +703,9 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
         !session.isLoading) {
       // Keep the comparison cache unchanged until both stores commit, so an
       // existing pending ID also retries a failed native recovery write.
-      await synchronize(session);
+      if (await ensureSessionQueueLoaded(session.id)) {
+        await synchronize(session);
+      }
     }
   }
 

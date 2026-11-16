@@ -67,15 +67,13 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
     ref.watch(appLanguageStateProvider);
     final playback = ref.read(playbackFacadeProvider);
     final queue = ref.watch(
-      playbackSessionProvider(
-        sessionId,
-      ).select((session) {
+      playbackSessionProvider(sessionId).select((session) {
         final queue = session?.playbackQueue;
         if (queue == null) return null;
         return (
           name: queue.name,
           colorValue: queue.colorValue,
-          trackCount: queue.expandedTracks.length,
+          trackCount: queue.trackCount,
         );
       }),
     );

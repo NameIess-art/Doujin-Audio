@@ -416,6 +416,7 @@ class _UnifiedPopupOverlay<T> extends StatefulWidget {
 class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
   final _focusScope = FocusScopeNode();
   late CurvedAnimation _curved;
+  late CurvedAnimation _scaleCurved;
   late Animation<double> _scale;
   late Animation<Offset> _slide;
 
@@ -440,7 +441,12 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
       curve: kAppSpringCurve,
       reverseCurve: Curves.easeInCubic,
     );
-    _scale = Tween<double>(begin: 0.86, end: 1).animate(_curved);
+    _scaleCurved = CurvedAnimation(
+      parent: widget.animation,
+      curve: const Cubic(0.2, 0.92, 0.25, 1.032),
+      reverseCurve: Curves.easeInCubic,
+    );
+    _scale = Tween<double>(begin: 0.88, end: 1).animate(_scaleCurved);
     final dy = widget.anchor.dy <= widget.rect.center.dy ? -0.025 : 0.025;
     _slide = Tween<Offset>(
       begin: Offset(0, dy),
@@ -454,6 +460,7 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
     if (oldWidget.animation != widget.animation) {
       oldWidget.animation.removeStatusListener(_handleAnimationStatus);
       _curved.dispose();
+      _scaleCurved.dispose();
       _bindAnimation();
       widget.animation.addStatusListener(_handleAnimationStatus);
     }
@@ -463,6 +470,7 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
   void dispose() {
     widget.animation.removeStatusListener(_handleAnimationStatus);
     _curved.dispose();
+    _scaleCurved.dispose();
     _focusScope.dispose();
     super.dispose();
   }
@@ -960,6 +968,7 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
   final _focusScope = FocusScopeNode();
   late final AnimationController _controller;
   late final CurvedAnimation _curved;
+  late final CurvedAnimation _scaleCurved;
   late final Animation<double> _scale;
   bool _dismissed = false;
   bool _started = false;
@@ -982,7 +991,12 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
       curve: kAppSpringCurve,
       reverseCurve: Curves.easeInCubic,
     );
-    _scale = Tween<double>(begin: 0.86, end: 1).animate(_curved);
+    _scaleCurved = CurvedAnimation(
+      parent: _controller,
+      curve: const Cubic(0.2, 0.92, 0.25, 1.032),
+      reverseCurve: Curves.easeInCubic,
+    );
+    _scale = Tween<double>(begin: 0.88, end: 1).animate(_scaleCurved);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _dismissed) return;
       _focusScope.requestFocus();
@@ -1016,6 +1030,7 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
   void dispose() {
     _focusScope.dispose();
     _curved.dispose();
+    _scaleCurved.dispose();
     _controller.dispose();
     UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
     _completeResult(null);

@@ -197,12 +197,14 @@ class SwipeRevealActionPane extends StatelessWidget {
               ),
               child: AnimatedScale(
                 scale: progress <= 0
-                    ? 0.88
-                    : (progress < 0.6 ? 0.90 + progress * 0.08 : 1.0),
+                    ? 0.84
+                    : (progress < 0.58 ? 0.86 + (progress * 0.12) : 1.0),
                 duration: disableAnimations
                     ? Duration.zero
-                    : const Duration(milliseconds: 170),
-                curve: progress >= 0.6 ? kAppSpringCurve : Curves.easeOut,
+                    : (progress >= 0.58 ? kAppMotionStandard : kAppMotionFast),
+                curve: progress >= 0.58
+                    ? kAppSpringBackCurve
+                    : Curves.easeOutCubic,
                 child: showVertical
                     ? SizedBox(
                         width: width - 20,
@@ -283,7 +285,7 @@ class SwipeRevealActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = appIconButtonStyle(
+    final style = appButtonStyle(
       IconButton.styleFrom(
         animationDuration: kAppSelectionDuration,
         backgroundColor: backgroundColor,

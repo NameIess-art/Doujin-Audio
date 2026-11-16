@@ -453,6 +453,7 @@ class _RecordingRepository extends TestPersistenceRepository {
     PersistedPlaybackSession session, {
     bool includeQueue = true,
     bool includeEffects = true,
+    Map<String, int>? queueEntryPositions,
   }) async {
     sessionUpsertIds.add(session.id);
     final index = saved.indexWhere((value) => value.id == session.id);

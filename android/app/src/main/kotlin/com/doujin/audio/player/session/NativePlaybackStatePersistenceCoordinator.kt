@@ -2,6 +2,7 @@ package com.doujin.audio.player.session
 
 import android.content.Context
 import android.os.Handler
+import android.util.Log
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
 
@@ -57,7 +58,13 @@ private class AndroidNativePlaybackStatePersistenceEnvironment(
     }
 
     override fun execute(task: () -> Unit) {
-        executor.execute { task() }
+        executor.execute {
+            try {
+                task()
+            } catch (error: Exception) {
+                Log.e("PlaybackRecovery", "Unable to persist playback state", error)
+            }
+        }
     }
 
     override fun saveSessions(sessions: List<StoredNativePlaybackSession>, revisions: Map<String, Long>) {

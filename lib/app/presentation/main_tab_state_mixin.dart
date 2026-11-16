@@ -82,7 +82,10 @@ mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
     _scrollTransitionKey.currentState?.cancel();
     final controller = mainScrollController;
     if (!controller.hasClients) return;
-    controller.jumpTo(controller.offset);
+    final position = controller.position;
+    if (position.isScrollingNotifier.value) {
+      controller.jumpTo(position.pixels);
+    }
   }
 
   void measureHeader() {

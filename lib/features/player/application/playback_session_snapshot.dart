@@ -54,6 +54,7 @@ class PlaybackSessionSnapshot {
     required this.playbackError,
     required this.currentQueueIndex,
     this.queueVersion = 0,
+    this.queueLoadingRequired = false,
     required this.playbackQueue,
     required List<MusicTrack>? customQueueTracks,
     required this.positionStream,
@@ -94,6 +95,7 @@ class PlaybackSessionSnapshot {
       playbackError: session.playbackError,
       currentQueueIndex: session.currentQueueIndex,
       queueVersion: session.queueVersion,
+      queueLoadingRequired: session.queueLoadingRequired,
       playbackQueue: session.playbackQueue,
       customQueueTracks: session.customQueueTracks,
       positionStream: session.positionStream,
@@ -104,6 +106,7 @@ class PlaybackSessionSnapshot {
 
   final String id;
   final int queueVersion;
+  final bool queueLoadingRequired;
   final bool isTemporary;
   final DateTime createdAt;
   final DateTime? lastPlayedAt;
@@ -167,6 +170,7 @@ class PlaybackSessionSnapshot {
         other.playbackError == playbackError &&
         other.currentQueueIndex == currentQueueIndex &&
         other.queueVersion == queueVersion &&
+        other.queueLoadingRequired == queueLoadingRequired &&
         other.playbackQueue == playbackQueue &&
         (identical(other.customQueueTracks, customQueueTracks) ||
             (queueVersion != 0 && other.queueVersion == queueVersion) ||
@@ -200,6 +204,7 @@ class PlaybackSessionSnapshot {
     currentQueueIndex,
     playbackQueue?.contentSignature ?? playbackQueue,
     queueVersion,
+    queueLoadingRequired,
     customQueueTracks?.length,
   ]);
 }

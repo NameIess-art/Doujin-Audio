@@ -525,13 +525,16 @@ void _writeSessionDetailsToBatch(
   PlaybackSessionRecord session, {
   bool includeQueue = true,
   bool includeEffects = true,
+  bool includeSessionState = true,
   _PlaybackQueueRows? queueRows,
 }) {
-  batch.insert(
-    'session_playback_state',
-    _sessionPlaybackStateRow(session),
-    conflictAlgorithm: ConflictAlgorithm.replace,
-  );
+  if (includeSessionState) {
+    batch.insert(
+      'session_playback_state',
+      _sessionPlaybackStateRow(session),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
   if (includeEffects) _writeSessionAudioEffectsToBatch(batch, session);
   if (includeQueue) {
     _writePlaybackQueueToBatch(batch, session, rows: queueRows);
@@ -566,6 +569,109 @@ typedef _PlaybackQueueRows = ({
   List<Map<String, dynamic>> entries,
   List<Map<String, dynamic>> tracks,
 });
+
+_PlaybackQueueRows _playbackQueueDeltaRows(
+  (String, PlaybackQueueDeltaRecord) input,
+) {
+  final (sessionId, delta) = input;
+  final custom = delta.customTracks ?? const <MusicTrack>[];
+  final header = delta.header;
+  return (
+    queue: header == null
+        ? null
+        : {
+            'session_id': sessionId,
+            'name': header.name,
+            'color_value': header.colorValue,
+            'entry_count': header.entryCount,
+            'track_count': header.trackCount,
+          },
+    entries: [
+      for (final change in delta.upserted)
+        {
+          'session_id': sessionId,
+          'entry_id': change.entry.id,
+          'kind': change.entry.kind,
+          'title': change.entry.title,
+          'work_root_path': change.entry.workRootPath,
+          'sort_order': change.position,
+        },
+    ],
+    tracks: [
+      for (final change in delta.upserted)
+        if (change.writeTracks)
+          for (final (index, track) in change.entry.tracks.indexed)
+            _queueTrackRow(
+              sessionId: sessionId,
+              entryId: change.entry.id,
+              track: track,
+              duplicateIndex: index,
+              sortOrder: index,
+            ),
+      if (delta.replaceCustomTracks)
+        for (final (index, track) in custom.indexed)
+          _queueTrackRow(
+            sessionId: sessionId,
+            entryId: '__custom_queue__',
+            track: track,
+            duplicateIndex: index,
+            sortOrder: index,
+          ),
+    ],
+  );
+}
+
+void _writePlaybackQueueDelta(
+  Batch batch,
+  String sessionId,
+  PlaybackQueueDeltaRecord delta,
+  _PlaybackQueueRows rows,
+) {
+  for (final id in delta.deleted) {
+    batch.delete(
+      'playback_queue_entries',
+      where: 'session_id = ? AND entry_id = ?',
+      whereArgs: [sessionId, id],
+    );
+  }
+  for (final id in [
+    ...delta.deleted,
+    for (final change in delta.upserted)
+      if (change.writeTracks) change.entry.id,
+    if (delta.replaceCustomTracks) '__custom_queue__',
+  ]) {
+    batch.delete(
+      'playback_queue_entry_tracks',
+      where: 'session_id = ? AND entry_id = ?',
+      whereArgs: [sessionId, id],
+    );
+  }
+  if (rows.queue case final row?) {
+    batch.insert(
+      'playback_queues',
+      row,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+  for (final row in rows.entries) {
+    batch.insert(
+      'playback_queue_entries',
+      row,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+  for (final position in delta.moved.entries) {
+    batch.update(
+      'playback_queue_entries',
+      {'sort_order': position.value},
+      where: 'session_id = ? AND entry_id = ?',
+      whereArgs: [sessionId, position.key],
+    );
+  }
+  for (final row in rows.tracks) {
+    batch.insert('playback_queue_entry_tracks', row);
+  }
+}
 
 void _writePlaybackQueueToBatch(
   Batch batch,
@@ -625,12 +731,13 @@ _PlaybackQueueRows _playbackQueueRows(PlaybackSessionRecord session) {
                     (count, entry) => count + entry.tracks.length,
                   ) +
                   1)) {
-    for (var i = 0; i < customTracks.length; i++) {
+    final storedTracks = queue == null ? customTracks : customTracks.take(1);
+    for (final (i, track) in storedTracks.indexed) {
       tracks.add(
         _queueTrackRow(
           sessionId: session.id,
           entryId: '__custom_queue__',
-          track: customTracks[i],
+          track: track,
           duplicateIndex: i,
           sortOrder: i,
         ),
@@ -642,6 +749,11 @@ _PlaybackQueueRows _playbackQueueRows(PlaybackSessionRecord session) {
     'session_id': session.id,
     'name': queue.name,
     'color_value': queue.colorValue,
+    'entry_count': queue.entries.length,
+    'track_count': queue.entries.fold<int>(
+      0,
+      (count, entry) => count + entry.tracks.length,
+    ),
   };
   for (var entryIndex = 0; entryIndex < queue.entries.length; entryIndex++) {
     final entry = queue.entries[entryIndex];
@@ -751,19 +863,24 @@ _loadPlaybackQueueEntriesBySession(
   final entriesBySession = <String, List<Map<String, dynamic>>>{};
   for (final ids in _sessionIdChunks(sessionIds)) {
     final placeholders = List.filled(ids.length, '?').join(', ');
-    final rows = await db.rawQuery('''
+    final paged = sessionIds.length == 1;
+    Map<String, dynamic>? last;
+    do {
+      final cursor = last;
+      final rows = await db.rawQuery('''
         SELECT session_id, entry_id, kind, title, work_root_path, sort_order
         FROM playback_queue_entries
         WHERE session_id IN ($placeholders)
-        ORDER BY session_id ASC, sort_order ASC
-      ''', ids);
-    for (final row in rows) {
-      final sessionId = row['session_id'] as String?;
-      if (sessionId == null) continue;
-      entriesBySession
-          .putIfAbsent(sessionId, () => <Map<String, dynamic>>[])
-          .add(row);
-    }
+          ${cursor == null ? '' : 'AND (sort_order, entry_id) > (?, ?)'}
+        ORDER BY session_id ASC, sort_order ASC, entry_id ASC
+        ${paged ? 'LIMIT 512' : ''}
+      ''', [...ids, if (cursor != null) ...[cursor['sort_order'], cursor['entry_id']]]);
+      for (final row in rows) {
+        final sessionId = row['session_id'] as String;
+        entriesBySession.putIfAbsent(sessionId, () => []).add(row);
+      }
+      last = paged && rows.length == 512 ? rows.last : null;
+    } while (last != null);
   }
   return entriesBySession;
 }
@@ -775,7 +892,11 @@ Future<Map<String, List<Map<String, dynamic>>>> _loadQueueTracksByEntry(
   final tracksByEntry = <String, List<Map<String, dynamic>>>{};
   for (final ids in _sessionIdChunks(sessionIds)) {
     final placeholders = List.filled(ids.length, '?').join(', ');
-    final rows = await db.rawQuery('''
+    final paged = sessionIds.length == 1;
+    Map<String, dynamic>? last;
+    do {
+      final cursor = last;
+      final rows = await db.rawQuery('''
         SELECT
           session_id,
           entry_id,
@@ -795,19 +916,17 @@ Future<Map<String, List<Map<String, dynamic>>>> _loadQueueTracksByEntry(
           sort_order
         FROM playback_queue_entry_tracks
         WHERE session_id IN ($placeholders)
+          ${cursor == null ? '' : 'AND (entry_id, sort_order) > (?, ?)'}
         ORDER BY session_id ASC, entry_id ASC, sort_order ASC
-      ''', ids);
-    for (final row in rows) {
-      final sessionId = row['session_id'] as String?;
-      final entryId = row['entry_id'] as String?;
-      if (sessionId == null || entryId == null) continue;
-      tracksByEntry
-          .putIfAbsent(
-            _queueEntryKey(sessionId, entryId),
-            () => <Map<String, dynamic>>[],
-          )
-          .add(row);
-    }
+        ${paged ? 'LIMIT 512' : ''}
+      ''', [...ids, if (cursor != null) ...[cursor['entry_id'], cursor['sort_order']]]);
+      for (final row in rows) {
+        final sessionId = row['session_id'] as String;
+        final entryId = row['entry_id'] as String;
+        tracksByEntry.putIfAbsent(_queueEntryKey(sessionId, entryId), () => []).add(row);
+      }
+      last = paged && rows.length == 512 ? rows.last : null;
+    } while (last != null);
   }
   return tracksByEntry;
 }

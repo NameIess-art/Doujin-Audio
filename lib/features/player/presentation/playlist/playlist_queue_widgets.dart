@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -10,6 +11,7 @@ import 'package:path/path.dart' as path;
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/state/subtitle_settings_provider.dart';
+import '../../../../core/logging/app_log_service.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/media/path_matcher.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
@@ -21,7 +23,6 @@ import '../../../../core/widgets/playing_sound_wave_indicator.dart';
 import '../../../../core/widgets/swipe_reveal_card.dart';
 import '../../../library/application/library_facade.dart';
 import '../../application/playback_facade.dart';
-import '../../application/playback_session_snapshot.dart';
 import '../../domain/playback_queue.dart';
 import '../playback_providers.dart';
 import 'playlist_feature_icons.dart';
@@ -38,7 +39,7 @@ export 'playback_queue_audio_edit_page.dart' show PlaybackQueueAudioEditPage;
 class PlaybackQueueCard extends ConsumerStatefulWidget {
   const PlaybackQueueCard({
     super.key,
-    required this.session,
+    required this.sessionId,
     required this.library,
     required this.playback,
     required this.coverCacheWidth,
@@ -52,7 +53,7 @@ class PlaybackQueueCard extends ConsumerStatefulWidget {
     this.onTogglePin,
   });
 
-  final PlaybackSessionSnapshot session;
+  final String sessionId;
   final LibraryFacade library;
   final PlaybackFacade playback;
   final int? coverCacheWidth;
@@ -77,9 +78,31 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
       'queue_cover_discover:${identityHashCode(this)}';
   final List<String> _pendingDiscoveredPaths = [];
   _QueueCoverSelection? _coverSelection;
+  PlaybackQueueDefinition? _requestedPreviewQueue;
+  ValueListenable<TickerModeData>? _tickerMode;
+  bool _coverRefreshPending = false;
+
+  bool get _coverActivityEnabled => _tickerMode?.value.enabled ?? true;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final tickerMode = TickerMode.getValuesNotifier(context);
+    if (identical(tickerMode, _tickerMode)) return;
+    _tickerMode?.removeListener(_resumeCoverWork);
+    _tickerMode = tickerMode;
+    tickerMode.addListener(_resumeCoverWork);
+  }
+
+  void _resumeCoverWork() {
+    if (_coverActivityEnabled) {
+      UiInteractionCoordinator.instance.scheduleCommitFrame();
+    }
+  }
 
   @override
   void dispose() {
+    _tickerMode?.removeListener(_resumeCoverWork);
     _pendingDiscoveredPaths.clear();
     UiInteractionCoordinator.instance.cancelCommit(_coverScanKey);
     UiInteractionCoordinator.instance.cancelCommit(_coverDiscoverKey);
@@ -87,24 +110,24 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
   }
 
   void _scheduleCoverRefresh() {
+    _coverRefreshPending = true;
     UiInteractionCoordinator.instance.scheduleCommit(
       key: _coverScanKey,
       structural: true,
-      canRun: () =>
-          mounted && TickerMode.getValuesNotifier(context).value.enabled,
-      commit: () => setState(() {}),
+      canRun: () => mounted && _coverActivityEnabled,
+      commit: () => setState(() => _coverRefreshPending = false),
     );
   }
 
   void _scheduleCoverScan(_QueueCoverSelection selection) {
-    if (selection.isComplete) return;
+    if (_coverRefreshPending || selection.isComplete) return;
     UiInteractionCoordinator.instance.scheduleCommit(
       key: _coverScanKey,
       structural: true,
       canRun: () =>
           mounted &&
           identical(_coverSelection, selection) &&
-          TickerMode.getValuesNotifier(context).value.enabled,
+          _coverActivityEnabled,
       commit: () {
         if (selection.scan()) setState(() {});
         _scheduleCoverScan(selection);
@@ -112,9 +135,45 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
     );
   }
 
+  Future<void> _loadCoverPreviews(
+    PlaybackQueueDefinition queue,
+    int generation,
+  ) async {
+    final sessionId = widget.sessionId;
+    try {
+      final previews = await widget.playback.loadQueueEntryPreviews(
+        sessionId,
+        start: 0,
+        limit: 4,
+      );
+      if (!mounted ||
+          widget.sessionId != sessionId ||
+          !identical(
+            widget.playback.sessionById(sessionId)?.playbackQueue,
+            queue,
+          )) {
+        return;
+      }
+      final selection = _QueueCoverSelection(
+        previews.length,
+        (index) => previews[index].firstTrack,
+        widget.library,
+        generation,
+      );
+      _coverSelections[queue] = selection;
+      _scheduleCoverRefresh();
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'playback_queue_cover_previews_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final session = widget.session;
+    final sessionId = widget.sessionId;
     final library = widget.library;
     final playback = widget.playback;
     final coverCacheWidth = widget.coverCacheWidth;
@@ -122,7 +181,7 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
     final onEdit = widget.onEdit;
     final showSubtitles = ref.watch(
       subtitleSettingsProvider.select(
-        (settings) => settings.isGlobalEnabled(session.id),
+        (settings) => settings.isGlobalEnabled(sessionId),
       ),
     );
     final isSelectionMode = widget.isSelectionMode;
@@ -132,14 +191,15 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
     final onToggleSelect = widget.onToggleSelect;
     final onTogglePin = widget.onTogglePin;
     final isHidden = ref.watch(
-      isUndoableRemovalHiddenProvider(playbackSessionRemovalKey(session.id)),
+      isUndoableRemovalHiddenProvider(playbackSessionRemovalKey(sessionId)),
     );
-    final cardState = ref.watch(playlistSessionCardStateProvider(session.id));
+    final cardState = ref.watch(playlistSessionCardStateProvider(sessionId));
     final queueState = ref.watch(
-      playbackSessionProvider(session.id).select(
+      playbackSessionProvider(sessionId).select(
         (session) => (
           queue: session?.playbackQueue,
           currentIndex: session?.currentQueueIndex ?? -1,
+          requiresLoad: session?.queueLoadingRequired ?? false,
         ),
       ),
     );
@@ -152,30 +212,45 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
     final cs = Theme.of(context).colorScheme;
     final coverGeneration = ref.watch(coverGenerationProvider);
     final coordinator = UiInteractionCoordinator.instance;
-    final tickerEnabled = TickerMode.valuesOf(context).enabled;
+    final tickerEnabled = _coverActivityEnabled;
     final isDeferred = coordinator.isVisualUpdateDeferred;
-    var selection = _coverSelections[queue];
+    final coverKey = queueState.requiresLoad ? queue : queue.entries;
+    var selection = _coverSelections[coverKey];
     final hasFreshSelection =
         selection != null &&
         identical(selection.library, library) &&
         selection.generation == coverGeneration;
     if (!hasFreshSelection) {
       if (isDeferred || !tickerEnabled) {
-        if (isDeferred && tickerEnabled) _scheduleCoverRefresh();
+        _scheduleCoverRefresh();
         selection =
             _coverSelection != null &&
                 identical(_coverSelection!.library, library) &&
                 _coverSelection!.generation == coverGeneration
             ? _coverSelection
             : null;
-      } else {
+      } else if (!queueState.requiresLoad) {
         selection = _QueueCoverSelection(
-          queue.entries,
+          queue.entries.length,
+          (index) => queue.entries[index].tracks.firstOrNull,
           library,
           coverGeneration,
         );
         selection.scan();
-        _coverSelections[queue] = selection;
+        _coverSelections[coverKey] = selection;
+      } else if (selection != null) {
+        selection = _QueueCoverSelection(
+          selection.entryCount,
+          selection.trackAt,
+          library,
+          coverGeneration,
+        );
+        selection.scan();
+        _coverSelections[coverKey] = selection;
+      } else if (!identical(_requestedPreviewQueue, queue) &&
+          queue.entryCount > 0) {
+        _requestedPreviewQueue = queue;
+        unawaited(_loadCoverPreviews(queue, coverGeneration));
       }
     }
     if (!identical(_coverSelection, selection)) {
@@ -183,7 +258,7 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
       _pendingDiscoveredPaths.clear();
       _coverSelection = selection;
     }
-    if (selection != null && !selection.isComplete && tickerEnabled) {
+    if (selection != null && !selection.isComplete) {
       _scheduleCoverScan(selection);
     }
     Future<String?> coverFuture(MusicTrack track) => _coverFutures.putIfAbsent(
@@ -192,12 +267,19 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
           .read(libraryCoverUiControllerProvider)
           .deferredPlaybackCover(track, context: context),
     );
-    final tracks = queue.expandedTracks;
+    final hasTracks = queue.trackCount > 0;
     final activeColor = cardState.queueColorValue == null
         ? cs.primary
         : Color(cardState.queueColorValue!);
     final isPlaying = cardState.isPlaying;
     final coverSelection = selection;
+    if (coverSelection != null &&
+        (isDeferred || !tickerEnabled) &&
+        coverSelection.probes.any(
+          (probe) => !_coverFutures.containsKey(probe.track.path),
+        )) {
+      _scheduleCoverRefresh();
+    }
     if (coverSelection != null && !isDeferred && tickerEnabled) {
       for (final probe in coverSelection.probes) {
         final track = probe.track;
@@ -221,7 +303,7 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                   canRun: () =>
                       mounted &&
                       identical(_coverSelection, coverSelection) &&
-                      TickerMode.getValuesNotifier(context).value.enabled,
+                      _coverActivityEnabled,
                   commit: () {
                     if (_pendingDiscoveredPaths.isEmpty) return;
                     var changed = false;
@@ -247,7 +329,9 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
       }
     }
     final coverItems = coverSelection == null
-        ? const <({MusicTrack track, String? coverPath, Future<String?> future})>[]
+        ? const <
+            ({MusicTrack track, String? coverPath, Future<String?> future})
+          >[]
         : coverSelection.selected
               .map(
                 (entry) => (
@@ -265,37 +349,28 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
     final originalCurrentPath =
         playback.originalPathForRetargeted(cardState.trackPath) ??
         playback.originalPathForRetargeted(resolvedCurrentPath);
-    int currentIndex = -1;
     final hintIndex = queueState.currentIndex;
-    if (hintIndex >= 0 && hintIndex < tracks.length) {
-      final hintTrack = tracks[hintIndex];
-      if (PathMatcher.equalsNormalized(hintTrack.path, cardState.trackPath) ||
-          PathMatcher.equalsNormalized(hintTrack.path, resolvedCurrentPath) ||
-          (originalCurrentPath != null &&
-              PathMatcher.equalsNormalized(
-                hintTrack.path,
-                originalCurrentPath,
-              ))) {
-        currentIndex = hintIndex;
-      }
-    }
-    if (currentIndex < 0) {
-      final matchedCurrentIndex = tracks.indexWhere(
-        (track) =>
-            PathMatcher.equalsNormalized(track.path, cardState.trackPath) ||
-            PathMatcher.equalsNormalized(track.path, resolvedCurrentPath) ||
+    final runtimeTracks = playback.sessionById(sessionId)?.customQueueTracks;
+    final hintTrack = queueState.requiresLoad || hintIndex < 0
+        ? null
+        : runtimeTracks != null && hintIndex < runtimeTracks.length
+        ? runtimeTracks[hintIndex]
+        : queue.trackAt(hintIndex);
+    final matchesHint =
+        hintTrack != null &&
+        (PathMatcher.equalsNormalized(hintTrack.path, cardState.trackPath) ||
+            PathMatcher.equalsNormalized(hintTrack.path, resolvedCurrentPath) ||
             (originalCurrentPath != null &&
-                PathMatcher.equalsNormalized(track.path, originalCurrentPath)),
-      );
-      currentIndex = matchedCurrentIndex >= 0
-          ? matchedCurrentIndex
-          : (hintIndex >= 0 && hintIndex < tracks.length ? hintIndex : -1);
-    }
-    final currentTrack = currentIndex >= 0
-        ? tracks[currentIndex]
+                PathMatcher.equalsNormalized(
+                  hintTrack.path,
+                  originalCurrentPath,
+                )));
+    final currentTrack = matchesHint
+        ? hintTrack
         : ref
-              .read(audioPathCoordinatorProvider)
-              .sessionTrackForPath(session.id, cardState.trackPath);
+                  .read(audioPathCoordinatorProvider)
+                  .sessionTrackForPath(sessionId, cardState.trackPath) ??
+              hintTrack;
     final currentCoverScope = currentTrack == null
         ? null
         : library.coverArtworkCacheService.coverSearchKeyForTrack(currentTrack);
@@ -309,7 +384,7 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                       ) ==
                       currentCoverScope)),
     );
-    final currentTrackName = tracks.isEmpty
+    final currentTrackName = !hasTracks
         ? i18n.tr('empty_playback_queue')
         : currentTrack?.displayName ??
               path.basenameWithoutExtension(cardState.trackPath);
@@ -319,7 +394,7 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
     return UndoableRemovalTransition(
       hidden: isHidden,
       child: SwipeRevealCard(
-        key: ValueKey(session.id),
+        key: ValueKey(sessionId),
         shape: playlistRowShape,
         swipeEnabled: !isSelectionMode,
         leadingSwipeEnabled: false,
@@ -343,7 +418,7 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: playlistRowHeight),
           child: Material(
-            key: ValueKey('playback_queue_row_surface_${session.id}'),
+            key: ValueKey('playback_queue_row_surface_$sessionId'),
             shape: playlistRowShape,
             color: Colors.transparent,
             child: AppEntryInkWell(
@@ -362,19 +437,18 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
               onLongPress: onLongPress,
               child: PlaylistAudioRow(
                 contentKey: ValueKey<String>(
-                  'playback_queue_card_content_${session.id}',
+                  'playback_queue_card_content_$sessionId',
                 ),
                 cover: Stack(
                   clipBehavior: Clip.none,
                   children: [
                     SessionCoverProgressRing(
-                      session: session,
-                      sessionId: session.id,
+                      sessionId: sessionId,
                       activeColor: activeColor,
                       size: playlistCoverSize,
                       child: _QueueCoverGrid(
                         items: coverItems,
-                        sessionId: session.id,
+                        sessionId: sessionId,
                         currentCoverIndex: currentCoverIndex,
                         coverCacheWidth: coverCacheWidth,
                         dimension: coverProgressInnerDimension(
@@ -386,7 +460,7 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                       right: -2,
                       bottom: -2,
                       child: PlaylistSelectionIndicator(
-                        sessionId: session.id,
+                        sessionId: sessionId,
                         isSelected: isSelected,
                       ),
                     ),
@@ -395,7 +469,7 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                       right: -2,
                       child: PlaylistPinnedIndicator(
                         isPinned: isPinned,
-                        sessionId: session.id,
+                        sessionId: sessionId,
                         color: activeColor,
                       ),
                     ),
@@ -415,17 +489,14 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                     children: [
                       Text(
                         queue.name,
-                        key: ValueKey<String>(
-                          'playback_queue_name_${session.id}',
-                        ),
+                        key: ValueKey<String>('playback_queue_name_$sessionId'),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall
-                            ?.copyWith(
-                              color: activeColor,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 12,
-                            ),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: activeColor,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
                       ),
                       const SizedBox(height: 3),
                       Text.rich(
@@ -435,12 +506,10 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                               WidgetSpan(
                                 alignment: PlaceholderAlignment.middle,
                                 child: Padding(
-                                  padding: const EdgeInsets.only(
-                                    right: 6,
-                                  ),
+                                  padding: const EdgeInsets.only(right: 6),
                                   child: PlayingSoundWaveIndicator(
                                     key: ValueKey<String>(
-                                      'playback_queue_sound_wave_${session.id}',
+                                      'playback_queue_sound_wave_$sessionId',
                                     ),
                                     color: activeColor,
                                     isPlaying: isPlaying,
@@ -451,7 +520,7 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                           ],
                         ),
                         key: ValueKey<String>(
-                          'playback_queue_track_0_${session.id}',
+                          'playback_queue_track_0_$sessionId',
                         ),
                         semanticsLabel: currentTrackName,
                         maxLines: 2,
@@ -476,8 +545,7 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                         SessionFeatureBadgeStack(
                           featureIcons: sessionFeatureBadgeIcons(
                             showSubtitles: showSubtitles,
-                            channelSwapEnabled:
-                                cardState.channelSwapEnabled,
+                            channelSwapEnabled: cardState.channelSwapEnabled,
                             audioEffects: cardState.audioEffects,
                             speed: cardState.speed,
                           ),
@@ -486,15 +554,13 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                             tooltip: cardState.isPlaying
                                 ? i18n.tr('pause')
                                 : i18n.tr('play'),
-                            onPressed: tracks.isEmpty
+                            onPressed: !hasTracks && !isPlaying
                                 ? null
                                 : () {
                                     AppInteractionFeedback.trigger(
                                       AppInteractionFeedbackType.selection,
                                     );
-                                    playback.toggleSessionPlayPause(
-                                      session.id,
-                                    );
+                                    playback.toggleSessionPlayPause(sessionId);
                                   },
                             style: appIconButtonStyle(
                               IconButton.styleFrom(
@@ -509,8 +575,7 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                             icon: AnimatedSwitcher(
                               switchOutCurve: kAppFadeCurve,
                               switchInCurve: kAppFadeCurve,
-                              duration:
-                                  MediaQuery.disableAnimationsOf(context)
+                              duration: MediaQuery.disableAnimationsOf(context)
                                   ? Duration.zero
                                   : kAppFadeDuration,
                               transitionBuilder: (child, animation) {
@@ -572,9 +637,15 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
 }
 
 class _QueueCoverSelection {
-  _QueueCoverSelection(this.entries, this.library, this.generation);
+  _QueueCoverSelection(
+    this.entryCount,
+    this.trackAt,
+    this.library,
+    this.generation,
+  );
 
-  final List<PlaybackQueueEntry> entries;
+  final int entryCount;
+  final MusicTrack? Function(int) trackAt;
   final LibraryFacade library;
   final int generation;
   final probes = <({int index, MusicTrack track})>[];
@@ -582,19 +653,17 @@ class _QueueCoverSelection {
   int _nextEntry = 0;
 
   bool get isComplete =>
-      _nextEntry == entries.length ||
-      (probes.length == 4 && selected.length == 4);
+      _nextEntry == entryCount || (probes.length == 4 && selected.length == 4);
 
   bool scan() {
     var changed = false;
     // Missing artwork may force a search through the full queue. Bound each
     // frame's share and retain the cursor across scroll-driven remounts.
-    final end = math.min(_nextEntry + 32, entries.length);
+    final end = math.min(_nextEntry + 32, entryCount);
     while (_nextEntry < end && !isComplete) {
       final index = _nextEntry++;
-      final tracks = entries[index].tracks;
-      if (tracks.isEmpty) continue;
-      final track = tracks.first;
+      final track = trackAt(index);
+      if (track == null) continue;
       final candidate = (index: index, track: track);
       if (probes.length < 4) {
         probes.add(candidate);

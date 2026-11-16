@@ -621,6 +621,7 @@ final class _FailingPlaybackPersistenceRepository
     PersistedPlaybackSession session, {
     bool includeQueue = true,
     bool includeEffects = true,
+    Map<String, int>? queueEntryPositions,
   }) async {
     sessionWrites++;
     throw StateError('disk write failed');

@@ -3,6 +3,14 @@ import '../../../core/media/music_track.dart';
 
 enum PlaybackQueueEntryKind { track, work }
 
+typedef PlaybackQueueEntryPreview = ({
+  String id,
+  PlaybackQueueEntryKind kind,
+  String title,
+  int trackCount,
+  MusicTrack? firstTrack,
+});
+
 class PlaybackQueueEntry {
   PlaybackQueueEntry({
     required this.id,
@@ -62,11 +70,48 @@ class PlaybackQueueDefinition {
     required this.name,
     required List<PlaybackQueueEntry> entries,
     this.colorValue,
-  }) : entries = immutableList(entries);
+    int? storedEntryCount,
+    int? storedTrackCount,
+  }) : entries = immutableList(entries),
+       _storedEntryCount = storedEntryCount,
+       _storedTrackCount = storedTrackCount;
 
   final String name;
   final int? colorValue;
   final List<PlaybackQueueEntry> entries;
+  final int? _storedEntryCount;
+  final int? _storedTrackCount;
+
+  int get entryCount => _storedEntryCount ?? entries.length;
+  int get trackCount => _storedTrackCount ?? (_trackEnds.lastOrNull ?? 0);
+
+  late final List<int> _trackEnds = () {
+    var offset = 0;
+    return [for (final entry in entries) offset += entry.tracks.length];
+  }();
+
+  ({PlaybackQueueEntry entry, int offset})? locationAt(int index) {
+    if (index < 0 || index >= (_trackEnds.lastOrNull ?? 0)) return null;
+    var low = 0;
+    var high = _trackEnds.length - 1;
+    while (low < high) {
+      final middle = (low + high) ~/ 2;
+      if (_trackEnds[middle] <= index) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    return (
+      entry: entries[low],
+      offset: index - (low == 0 ? 0 : _trackEnds[low - 1]),
+    );
+  }
+
+  MusicTrack? trackAt(int index) {
+    final location = locationAt(index);
+    return location?.entry.tracks[location.offset];
+  }
 
   late final List<MusicTrack> expandedTracks = immutableList(
     entries.expand((entry) => entry.tracks),
@@ -97,6 +142,8 @@ class PlaybackQueueDefinition {
       name: name ?? this.name,
       colorValue: clearColor ? null : (colorValue ?? this.colorValue),
       entries: entries ?? this.entries,
+      storedEntryCount: entries == null ? _storedEntryCount : null,
+      storedTrackCount: entries == null ? _storedTrackCount : null,
     );
   }
 
@@ -106,10 +153,18 @@ class PlaybackQueueDefinition {
       other is PlaybackQueueDefinition &&
           name == other.name &&
           colorValue == other.colorValue &&
+          entryCount == other.entryCount &&
+          trackCount == other.trackCount &&
           _listEquals(entries, other.entries);
 
   @override
-  int get hashCode => Object.hash(name, colorValue, Object.hashAll(entries));
+  int get hashCode => Object.hash(
+    name,
+    colorValue,
+    entryCount,
+    trackCount,
+    Object.hashAll(entries),
+  );
 
   Map<String, Object?> toJson() => <String, Object?>{
     'name': name,

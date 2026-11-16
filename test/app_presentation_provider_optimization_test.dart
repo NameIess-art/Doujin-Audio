@@ -1010,7 +1010,7 @@ void main() {
           builder: (context, widgetRef, child) {
             ref = widgetRef;
             sortedIds = ref.watch(playlistSortedEntriesUiProvider)
-                .map((entry) => entry.sessionId)
+                .map((entry) => entry.id)
                 .toList();
             return const SizedBox.shrink();
           },
@@ -1101,7 +1101,7 @@ void main() {
           builder: (context, ref, child) {
             final entries = ref.watch(playlistSortedEntriesUiProvider);
             sorted = entries;
-            sortedIds = entries.map((entry) => entry.sessionId).toList();
+            sortedIds = entries.map((entry) => entry.id).toList();
             structure = ref.watch(playlistStructureUiProvider);
             return const SizedBox.shrink();
           },

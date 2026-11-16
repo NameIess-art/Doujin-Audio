@@ -54,7 +54,13 @@ extension PlaybackCommandRestore on PlaybackCommandCoordinator {
       if (!snapshot.playWhenReady && snapshot.processingState == 'idle') {
         continue;
       }
-      _handleNativePlaybackSnapshot(snapshot);
+      final session = _sessions[snapshot.sessionId]!;
+      if (session.queueLoadingRequired ||
+          _nativeSnapshotsWaitingForQueue.containsKey(session)) {
+        await _applyNativeSnapshotAfterQueueLoad(session, snapshot);
+      } else {
+        _handleNativePlaybackSnapshot(snapshot);
+      }
     }
     final focusedSessionId = bundle.focusedSessionId;
     if (focusedSessionId != null && _sessions.containsKey(focusedSessionId)) {
@@ -65,6 +71,25 @@ extension PlaybackCommandRestore on PlaybackCommandCoordinator {
       if (_sessions.isNotEmpty) _notifyPlaybackChanged();
     }
     return bundle;
+  }
+
+  Future<void> _applyNativeSnapshotAfterQueueLoad(
+    PlaybackSession session,
+    NativePlaybackSnapshot snapshot,
+  ) async {
+    final pending = _nativeSnapshotsWaitingForQueue.containsKey(session);
+    _nativeSnapshotsWaitingForQueue[session] = snapshot;
+    try {
+      final loaded = await _playbackFacade.ensureSessionQueueLoaded(session.id);
+      if (loaded && !pending) {
+        final latest = _nativeSnapshotsWaitingForQueue.remove(session);
+        if (latest != null) _handleNativePlaybackSnapshot(latest);
+      }
+    } catch (error, stackTrace) {
+      if (!pending) _logRestoreFailure(error, stackTrace);
+    } finally {
+      if (!pending) _nativeSnapshotsWaitingForQueue.remove(session);
+    }
   }
 
   void _logRestoreFailure(Object error, StackTrace stackTrace) {

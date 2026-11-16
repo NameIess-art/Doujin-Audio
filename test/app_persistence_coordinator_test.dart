@@ -897,6 +897,7 @@ final class _RecordingPlaybackPersistenceRepository
     PersistedPlaybackSession session, {
     bool includeQueue = true,
     bool includeEffects = true,
+    Map<String, int>? queueEntryPositions,
   }) async {
     definitionWrites.add((session.id, includeQueue, includeEffects));
   }

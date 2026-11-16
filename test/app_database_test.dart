@@ -8,15 +8,19 @@ import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_recommendation_engine.dart';
 import 'package:doujin_audio/features/player/domain/playback_queue.dart';
+import 'package:doujin_audio/features/player/application/playback_facade.dart';
 import 'package:doujin_audio/features/player/domain/playback_persistence_repository.dart';
 import 'package:doujin_audio/features/player/domain/time_segment_label.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/infrastructure/sqlite/sqlite_asmr_repository.dart';
+import 'package:doujin_audio/infrastructure/sqlite/sqlite_playback_repository.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'support/test_persistence_repository.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   late Database db;
   late AppDatabase appDatabase;
   late TestPersistenceRepository repository;
@@ -35,9 +39,172 @@ void main() {
 
   tearDown(() => db.close());
 
-  test('schema starts from version 15', () {
-    expect(AppDatabase.schemaVersion, 15);
+  test('schema starts from version 16', () {
+    expect(AppDatabase.schemaVersion, 16);
   });
+
+  test(
+    'v16 backfills queue summaries and keeps the detached occurrence',
+    () async {
+      final original = _playbackSession('a');
+      final detached = _playbackTrack('detached');
+      final queue = original.playbackQueue!;
+      final sqlite = SqlitePlaybackRepository(database: appDatabase);
+      await sqlite.upsertSession(
+        original.withQueue(queue, [detached, ...queue.expandedTracks]),
+      );
+      final sentinel = (await db.query(
+        'playback_queue_entry_tracks',
+        where: 'entry_id = ?',
+        whereArgs: ['__custom_queue__'],
+      )).single;
+      await db.insert('playback_queue_entry_tracks', {
+        ...sentinel,
+        'sort_order': 1,
+        'track_path': original.trackPath,
+      });
+      await db.execute('ALTER TABLE playback_queues DROP COLUMN entry_count');
+      await db.execute('ALTER TABLE playback_queues DROP COLUMN track_count');
+
+      await AppDatabase.upgradeSchemaForTest(db, 15, 16);
+
+      final summary = (await sqlite.loadSessionSummaries()).single;
+      expect(summary.session.playbackQueue!.entryCount, 1);
+      expect(summary.session.playbackQueue!.trackCount, 2);
+      expect(summary.session.playbackQueue!.entries, isEmpty);
+      expect(summary.requiresQueueLoad, isTrue);
+      final stored = (await sqlite.loadSessionQueue('a'))!;
+      expect(stored.positionMs, original.positionMs);
+      expect(stored.currentQueueIndex, original.currentQueueIndex);
+      expect(stored.customQueueTracks!.map((track) => track.path), [
+        detached.path,
+        original.trackPath,
+        original.trackPath,
+      ]);
+      expect(
+        await db.query(
+          'playback_queue_entry_tracks',
+          where: 'entry_id = ?',
+          whereArgs: ['__custom_queue__'],
+        ),
+        hasLength(1),
+      );
+    },
+  );
+
+  test('summary edits and previews preserve an unloaded queue', () async {
+    SharedPreferences.setMockInitialValues({});
+    final sqlite = SqlitePlaybackRepository(database: appDatabase);
+    final original = _playbackSession('a', speed: 1.25);
+    final queue = original.playbackQueue!;
+    await sqlite.upsertSession(original);
+    final playback = PlaybackFacade.create(databaseRepository: sqlite);
+    addTearDown(playback.dispose);
+    var recoveryWrites = 0;
+    playback.attachPersistenceRuntime(
+      trackByPath: (_) => null,
+      recordPlaybackProgress: () => true,
+      restoreRuntime: (_, {required focusedSessionId}) async {},
+      updatePlaybackHistory:
+          ({
+            required trackPath,
+            required position,
+            required now,
+            required updatePlayedAt,
+          }) => null,
+      onFocusChanged: (_) {},
+      synchronizePausedRecovery: (_) async {
+        recoveryWrites++;
+      },
+    );
+    await playback.loadPersistedState();
+    final session = playback.sessionById('a')!;
+    expect(session.queueLoadingRequired, isTrue);
+    expect(recoveryWrites, 0);
+    expect(session.currentQueueIndex, 1);
+    expect(session.trackForPath(original.trackPath)?.displayName, 'a');
+    expect(session.playbackQueue!.entries, isEmpty);
+    final previews = await playback.loadQueueEntryPreviews(
+      'a',
+      start: 0,
+      limit: 1,
+    );
+    expect(previews.single.trackCount, 2);
+    expect(previews.single.firstTrack!.path, original.trackPath);
+
+    final before = await _sessionTableRows(db, 'a');
+    expect(playback.renamePlaybackQueue('a', 'Renamed'), isTrue);
+    expect(playback.setPlaybackQueueColorValue('a', 123), isTrue);
+    await playback.flushSessionStatePersistence(sessionId: 'a');
+    expect(session.queueLoadingRequired, isTrue);
+    expect(recoveryWrites, 0);
+    final after = await _sessionTableRows(db, 'a');
+    expect(
+      after['playback_queue_entry_tracks'],
+      before['playback_queue_entry_tracks'],
+    );
+    expect(after['playback_queue_entries'], before['playback_queue_entries']);
+    expect(after['sessions'], before['sessions']);
+    expect(after['session_playback_state'], before['session_playback_state']);
+    final first = playback.ensureSessionQueueLoaded('a');
+    expect(identical(first, playback.ensureSessionQueueLoaded('a')), isTrue);
+    expect(await first, isTrue);
+    expect(
+      session.playbackQueue,
+      queue.copyWith(name: 'Renamed', colorValue: 123),
+    );
+    expect(session.currentQueueIndex, 1);
+  });
+
+  test(
+    'a failed queue delta rolls back entry order and summary, then retries',
+    () async {
+      final sqlite = SqlitePlaybackRepository(database: appDatabase);
+      final original = _playbackSession('a');
+      final queue = original.playbackQueue!;
+      final next = original.withQueue(
+        queue.copyWith(
+          entries: [
+            ...queue.entries,
+            PlaybackQueueEntry(
+              id: 'new_entry',
+              kind: PlaybackQueueEntryKind.track,
+              title: 'new',
+              tracks: [_playbackTrack('new')],
+            ),
+          ],
+        ),
+        null,
+      );
+      await sqlite.upsertSession(original);
+      final before = await _sessionTableRows(db, 'a');
+      await db.execute('''
+      CREATE TRIGGER reject_new_queue_track BEFORE INSERT ON playback_queue_entry_tracks
+      WHEN new.entry_id = 'new_entry'
+      BEGIN SELECT RAISE(ABORT, 'test write failure'); END
+    ''');
+      Future<void> apply() => sqlite.upsertSessionDelta(
+        next,
+        previous: original,
+        includeQueue: true,
+        includeEffects: false,
+      );
+      await expectLater(apply(), throwsA(isA<DatabaseException>()));
+      expect(await _sessionTableRows(db, 'a'), before);
+      await db.execute('DROP TRIGGER reject_new_queue_track');
+      await apply();
+      final after = await _sessionTableRows(db, 'a');
+      expect(
+        after['playback_queue_entry_tracks']!.where(
+          (row) => row['entry_id'] == queue.entries.single.id,
+        ),
+        before['playback_queue_entry_tracks'],
+      );
+      final summary = (await sqlite.loadSessionSummaries()).single;
+      expect(summary.session.playbackQueue!.entryCount, 2);
+      expect(summary.session.playbackQueue!.trackCount, 3);
+    },
+  );
 
   test('version 13 removes only duplicate constraint indexes', () async {
     await repository.seedSessions([_playbackSession('kept')]);
@@ -2986,9 +3153,7 @@ void main() {
         final isFile = detail.target.targetType == file.targetType;
         expect(
           detail.voiceActors,
-          isFile
-              ? ['File actor']
-              : ['Second actor', 'First actor'],
+          isFile ? ['File actor'] : ['Second actor', 'First actor'],
         );
         expect(detail.tags, isFile ? ['File tag'] : ['Z', 'A']);
       }
@@ -3329,6 +3494,7 @@ PersistedPlaybackSession _playbackSession(
   String id, {
   int positionMs = 1200,
   double volume = 0.8,
+  double speed = 1.2,
   PlaybackQueueDefinition? queue,
   List<MusicTrack>? customTracks,
   AudioEffectsState? effects,
@@ -3337,7 +3503,7 @@ PersistedPlaybackSession _playbackSession(
   trackPath: '/playback/$id.mp3',
   loopModeIndex: 1,
   volume: volume,
-  speed: 1.2,
+  speed: speed,
   positionMs: positionMs,
   durationMs: 10000,
   customQueueTracks: customTracks,

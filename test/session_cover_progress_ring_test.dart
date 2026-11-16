@@ -357,12 +357,10 @@ void main() {
         isInitialized: true,
       );
 
-      final session = PlaybackSessionSnapshot.fromRuntime(runtimeSession);
-
       await tester.pumpWidget(
         fixture.build(
           PlaybackQueueCard(
-            session: session,
+            sessionId: runtimeSession.id,
             library: fixture.runtimeGraph.library,
             playback: fixture.runtimeGraph.playback,
             coverCacheWidth: 64,

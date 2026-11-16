@@ -4609,6 +4609,7 @@ class _CountingTestPersistenceRepository extends TestPersistenceRepository {
     PersistedPlaybackSession session, {
     bool includeQueue = true,
     bool includeEffects = true,
+    Map<String, int>? queueEntryPositions,
   }) async {}
 
   @override

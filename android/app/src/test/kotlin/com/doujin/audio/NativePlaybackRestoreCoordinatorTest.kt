@@ -335,10 +335,12 @@ private class FakeRestoreEnvironment : NativePlaybackRestoreEnvironment {
     var loadFailure: Throwable? = null
     private val background = ArrayDeque<() -> Unit>()
     private val main = ArrayDeque<() -> Unit>()
-    override fun loadSessions(): List<StoredNativePlaybackSession> {
+    override fun loadSessions(sessionIds: Set<String>?, activeOnly: Boolean): List<StoredNativePlaybackSession> {
         loadCount += 1
         loadFailure?.let { throw it }
-        return sessions
+        return sessions.filter {
+            (sessionIds == null || it.sessionId in sessionIds) && (!activeOnly || it.playing || it.playWhenReady)
+        }
     }
     override fun executeBackground(task: () -> Unit) { background += task }
     override fun postMain(task: () -> Unit) { main += task }

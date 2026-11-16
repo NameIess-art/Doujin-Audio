@@ -33,7 +33,11 @@ const EdgeInsets playlistRowPadding = EdgeInsets.symmetric(
   horizontal: AppSpacing.xs,
   vertical: 6,
 );
-const RoundedRectangleBorder playlistRowShape = LibraryLikeCardMetrics.cardShape;
+const RoundedRectangleBorder playlistRowShape = RoundedRectangleBorder(
+  borderRadius: BorderRadius.all(
+    Radius.circular(LibraryLikeCardMetrics.coverRadius),
+  ),
+);
 
 Color playlistTemporaryCardColor(BuildContext context) {
   final cs = Theme.of(context).colorScheme;

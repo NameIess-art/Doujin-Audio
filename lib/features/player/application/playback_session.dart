@@ -67,6 +67,8 @@ class PlaybackSession {
     PlaybackQueueDefinition? playbackQueue,
     this.currentQueueIndex = 0,
     this.isTemporary = false,
+    this.queueLoadingRequired = false,
+    this.persistedCurrentTrack,
   }) : _customQueueTracks = customQueueTracks == null
            ? null
            : immutableList(customQueueTracks),
@@ -74,11 +76,13 @@ class PlaybackSession {
     hasDetachedQueueTrack =
         playbackQueue != null &&
         customQueueTracks != null &&
-        customQueueTracks.length == playbackQueue.expandedTracks.length + 1 &&
+        customQueueTracks.length == playbackQueue.trackCount + 1 &&
         customQueueTracks.isNotEmpty;
   }
 
   final String id;
+  bool queueLoadingRequired;
+  MusicTrack? persistedCurrentTrack;
   bool isTemporary;
   bool nativeStopAfterCurrentTrack = false;
   bool completedByTrackStop = false;
@@ -114,8 +118,10 @@ class PlaybackSession {
   PlaybackQueueDefinition? _playbackQueue;
   PlaybackQueueDefinition? get playbackQueue => _playbackQueue;
   set playbackQueue(PlaybackQueueDefinition? queue) {
-    if (_playbackQueue == queue) return;
+    if (identical(_playbackQueue, queue)) return;
+    final entriesChanged = !identical(_playbackQueue?.entries, queue?.entries);
     _playbackQueue = queue;
+    if (!entriesChanged) return;
     _queueVersion++;
     _trackPathMap = null;
     nativePlaybackQueueCacheKey = null;
@@ -142,6 +148,20 @@ class PlaybackSession {
 
   MusicTrack? trackForPath(String trackPath, {String? resolvedPath}) {
     if (trackPath.isEmpty) return null;
+    final tracks = _customQueueTracks;
+    final current = queueLoadingRequired
+        ? persistedCurrentTrack
+        : tracks != null &&
+              currentQueueIndex >= 0 &&
+              currentQueueIndex < tracks.length
+        ? tracks[currentQueueIndex]
+        : _playbackQueue?.trackAt(currentQueueIndex);
+    if (current != null &&
+        (PathMatcher.equalsNormalized(current.path, trackPath) ||
+            (resolvedPath != null &&
+                PathMatcher.equalsNormalized(current.path, resolvedPath)))) {
+      return current;
+    }
     final map = _trackMap;
     final normalized = PathMatcher.normalize(trackPath);
     final direct = map[normalized];

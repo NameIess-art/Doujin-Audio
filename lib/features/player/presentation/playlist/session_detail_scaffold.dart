@@ -178,10 +178,16 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
 
   void _handleDragDismissUpdate(DragUpdateDetails details) {
     if (widget.transitionActive.value || _dragDismissClosing) return;
-    final nextOffset = (_dragOffset + details.delta.dy).clamp(
-      0.0,
-      double.infinity,
-    );
+    final delta = details.delta.dy;
+    final maxOffset = MediaQuery.sizeOf(context).height * 0.65;
+    final double nextOffset;
+    if (_dragOffset >= _dragDismissThreshold && delta > 0) {
+      final overDrag = (_dragOffset - _dragDismissThreshold).clamp(0.0, 400.0);
+      final damping = 1.0 + (overDrag / 180.0);
+      nextOffset = (_dragOffset + delta / damping).clamp(0.0, maxOffset);
+    } else {
+      nextOffset = (_dragOffset + delta).clamp(0.0, maxOffset);
+    }
     if (nextOffset == _dragOffset) return;
     if (nextOffset > 0 && _dragOffset == 0) {
       _detailRoute?.beginInteractiveDismiss();
@@ -208,7 +214,10 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
         (_dragOffset > 20 && velocity >= _dragDismissVelocity);
     if (shouldDismiss) {
       _dragDismissClosing = true;
-      if (!MediaQuery.disableAnimationsOf(context) &&
+      final hasCoverFlight =
+          _detailRoute?.detailCoverKey.currentState?.decodedImage != null;
+      if (!hasCoverFlight &&
+          !MediaQuery.disableAnimationsOf(context) &&
           TickerMode.valuesOf(context).enabled) {
         final targetOffset = math.max(
           _dragOffset + 120.0,
@@ -694,11 +703,13 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
               ),
               Transform.translate(
                 offset: Offset(0, _dragOffset),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.vertical(
-                    top: Radius.circular(24.0 * dragFraction),
+                child: Transform.scale(
+                  scale: 1.0 - (0.045 * dragFraction),
+                  alignment: Alignment.topCenter,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(24.0 * dragFraction),
+                    child: content,
                   ),
-                  child: content,
                 ),
               ),
             ],

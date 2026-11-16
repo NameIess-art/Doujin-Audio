@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:doujin_audio/app/presentation/app_orientation_controller.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
+import 'package:doujin_audio/core/widgets/app_search_page.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/sliding_selection_indicator.dart';
+import 'package:doujin_audio/core/widgets/swipe_reveal_action_pane.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/features/library/presentation/work_image_viewer_page.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
@@ -479,6 +483,185 @@ void main() {
         expect(normalDelta, greaterThan(5000));
         expect(halfDelta, closeTo(normalDelta * 0.5, normalDelta * 0.08));
         expect(quarterDelta, closeTo(normalDelta * 0.25, normalDelta * 0.08));
+      },
+    );
+
+    testWidgets(
+      'SwipeRevealCard tracks drag at 55ms and SwipeRevealActionPane pops with spring-back past threshold',
+      (tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: SizedBox(
+                  width: 320,
+                  height: 76,
+                  child: SwipeRevealCard(
+                    shape: const RoundedRectangleBorder(),
+                    actionLabel: 'Remove',
+                    removeTooltip: 'Remove',
+                    onRemove: () {},
+                    child: const SizedBox.expand(
+                      child: Center(child: Text('Track swipe')),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final gesture = await tester.startGesture(
+          tester.getCenter(find.text('Track swipe')),
+        );
+        await gesture.moveBy(const Offset(-28, 0));
+        await tester.pump();
+
+        final dragTween = tester.widget<TweenAnimationBuilder<double>>(
+          find.byType(TweenAnimationBuilder<double>),
+        );
+        expect(dragTween.duration, const Duration(milliseconds: 55));
+        expect(dragTween.curve, Curves.easeOutCubic);
+
+        await gesture.moveBy(const Offset(-52, 0));
+        await tester.pump(const Duration(milliseconds: 60));
+
+        final paneScale = tester.widget<AnimatedScale>(
+          find.descendant(
+            of: find.byType(SwipeRevealActionPane),
+            matching: find.byType(AnimatedScale),
+          ),
+        );
+        expect(paneScale.duration, kAppMotionStandard);
+        expect(paneScale.curve, kAppSpringBackCurve);
+
+        await gesture.up();
+        await tester.pump();
+
+        final releaseTween = tester.widget<TweenAnimationBuilder<double>>(
+          find.byType(TweenAnimationBuilder<double>),
+        );
+        expect(releaseTween.duration, kAppMotionStandard);
+        expect(releaseTween.curve, kAppSpringCurve);
+
+        await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets(
+      'AppPlaybackIconTransition applies rotational morph without RotationTransition and returns to zero rotation at rest',
+      (tester) async {
+        var playing = false;
+        late StateSetter setPlaying;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: StatefulBuilder(
+                  builder: (context, setState) {
+                    setPlaying = setState;
+                    return AppPlaybackIconTransition(
+                      child: Icon(
+                        playing
+                            ? Icons.pause_rounded
+                            : Icons.play_arrow_rounded,
+                        key: ValueKey<bool>(playing),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        Iterable<Transform> rotatedTransforms() => tester
+            .widgetList<Transform>(
+              find.descendant(
+                of: find.byType(AppPlaybackIconTransition),
+                matching: find.byType(Transform),
+              ),
+            )
+            .where((t) => t.transform.entry(0, 1).abs() > 0.001);
+
+        expect(
+          find.descendant(
+            of: find.byType(AppPlaybackIconTransition),
+            matching: find.byType(RotationTransition),
+          ),
+          findsNothing,
+        );
+        expect(rotatedTransforms(), isEmpty);
+
+        setPlaying(() => playing = true);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 45));
+
+        expect(
+          find.descendant(
+            of: find.byType(AppPlaybackIconTransition),
+            matching: find.byType(RotationTransition),
+          ),
+          findsNothing,
+        );
+        expect(rotatedTransforms(), isNotEmpty);
+
+        await tester.pumpAndSettle();
+        expect(rotatedTransforms(), isEmpty);
+      },
+    );
+
+    testWidgets(
+      'buildAppSearchPageRoute configures non-sliding fade route with appSearchRouteName',
+      (tester) async {
+        late PageRoute<void> searchRoute;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Builder(
+                builder: (context) => TextButton(
+                  onPressed: () {
+                    searchRoute = buildAppSearchPageRoute(
+                      context: context,
+                      child: const Scaffold(
+                        body: AppPageContentTransition(
+                          child: SizedBox.expand(
+                            key: ValueKey<String>('search_polish_body'),
+                          ),
+                        ),
+                      ),
+                    );
+                    unawaited(Navigator.of(context).push(searchRoute));
+                  },
+                  child: const Text('Open search'),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        await tester.tap(find.text('Open search'));
+        await tester.pump();
+        await tester.pump();
+
+        expect(searchRoute.settings.name, appSearchRouteName);
+        expect(searchRoute.transitionDuration, kAppMotionStandard);
+        expect(searchRoute.reverseTransitionDuration, kAppMotionFast);
+        final searchBody = find.byKey(const ValueKey<String>('search_polish_body'));
+        expect(
+          find.ancestor(of: searchBody, matching: find.byType(SlideTransition)),
+          findsNothing,
+        );
+        expect(
+          find.ancestor(of: searchBody, matching: find.byType(FadeTransition)),
+          findsOneWidget,
+        );
+
+        await tester.pumpAndSettle();
       },
     );
   });

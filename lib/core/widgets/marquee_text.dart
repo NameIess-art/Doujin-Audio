@@ -155,9 +155,11 @@ class _MarqueeTextState extends State<MarqueeText>
   bool _pointerDown = false;
   bool _userScrolling = false;
   ValueListenable<bool>? _scrollActivity;
+  ValueListenable<TickerModeData>? _tickerMode;
 
+  bool get _pauseRequested => !_canAnimate || (_scrollActivity?.value ?? false);
   bool get _animationAllowed =>
-      _canAnimate && !(_scrollActivity?.value ?? false);
+      !_pauseRequested && (_tickerMode?.value.enabled ?? true);
 
   double get _pauseDuration => widget.pauseDuration.inMicroseconds / 1000000;
 
@@ -166,9 +168,14 @@ class _MarqueeTextState extends State<MarqueeText>
     super.didChangeDependencies();
     _canAnimate =
         defaultTargetPlatform != TargetPlatform.android &&
-        TickerMode.valuesOf(context).enabled &&
         !MediaQuery.disableAnimationsOf(context) &&
         !MarqueePauseScope.isPausedOf(context);
+    final tickerMode = TickerMode.getValuesNotifier(context);
+    if (!identical(tickerMode, _tickerMode)) {
+      _tickerMode?.removeListener(_syncTicker);
+      _tickerMode = tickerMode;
+      tickerMode.addListener(_syncTicker);
+    }
     final activity = ScrollActivityGate.scrollingListenableOf(context);
     if (!identical(activity, _scrollActivity)) {
       _scrollActivity?.removeListener(_handleScrollActivity);
@@ -180,11 +187,9 @@ class _MarqueeTextState extends State<MarqueeText>
 
   void _handleScrollActivity() {
     _syncTicker();
-    if (!_animationAllowed &&
-        _controller.hasClients &&
-        _controller.offset != 0) {
+    if (_pauseRequested && _controller.hasClients && _controller.offset != 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && !_animationAllowed && _controller.hasClients) {
+        if (mounted && _pauseRequested && _controller.hasClients) {
           _controller.jumpTo(0);
         }
       });
@@ -264,6 +269,7 @@ class _MarqueeTextState extends State<MarqueeText>
   @override
   void dispose() {
     _scrollActivity?.removeListener(_handleScrollActivity);
+    _tickerMode?.removeListener(_syncTicker);
     _ticker.dispose();
     _controller.dispose();
     super.dispose();

@@ -1,4 +1,5 @@
 import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
+import 'package:doujin_audio/features/player/domain/playback_persistence_repository.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -351,6 +352,7 @@ final class AppRuntimeWidgetTestFixture {
     NativePlaybackRepository? providedNativePlaybackRepository,
     ListeningActivityService? listeningActivity,
     TestPersistenceRepository? providedPersistenceRepository,
+    PlaybackPersistenceRepository? providedPlaybackPersistenceRepository,
     bool persistenceEnabled = false,
     SettingsRepository? providedSettingsRepository,
     LibraryTreeSnapshotBuilder? libraryTreeSnapshotBuilder,
@@ -401,7 +403,8 @@ final class AppRuntimeWidgetTestFixture {
       asmrMetadataService: asmrMetadataService,
     );
     playback = PlaybackFacade.create(
-      databaseRepository: persistenceRepository,
+      databaseRepository:
+          providedPlaybackPersistenceRepository ?? persistenceRepository,
       nativeRepository: nativePlaybackRepository,
       service: playbackService,
     );

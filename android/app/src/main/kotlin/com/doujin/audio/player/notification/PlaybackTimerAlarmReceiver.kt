@@ -14,6 +14,7 @@ import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import java.util.Calendar
+import java.util.concurrent.Executors
 
 class PlaybackTimerAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
@@ -57,6 +58,11 @@ object PlaybackTimerAlarmScheduler {
     private const val autoResumeRetryDelayMs = 30_000L
 
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
+    private val timerRecoveryExecutor by lazy {
+        Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "PlaybackTimerRecovery").apply { isDaemon = true }
+        }
+    }
 
     private fun commandDelivery(context: Context) = PlaybackTimerCommandDelivery(
             startService = {
@@ -64,8 +70,7 @@ object PlaybackTimerAlarmScheduler {
                     { action, runtime, generation, attempt, complete ->
                         when (action) {
                             actionTimerExpired -> {
-                                executeTimerExpired(context, service, runtime)
-                                complete(resultExecuted)
+                                executeTimerExpired(context, service, runtime, complete)
                             }
                             actionAutoResume -> {
                                 executeAutoResume(context, service, runtime, generation, attempt, complete)
@@ -291,28 +296,71 @@ object PlaybackTimerAlarmScheduler {
     private fun executeTimerExpired(
         context: Context,
         service: NativePlaybackService,
-        runtimeState: StoredPlaybackTimerRuntimeState?
+        runtimeState: StoredPlaybackTimerRuntimeState?,
+        complete: (String) -> Unit
     ) {
-        if (runtimeState == null) return
+        if (runtimeState == null) {
+            complete(resultStale)
+            return
+        }
         val activeSessionIds = service.pausePlayingSessionsForTimer(
             runtimeState.generation,
             runtimeState.stopAfterCurrentTrack
         )
-        val pausedSessionIds = if (runtimeState.stopAfterCurrentTrack) {
-            activeSessionIds
-        } else {
-            activeSessionIds.ifEmpty {
-                NativePlaybackStateStore.loadSessions(context)
-                    .filter { it.playing || it.playWhenReady }
-                    .map { it.sessionId }
-                    .ifEmpty { NativePlaybackStateStore.loadTimerCandidateSessionIds(context) }
+        if (runtimeState.stopAfterCurrentTrack || activeSessionIds.isNotEmpty()) {
+            finishTimerExpired(context, runtimeState, activeSessionIds)
+            complete(resultExecuted)
+            return
+        }
+        timerRecoveryExecutor.execute {
+            val recovered = runCatching {
+                NativePlaybackStateStore.loadActiveSessionRevisions(context)
+            }.getOrElse { error ->
+                logWarn(context, "timer_expiry_candidate_read_failed", error)
+                emptyMap()
+            }
+            mainHandler.post {
+                val currentState = NativePlaybackStateStore.loadTimerRuntimeState(context)
+                if (currentState == null ||
+                    currentState.generation != runtimeState.generation ||
+                    currentState.timerEndsAtWallClockMs != runtimeState.timerEndsAtWallClockMs ||
+                    currentState.stopAfterCurrentTrack != runtimeState.stopAfterCurrentTrack
+                ) {
+                    complete(resultStale)
+                    return@post
+                }
+                try {
+                    // Sticky recovery may have started playback while the candidate read was queued.
+                    val paused = NativePlaybackService.controller()
+                        ?.pausePlayingSessionsForTimer(runtimeState.generation, false)
+                        .orEmpty()
+                    val ids = paused.ifEmpty {
+                        recovered.filter { (id, revision) ->
+                            NativePlaybackStateStore.sessionRevision(id) == revision
+                        }.keys.toList()
+                    }
+                        .ifEmpty { NativePlaybackStateStore.loadTimerCandidateSessionIds(context) }
+                    finishTimerExpired(context, currentState, ids)
+                } catch (error: Exception) {
+                    logWarn(context, "timer_expiry_failed", error)
+                    complete(resultFailed)
+                    return@post
+                }
+                complete(resultExecuted)
             }
         }
+    }
+
+    private fun finishTimerExpired(
+        context: Context,
+        runtimeState: StoredPlaybackTimerRuntimeState,
+        pausedSessionIds: List<String>
+    ) {
         NativePlaybackStateStore.storePausedSessionIds(context, pausedSessionIds)
         logInfo(
             context,
             "timer_expired pausedSessionCount=${pausedSessionIds.size} " +
-                "autoResumeEnabled=${runtimeState?.autoResumeEnabled == true}"
+                "autoResumeEnabled=${runtimeState.autoResumeEnabled}"
         )
         // For track-end pauses, schedule auto-resume once the last target finishes.
         val nextState = runtimeState.copy(

@@ -291,7 +291,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     _siblingTrackPath = session.currentTrackPath;
     _siblingStructureRevision = revision;
     _hasSiblings = session.isPlaybackQueue
-        ? session.playbackQueue!.entries.any((entry) => entry.tracks.isNotEmpty)
+        ? session.playbackQueue!.trackCount > 0
         : _paths.cachedHasOtherTracksInSameWork(session.currentTrackPath) ??
               false;
     _scheduleSiblingQuery();
@@ -718,12 +718,17 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     }
 
     final hasSiblings = session.isPlaybackQueue
-        ? session.playbackQueue!.entries.any((entry) => entry.tracks.isNotEmpty)
-        : _siblingTrackPath == session.currentTrackPath &&
-              _siblingStructureRevision == paths.library.structureRevision
-        ? _hasSiblings
-        : paths.cachedHasOtherTracksInSameWork(session.currentTrackPath) ??
-              false;
+        ? session.playbackQueue!.trackCount > 0
+        : session.queueLoadingRequired ||
+              (session.customQueueTracks?.length ?? 0) > 1 ||
+              (_siblingTrackPath == session.currentTrackPath &&
+                      _siblingStructureRevision ==
+                          paths.library.structureRevision
+                  ? _hasSiblings
+                  : paths.cachedHasOtherTracksInSameWork(
+                          session.currentTrackPath,
+                        ) ??
+                        false);
     final selectedSegmentId = _segmentPanelExpanded ? _selectedSegmentId : null;
 
     Widget buildProgressBar() {
@@ -858,6 +863,11 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     if (_openingTrackSwitcher) return;
     _openingTrackSwitcher = true;
     try {
+      if (!await _playback.ensureSessionQueueLoaded(widget.session.id) ||
+          !mounted ||
+          !context.mounted) {
+        return;
+      }
       final session = _playback.sessionSnapshotById(widget.session.id);
       if (session == null) return;
       final i18n = ProviderScope.containerOf(

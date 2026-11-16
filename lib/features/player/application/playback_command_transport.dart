@@ -301,6 +301,11 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
   }
 
   bool _hasAdjacentPathFor(PlaybackSession session, {required bool forward}) {
+    if (session.queueLoadingRequired) {
+      // The exact loop scope is resolved when the user requests navigation.
+      return session.playbackQueue == null ||
+          session.playbackQueue!.trackCount > 1;
+    }
     return _playbackQueueResolver.hasAdjacentInScope(
       scope: _playbackQueueScopeFor(
         session,

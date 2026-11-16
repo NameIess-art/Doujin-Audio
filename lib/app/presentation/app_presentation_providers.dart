@@ -511,25 +511,27 @@ final playlistHeaderUiProvider = Provider<PlaylistHeaderState>((ref) {
 });
 
 final playlistStructureUiProvider = Provider<PlaylistStructureState>((ref) {
-  final catalog =
-      ref.watch(playbackCatalogProvider).value ??
-      ref.read(playbackFacadeProvider).catalogState;
-  return playlistStructureStateFromPlaybackState(
-    PlaybackStateSliceData(
-      activeSessions: catalog.sessions,
-      isInitialized: catalog.isInitialized,
-    ),
+  final directory = ref.watch(
+    playbackCatalogProvider.select((state) {
+      final catalog = state.value;
+      return catalog == null ? null : (catalog.sessions, catalog.isInitialized);
+    }),
+  );
+  final fallback = ref.read(playbackFacadeProvider).catalogState;
+  return PlaylistStructureState(
+    entries: directory?.$1 ?? fallback.sessions,
+    isInitialized: directory?.$2 ?? fallback.isInitialized,
   );
 });
 
 final playlistSortedEntriesUiProvider =
     NotifierProvider<
       PlaylistSortedEntriesNotifier,
-      List<PlaylistStructureEntry>
+      List<PlaybackDirectoryEntry>
     >(PlaylistSortedEntriesNotifier.new);
 
 class PlaylistSortedEntriesNotifier
-    extends Notifier<List<PlaylistStructureEntry>> {
+    extends Notifier<List<PlaybackDirectoryEntry>> {
   Set<String>? _knownSessionIds;
   final List<String> _newQueueIds = [];
   (PlaylistSortCriterion, bool, bool)? _sortOptions;
@@ -541,7 +543,7 @@ class PlaylistSortedEntriesNotifier
   }
 
   @override
-  List<PlaylistStructureEntry> build() {
+  List<PlaybackDirectoryEntry> build() {
     final structureState = ref.watch(playlistStructureUiProvider);
     final criterion = ref.watch(
       settingsStateProvider.select(
@@ -559,14 +561,11 @@ class PlaylistSortedEntriesNotifier
         (state) => state.value?.playlistGroupByLibrary ?? false,
       ),
     );
-    final pinnedSessionIds = ref
-        .watch(
-          settingsStateProvider.select(
-            (state) =>
-                state.value?.pinnedPlaylistSessionIds ?? const <String>[],
-          ),
-        )
-        .toSet();
+    final pinnedSessionIds = ref.watch(
+      settingsStateProvider.select(
+        (state) => state.value?.pinnedPlaylistSessionIds ?? const <String>[],
+      ),
+    );
     if (criterion == PlaylistSortCriterion.voiceActor ||
         criterion == PlaylistSortCriterion.releaseDate) {
       ref.watch(libraryDetailRevisionProvider);
@@ -577,8 +576,7 @@ class PlaylistSortedEntriesNotifier
         criterion == PlaylistSortCriterion.releaseDate ||
         structureState.entries.any(
           (entry) =>
-              !entry.session.isTemporary &&
-              entry.session.playbackQueue?.name.trim().isNotEmpty != true,
+              !entry.isTemporary && entry.queueName?.trim().isNotEmpty != true,
         );
     if (needsLibraryTrack) {
       ref.watch(
@@ -588,52 +586,47 @@ class PlaylistSortedEntriesNotifier
     final paths = ref.watch(audioPathCoordinatorProvider);
 
     final sortedSessions = sortPlaylistSessions(
-      sessions: structureState.entries
-          .map((entry) => entry.session)
-          .toList(growable: false),
+      sessions: structureState.entries,
       criterion: criterion,
       ascending: ascending,
       groupByLibrary: groupByLibrary,
       paths: paths,
       trackForSession: (session) =>
           paths.sessionTrackForPath(session.id, session.currentTrackPath),
-      pinnedSessionIds: pinnedSessionIds,
+      pinnedSessionIds: pinnedSessionIds.toSet(),
     );
-    final entriesBySessionId = <String, PlaylistStructureEntry>{
-      for (final entry in structureState.entries) entry.sessionId: entry,
+    final entriesBySessionId = <String, PlaybackDirectoryEntry>{
+      for (final entry in structureState.entries) entry.id: entry,
     };
     final sortOptions = (criterion, ascending, groupByLibrary);
     if (_sortOptions != sortOptions ||
-        !listEquals(_pinnedSessionIds, pinnedSessionIds.toList())) {
+        !listEquals(_pinnedSessionIds, pinnedSessionIds)) {
       _newQueueIds.clear();
     }
     _sortOptions = sortOptions;
-    _pinnedSessionIds = pinnedSessionIds.toList();
+    _pinnedSessionIds = pinnedSessionIds;
     if (structureState.isInitialized) {
       if (_knownSessionIds case final known?) {
         // Keep newly created queues visible until the user applies a sort or pin.
         _newQueueIds.insertAll(0, [
           for (final entry in structureState.entries)
-            if (entry.isPlaybackQueue &&
-                !entry.session.isTemporary &&
-                !known.contains(entry.sessionId))
-              entry.sessionId,
+            if (entry.queueName != null &&
+                !entry.isTemporary &&
+                !known.contains(entry.id))
+              entry.id,
         ]);
       }
       _knownSessionIds = entriesBySessionId.keys.toSet();
     }
     _newQueueIds.retainWhere(entriesBySessionId.containsKey);
-    return [
-          ...sortedSessions.where((session) => session.isTemporary),
-          for (final id in _newQueueIds) entriesBySessionId[id]!.session,
-          ...sortedSessions.where(
-            (session) =>
-                !session.isTemporary && !_newQueueIds.contains(session.id),
-          ),
-        ]
-        .map((session) => entriesBySessionId[session.id])
-        .whereType<PlaylistStructureEntry>()
-        .toList(growable: false);
+    if (_newQueueIds.isEmpty) return sortedSessions;
+    final newQueueIds = _newQueueIds.toSet();
+    return List<PlaybackDirectoryEntry>.unmodifiable([
+      ...sortedSessions.where((session) => session.isTemporary),
+      for (final id in _newQueueIds) entriesBySessionId[id]!,
+      for (final session in sortedSessions)
+        if (!session.isTemporary && !newQueueIds.contains(session.id)) session,
+    ]);
   }
 }
 
@@ -668,11 +661,13 @@ final libraryTrackProvider = Provider.autoDispose.family<MusicTrack?, String>((
 });
 
 final activeTrackPathsProvider = Provider<ActiveTrackPaths>((ref) {
-  final catalog =
-      ref.watch(playbackCatalogProvider).value ??
-      ref.read(playbackFacadeProvider).catalogState;
+  final sessions =
+      ref.watch(
+        playbackCatalogProvider.select((state) => state.value?.sessions),
+      ) ??
+      ref.read(playbackFacadeProvider).catalogState.sessions;
   return ActiveTrackPaths(
-    catalog.sessions
+    sessions
         .map((session) => session.currentTrackPath)
         .where((path) => path.isNotEmpty)
         .toSet(),
@@ -726,11 +721,14 @@ final mainOverlayUiProvider = Provider<MainOverlayUiState>((ref) {
       (s) => s.value?.isInitialized ?? fallbackSettings.isInitialized,
     ),
   );
-  final catalog =
-      ref.watch(playbackCatalogProvider).value ?? playback.catalogState;
-  final overlaySessions = PlaybackSessionOverlayList(
-    catalog.nowPlayingSessions,
-  );
+  final sessions =
+      ref.watch(
+        playbackCatalogProvider.select(
+          (state) => state.value?.nowPlayingSessions,
+        ),
+      ) ??
+      playback.catalogState.nowPlayingSessions;
+  final overlaySessions = PlaybackSessionOverlayList(sessions);
   return MainOverlayUiState(
     overlaySessions: overlaySessions,
     playingSessionCount: playbackState.playingSessionCount,
@@ -741,17 +739,23 @@ final mainOverlayUiProvider = Provider<MainOverlayUiState>((ref) {
   );
 });
 
+final _playbackSessionOrderProvider = Provider<SessionOrderState>((ref) {
+  final sessions =
+      ref.watch(
+        playbackCatalogProvider.select((state) => state.value?.sessions),
+      ) ??
+      ref.read(playbackFacadeProvider).catalogState.sessions;
+  return SessionOrderState(
+    sessionIds: List<String>.unmodifiable(
+      sessions.map((session) => session.id),
+    ),
+  );
+});
+
 final sessionDetailUiProvider = Provider.autoDispose
     .family<SessionDetailUiState, String>((ref, sessionId) {
-      final catalog =
-          ref.watch(playbackCatalogProvider).value ??
-          ref.read(playbackFacadeProvider).catalogState;
       return SessionDetailUiState(
-        sessionOrder: SessionOrderState(
-          sessionIds: catalog.sessions
-              .map((session) => session.id)
-              .toList(growable: false),
-        ),
+        sessionOrder: ref.watch(_playbackSessionOrderProvider),
         detail: ref.watch(sessionDetailTransportProvider(sessionId)),
         coverGeneration: ref.watch(coverGenerationProvider),
       );

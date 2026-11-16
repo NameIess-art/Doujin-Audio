@@ -1,6 +1,7 @@
 package com.doujin.audio.storage
 
 import com.doujin.audio.metadata.*
+import com.doujin.audio.player.session.NativePlaybackStateStore
 import com.doujin.audio.scanner.*
 import com.doujin.audio.subtitle.*
 
@@ -34,7 +35,7 @@ internal class FileCacheOperations(private val context: Context) {
     fun reconcilePersistedUriPermissions(retainedUris: Set<String>): Map<String, Any> =
         PersistedUriPermissionOperations.reconcile(
             documentStorage.contentResolverForPermissions,
-            retainedUris
+            retainedUris + NativePlaybackStateStore.retainedRecoveryContentUris(context)
         ).toMap()
 
     fun readJsonDocument(

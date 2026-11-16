@@ -123,10 +123,13 @@ class _RenderReorderViewport extends RenderProxyBox {
       }
       if (_pending) controller.forward(from: 0);
     }
-    if (!enabled) {
+    // A tab transition mutes this list even when no reorder is running.
+    // Keep the retained rows paintable without invalidating every row.
+    if (!enabled && (controller.value != 1 || _pending)) {
       _pending = false;
       _positions.clear();
       for (final item in _items) {
+        if (item.delta == Offset.zero) continue;
         item.delta = Offset.zero;
         item.markNeedsPaint();
         item.markNeedsSemanticsUpdate();

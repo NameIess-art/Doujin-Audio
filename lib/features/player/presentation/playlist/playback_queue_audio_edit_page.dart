@@ -13,6 +13,7 @@ import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/theme/app_styles.dart';
 import '../../../../core/app_language.dart';
+import '../../../../core/logging/app_log_service.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/media/path_display.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
@@ -27,7 +28,7 @@ import '../../../../core/widgets/page_header_inset.dart';
 import '../../../../core/widgets/scroll_activity_gate.dart';
 import '../../../../core/widgets/top_page_header.dart';
 import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
-import '../../application/playback_session_snapshot.dart';
+import '../../application/audio_state_services.dart';
 import '../../domain/playback_queue.dart';
 import '../../../settings/application/settings_state.dart';
 import 'playlist_list_view.dart';
@@ -37,6 +38,7 @@ import 'playlist_shared_helpers.dart';
 import 'playback_queue_cover.dart';
 
 const _queueEntryRemovalDuration = Duration(milliseconds: 250);
+const _queueEntryPageSize = 128;
 
 class PlaybackQueueAudioEditPage extends ConsumerStatefulWidget {
   const PlaybackQueueAudioEditPage({
@@ -64,6 +66,81 @@ class _PlaybackQueueAudioEditPageState
   double _dragHandleTopOffset = 0;
   double _addedQueueTopInset = 0;
   bool _isTopAutoScrolling = false;
+  PlaybackQueueDefinition? _pagedQueue;
+  final List<PlaybackQueueEntryPreview> _entryPreviews = [];
+  bool _pageLoading = false;
+  bool _pageFailed = false;
+  bool _pageExhausted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _addedQueueScrollController.addListener(_loadNearQueueEnd);
+  }
+
+  void _loadNearQueueEnd() {
+    if (_addedQueueScrollController.hasClients &&
+        _addedQueueScrollController.position.extentAfter < 450) {
+      _scheduleQueuePage();
+    }
+  }
+
+  void _scheduleQueuePage() {
+    final queue = _pagedQueue;
+    if (queue == null ||
+        _didPop ||
+        _pageLoading ||
+        _pageFailed ||
+        _pageExhausted ||
+        _entryPreviews.length >= queue.entryCount) {
+      return;
+    }
+    _pageLoading = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_didPop && identical(_pagedQueue, queue)) {
+        unawaited(_loadQueuePage(queue));
+      }
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  Future<void> _loadQueuePage(PlaybackQueueDefinition queue) async {
+    final sessionId = widget.sessionId;
+    final playback = ref.read(playbackFacadeProvider);
+    bool isCurrent() =>
+        mounted &&
+        !_didPop &&
+        identical(_pagedQueue, queue) &&
+        identical(playback.sessionById(sessionId)?.playbackQueue, queue);
+    try {
+      if (_entryPreviews.isNotEmpty) setState(() {});
+      final page = await playback.loadQueueEntryPreviews(
+        sessionId,
+        start: _entryPreviews.length,
+        limit: _queueEntryPageSize,
+      );
+      if (!isCurrent()) return;
+      setState(() {
+        _pageLoading = false;
+        _pageExhausted = page.length < _queueEntryPageSize;
+        _entryPreviews.addAll(page);
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (isCurrent()) _loadNearQueueEnd();
+      });
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'playback_queue_entry_page_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!isCurrent()) return;
+      setState(() {
+        _pageLoading = false;
+        _pageFailed = true;
+      });
+    }
+  }
 
   void _startQueueDrag(PointerDownEvent event, BuildContext itemContext) {
     if (_dragPointerId != null || event.buttons != kPrimaryButton) return;
@@ -189,7 +266,9 @@ class _PlaybackQueueAudioEditPageState
     _dragPointerId = null;
     _latestDragPointerY = null;
     UiInteractionCoordinator.instance.cancelInteraction(this);
-    _addedQueueScrollController.dispose();
+    _addedQueueScrollController
+      ..removeListener(_loadNearQueueEnd)
+      ..dispose();
     super.dispose();
   }
 
@@ -202,8 +281,7 @@ class _PlaybackQueueAudioEditPageState
           playlistStructureUiProvider.select(
             (structure) => _OrdinarySourceSessions(
               structure.entries
-                  .where((entry) => !entry.isPlaybackQueue)
-                  .map((entry) => entry.session)
+                  .where((entry) => entry.queueName == null)
                   .toList(growable: false),
             ),
           ),
@@ -211,10 +289,11 @@ class _PlaybackQueueAudioEditPageState
         .sessions;
     final playback = ref.read(playbackFacadeProvider);
 
+    final sessionProvider = playbackSessionProvider(sessionId);
     ref.listen(
-      playbackSessionProvider(
-        sessionId,
-      ).select((session) => session?.playbackQueue?.entries.length ?? 0),
+      sessionProvider.select(
+        (session) => session?.playbackQueue?.entryCount ?? 0,
+      ),
       (previous, next) {
         if (previous != null && next > previous) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -228,16 +307,26 @@ class _PlaybackQueueAudioEditPageState
       },
     );
 
-    final queue = ref.watch(
-      playbackSessionProvider(
-        sessionId,
-      ).select((session) => session?.playbackQueue),
+    final (:queue, :requiresLoad) = ref.watch(
+      sessionProvider.select(
+        (session) => (
+          queue: session?.playbackQueue,
+          requiresLoad: session?.queueLoadingRequired ?? false,
+        ),
+      ),
     );
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     if (queue == null) return const SizedBox.shrink();
+    final pagedQueue = requiresLoad ? queue : null;
+    if (!identical(_pagedQueue, pagedQueue)) {
+      _pagedQueue = pagedQueue;
+      _entryPreviews.clear();
+      _pageLoading = _pageFailed = _pageExhausted = false;
+      _scheduleQueuePage();
+    }
 
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -295,49 +384,119 @@ class _PlaybackQueueAudioEditPageState
                     final removalState = ref.watch(
                       undoableRemovalStateProvider,
                     );
-                    final queueEntries = queue.entries
-                        .where(
-                          (entry) => !removalState.isHidden(
-                            playbackQueueEntryRemovalKey(sessionId, entry.id),
-                          ),
-                        )
-                        .toList(growable: false);
+                    bool isVisible(String id) => !removalState.isHidden(
+                      playbackQueueEntryRemovalKey(sessionId, id),
+                    );
+                    final filterHidden = removalState.hiddenKeys.isNotEmpty;
+                    final queueEntries = requiresLoad || !filterHidden
+                        ? queue.entries
+                        : queue.entries
+                              .where((entry) => isVisible(entry.id))
+                              .toList();
+                    final previews = !requiresLoad || !filterHidden
+                        ? _entryPreviews
+                        : _entryPreviews
+                              .where((entry) => isVisible(entry.id))
+                              .toList();
+                    final rowCount = requiresLoad
+                        ? previews.length
+                        : queueEntries.length;
+                    final hasMore =
+                        requiresLoad &&
+                        !_pageExhausted &&
+                        _entryPreviews.length < queue.entryCount;
+                    String idAt(int index) => requiresLoad
+                        ? previews[index].id
+                        : queueEntries[index].id;
 
-                    void reorder(int oldIndex, int newIndex) {
-                      if (oldIndex == newIndex || oldIndex + 1 == newIndex) {
-                        return;
+                    VoidCallback? captureDrop(int oldIndex, int newIndex) {
+                      if (oldIndex == newIndex ||
+                          oldIndex + 1 == newIndex ||
+                          oldIndex < 0 ||
+                          oldIndex >= rowCount ||
+                          newIndex < 0 ||
+                          newIndex > rowCount) {
+                        return null;
                       }
-                      // Pending removals remain in the queue until committed.
-                      final entries = playback
-                          .sessionById(sessionId)
-                          ?.playbackQueue
-                          ?.entries;
-                      if (entries == null) return;
-                      final sourceId = queueEntries[oldIndex].id;
-                      final sourceIndex = entries.indexWhere(
-                        (entry) => entry.id == sourceId,
+                      final sourceId = idAt(oldIndex);
+                      final afterLast = newIndex == rowCount;
+                      final targetId = idAt(
+                        afterLast ? newIndex - 1 : newIndex,
                       );
-                      final targetIndex = newIndex == queueEntries.length
-                          ? entries.length
-                          : entries.indexWhere(
-                              (entry) => entry.id == queueEntries[newIndex].id,
+                      final returnContext = widget.returnContext;
+                      Future<void> commit() async {
+                        try {
+                          if (requiresLoad &&
+                              !await playback.ensureSessionQueueLoaded(
+                                sessionId,
+                              )) {
+                            return;
+                          }
+                          final entries = playback
+                              .sessionById(sessionId)
+                              ?.playbackQueue
+                              ?.entries;
+                          if (entries == null) return;
+                          final source = entries.indexWhere(
+                            (entry) => entry.id == sourceId,
+                          );
+                          final target = afterLast && !hasMore
+                              ? entries.length
+                              : entries.indexWhere(
+                                  (entry) => entry.id == targetId,
+                                );
+                          if (source < 0 || target < 0) return;
+                          await playback.reorderPlaybackQueueEntry(
+                            sessionId,
+                            source,
+                            target + (afterLast && hasMore ? 1 : 0),
+                          );
+                        } catch (error, stackTrace) {
+                          AppLogService.warning(
+                            'playback_queue_reorder_failed',
+                            error: error,
+                            stackTrace: stackTrace,
+                          );
+                          final feedbackContext = mounted && !_didPop
+                              ? context
+                              : returnContext;
+                          if (feedbackContext != null &&
+                              feedbackContext.mounted) {
+                            showAppSnackBar(
+                              feedbackContext,
+                              i18n.tr('operation_failed_retry'),
+                              tone: AppFeedbackTone.warning,
                             );
-                      if (sourceIndex < 0 || targetIndex < 0) return;
-                      unawaited(
-                        playback.reorderPlaybackQueueEntry(
-                          sessionId,
-                          sourceIndex,
-                          targetIndex,
-                        ),
-                      );
+                          }
+                        }
+                      }
+
+                      return () => unawaited(commit());
                     }
+
+                    final footer = hasMore && (_pageLoading || _pageFailed)
+                        ? Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Center(
+                              child: _pageFailed
+                                  ? TextButton(
+                                      onPressed: () => setState(() {
+                                        _pageFailed = false;
+                                        _scheduleQueuePage();
+                                      }),
+                                      child: Text(i18n.tr('retry')),
+                                    )
+                                  : const CircularProgressIndicator(),
+                            ),
+                          )
+                        : null;
 
                     _addedQueueTopInset = addedQueueTop;
                     final addedToQueueSection = Stack(
                       key: _addedQueueSectionKey,
                       children: [
                         Positioned.fill(
-                          child: queueEntries.isEmpty
+                          child: rowCount == 0 && footer == null
                               ? Padding(
                                   padding: EdgeInsets.only(
                                     top: addedQueueTop + 4,
@@ -358,45 +517,56 @@ class _PlaybackQueueAudioEditPageState
                                   buildDefaultDragHandles: false,
                                   proxyDecorator: (child, index, animation) =>
                                       RepaintBoundary(child: child),
-                                  itemCount: queueEntries.length,
+                                  itemCount: rowCount,
+                                  footer: footer,
                                   onReorderStart: (index) {
                                     _draggedIndex = index;
                                     _pendingDrop = null;
                                   },
                                   onReorderEnd: (index) {
-                                    final from = _draggedIndex!;
-                                    if (from == index || from + 1 == index) {
-                                      return;
-                                    }
+                                    final from = _draggedIndex;
+                                    _draggedIndex = null;
                                     // Flutter commits after the drop animation.
                                     // Popping the route can mute its ticker first.
-                                    _pendingDrop = () => reorder(from, index);
+                                    _pendingDrop = from == null
+                                        ? null
+                                        : captureDrop(from, index);
                                   },
                                   onReorder: (oldIndex, newIndex) {
                                     if (_didPop) return;
                                     final pendingDrop = _pendingDrop;
                                     _pendingDrop = null;
-                                    if (pendingDrop != null) {
-                                      pendingDrop();
-                                    } else {
-                                      reorder(oldIndex, newIndex);
-                                    }
+                                    (pendingDrop ??
+                                            captureDrop(oldIndex, newIndex))
+                                        ?.call();
                                   },
                                   itemBuilder: (itemContext, index) {
-                                    final entry = queueEntries[index];
+                                    final loadedEntry = requiresLoad
+                                        ? null
+                                        : queueEntries[index];
+                                    final entry = loadedEntry == null
+                                        ? previews[index]
+                                        : (
+                                            id: loadedEntry.id,
+                                            kind: loadedEntry.kind,
+                                            title: loadedEntry.title,
+                                            trackCount:
+                                                loadedEntry.tracks.length,
+                                            firstTrack:
+                                                loadedEntry.tracks.firstOrNull,
+                                          );
                                     return _AnimatedQueueEntryCard(
                                       key: ValueKey(entry.id),
                                       content: (entry, index, i18n.language),
                                       onRemove: () =>
                                           unawaited(_removeEntry(entry.id)),
                                       builder: (cardContext, triggerRemove) {
-                                        final firstTrack =
-                                            entry.tracks.firstOrNull;
+                                        final firstTrack = entry.firstTrack;
                                         final itemTitle =
                                             entry.kind ==
                                                 PlaybackQueueEntryKind.work
                                             ? i18n.tr('audio_count', {
-                                                'count': entry.tracks.length,
+                                                'count': entry.trackCount,
                                               })
                                             : entry.title;
                                         return _QueueAudioEditCard(
@@ -575,7 +745,7 @@ class _QueueSourceAudioTile extends ConsumerWidget {
     required this.source,
   });
   final String queueSessionId;
-  final PlaybackSessionSnapshot source;
+  final PlaybackDirectoryEntry source;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -761,7 +931,7 @@ class _QueueAudioEditCard extends ConsumerWidget {
 }
 
 class _AnimatedQueueEntryCard extends StatefulWidget {
-  final (PlaybackQueueEntry, int, AppLanguage) content;
+  final (PlaybackQueueEntryPreview, int, AppLanguage) content;
   final Widget Function(BuildContext context, VoidCallback triggerRemove)
   builder;
   final VoidCallback onRemove;
@@ -817,7 +987,7 @@ class _AnimatedQueueEntryCardState extends State<_AnimatedQueueEntryCard> {
 class _OrdinarySourceSessions {
   const _OrdinarySourceSessions(this.sessions);
 
-  final List<PlaybackSessionSnapshot> sessions;
+  final List<PlaybackDirectoryEntry> sessions;
 
   @override
   bool operator ==(Object other) {
@@ -837,6 +1007,8 @@ class _OrdinarySourceSessions {
 
   @override
   int get hashCode => Object.hashAll(
-    sessions.map((session) => Object.hash(session.id, session.currentTrackPath)),
+    sessions.map(
+      (session) => Object.hash(session.id, session.currentTrackPath),
+    ),
   );
 }

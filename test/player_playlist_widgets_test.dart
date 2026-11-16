@@ -27,6 +27,7 @@ import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/application/playback_queue_resolver.dart';
+import 'package:doujin_audio/features/player/domain/playback_persistence_repository.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
@@ -60,7 +61,36 @@ import 'package:doujin_audio/app/presentation/windows_window_title_bar.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'support/app_runtime_test_fixture.dart';
+import 'support/test_persistence_repository.dart';
 import 'support/test_playback_commands.dart';
+
+class _PagedQueueRepository extends TestPersistenceRepository
+    implements PlaybackQueueStorage {
+  final List<(int, int)> requests = [];
+
+  @override
+  Future<List<PlaybackQueueEntryPreview>> loadQueueEntryPage(
+    String sessionId, {
+    required int start,
+    required int limit,
+  }) async {
+    requests.add((start, limit));
+    if (requests.length == 1) throw StateError('Failed to read queue');
+    return [
+      for (var index = start; index < start + limit && index < 260; index++)
+        (
+          id: 'saved-entry-$index',
+          kind: PlaybackQueueEntryKind.track,
+          title: 'Saved track $index',
+          trackCount: 1,
+          firstTrack: null,
+        ),
+    ];
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 class _RecordingPlaybackCoverCacheService extends CoverArtworkCacheService {
   _RecordingPlaybackCoverCacheService()
@@ -5034,7 +5064,7 @@ void main() {
       final lastId = container
           .read(playlistSortedEntriesUiProvider)
           .last
-          .sessionId;
+          .id;
       for (
         var attempt = 0;
         attempt < 20 && controller.position.extentAfter > 0.5;
@@ -5726,6 +5756,8 @@ void main() {
     tester,
   ) async {
     final coverCache = _RecordingPlaybackCoverCacheService();
+    final tickerEnabled = ValueNotifier(true);
+    addTearDown(tickerEnabled.dispose);
     final fixture = AppRuntimeWidgetTestFixture(
       coverArtworkCacheService: coverCache,
     );
@@ -5764,16 +5796,21 @@ void main() {
     }
 
     Widget card() => fixture.build(
-      Center(
-        child: SizedBox(
-          width: 400,
-          child: PlaybackQueueCard(
-            session: PlaybackSessionSnapshot.fromRuntime(session),
-            library: fixture.runtimeGraph.library,
-            playback: fixture.runtimeGraph.playback,
-            coverCacheWidth: 96,
-            onOpen: (_) {},
-            onEdit: () {},
+      ValueListenableBuilder<bool>(
+        valueListenable: tickerEnabled,
+        builder: (context, enabled, child) =>
+            TickerMode(enabled: enabled, child: child!),
+        child: Center(
+          child: SizedBox(
+            width: 400,
+            child: PlaybackQueueCard(
+              sessionId: session.id,
+              library: fixture.runtimeGraph.library,
+              playback: fixture.runtimeGraph.playback,
+              coverCacheWidth: 96,
+              onOpen: (_) {},
+              onEdit: () {},
+            ),
           ),
         ),
       ),
@@ -5783,6 +5820,13 @@ void main() {
     await tester.pumpWidget(card());
     await tester.pump();
     expect(coverCache.requestedPaths, [track.path]);
+
+    final coverLookups = coverCache.resolvedPlaybackPaths.length;
+    tickerEnabled.value = false;
+    await tester.pump();
+    tickerEnabled.value = true;
+    await tester.pump();
+    expect(coverCache.resolvedPlaybackPaths.length, coverLookups);
 
     await tester.pumpWidget(card());
     await tester.pump();
@@ -5855,7 +5899,7 @@ void main() {
         Center(
           child: PlaybackQueueCard(
             key: ValueKey(mount),
-            session: PlaybackSessionSnapshot.fromRuntime(session),
+            sessionId: session.id,
             library: fixture.library,
             playback: fixture.playback,
             coverCacheWidth: 96,
@@ -6037,7 +6081,7 @@ void main() {
         fixture.build(
           Center(
             child: PlaybackQueueCard(
-              session: PlaybackSessionSnapshot.fromRuntime(session),
+              sessionId: session.id,
               library: fixture.runtimeGraph.library,
               playback: fixture.runtimeGraph.playback,
               coverCacheWidth: 96,
@@ -6174,7 +6218,7 @@ void main() {
         );
         final card = find.byWidgetPredicate(
           (widget) =>
-              widget is PlaybackQueueCard && widget.session.id == created.id,
+              widget is PlaybackQueueCard && widget.sessionId == created.id,
         );
         final initialRect = tester.getRect(card);
         expect(
@@ -6185,7 +6229,7 @@ void main() {
                   find.byWidgetPredicate(
                     (widget) =>
                         widget is PlaybackQueueCard &&
-                        widget.session.id == existing.id,
+                        widget.sessionId == existing.id,
                   ),
                 )
                 .dy,
@@ -6953,6 +6997,47 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 100));
   });
+
+  testWidgets(
+    'restored queue editor retries and reads entries one page at a time',
+    (tester) async {
+      final repository = _PagedQueueRepository();
+      final fixture = AppRuntimeWidgetTestFixture(
+        providedPersistenceRepository: repository,
+      );
+      addTearDown(fixture.dispose);
+      final session = fixture.playback.createPlaybackQueue('Paged queue');
+      session
+        ..playbackQueue = PlaybackQueueDefinition(
+          name: 'Paged queue',
+          entries: const [],
+          storedEntryCount: 260,
+          storedTrackCount: 260,
+        )
+        ..queueLoadingRequired = true;
+      fixture.playback.publishSessionState(session.id);
+
+      await tester.pumpWidget(fixture.build(
+        PlaybackQueueAudioEditPage(sessionId: session.id),
+      ));
+      await tester.pumpAndSettle();
+      final retry = find.text(fixture.languageProvider.tr('retry'));
+      expect(retry, findsOneWidget);
+      expect(repository.requests, [(0, 128)]);
+
+      await tester.tap(retry);
+      await tester.pumpAndSettle();
+      final list = find.byType(ReorderableListView);
+      expect(tester.widget<ReorderableListView>(list).itemCount, 128);
+      final controller = tester.widget<ReorderableListView>(list).scrollController!;
+      controller.jumpTo(controller.position.maxScrollExtent - 1);
+      await tester.pumpAndSettle();
+      expect(tester.widget<ReorderableListView>(list).itemCount, 256);
+      expect(repository.requests, [(0, 128), (0, 128), (128, 128)]);
+      expect(session.queueLoadingRequired, isTrue);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'queue reorder reuses rows, scrolls at the edges and survives quick back',
@@ -13431,7 +13516,7 @@ void main() {
   );
 
   testWidgets(
-    'playlist rows share the library corner radius and ignore horizontal drags',
+    'playlist rows match library cover corners and ignore horizontal drags',
     (tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -13480,14 +13565,17 @@ void main() {
       );
       final cardRect = tester.getRect(swipeCardFinder);
       expect(cardRect.height, playlistRowHeight);
-      expect(swipeCard.shape, LibraryLikeCardMetrics.cardShape);
+      const coverRadius = BorderRadius.all(
+        Radius.circular(LibraryLikeCardMetrics.coverRadius),
+      );
+      expect(
+        swipeCard.shape,
+        const RoundedRectangleBorder(borderRadius: coverRadius),
+      );
       final clip = find.descendant(
         of: swipeCardFinder,
         matching: find.byWidgetPredicate(
-          (widget) =>
-              widget is ClipRRect &&
-              widget.borderRadius ==
-                  LibraryLikeCardMetrics.cardShape.borderRadius,
+          (widget) => widget is ClipRRect && widget.borderRadius == coverRadius,
         ),
       );
       expect(clip, findsOneWidget);
@@ -13509,7 +13597,7 @@ void main() {
         );
       }
 
-      // This point is inside the library radius but outside the old capsule.
+      // This point is inside the rounded row but outside the old capsule.
       await tester.longPressAt(cardRect.topLeft + const Offset(4, 12));
       await pumpFiniteTransitions(tester);
       expect(

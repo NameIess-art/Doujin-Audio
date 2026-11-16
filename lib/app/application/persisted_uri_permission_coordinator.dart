@@ -112,9 +112,17 @@ final class PersistedUriPermissionCoordinator implements RuntimeBinding {
           savedDownloadContentUri,
         );
         if (revision == _lastSubmittedRevision) continue;
+        final playbackUris = await _playback.collectPersistedContentUris();
+        if (_disposed) return;
+        if (revision.$1 != _library.persistedUriReferenceRevision ||
+            revision.$2 != _playback.persistedUriReferenceRevision ||
+            revision.$3 != _downloads.persistedUriReferenceRevision) {
+          _requested = true;
+          continue;
+        }
         final retainedUris = <String>{
           ..._library.persistedContentUris,
-          ..._playback.persistedContentUris,
+          ...playbackUris,
           ..._downloads.persistedContentUris,
           ?savedDownloadContentUri,
         };

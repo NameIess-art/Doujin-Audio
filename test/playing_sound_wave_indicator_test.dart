@@ -1,6 +1,5 @@
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/widgets/playing_sound_wave_indicator.dart';
-import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -364,9 +363,7 @@ void main() {
                       width: 360,
                       child: isQueue
                           ? PlaybackQueueCard(
-                              session: PlaybackSessionSnapshot.fromRuntime(
-                                session,
-                              ),
+                              sessionId: session.id,
                               library: fixture.runtimeGraph.library,
                               playback: fixture.runtimeGraph.playback,
                               coverCacheWidth: 96,

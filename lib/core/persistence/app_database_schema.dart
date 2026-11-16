@@ -17,6 +17,7 @@ Future<void> _onCreate(Database db, int version) async {
   await _createTrackIndexes(db);
   await _createSessionsTable(db);
   await _createSessionDetailTables(db);
+  await _createPlaybackQueueSummary(db);
   await _createAsmrTables(db);
   await _createAudioDetailsTable(db);
   await _createLibraryEntriesTable(db);
@@ -80,6 +81,24 @@ Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
   await _createTrackDetailTables(db);
   await _createTrackIndexes(db);
   await _createSessionDetailTables(db);
+  if (oldVersion < 16 && newVersion >= 16) {
+    await _createPlaybackQueueSummary(db);
+    // Named queues already store the rest of the detached track's queue
+    // under its normal entry IDs. Keep the detached occurrence only.
+    await db.execute('''
+      DELETE FROM playback_queue_entry_tracks
+      WHERE entry_id = '__custom_queue__' AND sort_order > 0
+        AND session_id IN (SELECT session_id FROM playback_queues)
+    ''');
+    await db.execute('''
+      UPDATE playback_queues SET
+        entry_count = (SELECT COUNT(*) FROM playback_queue_entries
+          WHERE session_id = playback_queues.session_id),
+        track_count = (SELECT COUNT(*) FROM playback_queue_entry_tracks
+          WHERE session_id = playback_queues.session_id
+            AND entry_id != '__custom_queue__')
+    ''');
+  }
   if (oldVersion < 15 && newVersion >= 15) await _migrateAsmrIdentity(db);
   await _createAsmrTables(db);
   await _createAudioDetailsTable(db);
@@ -314,6 +333,26 @@ Future<void> _createSessionDetailTables(Database db) async {
   await db.execute(
     'CREATE INDEX IF NOT EXISTS idx_playback_queue_entries_order '
     'ON playback_queue_entries(session_id, sort_order)',
+  );
+}
+
+Future<void> _createPlaybackQueueSummary(Database db) async {
+  for (final column in ['entry_count', 'track_count']) {
+    await _addColumnIfMissing(
+      db,
+      'playback_queues',
+      column,
+      'INTEGER NOT NULL DEFAULT 0',
+    );
+  }
+  await db.execute(
+    'CREATE INDEX IF NOT EXISTS idx_queue_tracks_session_path '
+    'ON playback_queue_entry_tracks(session_id, track_path)',
+  );
+  await db.execute(
+    'CREATE INDEX IF NOT EXISTS idx_queue_tracks_content_uri '
+    "ON playback_queue_entry_tracks(track_path) WHERE track_path >= 'content://' "
+    "AND track_path < 'content:/0'",
   );
 }
 

@@ -124,6 +124,8 @@ final class PlaybackCommandCoordinator
   final Map<String, ({String trackPath, String playedPath})>
   _automaticPlaybackCacheTracks = {};
   final _audibleTrackPaths = <String, String>{};
+  final _nativeSnapshotsWaitingForQueue =
+      <PlaybackSession, NativePlaybackSnapshot>{};
 
   void releaseSessionResources(String sessionId) {
     if (_audibleTrackPaths.remove(sessionId) != null) {
@@ -144,6 +146,7 @@ final class PlaybackCommandCoordinator
     _activePlaybackCachePaths.clear();
     _automaticPlaybackCacheTracks.clear();
     _audibleTrackPaths.clear();
+    _nativeSnapshotsWaitingForQueue.clear();
     await _asmrPlaybackCacheService.dispose();
   }
 
@@ -308,8 +311,18 @@ final class PlaybackCommandCoordinator
   }) => _syncPlaybackQueueSession(session, selectFirst: selectFirst);
 
   @override
-  void handleNativeSnapshot(NativePlaybackSnapshot snapshot) =>
-      _handleNativePlaybackSnapshot(snapshot);
+  void handleNativeSnapshot(NativePlaybackSnapshot snapshot) {
+    final session = _sessions[snapshot.sessionId];
+    if (session != null &&
+        (_nativeSnapshotsWaitingForQueue.containsKey(session) ||
+            (session.queueLoadingRequired &&
+                (snapshot.playWhenReady ||
+                    snapshot.processingState != 'idle')))) {
+      unawaited(_applyNativeSnapshotAfterQueueLoad(session, snapshot));
+      return;
+    }
+    _handleNativePlaybackSnapshot(snapshot);
+  }
 
   Future<List<Map<String, Object?>>> nativePlaybackQueueFor(
     PlaybackSession session, {

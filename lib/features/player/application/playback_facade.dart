@@ -247,6 +247,7 @@ final class PlaybackFacade {
   bool _pendingSessionOrder = false;
   final Map<String, PersistedPlaybackSession> _persistedSessions = {};
   final Map<String, int> _persistedQueueVersions = {};
+  final Map<PlaybackSession, Future<bool>> _deferredQueueLoads = {};
   final Set<String> _pendingSessionDefinitionIds = {};
   final Set<String> _pendingDeletedSessionIds = {};
   final Map<String, MusicTrack> _pendingPlaybackHistoryTracks = {};
@@ -285,9 +286,7 @@ final class PlaybackFacade {
       if (session != null) _service.publishSession(session);
       return;
     }
-    for (final session in _service.activeSessions) {
-      _service.publishSession(session);
-    }
+    _service.publishSessions(_service.activeSessions);
   }
 
   void _notifySessionStateChanged([PlaybackSession? session]) {
@@ -351,6 +350,34 @@ final class PlaybackFacade {
     }
     return references;
   }
+
+  Future<Set<String>> collectPersistedContentUris() async {
+    final repository = databaseRepository;
+    final stored = repository is PlaybackQueueStorage
+        ? await (repository as PlaybackQueueStorage).loadQueueContentUris()
+        : const <String>{};
+    return {...stored, ...persistedContentUris};
+  }
+
+  Future<bool> ensureSessionQueueLoaded(String sessionId) =>
+      PlaybackSessionPersistenceCoordinator(
+        this,
+      ).ensureSessionQueueLoaded(sessionId);
+
+  Future<void> addPlaybackQueueEntries(
+    String sessionId,
+    List<PlaybackQueueEntry> entries,
+  ) => PlaybackQueuePathCoordinator(
+    this,
+  ).addPlaybackQueueEntries(sessionId, entries);
+
+  Future<List<PlaybackQueueEntryPreview>> loadQueueEntryPreviews(
+    String sessionId, {
+    required int start,
+    required int limit,
+  }) => PlaybackSessionPersistenceCoordinator(
+    this,
+  ).loadQueueEntryPreviews(sessionId, start: start, limit: limit);
 
   void attachSessionRuntime({
     required void Function(PlaybackSession session) onSessionRegistered,
@@ -843,6 +870,10 @@ final class PlaybackFacade {
   Future<void> switchSessionQueueTrack(String sessionId, int queueIndex) async {
     final session = _service.sessions[sessionId];
     if (session == null) return;
+    if (session.queueLoadingRequired &&
+        !await ensureSessionQueueLoaded(sessionId)) {
+      return;
+    }
     final tracks = session.isPlaybackQueue
         ? session.playbackQueue!.expandedTracks
         : session.customQueueTracks;
@@ -863,6 +894,10 @@ final class PlaybackFacade {
   Future<void> seekSessionToNext(String sessionId) async {
     final session = _service.sessions[sessionId];
     if (session == null || session.pendingNativeTrackPath != null) return;
+    if (session.queueLoadingRequired &&
+        !await ensureSessionQueueLoaded(sessionId)) {
+      return;
+    }
     final target = _commandPort?.resolveAdvance(
       session,
       forward: true,
@@ -885,6 +920,10 @@ final class PlaybackFacade {
     if (session == null || session.pendingNativeTrackPath != null) return;
     if (!session.isPlaybackQueue && session.position.inSeconds > 3) {
       await seekSession(sessionId, Duration.zero);
+      return;
+    }
+    if (session.queueLoadingRequired &&
+        !await ensureSessionQueueLoaded(sessionId)) {
       return;
     }
     final target = _commandPort?.resolveAdvance(

@@ -92,25 +92,29 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
     final queueContainsCurrent =
         !session.hasDetachedQueueTrack &&
         previousIndex >= 0 &&
-        queueTracks.any(
-          (track) => PathMatcher.equalsNormalized(track.path, previousPath),
+        previousIndex < queueTracks.length &&
+        PathMatcher.equalsNormalized(
+          queueTracks[previousIndex].path,
+          previousPath,
         );
     MusicTrack? retainedCurrentTrack;
-    if (!selectFirst &&
+    if (session.hasDetachedQueueTrack && previousIndex == 0) {
+      retainedCurrentTrack = previousRuntimeTracks?.firstOrNull;
+    } else if (!selectFirst &&
         (session.loadedPath != null || session.hasDetachedQueueTrack) &&
         previousPath.isNotEmpty &&
         !queueContainsCurrent) {
-      for (final track in previousRuntimeTracks ?? const <MusicTrack>[]) {
-        if (PathMatcher.equalsNormalized(track.path, previousPath)) {
-          retainedCurrentTrack = track;
-          break;
-        }
-      }
+      final index =
+          previousRuntimeTracks?.indexWhere(
+            (track) => PathMatcher.equalsNormalized(track.path, previousPath),
+          ) ??
+          -1;
+      if (index >= 0) retainedCurrentTrack = previousRuntimeTracks![index];
     }
     final tracks = retainedCurrentTrack == null
         ? queueTracks
         : <MusicTrack>[retainedCurrentTrack, ...queueTracks];
-    session.customQueueTracks = List<MusicTrack>.unmodifiable(tracks);
+    session.customQueueTracks = tracks;
     session.hasDetachedQueueTrack = retainedCurrentTrack != null;
     final queueRevision = session.queueVersion;
 

@@ -44,6 +44,9 @@ import 'package:doujin_audio/features/player/application/windows_playback_bridge
 import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
+import 'package:doujin_audio/features/player/domain/playback_persistence_repository.dart';
+import 'package:doujin_audio/infrastructure/sqlite/sqlite_playback_repository.dart';
+import 'package:doujin_audio/features/player/domain/playback_queue.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_view_models.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
@@ -59,10 +62,13 @@ import 'package:doujin_audio/features/library/presentation/library_providers.dar
 import 'package:doujin_audio/features/player/presentation/playback_providers.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_tab.dart';
+import 'package:doujin_audio/features/settings/application/settings_state.dart';
 
 import '../test/support/app_runtime_test_fixture.dart';
 import '../test/support/test_persistence_repository.dart';
 import 'support/app_startup_test_helper.dart';
+
+part 'support/playlist_performance_scenario.dart';
 
 double get _displayRefreshRate =>
     WidgetsBinding.instance.platformDispatcher.views.first.display.refreshRate;
@@ -133,6 +139,8 @@ void main() {
         'detail-compare',
         'session-cover-transitions',
         'playback',
+        'playlist-sessions',
+        'playlist-queue',
         'page-transitions',
         'page-transitions-playing',
         'page-transitions-settings-cycle',
@@ -182,6 +190,10 @@ void main() {
         _scenario == 'page-transitions-playing' ||
         _scenario == 'page-transitions-settings-cycle') {
       await _measureRealPlayback(tester, binding);
+      return;
+    }
+    if (_scenario == 'playlist-sessions' || _scenario == 'playlist-queue') {
+      await _measureLargePlaylists(tester, binding);
       return;
     }
     debugPrint('PERF_STAGE fixture_start scenario=$_scenario');

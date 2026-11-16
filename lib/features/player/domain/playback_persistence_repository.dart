@@ -41,6 +41,29 @@ final class PersistedPlaybackSession {
   final int? createdAtMs;
   final int? updatedAtMs;
   final int? lastPlayedAtMs;
+
+  PersistedPlaybackSession withQueue(
+    PlaybackQueueDefinition? queue,
+    List<MusicTrack>? customTracks,
+  ) => PersistedPlaybackSession(
+    id: id,
+    trackPath: trackPath,
+    isTemporary: isTemporary,
+    loopModeIndex: loopModeIndex,
+    volume: volume,
+    speed: speed,
+    positionMs: positionMs,
+    durationMs: durationMs,
+    customQueueTracks: customTracks,
+    playbackQueue: queue,
+    currentQueueIndex: currentQueueIndex,
+    channelSwapEnabled: channelSwapEnabled,
+    audioEffects: audioEffects,
+    sortOrder: sortOrder,
+    createdAtMs: createdAtMs,
+    updatedAtMs: updatedAtMs,
+    lastPlayedAtMs: lastPlayedAtMs,
+  );
 }
 
 abstract interface class PlaybackPersistenceRepository {
@@ -64,4 +87,33 @@ abstract interface class PlaybackPersistenceRepository {
   Future<List<TimeSegmentLabel>> loadTimeSegmentLabels(String trackKey);
   Future<void> upsertTimeSegmentLabel(TimeSegmentLabel label);
   Future<void> deleteTimeSegmentLabel(String id);
+}
+
+/// Indexed storage for session summaries and independently persisted queues.
+abstract interface class PlaybackQueueStorage {
+  Future<
+    List<
+      ({
+        PersistedPlaybackSession session,
+        MusicTrack? currentTrack,
+        bool requiresQueueLoad,
+      })
+    >
+  >
+  loadSessionSummaries();
+  Future<PersistedPlaybackSession?> loadSessionQueue(String sessionId);
+  Future<List<PlaybackQueueEntryPreview>> loadQueueEntryPage(
+    String sessionId, {
+    required int start,
+    required int limit,
+  });
+  Future<Set<String>> loadQueueContentUris();
+  Future<Set<String>> findQueuesReferencingPath(String path);
+  Future<void> upsertSessionDelta(
+    PersistedPlaybackSession session, {
+    required PersistedPlaybackSession previous,
+    required bool includeQueue,
+    required bool includeEffects,
+    bool includeSessionState = true,
+  });
 }

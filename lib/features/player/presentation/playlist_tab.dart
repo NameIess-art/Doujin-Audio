@@ -31,6 +31,7 @@ import '../../../core/widgets/swipe_reveal_card.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../settings/application/settings_state.dart';
+import '../application/audio_state_services.dart';
 import '../application/playback_facade.dart';
 import '../domain/playback_mode.dart';
 import 'bedtime_canvas_page.dart';
@@ -85,7 +86,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   final Set<String> _selectedSessionIds = <String>{};
   Set<String>? _knownSessionIds;
   final Set<String> _appearingQueueIds = <String>{};
-  List<PlaylistStructureEntry>? _indexedEntries;
+  List<PlaybackDirectoryEntry>? _indexedEntries;
   List<String> _sessionOrder = const [];
   Map<String, int> _sessionIndices = const {};
 
@@ -132,8 +133,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   void _reconcileSelection(PlaylistStructureState structureState) {
     if (!_isSelectionMode) return;
     final availableSessionIds = structureState.entries
-        .where((entry) => !entry.session.isTemporary)
-        .map((entry) => entry.sessionId)
+        .where((entry) => !entry.isTemporary)
+        .map((entry) => entry.id)
         .toSet();
     if (_selectedSessionIds.every(availableSessionIds.contains)) return;
     setState(() {
@@ -177,7 +178,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   }
 
   Future<void> _handleCreatePlaybackQueue(
-    List<PlaylistStructureEntry> visibleEntries,
+    List<PlaybackDirectoryEntry> visibleEntries,
     PlaybackFacade playback,
     AudioPathCoordinator paths,
   ) async {
@@ -211,14 +212,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     }
   }
 
-  bool _hasSelectedPlaybackQueueSource(
-    List<PlaylistStructureEntry> visibleEntries,
-    AudioPathCoordinator paths,
-  ) => PlaylistBatchActions.hasSelectedPlaybackQueueSource(
-    visibleEntries: visibleEntries,
-    paths: paths,
-    selectedSessionIds: _selectedSessionIds,
-  );
+  bool _hasSelectedPlaybackQueueSource(AudioPathCoordinator paths) =>
+      PlaylistBatchActions.hasSelectedPlaybackQueueSource(
+        playback: ref.read(playbackFacadeProvider),
+        paths: paths,
+        selectedSessionIds: _selectedSessionIds,
+      );
 
   @override
   int get tabIndex => widget.tabIndex;
@@ -463,7 +462,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                     final isRemoveEnabled = count > 0 && !_creatingQueue;
                     final canCreateQueue =
                         !_creatingQueue &&
-                        _hasSelectedPlaybackQueueSource(visibleEntries, paths);
+                        _hasSelectedPlaybackQueueSource(paths);
 
                     return TopPageHeader(
                       key: const ValueKey('playlist_batch_selection_header'),
@@ -686,7 +685,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final orderChanged = !identical(_indexedEntries, visibleEntries);
     if (orderChanged) {
       _indexedEntries = visibleEntries;
-      _sessionOrder = visibleEntries.map((entry) => entry.sessionId).toList();
+      _sessionOrder = visibleEntries.map((entry) => entry.id).toList();
       _sessionIndices = {
         for (var i = 0; i < _sessionOrder.length; i++) _sessionOrder[i]: i,
       };
@@ -698,10 +697,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         _appearingQueueIds.addAll(
           visibleEntries
               .where(
-                (entry) =>
-                    entry.isPlaybackQueue && !known.contains(entry.session.id),
+                (entry) => entry.queueName != null && !known.contains(entry.id),
               )
-              .map((entry) => entry.session.id),
+              .map((entry) => entry.id),
         );
       }
       _knownSessionIds = sessionIds;
@@ -726,20 +724,20 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       if (index == visibleEntries.length) {
         return const SizedBox.shrink(key: ValueKey('bottom_spacing'));
       }
-      final structure = visibleEntries[index];
-      final session = structure.session;
+      final session = visibleEntries[index];
+      final isQueue = session.queueName != null;
       final isTemporary = session.isTemporary;
       final isPinned =
           !isTemporary && pinnedPlaylistSessionIds.contains(session.id);
       // Queue rows resolve their own current track and cover mosaic. Only
       // ordinary sessions need the single-track artwork prepared here.
-      final track = structure.isPlaybackQueue
+      final track = isQueue
           ? null
-          : paths.sessionTrackForPath(session.id, structure.trackPath);
+          : paths.sessionTrackForPath(session.id, session.currentTrackPath);
       final card = RepaintBoundary(
-        child: structure.isPlaybackQueue
+        child: isQueue
             ? PlaybackQueueCard(
-                session: session,
+                sessionId: session.id,
                 library: library,
                 playback: playback,
                 coverCacheWidth: coverCacheWidth,
@@ -758,7 +756,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                             .read(settingsRepositoryProvider)
                             .togglePlaylistSessionPinned(session.id),
                       ),
-                onOpen: (coverOrigin) => session.currentTrackPath.isEmpty
+                onOpen: (coverOrigin) =>
+                    playback
+                            .sessionById(session.id)
+                            ?.currentTrackPath
+                            .isNotEmpty !=
+                        true
                     ? showAppSnackBar(
                         context,
                         i18n.tr('queue_add_audio_first'),
@@ -770,7 +773,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
               )
             : SessionListCard(
                 sessionId: session.id,
-                session: session,
+                session: playback.sessionSnapshotById(session.id),
                 track: track,
                 coverCacheWidth: coverCacheWidth,
                 library: library,
@@ -800,7 +803,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         id: session.id,
         child: BrowseAnchor(
           id: session.id,
-          child: structure.isPlaybackQueue
+          child: isQueue
               ? TweenAnimationBuilder<double>(
                   key: ValueKey('playlist_queue_appearance_${session.id}'),
                   tween: Tween<double>(
@@ -1102,7 +1105,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
             final queueCount = ref
                 .read(playlistStructureUiProvider)
                 .entries
-                .where((entry) => entry.isPlaybackQueue)
+                .where((entry) => entry.queueName != null)
                 .length;
             ref
                 .read(playbackFacadeProvider)

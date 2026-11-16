@@ -7,6 +7,7 @@ import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/features/library/domain/library_entry.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
+import 'package:doujin_audio/features/player/domain/playback_queue.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/application/audio_state_services.dart';
 import 'package:doujin_audio/core/state/audio_state_slice.dart';
@@ -41,6 +42,64 @@ void main() {
   });
 
   group('PlaybackSessionService', () {
+    test(
+      'restores a large catalog in one publish and isolates queue edits',
+      () async {
+        final service = PlaybackSessionService();
+        addTearDown(service.dispose);
+        final sessions = [
+          for (var index = 0; index < 500; index++)
+            PlaybackSession(
+              id: '$index',
+              currentTrackPath: '/tracks/$index.mp3',
+              loopMode: SessionLoopMode.single,
+              nonSingleLoopMode: SessionLoopMode.single,
+              volume: 1,
+              createdAt: DateTime(2026),
+              state: const PlayerState(false, ProcessingState.ready),
+              playbackQueue: index == 0
+                  ? PlaybackQueueDefinition(name: 'Queue', entries: const [])
+                  : null,
+            ),
+        ];
+        addTearDown(
+          () => Future.wait(sessions.map((session) => session.shutdown())),
+        );
+        final session = sessions.first;
+        final updates = <PlaybackCatalogState>[];
+        final catalogSubscription = service.catalog.stream.listen(updates.add);
+        final sessionSubscription = service
+            .sessionStates(session.id)
+            .listen((_) {});
+        addTearDown(catalogSubscription.cancel);
+        addTearDown(sessionSubscription.cancel);
+        await Future<void>.delayed(Duration.zero);
+
+        service.sessions.addEntries(
+          sessions.map((session) => MapEntry(session.id, session)),
+        );
+        service.sessionOrder.addAll(
+          sessions.reversed.map((session) => session.id),
+        );
+        service.markActiveSessionsDirty();
+        service.publishSessions(sessions);
+        expect(updates.map((state) => state.sessions.length), [0, 500]);
+        final directory = service.catalog.state.sessions;
+        expect(directory.first.id, '499');
+
+        session.playbackQueue = session.playbackQueue!.copyWith(colorValue: 15);
+        session.lastKnownPosition = const Duration(seconds: 30);
+        service.publishSession(session);
+        expect(service.catalog.state.sessions, same(directory));
+        expect(updates, hasLength(2));
+        session.playbackQueue = session.playbackQueue!.copyWith(
+          name: 'Renamed',
+        );
+        service.publishSession(session);
+        expect(updates.last.sessions.last.queueName, 'Renamed');
+      },
+    );
+
     test('continues queued preparation after a predecessor fails', () async {
       final service = PlaybackSessionService();
       addTearDown(service.dispose);

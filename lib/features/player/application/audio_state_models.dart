@@ -39,17 +39,37 @@ class PlaybackAggregateState {
   );
 }
 
-/// Directory snapshots change only when membership or display structure changes.
+typedef PlaybackDirectoryEntry = ({
+  String id,
+  String currentTrackPath,
+  bool isTemporary,
+  DateTime createdAt,
+  DateTime? lastPlayedAt,
+  String? queueName,
+});
+
+PlaybackDirectoryEntry playbackDirectoryEntry(
+  PlaybackSessionSnapshot session,
+) => (
+  id: session.id,
+  currentTrackPath: session.currentTrackPath,
+  isTemporary: session.isTemporary,
+  createdAt: session.createdAt,
+  lastPlayedAt: session.lastPlayedAt,
+  queueName: session.playbackQueue?.name,
+);
+
+/// The directory only carries fields required to find and order sessions.
 @immutable
 class PlaybackCatalogState {
   PlaybackCatalogState({
-    List<PlaybackSessionSnapshot> sessions = const [],
+    List<PlaybackDirectoryEntry> sessions = const [],
     List<PlaybackSessionSnapshot> nowPlayingSessions = const [],
     this.isInitialized = false,
   }) : sessions = immutableList(sessions),
        nowPlayingSessions = immutableList(nowPlayingSessions);
 
-  final List<PlaybackSessionSnapshot> sessions;
+  final List<PlaybackDirectoryEntry> sessions;
   final List<PlaybackSessionSnapshot> nowPlayingSessions;
   final bool isInitialized;
 

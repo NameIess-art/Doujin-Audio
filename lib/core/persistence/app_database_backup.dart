@@ -161,6 +161,9 @@ Future<void> _validateRestoreSchema(
                 (version >= 3 || columnName != 'duration_ms') &&
                 (version >= 4 || columnName != 'card_cover_selected'),
           'sessions' => version >= 7 || columnName != 'is_temporary',
+          'playback_queues' =>
+            version >= 16 ||
+                !const {'entry_count', 'track_count'}.contains(columnName),
           'time_segment_labels' =>
             version >= 12 || columnName != 'track_match_key',
           _ => true,

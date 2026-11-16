@@ -2,11 +2,11 @@ import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 
+import '../../../core/immutable_collections.dart';
 import '../domain/audio_effects.dart';
 import '../domain/playback_mode.dart';
 import '../application/playback_session_snapshot.dart';
 import '../application/audio_state_services.dart';
-import '../../../core/media/music_track.dart';
 
 @immutable
 class PlaylistHeaderState {
@@ -66,55 +66,13 @@ class PlaylistHeaderState {
 }
 
 @immutable
-class PlaylistStructureEntry {
-  const PlaylistStructureEntry({
-    required this.session,
-    required this.sessionId,
-    required this.trackPath,
-    required this.isPlaybackQueue,
-    required this.queueColorValue,
-    required this.queueContentSignature,
-  });
-
-  final PlaybackSessionSnapshot session;
-  final String sessionId;
-  final String trackPath;
-  final bool isPlaybackQueue;
-  final int? queueColorValue;
-  final int? queueContentSignature;
-
-  @override
-  bool operator ==(Object other) {
-    return other is PlaylistStructureEntry &&
-        other.sessionId == sessionId &&
-        other.trackPath == trackPath &&
-        other.isPlaybackQueue == isPlaybackQueue &&
-        other.session.isTemporary == session.isTemporary &&
-        other.session.lastPlayedAt == session.lastPlayedAt &&
-        other.queueColorValue == queueColorValue &&
-        other.queueContentSignature == queueContentSignature;
-  }
-
-  @override
-  int get hashCode => Object.hash(
-    sessionId,
-    trackPath,
-    isPlaybackQueue,
-    session.isTemporary,
-    session.lastPlayedAt,
-    queueColorValue,
-    queueContentSignature,
-  );
-}
-
-@immutable
 class PlaylistStructureState {
   const PlaylistStructureState({
     required this.entries,
     required this.isInitialized,
   });
 
-  final List<PlaylistStructureEntry> entries;
+  final List<PlaybackDirectoryEntry> entries;
   final bool isInitialized;
 
   bool get hasSessions => entries.isNotEmpty;
@@ -127,8 +85,7 @@ class PlaylistStructureState {
   }
 
   @override
-  int get hashCode =>
-      Object.hash(Object.hashAll(entries), isInitialized);
+  int get hashCode => Object.hash(Object.hashAll(entries), isInitialized);
 }
 
 @immutable
@@ -178,7 +135,7 @@ class MainOverlayUiState {
 final class PlaybackSessionOverlayList
     extends ListBase<PlaybackSessionSnapshot> {
   PlaybackSessionOverlayList(Iterable<PlaybackSessionSnapshot> sessions)
-    : _items = List<PlaybackSessionSnapshot>.unmodifiable(sessions);
+    : _items = immutableList(sessions);
 
   final List<PlaybackSessionSnapshot> _items;
 
@@ -213,8 +170,12 @@ final class PlaybackSessionOverlayList
           left.playbackError != right.playbackError ||
           left.currentQueueIndex != right.currentQueueIndex ||
           left.queueVersion != right.queueVersion ||
-          left.playbackQueue != right.playbackQueue ||
-          !listEquals(left.customQueueTracks, right.customQueueTracks)) {
+          (left.queueVersion == 0 &&
+              (left.playbackQueue != right.playbackQueue ||
+                  !listEquals(
+                    left.customQueueTracks,
+                    right.customQueueTracks,
+                  )))) {
         return false;
       }
     }
@@ -233,8 +194,6 @@ final class PlaybackSessionOverlayList
         session.playbackError,
         session.currentQueueIndex,
         session.queueVersion,
-        session.playbackQueue,
-        Object.hashAll(session.customQueueTracks ?? const <MusicTrack>[]),
       ),
     ),
   );
@@ -462,29 +421,5 @@ PlaylistSessionCardState playlistSessionCardStateFromSession(
     speed: session.speed,
     playbackError: session.playbackError,
     queueColorValue: session.playbackQueue?.colorValue,
-  );
-}
-
-PlaylistStructureState playlistStructureStateFromPlaybackState(
-  PlaybackStateSliceData playbackState,
-) {
-  return PlaylistStructureState(
-    entries: List<PlaylistStructureEntry>.unmodifiable(
-      playbackState.activeSessions.map(_playlistStructureEntry),
-    ),
-    isInitialized: playbackState.isInitialized,
-  );
-}
-
-PlaylistStructureEntry _playlistStructureEntry(
-  PlaybackSessionSnapshot session,
-) {
-  return PlaylistStructureEntry(
-    session: session,
-    sessionId: session.id,
-    trackPath: session.currentTrackPath,
-    isPlaybackQueue: session.isPlaybackQueue,
-    queueColorValue: session.playbackQueue?.colorValue,
-    queueContentSignature: session.playbackQueue?.contentSignature,
   );
 }

@@ -34,7 +34,7 @@ class AppBottomSheet {
                 duration: kAppMotionStandard,
                 reverseDuration: reverseAnimationDurationOf(context),
                 curve: kAppSpringCurve,
-                reverseCurve: kAppSpringCurve,
+                reverseCurve: Curves.easeInCubic,
               );
 
     final navigator = Navigator.of(context, rootNavigator: useRootNavigator);

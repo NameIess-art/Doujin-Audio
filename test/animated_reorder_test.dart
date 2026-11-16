@@ -3,6 +3,18 @@ import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+class _PaintProbe extends CustomPainter {
+  _PaintProbe(this.onPaint);
+
+  final VoidCallback onPaint;
+
+  @override
+  void paint(Canvas canvas, Size size) => onPaint();
+
+  @override
+  bool shouldRepaint(_PaintProbe oldDelegate) => false;
+}
+
 void main() {
   Widget list(
     List<int> order, {
@@ -133,6 +145,38 @@ void main() {
     await tester.pumpWidget(list([3, 0, 1, 2]));
     expect(tester.getTopLeft(find.text('entry-0')).dy, 100);
     expect(tester.binding.hasScheduledFrame, isFalse);
+  });
+
+  testWidgets('muting an idle list preserves retained row paint', (
+    tester,
+  ) async {
+    final tickerEnabled = ValueNotifier(true);
+    addTearDown(tickerEnabled.dispose);
+    var paints = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ValueListenableBuilder<bool>(
+          valueListenable: tickerEnabled,
+          builder: (context, enabled, child) =>
+              TickerMode(enabled: enabled, child: child!),
+          child: AnimatedReorder(
+            order: const [0],
+            child: RepaintBoundary(
+              child: AnimatedReorderItem(
+                id: 0,
+                child: CustomPaint(painter: _PaintProbe(() => paints++)),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(paints, 1);
+    tickerEnabled.value = false;
+    await tester.pump();
+    tickerEnabled.value = true;
+    await tester.pump();
+    expect(paints, 1);
   });
 
   for (final disable in [true, false]) {

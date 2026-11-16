@@ -1,4 +1,3 @@
-import '../../../library/presentation/library_providers.dart';
 import '../playback_providers.dart';
 import 'dart:async';
 
@@ -9,9 +8,9 @@ import '../../../../app/application/audio_path_coordinator.dart';
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../core/widgets/app_feedback.dart';
+import '../../application/audio_state_services.dart';
 import '../../application/playback_facade.dart';
 import '../../domain/playback_queue.dart';
-import '../playlist_view_models.dart';
 import 'playlist_shared_helpers.dart';
 
 /// Orchestrates multi-selection batch actions on the playlist.
@@ -85,7 +84,7 @@ abstract final class PlaylistBatchActions {
 
   static Future<void> createPlaybackQueue({
     required WidgetRef ref,
-    required List<PlaylistStructureEntry> visibleEntries,
+    required List<PlaybackDirectoryEntry> visibleEntries,
     required Set<String> selectedSessionIds,
     required PlaybackFacade playback,
     required AudioPathCoordinator paths,
@@ -93,78 +92,78 @@ abstract final class PlaylistBatchActions {
   }) async {
     final selectedIds = Set<String>.of(selectedSessionIds);
     if (!hasSelectedPlaybackQueueSource(
-      visibleEntries: visibleEntries,
+      playback: playback,
       paths: paths,
       selectedSessionIds: selectedIds,
     )) {
       return;
     }
 
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final context = ref.context;
+    final entries = <PlaybackQueueEntry>[];
+    for (final entry in visibleEntries) {
+      if (!selectedIds.contains(entry.id)) continue;
+      if (entry.queueName != null) {
+        if (await playback.ensureSessionQueueLoaded(entry.id)) {
+          final queue = playback.sessionById(entry.id)?.playbackQueue;
+          if (queue != null) {
+            entries.addAll(
+              queue.entries.where((entry) => entry.tracks.isNotEmpty),
+            );
+          }
+        }
+        continue;
+      }
+      final path = playback.sessionById(entry.id)?.currentTrackPath;
+      if (path == null) continue;
+      final track = paths.sessionTrackForPath(entry.id, path);
+      if (track == null) continue;
+      final tracks = track.isSingle
+          ? [track]
+          : paths.tracksInSameWork(track.path);
+      if (tracks.isEmpty) continue;
+      entries.add(
+        PlaybackQueueEntry(
+          id: '',
+          kind: track.isSingle
+              ? PlaybackQueueEntryKind.track
+              : PlaybackQueueEntryKind.work,
+          title: track.isSingle
+              ? track.displayName
+              : paths.workTitleForTrack(track),
+          tracks: tracks,
+          workRootPath: track.isSingle
+              ? null
+              : paths.workRootForTrack(track.path),
+        ),
+      );
+    }
+    if (entries.isEmpty || !context.mounted) return;
     final queueCount = playback.sessions.values
         .where((session) => session.isPlaybackQueue)
         .length;
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final queue = playback.createPlaybackQueue(
       i18n.tr('default_playback_queue_name', {
         'number': (queueCount + 1).toString(),
       }),
     );
     onQueueAdded();
-    final coordinator = ref.read(playbackQueueCoordinatorProvider);
-    final library = ref.read(libraryFacadeProvider);
-    for (final entry in visibleEntries) {
-      if (!selectedIds.contains(entry.sessionId)) continue;
-      if (entry.isPlaybackQueue) {
-        for (final sourceEntry
-            in entry.session.playbackQueue?.entries ??
-                const <PlaybackQueueEntry>[]) {
-          if (sourceEntry.tracks.isEmpty) continue;
-          if (sourceEntry.kind == PlaybackQueueEntryKind.work) {
-            for (final track in sourceEntry.tracks.take(4)) {
-              unawaited(
-                library.playbackCoverPathFutureForTrack(track),
-              );
-            }
-            await playback.addWorkToPlaybackQueue(
-              queue.id,
-              title: sourceEntry.title,
-              tracks: sourceEntry.tracks,
-              workRootPath: sourceEntry.workRootPath,
-            );
-          } else {
-            for (final track in sourceEntry.tracks) {
-              await coordinator.addTrack(queue.id, track);
-            }
-          }
-        }
-        continue;
-      }
-      final track = paths.sessionTrackForPath(
-        entry.session.id,
-        entry.trackPath,
-      );
-      if (track != null) {
-        await coordinator.addWork(queue.id, track);
-      }
-    }
+    await playback.addPlaybackQueueEntries(queue.id, entries);
   }
 
   static bool hasSelectedPlaybackQueueSource({
-    required List<PlaylistStructureEntry> visibleEntries,
+    required PlaybackFacade playback,
     required AudioPathCoordinator paths,
     required Set<String> selectedSessionIds,
   }) {
-    for (final entry in visibleEntries) {
-      if (!selectedSessionIds.contains(entry.sessionId)) continue;
-      if (entry.isPlaybackQueue) {
-        final hasEntries = entry.session.playbackQueue?.entries.any(
-              (queueEntry) => queueEntry.tracks.isNotEmpty,
-            ) ??
-            false;
-        if (hasEntries) return true;
-        continue;
-      }
-      if (paths.sessionTrackForPath(entry.session.id, entry.trackPath) != null) {
+    for (final id in selectedSessionIds) {
+      final session = playback.sessionById(id);
+      if (session == null) continue;
+      final queue = session.playbackQueue;
+      if (queue != null
+          ? queue.trackCount > 0
+          : paths.sessionTrackForPath(id, session.currentTrackPath) != null) {
         return true;
       }
     }

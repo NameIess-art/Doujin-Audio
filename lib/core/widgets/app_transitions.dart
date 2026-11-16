@@ -7,6 +7,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 
 import '../ui/ui_interaction_coordinator.dart';
 import 'app_edge_fade_mask.dart';
@@ -1077,17 +1078,22 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
             fit: StackFit.passthrough,
             children: [
               Positioned(
-                left: -12,
+                left: -16,
                 top: 0,
                 bottom: 0,
-                width: 12,
+                width: 16,
                 child: IgnorePointer(
                   child: FadeTransition(
                     opacity: widget.animation,
                     child: const DecoratedBox(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
-                          colors: [Color(0x00000000), Color(0x16000000)],
+                          colors: [
+                            Color(0x00000000),
+                            Color(0x07000000),
+                            Color(0x1C000000),
+                          ],
+                          stops: [0.0, 0.55, 1.0],
                         ),
                       ),
                     ),
@@ -1780,7 +1786,23 @@ class AppPlaybackIconTransition extends StatelessWidget {
           begin: beginScale,
           end: 1,
         ).chain(CurveTween(curve: kAppSpringBackCurve)).animate(animation),
-        child: child,
+        child: AnimatedBuilder(
+          animation: animation,
+          child: child,
+          builder: (context, innerChild) {
+            final value = animation.value;
+            if (value >= 0.999) return innerChild!;
+            final progress = kAppSpringCurve.transform(value.clamp(0.0, 1.0));
+            final angle =
+                (animation.status == AnimationStatus.reverse ? 0.22 : -0.22) *
+                (1.0 - progress);
+            return Transform.rotate(
+              angle: angle,
+              transformHitTests: false,
+              child: innerChild,
+            );
+          },
+        ),
       ),
     );
   }
@@ -3297,9 +3319,11 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
     return true;
   }
 
-  void _updateInteractivePop(double deltaFraction) {
-    if (_disposed || controller == null) return;
-    controller!.value = (controller!.value - deltaFraction).clamp(0.0, 1.0);
+  double? _updateInteractivePop(double deltaFraction) {
+    if (_disposed || controller == null) return null;
+    final next = (controller!.value - deltaFraction).clamp(0.0, 1.0);
+    controller!.value = next;
+    return next;
   }
 
   void _endInteractivePop(double velocityFraction) {
@@ -3310,7 +3334,18 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
           nav.pop();
         }
       } else {
-        controller!.fling(velocity: 2.0);
+        final spring = SpringDescription.withDampingRatio(
+          mass: 1.0,
+          stiffness: 520.0,
+          ratio: 0.92,
+        );
+        final simulation = SpringSimulation(
+          spring,
+          controller!.value,
+          1.0,
+          (-velocityFraction).clamp(-6.0, 6.0),
+        );
+        controller!.animateWith(simulation);
       }
     }
     if (nav != null && nav.userGestureInProgress) {
@@ -3332,21 +3367,31 @@ class _EdgeSwipeBackLayer extends StatefulWidget {
 class _EdgeSwipeBackLayerState extends State<_EdgeSwipeBackLayer> {
   static const double _edgeWidth = 32;
   bool _dragging = false;
+  bool _thresholdHapticTriggered = false;
 
   void _handleDragStart(DragStartDetails details) {
     _dragging = widget.route._startInteractivePop();
+    _thresholdHapticTriggered = false;
   }
 
   void _handleDragUpdate(DragUpdateDetails details) {
     if (!_dragging) return;
     final width = context.size?.width ?? 0;
     if (width <= 0) return;
-    widget.route._updateInteractivePop(details.delta.dx / width);
+    final value = widget.route._updateInteractivePop(details.delta.dx / width);
+    if (value == null) return;
+    if (!_thresholdHapticTriggered && value <= 0.68) {
+      _thresholdHapticTriggered = true;
+      unawaited(HapticFeedback.selectionClick());
+    } else if (_thresholdHapticTriggered && value > 0.72) {
+      _thresholdHapticTriggered = false;
+    }
   }
 
   void _handleDragEnd(DragEndDetails details) {
     if (!_dragging) return;
     _dragging = false;
+    _thresholdHapticTriggered = false;
     final width = context.size?.width ?? 0;
     final velocity = width > 0 ? details.velocity.pixelsPerSecond.dx / width : 0.0;
     widget.route._endInteractivePop(velocity);
@@ -3355,6 +3400,7 @@ class _EdgeSwipeBackLayerState extends State<_EdgeSwipeBackLayer> {
   void _handleDragCancel() {
     if (!_dragging) return;
     _dragging = false;
+    _thresholdHapticTriggered = false;
     widget.route._endInteractivePop(0.0);
   }
 

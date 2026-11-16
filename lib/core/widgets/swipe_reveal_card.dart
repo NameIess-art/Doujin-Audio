@@ -631,8 +631,10 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                   duration:
                       _snapClosed || MediaQuery.disableAnimationsOf(context)
                       ? Duration.zero
-                      : kAppMotionStandard,
-                  curve: _dragAccepted ? Curves.easeOut : kAppSpringCurve,
+                      : (_dragAccepted
+                            ? const Duration(milliseconds: 55)
+                            : kAppMotionStandard),
+                  curve: _dragAccepted ? Curves.easeOutCubic : kAppSpringCurve,
                   onEnd: () {
                     if (!mounted) return;
                     _displayedWidth = _revealedWidth;

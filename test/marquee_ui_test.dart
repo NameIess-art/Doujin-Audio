@@ -76,6 +76,46 @@ Future<void> _pumpMarqueeFrames(WidgetTester tester, int milliseconds) async {
 }
 
 void main() {
+  testWidgets(
+    'muting a page pauses a marquee at its painted offset',
+    (tester) async {
+      final enabled = ValueNotifier(true);
+      addTearDown(enabled.dispose);
+      await tester.pumpWidget(
+        _buildApp(
+          ValueListenableBuilder<bool>(
+            valueListenable: enabled,
+            builder: (context, enabled, child) =>
+                TickerMode(enabled: enabled, child: child!),
+            child: const Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: 120,
+                child: MarqueeText(
+                  text: 'A title much longer than the available marquee width',
+                  pauseDuration: Duration.zero,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await _pumpMarqueeFrames(tester, 500);
+      final position = tester
+          .state<ScrollableState>(find.byType(Scrollable))
+          .position;
+      final offset = position.pixels;
+      expect(offset, greaterThan(0));
+      enabled.value = false;
+      await _pumpMarqueeFrames(tester, 500);
+      expect(position.pixels, offset);
+      enabled.value = true;
+      await _pumpMarqueeFrames(tester, 400);
+      expect(position.pixels, greaterThan(offset));
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.windows}),
+  );
+
   for (final singleAudio in [false, true]) {
     testWidgets(
       '${singleAudio ? 'audio' : 'work'} hover waits for scroll idle without mounting crossed marquees',

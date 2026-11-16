@@ -136,6 +136,10 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       if (!_isRegisteredSession(session)) return false;
     }
     if (!autoPlay) {
+      if (session.queueLoadingRequired &&
+          !await _playbackFacade.ensureSessionQueueLoaded(session.id)) {
+        return false;
+      }
       if (session.loadedPath != null ||
           session.pendingNativeTrackPath != null ||
           session.state.playing) {
@@ -194,6 +198,10 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       if (!requestedSource.contains('://')) requestedSource,
     ]);
     try {
+      if (session.queueLoadingRequired &&
+          !await _playbackFacade.ensureSessionQueueLoaded(session.id)) {
+        return false;
+      }
       if (!_isSessionLoadCurrent(session, generation)) {
         return false;
       }
@@ -665,10 +673,11 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     );
     try {
       await _playbackFacade.validatePlaybackCachePaths(paths);
-      paths = _nativePlaybackQueuePathsFor(
+      final scope = _playbackQueueScopeFor(
         session,
         currentPath: logicalCurrentPath,
       );
+      paths = scope.paths;
       final cacheKey = Object.hash(
         _playbackQueueScopeKey(session, logicalCurrentPath),
         _libraryFacade.contentRevision,
@@ -687,16 +696,35 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       }
       session.nativePlaybackQueueCacheKey = cacheKey;
       session.nativePlaybackQueueCache = null;
-      final descriptors = <_NativeQueueTrack>[];
-      for (final trackPath in paths) {
-        final track = _sessionTrackForPath(session, trackPath);
-        descriptors.add((
-          path: trackPath,
-          track: track,
-          coverPath: resolvedPlaybackCoverPathForTrack(track),
-        ));
+      Future<List<Map<String, Object?>>> buildQueue() async {
+        final descriptors = <_NativeQueueTrack>[];
+        final slice = Stopwatch()..start();
+        final customTracks =
+            session.isPlaybackQueue && !session.hasDetachedQueueTrack
+            ? session.playbackQueue!.expandedTracks
+            : session.customQueueTracks;
+        for (final (index, trackPath) in paths.indexed) {
+          final track = scope.isCustomQueue && customTracks != null
+              ? customTracks[scope.queueIndices[index]]
+              : _sessionTrackForPath(session, trackPath);
+          descriptors.add((
+            path: trackPath,
+            track: track,
+            coverPath: resolvedPlaybackCoverPathForTrack(track),
+          ));
+          if (slice.elapsedMicroseconds >= 2000) {
+            await Future<void>.delayed(Duration.zero);
+            if (!_isRegisteredSession(session) ||
+                session.nativePlaybackQueueCacheKey != cacheKey) {
+              return const [];
+            }
+            slice.reset();
+          }
+        }
+        return compute(_buildNativePlaybackQueue, descriptors);
       }
-      final pending = compute(_buildNativePlaybackQueue, descriptors);
+
+      final pending = buildQueue();
       session.nativePlaybackQueueFuture = pending;
       try {
         final queue = await pending;

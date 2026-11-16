@@ -72,6 +72,24 @@ final class PlaybackQueueRecord {
   final List<PlaybackQueueEntryRecord> entries;
 }
 
+typedef PlaybackQueueEntryPreviewRecord = ({
+  String id,
+  String kind,
+  String title,
+  int trackCount,
+  MusicTrack? firstTrack,
+});
+
+typedef PlaybackQueueDeltaRecord = ({
+  ({String name, int? colorValue, int entryCount, int trackCount})? header,
+  List<String> deleted,
+  List<({PlaybackQueueEntryRecord entry, int position, bool writeTracks})>
+  upserted,
+  Map<String, int> moved,
+  bool replaceCustomTracks,
+  List<MusicTrack>? customTracks,
+});
+
 final class PlaybackSessionRecord {
   PlaybackSessionRecord({
     required this.id,

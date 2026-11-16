@@ -97,12 +97,13 @@ class NativePlaybackSessionRestorerTest {
 
     @Test
     fun `timer storage does not wait for the session queue serialization monitor`() {
+        val store = NativePlaybackStateStore
         val queueWriting = CountDownLatch(1)
         val allowQueueWrite = CountDownLatch(1)
         val executor = Executors.newFixedThreadPool(2)
         try {
             val queue = executor.submit {
-                synchronized(NativePlaybackStateStore) {
+                synchronized(store) {
                     queueWriting.countDown()
                     assertTrue(allowQueueWrite.await(2, TimeUnit.SECONDS))
                 }

@@ -9,7 +9,6 @@ import com.doujin.audio.player.session.NativePlaybackStateStore
 import com.doujin.audio.player.session.NativePlaybackSession
 import com.doujin.audio.player.session.NativePlaybackSessionManager
 import com.doujin.audio.player.session.NativeMediaItemDescriptor
-import com.doujin.audio.player.session.mergeNativePlaybackDefinitions
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -367,7 +366,7 @@ private class FakeStatePersistenceEnvironment(private val filterRevisions: Boole
         val accepted = sessions.filter { !filterRevisions || revisions[it.sessionId] == NativePlaybackStateStore.sessionRevision(it.sessionId) }
         if (accepted.isEmpty()) return
         savedSessions += accepted
-        storedDefinitions = mergeNativePlaybackDefinitions(storedDefinitions, accepted)
+        storedDefinitions = (storedDefinitions + accepted).associateBy { it.sessionId }.values.toList()
     }
 
     override fun saveSessionProgress(progress: List<StoredNativePlaybackProgress>, revisions: Map<String, Long>) {

@@ -1,20 +1,24 @@
 package com.doujin.audio
 
 import android.content.Context
+import android.database.sqlite.SQLiteDatabase
+import com.doujin.audio.player.session.NativePlaybackRecoveryDatabase
+import com.doujin.audio.player.session.encodeDefinition
 import com.doujin.audio.player.session.NativePlaybackStateStore
 import com.doujin.audio.player.session.StoredNativePlaybackProgress
 import com.doujin.audio.player.session.StoredNativePlaybackQueueItem
 import com.doujin.audio.player.session.StoredNativePlaybackSession
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 import org.junit.Assert.*
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
-import java.util.concurrent.Executors
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
@@ -27,107 +31,141 @@ class NativePlaybackStateStoreTest {
 
     @Before
     fun reset() {
-        NativePlaybackStateStore.clearSessions(context)
+        context.deleteDatabase(NativePlaybackRecoveryDatabase.fileName)
         definitions.edit().clear().commit()
         progress.edit().clear().commit()
     }
 
-    @Test
-    fun `chapter identity and clipping survive structural JSON and progress recovery`() {
-        val queue = listOf(
-            StoredNativePlaybackQueueItem("chapter-a", "https://example.com/a.m3u8", "A", null, null,
-                clipStartMs = 10_000L, clipEndMs = 20_000L,
-                httpHeaders = mapOf("Referer" to "https://japaneseasmr.com/")),
-            StoredNativePlaybackQueueItem("chapter-b", "https://example.com/a.m3u8", "B", null, null,
-                clipStartMs = 20_000L, clipEndMs = 40_000L))
-        NativePlaybackStateStore.saveSessions(context, listOf(session("A", 1_000L).copy(queue = queue)))
-        NativePlaybackStateStore.saveSessionProgress(context, listOf(playingProgress("A", 4_000L)))
-        val restored = NativePlaybackStateStore.loadSessions(context).single()
-        assertEquals(queue, restored.queue)
-        assertEquals(4_000L, restored.positionMs)
+    @After
+    fun clearStore() {
+        NativePlaybackStateStore.removeTemporarySession("T")
     }
 
     @Test
-    fun `progress updates touch only the small container and restore over unchanged queues`() {
-        val stored = session("A", 1_000L)
-        NativePlaybackStateStore.saveSessions(context, listOf(stored))
-        val initialDefinitions = definitions.all.toMap()
+    fun `large chapter definitions keep clipping content references and progress across chunks`() {
+        val contentUri = "content://com.example/documents/章"
+        val queue = List(10_000) { index ->
+            StoredNativePlaybackQueueItem(
+                path = "/chapter-$index",
+                uri = "https://example.com/chapter.m3u8",
+                title = "Chapter $index 👋",
+                subtitle = null,
+                artUri = null,
+                candidateUris = listOf(contentUri),
+                clipStartMs = index * 20_000L,
+                clipEndMs = (index + 1) * 20_000L,
+                httpHeaders = mapOf("Referer" to "https://japaneseasmr.com/")
+            )
+        }
+        NativePlaybackStateStore.upsertSessions(context, listOf(session("A", 1_000L).copy(queue = queue)))
+        val initialChunks = chunkRows("A")
+        assertTrue(initialChunks.size > 2)
 
         for (position in listOf(16_000L, 31_000L, 46_000L)) {
-            NativePlaybackStateStore.saveSessionProgress(context, listOf(playingProgress("A", position)))
+            saveProgress(playingProgress("A", position))
         }
 
-        assertEquals(initialDefinitions, definitions.all)
-        assertFalse(definitions.contains(progressKey))
-        assertTrue(progress.contains(progressKey))
-        assertFalse(progress.contains("sessions"))
-        val restored = NativePlaybackStateStore.loadSessions(context).single()
+        assertEquals(initialChunks, chunkRows("A"))
+        val restored = NativePlaybackStateStore.loadSessions(context, setOf("A")).single()
+        assertEquals(queue, restored.queue)
         assertEquals(46_000L, restored.positionMs)
-        assertEquals(stored.queue, restored.queue)
         assertTrue(restored.playing)
+        assertEquals(setOf(contentUri), NativePlaybackStateStore.retainedRecoveryContentUris(context))
         assertEquals(setOf("A"), NativePlaybackStateStore.loadActiveSessionRevisions(context).keys)
     }
 
     @Test
-    fun `legacy progress migrates once and does not replace newer progress on recovery`() {
-        seedLegacyProgress(playingProgress("A", 9_000L))
+    fun `legacy recovery migrates valid progress once and keeps timer preferences`() {
+        seedLegacy(session("A", 1_000L), playingProgress("A", 9_000L))
+        definitions.edit().putString("playback_behavior_v1", """{"requestAudioFocus":false}""").commit()
 
-        // The timer's main-thread fallback reads compatibly without committing migration.
-        assertEquals(9_000L, NativePlaybackStateStore.loadSessions(context).single().positionMs)
-        assertTrue(definitions.contains(progressKey))
-        assertFalse(progress.contains(progressKey))
-        assertEquals(9_000L, loadOnBackground().single().positionMs)
-        assertFalse(definitions.contains(progressKey))
-        assertTrue(progress.contains(progressKey))
-        assertEquals(setOf("A"), NativePlaybackStateStore.loadActiveSessionRevisions(context).keys)
+        NativePlaybackRecoveryDatabase(context).use { database ->
+            assertEquals(9_000L, database.loadSessions(null, false).single().positionMs)
+            assertFalse(definitions.contains("sessions"))
+            assertFalse(definitions.contains(progressKey))
+            assertFalse(NativePlaybackStateStore.loadPlaybackBehavior(context).requestAudioFocus)
+            assertEquals(listOf("A"), database.sessionIds(activeOnly = true))
+            database.updateProgress(listOf(playingProgress("A", 24_000L)))
+        }
 
-        NativePlaybackStateStore.saveSessionProgress(context, listOf(playingProgress("A", 24_000L)))
-        // Simulate termination after the new file landed but before the old key was removed.
-        definitions.edit().putString(progressKey, encode(playingProgress("A", 9_000L))).commit()
-        assertEquals(24_000L, loadOnBackground().single().positionMs)
-        assertFalse(definitions.contains(progressKey))
+        // The database version remains authoritative if termination left old keys behind.
+        seedLegacy(session("A", 1_000L), playingProgress("A", 9_000L))
+        NativePlaybackRecoveryDatabase(context).use { database ->
+            assertEquals(24_000L, database.loadSessions(null, false).single().positionMs)
+            assertFalse(definitions.contains("sessions"))
+        }
     }
 
     @Test
-    fun `cleared new progress is authoritative over a leftover legacy key`() {
-        seedLegacyProgress(playingProgress("A", 9_000L))
-        loadOnBackground()
-        NativePlaybackStateStore.saveSessionProgress(context, emptyList())
-        definitions.edit().putString(progressKey, encode(playingProgress("A", 9_000L))).commit()
+    fun `legacy overlay with the wrong generation never replaces structural progress`() {
+        seedLegacy(session("A", 1_000L), playingProgress("A", 9_000L))
+        progress.edit().putLong(generationKey, 2L)
+            .putString(progressKey, encode(playingProgress("A", 30_000L))).commit()
 
-        val restored = loadOnBackground().single()
+        val restored = NativePlaybackRecoveryDatabase(context).use { it.loadSessions(null, false).single() }
         assertEquals(1_000L, restored.positionMs)
         assertFalse(restored.playing)
-        assertFalse(definitions.contains(progressKey))
         assertFalse(progress.contains(progressKey))
     }
 
     @Test
-    fun `structural replacement rejects the previous progress file after an interrupted write`() {
-        NativePlaybackStateStore.saveSessions(context, listOf(session("A", 1_000L)))
-        NativePlaybackStateStore.saveSessionProgress(context, listOf(playingProgress("A", 30_000L)))
-        val oldProgress = progress.getString(progressKey, null)
-        val oldGeneration = progress.getLong(generationKey, 0L)
-        val replacement = session("A", 500L).copy(uri = "file:///new.mp3", path = "/new.mp3")
-        NativePlaybackStateStore.upsertSessions(context, listOf(replacement))
+    fun `legacy progress sidecar is authoritative even after removal of all progress rows`() {
+        seedLegacy(session("A", 1_000L), playingProgress("A", 9_000L))
+        progress.edit().putLong(generationKey, 3L).commit()
 
-        assertFalse(progress.contains(progressKey))
-        // The structural file reached disk while the old progress file remained.
-        progress.edit().putString(progressKey, oldProgress).putLong(generationKey, oldGeneration).commit()
-        val restored = NativePlaybackStateStore.loadSessions(context).single()
-        assertEquals("/new.mp3", restored.path)
-        assertEquals(500L, restored.positionMs)
+        NativePlaybackRecoveryDatabase(context).use { database ->
+            assertEquals(1_000L, database.loadSessions(null, false).single().positionMs)
+        }
+    }
+
+    @Test
+    fun `scoped writes replace only one definition and do not rewrite another sessions progress`() {
+        val first = session("A", 1_000L)
+        val second = session("B", 2_000L)
+        NativePlaybackStateStore.upsertSessions(context, listOf(first, second))
+        saveProgress(playingProgress("A", 16_000L), playingProgress("B", 17_000L))
+        val untouchedChunks = chunkRows("B")
+
+        NativePlaybackStateStore.upsertSessions(context, listOf(first.copy(positionMs = 21_000L)))
+        val restored = NativePlaybackStateStore.loadSessions(context, setOf("A")).single()
+        assertEquals(21_000L, restored.positionMs)
         assertFalse(restored.playing)
-        assertTrue(NativePlaybackStateStore.loadActiveSessionRevisions(context).isEmpty())
+        assertEquals(untouchedChunks, chunkRows("B"))
+        val other = NativePlaybackStateStore.loadSessions(context, activeOnly = true).single()
+        assertEquals("B", other.sessionId)
+        assertEquals(17_000L, other.positionMs)
     }
 
     @Test
-    fun `removing one definition preserves other progress and rejects its late write`() {
-        NativePlaybackStateStore.saveSessions(context, listOf(session("A", 1_000L), session("B", 2_000L)))
-        NativePlaybackStateStore.saveSessionProgress(context,
-            listOf(playingProgress("A", 16_000L), playingProgress("B", 17_000L)))
-        val oldRevision = NativePlaybackStateStore.sessionRevision("A")
+    fun `definition write failure rolls back progress chunks and retained references`() {
+        val initialUri = "content://example/original"
+        val first = session("A", 1_000L).copy(uri = initialUri)
+        NativePlaybackStateStore.upsertSessions(context, listOf(first))
+        saveProgress(playingProgress("A", 7_000L))
 
+        assertThrows(JSONException::class.java) {
+            NativePlaybackStateStore.upsertSessions(context, listOf(
+                first.copy(uri = "content://example/replaced"),
+                session("B", 2_000L).copy(volume = Float.POSITIVE_INFINITY)
+            ))
+        }
+
+        assertEquals(7_000L, NativePlaybackStateStore.loadSessions(context, setOf("A")).single().positionMs)
+        assertEquals(setOf(initialUri), NativePlaybackStateStore.retainedRecoveryContentUris(context))
+        assertTrue(NativePlaybackStateStore.loadSessions(context, setOf("B")).isEmpty())
+
+        NativePlaybackStateStore.upsertSessions(context, listOf(first.copy(positionMs = 11_000L)))
+        assertEquals(11_000L, NativePlaybackStateStore.loadSessions(context, setOf("A")).single().positionMs)
+    }
+
+    @Test
+    fun `removing one definition drops its URI refs and rejects its late progress`() {
+        val removedUri = "content://example/removed"
+        val retainedUri = "content://example/retained"
+        NativePlaybackStateStore.upsertSessions(context,
+            listOf(session("A", 1_000L).copy(uri = removedUri), session("B", 2_000L).copy(uri = retainedUri)))
+        saveProgress(playingProgress("A", 16_000L), playingProgress("B", 17_000L))
+        val oldRevision = NativePlaybackStateStore.sessionRevision("A")
         NativePlaybackStateStore.removeSession(context, "A")
         NativePlaybackStateStore.upsertSessionProgress(context, listOf(playingProgress("A", 31_000L)),
             mapOf("A" to oldRevision))
@@ -135,26 +173,14 @@ class NativePlaybackStateStoreTest {
         val restored = NativePlaybackStateStore.loadSessions(context).single()
         assertEquals("B", restored.sessionId)
         assertEquals(17_000L, restored.positionMs)
-        assertTrue(restored.playing)
-        assertFalse(progress.contains(progressKey))
+        assertEquals(setOf(retainedUri), NativePlaybackStateStore.retainedRecoveryContentUris(context))
     }
 
     @Test
-    fun `clear removes both stores so reusing a session id cannot restore its old position`() {
-        seedLegacyProgress(playingProgress("A", 90_000L))
-        NativePlaybackStateStore.clearSessions(context)
-
-        assertTrue(NativePlaybackStateStore.loadSessions(context).isEmpty())
-        assertFalse(definitions.contains("sessions"))
-        assertFalse(definitions.contains(progressKey))
-        assertFalse(progress.contains(progressKey))
-        NativePlaybackStateStore.saveSessions(context, listOf(session("A", 10L)))
-        assertEquals(10L, NativePlaybackStateStore.loadSessions(context).single().positionMs)
-    }
-
-    @Test
-    fun `clear keeps a newer cold selection and its exact position`() {
-        NativePlaybackStateStore.saveSessions(context, listOf(session("A", 1_000L)))
+    fun `clear removes old revisions and preserves a newer cold selection`() {
+        NativePlaybackStateStore.upsertSessions(context, listOf(session("A", 1_000L)))
+        saveProgress(playingProgress("A", 90_000L))
+        assertEquals(90_000L, NativePlaybackStateStore.loadSessions(context).single().positionMs)
         val clearRevision = NativePlaybackStateStore.invalidateAllSessions()
         NativePlaybackStateStore.saveColdSession(context, session("B", 22_000L))
 
@@ -163,24 +189,46 @@ class NativePlaybackStateStoreTest {
         val restored = NativePlaybackStateStore.loadSessions(context).single()
         assertEquals("B", restored.sessionId)
         assertEquals(22_000L, restored.positionMs)
-        assertFalse(progress.contains(progressKey))
+        NativePlaybackStateStore.saveColdSession(context, session("A", 10L))
+        assertEquals(10L, NativePlaybackStateStore.loadSessions(context, setOf("A")).single().positionMs)
     }
 
-    private fun seedLegacyProgress(value: StoredNativePlaybackProgress) {
-        NativePlaybackStateStore.saveSessions(context, listOf(session(value.sessionId, 1_000L)))
-        definitions.edit().remove(generationKey).putString(progressKey, encode(value)).commit()
-        progress.edit().clear().commit()
+    @Test
+    fun `scoped restore skips invalidated definitions while preserving temporary sessions`() {
+        NativePlaybackStateStore.upsertSessions(context, listOf(session("A", 1_000L)))
+        NativePlaybackStateStore.invalidateSession("A")
+        NativePlaybackStateStore.saveTemporarySession(session("T", 2_000L).copy(
+            isTemporary = true, playWhenReady = true))
+        assertTrue(NativePlaybackStateStore.loadSessions(context, setOf("A")).isEmpty())
+        assertEquals("T", NativePlaybackStateStore.loadSessions(context, activeOnly = true).single().sessionId)
+        assertEquals(setOf("T"), NativePlaybackStateStore.loadActiveSessionRevisions(context).keys)
+        assertTrue(chunkRows("T").isEmpty())
+
+        saveProgress(StoredNativePlaybackProgress("T", 8_000L, playing = false, playWhenReady = false))
+        assertTrue(NativePlaybackStateStore.loadActiveSessionRevisions(context).isEmpty())
+        assertEquals(8_000L, NativePlaybackStateStore.loadSessions(context, setOf("T")).single().positionMs)
     }
 
-    private fun loadOnBackground(): List<StoredNativePlaybackSession> {
-        val executor = Executors.newSingleThreadExecutor()
-        return try {
-            executor.submit<List<StoredNativePlaybackSession>> {
-                NativePlaybackStateStore.loadSessions(context)
-            }.get()
-        } finally {
-            executor.shutdown()
-        }
+    private fun seedLegacy(session: StoredNativePlaybackSession, value: StoredNativePlaybackProgress) {
+        definitions.edit().putLong(generationKey, 3L)
+            .putString("sessions", JSONArray().put(session.encodeDefinition()).toString())
+            .putString(progressKey, encode(value)).commit()
+    }
+
+    private fun saveProgress(vararg values: StoredNativePlaybackProgress) {
+        NativePlaybackStateStore.upsertSessionProgress(context, values.toList(),
+            values.associate { it.sessionId to NativePlaybackStateStore.sessionRevision(it.sessionId) })
+    }
+
+    private fun chunkRows(sessionId: String): List<String> = SQLiteDatabase.openDatabase(
+        context.getDatabasePath(NativePlaybackRecoveryDatabase.fileName).absolutePath,
+        null,
+        SQLiteDatabase.OPEN_READONLY
+    ).use { db ->
+        db.rawQuery(
+            "SELECT hex(payload) FROM definition_chunks WHERE session_id = ? ORDER BY chunk_index",
+            arrayOf(sessionId)
+        ).use { cursor -> buildList { while (cursor.moveToNext()) add(cursor.getString(0)) } }
     }
 
     private fun playingProgress(id: String, positionMs: Long) =

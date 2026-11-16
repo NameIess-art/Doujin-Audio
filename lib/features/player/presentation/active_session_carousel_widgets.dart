@@ -423,7 +423,7 @@ class _ActiveSessionIndicator extends StatelessWidget {
     final shape = BorderRadius.circular(2);
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
-        : const Duration(milliseconds: 150);
+        : const Duration(milliseconds: 180);
     return ValueListenableBuilder<int>(
       valueListenable: indexListenable,
       child: Row(
@@ -461,9 +461,10 @@ class _ActiveSessionIndicator extends StatelessWidget {
                     0,
                   ),
                   duration: duration,
-                  curve: Curves.easeInOut,
+                  curve: kAppSpringCurve,
                   child: AnimatedContainer(
                     duration: duration,
+                    curve: kAppSpringCurve,
                     width: highlightWidth,
                     height: dotHeight,
                     decoration: BoxDecoration(

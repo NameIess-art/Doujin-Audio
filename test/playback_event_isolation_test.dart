@@ -444,6 +444,7 @@ final class _IsolationPersistenceRepository extends TestPersistenceRepository {
     PersistedPlaybackSession session, {
     bool includeQueue = true,
     bool includeEffects = true,
+    Map<String, int>? queueEntryPositions,
   }) async {
     writtenSessionIds.add(session.id);
   }

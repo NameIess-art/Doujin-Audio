@@ -3,16 +3,22 @@ package com.doujin.audio
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.SharedPreferences
+import android.database.DatabaseErrorHandler
+import android.database.sqlite.SQLiteDatabase
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.AndroidJUnit4
+import com.doujin.audio.player.session.NativePlaybackRecoveryDatabase
 import com.doujin.audio.player.session.NativePlaybackStateStore
+import com.doujin.audio.player.session.decodeDefinition
+import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.UUID
 
-/** Uses the platform JSON reader and preferences; no playback service is started. */
+/** Exercises candidate lookup and legacy migration on Android's SQLite implementation. */
 @Suppress("DEPRECATION")
 @RunWith(AndroidJUnit4::class)
 class NativePlaybackTimerCandidatesTest {
@@ -23,16 +29,24 @@ class NativePlaybackTimerCandidatesTest {
     fun setUp() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         preferences = context.getSharedPreferences("timer_candidates_test", Context.MODE_PRIVATE)
+        val prefix = "timer_candidates_${UUID.randomUUID()}_"
         storeContext = object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
             override fun getSharedPreferences(name: String, mode: Int): SharedPreferences = preferences
+            override fun getDatabasePath(name: String) = context.getDatabasePath(prefix + name)
+            override fun openOrCreateDatabase(name: String, mode: Int, factory: SQLiteDatabase.CursorFactory?) =
+                context.openOrCreateDatabase(prefix + name, mode, factory)
+            override fun openOrCreateDatabase(
+                name: String, mode: Int, factory: SQLiteDatabase.CursorFactory?, errorHandler: DatabaseErrorHandler?
+            ) = context.openOrCreateDatabase(prefix + name, mode, factory, errorHandler)
         }
         preferences.edit().clear().commit()
-        NativePlaybackStateStore.clearSessions(storeContext)
     }
 
     @After
     fun tearDown() {
-        NativePlaybackStateStore.clearSessions(storeContext)
+        NativePlaybackStateStore.removeTemporarySession("temporary")
+        SQLiteDatabase.deleteDatabase(storeContext.getDatabasePath(NativePlaybackRecoveryDatabase.fileName))
         preferences.edit().clear().commit()
     }
 
@@ -64,12 +78,9 @@ class NativePlaybackTimerCandidatesTest {
 
     @Test
     fun testTemporaryPlayingSessionSurvivesCorruptPersistedDefinitions() {
-        preferences.edit().putString("sessions", """
-            [{"sessionId":"seed","uri":"file:///a","playing":false}]
-        """).commit()
-        val session = NativePlaybackStateStore.loadSessions(storeContext).single().copy(
-            sessionId = "temporary", isTemporary = true, playWhenReady = true
-        )
+        val session = requireNotNull(
+            JSONObject("""{"sessionId":"temporary","uri":"file:///a","playWhenReady":true}""").decodeDefinition()
+        ).copy(isTemporary = true)
         NativePlaybackStateStore.saveTemporarySession(session)
         preferences.edit().putString("sessions", "[").commit()
 
@@ -83,6 +94,7 @@ class NativePlaybackTimerCandidatesTest {
              {"sessionId":"unchanged","uri":"file:///b","playing":true}]
         """).commit()
         val invalidatingContext = object : ContextWrapper(storeContext) {
+            override fun getApplicationContext(): Context = this
             override fun getSharedPreferences(name: String, mode: Int): SharedPreferences =
                 object : SharedPreferences by preferences {
                     override fun getString(key: String?, default: String?): String? {

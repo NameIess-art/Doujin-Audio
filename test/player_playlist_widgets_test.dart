@@ -11823,6 +11823,16 @@ void main() {
       final removeIconButton = find.byKey(
         const ValueKey<String>('batch_remove_button'),
       );
+      final removeIconContext = tester.element(
+        find.descendant(
+          of: removeIconButton,
+          matching: find.byIcon(Icons.delete_outline_rounded),
+        ),
+      );
+      expect(
+        IconTheme.of(removeIconContext).color,
+        Theme.of(removeIconContext).colorScheme.error,
+      );
       final createQueueIconButton = find.byKey(
         const ValueKey<String>('batch_create_queue_button'),
       );

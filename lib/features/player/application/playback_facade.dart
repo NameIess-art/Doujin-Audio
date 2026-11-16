@@ -5,6 +5,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, mapEquals;
+import 'package:path/path.dart' as path;
 
 import '../../../core/errors/native_result.dart';
 import '../../../core/immutable_collections.dart';
@@ -13,6 +14,7 @@ import '../../../core/media/path_matcher.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/persistence/app_preferences.dart';
+import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../domain/audio_effects.dart';
 import '../domain/playback_mode.dart';
 import '../domain/playback_queue.dart';
@@ -118,6 +120,7 @@ final class PlaybackFacade {
   int _transportCommandSequence = 0;
   int _sessionSeed = 0;
   int _directPlayRevision = 0;
+  final Set<String> _removingMissingTemporarySessionIds = {};
   PlaybackSession? _directPlaybackSession;
   static const _resumeBatchKey = 'playlist_resume_batch_v1';
   Map<String, String> _resumeBatch = {};
@@ -1045,6 +1048,10 @@ final class PlaybackFacade {
       ).configurePersistence(enabled: enabled);
   Future<void> loadPersistedState() =>
       PlaybackSessionPersistenceCoordinator(this).loadPersistedState();
+  Future<void> removeMissingTemporarySessions() =>
+      PlaybackSessionPersistenceCoordinator(
+        this,
+      ).removeMissingTemporarySessions();
   Future<void> resetPersistedState() =>
       PlaybackSessionPersistenceCoordinator(this).resetPersistedState();
   Future<void> savePersistedState() =>

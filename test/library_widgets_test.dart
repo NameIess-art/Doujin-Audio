@@ -3220,6 +3220,15 @@ void main() {
     );
     expect(batchAddButton, findsOneWidget);
     expect(tester.widget<IconButton>(batchAddButton).iconSize, 20);
+    final batchRemoveIcon = find.descendant(
+      of: find.byKey(const ValueKey('library_search_batch_remove_button')),
+      matching: find.byIcon(Icons.delete_outline_rounded),
+    );
+    final batchRemoveContext = tester.element(batchRemoveIcon);
+    expect(
+      IconTheme.of(batchRemoveContext).color,
+      Theme.of(batchRemoveContext).colorScheme.error,
+    );
     final batchPinButton = find.byKey(
       const ValueKey<String>('library_search_batch_pin_button'),
     );

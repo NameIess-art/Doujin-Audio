@@ -6,7 +6,7 @@
 
 [简体中文](README.md) | English | [日本語](README.ja.md)
 
-An Android / Windows player for ASMR, doujin audio, and local media libraries. Play local audio and video, stream and download from ASMR.ONE, and manage multiple playback sessions with independent positions, volume, subtitles, and audio effects.
+An Android / Windows player for ASMR, doujin audio, and local media libraries. Play local audio and video, stream and download from online work catalogs, and manage multiple playback sessions with independent positions, volume, subtitles, and audio effects.
 
 [Download](https://github.com/NameIess-art/Doujin-Audio/releases/latest) · [Changelog](release_notes.md) · [GPL-3.0](LICENSE) · [Privacy Notice](PRIVACY.md) · [Security Notice](SECURITY.md)
 
@@ -32,8 +32,8 @@ Official releases are distributed only through GitHub Releases. App-store AAB pa
 
 1. Install the package for your platform. If Android blocks installation, allow the browser or file manager opening the APK to install unknown applications. On Windows, follow the wizard to install for the current user.
 2. Add a media folder, subfolder, or individual file in the local audio library. Android uses the SAF system picker for authorization; Windows uses local folders.
-3. Select a work to view its details, or select an audio/video entry to play it. You can also browse online content in ASMR.ONE; account features require sign-in.
-4. Android cards support swipe actions; Windows uses right-click menus. In the local/online library or playlists, right-click and choose Select multiple to select the current item and continue selecting others. Closing the Windows main window keeps the application running in the tray. Choose Exit from the tray to stop playback and quit.
+3. Select a work to view its details, or select an audio/video entry to play it. You can also browse ASMR.ONE and Japanese ASMR resources in the online library; ASMR.ONE account sync features require sign-in.
+4. On Android, long-press selectable items in the local library or playlists to enter multi-select, or swipe left on playback queue entries to open edit actions. In the online library, open a work to view its actions. On Windows, use right-click menus; in the local/online library or playlists, right-click and choose Select multiple to select the current item and continue selecting others. Closing the Windows main window keeps the application running in the tray. Choose Exit from the tray to stop playback and quit.
 
 ## Screenshots
 
@@ -65,8 +65,10 @@ Official releases are distributed only through GitHub Releases. App-store AAB pa
 - Automatically match same-name subtitles or associate them manually. Supports `.srt`, `.ass`, `.ssa`, `.vtt`, and `.lrc`. Playback details, the mini-player, and the system overlay display subtitles together, with timing adjustments, full-timeline browsing, and tap-to-seek.
 - Drag subtitle overlays and customize their font, size, color, background opacity, and outline. Android requires overlay permission; Windows uses a separate always-on-top window.
 - Importing local subtitles renames and moves the selected file beside the audio. Existing subtitles require overwrite confirmation; cancellation preserves the original files. Edit text and start/end times line by line, then save to the associated file in its original format, including through Android SAF.
-- Manually select a Japanese `.txt` / `.md` script to match against audio and generate a timed `.lrc`. A `.txt` with valid timestamps can be imported directly. Japanese subtitles can be translated into Chinese or English and saved as an SRT containing both original and translated text.
-- Recognition and translation results are saved beside local audio; results for online audio are stored in the application data directory. The first use downloads and verifies local models. Tasks support background processing, progress viewing, and resuming after interruption. **Script recognition is not currently supported on 32-bit Android, but online subtitle translation remains available.**
+- Manually select a Japanese `.txt` / `.md` script to match against audio and generate a timed `.lrc`. A `.txt` with valid timestamps can be imported directly. Japanese subtitles are translated into Chinese or English via the Google public online interface without downloading or using a local translation model, preserving timestamps and saving as a bilingual "original + translation" SRT.
+- Each translation is saved separately as `<full-audio-filename>.translated.<target-language>.srt` (`zh-CN` for Chinese, `en` for English), appending `.2`, `.3`, etc. on name collisions while leaving the original subtitle and other translations untouched. "Select subtitle" in the subtitle menu switches between the original subtitle and each translation and remembers the choice per audio track; a newly succeeded translation is activated automatically.
+- Subtitle translation explicitly sets Japanese as the source language and preserves multi-line originals; each cue is translated as a complete block within request length limits. Newly generated SRT translations carry original-text boundary markers hidden from in-app display so re-translation only processes the original text rather than re-translating previous translations. Editing a generated bilingual subtitle edits the original and translated lines separately while preserving those boundaries.
+- Recognition and translation results are saved beside local audio; results for online audio are stored in the application data directory. The first script recognition use downloads and verifies a local CTC model, and tasks support background processing, progress viewing, and resuming after interruption. **Script recognition is not currently supported on 32-bit Android, but online subtitle translation remains available.** Subtitle translation sends source text to Google and requires network access, so availability depends on network connectivity, rate limits, and service changes; failures or cancellations do not overwrite existing subtitles.
 
 ### Local media library
 
@@ -75,46 +77,50 @@ Official releases are distributed only through GitHub Releases. App-store AAB pa
 - **Covers:** Extract covers from folder images, embedded audio artwork, or video frames. Prefer a file's own cover or select one manually. Duplicate embedded covers are deduplicated; WAV APIC covers are supported.
 - **Work attachments:** Read `.txt`, `.md`, and `.pdf` scripts and documents on the details page. Text supports encoding detection; PDFs offer paged previews.
 - **Page translation:** Translate titles, circles, tags, directory structures, and file names from the top-right corner of local and ASMR.ONE work detail pages; translate loaded TXT and Markdown text from the top-right corner of the text viewer while preserving formatting, links, and code blocks (PDF translation is not supported). The target language follows the app language; tap again to revert to the original text, and in-progress requests can be cancelled. Translations only change the display without altering work metadata, file paths, or source files. Uses Google public online translation without requiring an API key; text to be translated is sent to Google, and availability depends on network connectivity, rate limits, and service adjustments.
-- **DLsite metadata:** Look up work information by RJ code, filename, or title. Match works in batches, review them individually, edit results, and confirm before saving. Local works with an RJ code can open the ASMR.ONE download page directly to add missing files to the current work folder.
+- **DLsite metadata:** Look up work information by RJ code, filename, or title across DLsite, ASMR.ONE, and Japanese ASMR in order. If an earlier source fails or still leaves fields missing, later sources fill only the missing fields and queries stop once metadata is complete. Match works in batches, review them individually, edit results, and confirm before saving. Local works with an RJ code can open the online library download page directly to add missing files to the current work folder.
 - **Removal and restoration:** Undo a library removal. Removed folders are skipped in future scans and can be restored from Removed folders.
 
 Work information is stored in `doujin-audio.json` inside the folder, including the chosen cover, timeline markers, and segment loops. Scan imports and RJ-code completion do not rewrite existing JSON. Automatic duration completion updates only missing durations, preserving other fields and entries; unreadable or incompatible files remain unchanged. Folder-work markers use relative track paths for restoration after moves, and repeated imports retain newer markers.
 
-### ASMR.ONE and downloads
+### Online library and downloads
 
-- Browse newly added works, recommendations, tags, and voice actors. Sign in to synchronize favorites and playback history. Stream audio, add it to queues, and automatically cache it after playback.
+- Browse and search ASMR.ONE and Japanese ASMR on a single page without choosing a source; works with the same code are merged with ASMR.ONE preferred. Added, latest, and recommended lists aggregate both sites, while sales, rating, and review rankings use ASMR.ONE metrics. Favorites and history are managed locally together, with ASMR.ONE content synchronized after sign-in.
+- Japanese ASMR search and catalogs are fetched through Eara (`earaasmr.com`), while playback and downloads connect directly to the media site. Third-party endpoints may change or become temporarily unavailable; if one site fails, a notice is shown and results from the other are kept. Because this endpoint only provides release order, Japanese ASMR participates in "Added time" sorting using the added date of loaded batches and does not guarantee cross-page site-wide added order.
+- Popular voice actors and tags on the search page use Eara's popular suggestions endpoint, showing cached or bundled snapshots immediately and refreshing in the background; each section shows three rows by default and expands to up to 30 items.
+- Japanese ASMR streams by chapter with progress and track switching. Downloads resolve the source file page and actual URL with limited retries on network failure, and fall back to HLS saved as M4A when the source file remains unavailable. "Size unknown" is shown when the endpoint omits file size, and the actual size is recorded upon completion. Paused HLS chapters re-download the incomplete chapter rather than reusing partial remuxed files.
 - Download individual tracks, subfolders, or complete works while preserving the original folder structure. Covers are saved separately to `Cover/<RJ code>.<extension>`. Android uses SAF download folders; Windows uses local folders.
 - Pause individual tasks or all downloads, resume interrupted transfers, and retry failures. Download 1–5 works concurrently and set a retry limit of 3–10 attempts (default 5). Tasks are suspended when entering the background or before exit, then continue on resumption.
-- Completed work downloads automatically refresh already-added libraries. **Download folders are not automatically added to the library**; works outside it require manual import. Existing JSON remains unchanged; new JSON is generated only after a complete, successful download with valid metadata.
+- Resuming downloads only reuses temporary files verified to belong to the same remote version; unverifiable legacy partial files are re-downloaded. Auto-caching during playback is enabled only after a complete download passes length verification, and legacy auto-caches are regenerated; completed user downloads are not rebuilt in batches.
+- When saving work metadata is enabled, download tasks reuse the DLsite → ASMR.ONE → Japanese ASMR lookup and gap-filling flow by RJ code, following the work-metadata language setting; if all lookups fail or there is no RJ code, online catalog data is preserved without interrupting media downloads. New `doujin-audio.json` files are created before writing media files, and existing JSON files remain untouched.
+- Completed work downloads automatically refresh already-added libraries. **Download folders are not automatically added to the library**; works outside it require manual import.
 
 ### Timers and background playback
 
-- Stop after a countdown or when the current track ends, with fade-out before stopping and automatic resumption at a preset time with fade-in.
+- After setting a countdown, you can enable "Pause sessions after playback ends" so each playback session pauses when its current track finishes once the timer expires. Supports fade-out before pausing, automatic resumption at a preset time, and fade-in on resume.
 - Android uses a native foreground media service for background and screen-off playback. Its notification shows only the application name and service status. Playback failures are retried, and pending timer tasks are restored after reboot.
 - Android Doze and manufacturer background restrictions can still affect long listening sessions. Review battery optimization and background permissions under Permissions and background. WakeLocks cannot bypass system restrictions.
 - Windows restores pending timer tasks through the current user's Task Scheduler. Waking from sleep depends on hardware and power policy. **Waking from shutdown and playback while signed out are not supported.**
 
 ### My: listening statistics, history, and interests
 
-In landscape, the left sidebar provides separate My and Settings entries after Playlists, with Settings below My. The Android portrait bottom menu retains a combined My / Settings entry, showing Settings on first use. Its header button switches pages, and the navigation label and icon follow the current page. The app remembers your choice; selecting My / Settings as the startup page restores that page.
+Both the bottom menu and the landscape sidebar provide separate My and Settings entries after Playlists. Settings → General → Page display allows hiding My. Either visible My or Settings page can be set as the startup page. Bottom menu buttons share the available width equally.
 
-- **Listening time**: View actual listening time across local and ASMR.ONE works by day, week, month, quarter, or year. Simultaneous sessions count once; pauses and buffering do not count, and playback speed does not multiply elapsed time. Older history is not used to invent past listening totals.
+- **Listening time**: View actual listening time across local and online works by day, week, month, quarter, or year. Simultaneous sessions count once; pauses and buffering do not count, and playback speed does not multiply elapsed time. Older history is not used to invent past listening totals.
 - **Bar chart and heatmap**: Switch styles on the right of the date row; the last choice is remembered. The heatmap fills the available area with seven rows of larger cells, with the latest period at the bottom right. Color intensity follows the theme and increases with listening time.
 - **Dates and exact durations**: Click the date to enter a selection and scroll horizontally through past periods. Select a bar or cell to see its date range and exact duration. Windows also supports hover details, mouse dragging, wheel scrolling, and trackpad scrolling.
 - **Listening history**: Local and online works appear in a single horizontal row, ordered by most recent playback. Covers show two lines of title text; local titles follow the local-name display setting. Click to open details, preferring an available local copy; unavailable sources show a message.
-- **Interests (Tags, Voice Actors, Circles)**: Switch between Tags, Voice Actors, and Circles tabs to view the 20 most listened entries by actual listening contribution, filling vacancies with manual choices. Items are highlighted; tap one to copy its name. The interest editor automatically marks frequently listened items and lets you select any number of additional choices for recommendations, saved on confirmation. Manual choices and listening data are stored separately; selecting or deselecting never changes the listening ranking.
-- **Uninterested exclusions**: Search the catalog to select or deselect exclusions for tags, voice actors, and circles, hiding matching works across online lists. Existing favorites, history, downloads, and active playback are retained, including history in My. The catalog combines online and local metadata and caches them for offline search and batch saving.
+- **Interests (Tags, Voice Actors, Circles)**: Switch between Tags, Voice Actors, and Circles tabs on the My page to view the top 20 entries and tap any item to copy its name. When tags have fewer than 20 entries, confirmed manual tags are appended to the auto-selected list and retain their manual selection state even if pushed out by other tags. Manual selections have no limit and feed into recommendation preferences once confirmed.
+- **Uninterested exclusions**: Select or deselect tags, voice actors, and circles to exclude on each management page, hiding matching works across online library lists. Existing favorites, history, downloads, and active playback are retained, including history in My. Complete metadata supports offline search and batch saving.
 
 ### Personalization and data maintenance
 
 - **Network services**: Test DLsite, ASMR mirrors, and Japanese ASMR; choose a mirror. System/VPN, HTTP, SOCKS5 (with optional authentication), and custom DNS apply to in-app requests, including streaming, downloads, updates, and translation. New connections use changed settings while current tasks continue. Proxy passwords remain encrypted on the device and are excluded from preference backups.
-- Choose light, dark, or system theme, pure black theme, frosted menu bars, a theme color, separate ASMR.ONE colors, the startup page, transition speed, reduced motion, and cover decoding quality. The interface supports Simplified Chinese, English, and Japanese.
+- Choose light, dark, or system theme, pure black theme, frosted menu bars, a theme color, the startup page, transition speed, reduced motion, and cover decoding quality. The interface supports Simplified Chinese, English, and Japanese.
 - On Android, configure behavior after headphone disconnection, temporary audio-focus loss, or calls, and choose exclusive audio focus or mixing with other applications.
 - `.dabackup` stores the library, settings, playback history and sessions, timeline markers, and ASMR.ONE credentials. Restores are validated before replacing data at the next cold start, with rollback on failure. **Restores are supported only on the same platform.**
 - Persistent cover caching supports offline access and survives restarts, with no automatic eviction by age or capacity. Lists, filters, pagination, and browsing positions are retained only during the current run; reopening details loads the file tree again.
 - Android provides storage analysis and selective cache cleanup. Windows hides mobile settings such as Permissions and background, Cache, and Storage space; internal caches still serve playback and downloads. Cleanup preserves source files, manually chosen covers, favorites, history, and playback state.
 - Export diagnostic reports with sensitive account information removed to help report problems.
-- Convert video to MP3, AAC, OGG, WAV, or FLAC, with bitrate selection, progress, and cancellation. Add the result to the library when finished.
 
 ## Supported formats
 
@@ -143,7 +149,7 @@ Press `F1` to view keyboard help and global shortcut registration status:
 | Application foreground | `Ctrl+Space` | Play / pause |
 | Application foreground | `Ctrl+←` / `→` | Previous / next track |
 | Application foreground | `Alt+←` / `→` | Seek backward / forward 5 seconds |
-| Application foreground | `Alt+↑` / `↓` | Increase / decrease the controlled session's volume by 5% |
+| Application foreground | `↑` / `↓` | Increase / decrease the controlled session's volume by 5% |
 | Main interface | `Ctrl+1` through `Ctrl+4` | Switch navigation pages in displayed order |
 | Main interface | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous page |
 | Controls and menus | `Tab` / `Shift+Tab`, `Enter` | Move focus and activate controls |
@@ -156,7 +162,7 @@ Text fields retain their editing keys. Space first activates a focused button an
 
 Check GitHub Latest Release automatically at startup or manually from settings. The application selects an installer for the platform and CPU architecture, displays download progress, and launches the Android system installer or Windows installation wizard **only after SHA-256 verification passes**. Android chooses universal if the architecture is unknown; Windows chooses the x64 installer.
 
-Library indexes, settings, and playback state are stored locally on the device. Network access is used for ASMR.ONE, DLsite metadata, GitHub updates, and the initial download of subtitle-processing models. Online subtitles are cached locally before loading. Permissions such as file access and overlays are requested when their features are used. See the [Privacy Notice](PRIVACY.md) for details.
+Library indexes, settings, and playback state are stored locally on the device. Network access is used for online work catalogs (ASMR.ONE and Eara's Japanese ASMR catalog with corresponding media sites), DLsite metadata, GitHub updates, the initial download of script-recognition models, and user-initiated page and subtitle translation. Online subtitles are cached locally before loading. Permissions such as file access and overlays are requested when their features are used. See the [Privacy Notice](PRIVACY.md) for details.
 
 ### Android permissions
 
@@ -178,7 +184,7 @@ Flutter provides shared UI and business logic. Android playback uses Media3 / Ex
 | --- | --- |
 | `lib/app/` | Startup, dependency assembly, routing, global state, themes, and language |
 | `lib/core/` | Persistence, platform gateways, shared media models, and reusable components |
-| `lib/features/` | Library, Player, ASMR, Settings, Data Support, and Video Converter, separated into `domain` / `application` / `presentation` |
+| `lib/features/` | Library, Player, ASMR, Settings, and Data Support, separated into `domain` / `application` / `presentation` |
 | `android/` | Playback service, channels, scanning, storage, metadata, subtitles, and updates |
 | `windows/runner/desktop/` | Windows, tray, system media controls, subtitle overlays, and scheduled tasks |
 | `test/`, `integration_test/` | Unit, widget, and platform integration tests |

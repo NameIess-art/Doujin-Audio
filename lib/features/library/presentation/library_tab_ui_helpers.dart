@@ -302,6 +302,9 @@ class LibraryBatchSelectionHeader extends StatelessWidget {
             key: ValueKey<String>('${keyPrefix}_batch_remove_button'),
             onPressed: onRemove,
             icon: const Icon(Icons.delete_outline_rounded),
+            style: IconButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
             tooltip: i18n.tr('remove'),
             iconSize: 20,
             padding: EdgeInsets.zero,

@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'support/test_playback_commands.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'support/test_persistence_repository.dart';
+import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/application/playback_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_session_launcher.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
@@ -14,8 +17,8 @@ import 'package:doujin_audio/features/player/domain/playback_persistence_reposit
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  MusicTrack track(String name) => MusicTrack(
-    path: '/tracks/$name.mp3',
+  MusicTrack track(String name, {String? sourcePath}) => MusicTrack(
+    path: sourcePath ?? '/tracks/$name.mp3',
     displayName: name,
     groupKey: '/tracks',
     groupTitle: 'Tracks',
@@ -166,6 +169,17 @@ void main() {
 
   test('restart restores the last direct playback entry paused', () async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final directory = await Directory.systemTemp.createTemp('direct_restore');
+    addTearDown(() => directory.delete(recursive: true));
+    final tracks = [
+      for (final name in ['a', 'b'])
+        track(
+          name,
+          sourcePath: (await File.fromUri(
+            directory.uri.resolve('$name.mp3'),
+          ).create()).path,
+        ),
+    ];
     final repository = _RecordingRepository();
     final original = PlaybackFacade.create(databaseRepository: repository);
     addTearDown(original.dispose);
@@ -187,7 +201,7 @@ void main() {
       resolveAdvance: (_, {required forward}) => null,
       hasAdjacent: (_, {required forward}) => false,
     );
-    await original.playDirect([track('a'), track('b')], startIndex: 1);
+    await original.playDirect(tracks, startIndex: 1);
     await original.savePersistedState();
     final savedId = repository.saved.single.id;
 
@@ -210,16 +224,16 @@ void main() {
 
     final restored = restarted.activeSessions.single;
     expect(restored.id, savedId);
-    expect(restored.currentTrackPath, track('b').path);
+    expect(restored.currentTrackPath, tracks.last.path);
     expect(restored.isTemporary, isTrue);
     expect(restored.state.playing, isFalse);
     expect(restarted.catalogState.nowPlayingSessions.map((s) => s.id), [
       savedId,
     ]);
-    expect(restored.customQueueTracks?.map((item) => item.path), [
-      track('a').path,
-      track('b').path,
-    ]);
+    expect(
+      restored.customQueueTracks?.map((item) => item.path),
+      tracks.map((track) => track.path),
+    );
   });
 
   test(
@@ -259,6 +273,45 @@ void main() {
       expect(restarted.catalogState.nowPlayingSessions, isEmpty);
     },
   );
+
+  test('direct playback does not reuse a temporary session being removed', () async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final directory = await Directory.systemTemp.createTemp('direct_cleanup');
+    addTearDown(() => directory.delete(recursive: true));
+    final missing = track(
+      'missing',
+      sourcePath: File.fromUri(directory.uri.resolve('missing.mp3')).path,
+    );
+    final repository = _RecordingRepository();
+    final native = _DeferredNativeRemoval();
+    final facade = PlaybackFacade.create(
+      databaseRepository: repository,
+      nativeRepository: native,
+    );
+    addTearDown(facade.dispose);
+    final stale = facade.createTrackSession(
+      missing,
+      customQueueTracks: [missing],
+      isTemporary: true,
+    );
+    await facade.savePersistedState();
+
+    final cleanup = facade.removeMissingTemporarySessions();
+    try {
+      expect(await native.started.future, stale.id);
+      final replacement = track('replacement');
+      expect(await facade.playDirect([replacement]), isTrue);
+      final current = facade.sessions.values.singleWhere(
+        (session) => session.currentTrackPath == replacement.path,
+      );
+      expect(current.id, isNot(stale.id));
+    } finally {
+      native.finish.complete();
+      await cleanup;
+    }
+    expect(repository.saved.single.id, facade.sessions.values.single.id);
+    expect(repository.deletedSessionIds, [stale.id]);
+  });
 
   test('direct playback keeps an added playlist item independent', () async {
     final facade = PlaybackFacade.create(
@@ -440,6 +493,18 @@ void main() {
   });
 }
 
+class _DeferredNativeRemoval extends NativePlaybackRepository {
+  final started = Completer<String>();
+  final finish = Completer<void>();
+
+  @override
+  Future<NativeResult<void>> removeSession(String sessionId) async {
+    started.complete(sessionId);
+    await finish.future;
+    return const NativeSuccess<void>();
+  }
+}
+
 class _RecordingRepository extends TestPersistenceRepository {
   List<PersistedPlaybackSession> saved = [];
   final sessionUpsertIds = <String>[];
@@ -447,6 +512,9 @@ class _RecordingRepository extends TestPersistenceRepository {
 
   @override
   Future<List<PersistedPlaybackSession>> loadAllSessions() async => saved;
+
+  @override
+  Future<void> updateSessionOrder(List<String> sessionIds) async {}
 
   @override
   Future<void> upsertSession(

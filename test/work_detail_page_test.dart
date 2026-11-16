@@ -2701,11 +2701,12 @@ void main() {
 
     for (final fromLibrary in [false, true]) {
       _detailTestWidgets(
-        '${fromLibrary ? 'library' : 'folder'} audio and video menus add one item and remove with undo',
+        '${fromLibrary ? 'library' : 'folder'} entry menus use the source removal label and support undo',
         (tester) async {
           SharedPreferences.setMockInitialValues(const <String, Object>{});
+          const folderPath = '/library/menu-work';
           final covers = _ControlledWorkDetailCoverService()
-            ..images.complete([])
+            ..images.complete(['$folderPath/Artwork/cover.jpg'])
             ..cover.complete(null);
           final fixture = AppRuntimeWidgetTestFixture(
             coverArtworkCacheService: covers,
@@ -2737,7 +2738,6 @@ void main() {
           );
           await tester.binding.setSurfaceSize(const Size(1000, 1200));
           addTearDown(() => tester.binding.setSurfaceSize(null));
-          const folderPath = '/library/menu-work';
           const target = AudioDetailTarget(
             targetType: AudioDetailTargetType.libraryRootFolder,
             targetPath: folderPath,
@@ -2772,7 +2772,9 @@ void main() {
           );
           for (
             var i = 0;
-            i < 40 && find.text('Audio entry').evaluate().isEmpty;
+            i < 40 &&
+                (find.text('Audio entry').evaluate().isEmpty ||
+                    find.text('Artwork').evaluate().isEmpty);
             i++
           ) {
             await tester.pump(const Duration(milliseconds: 50));
@@ -2782,7 +2784,7 @@ void main() {
           }
           expect(find.text('Audio entry'), findsOneWidget);
           expect(find.byIcon(Icons.videocam_outlined), findsOneWidget);
-          expect(find.byIcon(Icons.more_vert_rounded), findsNWidgets(2));
+          expect(find.byIcon(Icons.more_vert_rounded), findsNWidgets(3));
           final more = find.byKey(
             ValueKey('work_entry_more_${tracks.first.path}'),
           );
@@ -2790,6 +2792,13 @@ void main() {
           await _settleDetail(tester);
           expect(find.text(fixture.languageProvider.tr('play')), findsOneWidget);
           expect(find.text(removalLabel), findsOneWidget);
+          final removalIcon = tester.element(
+            find.byIcon(Icons.remove_circle_outline_rounded),
+          );
+          expect(
+            IconTheme.of(removalIcon).color,
+            Theme.of(removalIcon).colorScheme.error,
+          );
           expect(find.text(absentLabel), findsNothing);
           expect(
             find.text(fixture.languageProvider.tr('rename')),
@@ -2869,6 +2878,15 @@ void main() {
           expect(temporary.customQueueTracks?.map((track) => track.path), [
             tracks.last.path,
           ]);
+
+          final folderMore = find.byKey(
+            const ValueKey('work_entry_more_Artwork'),
+          );
+          await tester.ensureVisible(folderMore);
+          await tester.tap(folderMore);
+          await _settleDetail(tester);
+          expect(find.text(removalLabel), findsOneWidget);
+          expect(find.text(absentLabel), findsNothing);
         },
         variant: const TargetPlatformVariant({
           TargetPlatform.android,
@@ -2876,6 +2894,133 @@ void main() {
         }),
       );
     }
+
+    _detailTestWidgets(
+      'local folder menu removes indexed and attachment-only folders with undo',
+      (tester) async {
+        const workPath = '/library/folder-menu';
+        const indexedFolder = '$workPath/Disc 1';
+        const attachmentFolder = '$workPath/Artwork';
+        const trackPath = '$indexedFolder/song.mp3';
+        const otherTrackPath = '$workPath/other.mp3';
+        const target = AudioDetailTarget(
+          targetType: AudioDetailTargetType.libraryRootFolder,
+          targetPath: workPath,
+        );
+        final covers = _ControlledWorkDetailCoverService()
+          ..images.complete(['$attachmentFolder/cover.jpg'])
+          ..cover.complete(null);
+        final fixture = AppRuntimeWidgetTestFixture(
+          coverArtworkCacheService: covers,
+        );
+        _detailFixtures.add(fixture);
+        addTearDown(fixture.dispose);
+        fixture.playback.detachCommandPort();
+        fixture.playback.attachPlaybackCommands(
+          prepareSession:
+              (
+                session, {
+                required nextPath,
+                autoPlay = true,
+                forceStartAtZero = false,
+                showLoading = true,
+                targetQueueIndex,
+              }) async {
+                session.currentTrackPath = nextPath;
+                return true;
+              },
+          pauseSession: (_) async {},
+          startSession: (_, {required shouldStartTriggerCountdown}) async =>
+              true,
+          resolveAdvance: (_, {required forward}) => null,
+          hasAdjacent: (_, {required forward}) => false,
+        );
+        fixture.library.addWatchedFolder(workPath, notify: false);
+        fixture.library.addTracks([
+          for (final (file, title) in [
+            (trackPath, 'Song'),
+            (otherTrackPath, 'Other song'),
+          ])
+            MusicTrack(
+              path: file,
+              displayName: title,
+              groupKey: workPath,
+              groupTitle: 'Folder menu work',
+              groupSubtitle: '',
+              isSingle: false,
+            ),
+        ], persist: false);
+        await tester.binding.setSurfaceSize(const Size(1000, 1200));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(
+          fixture.build(const WorkDetailPage.forLocal(target: target)),
+        );
+        await _settleDetail(tester);
+
+        final remove = find.text(fixture.languageProvider.tr('remove'));
+        Future<void> removeFolder(String name) async {
+          if (defaultTargetPlatform == TargetPlatform.windows) {
+            await tester.tap(
+              find.text(name),
+              buttons: kSecondaryMouseButton,
+              kind: PointerDeviceKind.mouse,
+            );
+          } else {
+            await tester.tap(find.byKey(ValueKey('work_entry_more_$name')));
+          }
+          await _settleDetail(tester);
+          final removalIcon = tester.element(
+            find.byIcon(Icons.remove_circle_outline_rounded),
+          );
+          expect(
+            IconTheme.of(removalIcon).color,
+            Theme.of(removalIcon).colorScheme.error,
+          );
+          await tester.tap(remove);
+          await _settleDetail(tester);
+          expect(find.text(name), findsNothing);
+        }
+
+        expect(find.text('Disc 1'), findsOneWidget);
+        expect(find.text('Artwork'), findsOneWidget);
+        await removeFolder('Disc 1');
+        expect(fixture.library.trackByPath(trackPath), isNotNull);
+        await tester.tap(find.text('Other song'));
+        await tester.pump();
+        expect(
+          fixture.playback.sessions.values.single.customQueueTracks
+              ?.map((track) => track.path),
+          [otherTrackPath],
+        );
+        expect(fixture.undoableRemovalService.state.hasPending, isTrue);
+        await fixture.undoableRemovalService.undoPending();
+        await _settleDetail(tester);
+        expect(find.text('Disc 1'), findsOneWidget);
+
+        await removeFolder('Disc 1');
+        await removeFolder('Artwork');
+        final failures = await tester.runAsync(
+          fixture.undoableRemovalService.commitPending,
+        );
+        await _settleDetail(tester);
+        expect(failures, 0);
+        expect(fixture.library.trackByPath(trackPath), isNull);
+        expect(
+          fixture.library.isLibraryPathExcluded(workPath, indexedFolder),
+          isTrue,
+        );
+        expect(
+          fixture.library.isLibraryPathExcluded(workPath, attachmentFolder),
+          isTrue,
+        );
+        expect(find.text('Disc 1'), findsNothing);
+        expect(find.text('Artwork'), findsNothing);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
 
     _detailTestWidgets(
       'renders local work detail header, pinned RJ row and action buttons',

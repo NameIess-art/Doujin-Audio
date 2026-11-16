@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Handler
 import android.util.Log
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 internal interface NativePlaybackStatePersistenceEnvironment {
@@ -15,6 +16,7 @@ internal interface NativePlaybackStatePersistenceEnvironment {
     fun removeSession(sessionId: String, revision: Long)
     fun clearSessions(revision: Long)
     fun shutdown()
+    fun awaitTermination(timeoutMs: Long): Boolean = true
 }
 
 internal fun StoredNativePlaybackSession.toStoredProgress() =
@@ -86,6 +88,9 @@ private class AndroidNativePlaybackStatePersistenceEnvironment(
     override fun shutdown() {
         executor.shutdown()
     }
+
+    override fun awaitTermination(timeoutMs: Long): Boolean =
+        executor.awaitTermination(timeoutMs, TimeUnit.MILLISECONDS)
 }
 
 internal class NativePlaybackStatePersistenceCoordinator(
@@ -231,4 +236,7 @@ internal class NativePlaybackStatePersistenceCoordinator(
         persistNow()
         environment.shutdown()
     }
+
+    fun awaitTermination(timeoutMs: Long = 10_000L): Boolean =
+        environment.awaitTermination(timeoutMs)
 }

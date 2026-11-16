@@ -43,6 +43,14 @@ import org.robolectric.util.ReflectionHelpers
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
 class NativePlaybackCommandSnapshotTest {
+    private fun shutdownPersistence(service: NativePlaybackService) {
+        val persistence = ReflectionHelpers.callInstanceMethod<NativePlaybackStatePersistenceCoordinator>(
+            service, "getStatePersistence"
+        )
+        persistence.shutdown()
+        assertTrue(persistence.awaitTermination())
+    }
+
     @Test
     fun `denied media session play schedules foreground teardown without a player state change`() {
         val service = Robolectric.buildService(NativePlaybackService::class.java).get()
@@ -68,7 +76,7 @@ class NativePlaybackCommandSnapshotTest {
             assertFalse(foreground.isStarted)
         } finally {
             session.release()
-            ReflectionHelpers.callInstanceMethod<NativePlaybackStatePersistenceCoordinator>(service, "getStatePersistence").shutdown()
+            shutdownPersistence(service)
         }
     }
 
@@ -124,7 +132,7 @@ class NativePlaybackCommandSnapshotTest {
             assertNull(sessions.get("video"))
         } finally {
             session.release()
-            ReflectionHelpers.callInstanceMethod<NativePlaybackStatePersistenceCoordinator>(service, "getStatePersistence").shutdown()
+            shutdownPersistence(service)
         }
     }
 
@@ -157,7 +165,7 @@ class NativePlaybackCommandSnapshotTest {
             assertNull(boundPlayer)
         } finally {
             session.release()
-            ReflectionHelpers.callInstanceMethod<NativePlaybackStatePersistenceCoordinator>(service, "getStatePersistence").shutdown()
+            shutdownPersistence(service)
         }
     }
 
@@ -173,7 +181,7 @@ class NativePlaybackCommandSnapshotTest {
             assertNull(session.playerOrNull())
         } finally {
             session.release()
-            ReflectionHelpers.callInstanceMethod<NativePlaybackStatePersistenceCoordinator>(service, "getStatePersistence").shutdown()
+            shutdownPersistence(service)
         }
     }
 
@@ -234,7 +242,7 @@ class NativePlaybackCommandSnapshotTest {
             assertNull(sessions.get("video"))
         } finally {
             session.release()
-            ReflectionHelpers.callInstanceMethod<NativePlaybackStatePersistenceCoordinator>(service, "getStatePersistence").shutdown()
+            shutdownPersistence(service)
         }
     }
 
@@ -284,7 +292,7 @@ class NativePlaybackCommandSnapshotTest {
             assertEquals(1, player.mediaItemCount)
         } finally {
             session.release()
-            ReflectionHelpers.callInstanceMethod<NativePlaybackStatePersistenceCoordinator>(service, "getStatePersistence").shutdown()
+            shutdownPersistence(service)
         }
     }
 
@@ -358,9 +366,7 @@ class NativePlaybackCommandSnapshotTest {
             assertEquals(1.4f, sessions.get("deferred")!!.progressAnchorSnapshot().speed, 0f)
         } finally {
             service.removeStateListener("test")
-            ReflectionHelpers.callInstanceMethod<NativePlaybackStatePersistenceCoordinator>(
-                service, "getStatePersistence"
-            ).shutdown()
+            shutdownPersistence(service)
         }
     }
 }

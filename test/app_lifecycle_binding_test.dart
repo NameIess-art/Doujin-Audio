@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
@@ -40,8 +41,13 @@ void main() {
         addTearDown(graph.runtime.dispose);
         await graph.runtime.start();
 
+        final directory = await Directory.systemTemp.createTemp('resume_batch');
+        addTearDown(() => directory.delete(recursive: true));
+        final media = await File.fromUri(
+          directory.uri.resolve('background.mp3'),
+        ).create();
         final track = MusicTrack(
-          path: '/music/background.mp3',
+          path: media.path,
           displayName: 'Background',
           groupKey: '/music',
           groupTitle: 'Music',
@@ -108,6 +114,50 @@ void main() {
     );
   }
 
+  test(
+    'foreground resume removes a temporary session deleted on disk',
+    () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final database = await AppRuntimeTestFixture.installSharedDatabase();
+      addTearDown(() => AppRuntimeTestFixture.disposeSharedDatabase(database));
+      final directory = await Directory.systemTemp.createTemp('resume_cleanup');
+      addTearDown(() => directory.delete(recursive: true));
+      final media = await File.fromUri(
+        directory.uri.resolve('deleted.mp3'),
+      ).create();
+      final repository = TestPersistenceRepository();
+      final graph = createTestRuntimeGraph(
+        persistenceRepository: repository,
+        skipPersistence: false,
+      );
+      addTearDown(graph.runtime.dispose);
+      await graph.runtime.start();
+      final track = MusicTrack(
+        path: media.path,
+        displayName: 'Deleted',
+        groupKey: directory.path,
+        groupTitle: 'Music',
+        groupSubtitle: '',
+        isSingle: true,
+      );
+      final session = graph.playback.createTrackSession(
+        track,
+        customQueueTracks: [track],
+        isTemporary: true,
+      );
+      await graph.runtime.enterBackground();
+      expect((await repository.loadAllSessions()).map((item) => item.id), [
+        session.id,
+      ]);
+
+      await media.delete();
+      await graph.runtime.resumeForeground();
+      expect(graph.playback.sessions, isEmpty);
+      expect(await repository.loadAllSessions(), isEmpty);
+    },
+  );
+
   for (final completed in [false, true]) {
     test(
       'Android updates the background resume target (completed=$completed)',
@@ -134,12 +184,18 @@ void main() {
         );
         addTearDown(graph.runtime.dispose);
         await graph.runtime.start();
+        final directory = await Directory.systemTemp.createTemp(
+          'background_resume',
+        );
+        addTearDown(() => directory.delete(recursive: true));
         final tracks = [
           for (final name in ['first', 'second'])
             testMusicTrack(
               name: name,
-              path: '/music/$name.mp3',
-              groupKey: '/music',
+              path: (await File.fromUri(
+                directory.uri.resolve('$name.mp3'),
+              ).create()).path,
+              groupKey: directory.path,
               groupTitle: 'Music',
             ),
         ];

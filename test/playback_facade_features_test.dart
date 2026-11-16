@@ -9,10 +9,12 @@ import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'support/test_persistence_repository.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
+import 'package:doujin_audio/features/player/application/playback_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_notification_service.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
+import 'package:doujin_audio/infrastructure/sqlite/sqlite_playback_repository.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -66,6 +68,118 @@ void main() {
     markNativePlayingSession(session);
     return session;
   }
+
+  test(
+    'cold restore deletes the missing temporary session and resume target',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('session_source');
+      addTearDown(() => directory.delete(recursive: true));
+      final media = await File.fromUri(
+        directory.uri.resolve('deleted.mp3'),
+      ).create();
+      final kept = await File.fromUri(
+        directory.uri.resolve('kept.mp3'),
+      ).create();
+      final repository = SqlitePlaybackRepository(
+        database: AppDatabase.test(db),
+      );
+      const document =
+          'content://com.android.externalstorage.documents/document/primary%3Adeleted.mp3';
+      const unavailable =
+          'content://com.android.externalstorage.documents/document/primary%3Aunavailable.mp3';
+      final removedIds = <String>[];
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+        if (call.method == NativePlaybackMethod.removeSession) {
+          removedIds.add((call.arguments as Map)['sessionId'] as String);
+        }
+        return <String, Object?>{'ok': true, 'value': null};
+      });
+      messenger.setMockMethodCallHandler(fileCacheChannel, (call) async {
+        final source = (call.arguments as Map)['path'];
+        if (source == unavailable) {
+          return {
+            'ok': false,
+            'errorCode': 'document_path_exists_failed',
+            'error': 'permission denied',
+          };
+        }
+        expect(source, document);
+        return {
+          'ok': true,
+          'value': call.method == FileCacheMethod.documentPathExists
+              ? false
+              : media.path,
+        };
+      });
+
+      Future<void> seed(
+        String id,
+        String source, {
+        bool temporary = true,
+      }) async {
+        final track = MusicTrack(
+          path: source,
+          displayName: id,
+          groupKey: source,
+          groupTitle: id,
+          groupSubtitle: '',
+          isSingle: true,
+        );
+        await repository.upsertSession(
+          PersistedPlaybackSession(
+            id: id,
+            trackPath: source,
+            isTemporary: temporary,
+            loopModeIndex: 0,
+            volume: 1,
+            positionMs: 1200,
+            durationMs: 3000,
+            customQueueTracks: [track],
+            channelSwapEnabled: false,
+            sortOrder: 0,
+          ),
+        );
+      }
+
+      const resumeKey = 'playlist_resume_batch_v1';
+      await seed('removed-temp', media.path);
+      await seed('regular', media.path, temporary: false);
+      await seed('valid-temp', kept.path);
+      await seed('online-temp', 'https://example.com/track.mp3');
+      await seed('removed-document', document);
+      await seed('unavailable-document', unavailable);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        resumeKey,
+        json.encode({'removed-temp': media.path}),
+      );
+      await media.delete();
+
+      final restored = PlaybackFacade.create(databaseRepository: repository);
+      addTearDown(restored.dispose);
+      await restored.loadPersistedState();
+
+      const remainingIds = {
+        'regular',
+        'valid-temp',
+        'online-temp',
+        'unavailable-document',
+      };
+      expect(restored.sessions.keys.toSet(), remainingIds);
+      expect(restored.canResumeLastPlayback, isFalse);
+      expect(removedIds, unorderedEquals(['removed-temp', 'removed-document']));
+      expect(json.decode(prefs.getString(resumeKey)!), isEmpty);
+      expect(
+        (await repository.loadSessionSummaries())
+            .map((row) => row.session.id)
+            .toSet(),
+        remainingIds,
+      );
+      expect(await repository.loadSessionQueue('removed-temp'), isNull);
+    },
+  );
 
   group('duplicate work sessions', () {
     final first = MusicTrack(

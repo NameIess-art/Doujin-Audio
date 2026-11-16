@@ -135,8 +135,12 @@ void main() {
     expect(snapshot.validDepth(['Extras', 'Texts', 'Missing']), 2);
     expect(snapshot.indicesAt([])[snapshot.entriesAt([])[2].rowKey], 2);
     final trackPath = PathMatcher.normalize('C:/作品/Track10.mp3');
-    expect(snapshot.containsLocalTrack([], trackPath), isTrue);
-    expect(snapshot.containsLocalTrack(['Extras'], trackPath), isFalse);
+    expect(snapshot.containsRemovalPath([], trackPath), isTrue);
+    expect(snapshot.containsRemovalPath(['Extras'], trackPath), isFalse);
+    expect(
+      snapshot.containsRemovalPath([], PathMatcher.normalize('C:/作品/Extras')),
+      isTrue,
+    );
     expect(
       snapshot.entriesAt(['Extras']),
       same(snapshot.entriesAt(['Extras'])),

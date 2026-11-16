@@ -32,6 +32,7 @@ class WorkEntryItem {
     this.duration,
     this.fileSizeBytes,
     this.track,
+    this.localFolder,
     this.remoteReference,
     this.remoteExtension,
     this.isRemoteVideo = false,
@@ -46,11 +47,17 @@ class WorkEntryItem {
   final Duration? duration;
   final int? fileSizeBytes;
   final MusicTrack? track;
+  final FolderNode? localFolder;
   final Object? remoteReference;
   final String? remoteExtension;
   final bool isRemoteVideo;
   final WorkTextFile? textFile;
   final WorkImageItem? imageItem;
+
+  String? get removalPath =>
+      type == WorkEntryType.folder && fullPathOrUrl.isNotEmpty
+      ? fullPathOrUrl
+      : track?.path;
 
   String get extension =>
       remoteExtension ??
@@ -175,14 +182,14 @@ class WorkDirectorySnapshot {
         ),
       ),
     );
-    _localTrackKeys = Map.unmodifiable(
+    _removalPaths = Map.unmodifiable(
       _directories.map(
         (path, entries) => MapEntry(
           path,
           Set<String>.unmodifiable({
             for (final entry in entries)
-              if (entry.track case final track?)
-                PathMatcher.normalize(track.path),
+              if (entry.removalPath case final path?)
+                PathMatcher.normalize(path),
           }),
         ),
       ),
@@ -191,7 +198,7 @@ class WorkDirectorySnapshot {
 
   final Map<String, List<WorkEntryItem>> _directories;
   late final Map<String, Map<Key, int>> _entryIndices;
-  late final Map<String, Set<String>> _localTrackKeys;
+  late final Map<String, Set<String>> _removalPaths;
   final List<WorkImageItem> images;
   final List<WorkTextFile> texts;
   final bool hasSubtitle;
@@ -202,8 +209,8 @@ class WorkDirectorySnapshot {
   Map<Key, int> indicesAt(List<String> segments) =>
       _entryIndices[segments.join('/')] ?? const {};
 
-  bool containsLocalTrack(List<String> segments, String normalizedPath) =>
-      _localTrackKeys[segments.join('/')]?.contains(normalizedPath) ?? false;
+  bool containsRemovalPath(List<String> segments, String normalizedPath) =>
+      _removalPaths[segments.join('/')]?.contains(normalizedPath) ?? false;
 
   int validDepth(List<String> segments) {
     var path = '';
@@ -236,6 +243,7 @@ WorkDirectorySnapshot buildWorkDirectorySnapshot(WorkDirectoryInput input) {
             relativePath: relative,
             type: WorkEntryType.folder,
             fullPathOrUrl: child.path,
+            localFolder: child,
           ),
         );
         localTree(child, relative);
@@ -258,6 +266,10 @@ WorkDirectorySnapshot buildWorkDirectorySnapshot(WorkDirectoryInput input) {
 
   // File-only folders have no audio FolderNode. Insert each ancestor once,
   // instead of rescanning every discovered file for every visited directory.
+  final folderRoot = PathMatcher.normalize(input.folderPath);
+  final String? documentPrefix = PathMatcher.isContentUri(folderRoot)
+      ? folderRoot + (folderRoot.contains('::') ? '/' : '::')
+      : null;
   List<WorkEntryItem> fileParent(String relative) {
     final segments = relative.replaceAll(r'\', '/').trim().split('/');
     var path = '';
@@ -270,7 +282,9 @@ WorkDirectorySnapshot buildWorkDirectorySnapshot(WorkDirectoryInput input) {
             name: name,
             relativePath: next,
             type: WorkEntryType.folder,
-            fullPathOrUrl: next,
+            fullPathOrUrl: documentPrefix == null
+                ? PathMatcher.join(folderRoot, next)
+                : '$documentPrefix$next',
           ),
         );
         directories[next] = [];

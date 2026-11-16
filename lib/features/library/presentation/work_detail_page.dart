@@ -13,7 +13,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path/path.dart' as path;
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
@@ -746,7 +745,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
               .where(
                 (key) =>
                     key.namespace == 'library' &&
-                    directory.containsLocalTrack(_currentPathSegments, key.id),
+                    directory.containsRemovalPath(_currentPathSegments, key.id),
               )
               .toSet();
     final key = (entries, structureRevision);
@@ -759,11 +758,24 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
         ? entries
         : entries
               .where((entry) {
-                final track = entry.track;
-                return track == null ||
-                    (library.trackByPath(track.path) != null &&
-                        (hidden.isEmpty ||
-                            !hidden.contains(libraryRemovalKey(track.path))));
+                final removalPath = entry.removalPath;
+                if (removalPath == null) return true;
+                if (hidden.contains(libraryRemovalKey(removalPath))) {
+                  return false;
+                }
+                if (entry.track != null) {
+                  return library.trackByPath(removalPath) != null;
+                }
+                final root = library.libraryRootForPath(removalPath);
+                if (root != null) {
+                  return !library.isLibraryPathExcluded(root, removalPath);
+                }
+                final folderTracks = entry.localFolder?.allTracks;
+                return folderTracks == null ||
+                    folderTracks.isEmpty ||
+                    folderTracks.any(
+                      (track) => library.trackByPath(track.path) != null,
+                    );
               })
               .toList(growable: false);
     _entryIndices = _currentEntries.length == entries.length
@@ -789,10 +801,26 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       final playback = ref.read(playbackFacadeProvider);
       final library = ref.read(libraryFacadeProvider);
       final removals = ref.read(undoableRemovalStateProvider);
-      final tracks = (_localFolderNode?.allTracks ?? [item.track!])
+      final tree = _localFolderNode;
+      final hiddenFolderTracks = <String>{};
+      void collectHiddenFolders(FolderNode folder) {
+        if (removals.isHidden(libraryRemovalKey(folder.path))) {
+          hiddenFolderTracks.addAll(folder.allTracks.map((track) => track.path));
+          return;
+        }
+        for (final child in folder.children.whereType<FolderNode>()) {
+          collectHiddenFolders(child);
+        }
+      }
+
+      if (tree != null && removals.hiddenKeys.isNotEmpty) {
+        collectHiddenFolders(tree);
+      }
+      final tracks = (tree?.allTracks ?? [item.track!])
           .where(
             (track) =>
                 library.trackByPath(track.path) != null &&
+                !hiddenFolderTracks.contains(track.path) &&
                 !removals.isHidden(libraryRemovalKey(track.path)),
           )
           .toList(growable: false);
@@ -846,12 +874,15 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
             );
           }
         case WorkEntryAction.remove:
-          if (widget.isLocal && item.track != null) {
+          final removalPath = item.removalPath;
+          if (widget.isLocal && removalPath != null) {
             await stageLibraryRemoval(
               context,
               ref,
-              targetPath: item.track!.path,
-              target: LibraryRemovalTarget.track,
+              targetPath: removalPath,
+              target: item.type == WorkEntryType.folder
+                  ? LibraryRemovalTarget.folder
+                  : LibraryRemovalTarget.track,
             );
           }
         case WorkEntryAction.rename:
@@ -876,12 +907,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                         item.fullPathOrUrl,
                       )
                 : item.fullPathOrUrl;
-            final targetPath =
-                item.type == WorkEntryType.folder &&
-                    !path.windows.isAbsolute(sourcePath)
-                ? path.windows.join(_localTarget!.targetPath, item.relativePath)
-                : sourcePath;
-            await openLocalContainingFolder(context, ref, targetPath);
+            await openLocalContainingFolder(context, ref, sourcePath);
           }
         case WorkEntryAction.copy:
           _copyText(context, item.name);
@@ -972,11 +998,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   }
 
   List<UnifiedMenuEntry<WorkEntryAction>> _entryMenuItems(
-    WorkEntryItem item,
-    bool isLibraryAudio,
+    WorkEntryType type,
+    String? removalLabel,
   ) {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final entries = switch (item.type) {
+    final entries = switch (type) {
       WorkEntryType.folder => [
         UnifiedMenuEntry<WorkEntryAction>.action(
           value: WorkEntryAction.open,
@@ -1016,12 +1042,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
             value: WorkEntryAction.rename,
             icon: Icons.drive_file_rename_outline_rounded,
             label: i18n.tr('rename'),
-          ),
-        if (widget.isLocal && item.track != null)
-          UnifiedMenuEntry<WorkEntryAction>.action(
-            value: WorkEntryAction.remove,
-            icon: Icons.remove_circle_outline_rounded,
-            label: i18n.tr(isLibraryAudio ? 'exclude' : 'remove'),
           ),
       ],
       WorkEntryType.text => [
@@ -1073,6 +1093,16 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           value: WorkEntryAction.openContainingFolder,
           icon: Icons.folder_open_rounded,
           label: i18n.tr('open_containing_folder'),
+        ),
+      );
+    }
+    if (removalLabel != null) {
+      entries.add(
+        UnifiedMenuEntry<WorkEntryAction>.action(
+          value: WorkEntryAction.remove,
+          icon: Icons.remove_circle_outline_rounded,
+          label: i18n.tr(removalLabel),
+          destructive: true,
         ),
       );
     }
@@ -1277,7 +1307,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     required bool hasError,
     required ColorScheme cs,
     required String emptyFolderLabel,
-    required Map<(WorkEntryType, bool), List<UnifiedMenuEntry<WorkEntryAction>>>
+    required Map<
+      (WorkEntryType, String?),
+      List<UnifiedMenuEntry<WorkEntryAction>>
+    >
     entryMenus,
     required String moreLabel,
     required String unknownSizeLabel,
@@ -1315,10 +1348,22 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
         delegate: SliverChildBuilderDelegate(
           (context, index) {
             final item = entries[index];
-            final isLibraryAudio =
-                widget.isLocal &&
-                item.track != null &&
-                library.isLibraryTrack(item.track!.path);
+            String? removalLabel;
+            if (item.removalPath case final removalPath?
+                when widget.isLocal && interactive) {
+              if (item.type == WorkEntryType.folder) {
+                final root = library.libraryRootForPath(removalPath);
+                if (item.localFolder != null || root != null) {
+                  removalLabel = library.watchedLibraries.contains(root)
+                      ? 'exclude'
+                      : 'remove';
+                }
+              } else {
+                removalLabel = library.isLibraryTrack(removalPath)
+                    ? 'exclude'
+                    : 'remove';
+              }
+            }
             final id = item.id;
             final tile = FadeTransition(
               key: item.rowKey,
@@ -1330,10 +1375,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                 item: item,
                 accentColor: cs.primary,
                 menuEntries: interactive
-                    ? entryMenus.putIfAbsent(
-                        (item.type, isLibraryAudio),
-                        () => _entryMenuItems(item, isLibraryAudio),
-                      )
+                    ? entryMenus.putIfAbsent((
+                        item.type,
+                        removalLabel,
+                      ), () => _entryMenuItems(item.type, removalLabel))
                     : const [],
                 moreLabel: moreLabel,
                 unknownSizeLabel: unknownSizeLabel,
@@ -1586,7 +1631,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       );
       final coverMinHeight = coverMaxHeight.clamp(0.0, 120.0);
       final entryMenus =
-          <(WorkEntryType, bool), List<UnifiedMenuEntry<WorkEntryAction>>>{};
+          <(WorkEntryType, String?), List<UnifiedMenuEntry<WorkEntryAction>>>{};
       final moreLabel = i18n.tr('more_actions');
       final unknownSizeLabel = i18n.tr('asmr_download_size_unknown');
       final currentEntries = _buildCurrentEntries(ref);

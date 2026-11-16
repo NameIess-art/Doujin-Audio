@@ -666,7 +666,11 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     final queueTracks = immutableList(resolvedTracks);
     final session =
         _service.sessions.values
-            .where((candidate) => candidate.isTemporary)
+            .where(
+              (candidate) =>
+                  candidate.isTemporary &&
+                  !_removingMissingTemporarySessionIds.contains(candidate.id),
+            )
             .firstOrNull ??
         createTrackSession(
           track,

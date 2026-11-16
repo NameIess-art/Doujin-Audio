@@ -241,6 +241,7 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
     _playback.setBackgroundMode(false);
     _keepAlive.resumeForeground();
     await _playbackCommands.reconcileNativeRuntime();
+    await _playback.removeMissingTemporarySessions();
     _notifications.resyncAfterForegroundResume();
     await _timer.syncRuntimeFromNative();
     _timer.retryOverdueAutoResume();

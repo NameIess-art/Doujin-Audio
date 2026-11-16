@@ -253,6 +253,83 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
       restoredSessions,
       focusedSessionId: focusedSessionId,
     );
+    await removeMissingTemporarySessions();
+  }
+
+  Future<void> removeMissingTemporarySessions() async {
+    final candidates = [
+      for (final session in _service.sessions.values)
+        if (session.isTemporary &&
+            !_removingMissingTemporarySessionIds.contains(session.id) &&
+            !session.playbackRequested &&
+            !session.isPlaybackLoading)
+          (session, session.currentTrackPath, session.loadGeneration),
+    ];
+    final missing = await Future.wait(
+      candidates.map((candidate) => _isMissingTemporarySource(candidate.$2)),
+    );
+    final staleIds = <String>[];
+    for (var index = 0; index < candidates.length; index++) {
+      final (session, source, generation) = candidates[index];
+      if (missing[index] &&
+          !_removingMissingTemporarySessionIds.contains(session.id) &&
+          isRegisteredSession(session) &&
+          session.currentTrackPath == source &&
+          session.loadGeneration == generation &&
+          !session.playbackRequested &&
+          !session.isPlaybackLoading) {
+        staleIds.add(session.id);
+      }
+    }
+    if (staleIds.isEmpty) return;
+    _removingMissingTemporarySessionIds.addAll(staleIds);
+    try {
+      await removeSessions(staleIds);
+      if (staleIds.any((id) => !_service.sessions.containsKey(id))) {
+        await flushSessionStatePersistence();
+      }
+    } finally {
+      _removingMissingTemporarySessionIds.removeAll(staleIds);
+    }
+  }
+
+  Future<bool> _isMissingTemporarySource(String source) async {
+    var filePath = source;
+    if (PathMatcher.isContentUri(source)) {
+      if (defaultTargetPlatform != TargetPlatform.android ||
+          Uri.tryParse(source)?.authority !=
+              'com.android.externalstorage.documents') {
+        return false;
+      }
+      final files = FileCachePlatformGateway.instance;
+      if (await files.documentPathExistence(source) != false) return false;
+      // A failed document lookup can also mean lost access or an offline
+      // provider. Require a matching local filesystem path before pruning.
+      final resolved = await files.resolveDocumentFileSystemPath(source);
+      if (resolved == null) return false;
+      filePath = resolved;
+    }
+    if (!path.isAbsolute(filePath)) return false;
+    try {
+      final file = await File(filePath).open();
+      await file.close();
+      return false;
+    } on FileSystemException catch (error) {
+      final code = error.osError?.errorCode;
+      // Opening the file preserves the OS error that File.exists discards.
+      if (code != 2 && !(Platform.isWindows && code == 3)) return false;
+      if (Platform.isWindows) {
+        return Directory(path.rootPrefix(filePath)).exists();
+      }
+      if (Platform.isAndroid && filePath.startsWith('/storage/')) {
+        final components = path.split(filePath);
+        if (components.length < 3) return false;
+        final rootLength = components[2] == 'emulated' ? 4 : 3;
+        if (components.length <= rootLength) return false;
+        return Directory(path.joinAll(components.take(rootLength))).exists();
+      }
+      return true;
+    }
   }
 
   Future<bool> ensureSessionQueueLoaded(String sessionId) {

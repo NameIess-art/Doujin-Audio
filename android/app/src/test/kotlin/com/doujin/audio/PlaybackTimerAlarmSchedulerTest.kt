@@ -56,7 +56,12 @@ class PlaybackTimerAlarmSchedulerTest {
             assertNull(NativePlaybackStateStore.loadTimerRuntimeState(context))
             assertTrue(NativePlaybackStateStore.loadPausedSessionIds(context).isEmpty())
         } finally {
-            ReflectionHelpers.callInstanceMethod<NativePlaybackStatePersistenceCoordinator>(service, "getStatePersistence").shutdown()
+            val persistence = ReflectionHelpers.callInstanceMethod<NativePlaybackStatePersistenceCoordinator>(
+                service,
+                "getStatePersistence"
+            )
+            persistence.shutdown()
+            assertTrue(persistence.awaitTermination())
         }
     }
 

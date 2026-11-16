@@ -8,10 +8,8 @@ import '../../../core/immutable_collections.dart';
 import '../domain/asmr_models.dart';
 import '../domain/asmr_search_suggestions.dart';
 import '../../../core/media/music_track.dart';
-import '../../library/application/work_text_service.dart';
 import 'asmr_account_sync_service.dart';
 import 'asmr_category_catalog.dart';
-import 'asmr_download_manager.dart';
 import 'asmr_playback_coordinator.dart';
 import 'asmr_preferences.dart';
 import 'asmr_search_suggestions_seed.dart';
@@ -37,7 +35,7 @@ typedef _InterestSnapshot = ({
 
 AsmrTagPreferences _mergeTagCatalog(
   ({AsmrTagPreferences state, List<AsmrTag> entries}) input,
-) => AsmrTagPreferences.fromJson(input.state.toJson())
+) => input.state.copy()
   ..mergeTags(input.entries)
   ..catalogComplete = true;
 
@@ -57,9 +55,9 @@ _deriveTagInterests(
   })
   input,
 ) {
-  final state = AsmrTagPreferences.fromJson(input.state.toJson());
-  final voices = AsmrTagPreferences.fromJson(input.voices.toJson());
-  final circles = AsmrTagPreferences.fromJson(input.circles.toJson());
+  final state = input.state.copy();
+  final voices = input.voices.copy();
+  final circles = input.circles.copy();
   final tagGroups = input.tracks
       .map((track) => track.tags)
       .followedBy(input.favorites.map((work) => work.tags))
@@ -325,8 +323,9 @@ class AsmrLibraryController extends ChangeNotifier
       !_circlePreferences.excludes(names: [work.circleName]);
 
   Future<void> _mutateTagPreferences(
-    void Function(AsmrTagPreferences)? mutate, {
+    bool Function(AsmrTagPreferences)? mutate, {
     bool interruptRecommendations = false,
+    bool recommendationsOnly = false,
     List<AsmrTag>? catalog,
     int? expectedEpoch,
   }) => _runStateMutation(() async {
@@ -335,18 +334,19 @@ class AsmrLibraryController extends ChangeNotifier
         (expectedEpoch == null || expectedEpoch == _runtimeCacheEpoch);
     if (!isCurrent()) return;
     final next = catalog == null
-        ? AsmrTagPreferences.fromJson(_tagPreferences.toJson())
+        ? _tagPreferences.copy()
         : await compute(_mergeTagCatalog, (
             state: _tagPreferences,
             entries: catalog,
           ));
     if (!isCurrent()) return;
-    mutate?.call(next);
+    if (mutate != null && !mutate(next)) return;
     await _preferencesStore.saveTagPreferences(next);
     if (!isCurrent()) return;
     _tagPreferences = next;
     _catalog.preferencesChanged(
       interruptRecommendations: interruptRecommendations,
+      recommendationsOnly: recommendationsOnly,
     );
     _bumpGlobalRevision();
     notifyListeners();
@@ -362,8 +362,9 @@ class AsmrLibraryController extends ChangeNotifier
 
   Future<void> _mutateCreatorPreferences(
     _CreatorInterest kind,
-    void Function(AsmrTagPreferences)? mutate, {
+    bool Function(AsmrTagPreferences)? mutate, {
     bool interruptRecommendations = false,
+    bool recommendationsOnly = false,
     int? expectedEpoch,
     List<AsmrTag>? catalog,
   }) async {
@@ -373,7 +374,7 @@ class AsmrLibraryController extends ChangeNotifier
         return;
       }
       final next = catalog == null
-          ? AsmrTagPreferences.fromJson(_creatorPreferences(kind).toJson())
+          ? _creatorPreferences(kind).copy()
           : await compute(_mergeTagCatalog, (
               state: _creatorPreferences(kind),
               entries: catalog,
@@ -382,7 +383,7 @@ class AsmrLibraryController extends ChangeNotifier
           (expectedEpoch != null && expectedEpoch != _runtimeCacheEpoch)) {
         return;
       }
-      mutate?.call(next);
+      if (mutate != null && !mutate(next)) return;
       if (kind == _CreatorInterest.voiceActor) {
         await _preferencesStore.saveVoiceActorPreferences(next);
       } else {
@@ -399,6 +400,7 @@ class AsmrLibraryController extends ChangeNotifier
       }
       _catalog.preferencesChanged(
         interruptRecommendations: interruptRecommendations,
+        recommendationsOnly: recommendationsOnly,
       );
       _bumpGlobalRevision();
       notifyListeners();
@@ -425,7 +427,10 @@ class AsmrLibraryController extends ChangeNotifier
     await ensureTagInterests();
     await _mutateCreatorPreferences(
       kind,
-      (state) => _applySelections(state, selections, excluded: excluded),
+      (state) {
+        _applySelections(state, selections, excluded: excluded);
+        return true;
+      },
       interruptRecommendations: true,
     );
     await _refreshRecommendationsAfterPreferenceChange();
@@ -479,6 +484,7 @@ class AsmrLibraryController extends ChangeNotifier
     await _mutateCreatorPreferences(
       kind,
       (state) => state.recordListeningBatch(batchId, contributions),
+      recommendationsOnly: true,
     );
   }
 
@@ -540,7 +546,10 @@ class AsmrLibraryController extends ChangeNotifier
     final selections = Map<String, bool>.of(changes);
     await ensureTagInterests();
     await _mutateTagPreferences(
-      (state) => _applySelections(state, selections, excluded: excluded),
+      (state) {
+        _applySelections(state, selections, excluded: excluded);
+        return true;
+      },
       interruptRecommendations: true,
     );
     await _refreshRecommendationsAfterPreferenceChange();
@@ -564,6 +573,7 @@ class AsmrLibraryController extends ChangeNotifier
     await ensureTagInterests();
     await _mutateTagPreferences(
       (state) => state.recordListeningBatch(batchId, contributions),
+      recommendationsOnly: true,
     );
   }
 
@@ -790,6 +800,35 @@ class AsmrLibraryController extends ChangeNotifier
   bool isTrackTreeLoading(String workKey) => _workContent.isLoading(workKey);
   List<AsmrTrackFile>? trackTreeFor(String workKey) =>
       _workContent.cachedTrackTree(workKey);
+
+  int get globalRevision => _globalRevision;
+  Object get authViewVersion => (_globalRevision, _authRestoreTask != null);
+  Object get syncViewVersion => (
+    _globalRevision,
+    _syncPhase,
+    _lastSyncAt,
+    _syncOperations.length,
+    _lastSyncError,
+  );
+  Object get interestViewVersion => (
+    _globalRevision,
+    _tagPreferences,
+    _voiceActorPreferences,
+    _circlePreferences,
+  );
+  Object categoryViewVersion(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+    bool searchSession = false,
+  }) => (
+    _catalog.stateRevision(
+      category,
+      searchQuery: searchQuery,
+      searchSession: searchSession,
+    ),
+    _initialized,
+    _contentLanguage,
+  );
 
   AsmrLibraryGlobalViewState get globalViewState => AsmrLibraryGlobalViewState(
     initialized: _initialized,
@@ -1376,18 +1415,6 @@ class AsmrLibraryController extends ChangeNotifier
       return loadPlayableTracks(work);
     }
     return _workContent.storePlayableTracks(work, tracks);
-  }
-
-  Future<List<WorkTextFile>> findWorkTextFiles(
-    AsmrWork work, {
-    AsmrDownloadManager? downloadManager,
-  }) async {
-    final tree = await ensureTrackTree(work);
-    return collectAsmrWorkTextFiles(
-      tree,
-      downloadManager: downloadManager,
-      workKey: work.workKey,
-    );
   }
 
   List<MusicTrack> buildPlayableTracksFromNode(

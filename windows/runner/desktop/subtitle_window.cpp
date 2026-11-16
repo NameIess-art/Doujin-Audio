@@ -75,13 +75,20 @@ void SubtitleWindow::Style(const flutter::EncodableMap& style) {
   InvalidateRect(window_, nullptr, TRUE);
 }
 void SubtitleWindow::FitText() {
-  if (!window_) return;
+  if (!window_ || fitting_text_) return;
+  fitting_text_ = true;
   RECT bounds{}; GetWindowRect(window_, &bounds);
   const double scale = GetDpiForWindow(window_) / 96.0;
   const int padding = static_cast<int>((20 + border_depth_ * 4) * scale);
-  if (!EnsureFont(GetDpiForWindow(window_))) return;
+  if (!EnsureFont(GetDpiForWindow(window_))) {
+    fitting_text_ = false;
+    return;
+  }
   HDC dc = GetDC(window_);
-  if (!dc) return;
+  if (!dc) {
+    fitting_text_ = false;
+    return;
+  }
   auto previous = SelectObject(dc, font_);
   RECT text{0, 0, std::max(1L, bounds.right - bounds.left - 2 * padding), 0};
   DrawTextW(dc, text_.empty() ? L" " : text_.c_str(), -1, &text,
@@ -98,6 +105,7 @@ void SubtitleWindow::FitText() {
     SetWindowPos(window_, nullptr, bounds.left, top, bounds.right - bounds.left,
         height, SWP_NOACTIVATE | SWP_NOZORDER);
   }
+  fitting_text_ = false;
 }
 bool SubtitleWindow::EnsureFont(UINT dpi) {
   const int height = static_cast<int>(font_size_ * dpi / 96.0);
@@ -124,10 +132,17 @@ void SubtitleWindow::ReleaseSurface() {
   output_bitmap_ = mask_bitmap_ = nullptr;
   previous_output_bitmap_ = previous_mask_bitmap_ = nullptr;
   pixels_ = coverage_ = nullptr;
-  surface_width_ = surface_rows_ = 0;
+  surface_width_ = surface_rows_ = surface_capacity_rows_ = 0;
 }
 bool SubtitleWindow::EnsureSurface(HDC screen, int width, int rows) {
-  if (surface_width_ == width && surface_rows_ == rows) return true;
+  if (surface_width_ == width && rows <= surface_capacity_rows_) {
+    if (surface_rows_ != rows) {
+      surface_rows_ = rows;
+      background_pixels_.resize(static_cast<size_t>(width) * rows);
+      background_dirty_ = content_dirty_ = true;
+    }
+    return true;
+  }
   ReleaseSurface();
   BITMAPINFO info{};
   info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -155,6 +170,7 @@ bool SubtitleWindow::EnsureSurface(HDC screen, int width, int rows) {
   }
   surface_width_ = width;
   surface_rows_ = rows;
+  surface_capacity_rows_ = rows;
   background_pixels_.resize(static_cast<size_t>(width) * rows);
   background_dirty_ = content_dirty_ = true;
   return true;

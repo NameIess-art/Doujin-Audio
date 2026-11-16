@@ -795,12 +795,17 @@ class LibraryLikeCardText extends StatelessWidget {
     required this.style,
   });
 
+  static final RegExp _lineBreakPattern = RegExp(r'[\r\n]+');
+
   final String text;
   final TextStyle style;
 
   @override
   Widget build(BuildContext context) {
-    final normalizedText = text.replaceAll(RegExp(r'[\r\n]+'), ' ');
+    final normalizedText =
+        text.contains('\n') || text.contains('\r')
+        ? text.replaceAll(_lineBreakPattern, ' ')
+        : text;
     final animate =
         defaultTargetPlatform == TargetPlatform.windows &&
         !MarqueePauseScope.isPausedOf(context) &&

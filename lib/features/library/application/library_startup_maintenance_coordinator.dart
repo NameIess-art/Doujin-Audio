@@ -159,7 +159,13 @@ final class LibraryStartupMaintenanceCoordinator {
     };
     if (knownLibraries.isEmpty || libraryService.library.isEmpty) return;
     final entriesToPersist = <LibraryEntry>[];
+    final budget = Stopwatch()..start();
     for (final libraryPath in knownLibraries) {
+      if (budget.elapsedMicroseconds > 4000) {
+        await Future<void>.delayed(Duration.zero);
+        if (!_isCurrent(epoch)) return;
+        budget.reset();
+      }
       if (libraryService.hasLibraryEntriesForLibrary(libraryPath)) continue;
       final tracks = libraryService.library
           .where(

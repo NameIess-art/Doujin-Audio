@@ -344,18 +344,32 @@ class EqualizerPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(appLanguageStateProvider);
-    final detail = ref.watch(
-      sessionDetailTransportProvider(
-        session.id,
-      ).select((state) => (state?.audioEffects, state?.eqCapabilities)),
+    final header = ref.watch(
+      sessionDetailTransportProvider(session.id).select(
+        (state) => (
+          state?.audioEffects.eqEnabled,
+          state?.audioEffects.eqPresetId,
+          state?.eqCapabilities,
+          Object.hashAll(
+            (state?.audioEffects.eqBandLevels ?? session.audioEffects.eqBandLevels)
+                .keys
+                .where((freq) => !eqBandFrequencies.contains(freq)),
+          ),
+        ),
+      ),
     );
-    final effects = detail.$1 ?? session.audioEffects;
-    final eqCapabilities = detail.$2 ?? session.eqCapabilities;
+    final eqEnabled = header.$1 ?? session.audioEffects.eqEnabled;
+    final eqPresetValue = header.$2;
+    final eqCapabilities = header.$3 ?? session.eqCapabilities;
+    final initialEffects = ref
+        .read(sessionDetailTransportProvider(session.id))
+        ?.audioEffects ??
+        session.audioEffects;
     // Keep the editor's frequencies stable before and after native preparation.
     // Android maps these gains to its supported bands when applying the effects.
     final frequencies = {
       ...eqBandFrequencies,
-      ...effects.eqBandLevels.keys,
+      ...initialEffects.eqBandLevels.keys,
     }.toList()..sort();
 
     final i18n = ProviderScope.containerOf(
@@ -375,12 +389,9 @@ class EqualizerPage extends ConsumerWidget {
             .toList(growable: false);
     final presets = <EqPreset>[...builtInEqPresets, ...customPresets];
     final selectedPresetId =
-        presets.any((preset) => preset.id == effects.eqPresetId)
-        ? effects.eqPresetId
+        presets.any((preset) => preset.id == eqPresetValue)
+        ? eqPresetValue
         : null;
-    final hasAdjustedEqBands = effects.eqBandLevels.values.any(
-      (gainDb) => gainDb.abs() >= 0.001,
-    );
 
     final isCustomPresetSelected = customPresets.any(
       (preset) => preset.id == selectedPresetId,
@@ -395,7 +406,7 @@ class EqualizerPage extends ConsumerWidget {
             i18n.tr('equalizer'),
             style: const TextStyle(fontWeight: FontWeight.w900),
           ),
-          value: effects.eqEnabled,
+          value: eqEnabled,
           onChanged: (value) {
             AppInteractionFeedback.trigger(
               AppInteractionFeedbackType.selection,
@@ -434,105 +445,133 @@ class EqualizerPage extends ConsumerWidget {
           },
         ),
         const SizedBox(height: 12),
-        ...frequencies.map((frequencyHz) {
-          final value = effects.eqBandLevels[frequencyHz] ?? 0.0;
-          return EqBandSlider(
-            label: _formatFrequency(frequencyHz),
-            value: value.clamp(
-              eqCapabilities.minGainDb,
-              eqCapabilities.maxGainDb,
-            ),
-            min: eqCapabilities.minGainDb,
-            max: eqCapabilities.maxGainDb,
-            onChanged: effects.eqEnabled
-                ? (nextValue) {
-                    AppInteractionFeedback.continuous(
-                      '$frequencyHz:${(nextValue * 2).round()}',
-                    );
-                    UiInteractionCoordinator.instance.scheduleThrottledCommit(
-                      key: 'session_eq:${session.id}:$frequencyHz',
-                      commit: () => unawaited(
-                        playback.setSessionEqBandLevel(
-                          session.id,
-                          frequencyHz,
-                          nextValue,
-                        ),
-                      ),
-                    );
-                  }
-                : null,
-            onChangeEnd: (value) {
-              AppInteractionFeedback.resetContinuous();
-              UiInteractionCoordinator.instance.cancelThrottledCommit(
-                'session_eq:${session.id}:$frequencyHz',
-              );
-              unawaited(
-                playback.setSessionEqBandLevel(session.id, frequencyHz, value),
-              );
-            },
-          );
-        }),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: FilledButton.tonal(
-                key: const ValueKey<String>('reset_equalizer'),
-                style: sessionDetailResetButtonStyle(context),
-                onPressed: hasAdjustedEqBands
-                    ? () {
-                        final flat = builtInEqPresets.first;
-                        unawaited(
-                          playback.applySessionEqPreset(session.id, flat),
+        ...frequencies.map(
+          (frequencyHz) => Consumer(
+            builder: (context, ref, _) {
+              final value =
+                  ref.watch(
+                    sessionDetailTransportProvider(session.id).select(
+                      (state) => state?.audioEffects.eqBandLevels[frequencyHz],
+                    ),
+                  ) ??
+                  session.audioEffects.eqBandLevels[frequencyHz] ??
+                  0.0;
+              return EqBandSlider(
+                label: _formatFrequency(frequencyHz),
+                value: value.clamp(
+                  eqCapabilities.minGainDb,
+                  eqCapabilities.maxGainDb,
+                ),
+                min: eqCapabilities.minGainDb,
+                max: eqCapabilities.maxGainDb,
+                onChanged: eqEnabled
+                    ? (nextValue) {
+                        AppInteractionFeedback.continuous(
+                          '$frequencyHz:${(nextValue * 2).round()}',
                         );
+                        UiInteractionCoordinator.instance
+                            .scheduleThrottledCommit(
+                              key: 'session_eq:${session.id}:$frequencyHz',
+                              commit: () => unawaited(
+                                playback.setSessionEqBandLevel(
+                                  session.id,
+                                  frequencyHz,
+                                  nextValue,
+                                ),
+                              ),
+                            );
                       }
                     : null,
-                child: Text(i18n.tr('eq_reset')),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: FilledButton.tonal(
-                key: ValueKey<String>(
-                  isCustomPresetSelected
-                      ? 'delete_equalizer_preset'
-                      : 'save_equalizer_preset',
-                ),
-                style: sessionDetailResetButtonStyle(context),
-                onPressed: isCustomPresetSelected && selectedPresetId != null
-                    ? () {
-                        final selectedPreset = customPresets
-                            .where((preset) => preset.id == selectedPresetId)
-                            .firstOrNull;
-                        if (selectedPreset != null) {
-                          unawaited(
-                            _stageEqualizerPresetRemoval(
-                              context,
-                              ref,
-                              selectedPreset,
-                            ),
-                          );
-                        }
-                      }
-                    : (hasAdjustedEqBands
-                          ? () => _showSavePresetDialog(
-                              context,
-                              commands: ref.read(
-                                settingsCommandControllerProvider,
-                              ),
-                              session: session,
-                            )
-                          : null),
-                child: Text(
-                  i18n.tr(
-                    isCustomPresetSelected
-                        ? 'eq_delete_preset'
-                        : 'eq_save_preset',
+                onChangeEnd: (value) {
+                  AppInteractionFeedback.resetContinuous();
+                  UiInteractionCoordinator.instance.cancelThrottledCommit(
+                    'session_eq:${session.id}:$frequencyHz',
+                  );
+                  unawaited(
+                    playback.setSessionEqBandLevel(
+                      session.id,
+                      frequencyHz,
+                      value,
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
+        Consumer(
+          builder: (context, ref, _) {
+            final hasAdjustedEqBands = ref.watch(
+              sessionDetailTransportProvider(session.id).select((state) {
+                final bandLevels =
+                    state?.audioEffects.eqBandLevels ??
+                    session.audioEffects.eqBandLevels;
+                return bandLevels.values.any((gainDb) => gainDb.abs() >= 0.001);
+              }),
+            );
+            return Row(
+              children: [
+                Expanded(
+                  child: FilledButton.tonal(
+                    key: const ValueKey<String>('reset_equalizer'),
+                    style: sessionDetailResetButtonStyle(context),
+                    onPressed: hasAdjustedEqBands
+                        ? () {
+                            final flat = builtInEqPresets.first;
+                            unawaited(
+                              playback.applySessionEqPreset(session.id, flat),
+                            );
+                          }
+                        : null,
+                    child: Text(i18n.tr('eq_reset')),
                   ),
                 ),
-              ),
-            ),
-          ],
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton.tonal(
+                    key: ValueKey<String>(
+                      isCustomPresetSelected
+                          ? 'delete_equalizer_preset'
+                          : 'save_equalizer_preset',
+                    ),
+                    style: sessionDetailResetButtonStyle(context),
+                    onPressed: isCustomPresetSelected && selectedPresetId != null
+                        ? () {
+                            final selectedPreset = customPresets
+                                .where((preset) => preset.id == selectedPresetId)
+                                .firstOrNull;
+                            if (selectedPreset != null) {
+                              unawaited(
+                                _stageEqualizerPresetRemoval(
+                                  context,
+                                  ref,
+                                  selectedPreset,
+                                ),
+                              );
+                            }
+                          }
+                        : (hasAdjustedEqBands
+                              ? () => _showSavePresetDialog(
+                                  context,
+                                  commands: ref.read(
+                                    settingsCommandControllerProvider,
+                                  ),
+                                  session: session,
+                                )
+                              : null),
+                    child: Text(
+                      i18n.tr(
+                        isCustomPresetSelected
+                            ? 'eq_delete_preset'
+                            : 'eq_save_preset',
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ],
     ).withWindowsSmoothScroll();
@@ -590,7 +629,7 @@ class EqualizerPage extends ConsumerWidget {
   }
 }
 
-class EqBandSlider extends StatelessWidget {
+class EqBandSlider extends StatefulWidget {
   const EqBandSlider({
     super.key,
     required this.label,
@@ -609,14 +648,38 @@ class EqBandSlider extends StatelessWidget {
   final ValueChanged<double>? onChangeEnd;
 
   @override
+  State<EqBandSlider> createState() => _EqBandSliderState();
+}
+
+class _EqBandSliderState extends State<EqBandSlider> {
+  double? _dragValue;
+  bool _dragging = false;
+
+  @override
+  void didUpdateWidget(covariant EqBandSlider oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_dragging &&
+        (oldWidget.value != widget.value || widget.onChanged == null)) {
+      _dragValue = null;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final divisions = ((max - min) * 2).round().clamp(1, 80).toInt();
+    final activeValue = (_dragValue ?? widget.value).clamp(
+      widget.min,
+      widget.max,
+    );
+    final divisions = ((widget.max - widget.min) * 2)
+        .round()
+        .clamp(1, 80)
+        .toInt();
     return Row(
       children: [
         SizedBox(
           width: 56,
           child: Text(
-            label,
+            widget.label,
             style: Theme.of(
               context,
             ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w800),
@@ -624,19 +687,33 @@ class EqBandSlider extends StatelessWidget {
         ),
         Expanded(
           child: Slider(
-            value: value,
-            min: min,
-            max: max,
+            value: activeValue,
+            min: widget.min,
+            max: widget.max,
             divisions: divisions,
-            label: '${value.toStringAsFixed(1)} dB',
-            onChanged: onChanged,
-            onChangeEnd: onChangeEnd,
+            label: '${activeValue.toStringAsFixed(1)} dB',
+            onChangeStart: widget.onChanged == null
+                ? null
+                : (_) => _dragging = true,
+            onChanged: widget.onChanged == null
+                ? null
+                : (nextValue) {
+                    setState(() => _dragValue = nextValue);
+                    widget.onChanged!(nextValue);
+                  },
+            onChangeEnd: widget.onChanged == null
+                ? null
+                : (nextValue) {
+                    _dragging = false;
+                    setState(() => _dragValue = nextValue);
+                    widget.onChangeEnd?.call(nextValue);
+                  },
           ),
         ),
         SizedBox(
           width: 54,
           child: Text(
-            '${value.toStringAsFixed(1)} dB',
+            '${activeValue.toStringAsFixed(1)} dB',
             textAlign: TextAlign.end,
             style: const TextStyle(
               fontFeatures: [FontFeature.tabularFigures()],

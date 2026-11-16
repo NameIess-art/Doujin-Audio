@@ -407,19 +407,27 @@ Future<void> _upsertCatalogTrackChunks(
       // deferred details. In particular, omitted tags/JSON are not deletions.
       final core = _trackCoreRow(track)..remove('duration_ms');
       batch.update('tracks', core, where: 'path = ?', whereArgs: [track.path]);
-      batch.insert(
-        'track_scan_info',
-        _trackScanRow(track, scanGeneration: scanGeneration),
-        conflictAlgorithm: ConflictAlgorithm.ignore,
-      );
       final scan = _trackScanRow(track, scanGeneration: scanGeneration);
-      if (scanGeneration == null) scan.remove('scan_generation');
-      batch.update(
-        'track_scan_info',
-        scan,
-        where: 'path = ?',
-        whereArgs: [track.path],
-      );
+      if (scanGeneration != null) {
+        batch.insert(
+          'track_scan_info',
+          scan,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      } else {
+        batch.insert(
+          'track_scan_info',
+          scan,
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+        scan.remove('scan_generation');
+        batch.update(
+          'track_scan_info',
+          scan,
+          where: 'path = ?',
+          whereArgs: [track.path],
+        );
+      }
     }
     await batch.commit(noResult: true);
   }

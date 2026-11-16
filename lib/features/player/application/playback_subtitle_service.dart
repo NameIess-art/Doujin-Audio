@@ -1168,10 +1168,25 @@ class PlaybackSubtitleService extends ChangeNotifier {
     );
   }
 
+  SubtitleTrack? _cachedTextTrack;
+  bool _cachedTextPersistent = false;
+  SubtitleCue? _cachedTextCue;
+  String? _cachedTextValue;
+
   String? _textAt(SubtitleTrack? track, Duration position, bool persistent) {
-    final cue = track?.cueAt(position, persistent: persistent);
+    if (track == null) return null;
+    final cue = track.cueAt(position, persistent: persistent);
+    if (identical(track, _cachedTextTrack) &&
+        persistent == _cachedTextPersistent &&
+        identical(cue, _cachedTextCue)) {
+      return _cachedTextValue;
+    }
+    _cachedTextTrack = track;
+    _cachedTextPersistent = persistent;
+    _cachedTextCue = cue;
     final text = cue?.text.trim();
-    return text == null || text.isEmpty ? null : text;
+    _cachedTextValue = text == null || text.isEmpty ? null : text;
+    return _cachedTextValue;
   }
 
   void clear() {
@@ -1183,6 +1198,9 @@ class PlaybackSubtitleService extends ChangeNotifier {
     _resultSources.clear();
     _loadingSources.clear();
     _automaticRetries.clear();
+    _cachedTextTrack = null;
+    _cachedTextCue = null;
+    _cachedTextValue = null;
     notifyListeners();
   }
 

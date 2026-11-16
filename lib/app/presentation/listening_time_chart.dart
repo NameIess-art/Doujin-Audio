@@ -142,27 +142,20 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
   ScrollController? _scrollController;
   ListeningInterval _interval = ListeningInterval.day;
   DateTime? _selected;
-  final _hoveredPeriod = ValueNotifier<DateTime?>(null);
   List<ListeningDay>? _aggregatedDays;
   ListeningInterval? _aggregatedInterval;
-  DateTime? _aggregatedSelection;
   DateTime? _aggregatedDay;
+  DateTime? _aggregatedSelected;
   List<ListeningPeriod> _periods = const [];
   int _maximum = 1;
-
-  @override
-  void dispose() {
-    _hoveredPeriod.dispose();
-    super.dispose();
-  }
 
   List<ListeningPeriod> _currentPeriods() {
     final now = DateTime.now();
     final day = DateTime(now.year, now.month, now.day);
     if (!identical(_aggregatedDays, widget.days) ||
         _aggregatedInterval != _interval ||
-        _aggregatedSelection != _selected ||
-        _aggregatedDay != day) {
+        _aggregatedDay != day ||
+        _aggregatedSelected != _selected) {
       _periods = aggregateListeningPeriods(
         widget.days,
         _interval,
@@ -175,8 +168,8 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
       );
       _aggregatedDays = widget.days;
       _aggregatedInterval = _interval;
-      _aggregatedSelection = _selected;
       _aggregatedDay = day;
+      _aggregatedSelected = _selected;
     }
     return _periods;
   }
@@ -317,7 +310,6 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
       ListeningPeriod period,
       Widget child, {
       double radius = 8,
-      ValueChanged<bool>? onHover,
     }) {
       final description =
           '${range(period)}: ${listeningDurationText(i18n, period.duration)}';
@@ -331,7 +323,6 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
             mouseCursor: WidgetStateMouseCursor.clickable,
             key: ValueKey(period.start),
             onTap: () => setState(() => _selected = period.start),
-            onHover: onHover,
             borderRadius: BorderRadius.circular(radius),
             child: ExcludeSemantics(child: child),
           ),
@@ -353,32 +344,19 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
       final level = milliseconds <= 0
           ? 0
           : ((milliseconds * 4 + _maximum - 1) ~/ _maximum).clamp(1, 4);
-      return selectablePeriod(
-        period,
-        ValueListenableBuilder<DateTime?>(
-          valueListenable: _hoveredPeriod,
-          builder: (context, hovered, child) => Container(
-            decoration: BoxDecoration(
-              color: Color.lerp(
-                colors.surfaceContainerHighest,
-                colors.primary,
-                level / 4,
-              ),
-              borderRadius: BorderRadius.circular(3),
-              border: selected.start == period.start || hovered == period.start
-                  ? Border.all(color: colors.onSurface, width: 1.5)
-                  : null,
-            ),
-          ),
-        ),
-        radius: 3,
-        onHover: (hovering) {
-          if (hovering) {
-            _hoveredPeriod.value = period.start;
-          } else if (_hoveredPeriod.value == period.start) {
-            _hoveredPeriod.value = null;
-          }
-        },
+      final description =
+          '${range(period)}: ${listeningDurationText(i18n, period.duration)}';
+      return _HeatmapPeriodCell(
+        periodKey: ValueKey(period.start),
+        description: description,
+        selected: selected.start == period.start,
+        fillColor: Color.lerp(
+          colors.surfaceContainerHighest,
+          colors.primary,
+          level / 4,
+        )!,
+        borderColor: colors.onSurface,
+        onTap: () => setState(() => _selected = period.start),
       );
     }
 
@@ -669,5 +647,62 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
       ],
     );
     return widget.builder(duration, chart);
+  }
+}
+
+class _HeatmapPeriodCell extends StatefulWidget {
+  const _HeatmapPeriodCell({
+    required this.periodKey,
+    required this.description,
+    required this.selected,
+    required this.fillColor,
+    required this.borderColor,
+    required this.onTap,
+  });
+
+  final Key periodKey;
+  final String description;
+  final bool selected;
+  final Color fillColor;
+  final Color borderColor;
+  final VoidCallback onTap;
+
+  @override
+  State<_HeatmapPeriodCell> createState() => _HeatmapPeriodCellState();
+}
+
+class _HeatmapPeriodCellState extends State<_HeatmapPeriodCell> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: widget.description,
+      child: Semantics(
+        label: widget.description,
+        selected: widget.selected,
+        button: true,
+        child: InkWell(
+          key: widget.periodKey,
+          mouseCursor: WidgetStateMouseCursor.clickable,
+          onTap: widget.onTap,
+          onHover: (hovering) {
+            if (_hovered != hovering) setState(() => _hovered = hovering);
+          },
+          borderRadius: BorderRadius.circular(3),
+          child: ExcludeSemantics(
+            child: Container(
+              decoration: BoxDecoration(
+                color: widget.fillColor,
+                borderRadius: BorderRadius.circular(3),
+                border: widget.selected || _hovered
+                    ? Border.all(color: widget.borderColor, width: 1.5)
+                    : null,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

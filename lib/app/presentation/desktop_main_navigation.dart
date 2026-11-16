@@ -54,7 +54,11 @@ class DesktopMainNavigation extends StatefulWidget {
   State<DesktopMainNavigation> createState() => _DesktopMainNavigationState();
 }
 
-class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
+class _DesktopMainNavigationState extends State<DesktopMainNavigation>
+    with SingleTickerProviderStateMixin {
+  static const double _landscapeCollapsedRailWidth = 64.0;
+  static const double _landscapeExpandedRailWidth = 244.0;
+
   final Object _motionInteraction = Object();
   final GlobalKey _menuToggleKey = GlobalKey();
   final GlobalKey _railPaintKey = GlobalKey();
@@ -62,10 +66,50 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
   final _destinationStates = {
     for (final type in MainDestinationType.values) type: WidgetStatesController(),
   };
+  late final AnimationController _widthController;
+  late final CurvedAnimation _widthCurve;
+  late final Animation<double> _landscapeWidthAnimation;
   bool _motionActive = false;
   bool _tickerModeEnabled = true;
   bool _disableAnimations = false;
   bool? _landscapeLayout;
+
+  @override
+  void initState() {
+    super.initState();
+    _widthController = AnimationController(
+      vsync: this,
+      duration: kThemeAnimationDuration,
+      value: widget.isMenuCollapsed ? 0.0 : 1.0,
+    );
+    _widthCurve = CurvedAnimation(
+      parent: _widthController,
+      curve: Curves.easeInOut,
+    );
+    _landscapeWidthAnimation = Tween<double>(
+      begin: _landscapeCollapsedRailWidth,
+      end: _landscapeExpandedRailWidth,
+    ).animate(_widthCurve);
+    _widthController.addStatusListener((status) {
+      if (_landscapeLayout == true &&
+          (status.isDismissed || status.isCompleted)) {
+        _finishMotion();
+      }
+    });
+  }
+
+  void _syncWidthAnimation() {
+    final target = widget.isMenuCollapsed ? 0.0 : 1.0;
+    if (_landscapeLayout != true || _disableAnimations) {
+      if (_widthController.value != target || _widthController.isAnimating) {
+        _widthController.value = target;
+      }
+      return;
+    }
+    if (_widthController.value != target || _widthController.isAnimating) {
+      _widthController.animateTo(target);
+    }
+  }
 
   void _syncMotionInteraction() {
     final coordinator = UiInteractionCoordinator.instance;
@@ -85,6 +129,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
     if (oldWidget.isMenuCollapsed != widget.isMenuCollapsed) {
       _motionActive = !_disableAnimations;
       _syncMotionInteraction();
+      _syncWidthAnimation();
     }
     final remaining = widget.destinations.map((item) => item.type).toSet();
     for (final item in oldWidget.destinations) {
@@ -110,11 +155,14 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
     }
     _landscapeLayout = landscape;
     _syncMotionInteraction();
+    _syncWidthAnimation();
   }
 
   @override
   void dispose() {
     UiInteractionCoordinator.instance.cancelInteraction(_motionInteraction);
+    _widthCurve.dispose();
+    _widthController.dispose();
     _railScroll.dispose();
     for (final states in _destinationStates.values) {
       states.dispose();
@@ -204,7 +252,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
             child: Builder(
               builder: (context) {
                 Widget buildRail(
-                  double? landscapeWidth,
+                  ValueListenable<double>? landscapeWidthListenable,
                 ) => ValueListenableBuilder<int>(
                   valueListenable: activePageIndex,
                   builder: (context, selectedIndex, _) {
@@ -212,14 +260,8 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                       0,
                       destinations.length - 1,
                     );
-                    final labelOpacity = landscapeWidth == null
-                        ? 1.0
-                        : (4 *
-                                  (landscapeWidth - railMinWidth) /
-                                  (railMinExtendedWidth - railMinWidth))
-                              .clamp(0.0, 1.0);
                     Widget withIndicator(Widget rail) {
-                      if (landscapeWidth == null) return rail;
+                      if (landscapeWidthListenable == null) return rail;
                       Widget buildIndicator(double? dragPos) =>
                           SlidingSelectionIndicator(
                             index: activeIndex,
@@ -228,21 +270,34 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                             ),
                             overridePosition: dragPos,
                             child: rail,
-                            builder: (context, position, child) => CustomPaint(
-                              key: _railPaintKey,
-                              painter: SlidingSelectionPainter(
-                                containerKey: _railPaintKey,
-                                position: position,
-                                width: landscapeWidth - railMinWidth + 48,
-                                accentColor: cs.primary,
-                                scrollOffset: _railScroll,
-                                slots: [
-                                  for (final destination in destinations)
-                                    menuIconKeys[destination.type.index],
-                                ],
-                              ),
-                              child: child,
-                            ),
+                            builder: (context, position, child) =>
+                                ValueListenableBuilder<double>(
+                                  valueListenable: landscapeWidthListenable,
+                                  child: child,
+                                  builder:
+                                      (context, landscapeWidth, railChild) =>
+                                          CustomPaint(
+                                            key: _railPaintKey,
+                                            painter: SlidingSelectionPainter(
+                                              containerKey: _railPaintKey,
+                                              position: position,
+                                              width:
+                                                  landscapeWidth -
+                                                  railMinWidth +
+                                                  48,
+                                              accentColor: cs.primary,
+                                              scrollOffset: _railScroll,
+                                              slots: [
+                                                for (final destination
+                                                    in destinations)
+                                                  menuIconKeys[destination
+                                                      .type
+                                                      .index],
+                                              ],
+                                            ),
+                                            child: railChild,
+                                          ),
+                                ),
                           );
                       final pageDrag = widget.pageDragPosition;
                       return NotificationListener<ScrollNotification>(
@@ -290,7 +345,8 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                           child: Opacity(
                             opacity: selected ? 1 : 1 - collapse,
                             child: _buildDestinationIcon(
-                              landscapeWidth: landscapeWidth,
+                              landscapeWidthListenable:
+                                  landscapeWidthListenable,
                               railMinWidth: railMinWidth,
                               onPressed: () => onSwitchPage(index),
                               colorScheme: cs,
@@ -303,7 +359,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                                 key: ValueKey<String>(
                                   'main_destination_${item.labelKey}',
                                 ),
-                                color: landscapeWidth == null
+                                color: landscapeWidthListenable == null
                                     ? (selected
                                           ? cs.primary
                                           : cs.onSurfaceVariant)
@@ -520,26 +576,49 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                                 return NavigationRailDestination(
                                   icon: iconTarget(false),
                                   selectedIcon: iconTarget(true),
-                                  label: landscapeWidth != null
+                                  label: landscapeWidthListenable != null
                                       ? SizedBox(
                                           height: 48,
                                           child: Align(
                                             alignment: AlignmentDirectional
                                                 .centerStart,
                                             widthFactor: 1,
-                                            child: Opacity(
-                                              alwaysIncludeSemantics: true,
-                                              opacity: labelOpacity,
-                                              child: AppButtonText(
-                                                states:
-                                                    _destinationStates[item.type]!,
-                                                label: label,
-                                                style: labelStyle,
-                                                accentColor: cs.primary,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
+                                            child:
+                                                ValueListenableBuilder<double>(
+                                                  valueListenable:
+                                                      landscapeWidthListenable,
+                                                  child: AppButtonText(
+                                                    states:
+                                                        _destinationStates[item
+                                                            .type]!,
+                                                    label: label,
+                                                    style: labelStyle,
+                                                    accentColor: cs.primary,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                  builder:
+                                                      (
+                                                        context,
+                                                        landscapeWidth,
+                                                        labelChild,
+                                                      ) => Opacity(
+                                                        alwaysIncludeSemantics:
+                                                            true,
+                                                        opacity:
+                                                            (4 *
+                                                                    (landscapeWidth -
+                                                                        railMinWidth) /
+                                                                    (railMinExtendedWidth -
+                                                                        railMinWidth))
+                                                                .clamp(
+                                                                  0.0,
+                                                                  1.0,
+                                                                ),
+                                                        child: labelChild,
+                                                      ),
+                                                ),
                                           ),
                                         )
                                       : Text(
@@ -598,18 +677,12 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                 if (!isLandscapeLayout) return buildRail(null);
                 return Align(
                   alignment: Alignment.topLeft,
-                  child: TweenAnimationBuilder<double>(
-                    tween: Tween<double>(
-                      end: isMenuCollapsed
-                          ? railMinWidth
-                          : railMinExtendedWidth,
-                    ),
-                    duration: motionDuration,
-                    curve: Curves.easeInOut,
-                    onEnd: _finishMotion,
+                  child: ValueListenableBuilder<double>(
+                    valueListenable: _landscapeWidthAnimation,
+                    child: buildRail(_landscapeWidthAnimation),
                     // The viewport can still paint during collapse after the
                     // shell releases its space to the content pane.
-                    builder: (context, width, _) => OverflowBox(
+                    builder: (context, width, railChild) => OverflowBox(
                       alignment: Alignment.topLeft,
                       minWidth: width,
                       maxWidth: width,
@@ -623,7 +696,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                             alignment: Alignment.topLeft,
                             minWidth: railMinExtendedWidth,
                             maxWidth: railMinExtendedWidth,
-                            child: buildRail(width),
+                            child: railChild,
                           ),
                         ),
                       ),
@@ -711,7 +784,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
   }
 
   Widget _buildDestinationIcon({
-    required double? landscapeWidth,
+    required ValueListenable<double>? landscapeWidthListenable,
     required double railMinWidth,
     required ColorScheme colorScheme,
     required WidgetStatesController pointerStates,
@@ -719,11 +792,11 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
     required Widget icon,
     required VoidCallback onPressed,
   }) {
-    if (landscapeWidth == null) return icon;
+    if (landscapeWidthListenable == null) return icon;
     return Theme(
       data: Theme.of(context).copyWith(colorScheme: colorScheme),
       child: _DestinationPointerRow(
-        landscapeWidth: landscapeWidth,
+        landscapeWidthListenable: landscapeWidthListenable,
         railMinWidth: railMinWidth,
         pointerStates: pointerStates,
         iconButton: IconButton(
@@ -747,13 +820,13 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
 /// blocked rail padding stays non-interactive without triggering hover tint.
 class _DestinationPointerRow extends StatefulWidget {
   const _DestinationPointerRow({
-    required this.landscapeWidth,
+    required this.landscapeWidthListenable,
     required this.railMinWidth,
     required this.pointerStates,
     required this.iconButton,
   });
 
-  final double landscapeWidth;
+  final ValueListenable<double> landscapeWidthListenable;
   final double railMinWidth;
   final WidgetStatesController pointerStates;
   final Widget iconButton;
@@ -809,42 +882,49 @@ class _DestinationPointerRowState extends State<_DestinationPointerRow> {
 
   @override
   Widget build(BuildContext context) {
-    final hasLabelArea = widget.landscapeWidth > widget.railMinWidth;
-    return SizedBox(
-      width: widget.landscapeWidth,
-      height: 64,
-      child: Row(
-        children: [
-          // Consume padding around the 48px icon so only the circular button
-          // and extended label receive hover tint and click cursors.
-          MouseRegion(
-            cursor: SystemMouseCursors.basic,
-            hitTestBehavior: HitTestBehavior.opaque,
-            child: SizedBox(
-              width: widget.railMinWidth,
-              height: 64,
-              child: Center(
-                child: SizedBox.square(
-                  dimension: 48,
-                  child: AppButtonPointerRegion(
-                    statesController: _iconStates,
-                    cursor: SystemMouseCursors.click,
-                    builder: (_, _) => widget.iconButton,
-                  ),
-                ),
-              ),
+    final iconArea = MouseRegion(
+      cursor: SystemMouseCursors.basic,
+      hitTestBehavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: widget.railMinWidth,
+        height: 64,
+        child: Center(
+          child: SizedBox.square(
+            dimension: 48,
+            child: AppButtonPointerRegion(
+              statesController: _iconStates,
+              cursor: SystemMouseCursors.click,
+              builder: (_, _) => widget.iconButton,
             ),
           ),
-          if (hasLabelArea)
-            Expanded(
-              child: AppButtonPointerRegion(
-                statesController: _labelStates,
-                cursor: SystemMouseCursors.click,
-                builder: (_, _) => const SizedBox.expand(),
-              ),
-            ),
-        ],
+        ),
       ),
+    );
+    return ValueListenableBuilder<double>(
+      valueListenable: widget.landscapeWidthListenable,
+      child: iconArea,
+      builder: (context, landscapeWidth, iconChild) {
+        final hasLabelArea = landscapeWidth > widget.railMinWidth;
+        return SizedBox(
+          width: landscapeWidth,
+          height: 64,
+          child: Row(
+            children: [
+              // Consume padding around the 48px icon so only the circular button
+              // and extended label receive hover tint and click cursors.
+              iconChild!,
+              if (hasLabelArea)
+                Expanded(
+                  child: AppButtonPointerRegion(
+                    statesController: _labelStates,
+                    cursor: SystemMouseCursors.click,
+                    builder: (_, _) => const SizedBox.expand(),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

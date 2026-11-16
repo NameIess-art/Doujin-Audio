@@ -995,7 +995,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
       // Only landscape changes the main layout when a detail pane opens.
       // WorkDetailPane owns route visibility; portrait push/pop must retain
       // the main navigator and dock instead of rebuilding them at both ends.
-      listenable: Listenable.merge([if (isLandscape) detailNavigation]),
+      listenable: Listenable.merge([
+        if (isLandscape) detailNavigation?.isOpenListenable,
+      ]),
       builder: (context, _) {
         final splitContent = isLandscape && (detailNavigation?.isOpen ?? false);
         final menuCollapsed =

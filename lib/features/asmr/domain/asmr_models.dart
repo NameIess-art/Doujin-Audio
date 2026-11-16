@@ -651,7 +651,7 @@ class AsmrTrackFile {
   bool get isImage =>
       !isFolder &&
       (_asmrImageExtensions.contains(resolvedExtension) || type == 'image');
-  bool get hasBrowsableContent =>
+  late final bool hasBrowsableContent =
       isAudio || children.any((child) => child.hasBrowsableContent);
   String get stemKey => _asmrMatchingStem(relativePath);
   String get baseNameStem => _asmrMatchingStem(title);

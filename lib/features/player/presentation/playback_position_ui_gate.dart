@@ -44,6 +44,11 @@ class PlaybackPositionUiGate extends ChangeNotifier {
 
   PlaybackPositionUiSnapshot get value => _value;
 
+  /// Reads the committed seek position before its progress event is delivered.
+  void syncPosition(Duration position) {
+    _updateValue(_value.copyWith(position: position));
+  }
+
   bool get tickerModeEnabled => _tickerModeEnabled;
 
   set tickerModeEnabled(bool enabled) {

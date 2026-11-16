@@ -1,5 +1,71 @@
+final RegExp _leadingZerosPattern = RegExp(r'^0+');
+
+@pragma('vm:prefer-inline')
+int _asciiFoldCodeUnit(int codeUnit) =>
+    codeUnit >= 65 && codeUnit <= 90 ? codeUnit + 32 : codeUnit;
+
+@pragma('vm:prefer-inline')
+bool _isAsciiDigit(int codeUnit) => codeUnit >= 48 && codeUnit <= 57;
+
+int? _compareNaturalAsciiFolded(String left, String right) {
+  final leftLength = left.length;
+  final rightLength = right.length;
+  var leftIndex = 0;
+  var rightIndex = 0;
+
+  while (leftIndex < leftLength && rightIndex < rightLength) {
+    final rawLeft = left.codeUnitAt(leftIndex);
+    final rawRight = right.codeUnitAt(rightIndex);
+    if (rawLeft >= 0x80 || rawRight >= 0x80) return null;
+
+    if (_isAsciiDigit(rawLeft) && _isAsciiDigit(rawRight)) {
+      var leftEnd = leftIndex + 1;
+      while (leftEnd < leftLength) {
+        final code = left.codeUnitAt(leftEnd);
+        if (code >= 0x80) return null;
+        if (!_isAsciiDigit(code)) break;
+        leftEnd++;
+      }
+      var rightEnd = rightIndex + 1;
+      while (rightEnd < rightLength) {
+        final code = right.codeUnitAt(rightEnd);
+        if (code >= 0x80) return null;
+        if (!_isAsciiDigit(code)) break;
+        rightEnd++;
+      }
+      final numberResult = _compareDigitRuns(
+        left,
+        leftIndex,
+        leftEnd,
+        right,
+        rightIndex,
+        rightEnd,
+      );
+      if (numberResult != 0) return numberResult;
+      leftIndex = leftEnd;
+      rightIndex = rightEnd;
+      continue;
+    }
+
+    final foldedLeft = _asciiFoldCodeUnit(rawLeft);
+    final foldedRight = _asciiFoldCodeUnit(rawRight);
+    if (foldedLeft != foldedRight) return foldedLeft.compareTo(foldedRight);
+    leftIndex++;
+    rightIndex++;
+  }
+
+  final lengthResult = leftLength.compareTo(rightLength);
+  if (lengthResult != 0) return lengthResult;
+  return left.compareTo(right);
+}
+
 int compareNatural(String left, String right, {bool caseSensitive = false}) {
   if (identical(left, right)) return 0;
+
+  if (!caseSensitive) {
+    final asciiResult = _compareNaturalAsciiFolded(left, right);
+    if (asciiResult != null) return asciiResult;
+  }
 
   final normalizedLeft = caseSensitive ? left : left.toLowerCase();
   final normalizedRight = caseSensitive ? right : right.toLowerCase();
@@ -158,8 +224,14 @@ _NumberToken _consumeNumber(String value, int start) {
 }
 
 int _compareNumbers(_NumberToken left, _NumberToken right) {
-  final trimmedLeft = left.normalizedDigits.replaceFirst(RegExp(r'^0+'), '');
-  final trimmedRight = right.normalizedDigits.replaceFirst(RegExp(r'^0+'), '');
+  final trimmedLeft = left.normalizedDigits.replaceFirst(
+    _leadingZerosPattern,
+    '',
+  );
+  final trimmedRight = right.normalizedDigits.replaceFirst(
+    _leadingZerosPattern,
+    '',
+  );
   final valLeft = trimmedLeft.isEmpty ? '0' : trimmedLeft;
   final valRight = trimmedRight.isEmpty ? '0' : trimmedRight;
 

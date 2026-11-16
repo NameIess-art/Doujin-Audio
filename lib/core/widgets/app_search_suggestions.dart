@@ -1,11 +1,11 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 
 import 'app_buttons.dart';
 import 'app_entry_ink_well.dart';
 import '../media/search_query_utils.dart';
+import '../ui/ui_interaction_coordinator.dart';
 
 /// A sliver section that folds by rendered rows, independently of item count.
 class AppSearchSuggestionSection extends StatelessWidget {
@@ -230,7 +230,9 @@ class _AppElementChipSliverState extends State<AppElementChipSliver> {
   TextDirection? _layoutDirection;
   Locale? _layoutLocale;
   bool _layoutComplete = false;
-  int? _measurementFrame;
+  bool _measurementScheduled = false;
+  late final String _measurementCommitKey =
+      'app_element_chip_sliver_${identityHashCode(this)}';
   final _rowsKey = GlobalKey();
 
   @override
@@ -240,26 +242,30 @@ class _AppElementChipSliverState extends State<AppElementChipSliver> {
   }
 
   void _cancelMeasurement() {
-    if (_measurementFrame case final id?) {
-      SchedulerBinding.instance.cancelFrameCallbackWithId(id);
-      _measurementFrame = null;
-    }
+    _measurementScheduled = false;
+    UiInteractionCoordinator.instance.cancelCommit(_measurementCommitKey);
   }
 
   void _scheduleMeasurement() {
-    if (_layoutComplete || _measurementFrame != null) return;
-    _measurementFrame = SchedulerBinding.instance.scheduleFrameCallback((_) {
-      _measurementFrame = null;
-      // A new search or layout replaces the queue during the next layout.
-      _ensureRows(_itemCount, maxNewItems: _measurementBatchSize);
-      if (_layoutComplete) {
-        setState(() {});
-        // A new delegate count alone does not relayout unchanged visible rows.
-        _rowsKey.currentContext?.findRenderObject()?.markNeedsLayout();
-      } else {
-        _scheduleMeasurement();
-      }
-    });
+    if (_layoutComplete || _measurementScheduled) return;
+    _measurementScheduled = true;
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _measurementCommitKey,
+      priority: 80,
+      commit: () {
+        _measurementScheduled = false;
+        if (!mounted || _layoutComplete) return;
+        // A new search or layout replaces the queue during the next layout.
+        _ensureRows(_itemCount, maxNewItems: _measurementBatchSize);
+        if (_layoutComplete) {
+          setState(() {});
+          // A new delegate count alone does not relayout unchanged visible rows.
+          _rowsKey.currentContext?.findRenderObject()?.markNeedsLayout();
+        } else {
+          _scheduleMeasurement();
+        }
+      },
+    );
   }
 
   bool _layout(

@@ -14,6 +14,7 @@ class _WindowsPlaybackSession {
   Object? lastEventKey;
   int queueRevision = 0, externalQueueRevision = 0, emittedQueueRevision = -1;
   Duration? lastProgressPosition;
+  Duration? lastProgressElapsed;
   Duration? duration;
 
   Future<T> enqueue<T>(Future<T> Function() action) {
@@ -429,6 +430,7 @@ class _WindowsPlaybackSession {
     videoController = null;
     pendingStart = null;
     lastProgressPosition = null;
+    lastProgressElapsed = null;
     for (final subscription in subscriptions) {
       await subscription.cancel();
     }

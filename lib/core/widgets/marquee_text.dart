@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -148,12 +150,17 @@ class _MarqueeTextState extends State<MarqueeText>
   // Marquee progress must not share PageStorage offsets with the parent list.
   final _controller = ScrollController(keepScrollOffset: false);
   late final Ticker _ticker = createTicker(_tick);
+  Timer? _pauseTimer;
   Duration? _previousTick;
-  double _pauseSeconds = 0;
   bool _atEnd = false;
   bool _canAnimate = false;
   bool _pointerDown = false;
   bool _userScrolling = false;
+  String? _measuredText;
+  TextStyle? _measuredStyle;
+  TextDirection? _measuredDirection;
+  TextScaler? _measuredScaler;
+  double? _measuredWidth;
   ValueListenable<bool>? _scrollActivity;
   ValueListenable<TickerModeData>? _tickerMode;
 
@@ -161,7 +168,13 @@ class _MarqueeTextState extends State<MarqueeText>
   bool get _animationAllowed =>
       !_pauseRequested && (_tickerMode?.value.enabled ?? true);
 
-  double get _pauseDuration => widget.pauseDuration.inMicroseconds / 1000000;
+  bool get _shouldRun =>
+      _animationAllowed &&
+      !_pointerDown &&
+      !_userScrolling &&
+      _controller.hasClients &&
+      _controller.position.hasContentDimensions &&
+      _controller.position.maxScrollExtent > 0;
 
   @override
   void didChangeDependencies() {
@@ -199,37 +212,61 @@ class _MarqueeTextState extends State<MarqueeText>
   @override
   void didUpdateWidget(MarqueeText oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.text != widget.text && _controller.hasClients) {
-      _controller.jumpTo(0);
+    if (oldWidget.text != widget.text) {
+      _cancelPauseTimer();
+      if (_ticker.isActive) _ticker.stop();
+      if (_controller.hasClients) _controller.jumpTo(0);
       _atEnd = false;
-      _pauseSeconds = _pauseDuration;
     }
     _syncTicker();
   }
 
+  void _cancelPauseTimer() {
+    _pauseTimer?.cancel();
+    _pauseTimer = null;
+  }
+
+  void _schedulePause(Duration duration) {
+    if (_ticker.isActive) _ticker.stop();
+    _cancelPauseTimer();
+    _pauseTimer = Timer(duration, () {
+      _pauseTimer = null;
+      if (!mounted || !_shouldRun) return;
+      if (_atEnd) {
+        _controller.jumpTo(0);
+        _atEnd = false;
+        if (widget.pauseDuration > Duration.zero) {
+          _schedulePause(widget.pauseDuration);
+          return;
+        }
+      }
+      _previousTick = null;
+      _ticker.start();
+    });
+  }
+
   void _syncTicker() {
-    final shouldRun =
-        _animationAllowed &&
-        !_pointerDown &&
-        !_userScrolling &&
-        _controller.hasClients &&
-        _controller.position.hasContentDimensions &&
-        _controller.position.maxScrollExtent > 0;
-    if (shouldRun && !_ticker.isActive) {
+    final shouldRun = _shouldRun;
+    if (shouldRun && !_ticker.isActive && _pauseTimer == null) {
       _previousTick = null;
       final hoverToRun =
           context
               .getInheritedWidgetOfExactType<_MarqueePauseScope>()
               ?.hoverToRun ??
           false;
-      _pauseSeconds =
+      final initialPause =
           defaultTargetPlatform == TargetPlatform.windows && hoverToRun
-          ? 0
-          : _pauseDuration;
+          ? Duration.zero
+          : widget.pauseDuration;
       _atEnd = _controller.offset >= _controller.position.maxScrollExtent;
-      _ticker.start();
-    } else if (!shouldRun && _ticker.isActive) {
-      _ticker.stop();
+      if (initialPause > Duration.zero) {
+        _schedulePause(initialPause);
+      } else {
+        _ticker.start();
+      }
+    } else if (!shouldRun) {
+      _cancelPauseTimer();
+      if (_ticker.isActive) _ticker.stop();
     }
   }
 
@@ -241,17 +278,13 @@ class _MarqueeTextState extends State<MarqueeText>
     final previous = _previousTick;
     _previousTick = elapsed;
     if (previous == null) return;
-    var seconds = (elapsed - previous).inMicroseconds / 1000000;
-    if (_pauseSeconds > 0) {
-      final remaining = seconds - _pauseSeconds;
-      _pauseSeconds = (_pauseSeconds - seconds).clamp(0, _pauseDuration);
-      if (remaining <= 0) return;
-      seconds = remaining;
-    }
+    final seconds = (elapsed - previous).inMicroseconds / 1000000;
     if (_atEnd) {
       _controller.jumpTo(0);
       _atEnd = false;
-      _pauseSeconds = _pauseDuration;
+      if (widget.pauseDuration > Duration.zero) {
+        _schedulePause(widget.pauseDuration);
+      }
       return;
     }
     final position = _controller.position;
@@ -262,12 +295,41 @@ class _MarqueeTextState extends State<MarqueeText>
     _controller.jumpTo(target);
     if (target == position.maxScrollExtent) {
       _atEnd = true;
-      _pauseSeconds = _pauseDuration;
+      if (widget.pauseDuration > Duration.zero) {
+        _schedulePause(widget.pauseDuration);
+      }
     }
+  }
+
+  double _measureTextWidth(BuildContext context) {
+    final direction = Directionality.of(context);
+    final scaler = MediaQuery.textScalerOf(context);
+    if (_measuredWidth != null &&
+        _measuredText == widget.text &&
+        _measuredStyle == widget.style &&
+        _measuredDirection == direction &&
+        _measuredScaler == scaler) {
+      return _measuredWidth!;
+    }
+    final painter = TextPainter(
+      text: TextSpan(text: widget.text, style: widget.style),
+      textDirection: direction,
+      textScaler: scaler,
+      maxLines: 1,
+    )..layout();
+    final width = painter.width;
+    painter.dispose();
+    _measuredText = widget.text;
+    _measuredStyle = widget.style;
+    _measuredDirection = direction;
+    _measuredScaler = scaler;
+    _measuredWidth = width;
+    return width;
   }
 
   @override
   void dispose() {
+    _cancelPauseTimer();
     _scrollActivity?.removeListener(_handleScrollActivity);
     _tickerMode?.removeListener(_syncTicker);
     _ticker.dispose();
@@ -291,20 +353,14 @@ class _MarqueeTextState extends State<MarqueeText>
         var needsMarquee = widget.forceMarquee;
         var displayText = widget.text;
         if (constraints.hasBoundedWidth) {
-          final painter = TextPainter(
-            text: TextSpan(text: widget.text, style: widget.style),
-            textDirection: Directionality.of(context),
-            textScaler: MediaQuery.textScalerOf(context),
-            maxLines: 1,
-          )..layout();
-          if (painter.width > constraints.maxWidth) {
+          final width = _measureTextWidth(context);
+          if (width > constraints.maxWidth) {
             needsMarquee = true;
-          } else if (widget.forceMarquee && painter.width > 0) {
+          } else if (widget.forceMarquee && width > 0) {
             displayText =
                 '${widget.text}        ' *
-                ((constraints.maxWidth / painter.width).ceil() + 2);
+                ((constraints.maxWidth / width).ceil() + 2);
           }
-          painter.dispose();
         }
         if (!needsMarquee) {
           return widget.child ??

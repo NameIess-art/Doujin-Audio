@@ -230,7 +230,9 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
               ),
             )
           : AnimatedSize(
-              duration: motionStandard,
+              duration: widget.terms.length > 48
+                  ? Duration.zero
+                  : motionStandard,
               curve: Curves.easeOutCubic,
               alignment: Alignment.topCenter,
               child: Column(

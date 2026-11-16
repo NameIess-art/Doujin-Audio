@@ -2089,7 +2089,9 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   bool _isAnimating = false;
   bool _isDragging = false;
   double _dragDeltaPx = 0.0;
-  double _rubberBandFraction = 0.0;
+  final ValueNotifier<Offset> _rubberBandOffset = ValueNotifier(Offset.zero);
+  late final Animation<Offset> _rubberBandAnimation =
+      Animation.fromValueListenable(_rubberBandOffset);
   double _rubberBandStart = 0.0;
   int? _completingSwipeTarget;
   double? _lastNotifiedDragPosition;
@@ -2186,7 +2188,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   void _clearSwipeState() {
     _isDragging = false;
     _dragDeltaPx = 0.0;
-    _rubberBandFraction = 0.0;
+    _rubberBandOffset.value = Offset.zero;
     _rubberBandStart = 0.0;
     _completingSwipeTarget = null;
     _notifyDragPosition(null);
@@ -2272,7 +2274,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     if (!_canStartHorizontalSwipe()) return;
     _completingSwipeTarget = null;
     _dragDeltaPx = 0.0;
-    _rubberBandFraction = 0.0;
+    _rubberBandOffset.value = Offset.zero;
     _rubberBandStart = 0.0;
     if (!_animateSwipeEnabled) {
       setState(() => _isDragging = true);
@@ -2307,10 +2309,10 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       final damped = -direction * 0.16 * (1.0 - math.exp(-overscroll * 3.5));
       _notifyDragPosition(_currentIndex.toDouble());
       _controller.value = 0;
-      if (_targetIndex != _currentIndex || _rubberBandFraction != damped) {
+      _rubberBandOffset.value = Offset(damped, 0);
+      if (_targetIndex != _currentIndex) {
         setState(() {
           _targetIndex = _currentIndex;
-          _rubberBandFraction = damped;
         });
       }
       return;
@@ -2318,10 +2320,8 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
 
     final progress = rawFraction.abs().clamp(0.0, 1.0);
     final needsStateUpdate =
-        _targetIndex != candidate ||
-        _transitionDirection != direction ||
-        _rubberBandFraction != 0.0;
-    _rubberBandFraction = 0.0;
+        _targetIndex != candidate || _transitionDirection != direction;
+    _rubberBandOffset.value = Offset.zero;
     _notifyDragPosition(
       (_currentIndex + direction * progress).clamp(
         0.0,
@@ -2358,7 +2358,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       setState(() {
         _isDragging = false;
         _dragDeltaPx = 0.0;
-        _rubberBandFraction = 0.0;
+        _rubberBandOffset.value = Offset.zero;
         _targetIndex = _currentIndex;
       });
       if (next != _currentIndex) {
@@ -2369,22 +2369,23 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     }
 
     if (_targetIndex == _currentIndex) {
-      if (_rubberBandFraction.abs() < 0.001) {
+      final currentRubberBand = _rubberBandOffset.value.dx;
+      if (currentRubberBand.abs() < 0.001) {
         setState(() {
           _isDragging = false;
           _dragDeltaPx = 0.0;
-          _rubberBandFraction = 0.0;
+          _rubberBandOffset.value = Offset.zero;
           _controller.value = 1;
         });
         UiInteractionCoordinator.instance.endNavigation(_transitionInteraction);
         return;
       }
-      _rubberBandStart = _rubberBandFraction;
+      _rubberBandStart = currentRubberBand;
       _completingSwipeTarget = _currentIndex;
       setState(() {
         _isDragging = false;
         _dragDeltaPx = 0.0;
-        _rubberBandFraction = 0.0;
+        _rubberBandOffset.value = Offset.zero;
         _isAnimating = true;
       });
       _controller.animateWith(
@@ -2408,7 +2409,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     setState(() {
       _isDragging = false;
       _dragDeltaPx = 0.0;
-      _rubberBandFraction = 0.0;
+      _rubberBandOffset.value = Offset.zero;
       _rubberBandStart = 0.0;
       _isAnimating = true;
       _completingSwipeTarget = commitTarget;
@@ -2582,7 +2583,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       _currentIndex = index;
       _targetIndex = index;
       _isAnimating = false;
-      _rubberBandFraction = 0.0;
+      _rubberBandOffset.value = Offset.zero;
       _rubberBandStart = 0.0;
       _completingSwipeTarget = null;
       _controller.value = 1;
@@ -2611,6 +2612,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   void dispose() {
     widget.indexListenable.removeListener(_handleIndexChanged);
     UiInteractionCoordinator.instance.cancelNavigation(_transitionInteraction);
+    _rubberBandOffset.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -2651,7 +2653,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     final transitioning =
         (_isDragging || _isAnimating) && _targetIndex != _currentIndex;
     final rubberBanding =
-        (_isDragging && _rubberBandFraction != 0.0) ||
+        (_isDragging && _targetIndex == _currentIndex) ||
         (_isAnimating && _rubberBandStart != 0.0);
     final visible =
         preparing ||
@@ -2707,7 +2709,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
           : const AlwaysStoppedAnimation<Offset>(Offset(1, 0));
     } else if (rubberBanding && index == _currentIndex) {
       position = _isDragging
-          ? AlwaysStoppedAnimation<Offset>(Offset(_rubberBandFraction, 0))
+          ? _rubberBandAnimation
           : _controller.drive(
               Tween<Offset>(
                 begin: Offset.zero,

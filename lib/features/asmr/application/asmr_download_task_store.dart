@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../../core/immutable_collections.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/persistence/app_preferences.dart';
@@ -492,9 +493,10 @@ final class AsmrDownloadTaskStore {
       final downloadedBytes = _liveDownloadedBytes[workId];
       final task = this[workId];
       if (task == null || downloadedBytes == null) continue;
-      final fileDownloadedBytes = Map<String, int>.unmodifiable(
-        _liveFileDownloadedBytes[workId] ?? task.fileDownloadedBytes,
-      );
+      final liveFiles = _liveFileDownloadedBytes[workId];
+      final fileDownloadedBytes = liveFiles == null
+          ? task.fileDownloadedBytes
+          : immutableMap(liveFiles);
       final effectiveDownloadedBytes =
           task.totalBytes > 0 &&
               !task.hasUnknownFileSizes &&

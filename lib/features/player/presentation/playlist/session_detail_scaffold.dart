@@ -403,7 +403,16 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                             ),
                           );
                           final transport = ref.watch(
-                            sessionDetailTransportProvider(session.id),
+                            sessionDetailTransportProvider(session.id).select(
+                              (state) => state == null
+                                  ? null
+                                  : (
+                                      channelSwapEnabled:
+                                          state.channelSwapEnabled,
+                                      audioEffects: state.audioEffects,
+                                      speed: state.speed,
+                                    ),
+                            ),
                           );
                           final badges = sessionFeatureBadgeVisibility(
                             showSubtitles:

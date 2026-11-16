@@ -31,6 +31,15 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
   bool _showSearchPlaceholder = false;
   bool _isSelectionMode = false;
   final Set<String> _selectedWorkIds = <String>{};
+  final ValueNotifier<({bool active, Set<String> ids})> _selectionListenable =
+      ValueNotifier((active: false, ids: const <String>{}));
+
+  void _syncSelectionListenable() {
+    _selectionListenable.value = (
+      active: _isSelectionMode,
+      ids: Set<String>.unmodifiable(_selectedWorkIds),
+    );
+  }
   int _requestSerial = 0;
   bool _refreshPending = false;
   ModalRoute<dynamic>? _route;
@@ -238,31 +247,36 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
   void _clearSelection() {
     _isSelectionMode = false;
     _selectedWorkIds.clear();
+    _syncSelectionListenable();
   }
 
   void _enterSelectionMode(AsmrWork work) {
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
-    setState(() {
-      _isSelectionMode = true;
-      _selectedWorkIds
-        ..clear()
-        ..add(work.workKey);
-    });
+    final wasActive = _isSelectionMode;
+    _isSelectionMode = true;
+    _selectedWorkIds
+      ..clear()
+      ..add(work.workKey);
+    _syncSelectionListenable();
+    if (!wasActive) setState(() {});
   }
 
   void _exitSelectionMode() {
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.tap);
-    setState(_clearSelection);
+    final wasActive = _isSelectionMode;
+    _clearSelection();
+    if (wasActive) setState(() {});
   }
 
   void _toggleWorkSelection(AsmrWork work) {
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
-    setState(() {
-      if (!_selectedWorkIds.add(work.workKey)) {
-        _selectedWorkIds.remove(work.workKey);
-        if (_selectedWorkIds.isEmpty) _isSelectionMode = false;
-      }
-    });
+    final wasActive = _isSelectionMode;
+    if (!_selectedWorkIds.add(work.workKey)) {
+      _selectedWorkIds.remove(work.workKey);
+      if (_selectedWorkIds.isEmpty) _isSelectionMode = false;
+    }
+    _syncSelectionListenable();
+    if (wasActive != _isSelectionMode) setState(() {});
   }
 
   List<AsmrWork> _selectedWorks() => _selectedAsmrWorks(
@@ -278,12 +292,15 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
       context: context,
       ref: ref,
       works: _selectedWorks(),
-      onFinished: (failedIds) => setState(() {
+      onFinished: (failedIds) {
+        final wasActive = _isSelectionMode;
         _selectedWorkIds
           ..clear()
           ..addAll(failedIds);
         _isSelectionMode = failedIds.isNotEmpty;
-      }),
+        _syncSelectionListenable();
+        if (wasActive != _isSelectionMode) setState(() {});
+      },
     );
   }
 
@@ -292,7 +309,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
       context: context,
       ref: ref,
       works: _selectedWorks(),
-      refreshSelectionState: () => setState(() {}),
+      refreshSelectionState: _syncSelectionListenable,
     );
   }
 
@@ -524,6 +541,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
     UiInteractionCoordinator.instance.cancelCommit(_suggestionsLoadKey);
     UiInteractionCoordinator.instance.cancelCommit(_suggestionsCommitKey);
     _activeCategoryIndex.dispose();
+    _selectionListenable.dispose();
     _suggestionsScrollController.dispose();
     _searchController?.removeListener(_handleSuggestionsChanged);
     _suggestions.dispose();
@@ -568,8 +586,6 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
               _query,
               i18n.language,
               _showSearchPlaceholder,
-              _isSelectionMode,
-              _selectedWorkIds.join(','),
               topInset,
               bottomInset,
             ),
@@ -587,8 +603,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
                 topInset: topInset,
                 bottomInset: bottomInset,
                 onRefresh: () => _refresh(force: true),
-                isSelectionMode: _isSelectionMode,
-                selectedWorkIds: _selectedWorkIds,
+                selectionListenable: _selectionListenable,
                 onEnterSelectionMode: _enterSelectionMode,
                 onToggleSelection: _toggleWorkSelection,
               );
@@ -598,9 +613,6 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
       valueListenable: _activeCategoryIndex,
       child: resultsBody,
       builder: (context, _, resultsBody) {
-        final selectedWorks = _isSelectionMode
-            ? _selectedWorks()
-            : <AsmrWork>[];
         return AppSearchPageScaffold<AsmrCategoryType>(
           controller: _controller,
           focusNode: _focusNode,
@@ -624,20 +636,28 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
               ? null
               : () => unawaited(_onSubmitted(_controller.text)),
           controlsOverlay: _isSelectionMode
-              ? _AsmrBatchSelectionHeader(
-                  keyPrefix: 'asmr_search',
-                  i18n: i18n,
-                  selectedWorks: selectedWorks,
-                  onAddToPlaylist: selectedWorks.isEmpty
-                      ? null
-                      : _addSelectedWorksToPlaylist,
-                  onDownload: selectedWorks.isEmpty
-                      ? null
-                      : _downloadSelectedWorks,
-                  onToggleFavorite: selectedWorks.isEmpty
-                      ? null
-                      : _toggleSelectedFavorites,
-                  onExit: _exitSelectionMode,
+              ? ValueListenableBuilder<({bool active, Set<String> ids})>(
+                  valueListenable: _selectionListenable,
+                  builder: (context, selection, _) {
+                    final selectedWorks = selection.active
+                        ? _selectedWorks()
+                        : const <AsmrWork>[];
+                    return _AsmrBatchSelectionHeader(
+                      keyPrefix: 'asmr_search',
+                      i18n: i18n,
+                      selectedWorks: selectedWorks,
+                      onAddToPlaylist: selectedWorks.isEmpty
+                          ? null
+                          : _addSelectedWorksToPlaylist,
+                      onDownload: selectedWorks.isEmpty
+                          ? null
+                          : _downloadSelectedWorks,
+                      onToggleFavorite: selectedWorks.isEmpty
+                          ? null
+                          : _toggleSelectedFavorites,
+                      onExit: _exitSelectionMode,
+                    );
+                  },
                 )
               : null,
           body: Builder(

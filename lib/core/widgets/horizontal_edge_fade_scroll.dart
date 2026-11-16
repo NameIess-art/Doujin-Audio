@@ -71,6 +71,8 @@ class _HorizontalEdgeFadeScrollState extends State<HorizontalEdgeFadeScroll> {
           },
           child: _HorizontalEdgeMask(
             enabled: _fadeLeft || _fadeRight,
+            fadeLeft: _fadeLeft,
+            fadeRight: _fadeRight,
             blendMode: BlendMode.dstIn,
             shaderCallback: (bounds) => LinearGradient(
               colors: [
@@ -100,17 +102,23 @@ class _HorizontalEdgeFadeScrollState extends State<HorizontalEdgeFadeScroll> {
 class _HorizontalEdgeMask extends ShaderMask {
   const _HorizontalEdgeMask({
     required this.enabled,
+    required this.fadeLeft,
+    required this.fadeRight,
     required super.shaderCallback,
     required super.blendMode,
     required super.child,
   });
 
   final bool enabled;
+  final bool fadeLeft;
+  final bool fadeRight;
 
   @override
   RenderShaderMask createRenderObject(BuildContext context) =>
       _RenderHorizontalEdgeMask(
         enabled: enabled,
+        fadeLeft: fadeLeft,
+        fadeRight: fadeRight,
         shaderCallback: shaderCallback,
         blendMode: blendMode,
       );
@@ -121,22 +129,50 @@ class _HorizontalEdgeMask extends ShaderMask {
     covariant _RenderHorizontalEdgeMask renderObject,
   ) {
     super.updateRenderObject(context, renderObject);
-    renderObject.enabled = enabled;
+    renderObject
+      ..enabled = enabled
+      ..fadeLeft = fadeLeft
+      ..fadeRight = fadeRight;
   }
 }
 
 class _RenderHorizontalEdgeMask extends RenderShaderMask {
   _RenderHorizontalEdgeMask({
     required bool enabled,
+    required bool fadeLeft,
+    required bool fadeRight,
     required super.shaderCallback,
     required super.blendMode,
-  }) : _enabled = enabled;
+  }) : _enabled = enabled,
+       _fadeLeft = fadeLeft,
+       _fadeRight = fadeRight;
 
   bool _enabled;
+  bool _fadeLeft;
+  bool _fadeRight;
+  Shader? _cachedShader;
+  Size? _cachedSize;
+  bool? _cachedFadeLeft;
+  bool? _cachedFadeRight;
+
   set enabled(bool value) {
     if (_enabled == value) return;
     _enabled = value;
     markNeedsCompositingBitsUpdate();
+    markNeedsPaint();
+  }
+
+  set fadeLeft(bool value) {
+    if (_fadeLeft == value) return;
+    _fadeLeft = value;
+    _cachedShader = null;
+    markNeedsPaint();
+  }
+
+  set fadeRight(bool value) {
+    if (_fadeRight == value) return;
+    _fadeRight = value;
+    _cachedShader = null;
     markNeedsPaint();
   }
 
@@ -155,9 +191,18 @@ class _RenderHorizontalEdgeMask extends RenderShaderMask {
     // Rasterization can round the viewport clip and the mask rectangle
     // differently. Cover the boundary pixels without moving the gradient.
     const overlap = 1.0;
+    if (_cachedShader == null ||
+        _cachedSize != size ||
+        _cachedFadeLeft != _fadeLeft ||
+        _cachedFadeRight != _fadeRight) {
+      _cachedShader = shaderCallback(const Offset(overlap, overlap) & size);
+      _cachedSize = size;
+      _cachedFadeLeft = _fadeLeft;
+      _cachedFadeRight = _fadeRight;
+    }
     layer ??= ShaderMaskLayer();
     layer!
-      ..shader = shaderCallback(const Offset(overlap, overlap) & size)
+      ..shader = _cachedShader
       ..maskRect = (offset & size).inflate(overlap)
       ..blendMode = blendMode;
     context.pushLayer(layer!, (context, offset) {

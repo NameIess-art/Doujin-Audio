@@ -757,16 +757,30 @@ class WindowsPlaybackBridge
             !_progress.isClosed &&
             (player.state.playing || session.wantsPlay) &&
             position != session.lastProgressPosition) {
-          session.lastProgressPosition = position;
-          _progress.add(
-            NativePlaybackProgressUpdate(
-              sessionId: session.id,
-              position: position,
-              bufferedPosition: session.relativePosition(player.state.buffer),
-              duration: session.currentDuration,
-              nativeElapsedRealtimeMs: _elapsed.inMilliseconds,
-            ),
-          );
+          final nowElapsed = _elapsed;
+          final previousPosition = session.lastProgressPosition;
+          final previousElapsed = session.lastProgressElapsed;
+          final jumped =
+              previousPosition == null ||
+              position < previousPosition ||
+              (position - previousPosition).abs() >=
+                  const Duration(milliseconds: 250);
+          final elapsedDue =
+              previousElapsed == null ||
+              nowElapsed - previousElapsed >= const Duration(milliseconds: 32);
+          if (jumped || elapsedDue) {
+            session.lastProgressPosition = position;
+            session.lastProgressElapsed = nowElapsed;
+            _progress.add(
+              NativePlaybackProgressUpdate(
+                sessionId: session.id,
+                position: position,
+                bufferedPosition: session.relativePosition(player.state.buffer),
+                duration: session.currentDuration,
+                nativeElapsedRealtimeMs: nowElapsed.inMilliseconds,
+              ),
+            );
+          }
         }
       }),
       player.stream.error.listen((error) {

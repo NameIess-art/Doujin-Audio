@@ -6,6 +6,7 @@ import 'ui_interaction_coordinator.dart';
 
 int _interactionDeferredStreamSeed = 0;
 const Object _noPendingValue = Object();
+const Object _noVersion = Object();
 
 Stream<T> interactionDeferredListenableStream<T>({
   required Listenable source,
@@ -13,6 +14,7 @@ Stream<T> interactionDeferredListenableStream<T>({
   UiInteractionCoordinator? coordinator,
   bool deferInitialRead = false,
   bool structural = false,
+  Object? Function()? version,
 }) {
   final interaction = coordinator ?? UiInteractionCoordinator.instance;
   return Stream<T>.multi((events) {
@@ -20,11 +22,24 @@ Stream<T> interactionDeferredListenableStream<T>({
         'interaction_deferred_listenable_${_interactionDeferredStreamSeed++}';
     var dirty = false;
     var paused = false;
+    Object? lastVersion = _noVersion;
+
+    T readSnapshot() {
+      // Read the version before the snapshot so a synchronous mutation during
+      // read() cannot be attributed to the newer state.
+      lastVersion = version == null ? _noVersion : version();
+      return read();
+    }
 
     void flushPending() {
       if (!events.isClosed && !paused && dirty) {
         dirty = false;
-        events.addSync(read());
+        if (version != null &&
+            !identical(lastVersion, _noVersion) &&
+            version() == lastVersion) {
+          return;
+        }
+        events.addSync(readSnapshot());
       }
     }
 
@@ -33,10 +48,17 @@ Stream<T> interactionDeferredListenableStream<T>({
         dirty = true;
         return;
       }
+      if (version != null &&
+          !identical(lastVersion, _noVersion) &&
+          version() == lastVersion) {
+        dirty = false;
+        interaction.cancelCommit(commitKey);
+        return;
+      }
       if (!structural && !interaction.isInteracting) {
         interaction.cancelCommit(commitKey);
         dirty = false;
-        events.addSync(read());
+        events.addSync(readSnapshot());
         return;
       }
       // Snapshot construction can filter entire catalogs. Read once after the
@@ -67,7 +89,7 @@ Stream<T> interactionDeferredListenableStream<T>({
     if (deferInitialRead) {
       emit();
     } else {
-      events.addSync(read());
+      events.addSync(readSnapshot());
     }
   }, isBroadcast: true);
 }

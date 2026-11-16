@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'scroll_activity_gate.dart';
@@ -15,6 +16,8 @@ class ShimmerLoader extends StatefulWidget {
 class _ShimmerLoaderState extends State<ShimmerLoader>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
+  ValueListenable<bool>? _scrollActivity;
+  bool _animationAllowed = false;
 
   @override
   void initState() {
@@ -26,25 +29,52 @@ class _ShimmerLoaderState extends State<ShimmerLoader>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final activity = ScrollActivityGate.scrollingListenableOf(context);
+    if (!identical(activity, _scrollActivity)) {
+      _scrollActivity?.removeListener(_syncAnimation);
+      _scrollActivity = activity;
+      _scrollActivity?.addListener(_syncAnimation);
+    }
+    _animationAllowed =
+        widget.enabled &&
+        TickerMode.valuesOf(context).enabled &&
+        !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
+    _syncAnimation();
+  }
+
+  @override
+  void didUpdateWidget(covariant ShimmerLoader oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.enabled != widget.enabled) {
+      _animationAllowed =
+          widget.enabled &&
+          TickerMode.valuesOf(context).enabled &&
+          !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
+      _syncAnimation();
+    }
+  }
+
+  void _syncAnimation() {
+    final shouldRun = _animationAllowed && !(_scrollActivity?.value ?? false);
+    if (shouldRun && !_controller.isAnimating) {
+      _controller.repeat();
+    } else if (!shouldRun && _controller.isAnimating) {
+      _controller.stop();
+    }
+  }
+
+  @override
   void dispose() {
+    _scrollActivity?.removeListener(_syncAnimation);
     _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final shouldAnimate =
-        widget.enabled &&
-        TickerMode.valuesOf(context).enabled &&
-        !(MediaQuery.maybeOf(context)?.disableAnimations ?? false) &&
-        !ScrollActivityGate.isScrollingOf(context);
-    if (shouldAnimate && !_controller.isAnimating) {
-      _controller.repeat();
-    } else if (!shouldAnimate && _controller.isAnimating) {
-      _controller.stop();
-    }
-
-    if (!shouldAnimate) {
+    if (!_animationAllowed) {
       return widget.child;
     }
 
@@ -58,31 +88,33 @@ class _ShimmerLoaderState extends State<ShimmerLoader>
         ? cs.surfaceContainerHighest
         : cs.surfaceContainer;
 
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return ShaderMask(
-          blendMode: BlendMode.srcATop,
-          shaderCallback: (bounds) {
-            final x = -0.5 + _controller.value * 2.0;
-            return LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                baseColor,
-                baseColor,
-                highlightColor,
-                baseColor,
-                baseColor,
-              ],
-              stops: const [0.0, 0.35, 0.5, 0.65, 1.0],
-              transform: _SlidingGradientTransform(slidePercent: x),
-            ).createShader(bounds);
-          },
-          child: child,
-        );
-      },
-      child: widget.child,
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          return ShaderMask(
+            blendMode: BlendMode.srcATop,
+            shaderCallback: (bounds) {
+              final x = -0.5 + _controller.value * 2.0;
+              return LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  baseColor,
+                  baseColor,
+                  highlightColor,
+                  baseColor,
+                  baseColor,
+                ],
+                stops: const [0.0, 0.35, 0.5, 0.65, 1.0],
+                transform: _SlidingGradientTransform(slidePercent: x),
+              ).createShader(bounds);
+            },
+            child: child,
+          );
+        },
+        child: widget.child,
+      ),
     );
   }
 }

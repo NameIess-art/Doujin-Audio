@@ -509,71 +509,12 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     }
     final actionWidth = _activeActionWidth;
     final revealProgress = (_revealedWidth / actionWidth).clamp(0.0, 1.0);
-    final actionLabel = _hasTertiaryAction
-        ? [
-            widget.tertiaryActionLabel ?? '',
-            widget.secondaryActionLabel ?? '',
-            widget.actionLabel,
-          ].where((item) => item.trim().isNotEmpty).join(' / ')
-        : _hasSecondaryAction
-        ? '${widget.secondaryActionLabel ?? ''} / ${widget.actionLabel}'
-        : widget.actionLabel;
-    final actionTooltip = _hasTertiaryAction
-        ? widget.tertiaryActionTooltip ?? widget.removeTooltip
-        : _hasSecondaryAction
-        ? widget.secondaryActionTooltip ?? widget.removeTooltip
-        : widget.removeTooltip;
-    final leadingActions = <SwipeRevealAction>[
-      if (_hasLeadingAction)
-        SwipeRevealAction(
-          icon: widget.leadingActionIcon,
-          iconWidget: widget.leadingActionIconWidget,
-          tooltip: widget.leadingActionTooltip ?? widget.leadingActionLabel,
-          onPressed: widget.onLeadingAction!,
-          primary: true,
-          feedback: AppInteractionFeedbackType.confirmation,
-        ),
-      if (_hasSecondaryLeadingAction)
-        SwipeRevealAction(
-          icon: widget.secondaryLeadingActionIcon,
-          iconWidget: widget.secondaryLeadingActionIconWidget,
-          tooltip:
-              widget.secondaryLeadingActionTooltip ??
-              widget.secondaryLeadingActionLabel,
-          onPressed: widget.onSecondaryLeadingAction!,
-          primary: true,
-          feedback: AppInteractionFeedbackType.confirmation,
-        ),
-    ];
-    final trailingActions = <SwipeRevealAction>[
-      if (_hasTertiaryAction)
-        SwipeRevealAction(
-          icon: widget.tertiaryActionIcon,
-          tooltip: widget.tertiaryActionTooltip ?? widget.tertiaryActionLabel,
-          onPressed: widget.onTertiaryAction!,
-        ),
-      if (_hasSecondaryAction)
-        SwipeRevealAction(
-          icon: widget.secondaryActionIcon,
-          iconWidget: widget.secondaryActionIconWidget,
-          tooltip: widget.secondaryActionTooltip ?? widget.secondaryActionLabel,
-          onPressed: widget.onSecondaryAction!,
-        ),
-      SwipeRevealAction(
-        icon: widget.primaryActionIcon,
-        tooltip: widget.primaryActionTooltip ?? widget.removeTooltip,
-        onPressed: widget.onRemove,
-        primary: true,
-        destructive: widget.destructive,
-        feedback: widget.destructive
-            ? AppInteractionFeedbackType.destructive
-            : AppInteractionFeedbackType.confirmation,
-      ),
-    ];
     // Lists own per-card repaint isolation. Adding it here duplicates the
     // same full-card layer for every visible library and playlist entry.
+    final paneActive = _actionPaneActive || _revealedWidth > 0;
     return TapRegion(
-      onTapOutside: (_) => _closePane(),
+      enabled: paneActive,
+      onTapOutside: paneActive ? (_) => _closePane() : null,
       child: Padding(
         padding: widget.margin,
         child: GestureDetector(
@@ -609,16 +550,17 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                     ),
                     child: SwipeRevealActionPane(
                       actions: _revealedFromStart
-                          ? leadingActions
-                          : trailingActions,
+                          ? _buildLeadingActions()
+                          : _buildTrailingActions(),
                       fromStart: _revealedFromStart,
                       vertical: widget.verticalActions,
                       width: actionWidth,
                       progress: revealProgress,
                       shape: widget.shape,
                       color: widget.color,
-                      label: actionLabel,
-                      tooltip: actionTooltip,
+                      label: _buildActionLabel(),
+                      tooltip: _buildActionTooltip(),
+                      dragging: _dragAccepted,
                       onAction: _runActionAfterPaneClose,
                     ),
                   ),
@@ -629,12 +571,12 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                 TweenAnimationBuilder<double>(
                   tween: Tween<double>(begin: 0, end: _revealedWidth),
                   duration:
-                      _snapClosed || MediaQuery.disableAnimationsOf(context)
+                      _snapClosed ||
+                          _dragAccepted ||
+                          MediaQuery.disableAnimationsOf(context)
                       ? Duration.zero
-                      : (_dragAccepted
-                            ? const Duration(milliseconds: 55)
-                            : kAppMotionStandard),
-                  curve: _dragAccepted ? Curves.easeOutCubic : kAppSpringCurve,
+                      : kAppMotionStandard,
+                  curve: _dragAccepted ? Curves.linear : kAppSpringCurve,
                   onEnd: () {
                     if (!mounted) return;
                     _displayedWidth = _revealedWidth;
@@ -684,6 +626,71 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       ),
     );
   }
+
+  String _buildActionLabel() => _hasTertiaryAction
+      ? [
+          widget.tertiaryActionLabel ?? '',
+          widget.secondaryActionLabel ?? '',
+          widget.actionLabel,
+        ].where((item) => item.trim().isNotEmpty).join(' / ')
+      : _hasSecondaryAction
+      ? '${widget.secondaryActionLabel ?? ''} / ${widget.actionLabel}'
+      : widget.actionLabel;
+
+  String _buildActionTooltip() => _hasTertiaryAction
+      ? widget.tertiaryActionTooltip ?? widget.removeTooltip
+      : _hasSecondaryAction
+      ? widget.secondaryActionTooltip ?? widget.removeTooltip
+      : widget.removeTooltip;
+
+  List<SwipeRevealAction> _buildLeadingActions() => <SwipeRevealAction>[
+    if (_hasLeadingAction)
+      SwipeRevealAction(
+        icon: widget.leadingActionIcon,
+        iconWidget: widget.leadingActionIconWidget,
+        tooltip: widget.leadingActionTooltip ?? widget.leadingActionLabel,
+        onPressed: widget.onLeadingAction!,
+        primary: true,
+        feedback: AppInteractionFeedbackType.confirmation,
+      ),
+    if (_hasSecondaryLeadingAction)
+      SwipeRevealAction(
+        icon: widget.secondaryLeadingActionIcon,
+        iconWidget: widget.secondaryLeadingActionIconWidget,
+        tooltip:
+            widget.secondaryLeadingActionTooltip ??
+            widget.secondaryLeadingActionLabel,
+        onPressed: widget.onSecondaryLeadingAction!,
+        primary: true,
+        feedback: AppInteractionFeedbackType.confirmation,
+      ),
+  ];
+
+  List<SwipeRevealAction> _buildTrailingActions() => <SwipeRevealAction>[
+    if (_hasTertiaryAction)
+      SwipeRevealAction(
+        icon: widget.tertiaryActionIcon,
+        tooltip: widget.tertiaryActionTooltip ?? widget.tertiaryActionLabel,
+        onPressed: widget.onTertiaryAction!,
+      ),
+    if (_hasSecondaryAction)
+      SwipeRevealAction(
+        icon: widget.secondaryActionIcon,
+        iconWidget: widget.secondaryActionIconWidget,
+        tooltip: widget.secondaryActionTooltip ?? widget.secondaryActionLabel,
+        onPressed: widget.onSecondaryAction!,
+      ),
+    SwipeRevealAction(
+      icon: widget.primaryActionIcon,
+      tooltip: widget.primaryActionTooltip ?? widget.removeTooltip,
+      onPressed: widget.onRemove,
+      primary: true,
+      destructive: widget.destructive,
+      feedback: widget.destructive
+          ? AppInteractionFeedbackType.destructive
+          : AppInteractionFeedbackType.confirmation,
+    ),
+  ];
 }
 
 class _SwipeRevealPaneClipper extends CustomClipper<Rect> {

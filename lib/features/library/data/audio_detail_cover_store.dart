@@ -162,9 +162,15 @@ final class AudioDetailCoverStore {
   }
 
   Future<bool> _matches(File file, int length, String digest) async {
-    if (!await file.exists() || await file.length() != length) return false;
-    final bytes = await file.readAsBytes();
-    return Isolate.run(() => sha256.convert(bytes).toString() == digest);
+    final stat = await file.stat();
+    if (stat.type != FileSystemEntityType.file || stat.size != length) {
+      return false;
+    }
+    final filePath = file.path;
+    return Isolate.run(() async {
+      final bytes = await File(filePath).readAsBytes();
+      return bytes.length == length && sha256.convert(bytes).toString() == digest;
+    });
   }
 
   String? _portableBasePath(AudioDetailTarget target) =>

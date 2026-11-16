@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
@@ -51,55 +52,9 @@ class EmbeddedCoverArtworkService {
         PathMatcher.isContentUri(trackPath)) {
       return null;
     }
-    final trackFile = File(trackPath);
-    late final FileStat stat;
+    ({Uint8List picture, String contentKey})? extracted;
     try {
-      stat = await trackFile.stat();
-    } on FileSystemException {
-      return null;
-    }
-    if (stat.type != FileSystemEntityType.file) return null;
-
-    Uint8List? picture;
-    try {
-      RandomAccessFile? raf;
-      late final Uint8List header;
-      try {
-        raf = await trackFile.open();
-        header = await raf.read(12);
-      } finally {
-        await raf?.close();
-      }
-
-      if (header.length >= 3 &&
-          header[0] == 0x49 &&
-          header[1] == 0x44 &&
-          header[2] == 0x33) {
-        picture = await _readId3v2Picture(trackFile);
-        picture ??= await _readFlacPicture(trackFile);
-      } else if (header.length >= 4 &&
-          ascii.decode(header.sublist(0, 4), allowInvalid: true) == 'RIFF') {
-        picture = await _readWavPicture(trackFile);
-      } else if (header.length >= 4 &&
-          ascii.decode(header.sublist(0, 4), allowInvalid: true) == 'fLaC') {
-        picture = await _readFlacPicture(trackFile);
-      } else if (header.length >= 8 &&
-          ascii.decode(header.sublist(4, 8), allowInvalid: true) == 'ftyp') {
-        picture = await _readMp4Picture(trackFile);
-      } else if (header.length >= 4 &&
-          header[0] == 0x4f &&
-          header[1] == 0x67 &&
-          header[2] == 0x67 &&
-          header[3] == 0x53) {
-        picture = await _readOggPicture(trackFile);
-      } else {
-        picture =
-            await _readId3v2Picture(trackFile) ??
-            await _readWavPicture(trackFile) ??
-            await _readMp4Picture(trackFile) ??
-            await _readFlacPicture(trackFile) ??
-            await _readOggPicture(trackFile);
-      }
+      extracted = await Isolate.run(() => _extractPictureAndDigest(trackPath));
     } on FileSystemException catch (error, stackTrace) {
       AppLogService.warning(
         'embedded_cover_read_failed',
@@ -114,20 +69,20 @@ class EmbeddedCoverArtworkService {
       );
     }
 
-    if (picture == null || picture.isEmpty) return null;
+    if (extracted == null) return null;
 
     final cacheRoot = await getTemporaryDirectory();
     final cacheDirectory = Directory(
       path.join(cacheRoot.path, 'embedded_covers'),
     );
     await cacheDirectory.create(recursive: true);
-    final contentKey = sha256.convert(picture).toString();
+    final contentKey = extracted.contentKey;
     final output = File(path.join(cacheDirectory.path, '$contentKey.image'));
     final writeKey = '${cacheDirectory.path}|$contentKey';
     final existingWrite = _cacheWriteFutures[writeKey];
     if (existingWrite != null) return await existingWrite;
 
-    final writeFuture = _writeCachedPicture(output, picture);
+    final writeFuture = _writeCachedPicture(output, extracted.picture);
     _cacheWriteFutures[writeKey] = writeFuture;
     try {
       return await writeFuture;
@@ -136,6 +91,58 @@ class EmbeddedCoverArtworkService {
         unawaited(_cacheWriteFutures.remove(writeKey));
       }
     }
+  }
+
+  static Future<({Uint8List picture, String contentKey})?>
+  _extractPictureAndDigest(String trackPath) async {
+    final trackFile = File(trackPath);
+    final stat = await trackFile.stat();
+    if (stat.type != FileSystemEntityType.file) return null;
+
+    RandomAccessFile? raf;
+    late final Uint8List header;
+    try {
+      raf = await trackFile.open();
+      header = await raf.read(12);
+    } finally {
+      await raf?.close();
+    }
+
+    Uint8List? picture;
+    if (header.length >= 3 &&
+        header[0] == 0x49 &&
+        header[1] == 0x44 &&
+        header[2] == 0x33) {
+      picture = await _readId3v2Picture(trackFile);
+      picture ??= await _readFlacPicture(trackFile);
+    } else if (header.length >= 4 &&
+        ascii.decode(header.sublist(0, 4), allowInvalid: true) == 'RIFF') {
+      picture = await _readWavPicture(trackFile);
+    } else if (header.length >= 4 &&
+        ascii.decode(header.sublist(0, 4), allowInvalid: true) == 'fLaC') {
+      picture = await _readFlacPicture(trackFile);
+    } else if (header.length >= 8 &&
+        ascii.decode(header.sublist(4, 8), allowInvalid: true) == 'ftyp') {
+      picture = await _readMp4Picture(trackFile);
+    } else if (header.length >= 4 &&
+        header[0] == 0x4f &&
+        header[1] == 0x67 &&
+        header[2] == 0x67 &&
+        header[3] == 0x53) {
+      picture = await _readOggPicture(trackFile);
+    } else {
+      picture =
+          await _readId3v2Picture(trackFile) ??
+          await _readWavPicture(trackFile) ??
+          await _readMp4Picture(trackFile) ??
+          await _readFlacPicture(trackFile) ??
+          await _readOggPicture(trackFile);
+    }
+    if (picture == null || picture.isEmpty) return null;
+    return (
+      picture: picture,
+      contentKey: sha256.convert(picture).toString(),
+    );
   }
 
   static Future<String?> _writeCachedPicture(

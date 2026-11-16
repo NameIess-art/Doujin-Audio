@@ -17,7 +17,7 @@ import 'embedded_cover_artwork_service.dart';
 import 'library_service.dart';
 import 'library_organizer.dart';
 
-const Set<String> _folderCoverImageExtensions = {
+const Set<String> folderCoverImageExtensions = {
   '.jpg',
   '.jpeg',
   '.png',
@@ -725,7 +725,14 @@ final class CoverArtworkSourceResolver {
     );
     if (nestedImages.isNotEmpty) return nestedImages.first.displayPath;
 
+    final seenDirectories = <String>{};
+    var probed = 0;
     for (final track in tracksInCompleteCoverScope(folderPath)) {
+      final parentKey = PathMatcher.equivalenceKey(
+        PathMatcher.parentPath(track.path) ?? '',
+      );
+      if (!seenDirectories.add(parentKey) && probed > 0) continue;
+      probed++;
       final candidate = _isVideoTrack(track)
           ? await resolveVideoFramePathForTrack(track)
           : await resolvePlatformCoverPathForTrack(
@@ -733,6 +740,7 @@ final class CoverArtworkSourceResolver {
               includeGroupCoverFallback: false,
             );
       if (candidate != null && candidate.trim().isNotEmpty) return candidate;
+      if (probed >= 3) break;
     }
     return null;
   }
@@ -1109,7 +1117,7 @@ Future<List<String>> _scanFilesystemFolderImages(
     followLinks: false,
   )) {
     if (entity is! File ||
-        !_folderCoverImageExtensions.contains(
+        !folderCoverImageExtensions.contains(
           path.extension(entity.path).toLowerCase(),
         )) {
       continue;

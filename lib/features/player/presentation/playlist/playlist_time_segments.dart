@@ -128,7 +128,19 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
                 key: const ValueKey('playback_console_page_stack'),
                 indexListenable: _pageIndex,
                 itemCount: 5,
-                contentRevision: Object(),
+                contentRevision: (
+                  widget.session.id,
+                  widget.session.currentTrackPath,
+                  Object.hashAll(widget.labels),
+                  widget.selectedId,
+                  widget.showEditor,
+                  widget.loading,
+                  widget.draftStart,
+                  widget.draftEnd,
+                  widget.draftColorValue,
+                  widget.loopSegmentId,
+                  pageTopInset,
+                ),
                 itemBuilder: (context, index) => switch (index) {
                   0 => EqualizerPage(
                     session: widget.session,

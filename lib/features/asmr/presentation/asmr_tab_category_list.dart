@@ -35,24 +35,16 @@ class _AsmrWorkRowsDelegate extends SliverChildBuilderDelegate {
     required this.columnCount,
     required this.searchQuery,
     required this.searchSession,
-    required this.isSelectionMode,
-    required Set<String> selectedWorkIds,
-    required Map<String, Animation<double>> loadingAnimations,
     required this.collapsingWorks,
     super.childCount,
     super.findChildIndexCallback,
-  }) : selectedWorkIds = Set.of(selectedWorkIds),
-       loadingAnimations = Map.of(loadingAnimations),
-       // Each card already isolates its paint, including cards sharing a row.
+  }) : // Each card already isolates its paint, including cards sharing a row.
        super(addRepaintBoundaries: false);
 
   final List<AsmrWork> works;
   final int columnCount;
   final String searchQuery;
   final bool searchSession;
-  final bool isSelectionMode;
-  final Set<String> selectedWorkIds;
-  final Map<String, Animation<double>> loadingAnimations;
   final Map<String, _CollapsingAsmrWork> collapsingWorks;
 
   @override
@@ -63,9 +55,6 @@ class _AsmrWorkRowsDelegate extends SliverChildBuilderDelegate {
         columnCount != oldDelegate.columnCount ||
         searchQuery != oldDelegate.searchQuery ||
         searchSession != oldDelegate.searchSession ||
-        isSelectionMode != oldDelegate.isSelectionMode ||
-        !setEquals(selectedWorkIds, oldDelegate.selectedWorkIds) ||
-        !mapEquals(loadingAnimations, oldDelegate.loadingAnimations) ||
         !identical(collapsingWorks, oldDelegate.collapsingWorks);
   }
 }
@@ -83,8 +72,7 @@ class _AsmrCategoryList extends ConsumerStatefulWidget {
     required this.topInset,
     required this.bottomInset,
     required this.onRefresh,
-    required this.isSelectionMode,
-    required this.selectedWorkIds,
+    required this.selectionListenable,
     required this.onEnterSelectionMode,
     required this.onToggleSelection,
   });
@@ -99,8 +87,7 @@ class _AsmrCategoryList extends ConsumerStatefulWidget {
   final double topInset;
   final double bottomInset;
   final Future<void> Function() onRefresh;
-  final bool isSelectionMode;
-  final Set<String> selectedWorkIds;
+  final ValueListenable<({bool active, Set<String> ids})> selectionListenable;
   final ValueChanged<AsmrWork> onEnterSelectionMode;
   final ValueChanged<AsmrWork> onToggleSelection;
 
@@ -129,7 +116,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   final Map<String, Animation<double>> _loadingWorkAnimations = {};
   final Set<AnimationController> _loadingBatchControllers = {};
   final Map<String, GlobalKey> _itemKeys = {};
-  final Map<String, _AsmrWorkTreeCard> _workCardCache = {};
+  final Map<String, _SelectableAsmrWorkCard> _workCardCache = {};
   List<AsmrWork>? _visibleWorksSource;
   List<AsmrWork> _visibleWorksCache = const [];
   Object? _visiblePaginationToken;
@@ -320,11 +307,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     }
     controller.forward().then((_) {
       if (!mounted) return;
-      setState(() {
-        _loadingWorkAnimations.removeWhere((_, value) => value == animation);
-        _loadingBatchControllers.remove(controller);
-      });
-      controller.dispose();
+      _loadingWorkAnimations.removeWhere((_, value) => value == animation);
     });
   }
 
@@ -448,13 +431,11 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     final workKeyIndices = _workKeyIndices;
 
     Widget buildWorkCard(AsmrWork work) {
-      final selected = widget.selectedWorkIds.contains(work.workKey);
       var card = _workCardCache[work.workKey];
       if (card == null ||
           !identical(card.work, work) ||
           card.searchQuery != widget.searchQuery ||
-          card.isSelectionMode != widget.isSelectionMode ||
-          card.isSelected != selected) {
+          !identical(card.selectionListenable, widget.selectionListenable)) {
         if (_workCardCache.length >= 128) {
           _workCardCache.removeWhere(
             (id, _) => _itemKeys[id]?.currentContext == null,
@@ -462,11 +443,10 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         }
         // Paging changes the row delegate, but unchanged mounted cards can
         // reuse their complete widget instead of rebuilding text and artwork.
-        card = _AsmrWorkTreeCard(
+        card = _SelectableAsmrWorkCard(
           work: work,
           searchQuery: widget.searchQuery,
-          isSelectionMode: widget.isSelectionMode,
-          isSelected: selected,
+          selectionListenable: widget.selectionListenable,
           onLongPress: () => widget.onEnterSelectionMode(work),
           onToggleSelect: () => widget.onToggleSelection(work),
         );
@@ -803,9 +783,6 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                     columnCount: columnCount,
                     searchQuery: widget.searchQuery,
                     searchSession: widget.searchSession,
-                    isSelectionMode: widget.isSelectionMode,
-                    selectedWorkIds: widget.selectedWorkIds,
-                    loadingAnimations: _loadingWorkAnimations,
                     collapsingWorks: _visibleCollapsing,
                     childCount: rowCount,
                     findChildIndexCallback: columnCount == 1
@@ -976,4 +953,83 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
           expectedPaginationToken: expectedPaginationToken,
         );
   }
+}
+
+class _SelectableAsmrWorkCard extends StatefulWidget {
+  const _SelectableAsmrWorkCard({
+    required this.work,
+    required this.searchQuery,
+    required this.selectionListenable,
+    required this.onLongPress,
+    required this.onToggleSelect,
+  });
+
+  final AsmrWork work;
+  final String searchQuery;
+  final ValueListenable<({bool active, Set<String> ids})> selectionListenable;
+  final VoidCallback onLongPress;
+  final VoidCallback onToggleSelect;
+
+  @override
+  State<_SelectableAsmrWorkCard> createState() =>
+      _SelectableAsmrWorkCardState();
+}
+
+class _SelectableAsmrWorkCardState extends State<_SelectableAsmrWorkCard> {
+  late bool _selectionMode;
+  late bool _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncState();
+    widget.selectionListenable.addListener(_handleSelectionChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _SelectableAsmrWorkCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(
+      oldWidget.selectionListenable,
+      widget.selectionListenable,
+    )) {
+      oldWidget.selectionListenable.removeListener(_handleSelectionChanged);
+      widget.selectionListenable.addListener(_handleSelectionChanged);
+    }
+    _syncState();
+  }
+
+  void _syncState() {
+    final snapshot = widget.selectionListenable.value;
+    _selectionMode = snapshot.active;
+    _selected = snapshot.ids.contains(widget.work.workKey);
+  }
+
+  void _handleSelectionChanged() {
+    final snapshot = widget.selectionListenable.value;
+    final nextMode = snapshot.active;
+    final nextSelected = snapshot.ids.contains(widget.work.workKey);
+    if (nextMode != _selectionMode || nextSelected != _selected) {
+      setState(() {
+        _selectionMode = nextMode;
+        _selected = nextSelected;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.selectionListenable.removeListener(_handleSelectionChanged);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => _AsmrWorkTreeCard(
+    work: widget.work,
+    searchQuery: widget.searchQuery,
+    isSelectionMode: _selectionMode,
+    isSelected: _selected,
+    onLongPress: widget.onLongPress,
+    onToggleSelect: widget.onToggleSelect,
+  );
 }

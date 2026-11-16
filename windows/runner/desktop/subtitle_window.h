@@ -33,8 +33,8 @@ class SubtitleWindow {
   int font_height_ = 0;
   std::wstring font_family_;
   DWORD *pixels_ = nullptr, *coverage_ = nullptr;
-  int surface_width_ = 0, surface_rows_ = 0;
+  int surface_width_ = 0, surface_rows_ = 0, surface_capacity_rows_ = 0;
   UINT surface_dpi_ = 0;
   std::vector<DWORD> background_pixels_;
-  bool background_dirty_ = true, content_dirty_ = true;
+  bool background_dirty_ = true, content_dirty_ = true, fitting_text_ = false;
 };

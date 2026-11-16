@@ -1862,6 +1862,69 @@ void main() {
   );
 
   testWidgets(
+    'SessionProgressBar retains the seek target while progress updates are deferred',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final session = PlaybackSession(
+        id: 'seek-progress-session',
+        currentTrackPath: '/library/track.mp3',
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(false, ProcessingState.ready),
+      )
+        ..setOptimisticDuration(const Duration(minutes: 2))
+        ..setOptimisticPosition(const Duration(seconds: 10));
+      fixture.playbackService.registerSession(session);
+      final interaction = UiInteractionCoordinator.instance;
+      final interactionSource = Object();
+      addTearDown(() => interaction.cancelInteraction(interactionSource));
+
+      await tester.pumpWidget(
+        fixture.build(
+          Center(
+            child: SizedBox(
+              width: 400,
+              child: SessionProgressBar(
+                session: PlaybackSessionSnapshot.fromRuntime(session),
+                playback: fixture.playback,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final slider = find.byType(Slider);
+      final rect = tester.getRect(slider);
+      final gesture = await tester.startGesture(
+        Offset(rect.left + rect.width * 0.25, rect.center.dy),
+      );
+      interaction.beginInteraction(interactionSource);
+      await gesture.moveBy(Offset(rect.width * 0.4, 0));
+      await tester.pump();
+      final target = tester.widget<Slider>(slider).value.round();
+      expect(target, greaterThan(30000));
+      await gesture.up();
+      await tester.pump();
+      expect(session.position.inMilliseconds, target);
+      expect(tester.widget<Slider>(slider).value, target.toDouble());
+
+      interaction.cancelInteraction(interactionSource);
+      await tester.pump();
+      session.setOptimisticPosition(const Duration(seconds: 90));
+      await tester.pumpAndSettle();
+      expect(tester.widget<Slider>(slider).value, 90000);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
     'SessionProgressBar updates both timecode labels when hovering over progress track and restores on exit',
     (tester) async {
       await tester.runAsync(() async {

@@ -378,9 +378,14 @@ final class CoverArtworkStore {
     if (fileStem != null) {
       stem = fileStem;
     } else if (namespace == CoverArtworkNamespace.embedded) {
-      final cached = hashes?[fingerprint];
-      stem = cached ?? (await sha256.bind(source.openRead()).first).toString();
-      hashes?[fingerprint] = stem;
+      final existingStem = _sha256HexStem(path.basenameWithoutExtension(sourcePath));
+      if (existingStem != null) {
+        stem = existingStem;
+      } else {
+        final cached = hashes?[fingerprint];
+        stem = cached ?? (await sha256.bind(source.openRead()).first).toString();
+        hashes?[fingerprint] = stem;
+      }
     } else {
       stem = sha256
           .convert(
@@ -400,6 +405,11 @@ final class CoverArtworkStore {
     }
     return output.path;
   }
+
+  static final RegExp _sha256HexPattern = RegExp(r'^[0-9a-f]{64}$');
+
+  static String? _sha256HexStem(String stem) =>
+      stem.length == 64 && _sha256HexPattern.hasMatch(stem) ? stem : null;
 
   Future<void> bind(String logicalKey, String resolvedPath) {
     if (logicalKey.isEmpty || resolvedPath.isEmpty) return Future<void>.value();

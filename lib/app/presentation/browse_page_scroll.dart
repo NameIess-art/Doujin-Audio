@@ -212,30 +212,40 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
         // insertion or a layout change. Estimate from currently mounted rows,
         // then use the item's actual geometry on the next frame.
         final targetIndex = _anchorIndices[anchor]!;
-        (int, double)? first;
-        (int, double)? last;
+        (int, RenderBox)? firstEntry;
+        (int, RenderBox)? lastEntry;
         for (final entry in _anchors.entries) {
           final index = _anchorIndices[entry.key];
           final render = entry.value.findRenderObject();
           if (index == null || render is! RenderBox || !render.attached) {
             continue;
           }
-          final reveal = RenderAbstractViewport.maybeOf(
-            render,
-          )?.getOffsetToReveal(render, 0);
-          if (reveal == null) continue;
-          if (first == null || index < first.$1) first = (index, reveal.offset);
-          if (last == null || index >= last.$1) last = (index, reveal.offset);
+          if (firstEntry == null || index < firstEntry.$1) {
+            firstEntry = (index, render);
+          }
+          if (lastEntry == null || index >= lastEntry.$1) {
+            lastEntry = (index, render);
+          }
         }
-        if (first != null &&
-            last != null &&
-            last.$1 > first.$1 &&
-            last.$2 > first.$2) {
-          final stride = (last.$2 - first.$2) / (last.$1 - first.$1);
-          destination =
-              first.$2 +
-              (targetIndex - first.$1) * stride -
-              (anchorOffset ?? 0);
+        if (firstEntry != null &&
+            lastEntry != null &&
+            lastEntry.$1 > firstEntry.$1) {
+          final firstOffset = RenderAbstractViewport.maybeOf(
+            firstEntry.$2,
+          )?.getOffsetToReveal(firstEntry.$2, 0).offset;
+          final lastOffset = RenderAbstractViewport.maybeOf(
+            lastEntry.$2,
+          )?.getOffsetToReveal(lastEntry.$2, 0).offset;
+          if (firstOffset != null &&
+              lastOffset != null &&
+              lastOffset > firstOffset) {
+            final stride =
+                (lastOffset - firstOffset) / (lastEntry.$1 - firstEntry.$1);
+            destination =
+                firstOffset +
+                (targetIndex - firstEntry.$1) * stride -
+                (anchorOffset ?? 0);
+          }
         }
       }
       if (destination != null) {
@@ -268,12 +278,12 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
     double? firstOffset;
     final viewport = context.findRenderObject();
     if (viewport is RenderBox && viewport.attached && viewport.hasSize) {
+      RenderAbstractViewport? abstractViewport;
       for (final entry in _anchors.entries) {
         final box = entry.value.findRenderObject();
         if (box is! RenderBox || !box.attached || !box.hasSize) continue;
-        final reveal = RenderAbstractViewport.maybeOf(
-          box,
-        )?.getOffsetToReveal(box, 0);
+        abstractViewport ??= RenderAbstractViewport.maybeOf(box);
+        final reveal = abstractViewport?.getOffsetToReveal(box, 0);
         if (reveal == null) continue;
         final top = reveal.offset - position.pixels;
         if (top + box.size.height <= 0 || top >= viewport.size.height) continue;

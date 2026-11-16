@@ -154,26 +154,27 @@ class _AsmrDownloadSelectionListState extends State<AsmrDownloadSelectionList>
         index >= _animationStart &&
         index < _animationStart + _animationCount;
     final collapsing = animating && !_expandedPaths.contains(_animatingPath);
+    final tile = AsmrDownloadNodeTile(
+      key: ValueKey<String>('asmr_download_node_$path'),
+      node: row.node,
+      depth: row.depth,
+      selection: widget.selection,
+      expanded: _expandedPaths.contains(path),
+      onToggleExpansion: () => _toggleExpansion(path),
+      onSelectionChanged: widget.onSelectionChanged,
+    );
+    if (!animating) {
+      return KeyedSubtree(key: ValueKey<String>(path), child: tile);
+    }
     return SizeTransition(
       key: ValueKey<String>(path),
-      sizeFactor: animating ? _sizeFactor : const AlwaysStoppedAnimation(1),
+      sizeFactor: _sizeFactor,
       axisAlignment: -1,
       child: FadeTransition(
-        opacity: animating ? _opacity : const AlwaysStoppedAnimation(1),
+        opacity: _opacity,
         child: IgnorePointer(
           ignoring: collapsing,
-          child: ExcludeSemantics(
-            excluding: collapsing,
-            child: AsmrDownloadNodeTile(
-              key: ValueKey<String>('asmr_download_node_$path'),
-              node: row.node,
-              depth: row.depth,
-              selection: widget.selection,
-              expanded: _expandedPaths.contains(path),
-              onToggleExpansion: () => _toggleExpansion(path),
-              onSelectionChanged: widget.onSelectionChanged,
-            ),
-          ),
+          child: ExcludeSemantics(excluding: collapsing, child: tile),
         ),
       ),
     );

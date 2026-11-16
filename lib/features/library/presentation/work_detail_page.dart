@@ -1461,20 +1461,30 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
               trimmedCover.startsWith('https://') ||
               !widget.isLocal);
 
-      final coverGeneration = ref.watch(coverGenerationProvider);
       if (isRemoteCover) {
         final remoteUrl = trimmedCover;
         final library = ref.read(libraryFacadeProvider);
         final coverUi = ref.read(libraryCoverUiControllerProvider);
         final coverResolution = ref.watch(coverImageResolutionProvider);
         final cacheWidth = coverCacheWidthForResolution(coverResolution);
-        final resolved = library.resolvedCoverPathForRemoteCover(remoteUrl);
-        String? previewPath;
-        for (final url in [...?widget.remoteWork?.alternateCoverUrls]) {
-          if (url == null || url.trim() == remoteUrl) continue;
-          previewPath = library.resolvedCoverPathForRemoteCover(url);
-          if (previewPath != null) break;
+        String? resolvePreviewPath() {
+          for (final url in [...?widget.remoteWork?.alternateCoverUrls]) {
+            if (url == null || url.trim() == remoteUrl) continue;
+            final preview = library.resolvedCoverPathForRemoteCover(url);
+            if (preview != null) return preview;
+          }
+          return null;
         }
+
+        final (coverGeneration, resolved, previewPath) = ref.watch(
+          coverGenerationProvider.select((generation) {
+            final resolvedPath = library.resolvedCoverPathForRemoteCover(
+              remoteUrl,
+            );
+            final preview = resolvePreviewPath();
+            return (resolvedPath != null ? 0 : generation, resolvedPath, preview);
+          }),
+        );
         Widget coverPlaceholder(BuildContext context) {
           if (previewPath == null) return const CoverFallbackArtwork();
           // List thumbnails and main covers can be different URLs. Reuse the
@@ -1523,9 +1533,14 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
         );
       } else if (widget.isLocal) {
         final library = ref.read(libraryFacadeProvider);
-        final resolved =
-            library.resolvedCoverPathForFolder(_localTarget!.targetPath) ??
-            coverPath;
+        final (resolved, coverGeneration) = ref.watch(
+          coverGenerationProvider.select((generation) {
+            final resolvedPath =
+                library.resolvedCoverPathForFolder(_localTarget!.targetPath) ??
+                coverPath;
+            return (resolvedPath, resolvedPath != null ? 0 : generation);
+          }),
+        );
         final requestKey = (_localTarget, resolved, coverGeneration);
         if (_coverRequestKey != requestKey) {
           _coverRequestKey = requestKey;

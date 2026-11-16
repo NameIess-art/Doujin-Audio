@@ -30,6 +30,7 @@ class WorkDetailNavigation extends ChangeNotifier {
   final Set<Route<dynamic>> _closing = {};
   final Set<Route<dynamic>> _contentClosing = {};
   final _detailCoversContent = ValueNotifier(false);
+  final _isOpenNotifier = ValueNotifier(false);
   Animation<double>? _coveringAnimation;
   Object? _identity;
   Future<void>? _completion;
@@ -38,6 +39,7 @@ class WorkDetailNavigation extends ChangeNotifier {
   int _request = 0;
 
   bool get isOpen => _routes.length > 1 || _closing.isNotEmpty;
+  ValueListenable<bool> get isOpenListenable => _isOpenNotifier;
   bool get isContentOpen =>
       _contentRoutes.length > 1 || _contentClosing.isNotEmpty;
 
@@ -190,6 +192,7 @@ class WorkDetailNavigation extends ChangeNotifier {
         _identity = null;
         _completion = null;
       }
+      _isOpenNotifier.value = isOpen;
       _syncDetailCoverage();
       notifyListeners();
     });
@@ -226,6 +229,7 @@ class WorkDetailNavigation extends ChangeNotifier {
     _disposed = true;
     _coveringAnimation?.removeStatusListener(_onCoverStatusChanged);
     _detailCoversContent.dispose();
+    _isOpenNotifier.dispose();
     menuDismiss.value?.call();
     menuDismiss.value = null;
     menuDismiss.dispose();
@@ -399,7 +403,7 @@ class WorkDetailPane extends StatelessWidget {
     final roundCorners =
         isLandscape && defaultTargetPlatform != TargetPlatform.windows;
     return ListenableBuilder(
-      listenable: Listenable.merge([navigation, navigation.menuDismiss]),
+      listenable: navigation,
       child: child,
       builder: (context, child) {
         // The main body fills this MediaQuery. Update route metrics before
@@ -419,113 +423,115 @@ class WorkDetailPane extends StatelessWidget {
           backgroundColor: isLandscape ? null : Colors.transparent,
           child: const SizedBox.shrink(),
         );
-        return PopScope<Object?>(
-          canPop:
-              !navigation.isOpen &&
-              !navigation.isContentOpen &&
-              navigation.menuDismiss.value == null,
-          onPopInvokedWithResult: (didPop, _) {
-            if (didPop ||
-                !UiInteractionCoordinator.instance.navigationAllowed.value) {
-              return;
-            }
-            final dismissMenu = navigation.menuDismiss.value;
-            if (dismissMenu != null) {
-              dismissMenu();
-            } else {
-              final navigator = navigation.isOpen
-                  ? navigation.navigatorKey.currentState
-                  : navigation.contentNavigatorKey.currentState;
-              unawaited(navigator?.maybePop());
-            }
-          },
-          // This PopScope owns both nested stacks. A child returning to its
-          // first route must not tell Android to exit while the other stack
-          // still has a page; only the owning route should publish back state.
-          child: NotificationListener<NavigationNotification>(
-            onNotification: (_) => true,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                ValueListenableBuilder<bool>(
-                  valueListenable: navigation._detailCoversContent,
-                  child: child,
-                  builder: (context, covered, child) {
-                    // The source page remains visible while a full-width route
-                    // slides in or out. A side-by-side pane never covers it.
-                    final obscured = !isLandscape && covered;
-                    return MainTabVisibility(
-                      covered: obscured,
-                      child: TickerMode(
-                        enabled: !obscured,
-                        child: ExcludeFocus(
+        // This PopScope owns both nested stacks. A child returning to its
+        // first route must not tell Android to exit while the other stack
+        // still has a page; only the owning route should publish back state.
+        final stack = NotificationListener<NavigationNotification>(
+          onNotification: (_) => true,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              ValueListenableBuilder<bool>(
+                valueListenable: navigation._detailCoversContent,
+                child: child,
+                builder: (context, covered, child) {
+                  // The source page remains visible while a full-width route
+                  // slides in or out. A side-by-side pane never covers it.
+                  final obscured = !isLandscape && covered;
+                  return MainTabVisibility(
+                    covered: obscured,
+                    child: TickerMode(
+                      enabled: !obscured,
+                      child: ExcludeFocus(
+                        excluding: obscured,
+                        child: ExcludeSemantics(
                           excluding: obscured,
-                          child: ExcludeSemantics(
-                            excluding: obscured,
-                            child: IgnorePointer(
-                              ignoring: obscured,
-                              child: child,
-                            ),
+                          child: IgnorePointer(
+                            ignoring: obscured,
+                            child: child,
                           ),
                         ),
                       ),
-                    );
-                  },
-                ),
-                Positioned(
-                  key: const ValueKey('work_detail_pane_bounds'),
-                  right: 0,
-                  top: 0,
-                  bottom: 0,
-                  width: paneWidth,
-                  child: Offstage(
-                    offstage: !navigation.isOpen,
-                    child: Builder(
-                      builder: (context) {
-                        final mediaQuery = MediaQuery.of(context);
-                        return MediaQuery(
-                          data: mediaQuery.copyWith(
-                            size: Size(paneWidth, size.height),
-                            padding: mediaQuery.padding.copyWith(left: 0),
-                            viewPadding: mediaQuery.viewPadding.copyWith(
-                              left: 0,
-                            ),
-                          ),
-                          child: ColoredBox(
-                            color: isLandscape
-                                ? landscapeNavigationBackground(
-                                    Theme.of(context).colorScheme,
-                                  )
-                                : Colors.transparent,
-                            child: ClipRRect(
-                              key: const ValueKey('work_detail_pane_clip'),
-                              borderRadius: roundCorners
-                                  ? BorderRadius.circular(AppRadius.section)
-                                  : BorderRadius.zero,
-                              child: detailNavigator,
-                            ),
-                          ),
-                        );
-                      },
                     ),
+                  );
+                },
+              ),
+              Positioned(
+                key: const ValueKey('work_detail_pane_bounds'),
+                right: 0,
+                top: 0,
+                bottom: 0,
+                width: paneWidth,
+                child: Offstage(
+                  offstage: !navigation.isOpen,
+                  child: Builder(
+                    builder: (context) {
+                      final mediaQuery = MediaQuery.of(context);
+                      return MediaQuery(
+                        data: mediaQuery.copyWith(
+                          size: Size(paneWidth, size.height),
+                          padding: mediaQuery.padding.copyWith(left: 0),
+                          viewPadding: mediaQuery.viewPadding.copyWith(left: 0),
+                        ),
+                        child: ColoredBox(
+                          color: isLandscape
+                              ? landscapeNavigationBackground(
+                                  Theme.of(context).colorScheme,
+                                )
+                              : Colors.transparent,
+                          child: ClipRRect(
+                            key: const ValueKey('work_detail_pane_clip'),
+                            borderRadius: roundCorners
+                                ? BorderRadius.circular(AppRadius.section)
+                                : BorderRadius.zero,
+                            child: detailNavigator,
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
-                if (isLandscape)
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: CustomPaint(
-                        key: const ValueKey('content_pane_outline'),
-                        painter: _ContentPaneOutlinePainter(
-                          color: Theme.of(context).colorScheme.outlineVariant,
-                          sidebarWidth: sidebarWidth,
-                          detailWidth: navigation.isOpen ? paneWidth : 0,
-                          roundCorners: roundCorners,
-                        ),
+              ),
+              if (isLandscape)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CustomPaint(
+                      key: const ValueKey('content_pane_outline'),
+                      painter: _ContentPaneOutlinePainter(
+                        color: Theme.of(context).colorScheme.outlineVariant,
+                        sidebarWidth: sidebarWidth,
+                        detailWidth: navigation.isOpen ? paneWidth : 0,
+                        roundCorners: roundCorners,
                       ),
                     ),
                   ),
-              ],
-            ),
+                ),
+            ],
+          ),
+        );
+        return ValueListenableBuilder<VoidCallback?>(
+          valueListenable: navigation.menuDismiss,
+          child: stack,
+          builder: (context, dismissMenu, stackChild) => PopScope<Object?>(
+            canPop:
+                !navigation.isOpen &&
+                !navigation.isContentOpen &&
+                dismissMenu == null,
+            onPopInvokedWithResult: (didPop, _) {
+              if (didPop ||
+                  !UiInteractionCoordinator.instance.navigationAllowed.value) {
+                return;
+              }
+              if (dismissMenu != null) {
+                dismissMenu();
+              } else {
+                final navigator = navigation.isOpen
+                    ? navigation.navigatorKey.currentState
+                    : navigation.contentNavigatorKey.currentState;
+                unawaited(navigator?.maybePop());
+              }
+            },
+            child: stackChild!,
           ),
         );
       },

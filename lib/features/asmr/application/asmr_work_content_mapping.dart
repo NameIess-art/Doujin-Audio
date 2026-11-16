@@ -34,9 +34,11 @@ List<MusicTrack> flattenAsmrPlayableTracks(
     }
   }
 
-  Map<String, Object?> remoteMetadataForTrack(AsmrTrackFile node) {
+  Map<String, Object?> remoteMetadataForTrack(
+    AsmrTrackFile node,
+    PlaybackMediaReference reference,
+  ) {
     final metadata = Map<String, Object?>.from(workMetadata);
-    final reference = PlaybackMediaReference.parse(node.streamUrl ?? '');
     if (reference.isHls || reference.isChapter) {
       metadata['mediaReference'] = reference.toJson();
     }
@@ -75,32 +77,28 @@ List<MusicTrack> flattenAsmrPlayableTracks(
           node.downloadUrl,
           node.lowQualityUrl,
         ].any(AsmrApiService.isOfficialMediaUrl);
-        var track = node.toMusicTrack(
+        final reference = PlaybackMediaReference.parse(node.streamUrl ?? '');
+        final metadata = remoteMetadataForTrack(node, reference);
+        if (reference.isHls) {
+          // The original download is already one chapter. It cannot be a
+          // candidate for a whole-work HLS URI carrying chapter offsets.
+          metadata['playbackUrls'] = [node.streamUrl!];
+          metadata['fullQualityPlaybackUrls'] = [node.streamUrl!];
+        }
+        final track = node.toMusicTrack(
           groupTitleOverride: work.title,
           remoteCoverUrl: work.preferredCoverUrl,
           remoteMetadataKind:
-              PlaybackMediaReference.parse(node.streamUrl ?? '').isHls ||
+              reference.isHls ||
                   work.preferredResource.source ==
                       AsmrCatalogSource.japaneseAsmr
               ? 'jp-asmr'
               : 'asmr.one',
-          remoteMetadata: remoteMetadataForTrack(node),
+          remoteMetadata: metadata,
           preferredPlaybackUrls: usesOfficialMedia
               ? AsmrApiService.mediaStreamUrlsForHash(node.hash)
               : const <String>[],
         );
-        final reference = PlaybackMediaReference.parse(node.streamUrl ?? '');
-        if (reference.isHls) {
-          // The original download is already one chapter. It cannot be a
-          // candidate for a whole-work HLS URI carrying chapter offsets.
-          track = track.copyWith(
-            remoteMetadata: {
-              ...?track.remoteMetadata,
-              'playbackUrls': [node.streamUrl!],
-              'fullQualityPlaybackUrls': [node.streamUrl!],
-            },
-          );
-        }
         if (track.path.isNotEmpty) {
           result.add(track);
         }

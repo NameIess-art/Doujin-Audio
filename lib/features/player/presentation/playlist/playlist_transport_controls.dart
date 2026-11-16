@@ -15,6 +15,7 @@ import '../../../../core/widgets/app_glass_surface.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/windows_horizontal_wheel_scroll.dart';
 import '../../application/playback_facade.dart';
+import '../../application/playback_session.dart' show PlaybackPositionSample;
 import '../../application/playback_session_snapshot.dart';
 import 'playlist_loop_widgets.dart';
 import 'playlist_shared_helpers.dart';
@@ -146,8 +147,6 @@ class PrimaryPlaybackControls extends ConsumerWidget {
       forward: false,
     );
     final hasNext = playback.hasSessionAdjacentTrack(session.id, forward: true);
-    final canPrevious =
-        enabled && (session.position.inSeconds > 3 || hasPrevious);
     final canNext = enabled && hasNext;
 
     final primaryRow = SizedBox(
@@ -174,13 +173,13 @@ class PrimaryPlaybackControls extends ConsumerWidget {
           return Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              PrimaryTransportButton(
+              _PreviousTrackButton(
                 tooltip: i18n.tr('previous_track'),
                 constraints: sideBox,
-                enabled: canPrevious,
-                icon: Icons.skip_previous_rounded,
+                session: session,
+                enabled: enabled,
+                hasPrevious: hasPrevious,
                 iconSize: skipIconSize,
-                nudgeX: -4,
                 onPressed: () {
                   AppInteractionFeedback.trigger(
                     AppInteractionFeedbackType.selection,
@@ -866,6 +865,88 @@ class _SecondaryControlButton extends StatelessWidget {
         beginScale: 0.72,
         child: Icon(icon, key: ValueKey(icon), size: 20),
       ),
+    );
+  }
+}
+
+class _PreviousTrackButton extends StatefulWidget {
+  const _PreviousTrackButton({
+    required this.tooltip,
+    required this.constraints,
+    required this.session,
+    required this.enabled,
+    required this.hasPrevious,
+    required this.iconSize,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final BoxConstraints constraints;
+  final PlaybackSessionSnapshot session;
+  final bool enabled;
+  final bool hasPrevious;
+  final double iconSize;
+  final VoidCallback onPressed;
+
+  @override
+  State<_PreviousTrackButton> createState() => _PreviousTrackButtonState();
+}
+
+class _PreviousTrackButtonState extends State<_PreviousTrackButton> {
+  StreamSubscription<PlaybackPositionSample>? _positionSub;
+  bool _pastRestartThreshold = false;
+
+  bool get _needsThresholdWatch => widget.enabled && !widget.hasPrevious;
+
+  @override
+  void initState() {
+    super.initState();
+    _pastRestartThreshold = widget.session.position.inSeconds > 3;
+    _syncSubscription();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PreviousTrackButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextThreshold = widget.session.position.inSeconds > 3;
+    if (widget.session.id != oldWidget.session.id ||
+        widget.session.progressStream != oldWidget.session.progressStream ||
+        _needsThresholdWatch != (oldWidget.enabled && !oldWidget.hasPrevious)) {
+      _pastRestartThreshold = nextThreshold;
+      _syncSubscription();
+    } else if (_pastRestartThreshold != nextThreshold) {
+      _pastRestartThreshold = nextThreshold;
+    }
+  }
+
+  void _syncSubscription() {
+    unawaited(_positionSub?.cancel());
+    _positionSub = null;
+    if (!_needsThresholdWatch) return;
+    _positionSub = widget.session.progressStream.listen((sample) {
+      final past = sample.position.inSeconds > 3;
+      if (past != _pastRestartThreshold && mounted) {
+        setState(() => _pastRestartThreshold = past);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    unawaited(_positionSub?.cancel());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PrimaryTransportButton(
+      tooltip: widget.tooltip,
+      constraints: widget.constraints,
+      enabled: widget.enabled && (widget.hasPrevious || _pastRestartThreshold),
+      icon: Icons.skip_previous_rounded,
+      iconSize: widget.iconSize,
+      nudgeX: -4,
+      onPressed: widget.onPressed,
     );
   }
 }

@@ -420,6 +420,7 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
       );
       if (!identical(_service.sessions[session.id], session)) return;
 
+      var capabilitiesChanged = false;
       if (response.isOk) {
         final snapshot = response.valueOrNull;
         session.confirmedNativeAudioEffects = NativeAudioEffects(
@@ -431,7 +432,11 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
               ? snapshot!.channelSwapEnabled
               : desiredAudioEffects.channelSwapEnabled,
         );
-        if (snapshot != null) session.eqCapabilities = snapshot.eqCapabilities;
+        if (snapshot != null &&
+            session.eqCapabilities != snapshot.eqCapabilities) {
+          session.eqCapabilities = snapshot.eqCapabilities;
+          capabilitiesChanged = true;
+        }
       } else {
         AppLogService.warning(
           'PlaybackFacade.$errorLabel error: '
@@ -441,10 +446,16 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
 
       if (revision != session.audioEffectsSyncRevision) continue;
       final confirmed = session.confirmedNativeAudioEffects!;
-      session
-        ..audioEffects = confirmed.state
-        ..channelSwapEnabled = confirmed.channelSwapEnabled;
-      _notifySessionStateChanged(session);
+      final effectsChanged =
+          capabilitiesChanged ||
+          session.audioEffects != confirmed.state ||
+          session.channelSwapEnabled != confirmed.channelSwapEnabled;
+      if (effectsChanged) {
+        session
+          ..audioEffects = confirmed.state
+          ..channelSwapEnabled = confirmed.channelSwapEnabled;
+        _notifySessionStateChanged(session);
+      }
 
       await flushSessionStatePersistence(sessionId: session.id);
       if (!identical(_service.sessions[session.id], session)) return;

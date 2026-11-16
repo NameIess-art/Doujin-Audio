@@ -250,9 +250,24 @@ final class AsmrCategoryCatalog {
     );
   }
 
-  void preferencesChanged({bool interruptRecommendations = false}) {
-    _visibleCache = Expando();
+  int stateRevision(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+    bool searchSession = false,
+  }) => _state(category, canonicalElementQuery(searchQuery), searchSession).revision;
+
+  void preferencesChanged({
+    bool interruptRecommendations = false,
+    bool recommendationsOnly = false,
+  }) {
+    if (!recommendationsOnly) {
+      _visibleCache = Expando();
+    }
     for (final entry in _categories.entries) {
+      if (recommendationsOnly &&
+          entry.key.category != AsmrCategoryType.recommendation) {
+        continue;
+      }
       final state = entry.value;
       if (entry.key.category == AsmrCategoryType.recommendation) {
         if (interruptRecommendations) state.invalidateRequest();
@@ -792,18 +807,9 @@ final class AsmrCategoryCatalog {
     AsmrRequestCancellationToken cancellationToken,
   ) async {
     if (works.isEmpty) return const [];
-    while (true) {
-      cancellationToken.throwIfCancelled();
-      final favorites = _favoriteIds();
-      final prepared = await cancellationToken.waitFor(
-        compute(_prepareCategoryPage, (
-          incoming: works,
-          favoriteIds: favorites,
-        )),
-      );
-      cancellationToken.throwIfCancelled();
-      if (identical(favorites, _favoriteIds())) return prepared;
-    }
+    cancellationToken.throwIfCancelled();
+    final favorites = _favoriteIds();
+    return _prepareCategoryPage((incoming: works, favoriteIds: favorites));
   }
 
   void _applyPageResult(

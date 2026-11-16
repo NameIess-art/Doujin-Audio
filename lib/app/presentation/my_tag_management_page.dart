@@ -303,7 +303,7 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
     final content = controller == null
         ? Center(child: Text(i18n.tr('${widget.type.catalogKey}_incomplete')))
         : ListenableBuilder(
-            listenable: controller,
+            listenable: Listenable.merge([controller, _search]),
             builder: (context, _) {
               final view = _catalogView ??= _buildCatalogView(controller);
               final items = _visibleItems(view);
@@ -472,7 +472,6 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                         key: const ValueKey('my_tag_search_capsule'),
                         child: TextField(
                           controller: _search,
-                          onChanged: (_) => setState(() {}),
                           textInputAction: TextInputAction.search,
                           textAlignVertical: TextAlignVertical.center,
                           style: theme.textTheme.bodyMedium?.copyWith(
@@ -506,19 +505,22 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                                   width: searchHeight,
                                   height: searchHeight,
                                 ),
-                            suffixIcon: _search.text.isEmpty
-                                ? null
-                                : IconButton(
-                                    onPressed: () => setState(_search.clear),
-                                    padding: EdgeInsets.zero,
-                                    tooltip: MaterialLocalizations.of(
-                                      context,
-                                    ).deleteButtonTooltip,
-                                    icon: const Icon(
-                                      Icons.clear_rounded,
-                                      size: 20,
+                            suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                              valueListenable: _search,
+                              builder: (context, value, _) => value.text.isEmpty
+                                  ? const SizedBox.shrink()
+                                  : IconButton(
+                                      onPressed: _search.clear,
+                                      padding: EdgeInsets.zero,
+                                      tooltip: MaterialLocalizations.of(
+                                        context,
+                                      ).deleteButtonTooltip,
+                                      icon: const Icon(
+                                        Icons.clear_rounded,
+                                        size: 20,
+                                      ),
                                     ),
-                                  ),
+                            ),
                           ),
                         ),
                       ),

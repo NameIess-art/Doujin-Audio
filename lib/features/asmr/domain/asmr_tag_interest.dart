@@ -47,14 +47,15 @@ class AsmrTagPreferences {
   String resolve(String name) {
     final normalized = normalizeAsmrTag(name);
     if (tags.containsKey(name)) return name;
+    final directLocal = 'local:$normalized';
+    if (tags.containsKey(directLocal)) return directLocal;
     for (final tag in tags.values) {
       if (tag.aliases.any((alias) => normalizeAsmrTag(alias) == normalized)) {
         return tag.key;
       }
     }
-    final key = 'local:$normalized';
-    tags.putIfAbsent(key, () => AsmrTag(key: key, name: name.trim()));
-    return key;
+    tags.putIfAbsent(directLocal, () => AsmrTag(key: directLocal, name: name.trim()));
+    return directLocal;
   }
 
   void mergeTag(AsmrTag tag) => mergeTags([tag]);
@@ -196,18 +197,22 @@ class AsmrTagPreferences {
   bool excludes({
     required Iterable<String> names,
     Iterable<int> ids = const [],
-  }) =>
-      ids.any((id) => excluded.contains('online:$id')) ||
-      names.any((name) {
-        final normalized = normalizeAsmrTag(name);
-        return excluded.any(
-          (key) =>
-              tags[key]?.aliases.any(
-                (alias) => normalizeAsmrTag(alias) == normalized,
-              ) ??
-              false,
-        );
-      });
+  }) {
+    if (excluded.isEmpty) return false;
+    if (ids.any((id) => excluded.contains('online:$id'))) return true;
+    final normalizedNames = <String>[];
+    for (final name in names) {
+      final normalized = normalizeAsmrTag(name);
+      if (normalized.isNotEmpty) normalizedNames.add(normalized);
+    }
+    if (normalizedNames.isEmpty) return false;
+    final excludedAliases = <String>{
+      for (final key in excluded)
+        for (final alias in tags[key]?.aliases ?? const <String>[])
+          normalizeAsmrTag(alias),
+    };
+    return normalizedNames.any(excludedAliases.contains);
+  }
 
   Map<String, double> get recommendationWeights =>
       recommendationWeightsFor(listenedInterests);
@@ -237,6 +242,17 @@ class AsmrTagPreferences {
       }
     }
     return result;
+  }
+
+  AsmrTagPreferences copy() {
+    final next = AsmrTagPreferences(limit: limit)
+      ..tags.addAll(tags)
+      ..learned.addAll(learned)
+      ..manualInterests.addAll(manualInterests)
+      ..excluded.addAll(excluded)
+      ..consumedSequences.addAll(consumedSequences)
+      ..catalogComplete = catalogComplete;
+    return next;
   }
 
   Map<String, Object?> toJson() => {

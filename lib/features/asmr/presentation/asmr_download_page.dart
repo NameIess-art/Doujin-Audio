@@ -399,8 +399,10 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     final selection = _selection;
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final selectedLeafCount = selection?.selectedLeafCount() ?? 0;
-    final selectedTotalSizeBytes = selection?.selectedTotalSizeBytes() ?? 0;
+    final summary = selection?.selectedSummary();
+    final selectedLeafCount = summary?.leafCount ?? 0;
+    final selectedTotalSizeBytes = summary?.totalSizeBytes ?? 0;
+    final selectedHasUnknownSize = summary?.hasUnknownSize ?? false;
     final primaryColor = Theme.of(context).colorScheme.primary;
     final onPrimaryColor = Theme.of(context).colorScheme.onPrimary;
     final hasDestination = (_destinationRoot?.trim().isNotEmpty ?? false);
@@ -711,8 +713,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                           initialRjCode: widget.initialRjCode,
                           selectedLeafCount: selectedLeafCount,
                           selectedTotalSizeBytes: selectedTotalSizeBytes,
-                          selectedHasUnknownSize:
-                              selection?.selectedHasUnknownSize() ?? false,
+                          selectedHasUnknownSize: selectedHasUnknownSize,
 
                           customWorkFolderName: widget.customWorkFolderName,
                         ),

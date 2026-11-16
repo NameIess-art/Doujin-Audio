@@ -35,6 +35,33 @@ class AsmrDownloadSelectionModel {
     return List<AsmrTrackFile>.unmodifiable(result);
   }
 
+  ({int leafCount, int totalSizeBytes, bool hasUnknownSize}) selectedSummary() {
+    var leafCount = 0;
+    var totalSizeBytes = 0;
+    var hasUnknownSize = false;
+    void visit(AsmrDownloadSelectionNode node) {
+      if (node.selected) {
+        leafCount += node.totalLeafCount;
+        totalSizeBytes += node.totalSizeBytes;
+        if (node.hasUnknownSize) hasUnknownSize = true;
+        return;
+      }
+      if (!node.indeterminate) return;
+      for (final child in node.children) {
+        visit(child);
+      }
+    }
+
+    for (final node in rootNodes) {
+      visit(node);
+    }
+    return (
+      leafCount: leafCount,
+      totalSizeBytes: totalSizeBytes,
+      hasUnknownSize: hasUnknownSize,
+    );
+  }
+
   int selectedLeafCount() {
     var count = 0;
     for (final node in rootNodes) {

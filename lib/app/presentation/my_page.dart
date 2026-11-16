@@ -133,11 +133,12 @@ class _MyPageState extends ConsumerState<MyPage>
 
   Future<void> _openHistory(MusicTrack track) async {
     final library = ref.read(libraryFacadeProvider);
+    final targetKey = listeningWorkKey(track);
     final local = library.library
         .where(
           (candidate) =>
               !candidate.isRemoteAsmr &&
-              listeningWorkKey(candidate) == listeningWorkKey(track),
+              listeningWorkKey(candidate) == targetKey,
         )
         .firstOrNull;
     if (local != null && !local.isRemoteAsmr) {
@@ -306,25 +307,26 @@ class _MyPageState extends ConsumerState<MyPage>
               ? Text(i18n.tr(interestType.emptyKey))
               : Consumer(
                   builder: (context, ref, _) {
-                    final tags = ref.watch(asmrTagInterestsProvider);
-                    final voices = ref.watch(asmrVoiceActorInterestsProvider);
-                    final circles = ref.watch(asmrCircleInterestsProvider);
-                    final state = switch (interestType) {
-                      MyInterestType.tags => tags,
-                      MyInterestType.voiceActors => voices,
-                      MyInterestType.circles => circles,
+                    if (interestType != MyInterestType.tags) {
+                      ref.listen(asmrTagInterestsProvider, (_, _) {});
+                    }
+                    if (interestType != MyInterestType.voiceActors) {
+                      ref.listen(asmrVoiceActorInterestsProvider, (_, _) {});
+                    }
+                    if (interestType != MyInterestType.circles) {
+                      ref.listen(asmrCircleInterestsProvider, (_, _) {});
+                    }
+                    final provider = switch (interestType) {
+                      MyInterestType.tags => asmrTagInterestsProvider,
+                      MyInterestType.voiceActors =>
+                        asmrVoiceActorInterestsProvider,
+                      MyInterestType.circles => asmrCircleInterestsProvider,
                     };
+                    final state = ref.watch(provider);
                     if (!state.hasValue) {
                       if (state.hasError) {
                         return TextButton(
-                          onPressed: () =>
-                              ref.invalidate(switch (interestType) {
-                                MyInterestType.tags => asmrTagInterestsProvider,
-                                MyInterestType.voiceActors =>
-                                  asmrVoiceActorInterestsProvider,
-                                MyInterestType.circles =>
-                                  asmrCircleInterestsProvider,
-                              }),
+                          onPressed: () => ref.invalidate(provider),
                           child: Text(i18n.tr('my_retry')),
                         );
                       }
@@ -757,15 +759,13 @@ final _historyWorkTitleProvider = FutureProvider.autoDispose
           (state) => state.value?.workNameDisplay ?? WorkNameDisplay.workTitle,
         ),
       );
-      final library = ref.watch(libraryFacadeProvider);
+      final library = ref.read(libraryFacadeProvider);
       final target = library.audioDetailTargetForTrack(track);
       final folderName = PathDisplay.folderName(target.targetPath);
       if (displayMode == WorkNameDisplay.folderName) return folderName;
-      ref.watch(libraryDetailTargetRevisionProvider(target));
-      final cached =
-          library.resolvedAudioDetail(target) ??
-          library.categorySnapshot?.detailFor(target);
-      final detail = cached ?? (await library.loadAudioDetail(target)).detail;
+      final detail = await ref.watch(
+        libraryDetailForTargetProvider(target).future,
+      );
       final title = detail.workTitle.trim();
       return title.isNotEmpty ? title : folderName;
     });

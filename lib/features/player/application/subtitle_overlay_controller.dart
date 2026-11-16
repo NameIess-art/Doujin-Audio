@@ -44,6 +44,7 @@ final class SubtitleOverlayController {
   String? _runtimeSessionId;
   String? _runtimeTrackPath;
   String? _lastRuntimeText;
+  SubtitleOverlayRuntimeStyle? _appliedRuntimeStyle;
   bool Function()? _isRuntimeEnabled;
   PlaybackSession? Function()? _runtimeSession;
   PlaybackSubtitleService Function()? _runtimeSubtitles;
@@ -147,6 +148,7 @@ final class SubtitleOverlayController {
     _runtimeSessionId = null;
     _runtimeTrackPath = null;
     _lastRuntimeText = null;
+    _appliedRuntimeStyle = null;
     await subscription?.cancel();
     if (!_runtimeRunning && !immediate) return;
     _runtimeRunning = false;
@@ -156,6 +158,17 @@ final class SubtitleOverlayController {
 
   Future<void> _applyRuntimeStyle() {
     final style = _runtimeStyle!();
+    final previous = _appliedRuntimeStyle;
+    if (previous != null &&
+        previous.fontSize == style.fontSize &&
+        previous.backgroundColor == style.backgroundColor &&
+        previous.textColor == style.textColor &&
+        previous.backgroundOpacity == style.backgroundOpacity &&
+        previous.fontFamily == style.fontFamily &&
+        previous.borderDepth == style.borderDepth) {
+      return Future<void>.value();
+    }
+    _appliedRuntimeStyle = style;
     return updateStyle(
       fontSize: style.fontSize,
       backgroundColor: style.backgroundColor,

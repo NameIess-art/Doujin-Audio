@@ -558,9 +558,13 @@ class _SessionVideoFullscreenPageState
 
   void _endProgressInteraction(double value) {
     final target = Duration(milliseconds: value.round());
+    unawaited(_playback.seekSession(widget.sessionId, target));
+    final committedPosition = _playback.sessionById(widget.sessionId)?.position;
+    if (committedPosition != null) {
+      _positionGate?.syncPosition(committedPosition);
+    }
     _sliderInteracting = false;
     _sliderPositionMs.value = null;
-    unawaited(_playback.seekSession(widget.sessionId, target));
     _scheduleControlsHide();
   }
 

@@ -40,7 +40,21 @@ class SwipeRevealActionPane extends StatelessWidget {
     required this.tooltip,
     required this.onAction,
     this.color,
+    this.dragging = false,
   });
+
+  static Color? _cachedSeedPrimary;
+  static Color? _cachedDarkError;
+
+  static Color _darkDestructiveError(Color primary) {
+    if (_cachedSeedPrimary == primary && _cachedDarkError != null) {
+      return _cachedDarkError!;
+    }
+    final resolved = ColorScheme.fromSeed(seedColor: primary).error;
+    _cachedSeedPrimary = primary;
+    _cachedDarkError = resolved;
+    return resolved;
+  }
 
   final List<SwipeRevealAction> actions;
   final bool fromStart;
@@ -51,18 +65,20 @@ class SwipeRevealActionPane extends StatelessWidget {
   final String label;
   final String tooltip;
   final Color? color;
+  final bool dragging;
   final ValueChanged<VoidCallback> onAction;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final disableAnimations = MediaQuery.disableAnimationsOf(context);
+    final disableAnimations =
+        dragging || MediaQuery.disableAnimationsOf(context);
     final destructive = actions.any((action) => action.destructive);
     final baseColor =
         color ??
         (destructive
             ? Theme.of(context).brightness == Brightness.dark
-                  ? ColorScheme.fromSeed(seedColor: cs.primary).error
+                  ? _darkDestructiveError(cs.primary)
                   : cs.error
             : cs.primary);
     final onColor =

@@ -317,6 +317,15 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   late final AppLanguageProvider _languageProvider;
   bool _isSelectionMode = false;
   final Set<String> _selectedWorkIds = <String>{};
+  final ValueNotifier<({bool active, Set<String> ids})> _selectionListenable =
+      ValueNotifier((active: false, ids: const <String>{}));
+
+  void _syncSelectionListenable() {
+    _selectionListenable.value = (
+      active: _isSelectionMode,
+      ids: Set<String>.unmodifiable(_selectedWorkIds),
+    );
+  }
 
   AsmrCategoryType get _selectedCategory =>
       _headerCategories[_activeCategoryIndex.value];
@@ -685,10 +694,9 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     stopScroll();
     if (_isSelectionMode) {
-      setState(() {
-        _isSelectionMode = false;
-        _selectedWorkIds.clear();
-      });
+      _isSelectionMode = false;
+      _selectedWorkIds.clear();
+      _syncSelectionListenable();
     }
     final targetIndex = _headerCategories.indexOf(category);
     if (targetIndex >= 0) {
@@ -704,30 +712,27 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
 
   void _enterSelectionMode(AsmrWork work) {
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
-    setState(() {
-      _isSelectionMode = true;
-      _selectedWorkIds
-        ..clear()
-        ..add(work.workKey);
-    });
+    _isSelectionMode = true;
+    _selectedWorkIds
+      ..clear()
+      ..add(work.workKey);
+    _syncSelectionListenable();
   }
 
   void _exitSelectionMode() {
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.tap);
-    setState(() {
-      _isSelectionMode = false;
-      _selectedWorkIds.clear();
-    });
+    _isSelectionMode = false;
+    _selectedWorkIds.clear();
+    _syncSelectionListenable();
   }
 
   void _toggleWorkSelection(AsmrWork work) {
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
-    setState(() {
-      if (!_selectedWorkIds.add(work.workKey)) {
-        _selectedWorkIds.remove(work.workKey);
-        if (_selectedWorkIds.isEmpty) _isSelectionMode = false;
-      }
-    });
+    if (!_selectedWorkIds.add(work.workKey)) {
+      _selectedWorkIds.remove(work.workKey);
+      if (_selectedWorkIds.isEmpty) _isSelectionMode = false;
+    }
+    _syncSelectionListenable();
   }
 
   List<AsmrWork> _selectedWorks() {
@@ -744,12 +749,13 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       context: context,
       ref: ref,
       works: _selectedWorks(),
-      onFinished: (failedIds) => setState(() {
+      onFinished: (failedIds) {
         _selectedWorkIds
           ..clear()
           ..addAll(failedIds);
         _isSelectionMode = failedIds.isNotEmpty;
-      }),
+        _syncSelectionListenable();
+      },
     );
   }
 
@@ -758,7 +764,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       context: context,
       ref: ref,
       works: _selectedWorks(),
-      refreshSelectionState: () => setState(() {}),
+      refreshSelectionState: _syncSelectionListenable,
     );
   }
 
@@ -863,6 +869,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     UiInteractionCoordinator.instance.cancelCommit(_activationCommitKey);
     UiInteractionCoordinator.instance.cancelCommit(_languageCommitKey);
     _activeCategoryIndex.dispose();
+    _selectionListenable.dispose();
     _languageProvider.removeListener(_handleAppLanguageChanged);
     widget.activeTabIndexListenable?.removeListener(_handleActivityChanged);
     widget.activeSectionListenable?.removeListener(_handleActivityChanged);
@@ -965,8 +972,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                         !_activationCompleted,
                         headerContentHeight,
                         bottomInset,
-                        _isSelectionMode,
-                        _selectedWorkIds.join(','),
                       ),
                       itemBuilder: (context, index) {
                         final category = _headerCategories[index];
@@ -981,8 +986,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                           topInset: headerContentHeight,
                           bottomInset: bottomInset,
                           onRefresh: _refreshCategoryWithFeedback,
-                          isSelectionMode: _isSelectionMode,
-                          selectedWorkIds: _selectedWorkIds,
+                          selectionListenable: _selectionListenable,
                           onEnterSelectionMode: _enterSelectionMode,
                           onToggleSelection: _toggleWorkSelection,
                         );
@@ -1001,53 +1005,64 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
               valueListenable: _activeCategoryIndex,
               builder: (context, _, _) => Consumer(
                 builder: (context, ref, _) {
-                  final categoryState = _activationCompleted
-                      ? ref
-                            .watch(
-                              asmrCategoryStateProvider((
-                                category: _selectedCategory,
-                                searchQuery: '',
-                                searchSession: false,
-                              )),
-                            )
-                            .value
+                  final stats = _activationCompleted
+                      ? ref.watch(
+                          asmrCategoryStateProvider((
+                            category: _selectedCategory,
+                            searchQuery: '',
+                            searchSession: false,
+                          )).select((async) {
+                            final state = async.value;
+                            if (state == null) return null;
+                            return (
+                              totalCount: state.totalCount,
+                              worksLength: state.works.length,
+                              hasCombinedTotalCount: state.hasCombinedTotalCount,
+                              isPartialError:
+                                  state.lastError
+                                      is AsmrPartialCatalogException,
+                            );
+                          }),
+                        )
                       : null;
-                  final totalWorks = (categoryState?.totalCount ?? 0) > 0
-                      ? categoryState!.totalCount
-                      : (categoryState?.works.length ?? 0);
+                  final totalWorks = (stats?.totalCount ?? 0) > 0
+                      ? stats!.totalCount
+                      : (stats?.worksLength ?? 0);
                   var statsKey = 'asmr_header_stats';
-                  if (categoryState?.hasCombinedTotalCount == true) {
+                  if (stats?.hasCombinedTotalCount == true) {
                     statsKey = 'asmr_header_stats_combined';
-                  } else if (categoryState?.lastError
-                      is AsmrPartialCatalogException) {
+                  } else if (stats?.isPartialError == true) {
                     statsKey = 'asmr_header_stats_loaded';
                   }
                   final asmrStatsText = i18n.tr(statsKey, {
                     'count': totalWorks.toString(),
                   });
-                  final selectedWorks = _isSelectionMode
-                      ? _selectedWorks()
-                      : const <AsmrWork>[];
-                  return AppHeaderTransition(
-                    child: _isSelectionMode
-                        ? _AsmrBatchSelectionHeader(
-                            keyPrefix: 'asmr',
-                            i18n: i18n,
-                            selectedWorks: selectedWorks,
-                            onAddToPlaylist:
-                                selectedWorks.isEmpty ||
-                                    !ref.watch(coreRuntimeReadyProvider)
-                                ? null
-                                : _addSelectedWorksToPlaylist,
-                            onDownload: selectedWorks.isEmpty
-                                ? null
-                                : _downloadSelectedWorks,
-                            onToggleFavorite: selectedWorks.isEmpty
-                                ? null
-                                : _toggleSelectedFavorites,
-                            onExit: _exitSelectionMode,
-                          )
-                        : TopPageHeader(
+                  final coreRuntimeReady = ref.watch(coreRuntimeReadyProvider);
+                  return ValueListenableBuilder<({bool active, Set<String> ids})>(
+                    valueListenable: _selectionListenable,
+                    builder: (context, selection, _) {
+                      final selectedWorks = selection.active
+                          ? _selectedWorks()
+                          : const <AsmrWork>[];
+                      return AppHeaderTransition(
+                        child: selection.active
+                            ? _AsmrBatchSelectionHeader(
+                                keyPrefix: 'asmr',
+                                i18n: i18n,
+                                selectedWorks: selectedWorks,
+                                onAddToPlaylist:
+                                    selectedWorks.isEmpty || !coreRuntimeReady
+                                    ? null
+                                    : _addSelectedWorksToPlaylist,
+                                onDownload: selectedWorks.isEmpty
+                                    ? null
+                                    : _downloadSelectedWorks,
+                                onToggleFavorite: selectedWorks.isEmpty
+                                    ? null
+                                    : _toggleSelectedFavorites,
+                                onExit: _exitSelectionMode,
+                              )
+                            : TopPageHeader(
                             key: _headerKey,
                             icon: Icons.cloud_rounded,
                             iconColor: Theme.of(context).colorScheme.primary,
@@ -1122,6 +1137,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                               ),
                             ),
                           ),
+                        );
+                    },
                   );
                 },
               ),

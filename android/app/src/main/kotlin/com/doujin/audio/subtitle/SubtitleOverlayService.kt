@@ -114,13 +114,17 @@ class SubtitleOverlayService : Service() {
     fun updateSubtitle(text: String) {
         subtitleTextView?.post {
             val view = subtitleTextView ?: return@post
-            view.text = text
             val nextVisibility = if (text.isEmpty()) View.GONE else View.VISIBLE
+            if (view.text.toString() != text) {
+                view.text = text
+            }
             if (view.visibility != nextVisibility) {
                 view.visibility = nextVisibility
-                try {
-                    windowManager.updateViewLayout(view, params)
-                } catch (_: Exception) {}
+                if (nextVisibility == View.VISIBLE) {
+                    try {
+                        windowManager.updateViewLayout(view, params)
+                    } catch (_: Exception) {}
+                }
             }
         }
     }

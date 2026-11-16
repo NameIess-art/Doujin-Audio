@@ -223,9 +223,7 @@ extension NotificationFacadeSync on NotificationFacade {
         .toList(growable: false);
     final unchangedItems =
         payload.length == _lastNotificationItems.length &&
-        Iterable<int>.generate(payload.length).every(
-          (index) => identical(payload[index], _lastNotificationItems[index]),
-        );
+        _notificationItemsEqual(payload, _lastNotificationItems);
     if (_unifiedNotificationSyncKey != null &&
         _lastNotificationMainSessionId == mainSession?.id &&
         unchangedItems) {
@@ -235,10 +233,6 @@ extension NotificationFacadeSync on NotificationFacade {
       'mainSessionId': mainSession?.id,
       'items': payload,
     };
-    final nextSyncKey = json.encode(syncPayload);
-    if (_unifiedNotificationSyncKey == nextSyncKey) {
-      return true;
-    }
 
     final succeeded = payload.isEmpty
         ? await _clearUnifiedPlaybackNotificationsOnPlatform()
@@ -257,28 +251,46 @@ extension NotificationFacadeSync on NotificationFacade {
             ? activeSessions
             : const <PlaybackSession>[];
         final latestMainSession = _focusedSessionFrom(latestSessions);
-        final latestSyncKey = json.encode(<String, dynamic>{
-          'mainSessionId': latestMainSession?.id,
-          'items': latestSessions
-              .map(
-                (session) => _notificationPayloadForSession(
-                  session,
-                  resolveArtwork:
-                      includeExtras && identical(session, latestMainSession),
-                  refreshSubtitle: includeExtras,
-                ),
-              )
-              .toList(growable: false),
-        });
+        final latestItems = latestSessions
+            .map(
+              (session) => _notificationPayloadForSession(
+                session,
+                resolveArtwork:
+                    includeExtras && identical(session, latestMainSession),
+                refreshSubtitle: includeExtras,
+              ),
+            )
+            .toList(growable: false);
         // Preserve a newer pause/stop request, which may have no further
         // progress events, but wait for a later refresh to retry the same state.
-        _unifiedNotificationSyncPending = latestSyncKey != nextSyncKey;
+        _unifiedNotificationSyncPending =
+            latestMainSession?.id != mainSession?.id ||
+            !_notificationItemsEqual(latestItems, payload);
       }
       return false;
     }
-    _unifiedNotificationSyncKey = nextSyncKey;
+    _unifiedNotificationSyncKey = 'synced';
     _lastNotificationItems = payload;
     _lastNotificationMainSessionId = mainSession?.id;
+    return true;
+  }
+
+  static bool _notificationItemsEqual(
+    List<Map<String, dynamic>> a,
+    List<Map<String, dynamic>> b,
+  ) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      final left = a[i];
+      final right = b[i];
+      if (identical(left, right)) continue;
+      if (left.length != right.length) return false;
+      for (final entry in left.entries) {
+        if (!right.containsKey(entry.key) || right[entry.key] != entry.value) {
+          return false;
+        }
+      }
+    }
     return true;
   }
 

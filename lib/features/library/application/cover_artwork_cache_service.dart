@@ -874,30 +874,44 @@ class CoverArtworkCacheService {
     if (normalizedFolder.isEmpty || normalizedCover.isEmpty) return null;
     invalidateFolder(normalizedFolder);
     if (!newlySaved) {
-      final candidates = await _sourceResolver.resolveFolderCoverCandidates(
-        normalizedFolder,
-      );
-      final hasCandidate = candidates.any(
-        (c) =>
-            PathMatcher.equalsNormalized(c, normalizedCover) ||
-            PathMatcher.equivalenceKey(c) ==
-                PathMatcher.equivalenceKey(normalizedCover),
-      );
-      if (!hasCandidate) {
-        final coverContentKey = await _sourceResolver.localCoverContentKey(
-          normalizedCover,
+      final fastLocalImage =
+          !PathMatcher.isContentUri(normalizedCover) &&
+          folderCoverImageExtensions.contains(
+            path.extension(normalizedCover).toLowerCase(),
+          ) &&
+          PathMatcher.isWithinOrEqual(normalizedCover, normalizedFolder);
+      var verifiedFastImage = false;
+      if (fastLocalImage) {
+        final stat = await File(normalizedCover).stat();
+        verifiedFastImage =
+            stat.type == FileSystemEntityType.file && stat.size > 0;
+      }
+      if (!verifiedFastImage) {
+        final candidates = await _sourceResolver.resolveFolderCoverCandidates(
+          normalizedFolder,
         );
-        var contentMatched = false;
-        if (coverContentKey != null) {
-          for (final candidate in candidates) {
-            if (await _sourceResolver.localCoverContentKey(candidate) ==
-                coverContentKey) {
-              contentMatched = true;
-              break;
+        final hasCandidate = candidates.any(
+          (c) =>
+              PathMatcher.equalsNormalized(c, normalizedCover) ||
+              PathMatcher.equivalenceKey(c) ==
+                  PathMatcher.equivalenceKey(normalizedCover),
+        );
+        if (!hasCandidate) {
+          final coverContentKey = await _sourceResolver.localCoverContentKey(
+            normalizedCover,
+          );
+          var contentMatched = false;
+          if (coverContentKey != null) {
+            for (final candidate in candidates) {
+              if (await _sourceResolver.localCoverContentKey(candidate) ==
+                  coverContentKey) {
+                contentMatched = true;
+                break;
+              }
             }
           }
+          if (!contentMatched) return null;
         }
-        if (!contentMatched) return null;
       }
     }
     final durableSource = sourcePath?.trim();

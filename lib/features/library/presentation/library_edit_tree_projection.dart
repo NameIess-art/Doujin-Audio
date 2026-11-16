@@ -164,26 +164,27 @@ class LibraryEditFolderTreeNode extends LibraryEditTreeNode {
     required this.folderPath,
     required this.depth,
     List<LibraryEditTreeNode>? children,
-  }) : children = children ?? <LibraryEditTreeNode>[];
+  }) : name = PathDisplay.folderName(folderPath),
+       children = children ?? <LibraryEditTreeNode>[];
 
   final String folderPath;
   final int depth;
-  final List<LibraryEditTreeNode> children;
-
   @override
-  String get name => PathDisplay.folderName(folderPath);
+  final String name;
+  final List<LibraryEditTreeNode> children;
 
   @override
   String get pathValue => folderPath;
 }
 
 class LibraryEditTrackTreeNode extends LibraryEditTreeNode {
-  LibraryEditTrackTreeNode(this.trackPath);
+  LibraryEditTrackTreeNode(this.trackPath)
+    : name = PathDisplay.fileName(trackPath, withoutExtension: true);
 
   final String trackPath;
 
   @override
-  String get name => PathDisplay.fileName(trackPath, withoutExtension: true);
+  final String name;
 
   @override
   String get pathValue => trackPath;

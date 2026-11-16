@@ -128,49 +128,59 @@ extension AppDatabaseAudioDetails on AppDatabase {
         _writeAudioDetailRecordToBatch(batch, detail);
       }
       await batch.commit(noResult: true);
-      for (final label in labels) {
+      final labelList = labels.toList(growable: false);
+      if (labelList.isEmpty) return;
+      final existingRows = await transaction.query(
+        'time_segment_labels',
+        columns: const ['id', 'track_key', 'updated_at_ms'],
+      );
+      final existingById = <String, ({String trackKey, int updatedAtMs})>{
+        for (final row in existingRows)
+          row['id'] as String: (
+            trackKey: row['track_key'] as String,
+            updatedAtMs: (row['updated_at_ms'] as num).toInt(),
+          ),
+      };
+      final labelBatch = transaction.batch();
+      var hasLabelWrites = false;
+      for (final label in labelList) {
         var id = label.id;
-        var rows = await transaction.query(
-          'time_segment_labels',
-          where: 'id = ?',
-          whereArgs: [id],
-        );
+        var existing = existingById[id];
         // A copied work keeps its remapped ID even after the original label
         // has been deleted from the source work.
-        if (rows.isEmpty) {
+        if (existing == null) {
           final mappedId =
               '$id@${base64Url.encode(utf8.encode(PathMatcher.equivalenceKey(label.trackKey)))}';
-          final mappedRows = await transaction.query(
-            'time_segment_labels',
-            where: 'id = ?',
-            whereArgs: [mappedId],
-          );
-          if (mappedRows.isNotEmpty) {
+          final mappedExisting = existingById[mappedId];
+          if (mappedExisting != null) {
             id = mappedId;
-            rows = mappedRows;
+            existing = mappedExisting;
           }
         }
-        while (rows.isNotEmpty &&
+        while (existing != null &&
             !PathMatcher.equalsNormalized(
-              rows.first['track_key'] as String,
+              existing.trackKey,
               label.trackKey,
             )) {
           id =
               '$id@${base64Url.encode(utf8.encode(PathMatcher.equivalenceKey(label.trackKey)))}';
-          rows = await transaction.query(
-            'time_segment_labels',
-            where: 'id = ?',
-            whereArgs: [id],
-          );
+          existing = existingById[id];
         }
-        if (rows.isNotEmpty &&
-            (rows.first['updated_at_ms'] as num) >= label.updatedAtMs) {
+        if (existing != null && existing.updatedAtMs >= label.updatedAtMs) {
           continue;
         }
-        await transaction.insert('time_segment_labels', {
+        existingById[id] = (
+          trackKey: label.trackKey,
+          updatedAtMs: label.updatedAtMs,
+        );
+        labelBatch.insert('time_segment_labels', {
           ..._timeSegmentLabelRow(label),
           'id': id,
         }, conflictAlgorithm: ConflictAlgorithm.replace);
+        hasLabelWrites = true;
+      }
+      if (hasLabelWrites) {
+        await labelBatch.commit(noResult: true);
       }
     }),
   );

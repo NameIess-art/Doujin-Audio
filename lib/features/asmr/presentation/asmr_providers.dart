@@ -61,8 +61,10 @@ Stream<List<AsmrTagInterest>> _interestStream(
     );
     rethrow;
   }
+  final isConcrete = controller.runtimeType == AsmrLibraryController;
   yield* interactionDeferredListenableStream(
     source: controller,
+    version: isConcrete ? () => controller.interestViewVersion : null,
     read: () => read(controller),
     deferInitialRead: true,
     structural: true,
@@ -73,8 +75,10 @@ final asmrLibraryGlobalStateProvider =
     StreamProvider<AsmrLibraryGlobalViewState?>((ref) {
       final controller = ref.watch(asmrLibraryControllerProvider);
       if (controller == null) return Stream.value(null);
+      final isConcrete = controller.runtimeType == AsmrLibraryController;
       return interactionDeferredListenableStream(
         source: controller,
+        version: isConcrete ? () => controller.globalRevision : null,
         read: () => controller.globalViewState,
       );
     });
@@ -89,6 +93,7 @@ final asmrCategoryStateProvider = StreamProvider.autoDispose
     .family<AsmrCategoryViewState?, AsmrCategoryStateRequest>((ref, request) {
       final controller = ref.watch(asmrLibraryControllerProvider);
       if (controller == null) return Stream.value(null);
+      final isConcrete = controller.runtimeType == AsmrLibraryController;
       return interactionDeferredListenableStream(
         source: controller,
         deferInitialRead:
@@ -96,6 +101,13 @@ final asmrCategoryStateProvider = StreamProvider.autoDispose
             request.searchSession ||
             !controller.hasLoadedCategory(request.category),
         structural: true,
+        version: isConcrete
+            ? () => controller.categoryViewVersion(
+                request.category,
+                searchQuery: request.searchQuery,
+                searchSession: request.searchSession,
+              )
+            : null,
         read: () => controller.categoryViewState(
           request.category,
           searchQuery: request.searchQuery,
@@ -107,8 +119,10 @@ final asmrCategoryStateProvider = StreamProvider.autoDispose
 final asmrAuthStateProvider = StreamProvider<AsmrAuthViewState?>((ref) {
   final controller = ref.watch(asmrLibraryControllerProvider);
   if (controller == null) return Stream.value(null);
+  final isConcrete = controller.runtimeType == AsmrLibraryController;
   return interactionDeferredListenableStream(
     source: controller,
+    version: isConcrete ? () => controller.authViewVersion : null,
     read: () => controller.authViewState,
   );
 });
@@ -116,8 +130,10 @@ final asmrAuthStateProvider = StreamProvider<AsmrAuthViewState?>((ref) {
 final asmrSyncStateProvider = StreamProvider<AsmrSyncViewState?>((ref) {
   final controller = ref.watch(asmrLibraryControllerProvider);
   if (controller == null) return Stream.value(null);
+  final isConcrete = controller.runtimeType == AsmrLibraryController;
   return interactionDeferredListenableStream(
     source: controller,
+    version: isConcrete ? () => controller.syncViewVersion : null,
     read: () => controller.syncViewState,
   );
 });

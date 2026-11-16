@@ -322,27 +322,30 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
                 maintainSize: true,
                 maintainAnimation: true,
                 maintainState: true,
-                child: RepaintBoundary(
-                  child: SizedBox.expand(
-                    key: const ValueKey<String>('mobile_dock_playback'),
+                child: TickerMode(
+                  enabled: !widget.isPlaybackHidden,
+                  child: RepaintBoundary(
                     child: SizedBox.expand(
-                      key: widget.mobilePlaybackGeometryKey,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onLongPress: widget.onTogglePlaybackRow,
-                        child: AnimatedBuilder(
-                          animation: _rowCurve,
-                          child: playbackChild,
-                          builder: (context, child) => ClipRRect(
-                            key: const ValueKey<String>(
-                              'mobile_dock_playback_viewport',
+                      key: const ValueKey<String>('mobile_dock_playback'),
+                      child: SizedBox.expand(
+                        key: widget.mobilePlaybackGeometryKey,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onLongPress: widget.onTogglePlaybackRow,
+                          child: AnimatedBuilder(
+                            animation: _rowCurve,
+                            child: playbackChild,
+                            builder: (context, child) => ClipRRect(
+                              key: const ValueKey<String>(
+                                'mobile_dock_playback_viewport',
+                              ),
+                              borderRadius: BorderRadius.lerp(
+                                BorderRadius.circular(compactWidth / 2),
+                                BorderRadius.zero,
+                                _rowCurve.value,
+                              )!,
+                              child: child,
                             ),
-                            borderRadius: BorderRadius.lerp(
-                              BorderRadius.circular(compactWidth / 2),
-                              BorderRadius.zero,
-                              _rowCurve.value,
-                            )!,
-                            child: child,
                           ),
                         ),
                       ),

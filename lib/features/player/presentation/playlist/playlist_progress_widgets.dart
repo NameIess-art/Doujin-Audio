@@ -331,6 +331,12 @@ class _ProgressSliderAndTimecodesState
     final position = Duration(milliseconds: value.round());
     widget.onManualSeek?.call(position);
     widget.playback.seekSession(widget.session.id, position);
+    final committedPosition = widget.playback
+        .sessionById(widget.session.id)
+        ?.position;
+    if (committedPosition != null) {
+      _positionGate.syncPosition(committedPosition);
+    }
     _isDragging = false;
     _dragValueMs = null;
     _hoverValueMs = null;

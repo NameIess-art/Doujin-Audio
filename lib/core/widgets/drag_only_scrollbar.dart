@@ -66,7 +66,9 @@ class _DragOnlyScrollbarState extends RawScrollbarState<DragOnlyScrollbar> {
   @override
   void handleHoverExit(PointerExitEvent event) {
     super.handleHoverExit(event);
-    setState(() => _states.remove(WidgetState.hovered));
+    if (_states.remove(WidgetState.hovered)) {
+      setState(() {});
+    }
   }
 
   @override
@@ -241,7 +243,8 @@ class AppScrollBehavior extends MaterialScrollBehavior {
   ) {
     final controller = details.controller;
     if (defaultTargetPlatform == TargetPlatform.windows &&
-        controller is WindowsSmoothScrollController) {
+        controller is WindowsSmoothScrollController &&
+        axisDirectionToAxis(details.direction) == Axis.horizontal) {
       child = controller.handleWheelReversal(context, child);
     }
     if (axisDirectionToAxis(details.direction) != Axis.vertical) {

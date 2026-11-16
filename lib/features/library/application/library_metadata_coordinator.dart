@@ -413,13 +413,10 @@ final class LibraryMetadataCoordinator {
         }
         final latest =
             _detailCacheService.resolvedDetail(detail.target) ?? detail;
-        final duration =
-            latest.duration ??
-            (!hasUnknown && total > Duration.zero ? total : null);
-        if (duration != null) {
+        if (latest.duration == null && !hasUnknown && total > Duration.zero) {
           await saveMissingDuration(
             latest.target,
-            duration,
+            total,
             deferCategoryUpdate: true,
             skipSynchronizedDocument: true,
           );

@@ -41,7 +41,7 @@ final class PlaybackRuntimeBinding implements RuntimeBinding {
       onSessionRegistered: (session) {
         notifications.registerSessionFocus(session.id);
         keepAlive.sync();
-        notifications.syncPlaybackState();
+        notifications.syncRuntimePlaybackState();
         syncPlaybackState();
       },
       onSessionsRemoved: (sessions) {
@@ -52,7 +52,7 @@ final class PlaybackRuntimeBinding implements RuntimeBinding {
         }
       },
       onSessionsReordered: () {
-        notifications.syncPlaybackState();
+        notifications.syncRuntimePlaybackState();
         syncPlaybackState();
         playback.scheduleSessionOrderPersistence();
       },
@@ -62,7 +62,7 @@ final class PlaybackRuntimeBinding implements RuntimeBinding {
       },
       onRuntimeStateChanged: () {
         keepAlive.sync();
-        notifications.syncPlaybackState();
+        notifications.syncRuntimePlaybackState();
       },
       onSessionPositionChanged: (session, position) {
         playbackCommands.handleSessionPositionChanged(session, position);
@@ -80,7 +80,7 @@ final class PlaybackRuntimeBinding implements RuntimeBinding {
       onSessionDurationChanged: notifications.scheduleFocusedRefresh,
       onSessionSettingsChanged: () {
         syncPlaybackState();
-        notifications.syncPlaybackState();
+        notifications.syncRuntimePlaybackState();
       },
     );
     playback.attachPlaybackQueueSynchronizer(

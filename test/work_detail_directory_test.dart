@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_work_detail_sheet.dart';
 import 'package:doujin_audio/features/library/application/work_text_service.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_entries.dart';
@@ -131,6 +133,10 @@ void main() {
       same(input.texts.single),
     );
     expect(snapshot.validDepth(['Extras', 'Texts', 'Missing']), 2);
+    expect(snapshot.indicesAt([])[snapshot.entriesAt([])[2].rowKey], 2);
+    final trackPath = PathMatcher.normalize('C:/作品/Track10.mp3');
+    expect(snapshot.containsLocalTrack([], trackPath), isTrue);
+    expect(snapshot.containsLocalTrack(['Extras'], trackPath), isFalse);
     expect(
       snapshot.entriesAt(['Extras']),
       same(snapshot.entriesAt(['Extras'])),
@@ -151,8 +157,8 @@ void main() {
         ],
       ),
     ];
-    final snapshot = buildWorkDirectorySnapshot(WorkDirectoryInput.asmr(tree));
-    expect(snapshot.entriesAt([]).single.asmrNode, same(tree.single));
+    final snapshot = buildAsmrWorkDirectorySnapshot(tree);
+    expect(snapshot.entriesAt([]).single.remoteReference, same(tree.single));
     expect(snapshot.entriesAt(['Extras']).map((entry) => entry.name), [
       'audio2',
       'audio10',

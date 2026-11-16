@@ -10,6 +10,7 @@ import '../domain/library_node.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/logging/app_log_service.dart';
 import 'audio_detail_cache_service.dart';
+import 'audio_detail_repository.dart';
 import 'library_service.dart';
 import 'library_organizer.dart';
 import 'library_sorting.dart';
@@ -234,9 +235,13 @@ class LibrarySnapshotCacheService {
   int _folderTreesRevision = -1;
 
   AudioLibraryCategorySnapshot? _categorySnapshot;
-  Future<AudioLibraryCategorySnapshot>? _categoryFuture;
-  int _categoryFutureStructureRevision = -1;
-  int _categoryFutureDetailRevision = -1;
+  ({
+    Future<AudioLibraryCategorySnapshot> future,
+    Set<bool Function()?> requesters,
+    int structureRevision,
+    int detailRevision,
+  })?
+  _categoryRequest;
   int _categorySnapshotRevision = 0;
   final _pendingCategoryDetails = <AudioDetailTarget, AudioDetail>{};
 
@@ -401,7 +406,7 @@ class LibrarySnapshotCacheService {
     _cardFuture = null;
     _cardFutureRevision = -1;
     _cardCommitCallbacks.clear();
-    _categoryFuture = null;
+    _categoryRequest = null;
   }
 
   Future<LibraryTreeSnapshot> cardSnapshot({
@@ -516,6 +521,7 @@ class LibrarySnapshotCacheService {
 
   Future<AudioLibraryCategorySnapshot> categorySnapshot({
     required VoidCallback onCommitted,
+    bool Function()? isActive,
   }) {
     flushDetailChanges();
     final structureRevision = _libraryService.structureRevision;
@@ -527,11 +533,29 @@ class LibrarySnapshotCacheService {
       return Future<AudioLibraryCategorySnapshot>.value(cached);
     }
 
-    final inFlight = _categoryFuture;
+    final inFlight = _categoryRequest;
     if (inFlight != null &&
-        _categoryFutureStructureRevision == structureRevision &&
-        _categoryFutureDetailRevision == detailRevision) {
-      return inFlight;
+        inFlight.structureRevision == structureRevision &&
+        inFlight.detailRevision == detailRevision) {
+      inFlight.requesters.add(isActive);
+      return inFlight.future;
+    }
+
+    final requesters = <bool Function()?>{isActive};
+    void ensureActive() {
+      // Callers without a page scope still receive the snapshot they requested.
+      if (requesters.contains(null)) return;
+      final ownsRequest = identical(_categoryRequest?.requesters, requesters);
+      if (ownsRequest &&
+          structureRevision == _libraryService.structureRevision &&
+          detailRevision == _detailCacheService.revision &&
+          requesters.any((requester) => requester!())) {
+        return;
+      }
+      if (ownsRequest) {
+        _categoryRequest = null;
+      }
+      throw const AudioDetailOperationCancelled();
     }
 
     final buildFuture = AppLogService.measureAsync(
@@ -539,16 +563,16 @@ class LibrarySnapshotCacheService {
       () => _buildCategorySnapshot(
         structureRevision: structureRevision,
         detailRevision: detailRevision,
+        ensureActive: ensureActive,
       ),
       details: <String, Object?>{'tracks': _libraryService.library.length},
     );
-    _categoryFutureStructureRevision = structureRevision;
-    _categoryFutureDetailRevision = detailRevision;
     late final Future<AudioLibraryCategorySnapshot> future;
     future = buildFuture
         .then((snapshot) {
+          ensureActive();
           if (!_disposed &&
-              identical(_categoryFuture, future) &&
+              identical(_categoryRequest?.future, future) &&
               snapshot.structureRevision == _libraryService.structureRevision &&
               snapshot.detailRevision == _detailCacheService.revision) {
             _categorySnapshot = snapshot;
@@ -559,11 +583,16 @@ class LibrarySnapshotCacheService {
           return snapshot;
         })
         .whenComplete(() {
-          if (identical(_categoryFuture, future)) {
-            _categoryFuture = null;
+          if (identical(_categoryRequest?.future, future)) {
+            _categoryRequest = null;
           }
         });
-    _categoryFuture = future;
+    _categoryRequest = (
+      future: future,
+      requesters: requesters,
+      structureRevision: structureRevision,
+      detailRevision: detailRevision,
+    );
     return future;
   }
 
@@ -577,11 +606,11 @@ class LibrarySnapshotCacheService {
     _cachedTreeRevision = -1;
     _treeFuture = null;
     _treeCommitCallbacks.clear();
-    _categoryFuture = null;
+    _categoryRequest = null;
   }
 
   void markDetailChanged([AudioDetail? detail, bool defer = false]) {
-    _categoryFuture = null;
+    _categoryRequest = null;
     if (detail == null) {
       _pendingCategoryDetails.clear();
       _categorySnapshot = null;
@@ -613,9 +642,7 @@ class LibrarySnapshotCacheService {
     _treeFutureRevision = -1;
     _treeCommitCallbacks.clear();
     _categorySnapshot = null;
-    _categoryFuture = null;
-    _categoryFutureStructureRevision = -1;
-    _categoryFutureDetailRevision = -1;
+    _categoryRequest = null;
     _categorySnapshotRevision = 0;
     _pendingCategoryDetails.clear();
   }
@@ -635,6 +662,7 @@ class LibrarySnapshotCacheService {
   Future<AudioLibraryCategorySnapshot> _buildCategorySnapshot({
     required int structureRevision,
     required int detailRevision,
+    required VoidCallback ensureActive,
   }) async {
     final snapshot = await cardSnapshot(onCommitted: () {});
     var tree = snapshot.tree;
@@ -645,51 +673,54 @@ class LibrarySnapshotCacheService {
     }
 
     final requests = <_CategoryDetailRequest>[];
-    for (final node in tree) {
-      if (node is FolderNode) {
-        final target = AudioDetailTarget.libraryRootFolder(node.path);
-        requests.add(
-          _CategoryDetailRequest(
-            target: target,
-            title: node.name,
-            path: node.path,
-            isFolder: true,
-            tracks: node.allTracks,
-          ),
-        );
-      } else if (node is TrackNode && node.track.isSingle) {
-        final target = AudioDetailTarget.singleAudioFile(node.track.path);
-        requests.add(
-          _CategoryDetailRequest(
-            target: target,
-            title: node.track.displayName,
-            path: node.track.path,
-            isFolder: false,
-            tracks: List<MusicTrack>.unmodifiable([node.track]),
-          ),
-        );
+    final details = <AudioDetail>[];
+    // Submit one batch at a time so visible cards can enter the shared detail
+    // queue between batches. A superseded page can stop at the same boundary.
+    const batchSize = 64;
+    for (var start = 0; start < tree.length; start += batchSize) {
+      ensureActive();
+      final requestStart = requests.length;
+      final end = (start + batchSize).clamp(0, tree.length);
+      for (var index = start; index < end; index++) {
+        final node = tree[index];
+        if (node is FolderNode) {
+          requests.add(
+            _CategoryDetailRequest(
+              target: AudioDetailTarget.libraryRootFolder(node.path),
+              title: node.name,
+              path: node.path,
+              isFolder: true,
+              tracks: node.allTracks,
+            ),
+          );
+        } else if (node is TrackNode && node.track.isSingle) {
+          requests.add(
+            _CategoryDetailRequest(
+              target: AudioDetailTarget.singleAudioFile(node.track.path),
+              title: node.track.displayName,
+              path: node.track.path,
+              isFolder: false,
+              tracks: List<MusicTrack>.unmodifiable([node.track]),
+            ),
+          );
+        }
       }
+      final results = await _detailCacheService.loadMany(
+        requests
+            .getRange(requestStart, requests.length)
+            .map((request) => request.target),
+      );
+      details.addAll(results.map((result) => result.detail));
+      if (end < tree.length) await Future<void>.delayed(Duration.zero);
     }
 
-    final targets = requests.map((request) => request.target);
-    final details = await _loadCategoryDetails(targets);
+    ensureActive();
     return compute(_buildCategorySnapshotResult, (
       requests: requests,
       details: details,
       structureRevision: structureRevision,
       detailRevision: detailRevision,
     ));
-  }
-
-  Future<List<AudioDetail>> _loadCategoryDetails(
-    Iterable<AudioDetailTarget> targets,
-  ) async {
-    final orderedTargets = targets.toList(growable: false);
-    if (orderedTargets.isEmpty) return const <AudioDetail>[];
-    final results = await _detailCacheService.loadMany(orderedTargets);
-    return List<AudioDetail>.unmodifiable(
-      results.map((result) => result.detail),
-    );
   }
 
   void flushDetailChanges() {

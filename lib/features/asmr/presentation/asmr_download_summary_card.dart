@@ -125,7 +125,7 @@ class AsmrDownloadSummaryCard extends ConsumerWidget {
                     'count': selectedLeafCount,
                     'size': selectedHasUnknownSize
                         ? i18n.tr('asmr_download_size_unknown')
-                        : formatAsmrDownloadSize(selectedTotalSizeBytes),
+                        : formatMediaFileSize(selectedTotalSizeBytes),
                   }),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: cs.onSurfaceVariant,

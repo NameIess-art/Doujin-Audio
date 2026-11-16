@@ -4987,6 +4987,92 @@ void main() {
   });
 
   group('AppFadeThroughIndexedStack horizontal swipe', () {
+    for (final reducedMotion in [false, true]) {
+      testWidgets('cancelling a committed-distance drag keeps the current page '
+          '(reduced motion: $reducedMotion)', (tester) async {
+        final index = ValueNotifier<int>(0);
+        addTearDown(index.dispose);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MediaQuery(
+              data: MediaQueryData(disableAnimations: reducedMotion),
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: SizedBox(
+                  width: 400,
+                  height: 600,
+                  child: AppFadeThroughIndexedStack.lazy(
+                    indexListenable: index,
+                    itemCount: 2,
+                    onIndexSelected: (next) => index.value = next,
+                    itemBuilder: (_, page) => Center(child: Text('page $page')),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        final drag = await tester.startGesture(const Offset(320, 300));
+        await drag.moveBy(const Offset(-190, 0));
+        await tester.pump();
+        await drag.cancel();
+        await tester.pumpAndSettle();
+
+        expect(index.value, 0);
+        expect(find.text('page 0'), findsOneWidget);
+        expect(find.text('page 1'), findsNothing);
+        expect(
+          UiInteractionCoordinator.instance.navigationAllowed.value,
+          isTrue,
+        );
+      });
+    }
+
+    testWidgets('selecting the page being dragged in completes navigation', (
+      tester,
+    ) async {
+      final index = ValueNotifier<int>(0);
+      addTearDown(index.dispose);
+      final completed = <int>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 400,
+              height: 600,
+              child: AppFadeThroughIndexedStack.lazy(
+                indexListenable: index,
+                itemCount: 2,
+                onIndexSelected: (next) => index.value = next,
+                onTransitionCompleted: completed.add,
+                itemBuilder: (_, page) => Center(child: Text('page $page')),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final drag = await tester.startGesture(const Offset(320, 300));
+      await drag.moveBy(const Offset(-100, 0));
+      await tester.pump();
+      expect(find.text('page 1'), findsOneWidget);
+      expect(
+        UiInteractionCoordinator.instance.navigationAllowed.value,
+        isFalse,
+      );
+
+      index.value = 1;
+      await drag.up();
+      await tester.pumpAndSettle();
+
+      expect(find.text('page 0'), findsNothing);
+      expect(find.text('page 1'), findsOneWidget);
+      expect(completed, [1]);
+      expect(UiInteractionCoordinator.instance.navigationAllowed.value, isTrue);
+    });
+
     testWidgets(
       'supports interactive horizontal swipe with live drag tracking, snap, flick, and reversal',
       (tester) async {

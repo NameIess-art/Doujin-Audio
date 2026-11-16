@@ -86,12 +86,12 @@ extension NotificationFacadeSync on NotificationFacade {
     );
   }
 
-  void _requestUnifiedPlaybackNotificationFlush() {
+  void _requestUnifiedPlaybackNotificationFlush({bool runtimeChange = false}) {
     if (_stateService.synchronizationPaused) {
-      _unifiedNotificationSyncPending = false;
       _stateService.synchronizationPendingWhilePaused = true;
-      return;
+      if (!runtimeChange) return;
     }
+    _runtimeNotificationSyncPending |= runtimeChange;
     _unifiedNotificationSyncPending = true;
     if (_unifiedNotificationSyncInFlight) {
       return;
@@ -103,12 +103,13 @@ extension NotificationFacadeSync on NotificationFacade {
   Future<void> _flushUnifiedPlaybackNotificationState() async {
     try {
       while (_unifiedNotificationSyncPending) {
-        if (_stateService.synchronizationPaused) {
-          _unifiedNotificationSyncPending = false;
+        _unifiedNotificationSyncPending = false;
+        final runtimeChange = _runtimeNotificationSyncPending;
+        _runtimeNotificationSyncPending = false;
+        if (_stateService.synchronizationPaused && !runtimeChange) {
           _stateService.synchronizationPendingWhilePaused = true;
           break;
         }
-        _unifiedNotificationSyncPending = false;
         final shouldShowUnifiedNotifications =
             _notificationsEnabled && !_notificationsDismissedWhilePaused;
         final succeeded = shouldShowUnifiedNotifications
@@ -128,7 +129,11 @@ extension NotificationFacadeSync on NotificationFacade {
     } finally {
       _unifiedNotificationSyncInFlight = false;
       if (_unifiedNotificationSyncPending) {
-        _requestUnifiedPlaybackNotificationFlush();
+        _requestUnifiedPlaybackNotificationFlush(
+          runtimeChange: _runtimeNotificationSyncPending,
+        );
+      } else {
+        _runtimeNotificationSyncPending = false;
       }
     }
   }
@@ -202,6 +207,7 @@ extension NotificationFacadeSync on NotificationFacade {
   }
 
   Future<bool> _syncUnifiedPlaybackNotifications() async {
+    final includeExtras = !_stateService.synchronizationPaused;
     final sessionsToShow = activeSessions;
     final mainSession = _focusedSessionFrom(sessionsToShow);
     final sessionIds = sessionsToShow.map((session) => session.id).toSet();
@@ -210,7 +216,8 @@ extension NotificationFacadeSync on NotificationFacade {
         .map(
           (session) => _notificationPayloadForSession(
             session,
-            resolveArtwork: identical(session, mainSession),
+            resolveArtwork: includeExtras && identical(session, mainSession),
+            refreshSubtitle: includeExtras,
           ),
         )
         .toList(growable: false);
@@ -256,7 +263,9 @@ extension NotificationFacadeSync on NotificationFacade {
               .map(
                 (session) => _notificationPayloadForSession(
                   session,
-                  resolveArtwork: identical(session, latestMainSession),
+                  resolveArtwork:
+                      includeExtras && identical(session, latestMainSession),
+                  refreshSubtitle: includeExtras,
                 ),
               )
               .toList(growable: false),
@@ -276,6 +285,7 @@ extension NotificationFacadeSync on NotificationFacade {
   Map<String, dynamic> _notificationPayloadForSession(
     PlaybackSession session, {
     required bool resolveArtwork,
+    required bool refreshSubtitle,
   }) {
     final previous = _notificationPresentations[session.id];
     final trackPath = session.currentTrackPath;
@@ -304,7 +314,14 @@ extension NotificationFacadeSync on NotificationFacade {
         : metadataChanged
         ? null
         : previous.payload['artPath'] as String?;
-    final subtitle = _notificationSubtitleForSession(session);
+    // While scrolling, keep the last subtitle for this track until the
+    // deferred refresh. A new track must not inherit the old text.
+    final subtitle = refreshSubtitle
+        ? _notificationSubtitleForSession(session)
+        : previous?.trackPath == trackPath &&
+              identical(previous?.session, session)
+        ? previous!.payload['subtitle'] as String?
+        : null;
     final next = <String, dynamic>{
       'id': session.id,
       'title': metadataChanged

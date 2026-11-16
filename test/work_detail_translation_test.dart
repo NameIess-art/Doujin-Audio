@@ -4,6 +4,7 @@ import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_work_detail_sheet.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/core/translation/text_translation_service.dart';
 import 'package:doujin_audio/core/widgets/page_translation_scope.dart';
@@ -394,7 +395,7 @@ void main() {
         );
         await tester.pumpWidget(
           fixture.build(
-            WorkDetailPage.forAsmr(work: work),
+            buildAsmrWorkDetailPage(work: work),
             overrides: [
               textTranslationServiceProvider.overrideWithValue(service),
             ],

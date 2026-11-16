@@ -22,25 +22,13 @@ class _ShimmerLoaderState extends State<ShimmerLoader>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
-    )..repeat();
+    );
   }
 
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
-  }
-
-  @override
-  void didUpdateWidget(covariant ShimmerLoader oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.enabled) {
-      if (!_controller.isAnimating) {
-        _controller.repeat();
-      }
-    } else {
-      _controller.stop();
-    }
   }
 
   @override

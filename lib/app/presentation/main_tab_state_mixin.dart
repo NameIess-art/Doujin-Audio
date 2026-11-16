@@ -6,6 +6,24 @@ import 'package:flutter/material.dart';
 import '../../core/widgets/scroll_to_top_transition.dart';
 import '../theme/app_styles.dart';
 
+class MainTabVisibility extends InheritedWidget {
+  const MainTabVisibility({
+    super.key,
+    required this.covered,
+    required super.child,
+  });
+
+  final bool covered;
+
+  static bool isCovered(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<MainTabVisibility>()?.covered ??
+      false;
+
+  @override
+  bool updateShouldNotify(MainTabVisibility oldWidget) =>
+      covered != oldWidget.covered;
+}
+
 mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
   final GlobalKey headerKey = GlobalKey();
   late double headerHeight = defaultHeaderHeight;

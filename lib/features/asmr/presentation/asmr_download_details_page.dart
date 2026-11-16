@@ -340,7 +340,7 @@ class _AsmrDownloadDetailsTotals extends ConsumerWidget {
         const SizedBox(width: 6),
         Expanded(
           child: Text(
-            '${formatAsmrDownloadSize(downloaded)} / ${formatAsmrDownloadTotalSize(total: totals.total, unknown: totals.unknown, unknownLabel: i18n.tr('asmr_download_size_unknown'), estimate: totals.estimate)}',
+            '${formatMediaFileSize(downloaded)} / ${formatAsmrDownloadTotalSize(total: totals.total, unknown: totals.unknown, unknownLabel: i18n.tr('asmr_download_size_unknown'), estimate: totals.estimate)}',
             key: const ValueKey<String>('asmr_download_total_bytes'),
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: cs.onSurfaceVariant,
@@ -450,7 +450,7 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
             flex: 2,
             child: Text(
               retryAttempt == null
-                  ? '${formatAsmrDownloadSize(downloaded)} / ${formatAsmrDownloadTotalSize(total: total, unknown: total <= 0, unknownLabel: i18n.tr('asmr_download_size_unknown'), estimate: state.estimate)}'
+                  ? '${formatMediaFileSize(downloaded)} / ${formatAsmrDownloadTotalSize(total: total, unknown: total <= 0, unknownLabel: i18n.tr('asmr_download_size_unknown'), estimate: state.estimate)}'
                   : i18n.tr('asmr_download_status_retrying', {
                       'attempt': retryAttempt,
                       'max': state.retryMaximum,

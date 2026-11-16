@@ -4,13 +4,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../app/theme/app_design_tokens.dart';
+import '../../../core/media/media_file_support.dart' show formatMediaFileSize;
 import '../../../core/media/time_text_formatters.dart';
 import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
-import '../../asmr/presentation/asmr_download_format.dart';
 import 'work_detail_entries.dart';
 import '../../../core/widgets/page_translation_scope.dart';
 
@@ -101,7 +101,7 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
     final fileSize = item.fileSizeBytes;
     final info = <String>[
       fileSize != null && fileSize > 0
-          ? formatAsmrDownloadSize(fileSize)
+          ? formatMediaFileSize(fileSize)
           : widget.unknownSizeLabel,
       if (item.type == WorkEntryType.audio && item.duration != null)
         formatDurationWithUnits(item.duration!),
@@ -110,7 +110,7 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
     final icon = switch (item.type) {
       WorkEntryType.folder => AppDesignTokens.folderIcon,
       WorkEntryType.audio =>
-        (item.track?.isVideo ?? item.asmrNode?.isVideo ?? false)
+        (item.track?.isVideo ?? item.isRemoteVideo)
             ? Icons.videocam_outlined
             : AppDesignTokens.audioFileIcon,
       WorkEntryType.text => AppDesignTokens.textFileIcon,

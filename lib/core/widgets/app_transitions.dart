@@ -2040,6 +2040,7 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
     required this.indexListenable,
     required this.itemCount,
     required this.itemBuilder,
+    this.itemIds,
     this.contentRevision,
     this.separateHeader = false,
     this.duration = kAppFadeDuration,
@@ -2052,6 +2053,9 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
   int get index => indexListenable.value;
   final int itemCount;
   final IndexedWidgetBuilder itemBuilder;
+
+  /// Stable identities for items that can move when the destination list changes.
+  final List<Object>? itemIds;
 
   /// Changed builder inputs are applied when retained pages become visible.
   /// Leave null to keep the initial widgets across parent rebuilds.
@@ -2137,11 +2141,12 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     if (!identical(oldWidget.indexListenable, widget.indexListenable)) {
       oldWidget.indexListenable.removeListener(_handleIndexChanged);
       widget.indexListenable.addListener(_handleIndexChanged);
-      _handleIndexChanged();
     }
-    if (_itemCount != oldWidget.itemCount) {
-      _resetLazyChildren();
-      _handleIndexChanged();
+    final itemsChanged =
+        _itemCount != oldWidget.itemCount ||
+        !listEquals(widget.itemIds, oldWidget.itemIds);
+    if (itemsChanged) {
+      _resetLazyChildren(oldWidget);
     } else if (widget.contentRevision != oldWidget.contentRevision) {
       for (var index = 0; index < _itemCount; index++) {
         if (_lazyChildren[index] != null) {
@@ -2149,6 +2154,10 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
           _preparedPages.remove(index);
         }
       }
+    }
+    if (!itemsChanged &&
+        !identical(oldWidget.indexListenable, widget.indexListenable)) {
+      _handleIndexChanged();
     }
     if (widget.duration == Duration.zero &&
         (_isAnimating || _pendingIndex != null)) {
@@ -2197,26 +2206,34 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     UiInteractionCoordinator.instance.endNavigation(_transitionInteraction);
   }
 
-  void _resetLazyChildren() {
+  void _resetLazyChildren(AppFadeThroughIndexedStack oldWidget) {
     final previousKeys = _pageKeys;
     final previousChildren = _lazyChildren;
-    _lazyChildren = List<Widget?>.generate(
+    final previousIndices = <Object, int>{
+      for (var index = 0; index < previousChildren.length; index++)
+        (oldWidget.itemIds?[index] ?? index): index,
+    };
+    final indices = List<int?>.generate(
       _itemCount,
-      (index) =>
-          index < previousChildren.length && previousChildren[index] != null
+      (index) => previousIndices[widget.itemIds?[index] ?? index],
+    );
+    _lazyChildren = List<Widget?>.generate(_itemCount, (index) {
+      final previousIndex = indices[index];
+      return previousIndex != null && previousChildren[previousIndex] != null
           ? widget.itemBuilder(context, index)
-          : null,
-    );
-    _pageKeys = List<GlobalKey>.generate(
-      _itemCount,
-      (index) =>
-          index < previousKeys.length ? previousKeys[index] : GlobalKey(),
-    );
+          : null;
+    });
+    _pageKeys = List<GlobalKey>.generate(_itemCount, (index) {
+      final previousIndex = indices[index];
+      return previousIndex == null ? GlobalKey() : previousKeys[previousIndex];
+    });
     _controller.stop();
     _clearSwipeState();
     _dirtyChildren.clear();
     _pendingIndex = null;
-    _preparedPages.removeWhere((index) => index >= _itemCount);
+    _preparedPages.removeWhere(
+      (index) => index >= _itemCount || indices[index] != index,
+    );
     _isAnimating = false;
     _currentIndex = _safeIndex(widget.indexListenable.value);
     _targetIndex = _currentIndex;
@@ -2320,7 +2337,11 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     }
   }
 
-  void _handleHorizontalSwipeEnd(double velocityPxPerSec) {
+  void _handleHorizontalSwipeEnd(
+    double velocityPxPerSec, {
+    bool cancelled = false,
+    int? selectedIndex,
+  }) {
     if (!_isDragging || !mounted) return;
     _notifyDragPosition(null);
     final width = _viewportWidth;
@@ -2328,9 +2349,9 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       final rawFraction = width > 0 ? -_dragDeltaPx / width : 0.0;
       final vFraction = width > 0 ? -velocityPxPerSec / width : 0.0;
       var direction = 0;
-      if (vFraction.abs() >= 1.2) {
+      if (!cancelled && vFraction.abs() >= 1.2) {
         direction = vFraction > 0 ? 1 : -1;
-      } else if (rawFraction.abs() >= 0.35) {
+      } else if (!cancelled && rawFraction.abs() >= 0.35) {
         direction = rawFraction > 0 ? 1 : -1;
       }
       final next = (_currentIndex + direction).clamp(0, _itemCount - 1);
@@ -2343,6 +2364,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       if (next != _currentIndex) {
         widget.onIndexSelected?.call(next);
       }
+      UiInteractionCoordinator.instance.endNavigation(_transitionInteraction);
       return;
     }
 
@@ -2379,8 +2401,10 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
 
     final p = _controller.value.clamp(0.0, 1.0);
     final vProgress = (-velocityPxPerSec * _transitionDirection) / width;
-    final shouldCommit = vProgress >= 1.2 || (p >= 0.35 && vProgress > -0.6);
-    var commitTarget = shouldCommit ? _targetIndex : _currentIndex;
+    final shouldCommit =
+        !cancelled && (vProgress >= 1.2 || (p >= 0.35 && vProgress > -0.6));
+    var commitTarget =
+        selectedIndex ?? (shouldCommit ? _targetIndex : _currentIndex);
     setState(() {
       _isDragging = false;
       _dragDeltaPx = 0.0;
@@ -2389,7 +2413,9 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       _isAnimating = true;
       _completingSwipeTarget = commitTarget;
     });
-    if (shouldCommit && widget.onIndexSelected != null) {
+    if (selectedIndex == null &&
+        shouldCommit &&
+        widget.onIndexSelected != null) {
       widget.onIndexSelected!(commitTarget);
       if (!mounted) return;
       if (widget.indexListenable.value != commitTarget) {
@@ -2409,14 +2435,26 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     );
   }
 
-  void _handleHorizontalSwipeCancel() => _handleHorizontalSwipeEnd(0.0);
+  void _handleHorizontalSwipeCancel() =>
+      _handleHorizontalSwipeEnd(0.0, cancelled: true);
 
   void _handleIndexChanged() {
     if (!mounted || _itemCount == 0) return;
     final nextIndex = _safeIndex(widget.indexListenable.value);
     if (_isDragging) {
+      if (nextIndex == _targetIndex &&
+          nextIndex != _currentIndex &&
+          _animateSwipeEnabled) {
+        _handleHorizontalSwipeEnd(0, selectedIndex: nextIndex);
+        return;
+      }
       _clearSwipeState();
       _controller.stop();
+      _targetIndex = _currentIndex;
+      if (nextIndex == _currentIndex) {
+        _switchImmediately(nextIndex);
+        return;
+      }
     }
     if (_completingSwipeTarget != null) {
       if (nextIndex == _completingSwipeTarget) {
@@ -2639,9 +2677,13 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       visible: visible,
       preparing: preparing,
     );
+    final id = widget.itemIds?[index];
+    final key = id == null
+        ? ValueKey<String>('app_indexed_page_$index')
+        : ValueKey<Object>(id);
     if (widget.duration == Duration.zero) {
       return KeyedSubtree(
-        key: ValueKey<String>('app_indexed_page_$index'),
+        key: key,
         child: RepaintBoundary(key: _pageKeys[index], child: page),
       );
     }
@@ -2681,7 +2723,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     }
     if (!widget.separateHeader) {
       return KeyedSubtree(
-        key: ValueKey<String>('app_indexed_page_$index'),
+        key: key,
         child: SlideTransition(
           position: position,
           child: RepaintBoundary(key: _pageKeys[index], child: page),
@@ -2691,7 +2733,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     final parentMotion = context
         .dependOnInheritedWidgetOfExactType<_AppPageMotionScope>();
     return KeyedSubtree(
-      key: ValueKey<String>('app_indexed_page_$index'),
+      key: key,
       child: _AppPageMotionScope(
         headerAnimation: Listenable.merge([
           _controller,

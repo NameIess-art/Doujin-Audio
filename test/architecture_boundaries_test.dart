@@ -14,7 +14,6 @@ void main() {
         'asmrLibraryGlobalStateProvider',
         'asmrCategoryStateProvider',
         'asmrAuthStateProvider',
-        'asmrTrackTreeStateProvider',
         'asmrSyncStateProvider',
         'asmrPlaybackCoordinatorProvider',
         'asmrDownloadTaskIdsProvider',
@@ -113,6 +112,22 @@ void main() {
           file.readAsStringSync().contains('Future<bool> stageLibraryRemoval('),
     );
     expect(removalDeclarations, hasLength(1));
+  });
+
+  test('shared work detail views do not depend on ASMR', () {
+    final directory = Directory('lib/features/library/presentation');
+    final views = _dartFiles(directory).where(
+      (file) => path.basename(file.path).startsWith('work_detail_'),
+    );
+    for (final file in views) {
+      for (final import in _imports(file.readAsStringSync())) {
+        expect(
+          _resolvedProjectImport(file, import),
+          isNot(startsWith('lib/features/asmr/')),
+          reason: '${file.path} imports $import',
+        );
+      }
+    }
   });
 
   test('removed compatibility runtime APIs cannot return', () {

@@ -588,6 +588,39 @@ void main() {
     );
   });
 
+  test('runtime changes reach system controls during interaction', () async {
+    final service = _BlockingPlaybackNotificationService();
+    final covers = _RecordingNotificationCoverCache();
+    final fixture = _createNotificationFixture(service, coverCache: covers);
+    addTearDown(fixture.dispose);
+
+    fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+    await service.firstSyncStarted.future;
+    final previousPath = fixture.session.currentTrackPath;
+
+    fixture.facade.setSynchronizationPaused(true);
+    fixture.session
+      ..currentTrackPath = '/audio/next-track.mp3'
+      ..setOptimisticState(playing: false);
+    fixture.facade.syncRuntimePlaybackState();
+    fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+    service.releaseFirstSync.complete();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(service.syncCount, 2);
+    final item = (service.payloads.last['items'] as List).single as Map;
+    expect(item['title'], 'next-track');
+    expect(item['playing'], isFalse);
+    expect(covers.requests.keys, [previousPath]);
+
+    fixture.facade.setSynchronizationPaused(false);
+    await Future<void>.delayed(Duration.zero);
+    expect(covers.requests.keys, [previousPath, '/audio/next-track.mp3']);
+    for (final request in covers.requests.values) {
+      request.complete(null);
+    }
+  });
+
   test('pause and resume without pending work does not synchronize', () async {
     final service = _RecordingPlaybackNotificationService();
     final fixture = _createNotificationFixture(service);

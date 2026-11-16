@@ -15,17 +15,18 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
 
+import '../../../app/localization/app_language_provider.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/presentation/work_detail_navigation.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
-import '../../../core/app_language.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/dlsite_metadata.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart'
     show CoverImageReference;
+import '../../../core/ui/undoable_removal_service.dart';
 import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/widgets/app_feedback.dart';
@@ -41,12 +42,6 @@ import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/file_tree_row.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/top_page_header.dart';
-import '../../asmr/application/asmr_library_controller.dart';
-import '../../asmr/domain/asmr_models.dart';
-import '../../asmr/presentation/asmr_download_page.dart';
-import '../../asmr/presentation/asmr_favorite_action.dart';
-import '../../asmr/presentation/asmr_providers.dart';
-import '../../asmr/presentation/asmr_error_text.dart';
 import '../../player/presentation/playback_providers.dart';
 import '../../settings/presentation/settings_providers.dart';
 import '../application/work_text_service.dart';
@@ -63,6 +58,29 @@ import 'work_text_viewer_page.dart';
 
 const String workDetailRouteName = '/work-detail';
 
+abstract interface class RemoteWorkDetail {
+  String get title;
+  String get workCode;
+  String get rjCode;
+  String get circleName;
+  bool get hasSubtitle;
+  List<String> get voiceActors;
+  List<String> get tags;
+  String? get preferredCoverUrl;
+  List<String?> get alternateCoverUrls;
+
+  WorkDirectorySource? cachedDirectory(WidgetRef ref);
+  Future<void> initialize(WidgetRef ref);
+  Future<WorkDirectorySource> refreshDirectory(WidgetRef ref);
+  String directoryErrorLabel(AppLanguageProvider i18n, Object error);
+
+  bool isFavorite(WidgetRef ref);
+  Future<void> toggleFavorite(BuildContext context, WidgetRef ref);
+  Future<void> download(BuildContext context);
+  Future<bool> play(WidgetRef ref, WorkEntryItem item);
+  Future<bool> addToPlaylist(WidgetRef ref, WorkEntryItem item);
+}
+
 class WorkDetailPage extends ConsumerStatefulWidget {
   const WorkDetailPage.forLocal({
     super.key,
@@ -70,21 +88,20 @@ class WorkDetailPage extends ConsumerStatefulWidget {
     this.initialDetail,
     this.initialCoverPath,
   }) : localTarget = target,
-       asmrWork = null;
+       remoteWork = null;
 
-  const WorkDetailPage.forAsmr({super.key, required AsmrWork work})
-    : asmrWork = work,
+  const WorkDetailPage.forRemote({super.key, required RemoteWorkDetail work})
+    : remoteWork = work,
       localTarget = null,
       initialDetail = null,
       initialCoverPath = null;
 
   final AudioDetailTarget? localTarget;
-  final AsmrWork? asmrWork;
+  final RemoteWorkDetail? remoteWork;
   final AudioDetail? initialDetail;
   final String? initialCoverPath;
 
   bool get isLocal => localTarget != null;
-  bool get isAsmr => asmrWork != null;
 
   @override
   ConsumerState<WorkDetailPage> createState() => _WorkDetailPageState();
@@ -134,11 +151,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       'work_detail_data_${identityHashCode(this)}';
   final List<({int? request, VoidCallback update})> _pendingDataUpdates = [];
 
-  // ASMR state
-  List<AsmrTrackFile>? _asmrTree;
-  bool _loadingAsmr = true;
-  bool _requestingAsmr = false;
-  Object? _asmrLoadError;
+  WorkDirectorySource? _remoteDirectory;
+  bool _loadingRemote = true;
+  bool _requestingRemote = false;
+  Object? _remoteLoadError;
   DlsiteMetadata? _dlsiteMetadata;
   bool _showDlsiteMetadata = false;
   bool _loadingDlsiteMetadata = false;
@@ -148,6 +164,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   Object? _coverRequestKey;
   Future<String?>? _coverFuture;
   Object? _entriesKey;
+  Set<UndoableRemovalKey> _hiddenEntries = const {};
   List<WorkEntryItem> _currentEntries = const [];
   Map<Key, int> _entryIndices = const {};
   WorkDirectorySnapshot? _directory;
@@ -164,7 +181,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   void initState() {
     super.initState();
     _dlsiteLanguage = ref.read(appLanguageProviderInstanceProvider).language;
-    if (widget.isAsmr) {
+    if (!widget.isLocal) {
       ref.listenManual(appLanguageStateProvider, (_, next) {
         final language = next.value?.language;
         if (language == null || language == _dlsiteLanguage) return;
@@ -235,12 +252,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           library.resolvedCoverPathForFolder(_localTarget!.targetPath) ??
           _localDetail?.cardCoverPath;
     } else {
-      _asmrTree = ref
-          .read(asmrLibraryControllerProvider)
-          ?.trackTreeFor(widget.asmrWork!.workKey);
-      _loadingAsmr = _asmrTree == null;
+      _remoteDirectory = widget.remoteWork!.cachedDirectory(ref);
+      _loadingRemote = _remoteDirectory == null;
     }
-    _directory = _directoryInput.resolved;
+    _directory = _directoryInput?.resolved;
     final initialRequest = ++_localLoadRequest;
     if (widget.isLocal && (_localFolderNode == null || _directory == null)) {
       _loadingInitialTree = true;
@@ -268,7 +283,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           }
         } else {
           unawaited(_prepareDirectory());
-          unawaited(_loadAsmrData());
+          unawaited(_loadRemoteData());
         }
       },
     );
@@ -432,14 +447,22 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     );
   }
 
-  WorkDirectoryInput get _directoryInput => widget.isLocal
-      ? WorkDirectoryInput.local(
-          root: _localFolderNode,
-          texts: _localTextFiles,
-          images: _localImageReferences,
-          folderPath: _localTarget!.targetPath,
-        )
-      : WorkDirectoryInput.asmr(_asmrTree);
+  WorkDirectorySource? get _directoryInput {
+    if (!widget.isLocal) return _remoteDirectory;
+    // Wait for a real source instead of computing an empty intermediate tree.
+    if ((_loadingLocal || _loadingInitialTree) &&
+        _localFolderNode == null &&
+        _localTextFiles.isEmpty &&
+        _localImageReferences.isEmpty) {
+      return null;
+    }
+    return WorkDirectoryInput.local(
+      root: _localFolderNode,
+      texts: _localTextFiles,
+      images: _localImageReferences,
+      folderPath: _localTarget!.targetPath,
+    );
+  }
 
   Future<void> _prepareDirectory({
     bool allowInitialDuringNavigation = false,
@@ -447,16 +470,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     final request = ++_directoryRequest;
     final localRequest = _localLoadRequest;
     final input = _directoryInput;
+    if (input == null) return;
     final cached = input.resolved;
-    final loading = widget.isLocal ? _loadingLocal : _loadingAsmr;
-    // Wait for a real source instead of computing an empty intermediate tree.
-    if ((loading || _loadingInitialTree) &&
-        input.root == null &&
-        input.tree == null &&
-        input.texts.isEmpty &&
-        input.images.isEmpty) {
-      return;
-    }
+    final loading = widget.isLocal ? _loadingLocal : _loadingRemote;
     _preparingDirectory = cached != _directory || _directory == null;
     if (cached != null &&
         identical(cached, _directory) &&
@@ -515,8 +531,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
         setState(() {
           _directory = directory;
           _preparingDirectory = false;
-          if ((widget.isLocal && !_loadingLocal) ||
-              (widget.isAsmr && !_loadingAsmr)) {
+          if (!(widget.isLocal ? _loadingLocal : _loadingRemote)) {
             final depth = directory.validDepth(_currentPathSegments);
             if (depth < _currentPathSegments.length) {
               _cancelDirectorySlide();
@@ -609,23 +624,16 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     return const AlwaysStoppedAnimation(1);
   }
 
-  Future<void> _loadAsmrData() async {
-    if (_requestingAsmr) return;
-    final controller = ref.read(asmrLibraryControllerProvider);
-    if (controller == null) {
-      _publishDataUpdate(() {
-        _loadingAsmr = false;
-        _asmrLoadError = StateError('asmr_controller_unavailable');
-      });
-      return;
-    }
-    _requestingAsmr = true;
+  Future<void> _loadRemoteData() async {
+    if (_requestingRemote) return;
+    final work = widget.remoteWork!;
+    _requestingRemote = true;
     setState(() {
-      _loadingAsmr = true;
-      _asmrLoadError = null;
+      _loadingRemote = true;
+      _remoteLoadError = null;
     });
     try {
-      await controller.initializeForVisiblePage();
+      await work.initialize(ref);
       if (!mounted || _route?.isActive == false) return;
       if (!_isPageCurrent ||
           UiInteractionCoordinator.instance.isInteracting ||
@@ -635,30 +643,27 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           canRun: () => _isPageCurrent,
           commit: () {
             if (mounted && _route?.isActive != false) {
-              unawaited(_loadAsmrData());
+              unawaited(_loadRemoteData());
             }
           },
         );
         return;
       }
-      final tree = await controller.ensureTrackTree(
-        widget.asmrWork!,
-        forceRefresh: true,
-      );
+      final directory = await work.refreshDirectory(ref);
       if (!mounted) return;
       _publishDataUpdate(() {
-        _asmrTree = tree;
-        _loadingAsmr = false;
-        _asmrLoadError = null;
+        _remoteDirectory = directory;
+        _loadingRemote = false;
+        _remoteLoadError = null;
       });
     } catch (error) {
       if (!mounted) return;
       _publishDataUpdate(() {
-        _loadingAsmr = false;
-        _asmrLoadError = error;
+        _loadingRemote = false;
+        _remoteLoadError = error;
       });
     } finally {
-      _requestingAsmr = false;
+      _requestingRemote = false;
     }
   }
 
@@ -688,7 +693,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       });
       return;
     }
-    final currentEntries = _buildCurrentEntries(_directoryVisibilityKey(ref));
     final currentPath = List<String>.of(_currentPathSegments);
     final reverseToOutgoing =
         _directorySlide.isAnimating &&
@@ -709,9 +713,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       _outgoingDirectory = (
         path: currentPath,
         pathKey: currentPath.join('/'),
-        entries: List<WorkEntryItem>.of(currentEntries),
-        entryIndices: Map<Key, int>.of(_entryIndices),
-        hasError: _asmrLoadError != null,
+        entries: _currentEntries,
+        entryIndices: _entryIndices,
+        hasError: _remoteLoadError != null,
       );
       _directorySlideDirection = direction;
       _currentPathSegments
@@ -721,33 +725,53 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     _directorySlide.forward(from: startValue);
   }
 
-  List<WorkEntryItem> _buildCurrentEntries(Object? visibilityKey) {
-    final key = (_directory, visibilityKey, _currentPathSegments.join('/'));
-    if (_entriesKey == key) return _currentEntries;
-    _entriesKey = key;
+  List<WorkEntryItem> _buildCurrentEntries(WidgetRef ref) {
+    final directory = _directory;
     final entries =
-        _directory?.entriesAt(_currentPathSegments) ?? const <WorkEntryItem>[];
-    if (widget.isLocal) {
-      final library = ref.read(libraryFacadeProvider);
-      final removals = ref.read(undoableRemovalStateProvider);
-      // The directory snapshot can outlive a committed library removal.
-      _currentEntries = entries
-          .where(
-            (entry) =>
-                entry.track == null ||
-                (library.trackByPath(entry.track!.path) != null &&
-                    !removals.isHidden(libraryRemovalKey(entry.track!.path))),
-          )
-          .toList(growable: false);
-    } else {
-      _currentEntries = entries;
+        directory?.entriesAt(_currentPathSegments) ?? const <WorkEntryItem>[];
+    final library = widget.isLocal ? ref.read(libraryFacadeProvider) : null;
+    final structureRevision = library == null
+        ? null
+        : ref.watch(
+            libraryStateProvider.select(
+              (state) =>
+                  state.value?.structureRevision ?? library.structureRevision,
+            ),
+          );
+    final hidden = library == null || directory == null
+        ? const <UndoableRemovalKey>{}
+        : ref
+              .watch(undoableRemovalStateProvider)
+              .hiddenKeys
+              .where(
+                (key) =>
+                    key.namespace == 'library' &&
+                    directory.containsLocalTrack(_currentPathSegments, key.id),
+              )
+              .toSet();
+    final key = (entries, structureRevision);
+    if (_entriesKey == key && setEquals(_hiddenEntries, hidden)) {
+      return _currentEntries;
     }
-    _entryIndices = {
-      for (var index = 0; index < _currentEntries.length; index++)
-        ValueKey(
-          'work_detail_entry_fade_${_currentEntries[index].type.name}:${_currentEntries[index].relativePath}',
-        ): index,
-    };
+    _entriesKey = key;
+    _hiddenEntries = hidden;
+    _currentEntries = library == null
+        ? entries
+        : entries
+              .where((entry) {
+                final track = entry.track;
+                return track == null ||
+                    (library.trackByPath(track.path) != null &&
+                        (hidden.isEmpty ||
+                            !hidden.contains(libraryRemovalKey(track.path))));
+              })
+              .toList(growable: false);
+    _entryIndices = _currentEntries.length == entries.length
+        ? directory?.indicesAt(_currentPathSegments) ?? const {}
+        : {
+            for (var index = 0; index < _currentEntries.length; index++)
+              _currentEntries[index].rowKey: index,
+          };
     return _currentEntries;
   }
 
@@ -777,12 +801,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       );
       if (index < 0) throw StateError('The selected media is unavailable.');
       return playback.playDirect(tracks, startIndex: index);
-    } else if (widget.isAsmr && item.asmrNode != null) {
-      final playback = ref.read(asmrPlaybackCoordinatorProvider);
-      if (playback != null) {
-        return playback.playDirectTrack(widget.asmrWork!, item.asmrNode!);
-      }
     }
+    final remote = widget.remoteWork;
+    if (remote != null) return remote.play(ref, item);
     throw StateError('Playback is unavailable.');
   }
 
@@ -815,13 +836,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
               ? await ref
                     .read(playbackFacadeProvider)
                     .addTrackToPlaylist(item.track!)
-              : await ref
-                        .read(asmrPlaybackCoordinatorProvider)
-                        ?.addTrackToPlaylist(
-                          widget.asmrWork!,
-                          item.asmrNode!,
-                        ) ??
-                    (throw StateError('Playback is unavailable.'));
+              : await widget.remoteWork!.addToPlaylist(ref, item);
           if (mounted) {
             showAppSnackBar(
               context,
@@ -1066,34 +1081,23 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
 
   // Open text file
   Future<void> _openTextFile(WorkEntryItem item) async {
-    List<WorkTextFile> allTexts = const [];
-    if (widget.isLocal) {
-      allTexts = _localTextFiles
-          .where((file) => !file.isSubtitle)
-          .toList(growable: false);
-    } else {
-      allTexts = collectAsmrWorkTextFiles(_asmrTree ?? const []);
-      if (allTexts.isEmpty && item.asmrNode != null) {
-        allTexts = collectAsmrWorkTextFiles([item.asmrNode!]);
-      }
-    }
+    var allTexts = widget.isLocal
+        ? _localTextFiles
+              .where((file) => !file.isSubtitle)
+              .toList(growable: false)
+        : _directory?.texts ?? const <WorkTextFile>[];
     if (allTexts.isEmpty && item.textFile != null) {
       allTexts = [item.textFile!];
     }
-    int initialIndex = 0;
-    if (item.asmrNode != null) {
-      final idx = allTexts.indexWhere(
-        (f) => f.relativePath == item.asmrNode!.relativePath,
+    var initialIndex = 0;
+    if (item.textFile case final text?) {
+      final index = allTexts.indexWhere(
+        (file) =>
+            file.relativePath == text.relativePath ||
+            (widget.isLocal &&
+                (file.path == text.path || file.name == text.name)),
       );
-      if (idx >= 0) initialIndex = idx;
-    } else if (item.textFile != null) {
-      final idx = allTexts.indexWhere(
-        (f) =>
-            f.path == item.textFile!.path ||
-            f.relativePath == item.textFile!.relativePath ||
-            f.name == item.textFile!.name,
-      );
-      if (idx >= 0) initialIndex = idx;
+      if (index >= 0) initialIndex = index;
     }
     await Navigator.of(context).push<void>(
       buildAppPageRoute(
@@ -1191,7 +1195,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   }
 
   Future<void> _toggleDlsiteMetadata() async {
-    final rjCode = widget.asmrWork?.rjCode ?? '';
+    final rjCode = widget.remoteWork?.rjCode ?? '';
     if (_loadingDlsiteMetadata ||
         AudioDetail.findRjCodeInText(rjCode) == null) {
       return;
@@ -1246,23 +1250,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     showAppSnackBar(context, i18n.tr(messageKey), icon: Icons.info_outline);
   }
 
-  // ASMR actions: Download, Toggle favorite
-  Future<void> _handleAsmrDownload() async {
-    await Navigator.of(context).push<AsmrDownloadPageResult>(
-      buildAppPageRoute<AsmrDownloadPageResult>(
-        context: context,
-        child: AsmrDownloadPage(work: widget.asmrWork!),
-      ),
-    );
-  }
-
-  Future<void> _handleAsmrToggleFavorite() async {
-    final work = widget.asmrWork;
-    if (work == null) return;
-    final changed = await setAsmrWorksFavoriteWithFeedback(context, ref, [
-      work,
-    ]);
-    if (changed && mounted) setState(() {});
+  Future<void> _handleRemoteToggleFavorite() async {
+    await widget.remoteWork?.toggleFavorite(context, ref);
   }
 
   @override
@@ -1278,29 +1267,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
         return page;
       },
     );
-  }
-
-  Object? _directoryVisibilityKey(WidgetRef ref) {
-    final Object? visibilityKey;
-    if (widget.isLocal) {
-      final library = ref.read(libraryFacadeProvider);
-      visibilityKey = (
-        ref.watch(undoableRemovalStateProvider).hiddenKeys,
-        ref.watch(
-          libraryStateProvider.select(
-            (state) => state.value?.contentRevision ?? library.contentRevision,
-          ),
-        ),
-      );
-    } else {
-      // Observe user removals and undo without replacing this page's file tree.
-      visibilityKey = ref.watch(
-        asmrTrackTreeStateProvider(
-          widget.asmrWork!.workKey,
-        ).select((state) => state.value?.revision),
-      );
-    }
-    return visibilityKey;
   }
 
   static void _ignoreEntryAction(WorkEntryAction _) {}
@@ -1353,9 +1319,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                 widget.isLocal &&
                 item.track != null &&
                 library.isLibraryTrack(item.track!.path);
-            final id = '${item.type.name}:${item.relativePath}';
+            final id = item.id;
             final tile = FadeTransition(
-              key: ValueKey('work_detail_entry_fade_$id'),
+              key: item.rowKey,
               opacity: interactive
                   ? _entryLoadOpacity(id)
                   : const AlwaysStoppedAnimation<double>(1),
@@ -1390,7 +1356,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final hasDlsiteRj =
-        AudioDetail.findRjCodeInText(widget.asmrWork?.rjCode ?? '') != null;
+        AudioDetail.findRjCodeInText(widget.remoteWork?.rjCode ?? '') != null;
     String dlsiteTooltip = 'work_dlsite_show';
     if (!hasDlsiteRj) {
       dlsiteTooltip = 'work_dlsite_unavailable';
@@ -1429,7 +1395,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       displayTags = detail?.tags ?? const [];
       coverPath = _localManualCover ?? detail?.cardCoverPath;
     } else {
-      final work = widget.asmrWork!;
+      final work = widget.remoteWork!;
       displayTitle = work.title;
       displayRj = work.workCode;
       displayCircle = work.circleName;
@@ -1493,7 +1459,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           hasValidCover &&
           (trimmedCover.startsWith('http://') ||
               trimmedCover.startsWith('https://') ||
-              widget.isAsmr);
+              !widget.isLocal);
 
       final coverGeneration = ref.watch(coverGenerationProvider);
       if (isRemoteCover) {
@@ -1504,10 +1470,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
         final cacheWidth = coverCacheWidthForResolution(coverResolution);
         final resolved = library.resolvedCoverPathForRemoteCover(remoteUrl);
         String? previewPath;
-        for (final url in [
-          widget.asmrWork?.thumbnailUrl,
-          widget.asmrWork?.coverUrl,
-        ]) {
+        for (final url in [...?widget.remoteWork?.alternateCoverUrls]) {
           if (url == null || url.trim() == remoteUrl) continue;
           previewPath = library.resolvedCoverPathForRemoteCover(url);
           if (previewPath != null) break;
@@ -1611,14 +1574,14 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           <(WorkEntryType, bool), List<UnifiedMenuEntry<WorkEntryAction>>>{};
       final moreLabel = i18n.tr('more_actions');
       final unknownSizeLabel = i18n.tr('asmr_download_size_unknown');
-      final currentEntries = _buildCurrentEntries(_directoryVisibilityKey(ref));
+      final currentEntries = _buildCurrentEntries(ref);
       final isLoading =
-          ((widget.isLocal ? _loadingLocal : _loadingAsmr) ||
+          ((widget.isLocal ? _loadingLocal : _loadingRemote) ||
               _loadingInitialTree ||
               _preparingDirectory ||
               _directory == null) &&
           currentEntries.isEmpty &&
-          _asmrLoadError == null;
+          _remoteLoadError == null;
       _updateDirectoryMotion(isLoading);
       final body = Stack(
         key: _pageStackKey,
@@ -1666,24 +1629,18 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
 
                         Consumer(
                           builder: (context, ref, _) {
-                            final isFavorite = widget.isAsmr
-                                ? ref
-                                          .watch(asmrLibraryControllerProvider)
-                                          ?.isFavorite(
-                                            widget.asmrWork!.workKey,
-                                          ) ??
-                                      widget.asmrWork!.isFavorite
-                                : false;
+                            final remote = widget.remoteWork;
+                            final isFavorite = remote?.isFavorite(ref) ?? false;
                             return WorkDetailActions(
                               i18n: i18n,
                               isLocal: widget.isLocal,
                               isFavorite: isFavorite,
                               accentColor: cs.primary,
                               onFetchInfo: _handleLocalFetchInfo,
-                              onDownload: widget.isLocal
+                              onDownload: remote == null
                                   ? _handleLocalDownload
-                                  : _handleAsmrDownload,
-                              onToggleFavorite: _handleAsmrToggleFavorite,
+                                  : () => remote.download(context),
+                              onToggleFavorite: _handleRemoteToggleFavorite,
                             );
                           },
                         ),
@@ -1704,16 +1661,19 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                 ),
 
                 // 4. Directory File Tree List
-                if (_asmrLoadError case final error?)
+                if (_remoteLoadError case final error?)
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
                       child: OperationStatusBanner(
                         key: const ValueKey('work_detail_directory_error'),
-                        label: localizedAsmrCatalogErrorText(i18n, error),
+                        label: widget.remoteWork!.directoryErrorLabel(
+                          i18n,
+                          error,
+                        ),
                         error: error,
                         retryTooltip: i18n.tr('retry'),
-                        onRetry: () => unawaited(_loadAsmrData()),
+                        onRetry: () => unawaited(_loadRemoteData()),
                       ),
                     ),
                   ),
@@ -1750,7 +1710,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                       currentSliver: _buildDirectorySliver(
                         entries: currentEntries,
                         entryIndices: _entryIndices,
-                        hasError: _asmrLoadError != null,
+                        hasError: _remoteLoadError != null,
                         cs: cs,
                         emptyFolderLabel: i18n.tr('empty_folder'),
                         entryMenus: entryMenus,
@@ -1877,7 +1837,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                     ),
                     const SizedBox(width: 6),
                   ],
-                  if (widget.isAsmr) ...[
+                  if (!widget.isLocal) ...[
                     Semantics(
                       toggled: _showDlsiteMetadata,
                       child: AppOverlayIconButton(

@@ -377,6 +377,40 @@ void main() {
     }),
   );
 
+  testWidgets(
+    'destination visibility preserves open tabs as their indices move',
+    (tester) async {
+      _setLogicalTestViewSize(
+        tester,
+        defaultTargetPlatform == TargetPlatform.windows
+            ? const Size(1280, 800)
+            : const Size(390, 820),
+      );
+      await _pumpAppShell(tester, includePlaybackSession: false);
+      final library = find.byType(LibraryTab, skipOffstage: false);
+      final libraryState = tester.state(library);
+      await _tapSettingsDestination(tester);
+      await _pumpMainScreenAnimations(tester);
+      final settings = find.byType(SettingsTab, skipOffstage: false);
+      final settingsState = tester.state(settings);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MainScreen)),
+        listen: false,
+      );
+      final repository = container.read(settingsRepositoryProvider);
+
+      for (final visible in [false, true]) {
+        await repository.setShowAsmrOne(visible);
+        await _pumpMainScreenAnimations(tester);
+        expect(tester.widget<LibraryTab>(library).tabIndex, visible ? 1 : 0);
+        expect(tester.state(library), same(libraryState));
+        expect(tester.widget<SettingsTab>(settings).tabIndex, visible ? 4 : 3);
+        expect(tester.state(settings), same(settingsState));
+        expect(find.byType(SettingsTab), findsOneWidget);
+      }
+    },
+  );
+
   for (final (startup, restored, showMy, expectedIndex, pageType) in [
     (StartupPage.my, null, true, 3, MyPage),
     (StartupPage.settings, null, true, 4, SettingsTab),
@@ -668,17 +702,17 @@ void main() {
           .separateHeader,
       isTrue,
     );
-    expect(find.byKey(const ValueKey<String>('main_page_fade_1')), findsOne);
+    expect(find.byKey(const ValueKey<String>('main_page_fade_library')), findsOne);
     expect(
-      find.byKey(const ValueKey<String>('main_page_fade_0')),
+      find.byKey(const ValueKey<String>('main_page_fade_asmrOne')),
       findsNothing,
     );
     expect(
-      find.byKey(const ValueKey<String>('main_page_fade_2')),
+      find.byKey(const ValueKey<String>('main_page_fade_playlist')),
       findsNothing,
     );
     expect(
-      find.byKey(const ValueKey<String>('main_page_fade_3')),
+      find.byKey(const ValueKey<String>('main_page_fade_my')),
       findsNothing,
     );
     final settingsDestination = find.byKey(
@@ -699,13 +733,13 @@ void main() {
     await tester.tap(settingsDestination);
     await _pumpMainScreenAnimations(tester);
 
-    expect(find.byKey(const ValueKey<String>('main_page_fade_4')), findsOne);
+    expect(find.byKey(const ValueKey<String>('main_page_fade_settings')), findsOne);
     final settingsCanvas = tester.widget<ColoredBox>(
       find.byKey(const ValueKey<String>('main_page_canvas')),
     );
     expect(settingsCanvas.color, isNot(Colors.transparent));
     expect(
-      find.byKey(const ValueKey<String>('main_page_fade_1')),
+      find.byKey(const ValueKey<String>('main_page_fade_library')),
       findsNothing,
     );
     expect(
@@ -757,7 +791,7 @@ void main() {
   });
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
-    testWidgets('main navigation waits for page transition ($platform)', (
+    testWidgets('main navigation retargets the active transition ($platform)', (
       tester,
     ) async {
       await _pumpAppShell(tester, includePlaybackSession: false);
@@ -790,15 +824,18 @@ void main() {
 
       selectPage(3);
       selectPage(2);
-      expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 3);
+      expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 2);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
       selectPage(1);
-      expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 3);
-      await _pumpMainScreenAnimations(tester);
+      expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 1);
+      await tester.pumpAndSettle();
+      expect(find.byType(LibraryTab), findsOneWidget);
       selectPage(2);
       expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 2);
-      await _pumpMainScreenAnimations(tester);
+      await tester.pumpAndSettle();
+      expect(find.byType(PlaylistTab), findsOneWidget);
+      expect(UiInteractionCoordinator.instance.navigationAllowed.value, isTrue);
       expect(tester.takeException(), isNull);
       debugDefaultTargetPlatformOverride = null;
     });
@@ -817,29 +854,30 @@ void main() {
     await tester.pump();
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.digit4);
+    expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 3);
     await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
-    expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 3);
+    expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 1);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
-    expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 3);
-    await _pumpMainScreenAnimations(tester);
-    expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 3);
+    expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 2);
+    await tester.pumpAndSettle();
+    expect(find.byType(PlaylistTab), findsOneWidget);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
-    await _pumpMainScreenAnimations(tester);
-    expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 2);
+    await tester.pumpAndSettle();
+    expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 1);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
-    await _pumpMainScreenAnimations(tester);
-    expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 3);
+    await tester.pumpAndSettle();
+    expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 2);
     debugDefaultTargetPlatformOverride = null;
   });
 
@@ -3574,11 +3612,11 @@ void main() {
       await _pumpAppShell(tester, includePlaybackSession: false);
 
       expect(
-        find.byKey(const ValueKey<String>('main_page_fade_1')),
+        find.byKey(const ValueKey<String>('main_page_fade_library')),
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey<String>('main_page_fade_0')),
+        find.byKey(const ValueKey<String>('main_page_fade_asmrOne')),
         findsNothing,
       );
 
@@ -3594,11 +3632,11 @@ void main() {
       await tester.pump();
 
       expect(
-        find.byKey(const ValueKey<String>('main_page_fade_0')),
+        find.byKey(const ValueKey<String>('main_page_fade_asmrOne')),
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey<String>('main_page_fade_1')),
+        find.byKey(const ValueKey<String>('main_page_fade_library')),
         findsNothing,
       );
 
@@ -3614,11 +3652,11 @@ void main() {
       await tester.pump();
 
       expect(
-        find.byKey(const ValueKey<String>('main_page_fade_1')),
+        find.byKey(const ValueKey<String>('main_page_fade_library')),
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey<String>('main_page_fade_0')),
+        find.byKey(const ValueKey<String>('main_page_fade_asmrOne')),
         findsNothing,
       );
     },
@@ -6398,7 +6436,7 @@ void main() {
       tester.state(find.byType(AsmrTab, skipOffstage: false)),
       same(asmrState),
     );
-    expect(find.byKey(const ValueKey<String>('main_page_fade_4')), findsOne);
+    expect(find.byKey(const ValueKey<String>('main_page_fade_settings')), findsOne);
     expect(
       find.byKey(const ValueKey<String>('main_destination_music_library')),
       findsOneWidget,
@@ -6425,7 +6463,7 @@ void main() {
       tester.state(find.byType(AsmrTab, skipOffstage: false)),
       same(asmrState),
     );
-    expect(find.byKey(const ValueKey<String>('main_page_fade_1')), findsOne);
+    expect(find.byKey(const ValueKey<String>('main_page_fade_library')), findsOne);
     debugDefaultTargetPlatformOverride = null;
     expect(tester.takeException(), isNull);
   });

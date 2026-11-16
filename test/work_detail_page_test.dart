@@ -32,6 +32,7 @@ import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/unified_popup_menu.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_work_detail_sheet.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_metadata_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
@@ -359,7 +360,7 @@ void main() {
       addTearDown(controller.dispose);
       await tester.pumpWidget(
         fixture.build(
-          WorkDetailPage.forAsmr(
+          buildAsmrWorkDetailPage(
             work: AsmrWork.fromJson(const {'id': 42, 'title': 'Late work'}),
           ),
           overrides: [
@@ -439,7 +440,7 @@ void main() {
         addTearDown(controller.dispose);
         await tester.runAsync(() async {
           if (remote) {
-            await WorkDirectoryInput.asmr(tree).load();
+            await AsmrWorkDirectoryInput(tree).load();
           } else {
             fixture.library.addWatchedFolder(folder, notify: false);
             fixture.library.addTracks(
@@ -474,7 +475,7 @@ void main() {
             buildAppPageRoute<void>(
               context: navigator.context,
               child: remote
-                  ? WorkDetailPage.forAsmr(
+                  ? buildAsmrWorkDetailPage(
                       work: AsmrWork.fromJson(const {'id': 123456, 'title': 'Work'}),
                     )
                   : WorkDetailPage.forLocal(
@@ -674,17 +675,15 @@ void main() {
     expect(local.map((item) => item.displayName), ['封面', '说明', '音频']);
     expect(local.last.duration, track.duration);
 
-    final remote = buildWorkDirectorySnapshot(
-      WorkDirectoryInput.asmr([
-        AsmrTrackFile.fromJson(const {
-          'title': 'Remote audio',
-          'type': 'audio',
-          'mediaStreamUrl': 'https://example.test/audio.flac?token=1',
-          'size': 4096,
-          'duration': 65,
-        }),
-      ]),
-    ).entriesAt([]).single;
+    final remote = buildAsmrWorkDirectorySnapshot([
+      AsmrTrackFile.fromJson(const {
+        'title': 'Remote audio',
+        'type': 'audio',
+        'mediaStreamUrl': 'https://example.test/audio.flac?token=1',
+        'size': 4096,
+        'duration': 65,
+      }),
+    ]).entriesAt([]).single;
     expect(remote.fileSizeBytes, 4096);
     expect(remote.duration, track.duration);
     expect(remote.extension, '.flac');
@@ -719,13 +718,11 @@ void main() {
         },
       ],
     });
-    final directory = buildWorkDirectorySnapshot(
-      WorkDirectoryInput.asmr([wrapper]),
-    );
+    final directory = buildAsmrWorkDirectorySnapshot([wrapper]);
     final root = directory.entriesAt([]);
     expect(root.map((entry) => entry.name), ['Bonus', 'Opening']);
-    expect(directory.directories.containsKey('japaneseasmr.com'), isFalse);
-    expect(root.last.asmrNode, same(wrapper.children.first));
+    expect(directory.validDepth(['japaneseasmr.com']), 0);
+    expect(root.last.remoteReference, same(wrapper.children.first));
     expect(root.last.relativePath, 'japaneseasmr.com/Opening.m4a');
     expect(directory.entriesAt(['Bonus']).map((entry) => entry.name), [
       'Extra',
@@ -785,7 +782,7 @@ void main() {
         });
         await tester.pumpWidget(
           fixture.build(
-            WorkDetailPage.forAsmr(work: work),
+            buildAsmrWorkDetailPage(work: work),
             overrides: [
               asmrLibraryControllerProvider.overrideWithValue(controller),
             ],
@@ -828,7 +825,7 @@ void main() {
         addTearDown(controller.dispose);
         await tester.pumpWidget(
           fixture.build(
-            WorkDetailPage.forAsmr(
+            buildAsmrWorkDetailPage(
               work: AsmrWork.fromJson(const {'id': 80, 'title': 'Remote work'}),
             ),
             overrides: [
@@ -938,7 +935,7 @@ void main() {
             fixture.build(
               MediaQuery(
                 data: MediaQueryData(disableAnimations: reducedMotion),
-                child: WorkDetailPage.forAsmr(
+                child: buildAsmrWorkDetailPage(
                   work: AsmrWork.fromJson(const {'id': 42, 'title': 'Work'}),
                 ),
               ),
@@ -1094,7 +1091,7 @@ void main() {
                         ? WorkDetailPage.forLocal(
                             target: AudioDetailTarget.libraryRootFolder(folder),
                           )
-                        : WorkDetailPage.forAsmr(
+                        : buildAsmrWorkDetailPage(
                             work: AsmrWork.fromJson(const {
                               'id': 123456,
                               'title': 'Work',
@@ -1214,7 +1211,7 @@ void main() {
                 }
               } else if (cached) {
                 await tester.runAsync(
-                  () => WorkDirectoryInput.asmr(remote.tree).load(),
+                  () => AsmrWorkDirectoryInput(remote.tree).load(),
                 );
               }
               final headerFinder = find.byKey(
@@ -1249,7 +1246,7 @@ void main() {
                                         voiceActors: ['Deferred voice actor'],
                                       ),
                                 )
-                              : WorkDetailPage.forAsmr(work: work),
+                              : buildAsmrWorkDetailPage(work: work),
                         ),
                       ),
                       child: const Text('Open first detail'),
@@ -1669,7 +1666,7 @@ void main() {
             ),
             skeletonRect,
           );
-          final halfFadeDuration = kPlaceholderContentTransitionDuration ~/ 2;
+          final halfFadeDuration = kAppFadeDuration ~/ 2;
           await tester.pump(halfFadeDuration);
           expect(
             tester.widget<SliverFadeTransition>(fade).opacity.value,
@@ -1832,7 +1829,7 @@ void main() {
                 .value,
             0,
           );
-          final halfFadeDuration = kPlaceholderContentTransitionDuration ~/ 2;
+          final halfFadeDuration = kAppFadeDuration ~/ 2;
           await tester.pump(halfFadeDuration);
           expect(
             tester
@@ -2061,7 +2058,7 @@ void main() {
             'title': 'Cached remote card',
             'mainCoverUrl': 'https://example.com/cover.jpg',
           });
-          Widget page() => fixture.build(WorkDetailPage.forAsmr(work: work));
+          Widget page() => fixture.build(buildAsmrWorkDetailPage(work: work));
           await tester.pumpWidget(page());
           expect(find.byType(AsyncRemoteCoverImage), findsOneWidget);
           await tester.pump();
@@ -3241,7 +3238,7 @@ void main() {
       );
 
       await tester.pumpWidget(
-        fixture.build(WorkDetailPage.forAsmr(work: asmrWork)),
+        fixture.build(buildAsmrWorkDetailPage(work: asmrWork)),
       );
       await tester.pump();
       await _settleDetail(tester);
@@ -3405,7 +3402,7 @@ void main() {
                       Navigator.of(context).push(
                         MaterialPageRoute<void>(
                           builder: (_) =>
-                              WorkDetailPage.forAsmr(work: asmrWork),
+                              buildAsmrWorkDetailPage(work: asmrWork),
                         ),
                       );
                     },
@@ -3527,7 +3524,7 @@ void main() {
         );
 
         await tester.pumpWidget(
-          fixture.build(WorkDetailPage.forAsmr(work: asmrWork)),
+          fixture.build(buildAsmrWorkDetailPage(work: asmrWork)),
         );
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
@@ -4436,13 +4433,16 @@ void main() {
         final themeSurface = Theme.of(
           tester.element(viewport),
         ).colorScheme.surface;
+        final viewerCanvas = tester.widget<Scaffold>(
+          find.ancestor(of: viewport, matching: find.byType(Scaffold)).first,
+        );
+        final layers =
+            ((viewerCanvas.body! as ClipRect).child! as Stack).children;
         expect(
-          tester
-              .widgetList<Scaffold>(
-                find.ancestor(of: viewport, matching: find.byType(Scaffold)),
-              )
-              .any((scaffold) => scaffold.backgroundColor == themeSurface),
-          isTrue,
+          layers.whereType<Positioned>().map((layer) => layer.child),
+          contains(
+            isA<ColoredBox>().having((box) => box.color, 'color', themeSurface),
+          ),
         );
         expect(find.byType(ImageFiltered), findsNothing);
         final pageView = tester.widget<PageView>(find.byType(PageView));
@@ -4588,7 +4588,8 @@ void main() {
       await tester.tap(viewportFinder);
       await tester.pump(const Duration(milliseconds: 50));
       await tester.tap(viewportFinder);
-      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump();
+      await tester.pump(kAppMotionStandard);
 
       expect(
         tester.widget<PageView>(find.byType(PageView)).physics,
@@ -4599,7 +4600,8 @@ void main() {
       await tester.tap(viewportFinder);
       await tester.pump(const Duration(milliseconds: 50));
       await tester.tap(viewportFinder);
-      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump();
+      await tester.pump(kAppMotionStandard);
 
       expect(
         tester.widget<PageView>(find.byType(PageView)).physics,

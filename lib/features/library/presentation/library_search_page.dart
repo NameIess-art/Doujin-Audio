@@ -317,12 +317,19 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     double topInset,
   ) {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
+    Future<AudioLibraryCategorySnapshot> loadSnapshot() =>
+        libraryFacade.audioLibraryCategorySnapshot(
+          isActive: () =>
+              mounted &&
+              _categorySnapshotStructureRevision == structureRevision &&
+              _categorySnapshotDetailRevision == detailRevision,
+        );
     if (_categorySnapshotFuture == null ||
         _categorySnapshotStructureRevision != structureRevision ||
         _categorySnapshotDetailRevision != detailRevision) {
       _categorySnapshotStructureRevision = structureRevision;
       _categorySnapshotDetailRevision = detailRevision;
-      _categorySnapshotFuture = libraryFacade.audioLibraryCategorySnapshot();
+      _categorySnapshotFuture = loadSnapshot();
     }
     final cached = libraryFacade.categorySnapshot;
     return FutureBuilder<AudioLibraryCategorySnapshot>(
@@ -381,8 +388,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                 retryLabel: i18n.tr('retry'),
                 onRetry: metadata && state.hasError
                     ? () => setState(() {
-                        _categorySnapshotFuture = libraryFacade
-                            .audioLibraryCategorySnapshot();
+                        _categorySnapshotFuture = loadSnapshot();
                       })
                     : null,
               );

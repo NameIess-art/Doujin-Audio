@@ -238,7 +238,7 @@ void main() {
               final work = tester.widget<WorkDetailPage>(
                 find.byType(WorkDetailPage),
               );
-              expect(work.asmrWork != null, action == 'online work');
+              expect(work.remoteWork != null, action == 'online work');
               navigator.pop();
               await tester.pumpAndSettle();
               await tester.pump(UiInteractionCoordinator.instance.idleDelay);

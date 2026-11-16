@@ -9,6 +9,7 @@ import 'package:doujin_audio/core/media/dlsite_metadata.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/persistence/json_document_store.dart';
+import 'package:doujin_audio/features/library/domain/audio_library_category.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_cache_service.dart';
@@ -845,6 +846,104 @@ void main() {
     expect(snapshot.entries, hasLength(30));
   });
 
+  for (final (scenario, keepAnotherConsumer, superseded) in [
+    ('closed search', false, false),
+    ('other search still active', true, false),
+    ('new structure revision', false, true),
+  ]) {
+    test(
+      'cold category yields to a visible detail and respects shared consumers '
+      '($scenario)',
+      () async {
+        final started = Completer<void>();
+        final releaseBatch = Completer<void>();
+        final batches = <List<AudioDetailTarget>>[];
+        final repository = _FakeAudioDetailRepository(
+          onBatchLoad: (targets) async {
+            batches.add(targets);
+            if (batches.length == 1) {
+              started.complete();
+              await releaseBatch.future;
+            }
+          },
+        );
+        final library = LibraryService();
+        for (var index = 0; index < 130; index++) {
+          final folderPath = '/library_$index';
+          library.watchedFolders.add(folderPath);
+          library.library.add(
+            _track(path: '$folderPath/track.mp3', groupKey: folderPath),
+          );
+        }
+        library.markStructureChanged();
+        final detailCache = AudioDetailCacheService(repository: repository);
+        final service = LibrarySnapshotCacheService(
+          libraryService: library,
+          detailCacheService: detailCache,
+        );
+        addTearDown(library.dispose);
+        addTearDown(detailCache.dispose);
+        addTearDown(service.dispose);
+
+        var active = true;
+        final search = service.categorySnapshot(
+          onCommitted: () {},
+          isActive: () => active,
+        );
+        final cancellation = keepAnotherConsumer
+            ? null
+            : expectLater(
+                search,
+                throwsA(isA<AudioDetailOperationCancelled>()),
+              );
+        await started.future;
+        expect(batches.single, hasLength(64));
+        if (keepAnotherConsumer) {
+          final other = service.categorySnapshot(
+            onCommitted: () {},
+            isActive: () => true,
+          );
+          expect(other, same(search));
+        }
+        active = superseded;
+        final visibleTarget = AudioDetailTarget.libraryRootFolder('/visible');
+        final visible = detailCache.load(visibleTarget);
+        Future<AudioLibraryCategorySnapshot>? replacement;
+        if (superseded) {
+          library
+            ..library.add(
+              _track(path: '/library_0/extra.mp3', groupKey: '/library_0'),
+            )
+            ..markStructureChanged();
+          service.markStructureChanged();
+          replacement = service.categorySnapshot(
+            onCommitted: () {},
+            isActive: () => true,
+          );
+        }
+        releaseBatch.complete();
+        await visible;
+        expect(batches[1].first, visibleTarget);
+
+        if (keepAnotherConsumer) {
+          expect((await search).entries, hasLength(130));
+          expect(batches.map((batch) => batch.length), [64, 1, 64, 2]);
+        } else if (replacement != null) {
+          await cancellation;
+          final current = await replacement;
+          expect(current.structureRevision, library.structureRevision);
+          expect(service.categorySnapshotSync, same(current));
+        } else {
+          await cancellation;
+          expect(batches, hasLength(2));
+          expect(service.categorySnapshotSync, isNull);
+          final restarted = await service.categorySnapshot(onCommitted: () {});
+          expect(restarted.entries, hasLength(130));
+        }
+      },
+    );
+  }
+
   test('tree cache updates only after async snapshot commits', () async {
     final library = LibraryService();
     library.watchedFolders.add('/library');
@@ -1445,10 +1544,12 @@ class _FakeAudioDetailRepository implements AudioDetailRepository {
   _FakeAudioDetailRepository({
     Map<String, String>? details,
     this.failBatchLoad = false,
+    this.onBatchLoad,
   }) : _details = details ?? const <String, String>{};
 
   final Map<String, String> _details;
   final bool failBatchLoad;
+  final Future<void> Function(List<AudioDetailTarget>)? onBatchLoad;
   int loadCount = 0;
   int batchLoadCount = 0;
 
@@ -1470,6 +1571,7 @@ class _FakeAudioDetailRepository implements AudioDetailRepository {
       throw StateError('batch load failed');
     }
     final values = targets.toList(growable: false);
+    if (onBatchLoad case final callback?) await callback(values);
     loadCount += values.length;
     return <AudioDetailLoadResult>[
       for (final target in values)

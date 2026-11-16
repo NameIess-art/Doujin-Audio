@@ -76,6 +76,7 @@ final class NotificationFacade {
   late CoverArtworkCacheService _coverArtworkCacheService;
   bool Function() _notificationsEnabledResolver = _alwaysFalse;
   bool _synchronizationAttached = false;
+  bool _runtimeNotificationSyncPending = false;
   final Map<String, _NotificationSessionPresentation>
   _notificationPresentations = <String, _NotificationSessionPresentation>{};
   List<Map<String, dynamic>> _lastNotificationItems =
@@ -147,12 +148,22 @@ final class NotificationFacade {
   void syncPlaybackState({bool immediateUnifiedSync = false}) =>
       _syncNotificationState(immediateUnifiedSync: immediateUnifiedSync);
 
+  void syncRuntimePlaybackState({bool immediateUnifiedSync = false}) {
+    if (_synchronizationAttached &&
+        _notificationsEnabled &&
+        _stateService.synchronizationPaused) {
+      _requestUnifiedPlaybackNotificationFlush(runtimeChange: true);
+      return;
+    }
+    syncPlaybackState(immediateUnifiedSync: immediateUnifiedSync);
+  }
+
   String? get focusedSessionId => _stateService.notificationFocusSessionId;
 
   void setFocusedSession(String? sessionId) {
     if (_stateService.notificationFocusSessionId == sessionId) return;
     _stateService.notificationFocusSessionId = sessionId;
-    _syncNotificationState();
+    syncRuntimePlaybackState();
   }
 
   void clearFocusIfMatches(String sessionId) {
@@ -255,6 +266,7 @@ final class NotificationFacade {
   }
 
   Future<void> resetPersistedState() async {
+    _runtimeNotificationSyncPending = false;
     _stateService
       ..notificationFocusSessionId = null
       ..unifiedNotificationSyncKey = null
@@ -322,6 +334,7 @@ final class NotificationFacade {
   }
 
   void detachRuntime() {
+    _runtimeNotificationSyncPending = false;
     _notificationPresentations.clear();
     _lastNotificationItems = const <Map<String, dynamic>>[];
     _lastNotificationMainSessionId = null;

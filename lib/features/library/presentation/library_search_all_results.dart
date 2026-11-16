@@ -17,6 +17,7 @@ import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/scroll_to_top_list.dart';
 import '../../../core/widgets/search_highlight.dart';
 import '../application/library_facade.dart';
+import '../domain/audio_library_category.dart';
 import '../domain/library_node.dart';
 import 'library_providers.dart';
 import 'library_tab_empty_scan.dart';
@@ -141,6 +142,8 @@ class _LibrarySearchAllResultsState
         widget.queryRevision == queryRevision &&
         widget.structureRevision == structureRevision &&
         widget.detailRevision == detailRevision &&
+        libraryFacade.structureRevision == structureRevision &&
+        libraryFacade.detailCacheService.revision == detailRevision &&
         identical(_pendingSearch?.token, token);
     final searchFuture = () async {
       final cached = _searchIndex.cachedResult(
@@ -149,11 +152,22 @@ class _LibrarySearchAllResultsState
         detailRevision: categoryRevision,
       );
       if (cached != null) return cached;
-      final effectiveCategorySnapshot =
-          categorySnapshot ??
-          await libraryFacade.audioLibraryCategorySnapshot();
-      if (!isCurrentRequest()) return null;
-      final tree = await libraryFacade.loadLibraryTree();
+      late final AudioLibraryCategorySnapshot effectiveCategorySnapshot;
+      if (categorySnapshot != null) {
+        effectiveCategorySnapshot = categorySnapshot;
+      }
+      late final List<LibraryNode> tree;
+      await Future.wait<void>([
+        if (categorySnapshot == null)
+          libraryFacade
+              .audioLibraryCategorySnapshot(isActive: isCurrentRequest)
+              .then((snapshot) {
+                effectiveCategorySnapshot = snapshot;
+              }),
+        libraryFacade.loadLibraryTree().then((nodes) {
+          tree = nodes;
+        }),
+      ], eagerError: true);
       if (!isCurrentRequest()) return null;
       final background = libraryTreeTrackCount(tree) > 200;
       final result = background

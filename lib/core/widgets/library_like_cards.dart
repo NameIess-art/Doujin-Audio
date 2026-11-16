@@ -50,13 +50,56 @@ class LibraryLikeCardMetrics {
 }
 
 class LibraryLikeSkeletonCard extends StatelessWidget {
-  const LibraryLikeSkeletonCard({super.key});
+  const LibraryLikeSkeletonCard({super.key, this.animate = true});
+
+  final bool animate;
 
   @override
   Widget build(BuildContext context) {
     const coverWidth =
         LibraryLikeCardMetrics.coverHeight *
         LibraryLikeCardMetrics.coverAspectRatio;
+    const content = Padding(
+      padding: EdgeInsets.all(8),
+      child: SizedBox(
+        height: LibraryLikeCardMetrics.contentHeight,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ShimmerContainer(
+              width: coverWidth,
+              height: LibraryLikeCardMetrics.coverHeight,
+              borderRadius: LibraryLikeCardMetrics.coverRadius,
+            ),
+            SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _SkeletonInfoLine(textWidth: double.infinity),
+                  _SkeletonInfoLine(icon: true, textWidth: 110),
+                  _SkeletonInfoLine(icon: true, textWidth: 140),
+                  _SkeletonInfoLine(icon: true, textWidth: 160),
+                  SizedBox(
+                    height: _libraryLikeInfoLineHeight,
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: ShimmerContainer(
+                        width: 140,
+                        height: 9,
+                        borderRadius: 4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!animate) return content;
     return const Card(
       margin: EdgeInsets.zero,
       shape: LibraryLikeCardMetrics.cardShape,
@@ -64,48 +107,7 @@ class LibraryLikeSkeletonCard extends StatelessWidget {
       elevation: 0,
       shadowColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
-      child: ShimmerLoader(
-        child: Padding(
-          padding: EdgeInsets.all(8),
-          child: SizedBox(
-            height: LibraryLikeCardMetrics.contentHeight,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ShimmerContainer(
-                  width: coverWidth,
-                  height: LibraryLikeCardMetrics.coverHeight,
-                  borderRadius: LibraryLikeCardMetrics.coverRadius,
-                ),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _SkeletonInfoLine(textWidth: double.infinity),
-                      _SkeletonInfoLine(icon: true, textWidth: 110),
-                      _SkeletonInfoLine(icon: true, textWidth: 140),
-                      _SkeletonInfoLine(icon: true, textWidth: 160),
-                      SizedBox(
-                        height: _libraryLikeInfoLineHeight,
-                        child: Align(
-                          alignment: Alignment.centerRight,
-                          child: ShimmerContainer(
-                            width: 140,
-                            height: 9,
-                            borderRadius: 4,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+      child: ShimmerLoader(child: content),
     );
   }
 }
@@ -170,28 +172,47 @@ class LibrarySkeletonListView extends StatelessWidget {
           itemCount,
           (contentHeight / LibraryLikeCardMetrics.rootTileHeight).ceil(),
         );
-        return ListView.builder(
-          primary: false,
-          physics: const NeverScrollableScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(
-            LibraryLikeCardMetrics.listHorizontalPadding,
-            topInset,
-            LibraryLikeCardMetrics.listHorizontalPadding,
-            bottomInset,
+        return ExcludeSemantics(
+          // Loading cards are decorative and share one animation layer for
+          // the viewport. Transition placeholders mute it through TickerMode.
+          child: ShimmerLoader(
+            child: ListView.builder(
+              primary: false,
+              physics: const NeverScrollableScrollPhysics(),
+              itemExtent: LibraryLikeCardMetrics.rootTileHeight,
+              cacheExtent: 0,
+              addAutomaticKeepAlives: false,
+              addRepaintBoundaries: false,
+              addSemanticIndexes: false,
+              padding: EdgeInsets.fromLTRB(
+                LibraryLikeCardMetrics.listHorizontalPadding,
+                topInset,
+                LibraryLikeCardMetrics.listHorizontalPadding,
+                bottomInset,
+              ),
+              itemCount: rowCount,
+              itemBuilder: (context, rowIndex) => columnCount <= 1
+                  ? const LibraryLikeSkeletonCard(animate: false)
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (
+                          var column = 0;
+                          column < columnCount;
+                          column++
+                        ) ...[
+                          if (column > 0)
+                            const SizedBox(
+                              width: kResponsiveLibraryCardSpacing,
+                            ),
+                          const Expanded(
+                            child: LibraryLikeSkeletonCard(animate: false),
+                          ),
+                        ],
+                      ],
+                    ),
+            ),
           ),
-          itemCount: rowCount,
-          itemBuilder: (context, rowIndex) => columnCount <= 1
-              ? const LibraryLikeSkeletonCard()
-              : Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    for (var column = 0; column < columnCount; column++) ...[
-                      if (column > 0)
-                        const SizedBox(width: kResponsiveLibraryCardSpacing),
-                      const Expanded(child: LibraryLikeSkeletonCard()),
-                    ],
-                  ],
-                ),
         );
       },
     );
@@ -488,11 +509,7 @@ Widget _libraryLikeSecondaryInfo(
           fontWeight: FontWeight.w400,
           color: color,
         )
-      : TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w400,
-          color: color,
-        );
+      : TextStyle(fontSize: 11, fontWeight: FontWeight.w400, color: color);
   return SizedBox(
     height: _libraryLikeInfoLineHeight,
     child: Align(
@@ -745,11 +762,7 @@ class _ActionMotion {
         controller.addListener(_onTick);
       } else {
         unawaited(
-          controller.animateTo(
-            targetScale,
-            duration: duration,
-            curve: curve,
-          ),
+          controller.animateTo(targetScale, duration: duration, curve: curve),
         );
       }
     }
@@ -766,13 +779,7 @@ class _ActionMotion {
     _fromColor = resolveColor(targetColor);
     _targetColor = targetColor;
     _setColorValueSilently(0);
-    unawaited(
-      colorController.animateTo(
-        1,
-        duration: duration,
-        curve: curve,
-      ),
-    );
+    unawaited(colorController.animateTo(1, duration: duration, curve: curve));
   }
 
   void dispose() {

@@ -106,7 +106,7 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
     _rowController =
         AnimationController(
           vsync: this,
-          duration: _motionDuration,
+          duration: const Duration(milliseconds: 400),
           value: hasPlayback && widget.isPlaybackRaised ? 1 : 0,
         )..addStatusListener((status) {
           _syncMotionInteraction();
@@ -121,8 +121,7 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
         });
     _rowCurve = CurvedAnimation(
       parent: _rowController,
-      curve: kAppSpringCurve,
-      reverseCurve: kAppSpringCurve,
+      curve: Curves.easeInOutSine,
     );
     _animationListenable = Listenable.merge([
       _appearanceCurve,

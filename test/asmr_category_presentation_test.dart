@@ -1656,6 +1656,50 @@ void main() {
       variant: TargetPlatformVariant({platform}),
     );
 
+    if (platform == TargetPlatform.windows) {
+      testWidgets(
+        'ASMR pagination retry is clickable after mouse-wheel scrolling',
+        (tester) async {
+          final controller = _PresentationController(createTestAsmrServices())
+            ..workCount = 30
+            ..hasMore = true
+            ..needsRetry = true;
+          final fixture = AppRuntimeWidgetTestFixture();
+          addTearDown(controller.dispose);
+          addTearDown(fixture.dispose);
+          await tester.pumpWidget(
+            fixture.build(
+              const AsmrTab(),
+              overrides: [
+                asmrLibraryControllerProvider.overrideWithValue(controller),
+              ],
+            ),
+          );
+          await pumpUntilFound(tester, find.text('Published work'));
+          await tester.pumpAndSettle();
+
+          final list = find.byKey(
+            const PageStorageKey(AsmrCategoryType.collected),
+          );
+          await tester.sendEventToBinding(
+            PointerScrollEvent(
+              position: tester.getCenter(list),
+              scrollDelta: const Offset(0, 10000),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(controller.loadMoreCount, 0);
+
+          final retry = find.byKey(const ValueKey('asmr_load_more_retry'));
+          expect(retry.hitTestable(), findsOneWidget);
+          await tester.tap(retry, kind: PointerDeviceKind.mouse);
+          await tester.pumpAndSettle();
+          expect(controller.loadMoreCount, 1);
+        },
+        variant: TargetPlatformVariant.only(TargetPlatform.windows),
+      );
+    }
+
     for (final count in [100, 1000]) {
       for (final retryFooter in [false, true]) {
         testWidgets(
@@ -2484,7 +2528,7 @@ void main() {
     );
   }
 
-  testWidgets('ASMR category and tree providers defer initial projections', (
+  testWidgets('ASMR category provider defers its initial projection', (
     tester,
   ) async {
     final controller = _PresentationController(createTestAsmrServices())
@@ -2501,27 +2545,20 @@ void main() {
       searchQuery: '',
       searchSession: false,
     ));
-    final tree = asmrTrackTreeStateProvider('source:asmrOne:1');
     final categorySubscription = container.listen(category, (_, _) {});
-    final treeSubscription = container.listen(tree, (_, _) {});
     controller.publish('Latest work');
     await tester.pump();
     expect(controller.categoryReads, 0);
-    expect(controller.treeReads, 0);
     expect(container.read(category).isLoading, isTrue);
-    expect(container.read(tree).isLoading, isTrue);
 
     controller.cacheValid = true;
     interaction.cancelInteraction(motion);
     await tester.pump();
     final state = await container.read(category.future);
     await tester.pump();
-    await container.read(tree.future);
     expect(state!.works.single.title, 'Latest work');
     expect(controller.categoryReads, 1);
-    expect(controller.treeReads, 1);
     categorySubscription.close();
-    treeSubscription.close();
     await tester.pump(const Duration(milliseconds: 1));
   });
 }
@@ -2564,7 +2601,6 @@ class _PresentationController extends AsmrLibraryController {
   String title = 'Published work';
   int revision = 0;
   int categoryReads = 0;
-  int treeReads = 0;
   bool hasMore = false;
   Object? paginationToken;
   ({Object token, int length})? appendedTo;
@@ -2677,12 +2713,6 @@ class _PresentationController extends AsmrLibraryController {
       operationError: catalogError,
       revision: revision,
     );
-  }
-
-  @override
-  AsmrTrackTreeViewState trackTreeViewState(String workId) {
-    treeReads++;
-    return super.trackTreeViewState(workId);
   }
 
   @override

@@ -329,7 +329,9 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
 
   Future<AudioLibraryCategorySnapshot> audioLibraryCategorySnapshot({
     void Function()? onCommitted,
+    bool Function()? isActive,
   }) => snapshotCacheService.categorySnapshot(
+    isActive: isActive,
     onCommitted: () {
       _syncStateSlice();
       onCommitted?.call();

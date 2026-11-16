@@ -5,6 +5,7 @@ import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/dlsite_metadata.dart';
 import 'package:doujin_audio/core/translation/text_translation_service.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_work_detail_sheet.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/library/application/dlsite_metadata_service.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
@@ -125,7 +126,7 @@ void main() {
         addTearDown(fixture.dispose);
         final work = _work();
         await tester.pumpWidget(
-          fixture.build(WorkDetailPage.forAsmr(work: work)),
+          fixture.build(buildAsmrWorkDetailPage(work: work)),
         );
         await _settle(tester);
         expect(service.requests, isEmpty);
@@ -145,10 +146,7 @@ void main() {
           of: find.byKey(_button),
           matching: find.text('DL'),
         );
-        expect(
-          tester.widget<Text>(dlLabel).style?.color,
-          Colors.white,
-        );
+        expect(tester.widget<Text>(dlLabel).style?.color, Colors.white);
         expect(find.byKey(_revert), findsNothing);
         await tester.tap(find.byKey(_button));
         await tester.pump();
@@ -234,7 +232,7 @@ void main() {
         );
         await tester.pumpWidget(
           fixture.build(
-            WorkDetailPage.forAsmr(work: _work()),
+            buildAsmrWorkDetailPage(work: _work()),
             overrides: [
               textTranslationServiceProvider.overrideWithValue(
                 _TranslationService(),
@@ -312,7 +310,7 @@ void main() {
     final fixture = AppRuntimeWidgetTestFixture(dlsiteMetadataService: service);
     addTearDown(fixture.dispose);
     await tester.pumpWidget(
-      fixture.build(WorkDetailPage.forAsmr(work: _work())),
+      fixture.build(buildAsmrWorkDetailPage(work: _work())),
     );
     await _settle(tester);
     await tester.tap(find.byKey(_button));
@@ -336,7 +334,7 @@ void main() {
       );
       addTearDown(fixture.dispose);
       await tester.pumpWidget(
-        fixture.build(WorkDetailPage.forAsmr(work: _work())),
+        fixture.build(buildAsmrWorkDetailPage(work: _work())),
       );
       await _settle(tester);
       await tester.tap(find.byKey(_button));
@@ -385,7 +383,7 @@ void main() {
     final fixture = AppRuntimeWidgetTestFixture(dlsiteMetadataService: service);
     addTearDown(fixture.dispose);
     await tester.pumpWidget(
-      fixture.build(WorkDetailPage.forAsmr(work: _work(code: ''))),
+      fixture.build(buildAsmrWorkDetailPage(work: _work(code: ''))),
     );
     await _settle(tester);
     expect(tester.widget<IconButton>(find.byKey(_button)).onPressed, isNull);
@@ -413,7 +411,7 @@ void main() {
     final fixture = AppRuntimeWidgetTestFixture(dlsiteMetadataService: service);
     addTearDown(fixture.dispose);
     await tester.pumpWidget(
-      fixture.build(WorkDetailPage.forAsmr(work: _work())),
+      fixture.build(buildAsmrWorkDetailPage(work: _work())),
     );
     await _settle(tester);
     await tester.tap(find.byKey(_button));
@@ -422,7 +420,7 @@ void main() {
     await _settle(tester);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(
-      fixture.build(WorkDetailPage.forAsmr(work: _work())),
+      fixture.build(buildAsmrWorkDetailPage(work: _work())),
     );
     await _settle(tester);
     expect(find.text('Online circle'), findsOneWidget);
@@ -442,7 +440,7 @@ void main() {
       );
       addTearDown(fixture.dispose);
       await tester.pumpWidget(
-        fixture.build(WorkDetailPage.forAsmr(work: _work())),
+        fixture.build(buildAsmrWorkDetailPage(work: _work())),
       );
       await _settle(tester);
       await tester.tap(find.byKey(_button));

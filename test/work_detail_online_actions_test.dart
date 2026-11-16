@@ -326,7 +326,7 @@ void main() {
       );
       await tester.pumpWidget(
         fixture.build(
-          WorkDetailPage.forAsmr(work: _work),
+          buildAsmrWorkDetailPage(work: _work),
           overrides: [
             asmrLibraryControllerProvider.overrideWithValue(controller),
             asmrPlaybackCoordinatorProvider.overrideWithValue(coordinator),
@@ -414,7 +414,7 @@ void main() {
       });
       expect(api.treeRequests, 1);
       Widget page() => fixture.build(
-        WorkDetailPage.forAsmr(work: _work),
+        buildAsmrWorkDetailPage(work: _work),
         overrides: [
           asmrLibraryControllerProvider.overrideWithValue(controller),
         ],
@@ -471,7 +471,7 @@ void main() {
 
       await tester.pumpWidget(
         fixture.build(
-          WorkDetailPage.forAsmr(work: _work),
+          buildAsmrWorkDetailPage(work: _work),
           overrides: [
             asmrLibraryControllerProvider.overrideWithValue(controller),
           ],
@@ -560,8 +560,6 @@ class _TrackApi extends AsmrApiService {
     AsmrRequestCancellationToken? cancellationToken,
   }) async {
     treeRequests++;
-    return treeResponseBuilder != null
-        ? await treeResponseBuilder!()
-        : _nodes;
+    return treeResponseBuilder != null ? await treeResponseBuilder!() : _nodes;
   }
 }

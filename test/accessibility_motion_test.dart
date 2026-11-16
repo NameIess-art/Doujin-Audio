@@ -140,8 +140,8 @@ void main() {
     final controller = tester
         .widget<BottomSheet>(find.byType(BottomSheet))
         .animationController!;
-    expect(controller.duration, kAppFadeDuration);
-    expect(controller.reverseDuration, kAppFadeDuration);
+    expect(controller.duration, kAppMotionStandard);
+    expect(controller.reverseDuration, kAppMotionFast);
   });
 
   testWidgets('bottom sheets never exceed three quarters of the screen', (

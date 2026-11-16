@@ -132,7 +132,7 @@ class AsmrDownloadTaskCard extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '${formatAsmrDownloadSize(task.downloadedBytes)} / ${formatAsmrDownloadTotalSize(total: task.totalBytes, unknown: task.hasUnknownFileSizes, unknownLabel: i18n.tr('asmr_download_size_unknown'), estimate: task.estimatedTotalBytes)}',
+                      '${formatMediaFileSize(task.downloadedBytes)} / ${formatAsmrDownloadTotalSize(total: task.totalBytes, unknown: task.hasUnknownFileSizes, unknownLabel: i18n.tr('asmr_download_size_unknown'), estimate: task.estimatedTotalBytes)}',
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
                         color: cs.onSurfaceVariant,
                         fontWeight: FontWeight.w600,

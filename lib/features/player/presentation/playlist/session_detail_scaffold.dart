@@ -79,7 +79,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
       'detail_subtitle_presence_${identityHashCode(this)}';
   late final AnimationController _dragResetController;
   Animation<double>? _dragResetAnimation;
-  double _dragOffset = 0;
+  final ValueNotifier<double> _dragOffset = ValueNotifier(0);
   bool _dragThresholdReached = false;
   bool _dragDismissClosing = false;
 
@@ -97,13 +97,13 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
           ..addListener(() {
             final animation = _dragResetAnimation;
             if (animation != null && mounted) {
-              setState(() => _dragOffset = animation.value);
+              _dragOffset.value = animation.value;
             }
           })
           ..addStatusListener((status) {
             if ((status == AnimationStatus.completed ||
                     status == AnimationStatus.dismissed) &&
-                _dragOffset == 0 &&
+                _dragOffset.value == 0 &&
                 mounted) {
               _detailRoute?.endInteractiveDismiss();
             }
@@ -162,6 +162,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
   void dispose() {
     UiInteractionCoordinator.instance.cancelInteraction(_dragDismissInteraction);
     _dragResetController.dispose();
+    _dragOffset.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _subtitles.removeListener(_handleSubtitlePresenceChanged);
     widget.transitionActive.removeListener(_handleTransitionChanged);
@@ -179,17 +180,18 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
   void _handleDragDismissUpdate(DragUpdateDetails details) {
     if (widget.transitionActive.value || _dragDismissClosing) return;
     final delta = details.delta.dy;
+    final offset = _dragOffset.value;
     final maxOffset = MediaQuery.sizeOf(context).height * 0.65;
     final double nextOffset;
-    if (_dragOffset >= _dragDismissThreshold && delta > 0) {
-      final overDrag = (_dragOffset - _dragDismissThreshold).clamp(0.0, 400.0);
+    if (offset >= _dragDismissThreshold && delta > 0) {
+      final overDrag = (offset - _dragDismissThreshold).clamp(0.0, 400.0);
       final damping = 1.0 + (overDrag / 180.0);
-      nextOffset = (_dragOffset + delta / damping).clamp(0.0, maxOffset);
+      nextOffset = (offset + delta / damping).clamp(0.0, maxOffset);
     } else {
-      nextOffset = (_dragOffset + delta).clamp(0.0, maxOffset);
+      nextOffset = (offset + delta).clamp(0.0, maxOffset);
     }
-    if (nextOffset == _dragOffset) return;
-    if (nextOffset > 0 && _dragOffset == 0) {
+    if (nextOffset == offset) return;
+    if (nextOffset > 0 && offset == 0) {
       _detailRoute?.beginInteractiveDismiss();
     }
     final crossed = nextOffset >= _dragDismissThreshold;
@@ -199,7 +201,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
         unawaited(HapticFeedback.selectionClick());
       }
     }
-    setState(() => _dragOffset = nextOffset);
+    _dragOffset.value = nextOffset;
   }
 
   void _handleDragDismissEnd(DragEndDetails details) {
@@ -209,9 +211,10 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
       return;
     }
     final velocity = details.velocity.pixelsPerSecond.dy;
+    final offset = _dragOffset.value;
     final shouldDismiss =
-        _dragOffset >= _dragDismissThreshold ||
-        (_dragOffset > 20 && velocity >= _dragDismissVelocity);
+        offset >= _dragDismissThreshold ||
+        (offset > 20 && velocity >= _dragDismissVelocity);
     if (shouldDismiss) {
       _dragDismissClosing = true;
       final hasCoverFlight =
@@ -220,10 +223,10 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
           !MediaQuery.disableAnimationsOf(context) &&
           TickerMode.valuesOf(context).enabled) {
         final targetOffset = math.max(
-          _dragOffset + 120.0,
+          offset + 120.0,
           MediaQuery.sizeOf(context).height * 0.45,
         );
-        _dragResetAnimation = Tween<double>(begin: _dragOffset, end: targetOffset)
+        _dragResetAnimation = Tween<double>(begin: offset, end: targetOffset)
             .chain(CurveTween(curve: Curves.easeOutCubic))
             .animate(_dragResetController);
         _dragResetController.duration = kAppMotionStandard;
@@ -242,14 +245,14 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
 
   void _animateDragDismissBack() {
     _dragThresholdReached = false;
-    final start = _dragOffset;
+    final start = _dragOffset.value;
     if (start == 0) {
       _detailRoute?.endInteractiveDismiss();
       return;
     }
     if (MediaQuery.disableAnimationsOf(context) ||
         !TickerMode.valuesOf(context).enabled) {
-      setState(() => _dragOffset = 0);
+      _dragOffset.value = 0;
       _detailRoute?.endInteractiveDismiss();
       return;
     }
@@ -689,32 +692,6 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
         ],
       ),
     );
-    final dragFraction = (_dragOffset / 320.0).clamp(0.0, 1.0);
-    final Widget draggableBody = allowVerticalDismiss && _dragOffset > 0
-        ? Stack(
-            fit: StackFit.expand,
-            children: [
-              IgnorePointer(
-                child: ColoredBox(
-                  color: Colors.black.withValues(
-                    alpha: (0.28 * (1.0 - dragFraction)).clamp(0.0, 0.28),
-                  ),
-                ),
-              ),
-              Transform.translate(
-                offset: Offset(0, _dragOffset),
-                child: Transform.scale(
-                  scale: 1.0 - (0.045 * dragFraction),
-                  alignment: Alignment.topCenter,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(24.0 * dragFraction),
-                    child: content,
-                  ),
-                ),
-              ),
-            ],
-          )
-        : content;
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onVerticalDragStart: allowVerticalDismiss ? _handleDragDismissStart : null,
@@ -723,7 +700,42 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
       onVerticalDragEnd: allowVerticalDismiss ? _handleDragDismissEnd : null,
       onVerticalDragCancel:
           allowVerticalDismiss ? _handleDragDismissCancel : null,
-      child: draggableBody,
+      child: allowVerticalDismiss
+          ? ValueListenableBuilder<double>(
+              valueListenable: _dragOffset,
+              // Keep the subtitle scroll position when the page starts moving.
+              child: content,
+              builder: (context, offset, child) {
+                final dragFraction = (offset / 320.0).clamp(0.0, 1.0);
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    IgnorePointer(
+                      child: ColoredBox(
+                        color: Colors.black.withValues(
+                          alpha: offset > 0 ? 0.28 * (1.0 - dragFraction) : 0,
+                        ),
+                      ),
+                    ),
+                    Transform.translate(
+                      offset: Offset(0, offset),
+                      child: Transform.scale(
+                        scale: 1.0 - (0.045 * dragFraction),
+                        alignment: Alignment.topCenter,
+                        child: ClipRRect(
+                          clipBehavior: offset > 0 ? Clip.antiAlias : Clip.none,
+                          borderRadius: BorderRadius.circular(
+                            24.0 * dragFraction,
+                          ),
+                          child: child,
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            )
+          : content,
     );
   }
 }

@@ -468,9 +468,14 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
         ),
       ),
     );
-    final pages = buildPages(canPage: true);
+    // A single-session dock has no paging interaction. An infinite delegate
+    // can mount the same session at two adjacent positions during a resize.
+    final singlePage = widget.retainDockPages && visibleSessions.length == 1
+        ? buildSessionCard(0)
+        : null;
+    final pages = singlePage ?? buildPages(canPage: true);
     final narrowPages = widget.retainDockPages
-        ? buildPages(canPage: false)
+        ? singlePage ?? buildPages(canPage: false)
         : null;
     final positionIndicator = IgnorePointer(
       child: Center(

@@ -9,6 +9,7 @@ import '../../core/ui/ui_interaction_coordinator.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../features/player/presentation/playlist/session_detail_route.dart';
 import 'main_screen.dart';
+import 'main_tab_state_mixin.dart';
 import 'routed_playback_dock_host.dart';
 
 /// Owns page navigation only; library and playback state stay in their facades.
@@ -28,6 +29,8 @@ class WorkDetailNavigation extends ChangeNotifier {
   final List<Route<dynamic>> _contentRoutes = [];
   final Set<Route<dynamic>> _closing = {};
   final Set<Route<dynamic>> _contentClosing = {};
+  final _detailCoversContent = ValueNotifier(false);
+  Animation<double>? _coveringAnimation;
   Object? _identity;
   Future<void>? _completion;
   bool _scheduled = false;
@@ -46,6 +49,7 @@ class WorkDetailNavigation extends ChangeNotifier {
   }) async {
     final navigator = Navigator.of(context);
     final origin = readAppRoute(context);
+    final navigation = WorkDetailNavigationScope.maybeOf(context);
     final openingOverPlayback = returnToMain && origin is SessionDetailRoute;
     if (openingOverPlayback) {
       // Restore the phone layout while playback detail still covers the main
@@ -53,10 +57,14 @@ class WorkDetailNavigation extends ChangeNotifier {
       await origin.prepareForExit();
     }
     await WidgetsBinding.instance.endOfFrame;
-    if (!context.mounted || !navigator.mounted || origin?.isCurrent == false) {
+    if (!navigator.mounted ||
+        origin?.isCurrent == false ||
+        (!openingOverPlayback && !context.mounted)) {
       return;
     }
-    final navigation = WorkDetailNavigationScope.maybeOf(context);
+    // Restoring portrait can replace the playback controls that opened this
+    // page. The owning Navigator and the current route survive that reflow.
+    final routeContext = openingOverPlayback ? navigator.context : context;
     if (navigation != null) {
       if (openingOverPlayback) {
         // Clear the main page's nested stacks while playback still covers them.
@@ -67,7 +75,7 @@ class WorkDetailNavigation extends ChangeNotifier {
           navigation._routes,
         );
         if (defaultTargetPlatform == TargetPlatform.windows ||
-            MediaQuery.orientationOf(context) == Orientation.landscape) {
+            MediaQuery.orientationOf(routeContext) == Orientation.landscape) {
           navigator.popUntil((route) => route.isFirst);
           await origin.completed;
           if (!navigator.mounted ||
@@ -83,7 +91,7 @@ class WorkDetailNavigation extends ChangeNotifier {
         return;
       }
     }
-    final route = buildRoute(context);
+    final route = buildRoute(routeContext);
     if (returnToMain) {
       // The navigator keeps the previous page painted until the incoming
       // slide completes, then removes it without an exit animation.
@@ -182,13 +190,42 @@ class WorkDetailNavigation extends ChangeNotifier {
         _identity = null;
         _completion = null;
       }
+      _syncDetailCoverage();
       notifyListeners();
+    });
+  }
+
+  void _syncDetailCoverage() {
+    PageRoute<dynamic>? cover;
+    for (var index = _routes.length - 1; index > 0; index--) {
+      final route = _routes[index];
+      if (route is PageRoute<dynamic> && route.opaque) {
+        cover = route;
+        break;
+      }
+    }
+    final animation = cover?.animation;
+    if (animation != _coveringAnimation) {
+      _coveringAnimation?.removeStatusListener(_onCoverStatusChanged);
+      _coveringAnimation = animation;
+      animation?.addStatusListener(_onCoverStatusChanged);
+    }
+    _detailCoversContent.value =
+        cover != null &&
+        (animation == null || animation.status == AnimationStatus.completed);
+  }
+
+  void _onCoverStatusChanged(AnimationStatus status) {
+    scheduleMicrotask(() {
+      if (!_disposed) _syncDetailCoverage();
     });
   }
 
   @override
   void dispose() {
     _disposed = true;
+    _coveringAnimation?.removeStatusListener(_onCoverStatusChanged);
+    _detailCoversContent.dispose();
     menuDismiss.value?.call();
     menuDismiss.value = null;
     menuDismiss.dispose();
@@ -410,7 +447,31 @@ class WorkDetailPane extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                child!,
+                ValueListenableBuilder<bool>(
+                  valueListenable: navigation._detailCoversContent,
+                  child: child,
+                  builder: (context, covered, child) {
+                    // The source page remains visible while a full-width route
+                    // slides in or out. A side-by-side pane never covers it.
+                    final obscured = !isLandscape && covered;
+                    return MainTabVisibility(
+                      covered: obscured,
+                      child: TickerMode(
+                        enabled: !obscured,
+                        child: ExcludeFocus(
+                          excluding: obscured,
+                          child: ExcludeSemantics(
+                            excluding: obscured,
+                            child: IgnorePointer(
+                              ignoring: obscured,
+                              child: child,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
                 Positioned(
                   key: const ValueKey('work_detail_pane_bounds'),
                   right: 0,

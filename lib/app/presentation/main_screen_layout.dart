@@ -111,7 +111,9 @@ extension _MainScreenLayout on _MainScreenState {
       );
 
       return KeyedSubtree(
-        key: ValueKey<String>('main_page_fade_$actualIndex'),
+        key: ValueKey<String>(
+          'main_page_fade_${destinations[actualIndex].type.name}',
+        ),
         child: page,
       );
     }
@@ -160,11 +162,10 @@ extension _MainScreenLayout on _MainScreenState {
                 separateHeader: true,
                 indexListenable: _activePageIndex,
                 itemCount: destinations.length,
-                contentRevision: (
-                  destinations.first.type,
-                  destinations.length,
-                  isLandscapeLayout,
-                ),
+                itemIds: [
+                  for (final destination in destinations) destination.type,
+                ],
+                contentRevision: isLandscapeLayout,
                 itemBuilder: pageShell,
                 onIndexSelected: _switchPage,
                 onDragPositionChanged: (position) {
@@ -586,22 +587,17 @@ extension _MainScreenLayout on _MainScreenState {
     required ValueNotifier<VoidCallback?>? menuDismiss,
     required Widget child,
   }) {
-    if (isDesktop) {
-      return MobileOverlayInset(
-        bottomInset: 0.0,
-        menuOverlayKey: _mainMenuOverlayKey,
-        menuDismiss: menuDismiss,
-        child: child,
-      );
-    }
+    // Keep the navigator's ancestors stable while playback restores portrait.
     return ValueListenableBuilder<bool?>(
       valueListenable: _mobilePlaybackRaised,
       child: child,
       builder: (context, _, child) => MobileOverlayInset(
-        bottomInset: _mobileContentInset(
-          context,
-          hasOverlaySessions: hasOverlaySessions,
-        ),
+        bottomInset: isDesktop
+            ? 0.0
+            : _mobileContentInset(
+                context,
+                hasOverlaySessions: hasOverlaySessions,
+              ),
         menuOverlayKey: _mainMenuOverlayKey,
         menuDismiss: menuDismiss,
         child: child!,

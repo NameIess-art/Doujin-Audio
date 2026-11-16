@@ -52,7 +52,7 @@ void main() {
     testWidgets(
       'ASMR appended page fades once from its data commit, reduce motion $reduceMotion',
       (tester) async {
-        final halfFadeDuration = kPlaceholderContentTransitionDuration ~/ 2;
+        final halfFadeDuration = kAppFadeDuration ~/ 2;
         final coordinator = UiInteractionCoordinator.instance;
         coordinator.resetForTest();
         addTearDown(coordinator.resetForTest);
@@ -95,7 +95,7 @@ void main() {
         controller.updateFavorites([oldWork]);
         await tester.pump();
         await tester.pump();
-        await tester.pump(kPlaceholderContentTransitionDuration);
+        await tester.pump(kAppFadeDuration);
         await tester.pump();
 
         final footer = find.byKey(
@@ -457,9 +457,9 @@ void main() {
           matching: find.byType(RawImage, skipOffstage: false),
           skipOffstage: false,
         );
-        bool hasThumbnail() => tester.widgetList<RawImage>(detailFrames).any(
-          (frame) => frame.image?.isCloneOf(thumbnail) ?? false,
-        );
+        bool hasThumbnail() => tester
+            .widgetList<RawImage>(detailFrames)
+            .any((frame) => frame.image?.isCloneOf(thumbnail) ?? false);
         expect(
           hasThumbnail(),
           isTrue,
@@ -508,7 +508,11 @@ void main() {
           await tester.pump(const Duration(milliseconds: 400));
           await tester.pump(const Duration(milliseconds: 200));
           unawaited(showAsmrWorkDetailSheet(tester.element(card), work));
-          for (var frame = 0; frame < 12 && detail.evaluate().isEmpty; frame++) {
+          for (
+            var frame = 0;
+            frame < 12 && detail.evaluate().isEmpty;
+            frame++
+          ) {
             await tester.pump();
           }
           expect(
@@ -1410,11 +1414,26 @@ void main() {
         expect(badge, findsOneWidget);
         final workCode = _work(id: 0).workCode;
         final row = find.byKey(ValueKey('asmr-work-${_work(id: 0).workKey}'));
-        final circle = find.descendant(of: row, matching: find.text('Test circle'));
-        final code = find.descendant(of: row, matching: find.text(workCode));
-        expect(tester.getCenter(code).dx, greaterThan(tester.getCenter(circle).dx));
-        expect(tester.getTopLeft(code).dy, closeTo(tester.getTopLeft(circle).dy, 0.01));
-        final duration = find.descendant(of: row, matching: find.byType(DurationOverlay));
+        final circle = find.descendant(
+          of: row,
+          matching: find.text('Test circle'),
+        );
+        final code = find.descendant(
+          of: row,
+          matching: find.text(workCode, findRichText: true),
+        );
+        expect(
+          tester.getCenter(code).dx,
+          greaterThan(tester.getCenter(circle).dx),
+        );
+        expect(
+          tester.getTopLeft(code).dy,
+          closeTo(tester.getTopLeft(circle).dy, 0.01),
+        );
+        final duration = find.descendant(
+          of: row,
+          matching: find.byType(DurationOverlay),
+        );
         final durationPosition = tester.widget<Positioned>(
           find.ancestor(of: duration, matching: find.byType(Positioned)).first,
         );
@@ -1553,12 +1572,13 @@ void main() {
     addTearDown(fixture.dispose);
     final workResult = Completer<AsmrWork?>();
     final trackTree = Completer<List<AsmrTrackFile>>();
-    final controller = _TestFavoritesAsmrLibraryController(
-      createTestAsmrServices(),
-      const <AsmrWork>[],
-    )
-      ..pendingWork = workResult.future
-      ..pendingTrackTree = trackTree.future;
+    final controller =
+        _TestFavoritesAsmrLibraryController(
+            createTestAsmrServices(),
+            const <AsmrWork>[],
+          )
+          ..pendingWork = workResult.future
+          ..pendingTrackTree = trackTree.future;
     final downloads = AsmrDownloadManager(persistTasks: false);
     addTearDown(controller.dispose);
     addTearDown(downloads.dispose);
@@ -1685,6 +1705,12 @@ void main() {
       await tester.pump();
 
       expect(controller.isFavorite(work.workKey), isTrue);
+      final selectedIcon = find.descendant(
+        of: favoriteButtonFinder,
+        matching: find.byIcon(Icons.favorite_rounded),
+      );
+      await pumpUntilFound(tester, selectedIcon);
+      expect(selectedIcon, findsOneWidget);
     },
   );
 
@@ -2032,19 +2058,37 @@ void main() {
         );
         controller.failedWorkIds.clear();
         controller.emptyWorkIds.clear();
-        expect(fixture.uiOperationService.isBusy(const UiOperationScope('asmr:batch-add')), isFalse);
-        final feedback = find.text(fixture.languageProvider.tr('batch_added_to_playlist_result', {
-          'success': 1,
-          'failed': 2,
-        }));
-        await tester.drag(find.ancestor(of: feedback, matching: find.byType(Dismissible)), const Offset(900, 0));
+        expect(
+          fixture.uiOperationService.isBusy(
+            const UiOperationScope('asmr:batch-add'),
+          ),
+          isFalse,
+        );
+        final feedback = find.text(
+          fixture.languageProvider.tr('batch_added_to_playlist_result', {
+            'success': 1,
+            'failed': 2,
+          }),
+        );
+        await tester.drag(
+          find.ancestor(of: feedback, matching: find.byType(Dismissible)),
+          const Offset(900, 0),
+        );
         await tester.pumpAndSettle();
         expect(feedback, findsNothing);
-        final retryButton = find.byKey(ValueKey('${keyPrefix}_batch_add_button'));
+        final retryButton = find.byKey(
+          ValueKey('${keyPrefix}_batch_add_button'),
+        );
         expect(tester.widget<IconButton>(retryButton).onPressed, isNotNull);
         await tester.tap(retryButton);
         await tester.pumpAndSettle();
-        expect(controller.loadedWorkIds, [first.id, failed.id, empty.id, failed.id, empty.id]);
+        expect(controller.loadedWorkIds, [
+          first.id,
+          failed.id,
+          empty.id,
+          failed.id,
+          empty.id,
+        ]);
         expect(
           find.byKey(ValueKey('${keyPrefix}_batch_selection_header')),
           findsNothing,

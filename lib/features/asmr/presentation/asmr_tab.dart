@@ -326,6 +326,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
 
   bool? _wasActive;
   ModalRoute<dynamic>? _route;
+  bool _covered = false;
 
   bool get _isSelected =>
       (widget.activeTabIndexListenable == null ||
@@ -333,7 +334,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       (widget.activeSectionListenable == null ||
           widget.activeSectionListenable!.value == widget.sectionIndex);
 
-  bool get _isActive => (_route?.isCurrent ?? true) && _isSelected;
+  bool get _isActive =>
+      !_covered && (_route?.isCurrent ?? true) && _isSelected;
 
   @override
   bool get handlesScrollToTop => _isActive;
@@ -1132,6 +1134,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     return Builder(
       builder: (context) {
         _route = ModalRoute.of(context);
+        _covered = MainTabVisibility.isCovered(context);
         _handleActivityChanged();
         return content;
       },

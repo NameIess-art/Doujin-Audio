@@ -40,6 +40,7 @@ class _FixedCategorySnapshotCache extends LibrarySnapshotCacheService {
   @override
   Future<AudioLibraryCategorySnapshot> categorySnapshot({
     required VoidCallback onCommitted,
+    bool Function()? isActive,
   }) async {
     requests++;
     return snapshot;

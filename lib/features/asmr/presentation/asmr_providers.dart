@@ -113,18 +113,6 @@ final asmrAuthStateProvider = StreamProvider<AsmrAuthViewState?>((ref) {
   );
 });
 
-final asmrTrackTreeStateProvider = StreamProvider.autoDispose
-    .family<AsmrTrackTreeViewState?, String>((ref, workId) {
-      final controller = ref.watch(asmrLibraryControllerProvider);
-      if (controller == null) return Stream.value(null);
-      return interactionDeferredListenableStream(
-        source: controller,
-        deferInitialRead: true,
-        structural: true,
-        read: () => controller.trackTreeViewState(workId),
-      );
-    });
-
 final asmrSyncStateProvider = StreamProvider<AsmrSyncViewState?>((ref) {
   final controller = ref.watch(asmrLibraryControllerProvider);
   if (controller == null) return Stream.value(null);

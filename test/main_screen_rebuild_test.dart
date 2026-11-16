@@ -208,11 +208,7 @@ void main() {
           .image!
           .clone();
       addTearDown(decodedCover.dispose);
-      final pages = find.descendant(
-        of: dock,
-        matching: find.byType(PageView, skipOffstage: false),
-      );
-      final initialPageSize = expanded ? tester.getSize(pages) : null;
+      final initialCarouselSize = tester.getSize(carousel);
       final contentNavigator = tester.element(
         find.byWidgetPredicate(
           (widget) =>
@@ -273,7 +269,9 @@ void main() {
         expect(left, greaterThan(origin));
         previousLeft = left;
         previousProgress = route.animation!.value;
-        if (expanded) expect(tester.getSize(pages), initialPageSize);
+        if (expanded) {
+          expect(tester.getSize(carousel), initialCarouselSize);
+        }
       }
       debugOnRebuildDirtyWidget = previous;
       expect(

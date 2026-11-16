@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:doujin_audio/app/presentation/app_orientation_controller.dart';
+import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/core/widgets/app_search_page.dart';
@@ -12,15 +13,18 @@ import 'package:doujin_audio/features/library/presentation/work_image_viewer_pag
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
+import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_progress_widgets.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_detail_page.dart';
+import 'package:doujin_audio/features/player/presentation/playlist/timeline_subtitle_view.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/app_runtime_test_fixture.dart';
 
 void main() {
+  AppRuntimeTestFixture.initialize();
   final coordinator = UiInteractionCoordinator.instance;
   setUp(coordinator.resetForTest);
   tearDown(coordinator.resetForTest);
@@ -145,6 +149,22 @@ void main() {
         );
         fixture.library.addTracks([track], persist: false);
         final session = fixture.playback.createTrackSession(track);
+        final subtitles = PlaybackSubtitleService(
+          trackResolver: (_) => track,
+          subtitleLoader: (_, _) async => SubtitleTrack(
+            sourcePath: '/music/drag.srt',
+            cues: [
+              for (var index = 0; index < 8; index++)
+                SubtitleCue(
+                  start: Duration(seconds: index * 5),
+                  end: Duration(seconds: (index + 1) * 5),
+                  text: 'Subtitle line $index',
+                ),
+            ],
+          ),
+        );
+        session.setOptimisticPosition(const Duration(seconds: 17));
+        expect(await subtitles.load(track.path), isNotNull);
         fixture.playbackService.syncSlice(
           activeSessions: [session],
           playingSessionCount: 0,
@@ -172,6 +192,7 @@ void main() {
                 ),
               ),
             ),
+            subtitleService: subtitles,
             overrides: [
               appOrientationControllerProvider.overrideWithValue(orientation),
             ],
@@ -184,16 +205,54 @@ void main() {
           findsOneWidget,
         );
 
+        final timeline = find.byType(TimelineSubtitleView);
+        final timelineState = tester.state(timeline);
+        final scrollable = find.descendant(
+          of: timeline,
+          matching: find.byType(Scrollable),
+        );
+        final scrollPosition = tester
+            .state<ScrollableState>(scrollable)
+            .position;
+        final offset = scrollPosition.pixels;
+        expect(offset, greaterThan(0));
+        final originalTop = tester.getTopLeft(timeline).dy;
+
+        void expectStableSubtitle() {
+          expect(tester.state(timeline), same(timelineState));
+          expect(
+            tester.state<ScrollableState>(scrollable).position,
+            same(scrollPosition),
+          );
+          expect(scrollPosition.pixels, offset);
+        }
+
         // Small pull near top springs back without closing.
-        await tester.dragFrom(const Offset(195, 160), const Offset(0, 50));
+        final pull = await tester.startGesture(const Offset(195, 160));
+        await pull.moveBy(const Offset(0, 24));
+        await pull.moveBy(const Offset(0, 26));
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(tester.getTopLeft(timeline).dy, greaterThan(originalTop));
+        expectStableSubtitle();
+        await pull.up();
         await tester.pumpAndSettle();
+        expectStableSubtitle();
+        expect(tester.getTopLeft(timeline).dy, originalTop);
         expect(
           find.byKey(const ValueKey('session_detail_close_button')),
           findsOneWidget,
         );
 
         // Large pull down closes the portrait detail route.
-        await tester.dragFrom(const Offset(195, 160), const Offset(0, 180));
+        final dismiss = await tester.startGesture(const Offset(195, 160));
+        await dismiss.moveBy(const Offset(0, 24));
+        await dismiss.moveBy(const Offset(0, 156));
+        await tester.pump(const Duration(milliseconds: 16));
+        expectStableSubtitle();
+        await dismiss.up();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 32));
+        expectStableSubtitle();
         await tester.pumpAndSettle();
         expect(
           find.byKey(const ValueKey('session_detail_close_button')),

@@ -17,6 +17,7 @@ import 'package:doujin_audio/app/presentation/global_shortcuts.dart';
 import 'package:doujin_audio/app/presentation/main_screen.dart';
 import 'package:doujin_audio/app/presentation/mobile_dock_capsule_content.dart';
 import 'package:doujin_audio/app/presentation/work_detail_navigation.dart';
+import 'package:doujin_audio/core/platform/notifications_platform_service.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_search_page.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
@@ -28,6 +29,7 @@ import 'package:doujin_audio/features/asmr/presentation/asmr_work_detail_sheet.d
 import 'package:doujin_audio/features/library/presentation/audio_detail_sheet.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
+import 'package:doujin_audio/features/player/application/playback_notification_service.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/presentation/active_session_carousel.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
@@ -84,6 +86,11 @@ Future<WorkDetailNavigation> _pumpApp(
     tester.view.resetPhysicalSize();
   });
   final fixture = AppRuntimeWidgetTestFixture(
+    providedNotificationService: PlaybackNotificationService(
+      notificationsPlatformService: NotificationsPlatformService(
+        isWindowsOverride: false,
+      ),
+    ),
     configureSettingsRepository: (settings) {
       settings.showAsmrOne = showAsmrOne;
       if (libraryWorkCount > 0) {
@@ -1234,7 +1241,7 @@ void main() {
           );
           expect(find.ancestor(of: work, matching: _pane), findsOneWidget);
           expect(tester.getRect(work).left, greaterThan(640));
-          expect(tester.widget<WorkDetailPage>(work).asmrWork != null, remote);
+          expect(tester.widget<WorkDetailPage>(work).remoteWork != null, remote);
 
           navigation.navigatorKey.currentState!.pop();
           await _settle(tester, withAsync: true);
@@ -1299,8 +1306,8 @@ void main() {
         await _finishRouteAnimation(tester);
         expect(localFinished, isTrue);
         expect(
-          tester.widget<WorkDetailPage>(find.byType(WorkDetailPage)).asmrWork,
-          same(work),
+          tester.widget<WorkDetailPage>(find.byType(WorkDetailPage)).remoteWork?.title,
+          work.title,
         );
         final asmrState = tester.state(find.byType(WorkDetailPage));
         expect(headerOpacity(), 1);
@@ -1907,6 +1914,48 @@ void main() {
         ],
         reason: 'Frames (main width, detail width, divider gap): $frames',
       );
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.android}),
+  );
+
+  testWidgets(
+    'settled detail pauses the retained library only while it covers the pane',
+    (tester) async {
+      final navigation = await _pumpApp(tester, size: const Size(390, 820));
+      final library = find.byType(LibraryTab, skipOffstage: false);
+      final libraryState = tester.state(library);
+      bool libraryEnabled() =>
+          TickerMode.getValuesNotifier(tester.element(library)).value.enabled;
+      expect(libraryEnabled(), isTrue);
+
+      unawaited(navigation.open(
+        'cover',
+        (_) => MaterialPageRoute<void>(
+          builder: (_) => const _Detail(identity: 'cover'),
+        ),
+      ));
+      await tester.pump();
+      expect(libraryEnabled(), isTrue);
+      await _settle(tester);
+      expect(libraryEnabled(), isFalse);
+      expect(tester.state(library), same(libraryState));
+
+      tester.view.physicalSize = const Size(820, 390);
+      await _settle(tester);
+      expect(libraryEnabled(), isTrue);
+      expect(tester.state(library), same(libraryState));
+
+      tester.view.physicalSize = const Size(390, 820);
+      await _settle(tester);
+      expect(libraryEnabled(), isFalse);
+
+      navigation.navigatorKey.currentState!.pop();
+      await tester.pump();
+      expect(navigation.isOpen, isTrue);
+      expect(libraryEnabled(), isTrue);
+      await _settle(tester);
+      expect(navigation.isOpen, isFalse);
+      expect(tester.state(library), same(libraryState));
     },
     variant: const TargetPlatformVariant({TargetPlatform.android}),
   );

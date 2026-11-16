@@ -637,6 +637,28 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                   }
                   final rowCount = (visibleWorks.length / columnCount).ceil();
                   final hasLoadMore = state.isLoadingMore || state.hasMore;
+                  Widget buildRetry() {
+                    if (defaultTargetPlatform == TargetPlatform.windows) {
+                      return TextButton(
+                        key: const ValueKey<String>('asmr_load_more_retry'),
+                        onPressed: state.isLoadingMore
+                            ? null
+                            : () => _loadMore(
+                                expectedPaginationToken: state.paginationToken,
+                              ),
+                        child: Text(i18n.tr('retry')),
+                      );
+                    }
+                    return Text(
+                      i18n.tr('asmr_load_more_hint'),
+                      key: const ValueKey<String>('asmr_load_more_retry_hint'),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    );
+                  }
+
                   Widget buildFooter(BuildContext context) {
                     final partialError =
                         state.operationError ?? state.lastError;
@@ -729,19 +751,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                               padding: const EdgeInsets.only(top: 4, bottom: 4),
                               child: Center(
                                 child: state.needsLoadMoreRetry
-                                    ? Text(
-                                        i18n.tr('asmr_load_more_hint'),
-                                        key: const ValueKey<String>(
-                                          'asmr_load_more_retry_hint',
-                                        ),
-                                        style: theme.textTheme.bodySmall
-                                            ?.copyWith(
-                                              color: theme
-                                                  .colorScheme
-                                                  .onSurfaceVariant,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                      )
+                                    ? buildRetry()
                                     : SizedBox(
                                         key: const ValueKey<String>(
                                           'asmr_load_more_progress',

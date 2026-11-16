@@ -259,7 +259,7 @@ void main() {
     );
   });
 
-  testWidgets('placeholder content fades over the shared 300ms duration', (
+  testWidgets('placeholder content fades over the shared duration', (
     tester,
   ) async {
     var showPlaceholder = true;
@@ -285,11 +285,6 @@ void main() {
       ),
     );
 
-    expect(
-      kPlaceholderContentTransitionDuration,
-      const Duration(milliseconds: 300),
-    );
-
     update(() => showPlaceholder = false);
     await tester.pump();
     // The fade starts after the content has laid out; establish its first tick.
@@ -308,17 +303,22 @@ void main() {
       unorderedEquals(<double>[0, 1]),
     );
 
-    await tester.pump(const Duration(milliseconds: 150));
+    final midpoint = kPlaceholderContentTransitionDuration ~/ 2;
+    await tester.pump(midpoint);
     final midpointOpacities = tester
         .widgetList<FadeTransition>(fadeFinder)
         .map((fade) => fade.opacity.value)
         .toList(growable: false);
     expect(midpointOpacities, hasLength(2));
-    expect(midpointOpacities[0], inInclusiveRange(0.3, 0.7));
-    expect(midpointOpacities[1], inInclusiveRange(0.3, 0.7));
-    expect(midpointOpacities[0] + midpointOpacities[1], closeTo(1, 0.001));
+    final easedMidpoint = kAppSpringCurve.transform(0.5);
+    expect(midpointOpacities[0], closeTo(1 - easedMidpoint, 0.001));
+    expect(midpointOpacities[1], closeTo(easedMidpoint, 0.001));
 
-    await tester.pump(const Duration(milliseconds: 149));
+    await tester.pump(
+      kPlaceholderContentTransitionDuration -
+          midpoint -
+          const Duration(milliseconds: 1),
+    );
     expect(find.byKey(const ValueKey('placeholder')), findsOneWidget);
 
     await tester.pump(const Duration(milliseconds: 1));
@@ -1026,6 +1026,13 @@ void main() {
           tester.view.physicalSize = size;
           await tester.pump();
           final cards = find.byType(LibraryLikeSkeletonCard);
+          expect(
+            find.descendant(
+              of: find.byType(LibrarySkeletonListView),
+              matching: find.byType(ShaderMask),
+            ),
+            findsOneWidget,
+          );
           final first = tester.getRect(cards.first);
           final last = tester.getRect(cards.last);
           expect(first.top, 64);

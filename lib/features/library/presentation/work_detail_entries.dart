@@ -6,7 +6,6 @@ import '../../../core/media/natural_sort.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
-import '../../asmr/domain/asmr_models.dart';
 import '../application/work_text_service.dart';
 import '../domain/library_node.dart';
 import 'work_image_viewer_page.dart';
@@ -33,7 +32,9 @@ class WorkEntryItem {
     this.duration,
     this.fileSizeBytes,
     this.track,
-    this.asmrNode,
+    this.remoteReference,
+    this.remoteExtension,
+    this.isRemoteVideo = false,
     this.textFile,
     this.imageItem,
   });
@@ -45,13 +46,18 @@ class WorkEntryItem {
   final Duration? duration;
   final int? fileSizeBytes;
   final MusicTrack? track;
-  final AsmrTrackFile? asmrNode;
+  final Object? remoteReference;
+  final String? remoteExtension;
+  final bool isRemoteVideo;
   final WorkTextFile? textFile;
   final WorkImageItem? imageItem;
 
   String get extension =>
-      asmrNode?.resolvedExtension ??
+      remoteExtension ??
       path.posix.extension(PathDisplay.fileName(track?.path ?? relativePath));
+
+  String get id => '${type.name}:$relativePath';
+  ValueKey<String> get rowKey => ValueKey('work_detail_entry_fade_$id');
 
   String get displayName {
     final suffix = extension;
@@ -64,94 +70,147 @@ class WorkEntryItem {
   }
 }
 
-// Derived presentation data, shared by reopened pages without retaining a page
-// or another writable library. Weak keys release it with the source snapshot.
+// The page can reuse a prepared directory without knowing its data source.
+abstract interface class WorkDirectorySource {
+  WorkDirectorySnapshot? get resolved;
+  Future<WorkDirectorySnapshot> load();
+}
+
+// Weak keys release derived directories with their source snapshots.
 final _directoryBuilds = Expando<_WorkDirectoryBuild>();
 
-typedef _DirectorySources = (
-  FolderNode?,
-  List<WorkTextFile>,
-  List<CoverImageReference>,
-  List<AsmrTrackFile>?,
-  String,
-);
+WorkDirectorySnapshot? resolvedWorkDirectory(Object owner, Object sources) {
+  final build = _directoryBuilds[owner];
+  return build?.sources == sources ? build?.snapshot : null;
+}
 
-class WorkDirectoryInput {
+Future<WorkDirectorySnapshot> prepareWorkDirectory<T>(
+  Object owner,
+  Object sources,
+  T input,
+  WorkDirectorySnapshot Function(T) buildSnapshot,
+) {
+  final previous = _directoryBuilds[owner];
+  if (previous?.sources == sources) return previous!.future;
+  final build = _WorkDirectoryBuild(sources);
+  _directoryBuilds[owner] = build;
+  build.future = compute(buildSnapshot, input).then(
+    (snapshot) {
+      build.snapshot = snapshot;
+      return snapshot;
+    },
+    onError: (Object error, StackTrace stack) {
+      if (identical(_directoryBuilds[owner], build)) {
+        _directoryBuilds[owner] = null;
+      }
+      Error.throwWithStackTrace(error, stack);
+    },
+  );
+  return build.future;
+}
+
+class _WorkDirectoryBuild {
+  _WorkDirectoryBuild(this.sources);
+  final Object sources;
+  late final Future<WorkDirectorySnapshot> future;
+  WorkDirectorySnapshot? snapshot;
+}
+
+class WorkDirectoryInput implements WorkDirectorySource {
   const WorkDirectoryInput.local({
     required this.root,
     required this.texts,
     required this.images,
     required this.folderPath,
-  }) : tree = null;
-
-  const WorkDirectoryInput.asmr(this.tree)
-    : root = null,
-      texts = const [],
-      images = const [],
-      folderPath = '';
+  });
 
   final FolderNode? root;
   final List<WorkTextFile> texts;
   final List<CoverImageReference> images;
   final String folderPath;
-  final List<AsmrTrackFile>? tree;
 
-  Object get _owner => root ?? tree ?? (texts.isNotEmpty ? texts : images);
-  _DirectorySources get _sources => (root, texts, images, tree, folderPath);
+  Object get _owner => root ?? (texts.isNotEmpty ? texts : images);
+  Object get _sources => (root, texts, images, folderPath);
 
-  WorkDirectorySnapshot? get resolved {
-    final build = _directoryBuilds[_owner];
-    return build?.sources == _sources ? build?.snapshot : null;
-  }
+  @override
+  WorkDirectorySnapshot? get resolved =>
+      resolvedWorkDirectory(_owner, _sources);
 
-  Future<WorkDirectorySnapshot> load() {
-    final previous = _directoryBuilds[_owner];
-    if (previous?.sources == _sources) return previous!.future;
-    final build = _WorkDirectoryBuild(_sources);
-    _directoryBuilds[_owner] = build;
-    build.future = compute(buildWorkDirectorySnapshot, this).then(
-      (snapshot) {
-        build.snapshot = snapshot;
-        return snapshot;
-      },
-      onError: (Object error, StackTrace stack) {
-        if (identical(_directoryBuilds[_owner], build)) {
-          _directoryBuilds[_owner] = null;
-        }
-        Error.throwWithStackTrace(error, stack);
-      },
-    );
-    return build.future;
-  }
-}
-
-class _WorkDirectoryBuild {
-  _WorkDirectoryBuild(this.sources);
-  final _DirectorySources sources;
-  late final Future<WorkDirectorySnapshot> future;
-  WorkDirectorySnapshot? snapshot;
+  @override
+  Future<WorkDirectorySnapshot> load() =>
+      prepareWorkDirectory(_owner, _sources, this, buildWorkDirectorySnapshot);
 }
 
 class WorkDirectorySnapshot {
   WorkDirectorySnapshot({
     required Map<String, List<WorkEntryItem>> directories,
-    required this.images,
+    required List<WorkImageItem> images,
+    List<WorkTextFile> texts = const [],
     required this.hasSubtitle,
-  }) : directories = Map.unmodifiable(directories);
+  }) : _directories = Map.unmodifiable(
+         directories.map((path, entries) {
+           entries.sort(
+             (a, b) => compareNaturalTreeEntries(
+               leftIsFolder: a.type == WorkEntryType.folder,
+               leftName: a.name,
+               leftPath: a.relativePath,
+               rightIsFolder: b.type == WorkEntryType.folder,
+               rightName: b.name,
+               rightPath: b.relativePath,
+             ),
+           );
+           return MapEntry(path, List<WorkEntryItem>.unmodifiable(entries));
+         }),
+       ),
+       images = List.unmodifiable(images),
+       texts = List.unmodifiable(texts) {
+    _entryIndices = Map.unmodifiable(
+      _directories.map(
+        (path, entries) => MapEntry(
+          path,
+          Map<Key, int>.unmodifiable({
+            for (var index = 0; index < entries.length; index++)
+              entries[index].rowKey: index,
+          }),
+        ),
+      ),
+    );
+    _localTrackKeys = Map.unmodifiable(
+      _directories.map(
+        (path, entries) => MapEntry(
+          path,
+          Set<String>.unmodifiable({
+            for (final entry in entries)
+              if (entry.track case final track?)
+                PathMatcher.normalize(track.path),
+          }),
+        ),
+      ),
+    );
+  }
 
-  final Map<String, List<WorkEntryItem>> directories;
+  final Map<String, List<WorkEntryItem>> _directories;
+  late final Map<String, Map<Key, int>> _entryIndices;
+  late final Map<String, Set<String>> _localTrackKeys;
   final List<WorkImageItem> images;
+  final List<WorkTextFile> texts;
   final bool hasSubtitle;
 
   List<WorkEntryItem> entriesAt(List<String> segments) =>
-      directories[segments.join('/')] ?? const [];
+      _directories[segments.join('/')] ?? const [];
+
+  Map<Key, int> indicesAt(List<String> segments) =>
+      _entryIndices[segments.join('/')] ?? const {};
+
+  bool containsLocalTrack(List<String> segments, String normalizedPath) =>
+      _localTrackKeys[segments.join('/')]?.contains(normalizedPath) ?? false;
 
   int validDepth(List<String> segments) {
     var path = '';
     var depth = 0;
     for (final segment in segments) {
       path = path.isEmpty ? segment : '$path/$segment';
-      if (!directories.containsKey(path)) break;
+      if (!_directories.containsKey(path)) break;
       depth++;
     }
     return depth;
@@ -221,130 +280,48 @@ WorkDirectorySnapshot buildWorkDirectorySnapshot(WorkDirectoryInput input) {
     return directories[path]!;
   }
 
-  void remoteTree(List<AsmrTrackFile> nodes, String path) {
-    final entries = directories.putIfAbsent(path, () => []);
-    for (final node in nodes) {
-      hasSubtitle |= node.isSubtitle;
-      // Japanese ASMR wraps its catalog in a site-name folder. It is not a
-      // work directory; keep the source nodes and paths for playback/downloads.
-      if (path.isEmpty && node.isFolder && node.title == 'japaneseasmr.com') {
-        remoteTree(node.children, path);
-        continue;
-      }
-      if (node.isFolder) {
-        entries.add(
-          WorkEntryItem(
-            name: node.title,
-            relativePath: node.relativePath,
-            type: WorkEntryType.folder,
-            asmrNode: node,
-          ),
-        );
-        remoteTree(node.children, childPath(path, node.title));
-      } else if (node.isAudio) {
-        entries.add(
-          WorkEntryItem(
-            name: node.displayTitle,
-            relativePath: node.relativePath,
-            type: WorkEntryType.audio,
-            fullPathOrUrl: node.streamUrl ?? '',
-            duration: node.duration,
-            fileSizeBytes: node.size,
-            asmrNode: node,
-          ),
-        );
-      } else if (node.isText) {
-        entries.add(
-          WorkEntryItem(
-            name: node.title,
-            relativePath: node.relativePath,
-            type: WorkEntryType.text,
-            fileSizeBytes: node.size,
-            asmrNode: node,
-          ),
-        );
-      } else if (node.isImage) {
-        final image = WorkImageItem(
-          name: node.title,
-          path: node.streamUrl ?? node.downloadUrl ?? '',
-          relativePath: node.relativePath,
-        );
-        images.add(image);
-        entries.add(
-          WorkEntryItem(
-            name: image.name,
-            relativePath: image.relativePath,
-            type: WorkEntryType.image,
-            fileSizeBytes: node.size,
-            fullPathOrUrl: image.path,
-            asmrNode: node,
-            imageItem: image,
-          ),
-        );
-      }
+  if (input.root != null) localTree(input.root!, '');
+  for (final text in input.texts) {
+    if (text.isSubtitle) {
+      hasSubtitle = true;
+      continue;
     }
-  }
-
-  if (input.tree != null) {
-    remoteTree(input.tree!, '');
-  } else {
-    if (input.root != null) localTree(input.root!, '');
-    for (final text in input.texts) {
-      if (text.isSubtitle) {
-        hasSubtitle = true;
-        continue;
-      }
-      fileParent(text.relativePath).add(
-        WorkEntryItem(
-          name: text.name,
-          relativePath: text.relativePath,
-          type: WorkEntryType.text,
-          fullPathOrUrl: text.path,
-          fileSizeBytes: text.fileSizeBytes,
-          textFile: text,
-        ),
-      );
-    }
-    for (final reference in input.images) {
-      final name = PathDisplay.folderName(reference.sourcePath);
-      final relative =
-          PathMatcher.relativeWithin(reference.sourcePath, input.folderPath) ??
-          name;
-      final image = WorkImageItem(
-        name: name,
-        path: reference.displayPath,
-        relativePath: relative.startsWith('..') ? name : relative,
-      );
-      images.add(image);
-      fileParent(image.relativePath).add(
-        WorkEntryItem(
-          name: name,
-          relativePath: image.relativePath,
-          type: WorkEntryType.image,
-          fullPathOrUrl: image.path,
-          fileSizeBytes: reference.fileSizeBytes,
-          imageItem: image,
-        ),
-      );
-    }
-  }
-  for (final path in directories.keys.toList(growable: false)) {
-    final entries = directories[path]!;
-    entries.sort(
-      (a, b) => compareNaturalTreeEntries(
-        leftIsFolder: a.type == WorkEntryType.folder,
-        leftName: a.name,
-        leftPath: a.relativePath,
-        rightIsFolder: b.type == WorkEntryType.folder,
-        rightName: b.name,
-        rightPath: b.relativePath,
+    fileParent(text.relativePath).add(
+      WorkEntryItem(
+        name: text.name,
+        relativePath: text.relativePath,
+        type: WorkEntryType.text,
+        fullPathOrUrl: text.path,
+        fileSizeBytes: text.fileSizeBytes,
+        textFile: text,
       ),
     );
-    directories[path] = List.unmodifiable(entries);
+  }
+  for (final reference in input.images) {
+    final name = PathDisplay.folderName(reference.sourcePath);
+    final relative =
+        PathMatcher.relativeWithin(reference.sourcePath, input.folderPath) ??
+        name;
+    final image = WorkImageItem(
+      name: name,
+      path: reference.displayPath,
+      relativePath: relative.startsWith('..') ? name : relative,
+    );
+    images.add(image);
+    fileParent(image.relativePath).add(
+      WorkEntryItem(
+        name: name,
+        relativePath: image.relativePath,
+        type: WorkEntryType.image,
+        fullPathOrUrl: image.path,
+        fileSizeBytes: reference.fileSizeBytes,
+        imageItem: image,
+      ),
+    );
   }
   return WorkDirectorySnapshot(
     directories: directories,
-    images: List.unmodifiable(images),
+    images: images,
     hasSubtitle: hasSubtitle,
   );
 }

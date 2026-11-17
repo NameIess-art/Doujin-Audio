@@ -2045,6 +2045,7 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
     required this.indexListenable,
     required this.itemCount,
     required this.itemBuilder,
+    this.wrapItem,
     this.itemIds,
     this.contentRevision,
     this.separateHeader = false,
@@ -2058,6 +2059,9 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
   int get index => indexListenable.value;
   final int itemCount;
   final IndexedWidgetBuilder itemBuilder;
+
+  /// Receives true for items that are visible or preparing to become visible.
+  final Widget Function(Widget child, bool visible)? wrapItem;
 
   /// Stable identities for items that can move when the destination list changes.
   final List<Object>? itemIds;
@@ -2679,8 +2683,9 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         }
       });
     }
+    final child = _childAt(index);
     final page = _pageHost(
-      child: _childAt(index),
+      child: widget.wrapItem?.call(child, visible) ?? child,
       visible: visible,
       preparing: preparing,
     );

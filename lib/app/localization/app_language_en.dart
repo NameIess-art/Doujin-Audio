@@ -226,7 +226,7 @@ const Map<String, String> appLanguageEn = {
   'batch_metadata_specific': 'Choose works',
   'batch_metadata_picker_search': 'Search RJ code or title',
   'batch_metadata_picker_done': 'Done ({count})',
-  'batch_metadata_all': 'All data',
+  'batch_metadata_all': 'All works',
   'batch_metadata_start': 'Start',
   'batch_metadata_status_searching': 'Searching',
   'batch_metadata_status_found': 'Found (unconfirmed)',
@@ -502,6 +502,7 @@ const Map<String, String> appLanguageEn = {
       'Overwrite current details with fetched metadata.',
   'audio_detail_fetch_scope_missing_hint':
       'Fill empty details only. Keep existing values.',
+  'metadata_scope_all': 'All data',
   'metadata_scope_missing': 'Missing data',
   'audio_detail_fetch_missing_query':
       'Enter an RJ number, folder/file name, or work title first.',

@@ -263,9 +263,8 @@ class LibraryBatchSelectionHeader extends StatelessWidget {
       key: ValueKey<String>('${keyPrefix}_batch_selection_header'),
       icon: Icons.library_music_rounded,
       topCapsuleTitle: i18n.tr('multi_select'),
-      topCapsuleData: i18n.tr('selected_count', {
-        'count': selectedCount.toString(),
-      }),
+      topCapsuleData: i18n.tr('selected_count'),
+      topCapsuleDataCount: selectedCount,
       titleWidget: const SizedBox.shrink(),
       leading: HeaderActionPill(
         children: [

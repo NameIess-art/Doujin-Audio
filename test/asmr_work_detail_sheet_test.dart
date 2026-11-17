@@ -1450,7 +1450,7 @@ void main() {
         expect(tester.widget<FadeTransition>(badgeFade).opacity.value, 0);
         await tester.pumpAndSettle();
 
-        expect(find.text('已选择 1 项'), findsOneWidget);
+        expect(find.bySemanticsLabel('已选择 1 项'), findsOneWidget);
         final selectedSurface = tester.widget<Material>(
           find
               .ancestor(
@@ -1462,7 +1462,7 @@ void main() {
         expect(selectedSurface.color, Colors.transparent);
         await tester.tap(find.text('Work 1'));
         await tester.pumpAndSettle();
-        expect(find.text('已选择 2 项'), findsOneWidget);
+        expect(find.bySemanticsLabel('已选择 2 项'), findsOneWidget);
         expect(find.text('Work 0'), findsOneWidget);
         expect(find.text('Work 1'), findsOneWidget);
         expect(find.text('Work ${count - 1}'), findsNothing);
@@ -2054,7 +2054,7 @@ void main() {
           findsOneWidget,
         );
         expect(
-          find.text(
+          find.bySemanticsLabel(
             fixture.languageProvider.tr('selected_count', {'count': '2'}),
           ),
           findsOneWidget,

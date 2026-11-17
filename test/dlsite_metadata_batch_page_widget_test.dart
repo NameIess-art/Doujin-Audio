@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -492,10 +493,18 @@ void main() {
     );
   });
 
-  testWidgets('batch setup content follows the one-line header closely', (
+  testWidgets('batch setup hint floats in the header above the scope list', (
     tester,
   ) async {
     final languageProvider = AppLanguageProvider();
+    addTearDown(languageProvider.dispose);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = switch (defaultTargetPlatform) {
+      TargetPlatform.windows => const Size(960, 600),
+      _ => const Size(360, 760),
+    };
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
 
     await tester.pumpWidget(
       ProviderScope(
@@ -504,14 +513,34 @@ void main() {
             languageProvider,
           ),
         ],
-        child: const MaterialApp(home: DlsiteMetadataBatchPage(entries: [])),
+        child: MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              textScaler: const TextScaler.linear(1.4),
+            ),
+            child: child!,
+          ),
+          home: const DlsiteMetadataBatchPage(entries: []),
+        ),
       ),
     );
 
-    expect(
-      tester.widget<ListView>(find.byType(ListView)).padding,
-      const EdgeInsets.fromLTRB(16, 52, 16, 88),
+    final hint = find.text(languageProvider.tr('batch_metadata_hint'));
+    final hintSurface = find.ancestor(
+      of: hint,
+      matching: find.byType(HeaderFloatingSurface),
     );
+    expect(hintSurface, findsOneWidget);
+    expect(
+      find.ancestor(of: hintSurface, matching: find.byType(TopPageHeader)),
+      findsOneWidget,
+    );
+    final scope = find.byKey(const ValueKey('batch_metadata_scope_group'));
+    expect(
+      tester.getRect(scope).top - tester.getRect(hintSurface).bottom,
+      closeTo(8, 0.1),
+    );
+    expect(tester.takeException(), isNull);
     final start = find.byKey(const ValueKey<String>('batch_metadata_start'));
     expect(start, findsOneWidget);
     expect(
@@ -526,7 +555,10 @@ void main() {
       tester.getRect(start).right,
       closeTo(tester.getSize(find.byType(Scaffold)).width - 16, 0.1),
     );
-  });
+  }, variant: const TargetPlatformVariant({
+    TargetPlatform.android,
+    TargetPlatform.windows,
+  }));
 
   testWidgets(
     'picker clears entry ink and ignores results after disposal',

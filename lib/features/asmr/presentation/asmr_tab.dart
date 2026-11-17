@@ -227,9 +227,8 @@ class _AsmrBatchSelectionHeader extends ConsumerWidget {
       icon: Icons.cloud_rounded,
       iconColor: Theme.of(context).colorScheme.primary,
       topCapsuleTitle: i18n.tr('multi_select'),
-      topCapsuleData: i18n.tr('selected_count', {
-        'count': selectedWorks.length.toString(),
-      }),
+      topCapsuleData: i18n.tr('selected_count'),
+      topCapsuleDataCount: selectedWorks.length,
       titleWidget: const SizedBox.shrink(),
       leading: HeaderActionPill(
         children: [

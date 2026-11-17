@@ -487,9 +487,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                   ),
                                   icon: Icons.playlist_play_rounded,
                                   topCapsuleTitle: i18n.tr('multi_select'),
-                                  topCapsuleData: i18n.tr('selected_count', {
-                                    'count': count.toString(),
-                                  }),
+                                  topCapsuleData: i18n.tr('selected_count'),
+                                  topCapsuleDataCount: count,
                                   titleWidget: const SizedBox.shrink(),
                                   leading: HeaderActionPill(
                                     children: [

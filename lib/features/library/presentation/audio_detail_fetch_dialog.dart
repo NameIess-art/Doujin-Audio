@@ -27,7 +27,7 @@ class _AudioDetailFetchScopeDialog extends StatelessWidget {
             tileColor: cs.surfaceContainer,
             contentPadding: const EdgeInsets.symmetric(horizontal: 16),
             leading: const Icon(Icons.select_all_rounded),
-            title: Text(i18n.tr('batch_metadata_all')),
+            title: Text(i18n.tr('metadata_scope_all')),
             onTap: () => Navigator.of(context).pop(_AudioDetailFetchScope.all),
           ),
           const SizedBox(height: 4),

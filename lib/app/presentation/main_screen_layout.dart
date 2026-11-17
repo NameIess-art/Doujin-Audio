@@ -167,6 +167,8 @@ extension _MainScreenLayout on _MainScreenState {
                 ],
                 contentRevision: isLandscapeLayout,
                 itemBuilder: pageShell,
+                wrapItem: (child, visible) =>
+                    _MainTabOverlayInset(visible: visible, child: child),
                 onIndexSelected: _switchPage,
                 onDragPositionChanged: (position) {
                   if (mounted) _pageDragPosition.value = position;
@@ -643,6 +645,34 @@ extension _MainScreenLayout on _MainScreenState {
     return max(systemBottom, kMobileDockBottomMargin) +
         kActiveSessionCarouselDockHeight +
         (hasRaisedPlayback ? MobileDockCapsuleContentState.rowTravel : 0);
+  }
+}
+
+class _MainTabOverlayInset extends StatefulWidget {
+  const _MainTabOverlayInset({required this.visible, required this.child});
+
+  final bool visible;
+  final Widget child;
+
+  @override
+  State<_MainTabOverlayInset> createState() => _MainTabOverlayInsetState();
+}
+
+class _MainTabOverlayInsetState extends State<_MainTabOverlayInset> {
+  double _bottomInset = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final overlay = context
+        .dependOnInheritedWidgetOfExactType<MobileOverlayInset>();
+    // A retained tab can reuse its layout until the stack prepares it again.
+    if (widget.visible) _bottomInset = overlay?.bottomInset ?? 0;
+    return MobileOverlayInset(
+      bottomInset: _bottomInset,
+      menuOverlayKey: overlay?.menuOverlayKey,
+      menuDismiss: overlay?.menuDismiss,
+      child: widget.child,
+    );
   }
 }
 

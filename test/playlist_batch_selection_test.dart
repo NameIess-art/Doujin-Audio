@@ -82,6 +82,20 @@ void main() {
         await tester.longPress(find.text('Track 1'));
         await tester.pumpAndSettle();
 
+        final rollingCount = find.byType(AppRollingNumber);
+        Finder digit(String value) =>
+            find.descendant(of: rollingCount, matching: find.text(value));
+        await tester.tap(find.text('Track 2'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(digit('1'), findsOneWidget);
+        expect(digit('2'), findsOneWidget);
+        await tester.pumpAndSettle();
+        expect(digit('1'), findsNothing);
+        expect(digit('2'), findsOneWidget);
+        await tester.tap(find.text('Track 2'));
+        await tester.pumpAndSettle();
+
         final headerFinder = find.byKey(
           const ValueKey('playlist_batch_selection_header'),
         );
@@ -108,7 +122,7 @@ void main() {
           findsOneWidget,
         );
         expect(
-          find.text(
+          find.bySemanticsLabel(
             fixture.languageProvider.tr('selected_count', {'count': '1'}),
           ),
           findsOneWidget,

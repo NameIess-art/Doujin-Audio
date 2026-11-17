@@ -310,7 +310,7 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.text(
+        find.bySemanticsLabel(
           fixture.languageProvider.tr('selected_count', {'count': '1'}),
         ),
         findsOneWidget,
@@ -376,7 +376,7 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.text(
+        find.bySemanticsLabel(
           fixture.languageProvider.tr('selected_count', {'count': '1'}),
         ),
         findsOneWidget,

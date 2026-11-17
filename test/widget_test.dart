@@ -1923,11 +1923,25 @@ void main() {
     final coverElement = tester.element(cover);
     final inline = tester.getRect(card);
     final maskTop = tester.getRect(mask).top;
+    Future<void> openTab(String destination) async {
+      await tester.tap(find.byKey(ValueKey('main_destination_$destination')));
+      await _pumpMainScreenAnimations(tester);
+      await pumpUntilUiIdle(tester);
+    }
+
+    await openTab('nav_settings');
+    await openTab('music_library');
+    final retainedSettings = tester.element(
+      find.byType(SettingsTab, skipOffstage: false),
+    );
+    expect(find.byType(LibraryTab).hitTestable(), findsOneWidget);
     var shellRebuilds = 0;
+    var hiddenSettingsRebuilds = 0;
     final previousRebuildCallback = debugOnRebuildDirtyWidget;
     debugOnRebuildDirtyWidget = (element, builtOnce) {
       previousRebuildCallback?.call(element, builtOnce);
       if (element.widget is MainScreen) shellRebuilds++;
+      if (identical(element, retainedSettings)) hiddenSettingsRebuilds++;
     };
     addTearDown(() => debugOnRebuildDirtyWidget = previousRebuildCallback);
     for (final raising in [true, false]) {
@@ -1972,6 +1986,17 @@ void main() {
         closeTo(inline.top - (raising ? inline.height : 0), 0.01),
       );
       await tester.pumpAndSettle();
+      expect(hiddenSettingsRebuilds, 0);
+      if (raising) {
+        final raisedInset = MobileOverlayInset.of(
+          tester.element(find.byType(LibraryTab)),
+        );
+        await openTab('nav_settings');
+        expect(tester.element(find.byType(SettingsTab)), same(retainedSettings));
+        expect(MobileOverlayInset.of(retainedSettings), raisedInset);
+        await openTab('music_library');
+        hiddenSettingsRebuilds = 0;
+      }
     }
     expect(tester.getRect(card), inline);
     expect(shellRebuilds, 0);
@@ -3530,7 +3555,7 @@ void main() {
     await tester.tap(secondWork);
     await tester.pumpAndSettle();
     expect(
-      find.text(harness.languageProvider.tr('selected_count', {'count': '2'})),
+      find.bySemanticsLabel(harness.languageProvider.tr('selected_count', {'count': '2'})),
       findsOneWidget,
     );
 

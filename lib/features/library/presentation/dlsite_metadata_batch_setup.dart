@@ -45,19 +45,11 @@ class BatchMetadataSetupView extends StatelessWidget {
     return ListView(
       padding: EdgeInsets.fromLTRB(
         16,
-        AppPageHeaderMetrics.contentTopInset(context),
+        AppPageHeaderMetrics.firstContentSpacing,
         16,
         88 + MediaQuery.paddingOf(context).bottom,
       ),
       children: [
-        Text(
-          i18n.tr('batch_metadata_hint'),
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-            height: 1.4,
-          ),
-        ),
-        const SizedBox(height: 16),
         Card(
           elevation: 0,
           margin: EdgeInsets.zero,

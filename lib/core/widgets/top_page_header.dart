@@ -113,6 +113,7 @@ class TopPageHeader extends StatefulWidget {
     this.showFadeMask = true,
     this.topCapsuleTitle,
     this.topCapsuleData,
+    this.topCapsuleDataCount,
     this.topCapsuleLeading,
     this.topCapsuleTrailing,
     this.topCapsuleChild,
@@ -144,6 +145,7 @@ class TopPageHeader extends StatefulWidget {
   final bool showFadeMask;
   final String? topCapsuleTitle;
   final String? topCapsuleData;
+  final int? topCapsuleDataCount;
   final Widget? topCapsuleLeading;
   final Widget? topCapsuleTrailing;
   final Widget? topCapsuleChild;
@@ -425,6 +427,7 @@ class _TopPageHeaderState extends State<TopPageHeader> {
             ? HeaderTopCapsule(
                 title: widget.topCapsuleTitle!,
                 data: widget.topCapsuleData,
+                dataCount: widget.topCapsuleDataCount,
                 leading:
                     widget.topCapsuleLeading ??
                     (widget.icon != null
@@ -1241,6 +1244,7 @@ class HeaderTopCapsule extends StatelessWidget {
     super.key,
     required this.title,
     this.data,
+    this.dataCount,
     this.leading,
     this.trailing,
     this.height = 38,
@@ -1248,6 +1252,9 @@ class HeaderTopCapsule extends StatelessWidget {
 
   final String title;
   final String? data;
+
+  /// Animates the number at the `{count}` placeholder in [data].
+  final int? dataCount;
   final Widget? leading;
   final Widget? trailing;
   final double height;
@@ -1265,11 +1272,9 @@ class HeaderTopCapsule extends StatelessWidget {
       style: appPageHeaderTitleStyle(context),
     );
     final dataText = trailing == null && data != null && data!.isNotEmpty
-        ? Text(
+        ? _buildDataText(
             data!,
-            maxLines: 1,
-            softWrap: false,
-            style: textTheme.bodySmall?.copyWith(
+            textTheme.bodySmall?.copyWith(
               fontWeight: isWindows ? null : FontWeight.w600,
               color: cs.onSurfaceVariant.withValues(
                 alpha: isWindows ? 1 : 0.85,
@@ -1313,6 +1318,36 @@ class HeaderTopCapsule extends StatelessWidget {
           if (trailing != null) ...[const SizedBox(width: 8), trailing!],
         ],
       ),
+    );
+  }
+
+  Widget _buildDataText(String value, TextStyle? style) {
+    const placeholder = '{count}';
+    final count = dataCount;
+    final index = count == null ? -1 : value.indexOf(placeholder);
+    if (count == null || index < 0) {
+      return Text(value, maxLines: 1, softWrap: false, style: style);
+    }
+
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(text: value.substring(0, index)),
+          WidgetSpan(
+            alignment: dart_ui.PlaceholderAlignment.baseline,
+            baseline: TextBaseline.alphabetic,
+            // WidgetSpan already scales the inline box with the surrounding text.
+            child: MediaQuery.withNoTextScaling(
+              child: AppRollingNumber(number: count, style: style),
+            ),
+          ),
+          TextSpan(text: value.substring(index + placeholder.length)),
+        ],
+      ),
+      style: style,
+      maxLines: 1,
+      softWrap: false,
+      semanticsLabel: value.replaceFirst(placeholder, '$count'),
     );
   }
 }

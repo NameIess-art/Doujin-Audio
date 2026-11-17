@@ -7,13 +7,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/widgets/app_buttons.dart';
 import '../../../app/state/app_runtime_providers.dart';
-import '../../../app/theme/app_styles.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../application/dlsite_metadata_batch_session.dart';
 import '../domain/audio_library_category.dart';
 import '../../../core/widgets/app_transitions.dart';
-import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
 
 import 'dlsite_metadata_batch_setup.dart';
@@ -186,7 +184,6 @@ class _DlsiteMetadataBatchPageState
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    final topInset = AppPageHeaderMetrics.contentTopInset(context);
     final cs = Theme.of(context).colorScheme;
     final canStart = !_loading && _selectedEntries.isNotEmpty;
     final startForeground = canStart
@@ -194,63 +191,85 @@ class _DlsiteMetadataBatchPageState
         : cs.onSurface.withValues(alpha: 0.38);
     return Scaffold(
       backgroundColor: cs.surface,
-      body: PageHeaderInset(
-        topInset: topInset,
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: AppPageContentTransition(
-                child: _error != null
-                    ? _BatchMetadataErrorView(onRetry: _load)
-                    : BatchMetadataSetupView(
-                        scope: _scope,
-                        allCount: _entries.length,
-                        noMetadataCount: _noMetadataEntries.length,
-                        anyMissingCount: _anyMissingEntries.length,
-                        hasRjCodeCount: _hasRjCodeEntries.length,
-                        specificCount: _specificEntries.length,
-                        onScopeChanged: (scope) {
-                          setState(() {
-                            _scope = scope;
-                          });
-                          if (scope == DlsiteMetadataBatchScope.specific &&
-                              _specificEntries.isEmpty) {
-                            _pickSpecific();
-                          }
-                        },
-                        onPickSpecific: _pickSpecific,
-                      ),
-              ),
-            ),
-            if (_error == null)
-              Positioned(
-                right: 16,
-                bottom: 16 + MediaQuery.paddingOf(context).bottom,
-                child: AppPageContentTransition(
-                  child: HeaderFloatingActionPill(
-                    pillKey: const ValueKey<String>('batch_metadata_start'),
-                    icon: Icons.play_arrow_rounded,
-                    label: i18n.tr('batch_metadata_start'),
-                    backgroundColor: canStart
-                        ? cs.primary
-                        : cs.onSurface.withValues(alpha: 0.12),
-                    foregroundColor: startForeground,
-                    onTap: canStart ? _run : null,
-                  ),
-                ),
-              ),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: TopPageHeader(
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TopPageHeader(
                 icon: Icons.library_add_check_rounded,
                 title: i18n.tr('batch_metadata'),
                 leading: const BackButton(),
+                additionalChild: _error != null
+                    ? null
+                    : Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                        child: HeaderFloatingSurface(
+                          height: null,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 9,
+                          ),
+                          child: Text(
+                            i18n.tr('batch_metadata_hint'),
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: cs.onSurfaceVariant,
+                                  height: 1.4,
+                                ),
+                          ),
+                        ),
+                      ),
+              ),
+              Expanded(
+                child: MediaQuery.removePadding(
+                  context: context,
+                  removeTop: true,
+                  child: AppPageContentTransition(
+                    child: _error != null
+                        ? _BatchMetadataErrorView(onRetry: _load)
+                        : BatchMetadataSetupView(
+                            scope: _scope,
+                            allCount: _entries.length,
+                            noMetadataCount: _noMetadataEntries.length,
+                            anyMissingCount: _anyMissingEntries.length,
+                            hasRjCodeCount: _hasRjCodeEntries.length,
+                            specificCount: _specificEntries.length,
+                            onScopeChanged: (scope) {
+                              setState(() {
+                                _scope = scope;
+                              });
+                              if (scope == DlsiteMetadataBatchScope.specific &&
+                                  _specificEntries.isEmpty) {
+                                _pickSpecific();
+                              }
+                            },
+                            onPickSpecific: _pickSpecific,
+                          ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (_error == null)
+            Positioned(
+              right: 16,
+              bottom: 16 + MediaQuery.paddingOf(context).bottom,
+              child: AppPageContentTransition(
+                child: HeaderFloatingActionPill(
+                  pillKey: const ValueKey<String>('batch_metadata_start'),
+                  icon: Icons.play_arrow_rounded,
+                  label: i18n.tr('batch_metadata_start'),
+                  backgroundColor: canStart
+                      ? cs.primary
+                      : cs.onSurface.withValues(alpha: 0.12),
+                  foregroundColor: startForeground,
+                  onTap: canStart ? _run : null,
+                ),
               ),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -269,12 +288,7 @@ class _BatchMetadataErrorView extends StatelessWidget {
     ).read(appLanguageProviderInstanceProvider);
     return Center(
       child: Padding(
-        padding: EdgeInsets.only(
-          top: AppPageHeaderMetrics.contentTopInset(context),
-          left: 24,
-          right: 24,
-          bottom: 24,
-        ),
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

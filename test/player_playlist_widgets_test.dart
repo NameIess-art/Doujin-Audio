@@ -11355,7 +11355,7 @@ void main() {
         expect(indicator(second.id), findsNothing);
         expect(indicator(temporary.id), findsNothing);
         expect(
-          find.text(
+          find.bySemanticsLabel(
             fixture.languageProvider.tr('selected_count', {'count': '1'}),
           ),
           findsOneWidget,
@@ -11366,7 +11366,7 @@ void main() {
         expect(indicator(second.id), findsOneWidget);
         expect(indicator(temporary.id), findsNothing);
         expect(
-          find.text(
+          find.bySemanticsLabel(
             fixture.languageProvider.tr('selected_count', {'count': '2'}),
           ),
           findsOneWidget,
@@ -11376,7 +11376,7 @@ void main() {
         expect(indicator(first.id), findsOneWidget);
         expect(indicator(second.id), findsNothing);
         expect(
-          find.text(
+          find.bySemanticsLabel(
             fixture.languageProvider.tr('selected_count', {'count': '1'}),
           ),
           findsOneWidget,
@@ -11512,7 +11512,7 @@ void main() {
         );
         expect(scroll.pixels, offset);
         if (offset == 80) {
-          final count = find.text(
+          final count = find.bySemanticsLabel(
             fixture.languageProvider.tr('selected_count', {'count': '1'}),
           );
           expect(count, findsOneWidget);
@@ -11688,8 +11688,9 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.text(
-          fixture.languageProvider.tr('selected_count', {'count': '1'}),
+        find.descendant(
+          of: batchHeader,
+          matching: find.byType(AppRollingNumber),
         ),
         findsOneWidget,
       );
@@ -11716,6 +11717,12 @@ void main() {
       );
 
       await pumpFiniteTransitions(tester);
+      expect(
+        find.bySemanticsLabel(
+          fixture.languageProvider.tr('selected_count', {'count': '1'}),
+        ),
+        findsOneWidget,
+      );
 
       final batchActions = find.descendant(
         of: batchHeader,

@@ -1230,7 +1230,7 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.text('${languageProvider.tr('batch_metadata_all')} (2)'),
+        find.text('全部作品 (2)'),
         findsOneWidget,
       );
       expect(
@@ -1246,7 +1246,7 @@ void main() {
   );
 
   testWidgets(
-    'batch metadata page defaults to all data scope when initialScope is set to all',
+    'batch metadata page defaults to all works when initialScope is set to all',
     (WidgetTester tester) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(390, 800);
@@ -2159,7 +2159,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.text(languageProvider.tr('batch_metadata_all')),
+      find.text('全部信息'),
       findsOneWidget,
     );
     expect(

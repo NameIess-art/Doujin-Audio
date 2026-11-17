@@ -21,6 +21,7 @@ extension _TimerTabDetailBody on _TimerTabState {
     DateTime? autoResumeAt,
   }) {
     final showAutoResumeCountdown = timerExpired && autoResumeAt != null;
+    final tokens = AppDesignTokens.of(context);
     final detailAccent = showAutoResumeCountdown
         ? cs.primary
         : timerExpired
@@ -82,7 +83,7 @@ extension _TimerTabDetailBody on _TimerTabState {
                       Container(
                         decoration: BoxDecoration(
                           color: cs.surfaceContainerLow,
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(tokens.radiusCard),
                         ),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
@@ -145,7 +146,7 @@ extension _TimerTabDetailBody on _TimerTabState {
                         Material(
                           color: cs.surfaceContainerLow,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(tokens.radiusCard),
                           ),
                           clipBehavior: Clip.antiAlias,
                           child: InkWell(
@@ -207,7 +208,7 @@ extension _TimerTabDetailBody on _TimerTabState {
                         Material(
                           color: cs.surfaceContainerLow,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(tokens.radiusCard),
                           ),
                           clipBehavior: Clip.antiAlias,
                           child: Padding(

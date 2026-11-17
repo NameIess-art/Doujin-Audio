@@ -35,6 +35,39 @@ class PlaybackTimerAlarmSchedulerTest {
     }
 
     @Test
+    fun `system alarm details open the app for countdown and automatic resume`() {
+        val countdown = timerState()
+        val alarmManager = context.getSystemService(AlarmManager::class.java)
+        for (state in listOf(countdown, countdown.copy(
+            timerEndsAtWallClockMs = null,
+            timerEndsElapsedRealtimeMs = null,
+            autoResumeAtMs = System.currentTimeMillis() + 60_000L
+        ))) {
+            NativePlaybackStateStore.saveTimerRuntimeState(context, state)
+            PlaybackTimerAlarmScheduler.rescheduleFromStoredState(context)
+
+            val alarm = shadowOf(alarmManager).scheduledAlarms.single()
+            val showIntent = checkNotNull(alarmManager.nextAlarmClock?.showIntent)
+            assertTrue(showIntent.isActivity)
+            assertNotEquals(alarm.operation, showIntent)
+            assertEquals(MainActivity::class.java.name, shadowOf(showIntent).savedIntent.component?.className)
+        }
+    }
+
+    @Test
+    fun `manual pause removes only that session from recovery candidates before expiry`() {
+        val countdown = timerState().copy(pausedSessionIds = emptyList())
+        NativePlaybackStateStore.saveTimerRuntimeState(context, countdown)
+        NativePlaybackStateStore.storeTimerCandidateSessionIds(context, listOf("A", "B"))
+
+        PlaybackTimerAlarmScheduler.onManualPlaybackStopped(context, "A")
+
+        assertEquals(listOf("B"), NativePlaybackStateStore.loadTimerCandidateSessionIds(context))
+        assertEquals(countdown, NativePlaybackStateStore.loadTimerRuntimeState(context))
+        assertTrue(NativePlaybackStateStore.loadPausedSessionIds(context).isEmpty())
+    }
+
+    @Test
     fun `buffering recovery preserves track-end targets until automatic resume is scheduled`() {
         val service = Robolectric.buildService(NativePlaybackService::class.java).get()
         val state = timerState().copy(timerEndsAtWallClockMs = null, timerEndsElapsedRealtimeMs = null)

@@ -80,6 +80,41 @@ void main() {
     expect(library.watchedLibraries, [r'C:\音频 库']);
   });
 
+  test('download refresh waits for a pending media rename', () async {
+    final root = await Directory.systemTemp.createTemp('download_rename_');
+    addTearDown(() => root.delete(recursive: true));
+    final audio = await File(path.join(root.path, 'before.mp3')).create();
+    library.addWatchedLibrary(root.path);
+    library.configureCoverArtworkRuntime(
+      isActiveCoverKey: (_) => false,
+      onActiveCoverChanged: () {},
+    );
+    final entered = Completer<void>();
+    final release = Completer<void>();
+    repository.beforeRetarget = () async {
+      entered.complete();
+      await release.future;
+    };
+    final rename = library.renameWorkEntryToName(
+      libraryRootPath: root.path,
+      entryPath: audio.path,
+      targetName: 'after',
+      isMedia: true,
+      isDirectory: false,
+    );
+    try {
+      await entered.future.timeout(const Duration(seconds: 5));
+      downloads.complete();
+      await _settle();
+      expect(scanner.labels, isEmpty);
+    } finally {
+      release.complete();
+      await rename;
+    }
+    await _settle();
+    expect(scanner.labels, [_labels]);
+  });
+
   test(
     'completion without sources does not register the download folder',
     () async {
@@ -371,6 +406,7 @@ Future<void> _settle() async {
 
 class _DetailPersistence extends TestPersistenceRepository {
   Future<void> Function()? beforeSave;
+  Future<void> Function()? beforeRetarget;
   int saveCount = 0;
 
   @override
@@ -389,6 +425,12 @@ class _DetailPersistence extends TestPersistenceRepository {
     saveCount++;
     await beforeSave?.call();
   }
+
+  @override
+  Future<void> retargetTimeSegmentLabels({
+    required String oldTrackKey,
+    required String newTrackKey,
+  }) async => await beforeRetarget?.call();
 }
 
 class _FileSystemSource extends PlatformLibraryScanDataSource {

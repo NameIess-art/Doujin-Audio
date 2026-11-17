@@ -213,6 +213,86 @@ void main() {
     );
   }
 
+  test(
+    'stale destination index rejects a rename before moving the file',
+    () async {
+      final root = await Directory.systemTemp.createTemp('stale_rename_');
+      addTearDown(() => root.delete(recursive: true));
+      final source = await File(
+        path.join(root.path, 'A.mp3'),
+      ).writeAsString('audio');
+      final destination = path.join(root.path, 'B.mp3');
+      final library = runtimeGraph.library;
+      final repository = library.databaseRepository;
+      library.configurePersistence(enabled: true);
+      await repository.insertTracks([
+        for (final file in [source.path, destination])
+          MusicTrack(
+            path: file,
+            displayName: path.basename(file),
+            groupKey: root.path,
+            groupTitle: 'Work',
+            groupSubtitle: root.path,
+            isSingle: false,
+          ),
+      ]);
+
+      await expectLater(
+        library.renameWorkEntryToName(
+          libraryRootPath: root.path,
+          entryPath: source.path,
+          targetName: 'B',
+          isMedia: true,
+          isDirectory: false,
+        ),
+        throwsA(isA<AudioDetailRenameException>()),
+      );
+      expect(await source.readAsString(), 'audio');
+      expect(await File(destination).exists(), isFalse);
+      expect(await repository.loadTrackDetail(source.path), isNotNull);
+      expect(await repository.loadTrackDetail(destination), isNotNull);
+    },
+  );
+
+  test(
+    'Windows case-only rename updates disk and the library index',
+    () async {
+      final root = await Directory.systemTemp.createTemp('case_rename_');
+      addTearDown(() => root.delete(recursive: true));
+      final source = await File(path.join(root.path, 'Track.mp3')).create();
+      final library = runtimeGraph.library;
+      final repository = library.databaseRepository;
+      final original = MusicTrack(
+        path: source.path,
+        displayName: 'Track',
+        groupKey: root.path,
+        groupTitle: 'Work',
+        groupSubtitle: root.path,
+        isSingle: false,
+        isFavorite: true,
+      );
+      library.configurePersistence(enabled: true);
+      library.addTracks([original], persist: false);
+      await repository.insertTracks([original]);
+
+      final renamed = await library.renameWorkEntryToName(
+        libraryRootPath: root.path,
+        entryPath: source.path,
+        targetName: 'TRACK',
+        isMedia: true,
+        isDirectory: false,
+      );
+      expect(
+        await root.list().map((file) => path.basename(file.path)).single,
+        'TRACK.mp3',
+      );
+      expect(library.trackByPath(renamed)?.path, renamed);
+      expect((await repository.loadTrackDetail(renamed))?.isFavorite, isTrue);
+      expect(await repository.loadTrackDetail(source.path), isNull);
+    },
+    skip: !Platform.isWindows,
+  );
+
   for (final renameFolder in [false, true]) {
     test(
       'renaming an excluded ${renameFolder ? 'folder' : 'track'} retains user state',

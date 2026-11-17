@@ -333,7 +333,9 @@ extension _TimerTabBody on _TimerTabState {
                       16,
                       widget.showHeader ? timerTopInset : 6,
                       16,
-                      24,
+                      MediaQuery.paddingOf(context).bottom +
+                          MobileOverlayInset.of(context) +
+                          24,
                     ),
                     physics: const ClampingScrollPhysics(),
                     children: [

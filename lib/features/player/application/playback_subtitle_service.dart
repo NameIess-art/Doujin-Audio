@@ -668,6 +668,10 @@ class PlaybackSubtitleService extends ChangeNotifier {
 
     final current = await load(trackPath);
     if (current == null) throw StateError('No subtitle file to edit');
+    // Callers can replace every cue in place without supplying source IDs.
+    final replaceInPlace =
+        cues.length == current.cues.length &&
+        cues.every((cue) => cue.assSourceLine == null);
     final editedCues = cues.indexed
         .map((entry) {
           final (index, cue) = entry;
@@ -680,6 +684,9 @@ class PlaybackSubtitleService extends ChangeNotifier {
             start: cue.start,
             end: cue.end,
             text: cue.text,
+            assSourceLine: replaceInPlace
+                ? current.cues[index].assSourceLine
+                : cue.assSourceLine,
             originalText:
                 original != null &&
                     (cue.text == original || cue.text.startsWith('$original\n'))
@@ -694,6 +701,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
     final content = _editedSubtitleContent(
       sourcePath,
       decodeWorkText(bytes).text,
+      current.cues,
       editedCues,
     );
     if (cues.isNotEmpty) {
@@ -797,9 +805,9 @@ class PlaybackSubtitleService extends ChangeNotifier {
   static String _editedSubtitleContent(
     String sourcePath,
     String original,
+    List<SubtitleCue> originalCues,
     List<SubtitleCue> cues,
   ) {
-    if (cues.isEmpty) return '\n';
     var extension = path.extension(sourcePath).toLowerCase();
     if (!const {
       '.srt',
@@ -824,26 +832,50 @@ class PlaybackSubtitleService extends ChangeNotifier {
         extension = '.srt';
       }
     }
+    if (cues.isEmpty && extension != '.ass' && extension != '.ssa') return '\n';
     return switch (extension) {
       '.lrc' => _lrcContent(cues),
       '.vtt' || '.webvtt' => _srtContent(cues, webVtt: true),
       '.srt' => _srtContent(cues),
-      '.ass' || '.ssa' => _assContent(original, cues),
+      '.ass' || '.ssa' => _assContent(original, originalCues, cues),
       _ => throw StateError('Unsupported subtitle format: $extension'),
     };
   }
 
-  static String _assContent(String original, List<SubtitleCue> cues) {
+  static String _assContent(
+    String original,
+    List<SubtitleCue> originalCues,
+    List<SubtitleCue> cues,
+  ) {
     final lines = original.replaceAll('\r\n', '\n').split('\n');
+    final originalByLine = {
+      for (final cue in originalCues) ?cue.assSourceLine: cue,
+    };
+    final editedByLine = <int, SubtitleCue>{};
+    final insertBeforeLine = <int, List<SubtitleCue>>{};
+    var pendingNewCues = <SubtitleCue>[];
+    for (final cue in cues) {
+      final line = cue.assSourceLine;
+      if (line == null) {
+        pendingNewCues.add(cue);
+      } else {
+        editedByLine[line] = cue;
+        if (pendingNewCues.isNotEmpty) {
+          insertBeforeLine[line] = pendingNewCues;
+          pendingNewCues = [];
+        }
+      }
+    }
     var inEvents = false;
     List<String>? columns;
-    final templates = <List<String>>[];
+    List<String>? defaultColumns;
     final kept = <String>[];
     var insertionIndex = -1;
-    for (final line in lines) {
-      final trimmed = line.trim();
+    for (final (index, line) in lines.indexed) {
+      final trimmed = line.trim().replaceFirst('\uFEFF', '');
       if (trimmed.startsWith('[')) {
         inEvents = trimmed.toLowerCase() == '[events]';
+        columns = null;
       }
       if (inEvents && trimmed.toLowerCase().startsWith('format:')) {
         columns = trimmed
@@ -851,42 +883,68 @@ class PlaybackSubtitleService extends ChangeNotifier {
             .split(',')
             .map((column) => column.trim().toLowerCase())
             .toList();
+        defaultColumns = columns;
         insertionIndex = kept.length + 1;
       }
-      if (inEvents && trimmed.toLowerCase().startsWith('dialogue:')) {
-        final count = columns?.length;
-        if (count == null) throw StateError('Missing ASS event format');
-        final fields = trimmed.substring(9).split(',');
-        if (fields.length < count) throw StateError('Invalid ASS dialogue');
-        templates.add([
-          ...fields.take(count - 1),
-          fields.skip(count - 1).join(','),
-        ]);
-      } else {
+      final previous = originalByLine[index];
+      if (previous == null) {
         kept.add(line);
+        continue;
       }
+      final cue = editedByLine.remove(index);
+      if (cue == null) continue;
+      if (columns == null || !trimmed.toLowerCase().startsWith('dialogue:')) {
+        throw StateError('ASS dialogue changed while editing');
+      }
+      final start = columns.indexOf('start');
+      final end = columns.indexOf('end');
+      final text = columns.indexOf('text');
+      final values = line.substring(line.indexOf(':') + 1).split(',');
+      if (start < 0 ||
+          end < 0 ||
+          text != columns.length - 1 ||
+          values.length < columns.length) {
+        throw StateError('Unsupported ASS event format');
+      }
+      if (cue.start != previous.start) values[start] = _assTime(cue.start);
+      if (cue.end != previous.end) values[end] = _assTime(cue.end);
+      if (cue.text != previous.text) {
+        values.replaceRange(text, values.length, [
+          cue.text.trim().replaceAll('\n', r'\N'),
+        ]);
+      }
+      for (final inserted in insertBeforeLine[index] ?? const <SubtitleCue>[]) {
+        kept.add(_newAssDialogue(columns, inserted));
+      }
+      kept.add(
+        '${line.substring(0, line.indexOf(':') + 1)}${values.join(',')}',
+      );
+      insertionIndex = kept.length;
     }
-    if (columns == null ||
-        insertionIndex < 0 ||
-        templates.isEmpty ||
-        columns.last != 'text' ||
-        !columns.contains('start') ||
-        !columns.contains('end')) {
+    if (editedByLine.isNotEmpty ||
+        defaultColumns == null ||
+        insertionIndex < 0) {
       throw StateError('Unsupported ASS event format');
     }
-    final dialogue = <String>[];
-    for (var index = 0; index < cues.length; index++) {
-      final cue = cues[index];
-      final values = List<String>.of(
-        templates[index < templates.length ? index : templates.length - 1],
-      );
-      values[columns.indexOf('start')] = _assTime(cue.start);
-      values[columns.indexOf('end')] = _assTime(cue.end);
-      values[columns.indexOf('text')] = cue.text.trim().replaceAll('\n', r'\N');
-      dialogue.add('Dialogue: ${values.join(',')}');
-    }
-    kept.insertAll(insertionIndex, dialogue);
-    return '${kept.join('\n').trimRight()}\n';
+    kept.insertAll(insertionIndex, [
+      for (final cue in pendingNewCues) _newAssDialogue(defaultColumns, cue),
+    ]);
+    return kept.join('\n');
+  }
+
+  static String _newAssDialogue(List<String> columns, SubtitleCue cue) {
+    final fields = columns.map(
+      (column) => switch (column) {
+        'start' => _assTime(cue.start),
+        'end' => _assTime(cue.end),
+        'text' => cue.text.trim().replaceAll('\n', r'\N'),
+        'style' => 'Default',
+        'marked' => 'Marked=0',
+        'layer' || 'marginl' || 'marginr' || 'marginv' => '0',
+        _ => '',
+      },
+    );
+    return 'Dialogue: ${fields.join(',')}';
   }
 
   static String _assTime(Duration duration) {

@@ -382,7 +382,8 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
       isMedia: isMedia,
       isDirectory: isDirectory,
     );
-    if (!PathMatcher.equalsNormalized(entryPath, renamedPath)) {
+    if (PathMatcher.normalize(entryPath) !=
+        PathMatcher.normalize(renamedPath)) {
       await _playback.retargetPath(entryPath, renamedPath);
     }
     return renamedPath;

@@ -127,6 +127,9 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     double? initialFadeMultiplier,
   }) async {
     if (!_isRegisteredSession(session)) return false;
+    final hadDetachedPlaybackQueueCurrent = _hasDetachedPlaybackQueueCurrent(
+      session,
+    );
     if (!PathMatcher.equalsNormalized(session.currentTrackPath, nextPath) ||
         (targetQueueIndex != null &&
             targetQueueIndex != session.currentQueueIndex)) {
@@ -171,14 +174,14 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         playing: false,
         processingState: ProcessingState.idle,
       );
+      if (hadDetachedPlaybackQueueCurrent &&
+          !_hasDetachedPlaybackQueueCurrent(session)) {
+        await _syncPlaybackQueueSession(session);
+      }
       _notifyPlaybackChanged(session.id);
       _playbackFacade.scheduleSessionStatePersistence(sessionId: session.id);
       return true;
     }
-    final hadDetachedPlaybackQueueCurrent = _hasDetachedPlaybackQueueCurrent(
-      session,
-    );
-
     final wasLoading = session.isLoading;
     final preparation = session.beginPreparation(
       showLoading: showLoading,

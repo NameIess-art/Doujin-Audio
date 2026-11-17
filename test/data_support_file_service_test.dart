@@ -270,6 +270,42 @@ void main() {
     );
   });
 
+  for (final interrupted in [false, true]) {
+    test('desktop backup overwrite is atomic ($interrupted)', () async {
+      final destination = File(
+        path.join(temporaryDirectory.path, 'existing.dabackup'),
+      );
+      const previousBackup = [4, 5, 6, 7];
+      const nextBackup = [1, 2, 3];
+      await destination.writeAsBytes(previousBackup);
+      filePicker.savePath = destination.path;
+      final service = DataSupportFileService(
+        backupService: _TestBackupService(
+          generate: (outputPath) async {
+            final backup = await File(outputPath).writeAsBytes(nextBackup);
+            return interrupted ? _InterruptedFile(backup.path) : backup;
+          },
+        ),
+        isAndroid: () => false,
+      );
+
+      final result = service.exportBackup(dialogTitle: 'Export');
+      if (interrupted) {
+        await expectLater(result, throwsA(isA<FileSystemException>()));
+      } else {
+        expect(await result, destination.path);
+      }
+      expect(
+        await destination.readAsBytes(),
+        interrupted ? previousBackup : nextBackup,
+      );
+      expect(
+        await temporaryDirectory.list().map((entry) => entry.path).toList(),
+        [destination.path],
+      );
+    });
+  }
+
   test(
     'global error exporter passes bytes to the picker and cleans up',
     () async {
@@ -292,6 +328,22 @@ void main() {
       );
     },
   );
+}
+
+final class _InterruptedFile implements File {
+  _InterruptedFile(this.path);
+
+  @override
+  final String path;
+
+  @override
+  Stream<List<int>> openRead([int? start, int? end]) async* {
+    yield [1, 2];
+    throw const FileSystemException('Interrupted backup copy');
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 final class _TestDiagnosticReportService extends DiagnosticReportService {

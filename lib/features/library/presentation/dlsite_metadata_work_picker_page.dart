@@ -7,6 +7,7 @@ import '../../../core/widgets/file_tree_row.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../domain/audio_library_category.dart';
 import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/search_highlight.dart';
 import '../../../core/widgets/top_page_header.dart';
@@ -99,7 +100,9 @@ class _DlsiteMetadataWorkPickerPageState
                       left: 16,
                       right: 16,
                       top: AppPageHeaderMetrics.contentTopInset(context),
-                      bottom: 78 + MediaQuery.paddingOf(context).bottom,
+                      bottom: 78 +
+                          MediaQuery.paddingOf(context).bottom +
+                          MobileOverlayInset.of(context),
                     ),
                     itemCount: filtered.isEmpty ? 1 : filtered.length,
                     itemBuilder: (context, index) {
@@ -222,7 +225,9 @@ class _DlsiteMetadataWorkPickerPageState
               ),
               Positioned(
                 right: 16,
-                bottom: 16 + MediaQuery.paddingOf(context).bottom,
+                bottom: 16 +
+                    MediaQuery.paddingOf(context).bottom +
+                    MobileOverlayInset.of(context),
                 child: AppPageContentTransition(
                   child: HeaderFloatingActionPill(
                     pillKey: const ValueKey<String>('batch_metadata_picker_done'),

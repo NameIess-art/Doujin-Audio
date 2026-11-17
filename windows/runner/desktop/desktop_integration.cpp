@@ -705,7 +705,6 @@ std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp
     return 0;
   }
   if (message == WM_APP + 43) { Action("exit"); return 0; }
-  if (message == WM_APP + 44) { Action("deviceDisconnected"); return 0; }
   if (message == WM_GETMINMAXINFO && !fullscreen_) {
     const auto dpi = GetDpiForWindow(window_);
     RECT rect{0,0,MulDiv(960,dpi,96),MulDiv(600,dpi,96)};

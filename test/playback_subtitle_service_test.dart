@@ -641,6 +641,56 @@ void main() {
     );
   });
 
+  for (final extension in ['ass', 'ssa']) {
+    test('$extension edits keep surviving event styles and tags', () async {
+      final directory = await Directory.systemTemp.createTemp('edited_ass_');
+      addTearDown(() => directory.delete(recursive: true));
+      final audioPath = path.join(directory.path, 'original.mp3');
+      await File(audioPath).create();
+      final source = File(path.join(directory.path, 'original.$extension'));
+      const second =
+          r'Dialogue: 0,0:00:03.00,0:00:04.00,Blue,Bob,42,{\pos(20,30)}Second, with a comma';
+      await source.writeAsString(
+        '[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,Text\n'
+        'Dialogue: 0,0:00:01.00,0:00:02.00,Red,Alice,12,First\n'
+        '$second\n',
+      );
+      final service = PlaybackSubtitleService(trackResolver: (_) => null);
+      addTearDown(service.dispose);
+      final loaded = (await service.load(audioPath))!;
+      final edited = await service.saveEditedSubtitle(audioPath, [
+        loaded.cues[1],
+      ]);
+      expect(await source.readAsString(), contains(second));
+      expect(await source.readAsString(), isNot(contains('Red,Alice')));
+
+      final surviving = edited.cues.single;
+      final withInsertion = await service.saveEditedSubtitle(audioPath, [
+        const SubtitleCue(
+          start: Duration(seconds: 2),
+          end: Duration(seconds: 3),
+          text: 'Inserted',
+        ),
+        SubtitleCue(
+          start: const Duration(milliseconds: 3200),
+          end: surviving.end,
+          text: surviving.text,
+          assSourceLine: surviving.assSourceLine,
+        ),
+      ]);
+      expect(withInsertion.cues.map((cue) => cue.text), [
+        'Inserted',
+        'Second, with a comma',
+      ]);
+      expect(
+        await source.readAsString(),
+        contains(r'Blue,Bob,42,{\pos(20,30)}Second, with a comma'),
+      );
+      expect((await service.saveEditedSubtitle(audioPath, [])).cues, isEmpty);
+      expect(await source.readAsString(), contains('Format: Layer'));
+    });
+  }
+
   test('ASMR.ONE subtitles cannot be edited or saved', () async {
     final directory = await Directory.systemTemp.createTemp('asmr_edit_');
     addTearDown(() => directory.delete(recursive: true));

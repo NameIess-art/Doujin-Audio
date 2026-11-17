@@ -349,7 +349,9 @@ class LibraryScanProgressCard extends StatelessWidget {
               LinearProgressIndicator(
                 value: progress,
                 minHeight: 3,
-                borderRadius: BorderRadius.circular(99),
+                borderRadius: BorderRadius.circular(
+                  AppDesignTokens.of(context).radiusCapsule,
+                ),
               ),
               const SizedBox(height: 6),
               Align(

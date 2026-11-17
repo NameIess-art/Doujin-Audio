@@ -192,7 +192,7 @@ class _SettingsSectionTitlePill extends StatelessWidget {
       child: Align(
         alignment: Alignment.centerLeft,
         child: HeaderFloatingSurface(
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           child: ConstrainedBox(
             constraints: BoxConstraints(
               maxWidth: MediaQuery.sizeOf(context).width - 64,

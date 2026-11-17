@@ -12,6 +12,7 @@ import '../../../core/widgets/file_tree_row.dart';
 import '../application/dlsite_metadata_batch_session.dart';
 import '../domain/audio_library_category.dart';
 import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
@@ -117,7 +118,9 @@ class _DlsiteMetadataBatchResultsPageState
                         16,
                         AppPageHeaderMetrics.contentTopInset(context),
                         16,
-                        78 + MediaQuery.paddingOf(context).bottom,
+                        78 +
+                            MediaQuery.paddingOf(context).bottom +
+                            MobileOverlayInset.of(context),
                       ),
                       itemCount: items.length,
                       itemBuilder: (context, index) {
@@ -329,7 +332,9 @@ class _DlsiteMetadataBatchResultsPageState
             ),
             Positioned(
               right: 16,
-              bottom: 16 + MediaQuery.paddingOf(context).bottom,
+              bottom: 16 +
+                  MediaQuery.paddingOf(context).bottom +
+                  MobileOverlayInset.of(context),
               child: AppPageContentTransition(
                 child: AnimatedBuilder(
                   animation: widget.session,

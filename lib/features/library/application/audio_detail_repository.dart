@@ -158,6 +158,10 @@ class AudioDetailRepository {
         normalized.target,
       ),
     );
+    if (previousTarget != null && previousTarget != normalized.target) {
+      _ensureCanCommit();
+      await _store.delete(previousTarget);
+    }
     return AudioDetailSaveResult(
       detail: normalized,
       documentStatus: document.status,

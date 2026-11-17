@@ -11,6 +11,8 @@ import '../../../core/media/path_matcher.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/mobile_overlay_inset.dart';
+import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/search_highlight.dart';
 import '../../../core/widgets/top_page_header.dart';
@@ -247,6 +249,10 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
       context,
       additionalHeight: 6 + AppPageHeaderMetrics.buttonSize,
     );
+    final bottomInset =
+        MediaQuery.paddingOf(context).bottom + MobileOverlayInset.of(context);
+    final listPadding =
+        EdgeInsets.fromLTRB(16, headerTopInset, 16, bottomInset + 24);
     final content = SearchHighlightScope(
       query: _searchQuery,
       child: PageHeaderInset(
@@ -261,7 +267,7 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
                     // Both lists mount during the fade; content owns primary.
                     primary: false,
                     physics: const NeverScrollableScrollPhysics(),
-                    padding: EdgeInsets.fromLTRB(16, headerTopInset, 16, 24),
+                    padding: listPadding,
                     children: [
                       LibraryEditTreeSkeleton(
                         key: const ValueKey('library_edit_entries_skeleton'),
@@ -279,7 +285,7 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
                   nodes: editTree,
                   initiallyExpanded: _searchQuery.isNotEmpty,
                   onRememberFolder: rememberFolderStructureSnapshot,
-                  padding: EdgeInsets.fromLTRB(16, headerTopInset, 16, 24),
+                  padding: listPadding,
                   leading: snapshotError
                       ? Padding(
                           padding: const EdgeInsets.only(top: 96),
@@ -307,16 +313,18 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
                         )
                       : null,
                   empty: Padding(
-                    padding: const EdgeInsets.only(top: 96),
+                    padding: const EdgeInsets.only(top: 80),
                     child: Center(
-                      child: Text(
-                        _searchQuery.isEmpty
+                      child: AppEmptyState(
+                        icon: _searchQuery.isEmpty
+                            ? Icons.folder_open_rounded
+                            : Icons.search_off_rounded,
+                        title: _searchQuery.isEmpty
                             ? i18n.tr('library_edit_empty')
                             : i18n.tr('no_search_results'),
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: cs.onSurfaceVariant,
-                          fontWeight: FontWeight.w700,
-                        ),
+                        message: _searchQuery.isEmpty
+                            ? null
+                            : i18n.tr('search_no_match'),
                       ),
                     ),
                   ),

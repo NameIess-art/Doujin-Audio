@@ -12,6 +12,7 @@ import '../application/asmr_download_models.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/top_page_header.dart';
@@ -72,7 +73,9 @@ class _AsmrDownloadTaskPageState extends ConsumerState<AsmrDownloadTaskPage> {
       16,
       contentTopInset,
       16,
-      MediaQuery.paddingOf(context).bottom + 16,
+      MediaQuery.paddingOf(context).bottom +
+          MobileOverlayInset.of(context) +
+          16,
     );
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,

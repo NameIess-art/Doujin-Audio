@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/widgets/app_entry_ink_well.dart';
+import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 
 enum DlsiteMetadataBatchScope {
@@ -25,6 +26,7 @@ class BatchMetadataSetupView extends StatelessWidget {
     required this.specificCount,
     required this.onScopeChanged,
     required this.onPickSpecific,
+    this.topInset,
   });
 
   final DlsiteMetadataBatchScope scope;
@@ -35,6 +37,7 @@ class BatchMetadataSetupView extends StatelessWidget {
   final int specificCount;
   final ValueChanged<DlsiteMetadataBatchScope> onScopeChanged;
   final VoidCallback onPickSpecific;
+  final double? topInset;
 
   @override
   Widget build(BuildContext context) {
@@ -45,9 +48,11 @@ class BatchMetadataSetupView extends StatelessWidget {
     return ListView(
       padding: EdgeInsets.fromLTRB(
         16,
-        AppPageHeaderMetrics.firstContentSpacing,
+        topInset ?? AppPageHeaderMetrics.firstContentSpacing,
         16,
-        88 + MediaQuery.paddingOf(context).bottom,
+        88 +
+            MediaQuery.paddingOf(context).bottom +
+            MobileOverlayInset.of(context),
       ),
       children: [
         Card(

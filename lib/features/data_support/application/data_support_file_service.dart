@@ -132,7 +132,22 @@ class DataSupportFileService {
       lockParentWindow: true,
     );
     if (savedPath == null) return null;
-    await source.openRead().pipe(File(savedPath).openWrite());
+    final destination = File(savedPath).absolute;
+    // Commit on the destination volume after the entire export is written.
+    final staging = await destination.parent.createTemp('.doujin-export-');
+    final stagedFile = File(path.join(staging.path, 'export.part'));
+    try {
+      final sink = stagedFile.openWrite();
+      sink.done.ignore();
+      try {
+        await sink.addStream(source.openRead());
+      } finally {
+        await sink.close();
+      }
+      await stagedFile.rename(destination.path);
+    } finally {
+      await _deleteTemporaryFile(stagedFile);
+    }
     return savedPath;
   }
 

@@ -14,6 +14,7 @@ import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/widgets/app_brand_icon.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
@@ -101,7 +102,8 @@ class AboutPage extends ConsumerWidget {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final tokens = AppDesignTokens.of(context);
-    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final bottomInset =
+        MediaQuery.paddingOf(context).bottom + MobileOverlayInset.of(context);
 
     final contentTopInset = AppPageHeaderMetrics.contentTopInset(context);
 
@@ -121,67 +123,84 @@ class AboutPage extends ConsumerWidget {
                     bottomInset + AppSpacing.xl,
                   ),
                   children: [
-                    _AboutCard(
-                      children: [
-                        const _AboutIdentity(),
-                        const SizedBox(height: AppSpacing.lg),
-                        _AboutVersionTile(versionFuture: versionFuture),
-                        const SizedBox(height: AppSpacing.xs),
-                        _AboutLinkTile(
-                          icon: Icons.code_rounded,
-                          title: i18n.tr('about_source_code'),
-                          onTap: () => unawaited(_openRepository(context, ref)),
+                    Center(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: tokens.readableContentMaxWidth,
                         ),
-                        const SizedBox(height: AppSpacing.xs),
-                        _AboutLinkTile(
-                          icon: Icons.menu_book_outlined,
-                          title: i18n.tr('about_wiki'),
-                          onTap: () => unawaited(_openReadme(context, ref)),
-                        ),
-                        const SizedBox(height: AppSpacing.xs),
-                        _AboutLinkTile(
-                          icon: Icons.mail_outline_rounded,
-                          title: i18n.tr('about_feedback'),
-                          onTap: () => unawaited(_openFeedback(context, ref)),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    _AboutCard(
-                      children: [
-                        ListTile(
-                          leading: const _AboutIconContainer(
-                            icon: Icons.person_outline_rounded,
-                          ),
-                          title: Text(
-                            i18n.tr('about_author'),
-                            style: theme.textTheme.titleMedium,
-                          ),
-                          trailing: Text(
-                            'NameIess-art',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: cs.onSurfaceVariant,
-                              fontWeight: FontWeight.w600,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _AboutCard(
+                              children: [
+                                const _AboutIdentity(),
+                                const SizedBox(height: AppSpacing.lg),
+                                _AboutVersionTile(versionFuture: versionFuture),
+                                const SizedBox(height: AppSpacing.xs),
+                                _AboutLinkTile(
+                                  icon: Icons.code_rounded,
+                                  title: i18n.tr('about_source_code'),
+                                  onTap: () =>
+                                      unawaited(_openRepository(context, ref)),
+                                ),
+                                const SizedBox(height: AppSpacing.xs),
+                                _AboutLinkTile(
+                                  icon: Icons.menu_book_outlined,
+                                  title: i18n.tr('about_wiki'),
+                                  onTap: () =>
+                                      unawaited(_openReadme(context, ref)),
+                                ),
+                                const SizedBox(height: AppSpacing.xs),
+                                _AboutLinkTile(
+                                  icon: Icons.mail_outline_rounded,
+                                  title: i18n.tr('about_feedback'),
+                                  onTap: () =>
+                                      unawaited(_openFeedback(context, ref)),
+                                ),
+                              ],
                             ),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.xs,
-                          ),
+                            const SizedBox(height: AppSpacing.lg),
+                            _AboutCard(
+                              children: [
+                                ListTile(
+                                  leading: const _AboutIconContainer(
+                                    icon: Icons.person_outline_rounded,
+                                  ),
+                                  title: Text(
+                                    i18n.tr('about_author'),
+                                    style: theme.textTheme.titleMedium,
+                                  ),
+                                  trailing: Text(
+                                    'NameIess-art',
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: cs.onSurfaceVariant,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: AppSpacing.xs,
+                                  ),
+                                ),
+                                const SizedBox(height: AppSpacing.xs),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: AppSpacing.xs,
+                                  ),
+                                  child: AppLabelledButton(
+                                    OutlinedButton.icon,
+                                    onPressed: () =>
+                                        unawaited(_openSponsor(context, ref)),
+                                    icon: const Icon(
+                                      Icons.favorite_border_rounded,
+                                    ),
+                                    label: Text(i18n.tr('about_reward')),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: AppSpacing.xs),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.xs,
-                          ),
-                          child: AppLabelledButton(
-                            OutlinedButton.icon,
-                            onPressed: () =>
-                                unawaited(_openSponsor(context, ref)),
-                            icon: const Icon(Icons.favorite_border_rounded),
-                            label: Text(i18n.tr('about_reward')),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ],
                 ).withWindowsSmoothScroll(),

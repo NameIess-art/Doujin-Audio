@@ -70,12 +70,15 @@ final class AsmrDownloadRuntimeBinding implements RuntimeBinding {
 
   Future<void> _refresh() async {
     while (!_disposed && _refreshPending && _library.state.isInitialized) {
-      if (_library.watchedFolders.isEmpty && _library.watchedLibraries.isEmpty) {
+      if (_library.watchedFolders.isEmpty &&
+          _library.watchedLibraries.isEmpty) {
         _refreshPending = false;
         return;
       }
-      // Cancellation clears the UI flag before the scanner releases its lease.
-      await Future.any<void>([_library.scanIdle, _stopping.future]);
+      await Future.any<void>([
+        _library.waitForScanAvailability(),
+        _stopping.future,
+      ]);
       if (_disposed || !_library.state.isInitialized) return;
       _refreshPending = false;
       if (_library.watchedFolders.isEmpty &&

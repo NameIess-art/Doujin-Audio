@@ -449,7 +449,20 @@ class _MyPageState extends ConsumerState<MyPage>
       // would rescan chart history and restart artwork, titles and taste reads
       // as it re-enters the viewport during a drag.
       children: [
-        for (final child in children) _RetainedMySection(child: child),
+        Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: AppDesignTokens.of(context).readableContentMaxWidth,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final child in children) _RetainedMySection(child: child),
+              ],
+            ),
+          ),
+        ),
       ],
     );
     Widget listeningChart({bool skeleton = false}) => Consumer(

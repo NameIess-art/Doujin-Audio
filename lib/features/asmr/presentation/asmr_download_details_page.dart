@@ -14,6 +14,7 @@ import '../application/asmr_download_models.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/file_tree_row.dart';
+import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
@@ -156,7 +157,9 @@ class _AsmrDownloadDetailsPageState
                     16,
                     listTopPadding,
                     16,
-                    MediaQuery.paddingOf(context).bottom + 16,
+                    MediaQuery.paddingOf(context).bottom +
+                    MobileOverlayInset.of(context) +
+                    16,
                   ),
                 ),
                 builder: (context) {
@@ -179,7 +182,9 @@ class _AsmrDownloadDetailsPageState
                             16,
                             listTopPadding,
                             16,
-                            MediaQuery.paddingOf(context).bottom + 16,
+                            MediaQuery.paddingOf(context).bottom +
+                    MobileOverlayInset.of(context) +
+                    16,
                           ),
                           sliver: SliverList.builder(
                             itemCount: _rows.length,

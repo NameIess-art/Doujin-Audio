@@ -204,8 +204,10 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    final bottomInset = MobileOverlayInset.of(context);
+    final bottomInset =
+        MediaQuery.paddingOf(context).bottom + MobileOverlayInset.of(context);
     final contentTopInset = AppPageHeaderMetrics.contentTopInset(context);
+    final tokens = AppDesignTokens.of(context);
 
     return ScrollActivityGate(
       child: PageHeaderInset(
@@ -225,26 +227,33 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                     ),
                     clipBehavior: Clip.none,
                     children: [
-                      _SettingsTileTheme.categories(
-                        child: Column(
-                          children: [
-                            for (
-                              var index = 0;
-                              index < _SettingsCategory.values.length;
-                              index++
-                            )
-                              _SettingsCategoryTile(
-                                category: _SettingsCategory.values[index],
-                                i18n: i18n,
-                                isFirst: index == 0,
-                                isLast:
-                                    index ==
-                                    _SettingsCategory.values.length - 1,
-                                onTap: () => _openSettingsCategory(
-                                  _SettingsCategory.values[index],
-                                ),
-                              ),
-                          ],
+                      Center(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: tokens.readableContentMaxWidth,
+                          ),
+                          child: _SettingsTileTheme.categories(
+                            child: Column(
+                              children: [
+                                for (
+                                  var index = 0;
+                                  index < _SettingsCategory.values.length;
+                                  index++
+                                )
+                                  _SettingsCategoryTile(
+                                    category: _SettingsCategory.values[index],
+                                    i18n: i18n,
+                                    isFirst: index == 0,
+                                    isLast:
+                                        index ==
+                                        _SettingsCategory.values.length - 1,
+                                    onTap: () => _openSettingsCategory(
+                                      _SettingsCategory.values[index],
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -454,7 +463,10 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
     final settings = ref.read(settingsRepositoryProvider);
     final settingsController = ref.read(settingsCommandControllerProvider);
     final cs = Theme.of(context).colorScheme;
+    final tokens = AppDesignTokens.of(context);
     final contentTopInset = AppPageHeaderMetrics.contentTopInset(context);
+    final bottomInset =
+        MediaQuery.paddingOf(context).bottom + MobileOverlayInset.of(context);
 
     return ValueListenableBuilder<AppUpdateInfo?>(
       valueListenable: widget.updateInfoListenable,
@@ -539,44 +551,56 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
               ),
             );
           }
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              NotificationListener<SizeChangedLayoutNotification>(
-                onNotification: (_) {
-                  _sectionTitleLayerKey.currentContext
-                      ?.findRenderObject()
-                      ?.markNeedsPaint();
-                  return false;
-                },
-                child: ListView(
-                  controller: _scrollController,
-                  padding: EdgeInsets.fromLTRB(16, contentTopInset, 16, 24),
-                  children: [
-                    _SettingsTileTheme(child: Column(children: sections)),
-                  ],
-                ),
+          return Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: tokens.readableContentMaxWidth,
               ),
-              Positioned(
-                top: contentTopInset,
-                bottom: 0,
-                left: 16,
-                right: 16,
-                child: IgnorePointer(
-                  child: ExcludeSemantics(
-                    child: Flow(
-                      key: _sectionTitleLayerKey,
-                      delegate: _SettingsSectionTitleLayout(
-                        _sectionTitleLayerKey,
-                        titleKeys,
-                        _scrollController,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  NotificationListener<SizeChangedLayoutNotification>(
+                    onNotification: (_) {
+                      _sectionTitleLayerKey.currentContext
+                          ?.findRenderObject()
+                          ?.markNeedsPaint();
+                      return false;
+                    },
+                    child: ListView(
+                      controller: _scrollController,
+                      padding: EdgeInsets.fromLTRB(
+                        16,
+                        contentTopInset,
+                        16,
+                        bottomInset + 24,
                       ),
-                      children: titles,
+                      children: [
+                        _SettingsTileTheme(child: Column(children: sections)),
+                      ],
                     ),
                   ),
-                ),
+                  Positioned(
+                    top: contentTopInset,
+                    bottom: 0,
+                    left: 16,
+                    right: 16,
+                    child: IgnorePointer(
+                      child: ExcludeSemantics(
+                        child: Flow(
+                          key: _sectionTitleLayerKey,
+                          delegate: _SettingsSectionTitleLayout(
+                            _sectionTitleLayerKey,
+                            titleKeys,
+                            _scrollController,
+                          ),
+                          children: titles,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           );
         }
 

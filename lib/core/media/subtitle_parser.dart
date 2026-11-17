@@ -11,12 +11,14 @@ class SubtitleCue {
     required this.end,
     required this.text,
     this.originalText,
+    this.assSourceLine,
   });
 
   final Duration start;
   final Duration end;
   final String text;
   final String? originalText;
+  final int? assSourceLine;
 
   bool contains(Duration position) {
     return position >= start && position < end;
@@ -164,23 +166,23 @@ SubtitleTrack? _parseSubtitleTrack({
     '.vtt' || '.webvtt' => _parseWebVtt(raw),
     '.srt' => _parseSrt(raw),
     '.ass' || '.ssa' => _parseAss(raw),
-    _ => const <SubtitleCue>[],
+    _ => null,
   };
 
-  final resolvedCues = cues.isNotEmpty
+  final resolvedCues =
+      cues != null &&
+          (cues.isNotEmpty || extension == '.ass' || extension == '.ssa')
       ? cues
       : _parseSubtitleTrackByContent(raw);
-  if (resolvedCues.isEmpty) return null;
+  if (resolvedCues == null) return null;
   return SubtitleTrack(sourcePath: sourcePath, cues: resolvedCues)
     .._timeIndex.prepare();
 }
 
-List<SubtitleCue> _parseSubtitleTrackByContent(String raw) {
+List<SubtitleCue>? _parseSubtitleTrackByContent(String raw) {
   final parsers = <List<SubtitleCue> Function()>[
     () => _parseWebVtt(raw),
     () => _parseSrt(raw),
-    () => _parseAss(raw),
-    () => _parseLrc(raw),
   ];
 
   for (final parse in parsers) {
@@ -190,7 +192,10 @@ List<SubtitleCue> _parseSubtitleTrackByContent(String raw) {
     }
   }
 
-  return const <SubtitleCue>[];
+  final assCues = _parseAss(raw);
+  if (assCues != null) return assCues;
+  final lrcCues = _parseLrc(raw);
+  return lrcCues.isEmpty ? null : lrcCues;
 }
 
 Future<File?> findSubtitleFileForAudio(String audioPath) async {
@@ -430,16 +435,17 @@ SubtitleCue? _timedCue((Duration, Duration) timing, String rawText) {
   );
 }
 
-List<SubtitleCue> _parseAss(String raw) {
+List<SubtitleCue>? _parseAss(String raw) {
   final lines = raw
       .replaceFirst('\uFEFF', '')
       .replaceAll('\r\n', '\n')
       .split('\n');
   final cues = <SubtitleCue>[];
   var inEvents = false;
+  var hasFormat = false;
   List<String> formatColumns = const <String>[];
 
-  for (final rawLine in lines) {
+  for (final (lineIndex, rawLine) in lines.indexed) {
     final line = rawLine.trim();
     if (line.isEmpty) continue;
     if (line.startsWith('[')) {
@@ -455,6 +461,11 @@ List<SubtitleCue> _parseAss(String raw) {
           .split(',')
           .map((part) => part.trim().toLowerCase())
           .toList();
+      hasFormat =
+          hasFormat ||
+          formatColumns.contains('start') &&
+              formatColumns.contains('end') &&
+              formatColumns.contains('text');
       continue;
     }
     if (!lower.startsWith('dialogue:')) continue;
@@ -483,10 +494,12 @@ List<SubtitleCue> _parseAss(String raw) {
     );
     if (text.isEmpty) continue;
 
-    cues.add(SubtitleCue(start: start, end: end, text: text));
+    cues.add(
+      SubtitleCue(start: start, end: end, text: text, assSourceLine: lineIndex),
+    );
   }
 
-  return cues;
+  return hasFormat ? cues : null;
 }
 
 List<String> _splitAssDialogue(String input, int expectedParts) {

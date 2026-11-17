@@ -824,7 +824,9 @@ final class PlaybackFacade {
       autoPlay: session.effectivePlaying,
       forceStartAtZero: true,
       showLoading: false,
-      targetQueueIndex: index,
+      // The switcher excludes a removed current track that is still in the
+      // runtime queue until playback moves to another occurrence.
+      targetQueueIndex: session.hasDetachedQueueTrack ? index + 1 : index,
     );
     scheduleSessionStatePersistence(sessionId: session.id);
   }

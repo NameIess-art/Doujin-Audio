@@ -677,21 +677,18 @@ class AppUpdateService {
   }
 
   Future<UpdateInstallResult> _launchUpdateInstaller(File file) async {
-    if (_isWindows) {
-      final verified = _verifiedDownload;
-      final expected = verified?.path == path.normalize(file.absolute.path)
-          ? verified?.checksum
-          : null;
-      if (expected == null ||
-          !await file.exists() ||
-          (await sha256.bind(file.openRead()).first).toString() != expected) {
-        return const UpdateInstallResult(
-          ok: false,
-          needsPermission: false,
-          message:
-              'Update checksum verification failed. Download the update again.',
-        );
-      }
+    final verified = _verifiedDownload;
+    if (verified == null ||
+        verified.path != path.normalize(file.absolute.path) ||
+        !await file.exists() ||
+        (await sha256.bind(file.openRead()).first).toString() !=
+            verified.checksum) {
+      return const UpdateInstallResult(
+        ok: false,
+        needsPermission: false,
+        message:
+            'Update checksum verification failed. Download the update again.',
+      );
     }
     final result = _isWindows
         ? await _platform.installWindowsUpdate(file.path)

@@ -24,6 +24,8 @@ import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/async_cover_image.dart';
 import '../../../../core/widgets/marquee_text.dart';
+import '../../../../core/widgets/mobile_overlay_inset.dart';
+import '../../../../core/widgets/operation_feedback.dart';
 import '../../../../core/widgets/page_header_inset.dart';
 import '../../../../core/widgets/scroll_activity_gate.dart';
 import '../../../../core/widgets/top_page_header.dart';
@@ -500,11 +502,14 @@ class _PlaybackQueueAudioEditPageState
                               ? Padding(
                                   padding: EdgeInsets.only(
                                     top: addedQueueTop + 4,
+                                    bottom:
+                                        MediaQuery.paddingOf(context).bottom +
+                                            MobileOverlayInset.of(context),
                                   ),
-                                  child: ListTile(
-                                    contentPadding: horizontalPadding,
-                                    title: Text(
-                                      i18n.tr('empty_playback_queue'),
+                                  child: Center(
+                                    child: AppEmptyState(
+                                      icon: Icons.queue_music_rounded,
+                                      title: i18n.tr('empty_playback_queue'),
                                     ),
                                   ),
                                 )
@@ -512,7 +517,10 @@ class _PlaybackQueueAudioEditPageState
                                   scrollController: _addedQueueScrollController,
                                   padding: horizontalPadding.copyWith(
                                     top: addedQueueTop,
-                                    bottom: AppSpacing.xs,
+                                    bottom:
+                                        MediaQuery.paddingOf(context).bottom +
+                                            MobileOverlayInset.of(context) +
+                                            AppSpacing.xs,
                                   ),
                                   buildDefaultDragHandles: false,
                                   proxyDecorator: (child, index, animation) =>

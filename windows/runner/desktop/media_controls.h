@@ -10,6 +10,8 @@
 #include <string>
 #include <vector>
 
+class EndpointNotifications;
+
 class MediaControls {
  public:
   explicit MediaControls(HWND window);
@@ -36,5 +38,5 @@ class MediaControls {
   winrt::Windows::Media::SystemMediaTransportControls controls_{nullptr};
   winrt::event_token button_token_{};
   Microsoft::WRL::ComPtr<IMMDeviceEnumerator> endpoints_;
-  Microsoft::WRL::ComPtr<IMMNotificationClient> endpoint_listener_;
+  Microsoft::WRL::ComPtr<EndpointNotifications> endpoint_listener_;
 };

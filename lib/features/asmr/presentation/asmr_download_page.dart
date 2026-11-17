@@ -19,6 +19,7 @@ import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/file_tree_row.dart';
+import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
 import 'asmr_download_summary_card.dart';
@@ -397,14 +398,13 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
   @override
   Widget build(BuildContext context) {
     final selection = _selection;
+    final primaryColor = Theme.of(context).colorScheme.primary;
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final summary = selection?.selectedSummary();
     final selectedLeafCount = summary?.leafCount ?? 0;
     final selectedTotalSizeBytes = summary?.totalSizeBytes ?? 0;
     final selectedHasUnknownSize = summary?.hasUnknownSize ?? false;
-    final primaryColor = Theme.of(context).colorScheme.primary;
-    final onPrimaryColor = Theme.of(context).colorScheme.onPrimary;
     final hasDestination = (_destinationRoot?.trim().isNotEmpty ?? false);
     final compactHeader = MediaQuery.sizeOf(context).width < 400;
     final destinationLabel = i18n.tr(
@@ -418,7 +418,8 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     final chooseDestination = (_starting || _loading || _choosingDestination)
         ? null
         : _chooseDestination;
-    final bottomInset = MediaQuery.of(context).viewPadding.bottom;
+    final bottomInset =
+        MediaQuery.paddingOf(context).bottom + MobileOverlayInset.of(context);
     final listBottomPadding = 76 + bottomInset;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -503,70 +504,17 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                     right: 16,
                     child: AppDeferredFade(
                       visible: !_loading && _selection != null && _work != null,
-                      child: HeaderFloatingSurface(
-                        key: const ValueKey<String>(
+                      child: HeaderFloatingActionPill(
+                        pillKey: const ValueKey<String>(
                           'asmr_download_start_button',
                         ),
-                        height: 46,
-                        radius: 23,
-                        padding: EdgeInsets.zero,
-                        child: Material(
-                          color: primaryColor,
-                          borderRadius: BorderRadius.circular(23),
-                          child: InkWell(
-                            mouseCursor: WidgetStateMouseCursor.clickable,
-                            borderRadius: BorderRadius.circular(23),
-                            onTap: _starting || _choosingDestination
-                                ? null
-                                : _startDownload,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  AnimatedSwitcher(
-                                    duration:
-                                        MediaQuery.disableAnimationsOf(context)
-                                        ? Duration.zero
-                                        : kAppFadeDuration,
-                                    switchInCurve: kAppFadeCurve,
-                                    switchOutCurve: kAppFadeCurve,
-                                    child: _starting
-                                        ? SizedBox(
-                                            width: 18,
-                                            height: 18,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              valueColor:
-                                                  AlwaysStoppedAnimation<Color>(
-                                                    onPrimaryColor,
-                                                  ),
-                                            ),
-                                          )
-                                        : Icon(
-                                            Icons.download_rounded,
-                                            size: 18,
-                                            color: onPrimaryColor,
-                                          ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    i18n.tr('asmr_download_action'),
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelLarge
-                                        ?.copyWith(
-                                          color: onPrimaryColor,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
+                        icon: Icons.download_rounded,
+                        label: i18n.tr('asmr_download_action'),
+                        loading: _starting,
+                        horizontalPadding: 16,
+                        onTap: _starting || _choosingDestination
+                            ? null
+                            : _startDownload,
                       ),
                     ),
                   ),

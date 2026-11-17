@@ -59,17 +59,20 @@ class LibraryEntryEditorService {
 
   Future<String?> renameAudioDetailTarget(
     AudioDetailTarget target,
-    String safeName,
-  ) => renameEntry(
+    String safeName, {
+    Future<void> Function(String oldPath, String newPath)? beforeLocalRename,
+  }) => renameEntry(
     target.targetPath,
     safeName,
     isDirectory: target.isLibraryRootFolder,
+    beforeLocalRename: beforeLocalRename,
   );
 
   Future<String?> renameEntry(
     String entryPath,
     String safeName, {
     required bool isDirectory,
+    Future<void> Function(String oldPath, String newPath)? beforeLocalRename,
   }) async {
     final oldPath = PathMatcher.normalize(entryPath);
     if (PathMatcher.isContentUri(oldPath)) {
@@ -88,9 +91,12 @@ class LibraryEntryEditorService {
             path.dirname(oldPath),
             '$safeName${path.extension(oldPath)}',
           );
-    if (PathMatcher.equalsNormalized(oldPath, newPath)) return newPath;
+    if (oldPath == newPath) return oldPath;
+    await beforeLocalRename?.call(oldPath, newPath);
     if (await FileSystemEntity.type(newPath, followLinks: false) !=
-        FileSystemEntityType.notFound) {
+            FileSystemEntityType.notFound &&
+        (!PathMatcher.equalsNormalized(oldPath, newPath) ||
+            !await FileSystemEntity.identical(oldPath, newPath))) {
       throw const AudioDetailRenameException('nameConflict');
     }
     if (isDirectory) {

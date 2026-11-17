@@ -213,7 +213,7 @@ object NativePlaybackStateStore {
         persistedRevisions.remove(sessionId)
         withTimerState {
             storePausedSessionIds(context, loadPausedSessionIds(context).filterNot { it == sessionId })
-            storeTimerCandidateSessionIds(context, loadTimerCandidateSessionIds(context).filterNot { it == sessionId })
+            removeTimerCandidateSessionId(context, sessionId)
             loadTimerRuntimeState(context)?.let { timer ->
                 saveTimerRuntimeState(context, timer.withoutSession(sessionId))
             }
@@ -342,6 +342,15 @@ object NativePlaybackStateStore {
             ?.toList()
             ?.sorted()
             ?: emptyList()
+    }
+
+    internal fun removeTimerCandidateSessionId(context: Context, sessionId: String) = withTimerState {
+        val candidates = loadTimerCandidateSessionIds(context)
+        if (sessionId in candidates) {
+            val remaining = candidates.filterNot { it == sessionId }
+            if (remaining.isEmpty()) clearTimerCandidateSessionIds(context)
+            else storeTimerCandidateSessionIds(context, remaining)
+        }
     }
 
     fun clearTimerCandidateSessionIds(context: Context) = withTimerState {

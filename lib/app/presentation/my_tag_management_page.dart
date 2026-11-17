@@ -302,7 +302,12 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
       additionalHeight: searchHeight + searchPadding.top,
     );
     final content = controller == null
-        ? Center(child: Text(i18n.tr('${widget.type.catalogKey}_incomplete')))
+        ? Center(
+            child: AppEmptyState(
+              icon: Icons.label_off_rounded,
+              title: i18n.tr('${widget.type.catalogKey}_incomplete'),
+            ),
+          )
         : ListenableBuilder(
             listenable: Listenable.merge([controller, _search]),
             builder: (context, _) {

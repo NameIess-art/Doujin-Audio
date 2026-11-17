@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../app/localization/app_language_provider.dart';
+import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
 import '../application/asmr_download_models.dart';
@@ -27,6 +28,7 @@ class AsmrDownloadTaskCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final tokens = AppDesignTokens.of(context);
     final primaryColor = Theme.of(context).colorScheme.primary;
     final retryAttempt = task.isActive
         ? task.fileRetryAttempts.values.fold<int?>(
@@ -40,8 +42,15 @@ class AsmrDownloadTaskCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       clipBehavior: Clip.antiAlias,
       elevation: 0,
-      color: cs.surfaceContainerHigh,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: cs.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(tokens.radiusSection),
+        side: BorderSide(
+          color: cs.outlineVariant.withValues(
+            alpha: tokens.standardBorderAlpha,
+          ),
+        ),
+      ),
       child: AppEntryInkWell(
         onTap: onOpen,
         child: Padding(

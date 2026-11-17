@@ -7,10 +7,12 @@
 #include <wrl/implements.h>
 #include <algorithm>
 #include <mutex>
+#include <utility>
 
 using namespace winrt::Windows::Media;
 namespace {
 constexpr int kControlId = 0x4100;
+constexpr UINT kAudioEndpointChanged = WM_APP + 44;
 const UINT kTaskbarButtonCreated = RegisterWindowMessageW(L"TaskbarButtonCreated");
 constexpr UINT kHotkeyKeys[] = {VK_SPACE, VK_LEFT, VK_RIGHT, VK_UP};
 constexpr const char* kHotkeyActions[] = {"toggle", "previous", "next", "showWindow"};
@@ -67,13 +69,19 @@ HICON ButtonIcon(int button, bool playing, bool dark) {
   if (mask) DeleteObject(mask);
   return icon;
 }
+}  // namespace
+
 class EndpointNotifications : public Microsoft::WRL::RuntimeClass<
     Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>, IMMNotificationClient> {
  public:
   EndpointNotifications(HWND window, const std::wstring& initial) : window_(window), current_(initial) {}
   HRESULT STDMETHODCALLTYPE OnDeviceStateChanged(LPCWSTR id,DWORD state) override {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (id && current_ == id && state != DEVICE_STATE_ACTIVE) PostMessage(window_,WM_APP+44,0,0);
+    if (id && current_ == id && state != DEVICE_STATE_ACTIVE) {
+      current_.clear();
+      disconnected_ = true;
+      PostMessage(window_, kAudioEndpointChanged, 0, 0);
+    }
     return S_OK;
   }
   HRESULT STDMETHODCALLTYPE OnDeviceRemoved(LPCWSTR id) override { return OnDeviceStateChanged(id,DEVICE_STATE_NOTPRESENT); }
@@ -83,14 +91,44 @@ class EndpointNotifications : public Microsoft::WRL::RuntimeClass<
     if (flow == eRender && role == eMultimedia) {
       std::lock_guard<std::mutex> lock(mutex_);
       const std::wstring next = id ? id : L"";
-      if (!current_.empty() && current_ != next) PostMessage(window_,WM_APP+44,0,0);
+      if (!current_.empty() && current_ != next) {
+        // A default change can arrive ahead of the loss notification. Check the
+        // old device on the window thread, keeping COM callbacks nonblocking.
+        previous_defaults_.push_back(std::move(current_));
+        PostMessage(window_, kAudioEndpointChanged, 0, 0);
+      }
       current_ = next;
     }
     return S_OK;
   }
+
+  bool TakeDisconnect(IMMDeviceEnumerator* enumerator) {
+    std::vector<std::wstring> previous_defaults;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      previous_defaults.swap(previous_defaults_);
+      if (std::exchange(disconnected_, false)) return true;
+    }
+    for (const auto& id : previous_defaults) {
+      Microsoft::WRL::ComPtr<IMMDevice> device;
+      const auto result = enumerator->GetDevice(id.c_str(), &device);
+      if (result == HRESULT_FROM_WIN32(ERROR_NOT_FOUND)) return true;
+      DWORD state = 0;
+      if (SUCCEEDED(result) && SUCCEEDED(device->GetState(&state)) &&
+          state != DEVICE_STATE_ACTIVE) return true;
+    }
+    return false;
+  }
+
  private:
-  HWND window_; std::wstring current_; std::mutex mutex_;
+  HWND window_;
+  std::wstring current_;
+  std::mutex mutex_;
+  std::vector<std::wstring> previous_defaults_;
+  bool disconnected_ = false;
 };
+
+namespace {
 const flutter::EncodableValue* Find(const flutter::EncodableMap& map, const char* key) {
   auto it = map.find(flutter::EncodableValue(key)); return it == map.end() ? nullptr : &it->second;
 }
@@ -149,6 +187,10 @@ flutter::EncodableMap MediaControls::HotkeyStatus() const {
 }
 std::optional<std::string> MediaControls::HandleMessage(UINT message, WPARAM wp,
                                                         LPARAM lp) {
+  if (message == kAudioEndpointChanged) {
+    if (endpoint_listener_->TakeDisconnect(endpoints_.Get())) return "deviceDisconnected";
+    return std::string();
+  }
   if (message == kTaskbarButtonCreated) {
     // Explorer creates a new toolbar after restart or restoring from the tray.
     thumbnail_added_ = false;

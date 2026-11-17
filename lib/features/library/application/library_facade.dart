@@ -160,7 +160,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   Future<void>? _loadFuture;
   int _scanOperationGeneration = 0;
   Completer<void>? _scanCompletion;
-  int _pathMutationCount = 0;
+  Completer<void>? _pathMutationCompletion;
   bool _interactionPaused = false;
   bool _background = false;
   void Function()? _coverChangeHandler;
@@ -182,6 +182,15 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   Stream<LibraryState> get states => _service.slice.stream;
   // Cancellation stops mutations before the scan has released its lease.
   Future<void> get scanIdle => _scanCompletion?.future ?? Future<void>.value();
+
+  Future<void> waitForScanAvailability() async {
+    while (true) {
+      final operation = _scanCompletion ?? _pathMutationCompletion;
+      if (operation == null) return;
+      await operation.future;
+    }
+  }
+
   List<LibraryNode> get libraryCards => snapshotCacheService.cards;
   @override
   List<MusicTrack> get library =>
@@ -627,7 +636,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     }).toSet();
     // The editor may open while a scan still owns a staged catalog batch.
     // Its completion requests another disk snapshot after releasing that lease.
-    if (_scanOperationGeneration != 0 || _pathMutationCount != 0) {
+    if (_scanOperationGeneration != 0 || _pathMutationCompletion != null) {
       return retainedFolders;
     }
     final retainedIndex = PathMembershipIndex(retainedFolders);
@@ -853,15 +862,20 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   );
 
   Future<T> _withScanPaused<T>(Future<T> Function() mutation) async {
-    _pathMutationCount++;
+    final previous = _pathMutationCompletion;
+    final completion = _pathMutationCompletion = Completer<void>();
     try {
       cancelScan();
       // A cancelled scan still owns its batch until rollback has finished.
       await scanIdle;
+      await previous?.future;
       if (_disposed) throw StateError('LibraryFacade has been disposed.');
       return await mutation();
     } finally {
-      _pathMutationCount--;
+      if (identical(_pathMutationCompletion, completion)) {
+        _pathMutationCompletion = null;
+      }
+      completion.complete();
     }
   }
 
@@ -910,7 +924,9 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
 
   @override
   int tryBeginScan({required String source, bool background = false}) {
-    if (_disposed || _scanOperationGeneration != 0 || _pathMutationCount != 0) {
+    if (_disposed ||
+        _scanOperationGeneration != 0 ||
+        _pathMutationCompletion != null) {
       return 0;
     }
     _service.scanGenerationSeed++;

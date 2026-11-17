@@ -24,6 +24,7 @@ import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/library_like_cards.dart';
+import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
@@ -693,6 +694,7 @@ class _DlsiteMetadataReviewPageState
         hasBatchNavigation && MediaQuery.sizeOf(context).width < 360;
     final bottomInset =
         MediaQuery.paddingOf(context).bottom +
+        MobileOverlayInset.of(context) +
         78 +
         (stackBottomActions ? 54 : 0);
     final reviewTitle = widget.editing
@@ -901,6 +903,7 @@ class _DlsiteMetadataReviewPageState
                 bottom:
                     16 +
                     MediaQuery.paddingOf(context).bottom +
+                    MobileOverlayInset.of(context) +
                     (stackBottomActions ? 54 : 0),
                 child: AppPageContentTransition(
                   child: ReviewWorkNavigation(
@@ -920,7 +923,9 @@ class _DlsiteMetadataReviewPageState
             if (_metadata != null || _loading)
               Positioned(
                 right: 16,
-                bottom: 16 + MediaQuery.paddingOf(context).bottom,
+                bottom: 16 +
+                    MediaQuery.paddingOf(context).bottom +
+                    MobileOverlayInset.of(context),
                 child: AppPageContentTransition(
                   child: ReviewConfirmButton(
                     saving: _saving,

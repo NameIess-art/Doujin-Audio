@@ -181,6 +181,41 @@ void main() {
     },
   );
 
+  test('Android rechecks the APK before retrying installation', () async {
+    service.dispose();
+    service = AppUpdateService(isWindows: false);
+    server.listen((request) async {
+      if (request.uri.path == '/checksum') {
+        request.response.write('${sha256.convert(payload)}  $assetName');
+      } else {
+        request.response.add(payload);
+      }
+      await request.response.close();
+    });
+    var launches = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(updateChannel, (call) async {
+          expect(call.method, 'installApk');
+          launches++;
+          return {
+            'ok': true,
+            'value': {'ok': false, 'needsPermission': true},
+          };
+        });
+    final file = await service.downloadUpdate(
+      info(checksumPath: 'checksum'),
+      onProgress: (_) {},
+    );
+    expect((await service.installUpdate(file)).needsPermission, isTrue);
+
+    await file.writeAsString('damaged after download');
+    final result = await service.installUpdate(file);
+
+    expect(result.ok, isFalse);
+    expect(result.needsPermission, isFalse);
+    expect(launches, 1);
+  });
+
   test(
     'failed replacement keeps the previous verified package leased',
     () async {

@@ -12,6 +12,8 @@ import '../../../core/ui/ui_operation_service.dart';
 import '../application/dlsite_metadata_batch_session.dart';
 import '../domain/audio_library_category.dart';
 import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/mobile_overlay_inset.dart';
+import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
 
 import 'dlsite_metadata_batch_setup.dart';
@@ -189,87 +191,92 @@ class _DlsiteMetadataBatchPageState
     final startForeground = canStart
         ? cs.onPrimary
         : cs.onSurface.withValues(alpha: 0.38);
+    final bottomInset =
+        MediaQuery.paddingOf(context).bottom + MobileOverlayInset.of(context);
     return Scaffold(
       backgroundColor: cs.surface,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TopPageHeader(
-                icon: Icons.library_add_check_rounded,
-                title: i18n.tr('batch_metadata'),
-                leading: const BackButton(),
-                additionalChild: _error != null
-                    ? null
-                    : Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                        child: HeaderFloatingSurface(
-                          height: null,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 9,
-                          ),
-                          child: Text(
-                            i18n.tr('batch_metadata_hint'),
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  color: cs.onSurfaceVariant,
-                                  height: 1.4,
-                                ),
+      body: PageHeaderInset(
+        topInset: 0,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TopPageHeader(
+                  icon: Icons.library_add_check_rounded,
+                  title: i18n.tr('batch_metadata'),
+                  leading: const BackButton(),
+                  additionalChild: _error != null
+                      ? null
+                      : Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                          child: HeaderFloatingSurface(
+                            height: null,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 9,
+                            ),
+                            child: Text(
+                              i18n.tr('batch_metadata_hint'),
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(
+                                    color: cs.onSurfaceVariant,
+                                    height: 1.4,
+                                  ),
+                            ),
                           ),
                         ),
-                      ),
-              ),
-              Expanded(
-                child: MediaQuery.removePadding(
-                  context: context,
-                  removeTop: true,
-                  child: AppPageContentTransition(
-                    child: _error != null
-                        ? _BatchMetadataErrorView(onRetry: _load)
-                        : BatchMetadataSetupView(
-                            scope: _scope,
-                            allCount: _entries.length,
-                            noMetadataCount: _noMetadataEntries.length,
-                            anyMissingCount: _anyMissingEntries.length,
-                            hasRjCodeCount: _hasRjCodeEntries.length,
-                            specificCount: _specificEntries.length,
-                            onScopeChanged: (scope) {
-                              setState(() {
-                                _scope = scope;
-                              });
-                              if (scope == DlsiteMetadataBatchScope.specific &&
-                                  _specificEntries.isEmpty) {
-                                _pickSpecific();
-                              }
-                            },
-                            onPickSpecific: _pickSpecific,
-                          ),
+                ),
+                Expanded(
+                  child: MediaQuery.removePadding(
+                    context: context,
+                    removeTop: true,
+                    child: AppPageContentTransition(
+                      child: _error != null
+                          ? _BatchMetadataErrorView(onRetry: _load)
+                          : BatchMetadataSetupView(
+                              scope: _scope,
+                              allCount: _entries.length,
+                              noMetadataCount: _noMetadataEntries.length,
+                              anyMissingCount: _anyMissingEntries.length,
+                              hasRjCodeCount: _hasRjCodeEntries.length,
+                              specificCount: _specificEntries.length,
+                              onScopeChanged: (scope) {
+                                setState(() {
+                                  _scope = scope;
+                                });
+                                if (scope == DlsiteMetadataBatchScope.specific &&
+                                    _specificEntries.isEmpty) {
+                                  _pickSpecific();
+                                }
+                              },
+                              onPickSpecific: _pickSpecific,
+                            ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (_error == null)
+              Positioned(
+                right: 16,
+                bottom: 16 + bottomInset,
+                child: AppPageContentTransition(
+                  child: HeaderFloatingActionPill(
+                    pillKey: const ValueKey<String>('batch_metadata_start'),
+                    icon: Icons.play_arrow_rounded,
+                    label: i18n.tr('batch_metadata_start'),
+                    backgroundColor: canStart
+                        ? cs.primary
+                        : cs.onSurface.withValues(alpha: 0.12),
+                    foregroundColor: startForeground,
+                    onTap: canStart ? _run : null,
                   ),
                 ),
               ),
-            ],
-          ),
-          if (_error == null)
-            Positioned(
-              right: 16,
-              bottom: 16 + MediaQuery.paddingOf(context).bottom,
-              child: AppPageContentTransition(
-                child: HeaderFloatingActionPill(
-                  pillKey: const ValueKey<String>('batch_metadata_start'),
-                  icon: Icons.play_arrow_rounded,
-                  label: i18n.tr('batch_metadata_start'),
-                  backgroundColor: canStart
-                      ? cs.primary
-                      : cs.onSurface.withValues(alpha: 0.12),
-                  foregroundColor: startForeground,
-                  onTap: canStart ? _run : null,
-                ),
-              ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -1,5 +1,6 @@
 package com.doujin.audio.player.notification
 
+import com.doujin.audio.MainActivity
 import com.doujin.audio.common.*
 import com.doujin.audio.player.service.*
 import com.doujin.audio.player.session.*
@@ -508,7 +509,7 @@ object PlaybackTimerAlarmScheduler {
                     "triggerRtc=$triggerRtcMs generation=$generation"
             )
             alarmManager.setAlarmClock(
-                AlarmManager.AlarmClockInfo(triggerRtcMs, pendingIntent),
+                AlarmManager.AlarmClockInfo(triggerRtcMs, showTimerIntent(context)),
                 pendingIntent
             )
         } catch (error: SecurityException) {
@@ -548,7 +549,7 @@ object PlaybackTimerAlarmScheduler {
                     "generation=$generation"
             )
             alarmManager.setAlarmClock(
-                AlarmManager.AlarmClockInfo(safeTriggerAtMs, pendingIntent),
+                AlarmManager.AlarmClockInfo(safeTriggerAtMs, showTimerIntent(context)),
                 pendingIntent
             )
         } catch (error: SecurityException) {
@@ -597,24 +598,24 @@ object PlaybackTimerAlarmScheduler {
         return PendingIntent.getBroadcast(context, requestCode, intent, flags)
     }
 
+    private fun showTimerIntent(context: Context): PendingIntent = PendingIntent.getActivity(
+        context,
+        0,
+        Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+        PendingIntent.FLAG_IMMUTABLE
+    )
+
     fun onManualPlaybackStopped(context: Context, sessionId: String) {
         // An explicit transport command removes a target; buffering and focus recovery do not.
         if (sessionId.isBlank()) return
+        NativePlaybackStateStore.removeTimerCandidateSessionId(context, sessionId)
         val pausedSessionIds = NativePlaybackStateStore.loadPausedSessionIds(context)
         if (sessionId !in pausedSessionIds) return
         val remainingPausedIds = pausedSessionIds.filterNot { it == sessionId }
-        val remainingCandidateIds = NativePlaybackStateStore
-            .loadTimerCandidateSessionIds(context)
-            .filterNot { it == sessionId }
         if (remainingPausedIds.isEmpty()) {
             NativePlaybackStateStore.clearPausedSessionIds(context)
         } else {
             NativePlaybackStateStore.storePausedSessionIds(context, remainingPausedIds)
-        }
-        if (remainingCandidateIds.isEmpty()) {
-            NativePlaybackStateStore.clearTimerCandidateSessionIds(context)
-        } else {
-            NativePlaybackStateStore.storeTimerCandidateSessionIds(context, remainingCandidateIds)
         }
         NativePlaybackStateStore.loadTimerRuntimeState(context)?.let { stored ->
             if (sessionId !in stored.pausedSessionIds) return@let

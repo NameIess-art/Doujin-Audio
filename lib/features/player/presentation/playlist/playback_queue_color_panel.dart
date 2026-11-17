@@ -48,7 +48,7 @@ class PlaybackQueueColorPanel extends StatelessWidget {
       child: DecoratedBox(
         key: const ValueKey('playback_queue_color_panel'),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(tokens.radiusOverlay),
           color: cs.surfaceContainerLow,
           boxShadow: [
             BoxShadow(
@@ -60,7 +60,7 @@ class PlaybackQueueColorPanel extends StatelessWidget {
         ),
         child: Material(
           color: Colors.transparent,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(tokens.radiusOverlay),
           clipBehavior: Clip.antiAlias,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),

@@ -230,7 +230,7 @@ class AppEmptyState extends StatelessWidget {
     super.key,
     required this.icon,
     required this.title,
-    required this.message,
+    this.message,
     this.actionLabel,
     this.onAction,
     this.actionIcon = Icons.add_rounded,
@@ -238,7 +238,7 @@ class AppEmptyState extends StatelessWidget {
 
   final IconData icon;
   final String title;
-  final String message;
+  final String? message;
   final String? actionLabel;
   final VoidCallback? onAction;
   final IconData actionIcon;
@@ -265,14 +265,16 @@ class AppEmptyState extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: theme.textTheme.titleLarge,
                 ),
-                SizedBox(height: tokens.spaceXs),
-                Text(
-                  message,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: cs.onSurfaceVariant,
+                if (message != null && message!.isNotEmpty) ...[
+                  SizedBox(height: tokens.spaceXs),
+                  Text(
+                    message!,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
                   ),
-                ),
+                ],
                 if (actionLabel != null && onAction != null) ...[
                   SizedBox(height: tokens.spaceLg),
                   AppLabelledButton(

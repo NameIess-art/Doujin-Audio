@@ -11,6 +11,7 @@ import 'app_buttons.dart';
 import 'app_edge_fade_mask.dart';
 import 'app_glass_surface.dart';
 import 'app_transitions.dart';
+import 'mobile_overlay_inset.dart';
 import 'page_header_inset.dart';
 import 'top_page_header.dart';
 import 'windows_horizontal_wheel_scroll.dart';
@@ -87,7 +88,7 @@ class AppSearchPageScaffold<T> extends StatefulWidget {
   final String Function(String)? translate;
 
   static double contentBottomInset(BuildContext context) =>
-      MediaQuery.paddingOf(context).bottom;
+      MediaQuery.paddingOf(context).bottom + MobileOverlayInset.of(context);
 
   static double controlsTopInset(
     BuildContext context, {

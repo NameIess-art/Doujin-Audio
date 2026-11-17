@@ -10,6 +10,8 @@ import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/file_tree_row.dart';
+import '../../../core/widgets/mobile_overlay_inset.dart';
+import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/search_highlight.dart';
 import '../../../core/widgets/top_page_header.dart';
@@ -70,17 +72,18 @@ class _LibraryManagementPageState extends ConsumerState<LibraryManagementPage> {
               AppPageContentTransition(
                 child: visibleLibraries.isEmpty
                     ? Center(
-                        child: Text(
-                          i18n.tr(
+                        child: AppEmptyState(
+                          icon: query.isEmpty
+                              ? Icons.folder_open_rounded
+                              : Icons.search_off_rounded,
+                          title: i18n.tr(
                             query.isEmpty
                                 ? 'library_manage_empty'
                                 : 'no_search_results',
                           ),
-                          style: Theme.of(context).textTheme.bodyLarge
-                              ?.copyWith(
-                                color: cs.onSurfaceVariant,
-                                fontWeight: FontWeight.w700,
-                              ),
+                          message: query.isEmpty
+                              ? null
+                              : i18n.tr('search_no_match'),
                         ),
                       )
                     : ListView.builder(
@@ -88,7 +91,9 @@ class _LibraryManagementPageState extends ConsumerState<LibraryManagementPage> {
                           16,
                           headerTopInset,
                           16,
-                          24,
+                          MediaQuery.paddingOf(context).bottom +
+                              MobileOverlayInset.of(context) +
+                              24,
                         ),
                         itemCount: visibleLibraries.length,
                         itemBuilder: (context, index) {

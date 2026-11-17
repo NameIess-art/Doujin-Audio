@@ -30,7 +30,7 @@ class _ModeSelector extends ConsumerWidget {
       final restColor = selected
           ? cs.primaryContainer.withValues(alpha: 0.6)
           : cs.surfaceContainerLow;
-      final radius = BorderRadius.circular(14);
+      final radius = BorderRadius.circular(tokens.radiusCard);
       final titleColor = selected ? cs.onPrimaryContainer : cs.onSurface;
       final iconBoxColor = selected
           ? cs.primary

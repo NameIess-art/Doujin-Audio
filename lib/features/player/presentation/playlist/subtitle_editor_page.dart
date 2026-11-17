@@ -169,6 +169,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
         end: cue.end,
         text: next.text,
         originalText: next.originalText,
+        assSourceLine: cue.assSourceLine,
       );
       _dirty = true;
     });
@@ -267,6 +268,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
         end: next.$2,
         text: cue.text,
         originalText: cue.originalText,
+        assSourceLine: cue.assSourceLine,
       );
       _dirty = true;
     });
@@ -307,11 +309,14 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
       _saveGeneration++;
     });
     try {
-      await ref
+      final saved = await ref
           .read(playbackSubtitleServiceProvider)
           .saveEditedSubtitle(widget.trackPath, List.of(_cues!));
       if (!mounted) return false;
-      setState(() => _dirty = false);
+      setState(() {
+        _cues = saved.cues.toList();
+        _dirty = false;
+      });
       showAppSnackBar(
         context,
         ref.read(appLanguageProviderInstanceProvider).tr('subtitle_saved'),

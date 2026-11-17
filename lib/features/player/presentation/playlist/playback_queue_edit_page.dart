@@ -338,7 +338,9 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
             );
           }
 
-          final radius = BorderRadius.circular(24);
+          final radius = BorderRadius.circular(
+            AppDesignTokens.of(context).radiusOverlay,
+          );
           return Padding(
             padding: EdgeInsets.only(top: top),
             child: Align(

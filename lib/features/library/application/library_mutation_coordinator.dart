@@ -636,12 +636,17 @@ final class LibraryMutationCoordinator {
     final renamedPath = await entryEditorService.renameAudioDetailTarget(
       oldTarget,
       safeName,
+      beforeLocalRename: (source, destination) => _checkRenameDestination(
+        source,
+        destination,
+        isDirectory: oldTarget.isLibraryRootFolder,
+      ),
     );
     if (renamedPath == null) {
       throw const AudioDetailRenameException('renameFailed');
     }
     final newPath = PathMatcher.normalize(renamedPath);
-    if (PathMatcher.equalsNormalized(oldPath, newPath)) {
+    if (oldPath == newPath) {
       return AudioDetailRenameResult(detail: detail, renamed: false);
     }
 
@@ -675,7 +680,6 @@ final class LibraryMutationCoordinator {
     snapshotCacheService.markDetailChanged(saveResult.detail);
     _syncStateSlice();
     final backupFailed = saveResult.documentFailed;
-    await _deleteAudioDetail(oldTarget);
     return AudioDetailRenameResult(
       detail: saveResult.detail,
       renamed: true,
@@ -704,12 +708,19 @@ final class LibraryMutationCoordinator {
       oldPath,
       safeName,
       isDirectory: isDirectory,
+      beforeLocalRename: isMedia || isDirectory
+          ? (source, destination) => _checkRenameDestination(
+              source,
+              destination,
+              isDirectory: isDirectory,
+            )
+          : null,
     );
     if (renamedPath == null) {
       throw const AudioDetailRenameException('renameFailed');
     }
     final newPath = PathMatcher.normalize(renamedPath);
-    if (PathMatcher.equalsNormalized(oldPath, newPath)) return newPath;
+    if (oldPath == newPath) return newPath;
 
     if (isDirectory) {
       await _retargetLibraryFolder(
@@ -726,6 +737,33 @@ final class LibraryMutationCoordinator {
       _syncStateSlice();
     }
     return newPath;
+  }
+
+  Future<void> _checkRenameDestination(
+    String source,
+    String destination, {
+    required bool isDirectory,
+  }) async {
+    bool conflicts(String candidate) => isDirectory
+        ? PathMatcher.isWithinOrEqual(candidate, destination) &&
+              !PathMatcher.isWithinOrEqual(candidate, source)
+        : PathMatcher.equalsNormalized(candidate, destination) &&
+              PathMatcher.normalize(candidate) != source;
+
+    if (_service.library.any((track) => conflicts(track.path)) ||
+        _service.libraryEntriesByLibrary.values.any(
+          (entries) => entries.keys.any(conflicts),
+        ) ||
+        (isDirectory &&
+            (_service.watchedFolders.any(conflicts) ||
+                _service.watchedLibraries.any(conflicts)))) {
+      throw const AudioDetailRenameException('nameConflict');
+    }
+    if (!isDirectory &&
+        _persistenceCoordinator.enabled &&
+        await databaseRepository.loadTrackDetail(destination) != null) {
+      throw const AudioDetailRenameException('nameConflict');
+    }
   }
 
   Future<void> _retargetLibraryFolder({

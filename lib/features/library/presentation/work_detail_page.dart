@@ -37,6 +37,7 @@ import '../../../core/widgets/unified_popup_menu.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
+import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/file_tree_row.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
@@ -1628,7 +1629,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       // width so the fully expanded cover, including that area, stays 4:3.
       final coverMaxHeight = (width * 3 / 4 - topSafeArea).clamp(
         0.0,
-        double.infinity,
+        380.0,
       );
       final coverMinHeight = coverMaxHeight.clamp(0.0, 120.0);
       final entryMenus =
@@ -1856,9 +1857,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: Stack(
-        children: [
-          AppPageContentTransition(
+      body: PageHeaderInset(
+        topInset: AppPageHeaderMetrics.contentTopInset(context),
+        child: Stack(
+          children: [
+            AppPageContentTransition(
             backgroundColor: cs.surface,
             child: ScrollActivityGate(
               onMetricsChanged: ref
@@ -1942,6 +1945,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
             ),
           ),
         ],
+      ),
       ),
     );
   }

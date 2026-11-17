@@ -629,6 +629,46 @@ void main() {
     );
 
     test(
+      'manual switch targets the visible row after removing the current track',
+      () async {
+        final preparations = <Map<Object?, Object?>>[];
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              if (call.method == NativePlaybackMethod.prepareSession) {
+                preparations.add(call.arguments as Map<Object?, Object?>);
+              }
+              return <String, Object?>{'ok': true, 'value': null};
+            });
+        final tracks = [
+          for (var index = 0; index < 3; index++)
+            testMusicTrack(
+              name: 'Track $index',
+              path: '/queue/$index.mp3',
+              groupKey: '/queue',
+              groupTitle: 'Queue',
+            ),
+        ];
+        runtimeGraph.library.addTracks(tracks, persist: false);
+        final session = runtimeGraph.playback.createPlaybackQueue('Queue 1');
+        for (final track in tracks) {
+          await queueCoordinator.addTrack(session.id, track);
+        }
+        await runtimeGraph.playback.toggleSessionPlayPause(session.id);
+        await runtimeGraph.playback.removePlaybackQueueEntry(
+          session.id,
+          session.playbackQueue!.entries.first.id,
+        );
+        expect(session.hasDetachedQueueTrack, isTrue);
+
+        await runtimeGraph.playback.switchSessionQueueTrack(session.id, 0);
+
+        final preparation = preparations.last;
+        expect(preparation['path'], PathMatcher.normalize(tracks[1].path));
+        expect(preparation['queueStartIndex'], 1);
+      },
+    );
+
+    test(
       'single files cannot expand into an imported-files work entry',
       () async {
         final selected = MusicTrack(

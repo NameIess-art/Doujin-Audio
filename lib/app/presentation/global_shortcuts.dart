@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/widgets/app_buttons.dart';
 import '../../core/widgets/app_dialog.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/windows_smooth_scroll_controller.dart';
@@ -262,8 +263,9 @@ class GlobalShortcuts extends ConsumerWidget {
                 includeRepeats: false,
               ): closeHelp,
             },
-            child: AppAlertDialog(
-              title: Text(i18n.tr('keyboard_shortcuts_title')),
+            child: AppDialog(
+              title: i18n.tr('keyboard_shortcuts_title'),
+              icon: Icons.keyboard_rounded,
               content: SizedBox(
                 width: 620,
                 child: SingleChildScrollView(
@@ -353,13 +355,15 @@ class GlobalShortcuts extends ConsumerWidget {
                   ),
                 ).withWindowsSmoothScroll(),
               ),
-              actions: [
-                TextButton(
-                  autofocus: true,
-                  onPressed: closeHelp,
-                  child: Text(i18n.tr('close')),
-                ),
-              ],
+              actions: AppDialogActions(
+                children: [
+                  AppPrimaryButton(
+                    autofocus: true,
+                    onPressed: closeHelp,
+                    label: i18n.tr('close'),
+                  ),
+                ],
+              ),
             ),
           );
         },

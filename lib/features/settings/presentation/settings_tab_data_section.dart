@@ -88,12 +88,18 @@ List<Widget> _buildSettingsDataSection({
                   cs.primary,
                 ),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                trailing: cacheOperation.isBusy
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2.2),
-                      )
-                    : null,
+                trailing: AnimatedSwitcher(
+                  duration: kAppPlaybackIconDuration,
+                  switchInCurve: kAppFadeCurve,
+                  switchOutCurve: kAppFadeCurve,
+                  child: cacheOperation.isBusy
+                      ? const SizedBox.square(
+                          key: ValueKey('busy'),
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2.2),
+                        )
+                      : const SizedBox.shrink(key: ValueKey('idle')),
+                ),
               );
             },
           ),

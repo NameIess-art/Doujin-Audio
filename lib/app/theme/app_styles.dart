@@ -41,6 +41,7 @@ class AppRadius {
 
 abstract final class AppPageHeaderMetrics {
   static const double buttonSize = 38;
+  static const double titleIconSize = 22;
   static const double contentHeight = buttonSize;
   static const double rowSpacing = 6;
   static const double expandedContentHeight = contentHeight * 2 + rowSpacing;

@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../core/widgets/app_entry_ink_well.dart';
+import '../../../core/widgets/unified_popup_menu.dart';
 import '../application/asmr_download_models.dart';
 
 import 'asmr_download_format.dart';
@@ -34,7 +36,7 @@ class AsmrDownloadTaskCard extends StatelessWidget {
           )
         : null;
 
-    return Card(
+    final card = Card(
       margin: const EdgeInsets.only(bottom: 12),
       clipBehavior: Clip.antiAlias,
       elevation: 0,
@@ -146,6 +148,59 @@ class AsmrDownloadTaskCard extends StatelessWidget {
         ),
       ),
     );
+
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      return GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onSecondaryTapDown: (details) =>
+            _showContextMenu(context, details.globalPosition),
+        child: card,
+      );
+    }
+    return card;
+  }
+
+  Future<void> _showContextMenu(
+    BuildContext context,
+    Offset globalPosition,
+  ) async {
+    final pauseResumeLabel = task.status == AsmrDownloadTaskStatus.failed
+        ? i18n.tr('retry')
+        : task.status == AsmrDownloadTaskStatus.paused
+        ? i18n.tr('resume')
+        : i18n.tr('pause');
+    final pauseResumeIcon = task.status == AsmrDownloadTaskStatus.failed
+        ? Icons.refresh_rounded
+        : task.status == AsmrDownloadTaskStatus.paused
+        ? Icons.play_arrow_rounded
+        : Icons.pause_rounded;
+
+    final action = await showUnifiedContextMenu<VoidCallback>(
+      context: context,
+      globalPosition: globalPosition,
+      entries: [
+        UnifiedMenuEntry.action(
+          value: onOpen,
+          label: i18n.tr('asmr_download_details_title'),
+          icon: Icons.info_outline_rounded,
+        ),
+        if (task.status != AsmrDownloadTaskStatus.completed &&
+            onTogglePause != null)
+          UnifiedMenuEntry.action(
+            value: onTogglePause!,
+            label: pauseResumeLabel,
+            icon: pauseResumeIcon,
+          ),
+        if (onRemove != null)
+          UnifiedMenuEntry.action(
+            value: onRemove!,
+            label: i18n.tr('asmr_download_remove_task'),
+            icon: Icons.delete_outline_rounded,
+            destructive: true,
+          ),
+      ],
+    );
+    action?.call();
   }
 }
 

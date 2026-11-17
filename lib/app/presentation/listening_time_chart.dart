@@ -254,8 +254,12 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
   Widget build(BuildContext context) {
     final i18n = widget.i18n;
     final chartStyle = widget.style;
+    // The outgoing list can still lay out cells while it fades.
+    final interval = _interval;
+    final skeleton = widget._skeleton;
     final heatmap = chartStyle == ListeningChartStyle.heatmap;
     final periods = _currentPeriods();
+    final maximum = _maximum;
     final selected = _selected == null
         ? periods.last
         : periods.where(_containsSelection).firstOrNull ?? periods.last;
@@ -271,7 +275,7 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
       double height = 16,
       double radius = 6,
       Alignment alignment = Alignment.centerLeft,
-    }) => widget._skeleton
+    }) => skeleton
         ? Stack(
             children: [
               Opacity(opacity: 0, child: child),
@@ -290,14 +294,14 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
         : child;
     String range(ListeningPeriod period) {
       final start = localizations.formatMediumDate(period.start);
-      if (_interval == ListeningInterval.day) return start;
+      if (interval == ListeningInterval.day) return start;
       return '$start – ${localizations.formatMediumDate(DateTime(period.end.year, period.end.month, period.end.day - 1))}';
     }
 
     String label(ListeningPeriod period) {
       final date = period.start;
       final year = (date.year % 100).toString().padLeft(2, '0');
-      return switch (_interval) {
+      return switch (interval) {
         ListeningInterval.day ||
         ListeningInterval.week => '${date.month}/${date.day}',
         ListeningInterval.month => '$year/${date.month}',
@@ -332,18 +336,18 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
 
     final colors = Theme.of(context).colorScheme;
     Widget heatmapCell(int index) {
-      if (widget._skeleton) return const ShimmerContainer(borderRadius: 3);
+      if (skeleton) return const ShimmerContainer(borderRadius: 3);
       final period = index >= 0
           ? periods[index]
           : ListeningPeriod(
-              _moveListeningPeriod(periods.first.start, _interval, index),
-              _moveListeningPeriod(periods.first.start, _interval, index + 1),
+              _moveListeningPeriod(periods.first.start, interval, index),
+              _moveListeningPeriod(periods.first.start, interval, index + 1),
               Duration.zero,
             );
       final milliseconds = period.duration.inMilliseconds;
       final level = milliseconds <= 0
           ? 0
-          : ((milliseconds * 4 + _maximum - 1) ~/ _maximum).clamp(1, 4);
+          : ((milliseconds * 4 + maximum - 1) ~/ maximum).clamp(1, 4);
       final description =
           '${range(period)}: ${listeningDurationText(i18n, period.duration)}';
       return _HeatmapPeriodCell(
@@ -493,11 +497,13 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
               ],
             ),
             child: WindowsHorizontalWheelScroll(
-              key: ValueKey(chartStyle),
+              key: ValueKey((chartStyle, interval)),
               // Each fading chart owns its scroll position, including rapid
               // reversals while an older instance is still fading out.
               builder: (controller) {
-                _scrollController = controller;
+                if (_interval == interval && widget.style == chartStyle) {
+                  _scrollController = controller;
+                }
                 return ScrollConfiguration(
                   behavior: ScrollConfiguration.of(context).copyWith(
                     dragDevices: PointerDeviceKind.values.toSet(),
@@ -510,16 +516,22 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
                         (constraints.maxHeight - 3 * (_heatmapRows - 1)) /
                             _heatmapRows,
                       );
+                      var itemExtent = _barExtent(constraints.maxWidth);
+                      var itemCount = periods.length;
                       if (heatmap) {
                         final visibleColumns = math.max(
                           1,
                           ((constraints.maxWidth + 3) / (cellSize + 3)).floor(),
                         );
-                        _heatmapExtent = constraints.maxWidth / visibleColumns;
-                        _heatmapColumnCount = math.max(
+                        itemExtent = constraints.maxWidth / visibleColumns;
+                        itemCount = math.max(
                           visibleColumns,
                           (periods.length + _heatmapRows - 1) ~/ _heatmapRows,
                         );
+                        if (identical(_scrollController, controller)) {
+                          _heatmapExtent = itemExtent;
+                          _heatmapColumnCount = itemCount;
+                        }
                       }
                       return ListView.builder(
                         key: ValueKey('listening-chart-${chartStyle.name}'),
@@ -527,12 +539,8 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
                         reverse: true,
                         scrollDirection: Axis.horizontal,
                         padding: EdgeInsets.zero,
-                        itemExtent: heatmap
-                            ? _heatmapExtent
-                            : _barExtent(constraints.maxWidth),
-                        itemCount: heatmap
-                            ? _heatmapColumnCount
-                            : periods.length,
+                        itemExtent: itemExtent,
+                        itemCount: itemCount,
                         itemBuilder: (context, index) {
                           if (heatmap) return heatmapColumn(index, cellSize);
                           final period = periods[periods.length - index - 1];
@@ -546,7 +554,7 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
                                   height: 138,
                                   child: Align(
                                     alignment: Alignment.bottomCenter,
-                                    child: widget._skeleton
+                                    child: skeleton
                                         ? ShimmerContainer(
                                             width: 18,
                                             height: 28.0 + (index % 4) * 30,
@@ -560,7 +568,7 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
                                                   period
                                                       .duration
                                                       .inMilliseconds /
-                                                  _maximum,
+                                                  maximum,
                                             ),
                                             decoration: BoxDecoration(
                                               color: active

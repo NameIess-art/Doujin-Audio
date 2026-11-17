@@ -947,6 +947,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           initialValue: name,
           autofocus: true,
           textInputAction: TextInputAction.done,
+          decoration: InputDecoration(hintText: i18n.tr('rename')),
           onChanged: (value) => name = value,
           onFieldSubmitted: (value) => Navigator.of(dialogContext).pop(value),
         ),

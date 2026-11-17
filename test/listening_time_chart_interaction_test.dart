@@ -301,6 +301,64 @@ void main() {
     }
   }
 
+  for (final style in ListeningChartStyle.values) {
+    for (final reducedMotion in [false, true]) {
+      testWidgets(
+        '$style fades between listening intervals with reduced motion $reducedMotion',
+        (tester) async {
+          await pumpChart(tester, style: style, reducedMotion: reducedMotion);
+          final area = find.byKey(const ValueKey('listening-chart-bars'));
+          final height = tester.getSize(area).height;
+          final fades = find.descendant(
+            of: area,
+            matching: find.byType(FadeTransition),
+          );
+
+          Future<void> select(ListeningInterval interval) async {
+            final chip = find.widgetWithText(
+              ChoiceChip,
+              i18n.tr('my_interval_${interval.name}'),
+            );
+            await tester.ensureVisible(chip);
+            await tester.tap(chip);
+            await tester.pump();
+            expect(tester.widget<ChoiceChip>(chip).selected, isTrue);
+          }
+
+          for (final interval in [
+            ...ListeningInterval.values.skip(1),
+            ListeningInterval.day,
+          ]) {
+            await select(interval);
+            if (!reducedMotion) {
+              expect(fades, findsNWidgets(2));
+              await tester.pump(kAppFadeDuration ~/ 2);
+              for (final fade in tester.widgetList<FadeTransition>(fades)) {
+                expect(fade.opacity.value, inExclusiveRange(0.45, 0.55));
+              }
+              await tester.pumpAndSettle();
+            } else {
+              await tester.pump();
+            }
+            expect(tester.widget<FadeTransition>(fades).opacity.value, 1);
+            expect(tester.getSize(area).height, height);
+          }
+
+          await select(ListeningInterval.year);
+          await select(ListeningInterval.day);
+          await tester.pumpAndSettle();
+          expect(find.byType(ListView), findsOneWidget);
+          expect(controller(tester).positions, hasLength(1));
+          expect(tester.takeException(), isNull);
+        },
+        variant: const TargetPlatformVariant({
+          TargetPlatform.android,
+          TargetPlatform.windows,
+        }),
+      );
+    }
+  }
+
   for (final width in [280.0, 720.0]) {
     testWidgets(
       'heatmap fills seven rows and anchors latest at bottom right at width $width',

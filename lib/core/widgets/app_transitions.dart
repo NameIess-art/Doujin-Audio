@@ -1355,6 +1355,7 @@ class PlaceholderContentTransition extends StatefulWidget {
     required this.placeholder,
     required this.content,
     this.duration = kPlaceholderContentTransitionDuration,
+    this.curve = kAppSpringCurve,
     this.fit = StackFit.expand,
     this.alignment = AlignmentDirectional.topStart,
     this.protectInteraction = true,
@@ -1364,6 +1365,7 @@ class PlaceholderContentTransition extends StatefulWidget {
   final Widget placeholder;
   final Widget content;
   final Duration duration;
+  final Curve curve;
   final StackFit fit;
   final AlignmentGeometry alignment;
 
@@ -1400,7 +1402,7 @@ class _PlaceholderContentTransitionState
       duration: widget.duration,
       value: widget.showPlaceholder ? 0 : 1,
     )..addStatusListener(_handleAnimationStatus);
-    _contentOpacity = _controller.drive(CurveTween(curve: kAppSpringCurve));
+    _contentOpacity = _controller.drive(CurveTween(curve: widget.curve));
     _placeholderOpacity = ReverseAnimation(_contentOpacity);
   }
 
@@ -1461,6 +1463,10 @@ class _PlaceholderContentTransitionState
     super.didUpdateWidget(oldWidget);
     if (oldWidget.duration != widget.duration) {
       _controller.duration = widget.duration;
+    }
+    if (oldWidget.curve != widget.curve) {
+      _contentOpacity = _controller.drive(CurveTween(curve: widget.curve));
+      _placeholderOpacity = ReverseAnimation(_contentOpacity);
     }
     if (oldWidget.showPlaceholder != widget.showPlaceholder) {
       _departingContent = widget.showPlaceholder ? oldWidget.content : null;

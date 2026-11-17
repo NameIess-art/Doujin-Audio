@@ -14,18 +14,29 @@ Widget _buildThemedApp({required Widget child, ThemeData? theme}) {
 }
 
 void main() {
-  testWidgets('playlist header icon is optically enlarged in both capsules', (
+  testWidgets('title capsules use larger text and icons within their row height', (
     tester,
   ) async {
     for (final topCapsule in [false, true]) {
-      for (final icon in [Icons.playlist_play_rounded, Icons.cloud_rounded]) {
+      for (final icon in [
+        Icons.playlist_play_rounded,
+        Icons.cloud_rounded,
+        Icons.description_rounded,
+      ]) {
         await tester.pumpWidget(
           _buildThemedApp(
-            child: TopPageHeader(
-              icon: icon,
-              title: 'Playlist',
-              topCapsuleTitle: topCapsule ? 'Playlist' : null,
-              useSafeAreaTop: false,
+            child: SizedBox(
+              width: 320,
+              child: MediaQuery(
+                data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+                child: TopPageHeader(
+                  icon: icon,
+                  title: topCapsule ? 'Actions' : 'Playlist',
+                  topCapsuleTitle: topCapsule ? 'Playlist' : null,
+                  topCapsuleData: '12 selected',
+                  useSafeAreaTop: false,
+                ),
+              ),
             ),
           ),
         );
@@ -36,18 +47,31 @@ void main() {
               )
             : find.byIcon(icon);
         final size = tester.widget<Icon>(iconFinder).size;
-        final expected = topCapsule ? 16.0 : 18.0;
         expect(
           size,
           closeTo(
-            icon == Icons.playlist_play_rounded ? expected * 1.15 : expected,
+            icon == Icons.playlist_play_rounded ? 22 * 1.15 : 22,
             0.001,
           ),
+        );
+        expect(tester.widget<Text>(find.text('Playlist')).style!.fontSize, 16);
+        if (topCapsule) {
+          expect(
+            tester.widget<Text>(find.text('12 selected')).style!.fontSize,
+            13,
+          );
+        }
+        expect(
+          tester.getSize(find.byType(TopPageHeader)).height,
+          topCapsule ? 88 : 44,
         );
         expect(tester.takeException(), isNull);
       }
     }
-  });
+  }, variant: const TargetPlatformVariant({
+    TargetPlatform.android,
+    TargetPlatform.windows,
+  }));
 
   group('TopPageHeader and HeaderSegmentedCategoryBar theme & accent tests', () {
     testWidgets('TopPageHeader uses custom iconColor when provided', (

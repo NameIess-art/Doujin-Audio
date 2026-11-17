@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/widgets/file_tree_row.dart';
+import '../../../core/widgets/operation_feedback.dart';
 import '../domain/audio_library_category.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/page_header_inset.dart';
@@ -100,8 +101,20 @@ class _DlsiteMetadataWorkPickerPageState
                       top: AppPageHeaderMetrics.contentTopInset(context),
                       bottom: 78 + MediaQuery.paddingOf(context).bottom,
                     ),
-                    itemCount: filtered.length,
+                    itemCount: filtered.isEmpty ? 1 : filtered.length,
                     itemBuilder: (context, index) {
+                      if (filtered.isEmpty) {
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 80),
+                          child: Center(
+                            child: AppEmptyState(
+                              icon: Icons.search_off_rounded,
+                              title: i18n.tr('no_results_found'),
+                              message: i18n.tr('search_no_match'),
+                            ),
+                          ),
+                        );
+                      }
                       final entry = filtered[index];
                       final id = AudioLibraryCategorySnapshot.targetKey(
                         entry.target,

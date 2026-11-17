@@ -120,14 +120,10 @@ class _AsmrDownloadTaskPageState extends ConsumerState<AsmrDownloadTaskPage> {
                       }
                       return taskIds.isEmpty
                           ? Center(
-                              child: Text(
-                                i18n.tr('asmr_download_no_tasks'),
-                                style: Theme.of(context).textTheme.bodyLarge
-                                    ?.copyWith(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurfaceVariant,
-                                    ),
+                              child: AppEmptyState(
+                                icon: Icons.download_done_rounded,
+                                title: i18n.tr('asmr_download_no_tasks'),
+                                message: i18n.tr('asmr_download_task_title'),
                               ),
                             )
                           : ListView.builder(
@@ -153,7 +149,7 @@ class _AsmrDownloadTaskPageState extends ConsumerState<AsmrDownloadTaskPage> {
               child: TopPageHeader(
                 icon: Icons.download_done_rounded,
                 iconColor: Theme.of(context).colorScheme.primary,
-                leading: const BackButton(),
+                leading: const AppHeaderBackButton(),
                 title: i18n.tr('asmr_download_task_title'),
               ),
             ),

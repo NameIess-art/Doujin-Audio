@@ -258,14 +258,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
               right: 0,
               child: TopPageHeader(
                 key: headerKey,
-                titleWidget: HeaderTopCapsule(
-                  title: i18n.tr('settings'),
-                  leading: Icon(
-                    Icons.settings_rounded,
-                    size: 16,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ),
+                icon: Icons.settings_rounded,
+                topCapsuleTitle: i18n.tr('settings'),
               ),
             ),
           ],
@@ -445,11 +439,7 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
               child: TopPageHeader(
                 icon: widget.category.icon,
                 title: i18n.tr(widget.category.labelKey),
-                leading: IconButton(
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  icon: const Icon(Icons.arrow_back_rounded),
-                  tooltip: i18n.tr('back'),
-                ),
+                leading: const AppHeaderBackButton(),
               ),
             ),
           ],

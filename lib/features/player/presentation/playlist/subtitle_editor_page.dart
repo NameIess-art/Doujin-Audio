@@ -8,6 +8,7 @@ import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/subtitle_parser.dart';
 import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/page_header_inset.dart';
 import '../../../../core/widgets/swipe_reveal_card.dart';
 import '../../../../core/widgets/top_page_header.dart';
@@ -64,8 +65,8 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     }
   }
 
-  Future<void> _editText(int index) async {
-    if (_saving) return;
+  Future<void> _editText(SubtitleCue cue) async {
+    if (_saving || !_cues!.contains(cue)) return;
     final generation = _saveGeneration;
     String normalizeLines(String value) => value
         .split(RegExp(r'\r?\n'))
@@ -73,7 +74,6 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
         .where((line) => line.isNotEmpty)
         .join('\n');
 
-    final cue = _cues![index];
     var text = cue.text;
     final original = cue.originalText;
     final bilingual =
@@ -174,10 +174,11 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     });
   }
 
-  Future<void> _editTime(int index) async {
+  Future<void> _editTime(SubtitleCue cue) async {
     if (_saving) return;
+    final index = _cues!.indexOf(cue);
+    if (index < 0) return;
     final generation = _saveGeneration;
-    final cue = _cues![index];
     final hasTime = cue.end > cue.start;
     var startText = hasTime ? _formatTime(cue.start) : '';
     var endText = hasTime ? _formatTime(cue.end) : '';
@@ -289,7 +290,12 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     final index = _cues?.indexOf(cue) ?? -1;
     if (index < 0) return;
     setState(() {
-      _cues!.removeAt(index);
+      if (_cues!.length == 1) {
+        // The outgoing list can still build its final row while fading.
+        _cues = [];
+      } else {
+        _cues!.removeAt(index);
+      }
       _dirty = true;
     });
   }
@@ -401,126 +407,190 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final contentTopInset = AppPageHeaderMetrics.contentTopInset(context);
+    final cues = _cues;
+    Widget transitionChild(Widget child, {required bool interactive}) {
+      return ExcludeFocus(
+        key: child.key,
+        excluding: !interactive,
+        child: ExcludeSemantics(
+          excluding: !interactive,
+          child: IgnorePointer(ignoring: !interactive, child: child),
+        ),
+      );
+    }
+
     final page = Scaffold(
       body: PageHeaderInset(
         topInset: contentTopInset,
         child: Stack(
           children: [
             Positioned.fill(
-              child: _errorKey != null
-                  ? Center(child: Text(i18n.tr(_errorKey!)))
-                  : _cues == null
-                  ? const Center(child: CircularProgressIndicator.adaptive())
-                  : _cues!.isEmpty
-                  ? Center(
-                      child: Text(
-                        i18n.tr(
-                          _dirty
-                              ? 'subtitle_all_removed'
-                              : 'subtitle_no_content',
-                        ),
-                      ),
-                    )
-                  : ListView.separated(
-                      padding: EdgeInsets.fromLTRB(16, contentTopInset, 16, 16),
-                      itemCount: _cues!.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 8),
-                      itemBuilder: (context, index) {
-                        final cue = _cues![index];
-                        final needsText = cue.text.trim().isEmpty;
-                        final needsTime = cue.end <= cue.start;
-                        return SwipeRevealCard(
-                          key: ObjectKey(cue),
-                          enabled: !_saving,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+              child: AnimatedSwitcher(
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : kPlaceholderContentTransitionDuration,
+                switchInCurve: kAppFadeCurve,
+                switchOutCurve: kAppFadeCurve,
+                layoutBuilder: (current, previous) => Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    for (final child in previous)
+                      transitionChild(child, interactive: false),
+                    if (current != null)
+                      transitionChild(current, interactive: true),
+                  ],
+                ),
+                child: _errorKey != null
+                    ? Center(
+                        key: ValueKey('error_$_errorKey'),
+                        child: Text(i18n.tr(_errorKey!)),
+                      )
+                    : cues == null
+                    ? const Center(
+                        key: ValueKey('cues_loading'),
+                        child: CircularProgressIndicator.adaptive(),
+                      )
+                    : cues.isEmpty
+                    ? Center(
+                        key: ValueKey('cues_empty_$_dirty'),
+                        child: Text(
+                          i18n.tr(
+                            _dirty
+                                ? 'subtitle_all_removed'
+                                : 'subtitle_no_content',
                           ),
-                          closedColor: cs.surfaceContainerLow,
-                          onRemove: () => _deleteCue(cue),
-                          actionLabel: i18n.tr('subtitle_delete_cue'),
-                          removeTooltip: i18n.tr('subtitle_delete_cue'),
-                          onLeadingAction: () => _insertAfter(cue),
-                          leadingActionLabel: i18n.tr('subtitle_add_below'),
-                          leadingActionTooltip: i18n.tr('subtitle_add_below'),
-                          leadingActionIcon: Icons.add_rounded,
-                          child: Material(
-                            color: cs.surfaceContainerLow,
-                            borderRadius: BorderRadius.circular(12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
+                        ),
+                      )
+                    : KeyedSubtree(
+                        key: const ValueKey('cues_list'),
+                        child: ListView.separated(
+                          padding: EdgeInsets.fromLTRB(
+                            16,
+                            contentTopInset,
+                            16,
+                            16,
+                          ),
+                          itemCount: cues.length,
+                          separatorBuilder: (_, _) => const SizedBox(height: 8),
+                          itemBuilder: (context, index) {
+                            final cue = cues[index];
+                            final needsText = cue.text.trim().isEmpty;
+                            final needsTime = cue.end <= cue.start;
+                            return SwipeRevealCard(
+                              key: ObjectKey(cue),
+                              enabled: !_saving,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              closedColor: cs.surfaceContainerLow,
+                              onRemove: () => _deleteCue(cue),
+                              actionLabel: i18n.tr('subtitle_delete_cue'),
+                              removeTooltip: i18n.tr('subtitle_delete_cue'),
+                              onLeadingAction: () => _insertAfter(cue),
+                              leadingActionLabel: i18n.tr('subtitle_add_below'),
+                              leadingActionTooltip: i18n.tr(
+                                'subtitle_add_below',
+                              ),
+                              leadingActionIcon: Icons.add_rounded,
+                              child: Material(
+                                color: cs.surfaceContainerLow,
+                                borderRadius: BorderRadius.circular(12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Expanded(
-                                      child: InkWell(
-                                        mouseCursor: WidgetStateMouseCursor.clickable,
-                                        key: ValueKey('subtitle_text_$index'),
-                                        borderRadius: BorderRadius.circular(12),
-                                        onTap: _saving
-                                            ? null
-                                            : () => _editText(index),
-                                        child: Padding(
-                                          padding: const EdgeInsets.all(14),
-                                          child: Text(
-                                            needsText
-                                                ? i18n.tr('subtitle_new_text')
-                                                : cue.text,
-                                            style: needsText
-                                                ? TextStyle(
-                                                    color: cs.onSurfaceVariant,
-                                                  )
-                                                : null,
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: InkWell(
+                                            mouseCursor: WidgetStateMouseCursor
+                                                .clickable,
+                                            key: ValueKey(
+                                              'subtitle_text_$index',
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                            onTap: _saving
+                                                ? null
+                                                : () => _editText(cue),
+                                            child: Padding(
+                                              padding: const EdgeInsets.all(14),
+                                              child: Text(
+                                                needsText
+                                                    ? i18n.tr(
+                                                        'subtitle_new_text',
+                                                      )
+                                                    : cue.text,
+                                                style: needsText
+                                                    ? TextStyle(
+                                                        color:
+                                                            cs.onSurfaceVariant,
+                                                      )
+                                                    : null,
+                                              ),
+                                            ),
                                           ),
                                         ),
-                                      ),
+                                        InkWell(
+                                          mouseCursor:
+                                              WidgetStateMouseCursor.clickable,
+                                          key: ValueKey('subtitle_time_$index'),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                          onTap: _saving
+                                              ? null
+                                              : () => _editTime(cue),
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(12),
+                                            child: needsTime
+                                                ? Text(
+                                                    i18n.tr(
+                                                      'subtitle_new_time',
+                                                    ),
+                                                  )
+                                                : Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment.end,
+                                                    children: [
+                                                      Text(
+                                                        _formatTime(cue.start),
+                                                      ),
+                                                      Text(
+                                                        _formatTime(cue.end),
+                                                      ),
+                                                    ],
+                                                  ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    InkWell(
-                                      mouseCursor: WidgetStateMouseCursor.clickable,
-                                      key: ValueKey('subtitle_time_$index'),
-                                      borderRadius: BorderRadius.circular(12),
-                                      onTap: _saving
-                                          ? null
-                                          : () => _editTime(index),
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(12),
-                                        child: needsTime
-                                            ? Text(i18n.tr('subtitle_new_time'))
-                                            : Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.end,
-                                                children: [
-                                                  Text(_formatTime(cue.start)),
-                                                  Text(_formatTime(cue.end)),
-                                                ],
+                                    if (needsText || needsTime)
+                                      Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          14,
+                                          0,
+                                          14,
+                                          12,
+                                        ),
+                                        child: Text(
+                                          i18n.tr('subtitle_complete_cue'),
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall
+                                              ?.copyWith(
+                                                color: cs.onSurfaceVariant,
                                               ),
+                                        ),
                                       ),
-                                    ),
                                   ],
                                 ),
-                                if (needsText || needsTime)
-                                  Padding(
-                                    padding: const EdgeInsets.fromLTRB(
-                                      14,
-                                      0,
-                                      14,
-                                      12,
-                                    ),
-                                    child: Text(
-                                      i18n.tr('subtitle_complete_cue'),
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.copyWith(
-                                            color: cs.onSurfaceVariant,
-                                          ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ).withWindowsSmoothScroll(),
+                              ),
+                            );
+                          },
+                        ).withWindowsSmoothScroll(),
+                      ),
+              ),
             ),
             Positioned(
               top: 0,
@@ -529,9 +599,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
               child: TopPageHeader(
                 icon: Icons.edit_note_rounded,
                 title: i18n.tr('subtitle_edit'),
-                leading: BackButton(
-                  onPressed: _saving ? null : _requestExit,
-                ),
+                leading: BackButton(onPressed: _saving ? null : _requestExit),
                 trailing: IconButton(
                   tooltip: i18n.tr('save'),
                   onPressed: _canSave ? _save : null,

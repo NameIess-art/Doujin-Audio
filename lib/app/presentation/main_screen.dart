@@ -366,7 +366,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
         _subtitleOverlay.requestRuntimeSync();
       }
       Future.delayed(const Duration(milliseconds: 750), () {
-        if (!mounted) return;
+        if (!mounted || !_appInForeground) return;
         warmup.schedule(isPlaybackPage: _isPlaybackPage, immediate: true);
       });
     });
@@ -729,25 +729,16 @@ class _MainScreenState extends ConsumerState<MainScreen>
       return;
     }
     _appInForeground = true;
-    // Keep cached content available for the first restored frame. Coalesced
-    // presentation updates and warmup resume after that frame's idle period.
-    _protectForegroundFrame();
+    _protectForegroundFrame(reconcileRuntime: true);
     if (shouldRunGlobalSubtitleOverlay(appInForeground: _appInForeground)) {
       _subtitleOverlay.requestRuntimeSync();
     } else {
       unawaited(_subtitleOverlay.stopRuntime(immediate: true));
     }
     unawaited(_permissionActionController.handleAppResumed());
-    unawaited(
-      ref.read(audioRuntimeCoordinatorProvider).resumeForeground().then((_) {
-        if (!mounted) return;
-        final warmup = ref.read(audioUiWarmupCoordinatorProvider);
-        warmup.schedule(isPlaybackPage: _isPlaybackPage, immediate: true);
-      }),
-    );
   }
 
-  void _protectForegroundFrame() {
+  void _protectForegroundFrame({bool reconcileRuntime = false}) {
     final generation = ++_foregroundInteractionGeneration;
     final interaction = UiInteractionCoordinator.instance;
     interaction.beginInteraction(
@@ -755,13 +746,26 @@ class _MainScreenState extends ConsumerState<MainScreen>
       deferVisualUpdates: true,
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted &&
-          _appInForeground &&
-          generation == _foregroundInteractionGeneration) {
-        interaction.endInteraction(_foregroundInteraction);
+      if (!mounted ||
+          !_appInForeground ||
+          generation != _foregroundInteractionGeneration) {
+        return;
+      }
+      interaction.endInteraction(_foregroundInteraction);
+      if (reconcileRuntime) {
+        // Let Flutter build the restored frame before requesting native state.
+        unawaited(_reconcileForegroundRuntime(generation));
       }
     });
     WidgetsBinding.instance.scheduleFrame();
+  }
+
+  Future<void> _reconcileForegroundRuntime(int generation) async {
+    await ref.read(audioRuntimeCoordinatorProvider).resumeForeground();
+    if (!mounted || generation != _foregroundInteractionGeneration) return;
+    ref
+        .read(audioUiWarmupCoordinatorProvider)
+        .schedule(isPlaybackPage: _isPlaybackPage, immediate: true);
   }
 
   void _cancelForegroundProtection() {

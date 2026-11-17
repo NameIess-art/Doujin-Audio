@@ -10,6 +10,7 @@ import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/app_search_suggestions.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/mobile_overlay_inset.dart';
+import '../../core/widgets/operation_feedback.dart';
 import '../../core/widgets/page_header_inset.dart';
 import '../../core/widgets/scroll_activity_gate.dart';
 import '../../core/widgets/shimmer_loading.dart';
@@ -352,41 +353,61 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                         ),
                       ),
                     ),
-                  SliverPadding(
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      0,
-                      16,
-                      MobileOverlayInset.of(context) + 88,
-                    ),
-                    sliver: ListenableBuilder(
-                      listenable: _draftRevision,
-                      builder: (context, _) => AppElementChipSliver(
-                        items: items,
-                        labels: view.labels,
-                        resolveRowCount: true,
-                        isSelected: (key) =>
-                            (view.automatic[key] ?? 0) > 0 ||
-                            (_changes[key] ?? view.selected.contains(key)),
-                        isEnabled: (key) => (view.automatic[key] ?? 0) <= 0,
-                        isMuted: (key) =>
-                            view.automatic.containsKey(key) &&
-                            _changes[key] != false,
-                        mutedHint: i18n.tr(widget.type.listenedKey),
-                        readOnly: _saving,
-                        onToggle: (key) {
-                          final value =
-                              !(_changes[key] ?? view.selected.contains(key));
-                          if (value == view.selected.contains(key)) {
-                            _changes.remove(key);
-                          } else {
-                            _changes[key] = value;
-                          }
-                          _draftRevision.value++;
-                        },
+                  if (items.isEmpty)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(
+                        child: AppEmptyState(
+                          icon: _search.text.trim().isNotEmpty
+                              ? Icons.search_off_rounded
+                              : Icons.label_off_rounded,
+                          title: i18n.tr(
+                            _search.text.trim().isNotEmpty
+                                ? 'no_results_found'
+                                : widget.type.emptyKey,
+                          ),
+                          message: _search.text.trim().isNotEmpty
+                              ? i18n.tr('search_no_match')
+                              : i18n.tr(widget.type.titleKey),
+                        ),
+                      ),
+                    )
+                  else
+                    SliverPadding(
+                      padding: EdgeInsets.fromLTRB(
+                        16,
+                        0,
+                        16,
+                        MobileOverlayInset.of(context) + 88,
+                      ),
+                      sliver: ListenableBuilder(
+                        listenable: _draftRevision,
+                        builder: (context, _) => AppElementChipSliver(
+                          items: items,
+                          labels: view.labels,
+                          resolveRowCount: true,
+                          isSelected: (key) =>
+                              (view.automatic[key] ?? 0) > 0 ||
+                              (_changes[key] ?? view.selected.contains(key)),
+                          isEnabled: (key) => (view.automatic[key] ?? 0) <= 0,
+                          isMuted: (key) =>
+                              view.automatic.containsKey(key) &&
+                              _changes[key] != false,
+                          mutedHint: i18n.tr(widget.type.listenedKey),
+                          readOnly: _saving,
+                          onToggle: (key) {
+                            final value =
+                                !(_changes[key] ?? view.selected.contains(key));
+                            if (value == view.selected.contains(key)) {
+                              _changes.remove(key);
+                            } else {
+                              _changes[key] = value;
+                            }
+                            _draftRevision.value++;
+                          },
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ).withWindowsSmoothScroll();
             },

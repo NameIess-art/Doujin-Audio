@@ -44,12 +44,22 @@ List<Widget> _buildSettingsAsmrSection({
                     : onChooseAsmrDownloadDestination,
                 tooltip: i18n.tr('asmr_download_choose_path'),
                 color: cs.onSurfaceVariant,
-                icon: asmrDownloadPathOperation.isBusy
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2.2),
-                      )
-                    : const Icon(Icons.drive_folder_upload_rounded, size: 20),
+                icon: AnimatedSwitcher(
+                  duration: kAppPlaybackIconDuration,
+                  switchInCurve: kAppFadeCurve,
+                  switchOutCurve: kAppFadeCurve,
+                  child: asmrDownloadPathOperation.isBusy
+                      ? const SizedBox.square(
+                          key: ValueKey('busy'),
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2.2),
+                        )
+                      : const Icon(
+                          Icons.drive_folder_upload_rounded,
+                          key: ValueKey('idle'),
+                          size: 20,
+                        ),
+                ),
               ),
             );
           },

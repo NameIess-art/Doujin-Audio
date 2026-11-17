@@ -69,8 +69,9 @@ class _SubtitleModelDownloadDialogState
       builder: (context, _) {
         final progress = widget.store.snapshot(widget.spec);
         final downloading = progress.active || _waiting;
-        return AppAlertDialog(
-          title: Text(i18n.tr('subtitle_model_download_title')),
+        return AppDialog(
+          title: i18n.tr('subtitle_model_download_title'),
+          icon: Icons.download_rounded,
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -103,25 +104,23 @@ class _SubtitleModelDownloadDialogState
               ],
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, downloading),
-              child: Text(
-                i18n.tr(
+          actions: AppDialogActions(
+            children: [
+              AppSecondaryButton(
+                onPressed: () => Navigator.pop(context, downloading),
+                label: i18n.tr(
                   downloading ? 'subtitle_download_in_background' : 'cancel',
                 ),
               ),
-            ),
-            if (!downloading)
-              AppPillButton(
-                onPressed: _observeDownload,
-                child: Text(
-                  i18n.tr(
+              if (!downloading)
+                AppPrimaryButton(
+                  onPressed: _observeDownload,
+                  label: i18n.tr(
                     _failed || progress.error != null ? 'retry' : 'confirm',
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         );
       },
     );

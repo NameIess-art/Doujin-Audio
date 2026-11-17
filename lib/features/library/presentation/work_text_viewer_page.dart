@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -10,6 +11,7 @@ import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
+import '../../../core/logging/app_log_service.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/app_transitions.dart';
@@ -41,7 +43,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
 
   bool _loading = true;
   PreparedWorkText? _document;
-  PdfController? _pdfController;
+  Uint8List? _pdfBytes;
   bool _loadFailed = false;
   int _loadGeneration = 0;
   bool _loadPending = false;
@@ -71,14 +73,8 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
     _readRequest?.cancel();
     UiInteractionCoordinator.instance.cancelCommit(_loadKey);
     UiInteractionCoordinator.instance.cancelCommit(_resultKey);
-    _disposePdfController();
     _scrollController.dispose();
     super.dispose();
-  }
-
-  void _disposePdfController() {
-    _pdfController?.dispose();
-    _pdfController = null;
   }
 
   WorkTextFile? get _currentFile =>
@@ -90,7 +86,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
     _readRequest = null;
     UiInteractionCoordinator.instance.cancelCommit(_loadKey);
     UiInteractionCoordinator.instance.cancelCommit(_resultKey);
-    _disposePdfController();
+    _pdfBytes = null;
     final file = _currentFile;
     if (file == null) {
       setState(() {
@@ -147,12 +143,9 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
             });
             return;
           }
-          final controller = PdfController(
-            document: PdfDocument.openData(bytes),
-          );
           setState(() {
             _loading = false;
-            _pdfController = controller;
+            _pdfBytes = bytes;
           });
         } else {
           setState(() {
@@ -256,11 +249,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
                         enabled: canTranslate,
                       )
                     : null,
-                leading: IconButton(
-                  icon: const Icon(Icons.arrow_back_rounded),
-                  tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
+                leading: const AppHeaderBackButton(),
               ),
             ),
             if (hasMultipleFiles)
@@ -297,12 +286,15 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
     double bottomPadding,
   ) {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final Widget content;
     if (_loading) {
-      return const Center(child: CircularProgressIndicator.adaptive());
-    }
-
-    if (_loadFailed) {
-      return Center(
+      content = const Center(
+        key: ValueKey('text_loading'),
+        child: CircularProgressIndicator.adaptive(),
+      );
+    } else if (_loadFailed) {
+      content = Center(
+        key: const ValueKey('text_failed'),
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -326,47 +318,57 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
           ),
         ),
       );
-    }
-
-    final file = _currentFile;
-    if (file == null) {
-      return Center(
-        child: Text(
-          i18n.tr('empty_file'),
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+    } else {
+      final file = _currentFile;
+      if (file == null) {
+        content = Center(
+          key: const ValueKey('text_empty_file'),
+          child: Text(
+            i18n.tr('empty_file'),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+            ),
           ),
-        ),
-      );
-    }
-
-    if (file.isPdf) {
-      return _buildPdfContent(
-        context,
-        theme,
-        cs,
-        contentTopInset,
-        bottomPadding,
-      );
-    }
-
-    if (_document?.isEmpty != false) {
-      return Center(
-        child: Text(
-          i18n.tr('empty_file'),
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+        );
+      } else if (_pdfBytes case final bytes?) {
+        content = _WorkPdfContent(
+          key: ValueKey(('text_pdf', _loadGeneration)),
+          bytes: bytes,
+          errorMessage: i18n.tr('text_file_load_failed'),
+          contentTopInset: contentTopInset,
+          bottomPadding: bottomPadding,
+        );
+      } else if (_document?.isEmpty != false) {
+        content = Center(
+          key: const ValueKey('text_empty_doc'),
+          child: Text(
+            i18n.tr('empty_file'),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+            ),
           ),
-        ),
-      );
+        );
+      } else {
+        content = KeyedSubtree(
+          key: ValueKey('text_doc_${file.path}'),
+          child: _buildDocumentContent(
+            context,
+            theme,
+            cs,
+            contentTopInset,
+            bottomPadding,
+          ),
+        );
+      }
     }
 
-    return _buildDocumentContent(
-      context,
-      theme,
-      cs,
-      contentTopInset,
-      bottomPadding,
+    return AnimatedSwitcher(
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : kPlaceholderContentTransitionDuration,
+      switchInCurve: kAppFadeCurve,
+      switchOutCurve: kAppFadeCurve,
+      child: content,
     );
   }
 
@@ -384,101 +386,6 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
         return Opacity(opacity: opacity, child: child);
       },
       child: child,
-    );
-  }
-
-  Widget _buildPdfContent(
-    BuildContext context,
-    ThemeData theme,
-    ColorScheme cs,
-    double contentTopInset,
-    double bottomPadding,
-  ) {
-    final controller = _pdfController;
-    if (controller == null) {
-      return const Center(child: CircularProgressIndicator.adaptive());
-    }
-
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              contentTopInset,
-              16,
-              bottomPadding + 76,
-            ),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 960),
-                child: _buildFadeInContent(
-                  context: context,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: PdfView(
-                      controller: controller,
-                      scrollDirection: Axis.vertical,
-                      pageSnapping: false,
-                      builders: PdfViewBuilders<DefaultBuilderOptions>(
-                        options: const DefaultBuilderOptions(),
-                        documentLoaderBuilder: (_) => const Center(
-                          child: CircularProgressIndicator.adaptive(),
-                        ),
-                        pageLoaderBuilder: (_) => const Center(
-                          child: CircularProgressIndicator.adaptive(),
-                        ),
-                        errorBuilder: (context, _) => Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Text(
-                              ref
-                                  .read(appLanguageProviderInstanceProvider)
-                                  .tr('text_file_load_failed'),
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: cs.error,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-        Positioned(
-          left: 16,
-          bottom: bottomPadding + 20,
-          child: PdfPageNumber(
-            controller: controller,
-            builder: (context, loading, page, pages) {
-              if (loading == PdfLoadingState.loading ||
-                  pages == null ||
-                  pages <= 1) {
-                return const SizedBox.shrink();
-              }
-              return HeaderFloatingSurface(
-                followBarGlass: true,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Center(
-                  child: Text(
-                    '$page / $pages',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.5,
-                      fontSize: 12.5,
-                      color: cs.onSurface,
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
     );
   }
 
@@ -630,6 +537,178 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _WorkPdfContent extends StatefulWidget {
+  const _WorkPdfContent({
+    super.key,
+    required this.bytes,
+    required this.errorMessage,
+    required this.contentTopInset,
+    required this.bottomPadding,
+  });
+
+  final Uint8List bytes;
+  final String errorMessage;
+  final double contentTopInset;
+  final double bottomPadding;
+
+  @override
+  State<_WorkPdfContent> createState() => _WorkPdfContentState();
+}
+
+class _WorkPdfContentState extends State<_WorkPdfContent> {
+  late final _opening = _openDocument();
+  PdfDocument? _document;
+  PdfController? _controller;
+  final _pageRenders = <Future<Object?>>{};
+
+  Future<PdfController?> _openDocument() async {
+    final document = await PdfDocument.openData(widget.bytes);
+    if (!mounted) {
+      await _closeDocument(document);
+      return null;
+    }
+    _document = document;
+    // PdfView needs a resolved document because it may detach during opening.
+    return _controller = PdfController(document: Future.value(document));
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    final document = _document;
+    if (document != null) unawaited(_closeDocument(document));
+    super.dispose();
+  }
+
+  Future<void> _closeDocument(PdfDocument document) async {
+    // Android requires each PdfRenderer.Page to be closed before its document.
+    // PdfView's image futures complete after render and page.close().
+    try {
+      await Future.wait(_pageRenders);
+    } catch (_) {
+      // PdfView handles page-image errors. Still close the document.
+    }
+    try {
+      await document.close();
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'Failed to close work PDF',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  void _trackPageRender(Future<Object?> render) {
+    if (!_pageRenders.add(render)) return;
+    unawaited(
+      render.then<void>(
+        (_) => _pageRenders.remove(render),
+        onError: (Object _, StackTrace _) => _pageRenders.remove(render),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    const builders = PdfViewBuilders<DefaultBuilderOptions>(
+      options: DefaultBuilderOptions(),
+    );
+    const loader = Center(child: CircularProgressIndicator.adaptive());
+
+    return FutureBuilder<PdfController?>(
+      future: _opening,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                widget.errorMessage,
+                style: theme.textTheme.bodyMedium?.copyWith(color: cs.error),
+              ),
+            ),
+          );
+        }
+        final controller = snapshot.data;
+        if (controller == null) return loader;
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  widget.contentTopInset,
+                  16,
+                  widget.bottomPadding + 76,
+                ),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 960),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: PdfView(
+                        controller: controller,
+                        scrollDirection: Axis.vertical,
+                        pageSnapping: false,
+                        builders: PdfViewBuilders<DefaultBuilderOptions>(
+                          options: builders.options,
+                          documentLoaderBuilder: (_) => loader,
+                          pageLoaderBuilder: (_) => loader,
+                          pageBuilder: (context, render, index, document) {
+                            _trackPageRender(render);
+                            return builders.pageBuilder(
+                              context,
+                              render,
+                              index,
+                              document,
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 16,
+              bottom: widget.bottomPadding + 20,
+              child: PdfPageNumber(
+                controller: controller,
+                builder: (context, loading, page, pages) {
+                  if (loading == PdfLoadingState.loading ||
+                      pages == null ||
+                      pages <= 1) {
+                    return const SizedBox.shrink();
+                  }
+                  return HeaderFloatingSurface(
+                    followBarGlass: true,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Center(
+                      child: Text(
+                        '$page / $pages',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
+                          fontSize: 12.5,
+                          color: cs.onSurface,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

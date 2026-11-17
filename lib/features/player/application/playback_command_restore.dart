@@ -54,12 +54,17 @@ extension PlaybackCommandRestore on PlaybackCommandCoordinator {
       if (!snapshot.playWhenReady && snapshot.processingState == 'idle') {
         continue;
       }
+      // The bundle already synchronized the retained URI inventory. Applying
+      // this reply after a deferred queue load must not replay its URI list.
+      final playbackSnapshot = snapshot.hasRetainedUrisPayload
+          ? snapshot.copyWith(hasRetainedUrisPayload: false)
+          : snapshot;
       final session = _sessions[snapshot.sessionId]!;
       if (session.queueLoadingRequired ||
           _nativeSnapshotsWaitingForQueue.containsKey(session)) {
-        await _applyNativeSnapshotAfterQueueLoad(session, snapshot);
+        await _applyNativeSnapshotAfterQueueLoad(session, playbackSnapshot);
       } else {
-        _handleNativePlaybackSnapshot(snapshot);
+        _handleNativePlaybackSnapshot(playbackSnapshot);
       }
     }
     final focusedSessionId = bundle.focusedSessionId;
@@ -68,7 +73,9 @@ extension PlaybackCommandRestore on PlaybackCommandCoordinator {
     }
     if (syncUi) {
       _syncNotificationState(immediateUnifiedSync: true);
-      if (_sessions.isNotEmpty) _notifyPlaybackChanged();
+      // Applying each live snapshot already publishes its session. Refresh
+      // shared presentation state for focus changes without rebuilding the list.
+      if (_sessions.isNotEmpty) _notifyPlaybackChangedCallback();
     }
     return bundle;
   }

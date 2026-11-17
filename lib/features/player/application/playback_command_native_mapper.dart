@@ -13,15 +13,17 @@ extension PlaybackCommandNativeMapper on PlaybackCommandCoordinator {
     final wasDetachedCurrent =
         currentSession != null &&
         _hasDetachedPlaybackQueueCurrent(currentSession);
-    if (currentSession != null &&
+    if (snapshot.queueIndex >= 0 &&
+        currentSession != null &&
         (currentSession.customQueueTracks?.isNotEmpty == true ||
             currentSession.isPlaybackQueue)) {
+      // Translating the native index only needs the cached paths and indices.
       final scope = _playbackQueueScopeFor(
         currentSession,
         currentPath: snapshot.path ?? currentSession.currentTrackPath,
+        repositionCurrentIndex: false,
       );
-      if (snapshot.queueIndex >= 0 &&
-          snapshot.queueIndex < scope.queueIndices.length &&
+      if (snapshot.queueIndex < scope.queueIndices.length &&
           (snapshot.path == null ||
               PathMatcher.equalsNormalized(
                 scope.paths[snapshot.queueIndex],

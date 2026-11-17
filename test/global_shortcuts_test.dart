@@ -4,6 +4,7 @@ import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
+import 'package:doujin_audio/core/widgets/app_dialog.dart';
 import 'package:doujin_audio/core/widgets/unified_popup_menu.dart';
 import 'package:doujin_audio/core/widgets/app_glass_surface.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
@@ -636,12 +637,12 @@ void main() {
         find.textContaining(language.tr('keyboard_shortcuts_status_error')),
         findsOneWidget,
       );
-      expect(find.bySubtype<AlertDialog>(), findsOneWidget);
+      expect(find.byType(AppDialog), findsOneWidget);
       expect(find.byType(AppGlassSurface), findsOneWidget);
       expect(find.byType(BackdropFilter), findsOneWidget);
       expect(
         tester.getSize(find.byType(AppGlassSurface)).width,
-        closeTo(600, 0.5),
+        closeTo(680, 0.5),
       );
       final shortcut = tester.getRect(find.text('Space / Ctrl + Space'));
       final action = tester.getRect(
@@ -652,16 +653,23 @@ void main() {
 
       await tester.sendKeyEvent(LogicalKeyboardKey.f1);
       await tester.pumpAndSettle();
-      expect(find.bySubtype<AlertDialog>(), findsNothing);
+      expect(find.byType(AppDialog), findsNothing);
 
       // Can open again once closed.
       await tester.sendKeyEvent(LogicalKeyboardKey.f1);
       await tester.pumpAndSettle();
-      expect(find.bySubtype<AlertDialog>(), findsOneWidget);
+      expect(find.byType(AppDialog), findsOneWidget);
 
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
-      expect(find.bySubtype<AlertDialog>(), findsNothing);
+      expect(find.byType(AppDialog), findsNothing);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.f1);
+      await tester.pumpAndSettle();
+      expect(find.byType(AppDialog), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.byType(AppDialog), findsNothing);
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );

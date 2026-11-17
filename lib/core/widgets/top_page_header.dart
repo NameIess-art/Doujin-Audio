@@ -294,7 +294,9 @@ class _TopPageHeaderState extends State<TopPageHeader> {
         widget.trailing != null;
 
     Widget wrapButton(Widget button) {
-      if (button is IconButton || button is BackButton) {
+      if (button is IconButton ||
+          button is BackButton ||
+          button is AppHeaderBackButton) {
         return HeaderFloatingButton(child: button);
       }
       return button;
@@ -321,9 +323,7 @@ class _TopPageHeaderState extends State<TopPageHeader> {
                   widget.icon,
                   size: AppDesignTokens.opticalIconSize(
                     widget.icon,
-                    AppDesignTokens.fileTypeIcons.contains(widget.icon)
-                        ? AppDesignTokens.fileEntryIconSize
-                        : 18,
+                    AppPageHeaderMetrics.titleIconSize,
                   ),
                   color: widget.iconColor ?? cs.primary,
                 ),
@@ -361,7 +361,7 @@ class _TopPageHeaderState extends State<TopPageHeader> {
                             color: cs.onSurfaceVariant.withValues(
                               alpha: isWindows ? 1 : 0.85,
                             ),
-                            fontSize: isWindows ? null : 11.5,
+                            fontSize: 13,
                             fontWeight: isWindows ? null : FontWeight.w600,
                           ),
                         ),
@@ -435,11 +435,7 @@ class _TopPageHeaderState extends State<TopPageHeader> {
                             widget.icon,
                             size: AppDesignTokens.opticalIconSize(
                               widget.icon,
-                              AppDesignTokens.fileTypeIcons.contains(
-                                    widget.icon,
-                                  )
-                                  ? AppDesignTokens.fileEntryIconSize
-                                  : 16,
+                              AppPageHeaderMetrics.titleIconSize,
                             ),
                             color: widget.iconColor ?? cs.primary,
                           )
@@ -623,7 +619,8 @@ TextStyle? appPageHeaderTitleStyle(BuildContext context) {
   final isWindows = theme.platform == TargetPlatform.windows;
   return theme.textTheme.titleSmall?.copyWith(
     color: theme.colorScheme.onSurface,
-    fontSize: isWindows ? null : 13.5,
+    fontSize: 16,
+    height: 1.15,
     fontWeight: isWindows ? null : FontWeight.w800,
     letterSpacing: isWindows ? null : 0.1,
   );
@@ -876,6 +873,32 @@ class HeaderFloatingButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class AppHeaderBackButton extends BackButton {
+  const AppHeaderBackButton({
+    super.key,
+    super.color,
+    super.style,
+    super.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      icon: const Icon(Icons.arrow_back_rounded),
+      color: color,
+      style: style,
+      tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+      onPressed: () {
+        if (onPressed != null) {
+          onPressed!();
+        } else {
+          Navigator.maybePop(context);
+        }
+      },
     );
   }
 }
@@ -1279,7 +1302,7 @@ class HeaderTopCapsule extends StatelessWidget {
               color: cs.onSurfaceVariant.withValues(
                 alpha: isWindows ? 1 : 0.85,
               ),
-              fontSize: isWindows ? null : 11.5,
+              fontSize: 13,
               letterSpacing: 0,
             ),
           )

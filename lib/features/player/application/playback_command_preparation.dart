@@ -777,21 +777,23 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
   PlaybackQueueScope _playbackQueueScopeFor(
     PlaybackSession session, {
     required String currentPath,
+    bool repositionCurrentIndex = true,
   }) {
     final resolvedCurrentPath = _playbackFacade.resolveRetargetedPath(
       currentPath,
     );
-    final sessionTrack = _sessionTrackForPath(session, resolvedCurrentPath);
     final cacheKey = _playbackQueueScopeKey(session, resolvedCurrentPath);
     final cached = session.nativePlaybackQueueScopeCache;
     if (session.nativePlaybackQueueScopeCacheKey == cacheKey &&
         cached != null) {
+      if (!repositionCurrentIndex) return cached;
       return _playbackQueueResolver.repositionScope(
         cached,
         currentPath: resolvedCurrentPath,
         currentQueueIndex: session.currentQueueIndex,
       );
     }
+    final sessionTrack = _sessionTrackForPath(session, resolvedCurrentPath);
     final queueTracks = session.isPlaybackQueue
         ? (session.hasDetachedQueueTrack
               ? session.customQueueTracks

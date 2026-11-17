@@ -98,13 +98,15 @@ class AboutPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     final tokens = AppDesignTokens.of(context);
     final bottomInset = MediaQuery.paddingOf(context).bottom;
 
     final contentTopInset = AppPageHeaderMetrics.contentTopInset(context);
 
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      backgroundColor: cs.surface,
       body: PageHeaderInset(
         topInset: contentTopInset,
         child: Stack(
@@ -153,16 +155,13 @@ class AboutPage extends ConsumerWidget {
                           ),
                           title: Text(
                             i18n.tr('about_author'),
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
+                            style: theme.textTheme.titleMedium,
                           ),
-                          trailing: const Text(
+                          trailing: Text(
                             'NameIess-art',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: cs.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                           contentPadding: const EdgeInsets.symmetric(
@@ -179,13 +178,7 @@ class AboutPage extends ConsumerWidget {
                             onPressed: () =>
                                 unawaited(_openSponsor(context, ref)),
                             icon: const Icon(Icons.favorite_border_rounded),
-                            label: Text(
-                              i18n.tr('about_reward'),
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
+                            label: Text(i18n.tr('about_reward')),
                           ),
                         ),
                       ],
@@ -300,9 +293,7 @@ class _AboutLinkTile extends StatelessWidget {
           leading: _AboutIconContainer(icon: icon),
           title: Text(
             title,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
+            style: theme.textTheme.titleMedium?.copyWith(
               color: cs.onSurface,
             ),
           ),
@@ -321,6 +312,8 @@ class _AboutVersionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -329,7 +322,7 @@ class _AboutVersionTile extends StatelessWidget {
       leading: const _AboutIconContainer(icon: Icons.info_outline_rounded),
       title: Text(
         i18n.tr('about_version'),
-        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        style: theme.textTheme.titleMedium,
       ),
       trailing: FutureBuilder<AppVersionInfo>(
         future: versionFuture,
@@ -337,7 +330,10 @@ class _AboutVersionTile extends StatelessWidget {
           snapshot.data?.versionName ?? '...',
           softWrap: true,
           textAlign: TextAlign.end,
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: cs.onSurfaceVariant,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),

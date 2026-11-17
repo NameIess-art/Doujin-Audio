@@ -948,6 +948,7 @@ typedef AppLabelledButtonConstructor =
     ButtonStyleButton Function({
       Key? key,
       required VoidCallback? onPressed,
+      bool autofocus,
       ButtonStyle? style,
       WidgetStatesController? statesController,
       Widget? icon,
@@ -959,6 +960,7 @@ class AppLabelledButton extends StatelessWidget {
     this.button, {
     super.key,
     this.style,
+    this.autofocus = false,
     required this.onPressed,
     required this.icon,
     required this.label,
@@ -966,6 +968,7 @@ class AppLabelledButton extends StatelessWidget {
 
   final AppLabelledButtonConstructor button;
   final ButtonStyle? style;
+  final bool autofocus;
   final VoidCallback? onPressed;
   final Widget icon;
   final Widget label;
@@ -975,6 +978,7 @@ class AppLabelledButton extends StatelessWidget {
     if (button == TextButton.icon) {
       return button(
         onPressed: onPressed,
+        autofocus: autofocus,
         style: appTextButtonStyle(style: style),
         icon: icon,
         label: label,
@@ -1029,6 +1033,7 @@ class AppLabelledButton extends StatelessWidget {
         }
         return button(
           onPressed: onPressed,
+          autofocus: autofocus,
           style: resolvedStyle,
           icon: icon,
           label: label,
@@ -1121,6 +1126,7 @@ class AppPillButton extends StatelessWidget {
     required this.onPressed,
     required this.child,
     this.style,
+    this.autofocus = false,
   }) : _outlined = false;
 
   const AppPillButton.outlined({
@@ -1128,11 +1134,13 @@ class AppPillButton extends StatelessWidget {
     required this.onPressed,
     required this.child,
     this.style,
+    this.autofocus = false,
   }) : _outlined = true;
 
   final VoidCallback? onPressed;
   final Widget child;
   final ButtonStyle? style;
+  final bool autofocus;
   final bool _outlined;
 
   @override
@@ -1154,11 +1162,13 @@ class AppPillButton extends StatelessWidget {
       builder: (context, _) => _outlined
           ? OutlinedButton(
               onPressed: onPressed,
+              autofocus: autofocus,
               style: feedbackStyle,
               child: child,
             )
           : FilledButton(
               onPressed: onPressed,
+              autofocus: autofocus,
               style: feedbackStyle,
               child: child,
             ),
@@ -1172,6 +1182,7 @@ class AppPrimaryButton extends StatelessWidget {
   final IconData? icon;
   final bool isLoading;
   final bool isDestructive;
+  final bool autofocus;
 
   const AppPrimaryButton({
     super.key,
@@ -1180,6 +1191,7 @@ class AppPrimaryButton extends StatelessWidget {
     this.icon,
     this.isLoading = false,
     this.isDestructive = false,
+    this.autofocus = false,
   });
 
   @override
@@ -1223,6 +1235,7 @@ class AppPrimaryButton extends StatelessWidget {
       return AppLabelledButton(
         FilledButton.icon,
         onPressed: onPressed,
+        autofocus: autofocus,
         style: style,
         icon: Icon(icon, size: 20),
         label: Text(label),
@@ -1231,6 +1244,7 @@ class AppPrimaryButton extends StatelessWidget {
 
     return AppPillButton(
       onPressed: onPressed,
+      autofocus: autofocus,
       style: style,
       child: Text(label),
     );

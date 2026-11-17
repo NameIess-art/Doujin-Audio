@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -597,7 +598,9 @@ void main() {
           ],
           child: MaterialApp(
             theme: ThemeData(
-              extensions: [AppDesignTokens.light.copyWith(barGlassEnabled: true)],
+              extensions: [
+                AppDesignTokens.light.copyWith(barGlassEnabled: true),
+              ],
             ),
             home: Builder(
               builder: (context) => Scaffold(
@@ -1006,6 +1009,95 @@ void main() {
     });
   }
 
+  for (final renderStarted in [false, true]) {
+    testWidgets(
+      renderStarted
+          ? 'closing the viewer waits for PDF page rendering'
+          : 'switching files closes a PDF that finishes opening later',
+      (tester) async {
+        SharedPreferences.setMockInitialValues(const <String, Object>{});
+        final language = AppLanguageProvider();
+        addTearDown(language.dispose);
+        await language.setLanguage(AppLanguage.zh);
+
+        const pdf = WorkTextFile(
+          name: 'manual.pdf',
+          relativePath: 'manual.pdf',
+          path: '/works/RJ123/manual.pdf',
+        );
+        final gateway = _FakeFileCacheGateway({
+          pdf.path: Uint8List.fromList([1]),
+        });
+        const channel = MethodChannel('io.scer.pdf_renderer');
+        final messenger = tester.binding.defaultBinaryMessenger;
+        final calls = <String>[];
+        final opening = Completer<Map<String, Object>>();
+        final rendering = Completer<Map<String, Object>>();
+        const openedDocument = {'id': 'document', 'pagesCount': 1};
+        messenger.setMockMethodCallHandler(channel, (call) async {
+          calls.add(call.method);
+          return switch (call.method) {
+            'open.document.data' => opening.future,
+            'open.page' => {'id': 'page', 'width': 1, 'height': 1},
+            'render' => rendering.future,
+            'close.page' || 'close.document' => null,
+            _ => throw MissingPluginException(call.method),
+          };
+        });
+        addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+        if (renderStarted) opening.complete(openedDocument);
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              appLanguageProviderInstanceProvider.overrideWithValue(language),
+              workTextServiceProvider.overrideWithValue(
+                WorkTextService(platformGateway: gateway),
+              ),
+            ],
+            child: const MaterialApp(
+              home: WorkTextViewerPage(files: [pdf, file1]),
+            ),
+          ),
+        );
+        for (var i = 0; i < 12; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(calls, contains('open.document.data'));
+        if (renderStarted) {
+          expect(calls, contains('render'));
+          await tester.pumpWidget(const SizedBox.shrink());
+          expect(calls, isNot(contains('close.document')));
+          rendering.complete({
+            'width': 1,
+            'height': 1,
+            'data': base64Decode(
+              'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk'
+              '+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+            ),
+          });
+          await tester.pump();
+          expect(calls, [
+            'open.document.data',
+            'open.page',
+            'render',
+            'close.page',
+            'close.document',
+          ]);
+        } else {
+          await tester.tap(find.byTooltip(language.tr('next_text_file')));
+          await tester.pump();
+          await tester.pumpAndSettle();
+          opening.complete(openedDocument);
+          await tester.pump();
+          expect(calls, ['open.document.data', 'close.document']);
+        }
+        expect(tester.takeException(), isNull);
+      },
+      skip: !Platform.isWindows,
+    );
+  }
+
   testWidgets(
     'WorkTextViewerPage uses TopPageHeader with fade mask and spans full width',
     (tester) async {
@@ -1082,7 +1174,10 @@ void main() {
         // The custom desktop scrollbar reads the shared page-header inset.
         expect(
           PageHeaderInset.of(scrollableContext),
-          closeTo(tester.getBottomLeft(find.byType(TopPageHeader)).dy + 8, 0.01),
+          closeTo(
+            tester.getBottomLeft(find.byType(TopPageHeader)).dy + 8,
+            0.01,
+          ),
         );
       } finally {
         debugDefaultTargetPlatformOverride = null;

@@ -657,6 +657,15 @@ void main() {
       await tester.drag(find.byType(SwipeRevealCard), const Offset(-170, 0));
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('删除字幕'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      final outgoingText = find.byKey(const ValueKey('subtitle_text_0'));
+      expect(outgoingText, findsOneWidget);
+      expect(outgoingText.hitTestable(), findsNothing);
+      await tester.tapAt(tester.getCenter(outgoingText));
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(find.byType(TextField), findsNothing);
       await tester.pumpAndSettle();
       expect(find.text('所有字幕已删除，保存后当前音频将不显示字幕'), findsOneWidget);
       await tester.tap(find.widgetWithIcon(IconButton, Icons.save_rounded));

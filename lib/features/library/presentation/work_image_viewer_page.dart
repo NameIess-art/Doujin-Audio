@@ -678,11 +678,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
                   icon: AppDesignTokens.imageFileIcon,
                   iconColor: AppDesignTokens.imageFileIconColor,
                   title: currentImage.name,
-                  leading: IconButton(
-                    icon: const Icon(Icons.arrow_back_rounded),
-                    tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-                    onPressed: () => Navigator.of(this.context).maybePop(),
-                  ),
+                  leading: const AppHeaderBackButton(),
                   trailing: widget.onSetAsCover != null
                       ? HeaderFloatingSurface(
                           padding: EdgeInsets.zero,

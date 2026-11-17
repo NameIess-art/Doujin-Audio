@@ -323,91 +323,105 @@ class _MyPageState extends ConsumerState<MyPage>
                       MyInterestType.circles => asmrCircleInterestsProvider,
                     };
                     final state = ref.watch(provider);
+                    final Widget interestContent;
                     if (!state.hasValue) {
                       if (state.hasError) {
-                        return TextButton(
+                        interestContent = TextButton(
+                          key: const ValueKey('interest-error'),
                           onPressed: () => ref.invalidate(provider),
                           child: Text(i18n.tr('my_retry')),
                         );
+                      } else {
+                        interestContent = const ShimmerLoader(
+                          key: ValueKey('interest-loading'),
+                          child: ShimmerContainer(
+                            width: 120,
+                            height: 32,
+                            borderRadius: 8,
+                          ),
+                        );
                       }
-                      return const ShimmerLoader(
-                        child: ShimmerContainer(
-                          width: 120,
-                          height: 32,
-                          borderRadius: 8,
-                        ),
-                      );
-                    }
-                    final interests = state.requireValue;
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (interests.isEmpty)
-                          Text(i18n.tr(interestType.emptyKey)),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            for (final interest in interests.take(20))
-                              ElementActionMenu(
-                                value: interest.tag.name,
-                                onCopy: () => _copyInterest(interest.tag.name),
-                                child: appNoPointerInkTheme(
-                                  context: context,
-                                  androidPressHighlight: true,
-                                  child: InputChip(
-                                    mouseCursor: WidgetStateMouseCursor.clickable,
-                                    key: ValueKey(
-                                      'my-${interestKeyPrefix}interest-${interest.tag.key}',
+                    } else {
+                      final interests = state.requireValue;
+                      interestContent = Column(
+                        key: const ValueKey('interest-loaded'),
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (interests.isEmpty)
+                            Text(i18n.tr(interestType.emptyKey)),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              for (final interest in interests.take(20))
+                                ElementActionMenu(
+                                  value: interest.tag.name,
+                                  onCopy: () => _copyInterest(interest.tag.name),
+                                  child: appNoPointerInkTheme(
+                                    context: context,
+                                    androidPressHighlight: true,
+                                    child: InputChip(
+                                      mouseCursor: WidgetStateMouseCursor.clickable,
+                                      key: ValueKey(
+                                        'my-${interestKeyPrefix}interest-${interest.tag.key}',
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 4,
+                                        vertical: 8,
+                                      ),
+                                      labelPadding: const EdgeInsets.symmetric(
+                                        horizontal: 4,
+                                      ),
+                                      visualDensity: VisualDensity.compact,
+                                      materialTapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                      showCheckmark: false,
+                                      side: BorderSide(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.outlineVariant,
+                                      ),
+                                      label: Text(
+                                        interest.tag.name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      onPressed: () =>
+                                          _copyInterest(interest.tag.name),
                                     ),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 4,
-                                      vertical: 8,
-                                    ),
-                                    labelPadding: const EdgeInsets.symmetric(
-                                      horizontal: 4,
-                                    ),
-                                    visualDensity: VisualDensity.compact,
-                                    materialTapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                    showCheckmark: false,
-                                    side: BorderSide(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.outlineVariant,
-                                    ),
-                                    label: Text(
-                                      interest.tag.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    onPressed: () =>
-                                        _copyInterest(interest.tag.name),
                                   ),
                                 ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [
+                              AppLabelledButton(
+                                OutlinedButton.icon,
+                                onPressed: () => _openTags(false),
+                                icon: const Icon(Icons.add_rounded),
+                                label: Text(i18n.tr(interestType.addKey)),
                               ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 4,
-                          children: [
-                            AppLabelledButton(
-                              OutlinedButton.icon,
-                              onPressed: () => _openTags(false),
-                              icon: const Icon(Icons.add_rounded),
-                              label: Text(i18n.tr(interestType.addKey)),
-                            ),
-                            AppLabelledButton(
-                              OutlinedButton.icon,
-                              onPressed: () => _openTags(true),
-                              icon: const Icon(Icons.block_rounded),
-                              label: Text(i18n.tr(interestType.excludedKey)),
-                            ),
-                          ],
-                        ),
-                      ],
+                              AppLabelledButton(
+                                OutlinedButton.icon,
+                                onPressed: () => _openTags(true),
+                                icon: const Icon(Icons.block_rounded),
+                                label: Text(i18n.tr(interestType.excludedKey)),
+                              ),
+                            ],
+                          ),
+                        ],
+                      );
+                    }
+                    return AnimatedSwitcher(
+                      duration: MediaQuery.disableAnimationsOf(context)
+                          ? Duration.zero
+                          : kPlaceholderContentTransitionDuration,
+                      switchInCurve: kAppFadeCurve,
+                      switchOutCurve: kAppFadeCurve,
+                      child: interestContent,
                     );
                   },
                 ),
@@ -606,14 +620,8 @@ class _MyPageState extends ConsumerState<MyPage>
               right: 0,
               child: TopPageHeader(
                 key: headerKey,
-                titleWidget: HeaderTopCapsule(
-                  title: i18n.tr('nav_my'),
-                  leading: Icon(
-                    Icons.person_rounded,
-                    size: 16,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ),
+                icon: Icons.person_rounded,
+                topCapsuleTitle: i18n.tr('nav_my'),
               ),
             ),
           ],
@@ -718,18 +726,30 @@ class _HistoryStripState extends ConsumerState<_HistoryStrip> {
                   return SizedBox(
                     width: 112,
                     child: Center(
-                      child: _loading
-                          ? const CircularProgressIndicator()
-                          : TextButton(
-                              onPressed: _loadMore,
-                              child: Text(
-                                i18n.tr(
-                                  _loadError == null
-                                      ? 'my_load_more'
-                                      : 'my_retry',
+                      child: AnimatedSwitcher(
+                        duration: MediaQuery.disableAnimationsOf(context)
+                            ? Duration.zero
+                            : kPlaceholderContentTransitionDuration,
+                        switchInCurve: kAppFadeCurve,
+                        switchOutCurve: kAppFadeCurve,
+                        child: _loading
+                            ? const SizedBox.square(
+                                key: ValueKey('loading'),
+                                dimension: 22,
+                                child: CircularProgressIndicator(strokeWidth: 2.2),
+                              )
+                            : TextButton(
+                                key: const ValueKey('load_more'),
+                                onPressed: _loadMore,
+                                child: Text(
+                                  i18n.tr(
+                                    _loadError == null
+                                        ? 'my_load_more'
+                                        : 'my_retry',
+                                  ),
                                 ),
                               ),
-                            ),
+                      ),
                     ),
                   );
                 }

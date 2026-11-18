@@ -107,8 +107,10 @@ object NativePlaybackStateStore {
     private val clearedRevision = AtomicLong()
     private val definitionRevisions = ConcurrentHashMap<String, Long>()
     private val revisionLock = Any()
+    private val stagedLock = Any()
     @PublishedApi internal val timerStateLock = Any()
     private val temporarySessions = ConcurrentHashMap<String, StoredNativePlaybackSession>()
+    private val stagedSessions = mutableMapOf<String, StoredNativePlaybackSession>()
     private val persistedRevisions = mutableMapOf<String, Long>()
     private var recoveryDatabase: NativePlaybackRecoveryDatabase? = null
 
@@ -137,14 +139,33 @@ object NativePlaybackStateStore {
     internal fun sessionRevision(sessionId: String): Long =
         maxOf(clearedRevision.get(), definitionRevisions[sessionId] ?: 0L)
 
+    internal fun stageSessions(
+        sessions: List<StoredNativePlaybackSession>,
+        expectedRevisions: Map<String, Long>
+    ) {
+        synchronized(stagedLock) {
+            sessions.forEach { session ->
+                val currentRevision = sessionRevision(session.sessionId)
+                if (expectedRevisions[session.sessionId] == currentRevision) {
+                    stagedSessions[session.sessionId] =
+                        session.copy(definitionRevision = currentRevision)
+                }
+            }
+        }
+    }
+
     internal fun invalidateSession(sessionId: String): Long = synchronized(revisionLock) {
-        revisionSequence.incrementAndGet().also { definitionRevisions[sessionId] = it }
+        revisionSequence.incrementAndGet().also {
+            definitionRevisions[sessionId] = it
+            synchronized(stagedLock) { stagedSessions.remove(sessionId) }
+        }
     }
 
     internal fun invalidateAllSessions(): Long = synchronized(revisionLock) {
         revisionSequence.incrementAndGet().also {
             definitionRevisions.clear()
             clearedRevision.set(it)
+            synchronized(stagedLock) { stagedSessions.clear() }
         }
     }
 
@@ -177,6 +198,14 @@ object NativePlaybackStateStore {
         accepted.filter { it.isTemporary }.forEach {
             if (sessionRevision(it.sessionId) == it.definitionRevision) saveTemporarySession(it)
         }
+        synchronized(stagedLock) {
+            accepted.forEach { session ->
+                val staged = stagedSessions[session.sessionId]
+                if (staged != null && staged.definitionRevision <= session.definitionRevision) {
+                    stagedSessions.remove(session.sessionId)
+                }
+            }
+        }
     }
 
     @Synchronized
@@ -194,20 +223,38 @@ object NativePlaybackStateStore {
             false
         }
         if (durable.isNotEmpty()) database(context).updateProgress(durable)
+        synchronized(stagedLock) {
+            accepted.forEach { item ->
+                val staged = stagedSessions[item.sessionId]
+                if (staged != null && staged.definitionRevision == expectedRevisions[item.sessionId]) {
+                    stagedSessions[item.sessionId] = staged.withProgressOverlay(item)
+                }
+            }
+        }
     }
 
     @Synchronized
-    internal fun pauseStoredSessions(context: Context) = database(context).pauseSessions()
+    internal fun pauseStoredSessions(context: Context) {
+        database(context).pauseSessions()
+        synchronized(stagedLock) {
+            stagedSessions.replaceAll { _, session ->
+                session.copy(playing = false, playWhenReady = false)
+            }
+        }
+    }
 
     @Synchronized
-    internal fun retainedRecoveryContentUris(context: Context): Set<String> =
-        database(context).retainedUris() +
-            loadTemporarySessions().flatMap { it.retainedContentUris() }
+    internal fun retainedRecoveryContentUris(context: Context): Set<String> {
+        val staged = synchronized(stagedLock) { stagedSessions.values.toList() }
+        return database(context).retainedUris() +
+            (loadTemporarySessions() + staged).flatMap { it.retainedContentUris() }
+    }
 
     @Synchronized
     internal fun removeSession(context: Context, sessionId: String, expectedRevision: Long? = null) {
         if (expectedRevision != null && expectedRevision != sessionRevision(sessionId)) return
         if (expectedRevision == null) invalidateSession(sessionId)
+        synchronized(stagedLock) { stagedSessions.remove(sessionId) }
         removeTemporarySession(sessionId)
         database(context).removeSessions(listOf(sessionId))
         persistedRevisions.remove(sessionId)
@@ -269,22 +316,35 @@ object NativePlaybackStateStore {
         db.removeSessions(retired)
         persistedRevisions.keys.removeAll(retired.toSet())
         temporarySessions.values.removeAll { it.definitionRevision <= revision }
+        synchronized(stagedLock) {
+            stagedSessions.values.removeAll { it.definitionRevision <= revision }
+        }
     }
 
     /** Timer candidate discovery reads only the progress columns. */
     @Synchronized
     internal fun loadActiveSessionRevisions(context: Context): Map<String, Long> {
+        val stagedById = synchronized(stagedLock) {
+            stagedSessions.values.filter { sessionRevision(it.sessionId) == it.definitionRevision }
+        }.associateBy { it.sessionId }
         val ids = database(context).sessionIds(activeOnly = true)
-        val durable = ids.mapNotNull { id ->
+        val durable = ids.filterNot { it in stagedById }.mapNotNull { id ->
             val revision = persistedRevisions[id] ?: 0L
             (id to revision).takeIf { sessionRevision(id) == revision }
         }
         val temporary = loadTemporarySessions().filter {
-            (it.playing || it.playWhenReady) && sessionRevision(it.sessionId) == it.definitionRevision
+            it.sessionId !in stagedById &&
+                (it.playing || it.playWhenReady) &&
+                sessionRevision(it.sessionId) == it.definitionRevision
         }.map {
             it.sessionId to it.definitionRevision
         }
-        return (durable + temporary).toMap()
+        val staged = stagedById.values.filter {
+            it.playing || it.playWhenReady
+        }.map {
+            it.sessionId to it.definitionRevision
+        }
+        return (durable + temporary + staged).toMap()
     }
 
     @Synchronized
@@ -294,17 +354,27 @@ object NativePlaybackStateStore {
         activeOnly: Boolean = false
     ): List<StoredNativePlaybackSession> {
         if (sessionIds?.isEmpty() == true) return emptyList()
+        val stagedById = synchronized(stagedLock) {
+            stagedSessions.values.filter { sessionRevision(it.sessionId) == it.definitionRevision }
+        }.associateBy { it.sessionId }
         val db = database(context)
-        val durable = db.loadSessions(sessionIds, activeOnly).mapNotNull {
-            val revision = persistedRevisions[it.sessionId] ?: 0L
-            it.copy(definitionRevision = revision).takeIf { sessionRevision(it.sessionId) == revision }
-        }
+        val durable = db.loadSessions(sessionIds, activeOnly)
+            .filterNot { it.sessionId in stagedById }
+            .mapNotNull {
+                val revision = persistedRevisions[it.sessionId] ?: 0L
+                it.copy(definitionRevision = revision).takeIf { sessionRevision(it.sessionId) == revision }
+            }
         val temporary = loadTemporarySessions().filter {
-            (sessionIds == null || it.sessionId in sessionIds) &&
+            it.sessionId !in stagedById &&
+                (sessionIds == null || it.sessionId in sessionIds) &&
                 (!activeOnly || it.playing || it.playWhenReady) &&
                 sessionRevision(it.sessionId) == it.definitionRevision
         }
-        return durable + temporary
+        val staged = stagedById.values.filter {
+            (sessionIds == null || it.sessionId in sessionIds) &&
+                (!activeOnly || it.playing || it.playWhenReady)
+        }
+        return durable + temporary + staged
     }
 
     fun storePausedSessionIds(context: Context, sessionIds: List<String>) = withTimerState {

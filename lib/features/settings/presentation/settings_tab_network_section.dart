@@ -290,7 +290,14 @@ class _NetworkSettingsControlsState
                     value: _authentication,
                     onChanged: _saving
                         ? null
-                        : (value) => setState(() => _authentication = value),
+                        : (value) {
+                            unawaited(
+                              AppInteractionFeedback.trigger(
+                                AppInteractionFeedbackType.selection,
+                              ),
+                            );
+                            setState(() => _authentication = value);
+                          },
                   ),
                   if (_authentication) ...[
                     field(

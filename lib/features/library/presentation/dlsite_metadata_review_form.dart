@@ -39,6 +39,7 @@ class DlsiteMetadataReviewForm extends StatelessWidget {
     required this.ratingController,
     this.validate = false,
     this.enabled = true,
+    this.isLibraryRootFolder = true,
   });
   final bool editing;
   final DlsiteMetadata? metadata;
@@ -53,6 +54,7 @@ class DlsiteMetadataReviewForm extends StatelessWidget {
   final TextEditingController ratingController;
   final bool validate;
   final bool enabled;
+  final bool isLibraryRootFolder;
 
   @override
   Widget build(BuildContext context) {
@@ -69,7 +71,14 @@ class DlsiteMetadataReviewForm extends StatelessWidget {
               'metadata_edit_audio_detail_folder_name',
             ),
             controller: folderNameController,
-            label: i18n.tr('audio_detail_folder_name'),
+            label: i18n.tr(
+              isLibraryRootFolder
+                  ? 'audio_detail_folder_name'
+                  : 'audio_detail_file_name',
+            ),
+            errorText: validate && folderNameController.text.trim().isEmpty
+                ? i18n.tr('metadata_invalid_name')
+                : null,
           ),
         _ReviewTextField(
           key: editing

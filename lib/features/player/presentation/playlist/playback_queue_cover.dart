@@ -1,3 +1,4 @@
+import '../../../library/presentation/library_card_artwork.dart';
 import '../../../library/presentation/library_providers.dart';
 import 'dart:async';
 
@@ -14,12 +15,16 @@ class QueueTrackCover extends ConsumerStatefulWidget {
     required this.track,
     required this.coverPath,
     required this.coverCacheWidth,
+    this.folderPath,
+    this.browseThumbnail = false,
     this.future,
   });
 
   final MusicTrack track;
   final String? coverPath;
   final int? coverCacheWidth;
+  final String? folderPath;
+  final bool browseThumbnail;
   final Future<String?>? future;
 
   @override
@@ -28,31 +33,63 @@ class QueueTrackCover extends ConsumerStatefulWidget {
 
 class QueueTrackCoverState extends ConsumerState<QueueTrackCover> {
   Future<String?>? _future;
-  String? _trackPath;
-  int _coverGeneration = -1;
+  String? _requestKey;
+  Object? _coverRevision;
 
   @override
   Widget build(BuildContext context) {
     final library = ref.read(libraryFacadeProvider);
-    final coverGeneration = ref.watch(coverGenerationProvider);
+    final folderPath = widget.folderPath;
+    final requestKey = folderPath ?? widget.track.path;
+    final Object coverRevision = folderPath != null
+        ? ref.watch(
+            coverGenerationProvider.select(
+              (_) => library.coverArtworkCacheService.revisionForScope(
+                folderPath,
+              ),
+            ),
+          )
+        : ref.watch(coverGenerationProvider);
     if (widget.future != null) {
       _future = widget.future;
     } else if (_future == null ||
-        _trackPath != widget.track.path ||
-        _coverGeneration != coverGeneration) {
-      _future = ref
-          .read(libraryCoverUiControllerProvider)
-          .deferredPlaybackCover(widget.track, context: context);
+        _requestKey != requestKey ||
+        _coverRevision != coverRevision) {
+      final coverUi = ref.read(libraryCoverUiControllerProvider);
+      if (folderPath != null) {
+        _future =
+            library.coverArtworkCacheService.cachedFutureForFolder(
+              folderPath,
+            ) ??
+            deferLibraryCardCoverLookup(
+              isMounted: () => mounted,
+              lookup: () =>
+                  coverUi.deferredFolderCover(folderPath, context: context),
+            );
+      } else if (widget.browseThumbnail) {
+        _future =
+            library.coverArtworkCacheService.cachedFutureForPlaybackTrack(
+              widget.track,
+            ) ??
+            deferLibraryCardCoverLookup(
+              isMounted: () => mounted,
+              lookup: () =>
+                  coverUi.deferredPlaybackCover(widget.track, context: context),
+            );
+      } else {
+        _future = coverUi.deferredPlaybackCover(widget.track, context: context);
+      }
     }
-    _trackPath = widget.track.path;
-    _coverGeneration = coverGeneration;
+    _requestKey = requestKey;
+    _coverRevision = coverRevision;
     return AsyncLocalCoverImage(
       onImageError: library.coverArtworkCacheService.reportArtworkReadFailure,
       future: _future!,
-      requestKey: widget.track.path,
+      requestKey: requestKey,
       initialPath: widget.coverPath,
       cacheWidth: widget.coverCacheWidth,
       useDefaultCacheWidth: widget.coverCacheWidth != null,
+      browseThumbnail: widget.browseThumbnail,
       deferLoadDuringInteraction: true,
       fit: BoxFit.cover,
     );

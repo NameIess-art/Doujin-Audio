@@ -467,29 +467,6 @@ void main() {
     );
   });
 
-  testWidgets('full-width title bar owns a single bounded glass surface', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: ThemeData(
-          extensions: [AppDesignTokens.light.copyWith(barGlassEnabled: true)],
-        ),
-        home: const Scaffold(appBar: AppPageAppBar(title: Text('Title'))),
-      ),
-    );
-    expect(find.byType(BackdropFilter), findsOneWidget);
-    final glass = find.byType(AppGlassSurface);
-    expect(
-      tester.getSize(glass).height,
-      tester.getSize(find.byType(AppBar)).height,
-    );
-    expect(tester.getSize(glass).height, lessThan(100));
-    final appBar = tester.widget<AppBar>(find.byType(AppBar));
-    expect(appBar.elevation, 0);
-    expect(appBar.scrolledUnderElevation, 0);
-  });
-
   testWidgets('header safe area and margins block input behind its controls', (
     tester,
   ) async {
@@ -646,7 +623,6 @@ void main() {
                   topCapsuleTitle: 'Library',
                   title: 'Actions',
                   collapseController: controller,
-                  floatingReveal: true,
                   additionalChild: additionalChild,
                 ),
               ],
@@ -710,17 +686,11 @@ void main() {
         collapsedHeight,
       );
 
-      // Reversing first crosses the reveal threshold, then expands the header.
-      controller.jumpTo(380);
-      await tester.pump();
-      expect(geometryBuilds, 0);
-      controller.jumpTo(310);
-      await tester.pump();
-      expect(tester.getSize(find.byType(TopPageHeader)).height, expandedHeight);
-      expect(capsuleBuilds, 0);
+      // Scrolling back to the top expands the header again.
       controller.jumpTo(0);
       await tester.pump();
       expect(tester.getSize(find.byType(TopPageHeader)).height, expandedHeight);
+      expect(capsuleBuilds, 0);
       await tester.pumpWidget(const SizedBox());
     },
     variant: const TargetPlatformVariant({

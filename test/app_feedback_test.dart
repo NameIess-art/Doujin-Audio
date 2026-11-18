@@ -182,6 +182,125 @@ void main() {
     expect(calls, hasLength(2));
   });
 
+  test('trigger maps semantic levels and respects disabled flag and Windows', () async {
+    final calls = <MethodCall>[];
+    final previousHaptics = AppInteractionFeedback.hapticFeedbackEnabled;
+    AppInteractionFeedback.hapticFeedbackEnabled = true;
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          calls.add(call);
+          return null;
+        });
+    addTearDown(() {
+      AppInteractionFeedback.hapticFeedbackEnabled = previousHaptics;
+      debugDefaultTargetPlatformOverride = null;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+
+    await AppInteractionFeedback.trigger(AppInteractionFeedbackType.tap);
+    await AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    await AppInteractionFeedback.trigger(
+      AppInteractionFeedbackType.confirmation,
+    );
+    await AppInteractionFeedback.trigger(AppInteractionFeedbackType.destructive);
+
+    expect(
+      calls.map((c) => (c.method, c.arguments)),
+      [
+        ('HapticFeedback.vibrate', 'HapticFeedbackType.lightImpact'),
+        ('HapticFeedback.vibrate', 'HapticFeedbackType.selectionClick'),
+        ('HapticFeedback.vibrate', 'HapticFeedbackType.mediumImpact'),
+        ('HapticFeedback.vibrate', 'HapticFeedbackType.heavyImpact'),
+      ],
+    );
+
+    calls.clear();
+    AppInteractionFeedback.hapticFeedbackEnabled = false;
+    await AppInteractionFeedback.trigger(AppInteractionFeedbackType.confirmation);
+    expect(calls, isEmpty);
+
+    AppInteractionFeedback.hapticFeedbackEnabled = true;
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    await AppInteractionFeedback.trigger(AppInteractionFeedbackType.confirmation);
+    expect(calls, isEmpty);
+  });
+
+  testWidgets(
+    'snackbar triggers haptics only for warnings and non-undo errors',
+    (tester) async {
+      final calls = <MethodCall>[];
+      final previousHaptics = AppInteractionFeedback.hapticFeedbackEnabled;
+      AppInteractionFeedback.hapticFeedbackEnabled = true;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+            calls.add(call);
+            return null;
+          });
+      addTearDown(() {
+        AppInteractionFeedback.hapticFeedbackEnabled = previousHaptics;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SystemChannels.platform, null);
+      });
+
+      late BuildContext feedbackContext;
+      await tester.pumpWidget(
+        _feedbackApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) {
+                feedbackContext = context;
+                return const SizedBox();
+              },
+            ),
+          ),
+        ),
+      );
+
+      calls.clear();
+      showAppSnackBar(feedbackContext, 'Info');
+      showAppSnackBar(
+        feedbackContext,
+        'Success',
+        tone: AppFeedbackTone.success,
+      );
+      showAppSnackBar(
+        feedbackContext,
+        'Removed',
+        tone: AppFeedbackTone.destructive,
+        isUndoAction: true,
+        actionLabel: 'Undo',
+        onAction: () {},
+      );
+      await tester.pump();
+      expect(
+        calls.where((c) => c.method == 'HapticFeedback.vibrate'),
+        isEmpty,
+      );
+
+      showAppSnackBar(
+        feedbackContext,
+        'Warning',
+        tone: AppFeedbackTone.warning,
+      );
+      showAppSnackBar(
+        feedbackContext,
+        'Failed',
+        tone: AppFeedbackTone.destructive,
+      );
+      await tester.pump();
+      expect(
+        calls.where((c) => c.method == 'HapticFeedback.vibrate'),
+        hasLength(2),
+      );
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.android}),
+  );
+
   testWidgets('top feedback action invokes callback and dismisses surface', (
     tester,
   ) async {

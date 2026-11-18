@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/widgets/app_buttons.dart';
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/theme/app_styles.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../application/dlsite_metadata_batch_session.dart';
@@ -53,6 +54,24 @@ class _DlsiteMetadataBatchPageState
       const <AudioLibraryCategoryEntry>[];
   late DlsiteMetadataBatchScope _scope;
   Object? _error;
+  final GlobalKey _headerKey = GlobalKey();
+  double _headerHeight = 0;
+  bool _headerMeasurementScheduled = false;
+
+  void _scheduleHeaderMeasurement() {
+    if (_headerMeasurementScheduled) return;
+    _headerMeasurementScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _headerMeasurementScheduled = false;
+      if (!mounted) return;
+      final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
+      if (box == null) return;
+      final h = box.size.height;
+      if (h > 0 && (_headerHeight == 0 || (h - _headerHeight).abs() > 0.5)) {
+        setState(() => _headerHeight = h);
+      }
+    });
+  }
   bool _loading = false;
 
   List<AudioLibraryCategoryEntry> get _anyMissingEntries => _entries
@@ -191,72 +210,81 @@ class _DlsiteMetadataBatchPageState
     final startForeground = canStart
         ? cs.onPrimary
         : cs.onSurface.withValues(alpha: 0.38);
+    _scheduleHeaderMeasurement();
+    final effectiveHeaderHeight = _headerHeight > 0
+        ? _headerHeight
+        : (_error == null
+              ? MediaQuery.paddingOf(context).top + 140.0
+              : AppPageHeaderMetrics.headerHeight(context));
+    final contentTopInset =
+        effectiveHeaderHeight + AppPageHeaderMetrics.firstContentSpacing;
     final bottomInset =
         MediaQuery.paddingOf(context).bottom + MobileOverlayInset.of(context);
     return Scaffold(
       backgroundColor: cs.surface,
       body: PageHeaderInset(
-        topInset: 0,
+        topInset: contentTopInset,
         child: Stack(
           fit: StackFit.expand,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                TopPageHeader(
-                  icon: Icons.library_add_check_rounded,
-                  title: i18n.tr('batch_metadata'),
-                  leading: const BackButton(),
-                  additionalChild: _error != null
-                      ? null
-                      : Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                          child: HeaderFloatingSurface(
-                            height: null,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 9,
-                            ),
-                            child: Text(
-                              i18n.tr('batch_metadata_hint'),
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(
-                                    color: cs.onSurfaceVariant,
-                                    height: 1.4,
-                                  ),
-                            ),
+            Positioned.fill(
+              child: AppPageContentTransition(
+                child: _error != null
+                    ? Padding(
+                        padding: EdgeInsets.only(top: contentTopInset),
+                        child: _BatchMetadataErrorView(onRetry: _load),
+                      )
+                    : BatchMetadataSetupView(
+                        topInset: contentTopInset,
+                        scope: _scope,
+                        allCount: _entries.length,
+                        noMetadataCount: _noMetadataEntries.length,
+                        anyMissingCount: _anyMissingEntries.length,
+                        hasRjCodeCount: _hasRjCodeEntries.length,
+                        specificCount: _specificEntries.length,
+                        onScopeChanged: (scope) {
+                          setState(() {
+                            _scope = scope;
+                          });
+                          if (scope == DlsiteMetadataBatchScope.specific &&
+                              _specificEntries.isEmpty) {
+                            _pickSpecific();
+                          }
+                        },
+                        onPickSpecific: _pickSpecific,
+                      ),
+              ),
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: TopPageHeader(
+                key: _headerKey,
+                icon: Icons.library_add_check_rounded,
+                title: i18n.tr('batch_metadata'),
+                leading: const AppHeaderBackButton(),
+                additionalChild: _error != null
+                    ? null
+                    : Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                        child: HeaderFloatingSurface(
+                          height: null,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 9,
+                          ),
+                          child: Text(
+                            i18n.tr('batch_metadata_hint'),
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: cs.onSurfaceVariant,
+                                  height: 1.4,
+                                ),
                           ),
                         ),
-                ),
-                Expanded(
-                  child: MediaQuery.removePadding(
-                    context: context,
-                    removeTop: true,
-                    child: AppPageContentTransition(
-                      child: _error != null
-                          ? _BatchMetadataErrorView(onRetry: _load)
-                          : BatchMetadataSetupView(
-                              scope: _scope,
-                              allCount: _entries.length,
-                              noMetadataCount: _noMetadataEntries.length,
-                              anyMissingCount: _anyMissingEntries.length,
-                              hasRjCodeCount: _hasRjCodeEntries.length,
-                              specificCount: _specificEntries.length,
-                              onScopeChanged: (scope) {
-                                setState(() {
-                                  _scope = scope;
-                                });
-                                if (scope == DlsiteMetadataBatchScope.specific &&
-                                    _specificEntries.isEmpty) {
-                                  _pickSpecific();
-                                }
-                              },
-                              onPickSpecific: _pickSpecific,
-                            ),
-                    ),
-                  ),
-                ),
-              ],
+                      ),
+              ),
             ),
             if (_error == null)
               Positioned(

@@ -20,7 +20,7 @@ List<Widget> _buildSettingsPlaybackSection({
             return SwitchListTile(
               key: const ValueKey<String>('allow_video_playback_switch'),
               value: allowVideoPlayback,
-              onChanged: (value) => saveSettingsWithFeedback(
+              onChanged: (value) => _saveSettingsSwitch(
                 context,
                 () => settings.setAllowVideoPlayback(value),
               ),
@@ -38,7 +38,7 @@ List<Widget> _buildSettingsPlaybackSection({
             );
             return SwitchListTile(
               value: asmrPlaybackCacheEnabled,
-              onChanged: (value) => saveSettingsWithFeedback(
+              onChanged: (value) => _saveSettingsSwitch(
                 context,
                 () => settings.setAsmrPlaybackCacheEnabled(value),
               ),
@@ -56,7 +56,7 @@ List<Widget> _buildSettingsPlaybackSection({
             );
             return SwitchListTile(
               value: recordProgress,
-              onChanged: (value) => saveSettingsWithFeedback(
+              onChanged: (value) => _saveSettingsSwitch(
                 context,
                 () => settings.setRecordPlaybackProgress(value),
               ),
@@ -246,48 +246,48 @@ List<Widget> _buildSettingsPlaybackSection({
               );
             },
           ),
-        Consumer(
-          builder: (context, ref, _) {
-            final behavior = ref.watch(
-              settingsStateProvider.select(
-                (state) =>
-                    state.value?.interruptionResumeBehavior ??
-                    InterruptionResumeBehavior.resume,
-              ),
-            );
-            return ListTile(
-              title: _settingsTitle(i18n.tr('interruption_resume_behavior')),
-              leading: _settingsIcon(Icons.phone_in_talk_rounded, cs.primary),
-              trailing: _settingsDropdown<InterruptionResumeBehavior>(
-                context,
-                value: behavior,
-                onChanged: (value) {
-                  if (value != null) {
-                    unawaited(
-                      saveSettingsWithFeedback(
-                        context,
-                        () => settingsController.setInterruptionResumeBehavior(
-                          value,
+        if (defaultTargetPlatform != TargetPlatform.windows)
+          Consumer(
+            builder: (context, ref, _) {
+              final behavior = ref.watch(
+                settingsStateProvider.select(
+                  (state) =>
+                      state.value?.interruptionResumeBehavior ??
+                      InterruptionResumeBehavior.resume,
+                ),
+              );
+              return ListTile(
+                title: _settingsTitle(i18n.tr('interruption_resume_behavior')),
+                leading: _settingsIcon(Icons.phone_in_talk_rounded, cs.primary),
+                trailing: _settingsDropdown<InterruptionResumeBehavior>(
+                  context,
+                  value: behavior,
+                  onChanged: (value) {
+                    if (value != null) {
+                      unawaited(
+                        saveSettingsWithFeedback(
+                          context,
+                          () => settingsController
+                              .setInterruptionResumeBehavior(value),
                         ),
-                      ),
-                    );
-                  }
-                },
-                items: InterruptionResumeBehavior.values
-                    .map(
-                      (value) => DropdownMenuItem<InterruptionResumeBehavior>(
-                        value: value,
-                        child: _settingsDropdownText(
-                          i18n.tr('interruption_resume_${value.name}'),
+                      );
+                    }
+                  },
+                  items: InterruptionResumeBehavior.values
+                      .map(
+                        (value) => DropdownMenuItem<InterruptionResumeBehavior>(
+                          value: value,
+                          child: _settingsDropdownText(
+                            i18n.tr('interruption_resume_${value.name}'),
+                          ),
                         ),
-                      ),
-                    )
-                    .toList(),
-              ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-            );
-          },
-        ),
+                      )
+                      .toList(),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+              );
+            },
+          ),
       ],
     ),
   ];

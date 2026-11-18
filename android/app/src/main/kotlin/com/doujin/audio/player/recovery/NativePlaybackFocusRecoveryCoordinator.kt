@@ -47,7 +47,10 @@ internal class NativePlaybackFocusRecoveryCoordinator(
 
     fun requestIfNeeded(): Boolean {
         if (!host.behavior.requestAudioFocus) return true
-        if (interruptionActive) return false
+        if (transientLossActive) return false
+        // Soft volume ducking retains focus ownership; interrupting new play/prepare
+        // requests here rejects playback instead of ducking alongside notifications.
+        if (duckActive) return true
         return audioFocus.requestIfNeeded()
     }
 

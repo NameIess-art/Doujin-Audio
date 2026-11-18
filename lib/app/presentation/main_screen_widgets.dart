@@ -54,6 +54,7 @@ class _BottomDestinationInkResponseState
   Widget build(BuildContext context) {
     return InkResponse(
       mouseCursor: WidgetStateMouseCursor.clickable,
+      enableFeedback: false,
       key: widget.inkKey,
       onTap: widget.onTap,
       // Consume long presses so they do not turn into navigation taps.
@@ -121,10 +122,12 @@ class _GlobalUpdateOperationBanner extends ConsumerWidget {
                     ? i18n.tr('update_download_failed')
                     : i18n.tr('download_update'),
                 message: label,
-                trailing: SizedBox(
-                  width: 72,
-                  child: LinearProgressIndicator(value: progress),
-                ),
+                trailing: hasError
+                    ? null
+                    : SizedBox(
+                        width: 72,
+                        child: LinearProgressIndicator(value: progress),
+                      ),
               ),
             ),
           ),

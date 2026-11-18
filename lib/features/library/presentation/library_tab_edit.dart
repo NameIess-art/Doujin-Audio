@@ -59,11 +59,7 @@ class LibraryEditPage extends ConsumerWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
-          leading: IconButton(
-            tooltip: i18n.tr('close'),
-            onPressed: () => Navigator.of(context).maybePop(),
-            icon: const Icon(Icons.arrow_back_rounded),
-          ),
+          leading: const AppHeaderBackButton(),
           trailing: IconButton(
             tooltip: i18n.tr('remove_library'),
             onPressed: () => _confirmRemoveLibrary(context, ref),

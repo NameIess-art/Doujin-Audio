@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
+import 'package:doujin_audio/core/widgets/app_edit_panel.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/presentation/playback_providers.dart';
@@ -92,8 +93,24 @@ Future<void> _editFirstText(WidgetTester tester, String text) async {
   await tester.tap(find.byKey(const ValueKey('subtitle_text_0')));
   await tester.pumpAndSettle();
   await tester.enterText(find.byType(TextField), text);
-  await tester.tap(find.byType(FilledButton).last);
+  await _tapInputSave(tester);
   await tester.pumpAndSettle();
+}
+
+Future<void> _tapInputSave(WidgetTester tester) async {
+  final editor = tester.element(find.byType(SubtitleEditorPage));
+  final language = ProviderScope.containerOf(
+    editor,
+  ).read(appLanguageProviderInstanceProvider);
+  final save = find.descendant(
+    of: find.byType(AppEditPanelForm),
+    matching: find.widgetWithText(TextButton, language.tr('save')),
+  );
+  await tester.pumpAndSettle();
+  await tester.ensureVisible(save);
+  await tester.pump();
+  expect(save.hitTestable(), findsOneWidget);
+  await tester.tap(save);
 }
 
 void main() {
@@ -171,7 +188,7 @@ void main() {
       await tester.pump();
       service.saveGate!.complete();
       await tester.pumpAndSettle();
-      await tester.tap(find.byType(FilledButton));
+      await _tapInputSave(tester);
       await tester.pumpAndSettle();
       expect(find.text('Saved'), findsOneWidget);
       expect(find.text('Late edit'), findsNothing);
@@ -204,14 +221,14 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Draft'), findsOneWidget);
       service.failSave = true;
-      await tester.tap(find.byType(BackButton));
+      await tester.tap(find.byType(AppHeaderBackButton));
       await tester.pumpAndSettle();
       await tester.tap(find.byType(FilledButton));
       await tester.pumpAndSettle();
       expect(find.byType(SubtitleEditorPage), findsOneWidget);
       expect(find.text('Draft'), findsOneWidget);
       service.failSave = false;
-      await tester.tap(find.byType(BackButton));
+      await tester.tap(find.byType(AppHeaderBackButton));
       await tester.pumpAndSettle();
       await tester.tap(find.byType(FilledButton));
       await tester.pumpAndSettle();
@@ -330,13 +347,13 @@ void main() {
         bilingualField('subtitle_translated_text'),
         'New translation\nmore translation',
       );
-      await tester.tap(find.byType(FilledButton));
+      await _tapInputSave(tester);
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('subtitle_time_0')));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField).first, '00:00:02.000');
       await tester.enterText(find.byType(TextField).last, '00:00:04.000');
-      await tester.tap(find.byType(FilledButton));
+      await _tapInputSave(tester);
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithIcon(IconButton, Icons.save_rounded));
       await tester.pump();
@@ -364,16 +381,16 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('subtitle_text_0')));
       await tester.pumpAndSettle();
       await tester.enterText(bilingualField('subtitle_original_text'), ' \n ');
-      await tester.tap(find.byType(FilledButton));
+      await _tapInputSave(tester);
       await tester.pumpAndSettle();
-      expect(find.bySubtype<AlertDialog>(), findsOneWidget);
+      expect(find.byType(AppEditPanelForm), findsOneWidget);
       expect(service.saved, isNull);
       await tester.enterText(
         bilingualField('subtitle_original_text'),
         'New source\nline',
       );
       await tester.enterText(bilingualField('subtitle_translated_text'), '');
-      await tester.tap(find.byType(FilledButton));
+      await _tapInputSave(tester);
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithIcon(IconButton, Icons.save_rounded));
       await tester.pump();
@@ -397,7 +414,7 @@ void main() {
         bilingualField('subtitle_translated_text'),
         'Restored translation',
       );
-      await tester.tap(find.byType(FilledButton));
+      await _tapInputSave(tester);
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithIcon(IconButton, Icons.save_rounded));
       await tester.pump();
@@ -415,6 +432,7 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.binding.setSurfaceSize(const Size(320, 568));
     tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.resetViewInsets);
     addTearDown(() async {
       tester.platformDispatcher.clearTextScaleFactorTestValue();
       await tester.binding.setSurfaceSize(null);
@@ -431,13 +449,19 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('subtitle_text_0')));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+    final panel = find.byType(AppEditPanelForm);
     expect(
       find.descendant(
-        of: find.bySubtype<AlertDialog>(),
+        of: panel,
         matching: find.byType(SingleChildScrollView),
       ),
       findsOneWidget,
     );
+    tester.view.viewInsets = FakeViewPadding(
+      bottom: 260 * tester.view.devicePixelRatio,
+    );
+    await tester.pumpAndSettle();
+    expect(tester.getBottomLeft(panel).dy, lessThanOrEqualTo(568 - 260));
     await tester.ensureVisible(bilingualField('subtitle_translated_text'));
     await tester.enterText(
       bilingualField('subtitle_translated_text'),
@@ -448,9 +472,10 @@ void main() {
       bilingualField('subtitle_original_text'),
       '  New source\r\n \r\n  second source line  \n\n',
     );
-    await tester.tap(find.byType(FilledButton));
+    await _tapInputSave(tester);
+    tester.view.resetViewInsets();
     await tester.pumpAndSettle();
-    expect(find.bySubtype<AlertDialog>(), findsNothing);
+    expect(panel, findsNothing);
     expect(tester.takeException(), isNull);
     await tester.tap(find.widgetWithIcon(IconButton, Icons.save_rounded));
     await tester.pump();
@@ -479,7 +504,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('subtitle_text_0')));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'Saved');
-    await tester.tap(find.byType(FilledButton).last);
+    await _tapInputSave(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithIcon(IconButton, Icons.save_rounded));
     await tester.pump(const Duration(milliseconds: 300));
@@ -492,7 +517,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('subtitle_text_0')));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'Unsaved');
-    await tester.tap(find.byType(FilledButton).last);
+    await _tapInputSave(tester);
     await tester.pumpAndSettle();
     service.failSave = true;
     await tester.tap(find.widgetWithIcon(IconButton, Icons.save_rounded));
@@ -539,23 +564,35 @@ void main() {
     expect(find.byType(HeaderFloatingButton), findsNWidgets(2));
 
     await tester.tap(find.byKey(const ValueKey('subtitle_text_0')));
-    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'After');
-    await tester.tap(find.byType(FilledButton).last);
-    await tester.pump(const Duration(milliseconds: 250));
+    await _tapInputSave(tester);
+    await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('subtitle_time_0')));
-    await tester.pump(const Duration(milliseconds: 250));
-    final timeFields = find.byType(TextField);
+    await tester.pumpAndSettle();
+    final timeFields = find.descendant(
+      of: find.byType(AppEditPanelForm),
+      matching: find.byType(TextField),
+    );
+    expect(timeFields, findsNWidgets(2));
     expect(
       tester.getTopLeft(timeFields.last).dy -
           tester.getBottomLeft(timeFields.first).dy,
       greaterThanOrEqualTo(12),
     );
-    await tester.enterText(find.byType(TextField).first, '00:00:02.000');
-    await tester.enterText(find.byType(TextField).last, '00:00:04.000');
-    await tester.tap(find.byType(FilledButton).last);
-    await tester.pump(const Duration(milliseconds: 250));
+    await tester.enterText(timeFields.first, '00:00:02.000');
+    await tester.enterText(timeFields.last, '00:00:01.000');
+    await _tapInputSave(tester);
+    await tester.pump();
+    expect(find.byType(AppEditPanelForm), findsOneWidget);
+    expect(
+      tester.widget<TextField>(timeFields.last).decoration?.errorText,
+      isNotNull,
+    );
+    await tester.enterText(timeFields.last, '00:00:04.000');
+    await _tapInputSave(tester);
+    await tester.pumpAndSettle();
 
     expect(find.text('After'), findsOneWidget);
     expect(find.text('00:00:02.000'), findsOneWidget);
@@ -611,7 +648,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('subtitle_text_1')));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), 'Inserted');
-      await tester.tap(find.byType(FilledButton).last);
+      await _tapInputSave(tester);
       await tester.pumpAndSettle();
       expect(
         tester
@@ -626,7 +663,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField).first, '00:00:03.200');
       await tester.enterText(find.byType(TextField).last, '00:00:04.800');
-      await tester.tap(find.byType(FilledButton).last);
+      await _tapInputSave(tester);
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithIcon(IconButton, Icons.save_rounded));
       await tester.pump();

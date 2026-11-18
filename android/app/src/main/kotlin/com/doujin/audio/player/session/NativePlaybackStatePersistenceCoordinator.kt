@@ -16,6 +16,7 @@ internal interface NativePlaybackStatePersistenceEnvironment {
     fun removeSession(sessionId: String, revision: Long)
     fun clearSessions(revision: Long)
     fun shutdown()
+    fun stageSessions(sessions: List<StoredNativePlaybackSession>, revisions: Map<String, Long>) {}
     fun awaitTermination(timeoutMs: Long): Boolean = true
 }
 
@@ -67,6 +68,10 @@ private class AndroidNativePlaybackStatePersistenceEnvironment(
                 Log.e("PlaybackRecovery", "Unable to persist playback state", error)
             }
         }
+    }
+
+    override fun stageSessions(sessions: List<StoredNativePlaybackSession>, revisions: Map<String, Long>) {
+        NativePlaybackStateStore.stageSessions(sessions, revisions)
     }
 
     override fun saveSessions(sessions: List<StoredNativePlaybackSession>, revisions: Map<String, Long>) {
@@ -184,6 +189,9 @@ internal class NativePlaybackStatePersistenceCoordinator(
         cancelScheduledPersist()
         val snapshots = if (hasSessions()) storedSessions() else emptyList()
         val revisions = sessionRevisions()
+        if (snapshots.isNotEmpty()) {
+            environment.stageSessions(snapshots, revisions)
+        }
         val saveGeneration = generation.incrementAndGet()
         environment.execute {
             if (saveGeneration != generation.get() || snapshots == lastSubmittedSnapshots) {
@@ -205,6 +213,7 @@ internal class NativePlaybackStatePersistenceCoordinator(
     }
 
     fun persistSession(session: StoredNativePlaybackSession, revision: Long) {
+        environment.stageSessions(listOf(session), mapOf(session.sessionId to revision))
         environment.execute {
             environment.saveSessions(listOf(session), mapOf(session.sessionId to revision))
             persistedStructure.remove(session.sessionId)

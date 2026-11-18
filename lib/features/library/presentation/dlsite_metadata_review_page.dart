@@ -4,12 +4,14 @@ import 'dlsite_metadata_review_navigation.dart';
 import 'library_providers.dart';
 import '../../settings/presentation/settings_providers.dart';
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../core/media/audio_detail.dart';
@@ -30,6 +32,7 @@ import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../application/audio_detail_repository.dart';
+import '../application/library_entry_editor_service.dart';
 import 'folder_cover_selector.dart';
 
 enum DlsiteMetadataReviewOutcome { applied, confirmed, skipped }
@@ -121,6 +124,7 @@ class _DlsiteMetadataReviewPageState
   final GlobalKey _headerKey = GlobalKey();
   final ScrollController _scrollController = WindowsSmoothScrollController();
   double _headerHeight = 0;
+  bool _headerMeasurementScheduled = false;
   final _titleController = TextEditingController();
   final _folderNameController = TextEditingController();
   final _rjCodeController = TextEditingController();
@@ -476,7 +480,8 @@ class _DlsiteMetadataReviewPageState
     setState(() => _validate = true);
     if (metadataDateErrorKey(_releaseDateController.text) != null ||
         metadataDurationErrorKey(_durationController.text) != null ||
-        metadataRatingErrorKey(_ratingController.text) != null) {
+        metadataRatingErrorKey(_ratingController.text) != null ||
+        (widget.editing && _folderNameController.text.trim().isEmpty)) {
       return;
     }
     setState(() {
@@ -616,6 +621,20 @@ class _DlsiteMetadataReviewPageState
         );
       }
       _finish(DlsiteMetadataReviewResult.applied(saveResult.detail, false));
+    } on AudioDetailRenameException catch (error) {
+      if (!mounted || readAppRoute(context)?.isCurrent != true) return;
+      setState(() => _saving = false);
+      showAppSnackBar(
+        context,
+        ProviderScope.containerOf(context, listen: false)
+            .read(appLanguageProviderInstanceProvider)
+            .tr(
+              error.reason == 'nameConflict'
+                  ? 'audio_detail_rename_conflict'
+                  : 'audio_detail_rename_failed',
+            ),
+        tone: AppFeedbackTone.warning,
+      );
     } catch (_) {
       if (!mounted || readAppRoute(context)?.isCurrent != true) return;
       setState(() => _saving = false);
@@ -670,6 +689,21 @@ class _DlsiteMetadataReviewPageState
     }
   }
 
+  void _scheduleHeaderMeasurement() {
+    if (_headerMeasurementScheduled) return;
+    _headerMeasurementScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _headerMeasurementScheduled = false;
+      if (!mounted) return;
+      final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
+      if (box == null) return;
+      final h = box.size.height;
+      if (h > 0 && (_headerHeight == 0 || (h - _headerHeight).abs() > 0.5)) {
+        setState(() => _headerHeight = h);
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
@@ -702,16 +736,7 @@ class _DlsiteMetadataReviewPageState
         : i18n.tr('dlsite_review_title');
     final targetName = PathDisplay.fileName(widget.detail.target.targetPath);
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
-      if (box != null) {
-        final h = box.size.height;
-        if (h > 0 && (_headerHeight == 0 || (h - _headerHeight).abs() > 0.5)) {
-          setState(() => _headerHeight = h);
-        }
-      }
-    });
+    _scheduleHeaderMeasurement();
 
     final defaultHeaderHeight = MediaQuery.paddingOf(context).top + 135.0;
     final effectiveHeaderHeight = _headerHeight > 0
@@ -764,21 +789,37 @@ class _DlsiteMetadataReviewPageState
                 child: PlaceholderContentTransition(
                   showPlaceholder: _loading,
                   placeholder: ClipRect(
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(20, listTopPadding, 20, 0),
-                      child: Stack(
-                        children: [
-                          Positioned(
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            child: MetadataReviewSkeleton(
-                              showCover:
-                                  widget.detail.target.isLibraryRootFolder,
-                            ),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final maxContentWidth = AppDesignTokens.of(
+                          context,
+                        ).readableContentMaxWidth;
+                        final sidePadding = math.max(
+                          20.0,
+                          (constraints.maxWidth - maxContentWidth) / 2,
+                        );
+                        return Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            sidePadding,
+                            listTopPadding,
+                            sidePadding,
+                            0,
                           ),
-                        ],
-                      ),
+                          child: Stack(
+                            children: [
+                              Positioned(
+                                top: 0,
+                                left: 0,
+                                right: 0,
+                                child: MetadataReviewSkeleton(
+                                  showCover:
+                                      widget.detail.target.isLibraryRootFolder,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
                   ),
                   content: _error != null
@@ -794,15 +835,24 @@ class _DlsiteMetadataReviewPageState
                             onSkip: widget.allowSkip ? _skip : null,
                           ),
                         )
-                      : ListView(
-                          controller: _scrollController,
-                          padding: EdgeInsets.fromLTRB(
-                            20,
-                            listTopPadding,
-                            20,
-                            bottomInset,
-                          ),
-                          children: [
+                      : LayoutBuilder(
+                          builder: (context, constraints) {
+                            final maxContentWidth = AppDesignTokens.of(
+                              context,
+                            ).readableContentMaxWidth;
+                            final sidePadding = math.max(
+                              20.0,
+                              (constraints.maxWidth - maxContentWidth) / 2,
+                            );
+                            return ListView(
+                              controller: _scrollController,
+                              padding: EdgeInsets.fromLTRB(
+                                sidePadding,
+                                listTopPadding,
+                                sidePadding,
+                                bottomInset,
+                              ),
+                              children: [
                             if (!widget.editing &&
                                 _metadata?.dlsiteRegionRestricted == true) ...[
                               Text(
@@ -835,41 +885,61 @@ class _DlsiteMetadataReviewPageState
                               const SizedBox(height: 20),
                             ],
                             if (coverUrl != null) ...[
-                              CoverArtworkFrame(
-                                borderRadius: BorderRadius.circular(16),
-                                child: AspectRatio(
-                                  aspectRatio: kStandardCoverAspectRatio,
-                                  child: AsyncRemoteCoverImage(
-                                    url: coverUrl,
-                                    future: ref
-                                        .read(libraryCoverUiControllerProvider)
-                                        .deferredRemoteCover(coverUrl),
-                                    initialPath: library
-                                        .resolvedCoverPathForRemoteCover(
-                                          coverUrl,
-                                        ),
-                                    retryFutureBuilder: () => ref
-                                        .read(libraryCoverUiControllerProvider)
-                                        .deferredRemoteCover(coverUrl),
-                                    fit: BoxFit.cover,
-                                    cacheWidth: coverCacheWidth,
-                                    useDefaultCacheWidth:
-                                        coverCacheWidth != null,
-                                    loadingBuilder: (_) =>
-                                        const CoverLoadingArtwork(
-                                          placeholder: CoverFallbackArtwork(),
-                                        ),
-                                    fallbackBuilder: (_) =>
-                                        const CoverFallbackArtwork(),
+                              Center(
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 480,
+                                    maxHeight: 360,
+                                  ),
+                                  child: CoverArtworkFrame(
+                                    borderRadius: BorderRadius.circular(16),
+                                    child: AspectRatio(
+                                      aspectRatio: kStandardCoverAspectRatio,
+                                      child: AsyncRemoteCoverImage(
+                                        url: coverUrl,
+                                        future: ref
+                                            .read(
+                                              libraryCoverUiControllerProvider,
+                                            )
+                                            .deferredRemoteCover(coverUrl),
+                                        initialPath: library
+                                            .resolvedCoverPathForRemoteCover(
+                                              coverUrl,
+                                            ),
+                                        retryFutureBuilder: () => ref
+                                            .read(
+                                              libraryCoverUiControllerProvider,
+                                            )
+                                            .deferredRemoteCover(coverUrl),
+                                        fit: BoxFit.cover,
+                                        cacheWidth: coverCacheWidth,
+                                        useDefaultCacheWidth:
+                                            coverCacheWidth != null,
+                                        loadingBuilder: (_) =>
+                                            const CoverLoadingArtwork(
+                                              placeholder:
+                                                  CoverFallbackArtwork(),
+                                            ),
+                                        fallbackBuilder: (_) =>
+                                            const CoverFallbackArtwork(),
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
                               SwitchListTile(
                                 value: _saveCover,
-                                onChanged: (value) => setState(() {
-                                  _saveCover = value;
-                                  _onDraftChanged();
-                                }),
+                                onChanged: (value) {
+                                  unawaited(
+                                    AppInteractionFeedback.trigger(
+                                      AppInteractionFeedbackType.selection,
+                                    ),
+                                  );
+                                  setState(() {
+                                    _saveCover = value;
+                                    _onDraftChanged();
+                                  });
+                                },
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 16,
                                 ),
@@ -881,6 +951,8 @@ class _DlsiteMetadataReviewPageState
                               editing: widget.editing,
                               validate: _validate,
                               enabled: !_saving,
+                              isLibraryRootFolder:
+                                  editingDetail.target.isLibraryRootFolder,
                               metadata: metadata,
                               folderNameController: _folderNameController,
                               rjCodeController: _rjCodeController,
@@ -893,7 +965,9 @@ class _DlsiteMetadataReviewPageState
                               ratingController: _ratingController,
                             ),
                           ],
-                        ),
+                        );
+                      },
+                    ),
                 ),
               ),
             ),
@@ -945,8 +1019,9 @@ class _DlsiteMetadataReviewPageState
                   icon: widget.editing
                       ? Icons.edit_note_rounded
                       : Icons.rate_review_rounded,
-                  leading: BackButton(
-                    onPressed: _saving ? null : _requestClose,
+                  leading: AppHeaderBackButton(
+                    enabled: !_saving,
+                    onPressed: _requestClose,
                   ),
                   title: reviewTitle,
                   trailing: headerTrailing,

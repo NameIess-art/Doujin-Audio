@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_dialog.dart';
@@ -110,20 +113,29 @@ class _DlsiteMetadataBatchResultsPageState
                   animation: widget.session,
                   builder: (context, _) {
                     final items = widget.session.items;
-                    return ListView.builder(
-                      key: const ValueKey<String>(
-                        'batch_metadata_results_list',
-                      ),
-                      padding: EdgeInsets.fromLTRB(
-                        16,
-                        AppPageHeaderMetrics.contentTopInset(context),
-                        16,
-                        78 +
-                            MediaQuery.paddingOf(context).bottom +
-                            MobileOverlayInset.of(context),
-                      ),
-                      itemCount: items.length,
-                      itemBuilder: (context, index) {
+                    final maxWidth = AppDesignTokens.of(
+                      context,
+                    ).readableContentMaxWidth;
+                    return LayoutBuilder(
+                      builder: (context, constraints) {
+                        final horizontalPadding = math.max(
+                          16.0,
+                          (constraints.maxWidth - maxWidth) / 2,
+                        );
+                        return ListView.builder(
+                          key: const ValueKey<String>(
+                            'batch_metadata_results_list',
+                          ),
+                          padding: EdgeInsets.fromLTRB(
+                            horizontalPadding,
+                            AppPageHeaderMetrics.contentTopInset(context),
+                            horizontalPadding,
+                            78 +
+                                MediaQuery.paddingOf(context).bottom +
+                                MobileOverlayInset.of(context),
+                          ),
+                          itemCount: items.length,
+                          itemBuilder: (context, index) {
                         final item = items[index];
                         final entry = item.entry;
                         final title = entry.detail.workTitle.isNotEmpty
@@ -220,34 +232,79 @@ class _DlsiteMetadataBatchResultsPageState
                           ),
                         );
                         if (isWindows) {
-                          row = GestureDetector(
-                            onSecondaryTapDown: _savingAll
-                                ? null
-                                : (details) async {
-                                    final selected = await showUnifiedContextMenu<bool>(
-                                      context: context,
-                                      globalPosition: details.globalPosition,
-                                      entries: [
-                                        UnifiedMenuEntry<bool>.action(
-                                          value: true,
-                                          icon: isExcluded
-                                              ? Icons.undo_rounded
-                                              : Icons.block_rounded,
-                                          label: i18n.tr(
-                                            isExcluded
-                                                ? 'batch_metadata_action_restore'
-                                                : 'batch_metadata_action_exclude',
-                                          ),
+                          Future<void> openContextMenu(
+                            Offset globalPosition,
+                          ) async {
+                            if (_savingAll) return;
+                            final selected =
+                                await showUnifiedContextMenu<VoidCallback>(
+                                  context: context,
+                                  globalPosition: globalPosition,
+                                  entries: [
+                                    if (!isExcluded &&
+                                        item.status !=
+                                            DlsiteMetadataBatchLookupStatus
+                                                .searching)
+                                      UnifiedMenuEntry<VoidCallback>.action(
+                                        value: () =>
+                                            unawaited(_handleItemTap(index)),
+                                        icon: item.isReviewable
+                                            ? Icons.rate_review_rounded
+                                            : Icons.refresh_rounded,
+                                        label: i18n.tr(
+                                          item.isReviewable
+                                              ? 'dlsite_review_title'
+                                              : 'retry',
                                         ),
-                                      ],
-                                    );
-                                    if (mounted && selected == true) {
-                                      toggleExcluded();
-                                    }
-                                  },
-                            child: row,
+                                      ),
+                                    UnifiedMenuEntry<VoidCallback>.action(
+                                      value: toggleExcluded,
+                                      icon: isExcluded
+                                          ? Icons.undo_rounded
+                                          : Icons.block_rounded,
+                                      label: i18n.tr(
+                                        isExcluded
+                                            ? 'batch_metadata_action_restore'
+                                            : 'batch_metadata_action_exclude',
+                                      ),
+                                    ),
+                                  ],
+                                );
+                            if (mounted) selected?.call();
+                          }
+
+                          void openKeyboardMenu() {
+                            final box =
+                                context.findRenderObject() as RenderBox?;
+                            if (box == null || !box.hasSize) return;
+                            unawaited(
+                              openContextMenu(
+                                box.localToGlobal(box.size.center(Offset.zero)),
+                              ),
+                            );
+                          }
+
+                          return CallbackShortcuts(
+                            bindings: {
+                              const SingleActivator(
+                                LogicalKeyboardKey.f10,
+                                shift: true,
+                              ): openKeyboardMenu,
+                              const SingleActivator(
+                                LogicalKeyboardKey.contextMenu,
+                              ): openKeyboardMenu,
+                            },
+                            child: Focus(
+                              child: GestureDetector(
+                                onSecondaryTapDown: _savingAll
+                                    ? null
+                                    : (details) => unawaited(
+                                        openContextMenu(details.globalPosition),
+                                      ),
+                                child: row,
+                              ),
+                            ),
                           );
-                          return row;
                         }
                         return Dismissible(
                           key: ValueKey<String>(
@@ -315,6 +372,8 @@ class _DlsiteMetadataBatchResultsPageState
                         );
                       },
                     ).withWindowsSmoothScroll();
+                      },
+                    );
                   },
                 ),
               ),
@@ -327,7 +386,7 @@ class _DlsiteMetadataBatchResultsPageState
                 key: const ValueKey<String>('batch_metadata_results_header'),
                 icon: Icons.library_add_check_rounded,
                 title: i18n.tr('batch_metadata'),
-                leading: const BackButton(),
+                leading: const AppHeaderBackButton(),
               ),
             ),
             Positioned(
@@ -432,6 +491,7 @@ class _BatchMetadataStatusIcon extends StatelessWidget {
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
+    final tokens = AppDesignTokens.of(context);
     if (isExcluded) {
       final label = i18n.tr('batch_metadata_status_excluded');
       return Tooltip(
@@ -455,12 +515,12 @@ class _BatchMetadataStatusIcon extends StatelessWidget {
     final (IconData icon, Color color, String label) = switch (status) {
       DlsiteMetadataBatchLookupStatus.found => (
         Icons.check_circle_rounded,
-        Colors.orange,
+        tokens.warning,
         i18n.tr('batch_metadata_status_found'),
       ),
       DlsiteMetadataBatchLookupStatus.confirmed => (
         Icons.check_circle_rounded,
-        Colors.green,
+        tokens.success,
         i18n.tr('batch_metadata_status_confirmed'),
       ),
       DlsiteMetadataBatchLookupStatus.notFound => (

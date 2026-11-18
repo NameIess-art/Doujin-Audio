@@ -117,7 +117,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
   void _exitSelectionMode() {
     if (_creatingQueue) return;
-    AppInteractionFeedback.trigger(AppInteractionFeedbackType.tap);
     _selection.value = const {};
   }
 
@@ -254,7 +253,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   void measureHeader() {
     final box = headerKey.currentContext?.findRenderObject() as RenderBox?;
     if (box != null && mounted) {
-      final h = box.size.height - headerControlsFullHeight;
+      final h = box.size.height;
       final minHeight = _minimumExpandedHeaderHeight(context);
       final targetHeight = h < minHeight ? minHeight : h;
       if (targetHeight > 0 && (targetHeight - headerHeight).abs() > 0.5) {
@@ -293,10 +292,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   }
 
   void _openSessionDetail(BuildContext context, String sessionId) {
-    AppInteractionFeedback.trigger(
-      AppInteractionFeedbackType.tap,
-      context: context,
-    );
     Navigator.of(
       context,
       rootNavigator: true,
@@ -304,10 +299,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   }
 
   Future<void> _openQueueEditor(BuildContext context, String sessionId) {
-    AppInteractionFeedback.trigger(
-      AppInteractionFeedbackType.tap,
-      context: context,
-    );
     return showPlaybackQueueEditPanel(context, sessionId);
   }
 

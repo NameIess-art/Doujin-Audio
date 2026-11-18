@@ -144,27 +144,29 @@ class CoverArtworkFrame extends StatelessWidget {
   final bool showShadow;
 
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: BoxDecoration(
-      borderRadius: borderRadius,
-      boxShadow: showShadow
-          ? [
-              BoxShadow(
-                color: Theme.of(context).brightness == Brightness.dark
-                    ? const Color(0x70000000)
-                    : const Color(0x3D000000),
-                blurRadius: 4,
-                offset: const Offset(0, 1),
-              ),
-            ]
-          : null,
-    ),
-    child: ClipRRect(
+  Widget build(BuildContext context) {
+    final clipped = ClipRRect(
       borderRadius: borderRadius,
       clipBehavior: clipBehavior,
       child: child,
-    ),
-  );
+    );
+    if (!showShadow) return clipped;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: borderRadius,
+        boxShadow: [
+          BoxShadow(
+            color: Theme.of(context).brightness == Brightness.dark
+                ? const Color(0x70000000)
+                : const Color(0x3D000000),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: clipped,
+    );
+  }
 }
 
 // Full-size artwork follows the selected quality; thumbnails use display pixels.

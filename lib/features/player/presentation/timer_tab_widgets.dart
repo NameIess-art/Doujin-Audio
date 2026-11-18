@@ -49,13 +49,7 @@ class _ModeSelector extends ConsumerWidget {
           clipBehavior: Clip.antiAlias,
           child: AppEntryInkWell(
             borderRadius: radius,
-            onTap: () {
-              AppInteractionFeedback.trigger(
-                AppInteractionFeedbackType.tap,
-                context: context,
-              );
-              onChanged(mode);
-            },
+            onTap: () => onChanged(mode),
             child: Padding(
               padding: EdgeInsets.symmetric(
                 horizontal: compact ? 12 : 14,

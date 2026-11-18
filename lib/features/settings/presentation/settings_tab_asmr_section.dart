@@ -216,7 +216,7 @@ List<Widget> _buildSettingsAsmrSection({
             );
             return SwitchListTile(
               value: saveMetadata,
-              onChanged: (value) => saveSettingsWithFeedback(
+              onChanged: (value) => _saveSettingsSwitch(
                 context,
                 () => settings.setAsmrDownloadSaveMetadata(value),
               ),
@@ -240,7 +240,7 @@ List<Widget> _buildSettingsAsmrSection({
             );
             return SwitchListTile(
               value: saveCover,
-              onChanged: (value) => saveSettingsWithFeedback(
+              onChanged: (value) => _saveSettingsSwitch(
                 context,
                 () => settings.setAsmrDownloadSaveCover(value),
               ),

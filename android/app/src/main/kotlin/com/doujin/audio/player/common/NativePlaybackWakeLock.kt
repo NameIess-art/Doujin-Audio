@@ -49,15 +49,17 @@ internal class NativePlaybackWakeLock(
         }
 
         val lock = wakeLock ?: return
-        if (lock.isHeld) return
+        val wasHeld = lock.isHeld
         try {
+            // Re-acquiring a non-reference-counted wake lock extends its timeout
+            // when a new playback request arrives before the previous window ends.
             lock.acquire(wakeLockTimeoutMs)
         } catch (e: Exception) {
             logWarn("wakelock_acquire_failed", e)
             return
         }
 
-        if (lock.isHeld) logInfo("wakelock_acquired")
+        if (!wasHeld && lock.isHeld) logInfo("wakelock_acquired")
         syncWifiLock()
     }
 
@@ -66,7 +68,7 @@ internal class NativePlaybackWakeLock(
      * may still suppress the lock; reacquiring does not grant a Doze exemption.
      */
     @SuppressLint("WakelockTimeout")
-    fun refresh() {
+    fun refresh(logRefresh: Boolean = true) {
         if (wakeLock == null) {
             acquire()
             return
@@ -76,7 +78,7 @@ internal class NativePlaybackWakeLock(
             // Non-reference-counted acquire replaces the pending timeout even
             // when the lock is already held, without briefly releasing the CPU.
             lock.acquire(wakeLockTimeoutMs)
-            logInfo("wakelock_refreshed")
+            if (logRefresh) logInfo("wakelock_refreshed")
         } catch (e: Exception) {
             logWarn("wakelock_refresh_failed", e)
         }

@@ -1,5 +1,15 @@
 part of 'settings_tab.dart';
 
+Future<bool> _saveSettingsSwitch(
+  BuildContext context,
+  Future<void> Function() save,
+) {
+  unawaited(
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+  );
+  return saveSettingsWithFeedback(context, save);
+}
+
 Widget _settingsTitle(String text) {
   return Text(text, softWrap: true, overflow: TextOverflow.visible);
 }

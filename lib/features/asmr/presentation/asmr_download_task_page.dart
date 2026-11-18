@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../core/ui/undoable_removal_service.dart';
@@ -134,9 +135,19 @@ class _AsmrDownloadTaskPageState extends ConsumerState<AsmrDownloadTaskPage> {
                               physics: const ClampingScrollPhysics(),
                               itemCount: taskIds.length,
                               itemBuilder: (context, index) {
-                                return _DownloadTaskItem(
-                                  key: ValueKey(taskIds[index]),
-                                  workId: taskIds[index],
+                                final maxWidth = AppDesignTokens.of(
+                                  context,
+                                ).readableContentMaxWidth;
+                                return Center(
+                                  child: ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      maxWidth: maxWidth,
+                                    ),
+                                    child: _DownloadTaskItem(
+                                      key: ValueKey(taskIds[index]),
+                                      workId: taskIds[index],
+                                    ),
+                                  ),
                                 );
                               },
                             ).withWindowsSmoothScroll();
@@ -197,9 +208,16 @@ Future<_TaskRemovalAction?> _showTaskRemovalMenu(
                 ),
                 leading: const Icon(Icons.remove_circle_outline_rounded),
                 title: Text(removeEntryLabel),
-                onTap: () => Navigator.of(
-                  sheetContext,
-                ).pop(_TaskRemovalAction.removeEntry),
+                onTap: () {
+                  unawaited(
+                    AppInteractionFeedback.trigger(
+                      AppInteractionFeedbackType.destructive,
+                    ),
+                  );
+                  Navigator.of(
+                    sheetContext,
+                  ).pop(_TaskRemovalAction.removeEntry);
+                },
               ),
               ListTile(
                 key: const ValueKey<String>(
@@ -210,9 +228,16 @@ Future<_TaskRemovalAction?> _showTaskRemovalMenu(
                   deleteDownloadedLabel,
                   style: TextStyle(color: cs.error),
                 ),
-                onTap: () => Navigator.of(
-                  sheetContext,
-                ).pop(_TaskRemovalAction.deleteDownloaded),
+                onTap: () {
+                  unawaited(
+                    AppInteractionFeedback.trigger(
+                      AppInteractionFeedbackType.destructive,
+                    ),
+                  );
+                  Navigator.of(
+                    sheetContext,
+                  ).pop(_TaskRemovalAction.deleteDownloaded);
+                },
               ),
             ],
           ),

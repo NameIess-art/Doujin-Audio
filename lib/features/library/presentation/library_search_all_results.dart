@@ -74,16 +74,37 @@ class _LibrarySearchAllResultsState
   final Set<String> _expandedSearchFolderPaths = <String>{};
   List<LibrarySearchRow> _visibleSearchItems = const [];
   List<LibrarySearchRow>? _offsetRows;
+  int? _offsetColumnCount;
   List<double>? _rowOffsets;
 
-  List<double> _offsetsFor(List<LibrarySearchRow> rows) {
-    if (identical(rows, _offsetRows)) return _rowOffsets!;
+  List<double> _offsetsFor(List<LibrarySearchRow> rows, int columnCount) {
+    if (identical(rows, _offsetRows) && _offsetColumnCount == columnCount) {
+      return _rowOffsets!;
+    }
     _offsetRows = rows;
+    _offsetColumnCount = columnCount;
     var offset = 0.0;
-    return _rowOffsets = [
-      offset,
-      for (final row in rows) offset += libraryTileExtent(row.node),
-    ];
+    final offsets = <double>[offset];
+    if (columnCount <= 1) {
+      for (final row in rows) {
+        offset += libraryTileExtent(row.node);
+        offsets.add(offset);
+      }
+      return _rowOffsets = offsets;
+    }
+    final rowCount = (rows.length / columnCount).ceil();
+    for (var rowIndex = 0; rowIndex < rowCount; rowIndex++) {
+      var rowExtent = 0.0;
+      for (var column = 0; column < columnCount; column++) {
+        final itemIndex = rowIndex * columnCount + column;
+        if (itemIndex >= rows.length) break;
+        final extent = libraryTileExtent(rows[itemIndex].node);
+        if (extent > rowExtent) rowExtent = extent;
+      }
+      offset += rowExtent;
+      offsets.add(offset);
+    }
+    return _rowOffsets = offsets;
   }
 
   @override
@@ -323,67 +344,103 @@ class _LibrarySearchAllResultsState
     } else {
       final visibleItems = _visibleSearchItems;
       final errorItemCount = hasCurrentError ? 1 : 0;
-      final offsets = !hasCurrentError && libraryTileExtentsAreFixed(context)
-          ? _offsetsFor(visibleItems)
-          : null;
+      final canUseGrid =
+          !hasCurrentError &&
+          _expandedSearchFolderPaths.isEmpty &&
+          visibleItems.every((item) => item.depth == 0);
+      final fixedExtents =
+          !hasCurrentError && libraryTileExtentsAreFixed(context);
       final highlightQuery = searchElementHighlight(_visibleSearchQuery);
+      Widget buildSearchItem(int itemIndex) {
+        final item = visibleItems[itemIndex];
+        final node = item.node;
+        return Padding(
+          key: ValueKey<String>('search_${node.path}'),
+          padding: EdgeInsets.only(left: item.depth * 8.0),
+          child: LibraryTreeItem(
+            node: node,
+            initiallyExpanded:
+                node is FolderNode &&
+                _expandedSearchFolderPaths.contains(
+                  PathMatcher.normalize(node.path),
+                ),
+            onFolderExpansionChanged: _handleSearchFolderExpansionChanged,
+            renderChildrenInline: false,
+            searchQuery: highlightQuery,
+            isSelectionMode: item.depth == 0 && widget.isSelectionMode,
+            isSelected: widget.selectedPaths.contains(
+              selectionKeyForLibraryNode(node),
+            ),
+            onLongPress: item.depth == 0
+                ? () => widget.onEnterSelectionMode(node)
+                : null,
+            onToggleSelect: item.depth == 0
+                ? () => widget.onToggleSelection(node)
+                : null,
+          ),
+        );
+      }
+
       content = SearchHighlightScope(
         query: highlightQuery,
-        child: ScrollToTopListView.builder(
-          key: const ValueKey<String>('library_search_results_all'),
-          controller: widget.scrollController,
-          padding: EdgeInsets.fromLTRB(
-            LibraryLikeCardMetrics.listHorizontalPadding,
-            topPadding,
-            LibraryLikeCardMetrics.listHorizontalPadding,
-            AppSearchPageScaffold.contentBottomInset(context),
-          ),
-          cacheExtent: 120,
-          physics: const ClampingScrollPhysics(),
-          itemCount: visibleItems.length + errorItemCount,
-          rowOffsets: offsets,
-          itemExtentBuilder: offsets == null
-              ? null
-              : (index, _) => offsets[index + 1] - offsets[index],
-          itemBuilder: (context, index) {
-            if (hasCurrentError && index == 0) {
-              return Padding(
-                key: const ValueKey<String>('library_search_stale_error'),
-                padding: const EdgeInsets.only(bottom: 8),
-                child: OperationStatusBanner(
-                  label: i18n.tr('operation_failed_retry'),
-                  error: _visibleSearchError,
-                  onRetry: _retrySearch,
-                  retryTooltip: i18n.tr('retry'),
-                ),
-              );
-            }
-            final item = visibleItems[index - errorItemCount];
-            final node = item.node;
-            return Padding(
-              key: ValueKey<String>('search_${node.path}'),
-              padding: EdgeInsets.only(left: item.depth * 8.0),
-              child: LibraryTreeItem(
-                node: node,
-                initiallyExpanded:
-                    node is FolderNode &&
-                    _expandedSearchFolderPaths.contains(
-                      PathMatcher.normalize(node.path),
-                    ),
-                onFolderExpansionChanged: _handleSearchFolderExpansionChanged,
-                renderChildrenInline: false,
-                searchQuery: highlightQuery,
-                isSelectionMode: item.depth == 0 && widget.isSelectionMode,
-                isSelected: widget.selectedPaths.contains(
-                  selectionKeyForLibraryNode(node),
-                ),
-                onLongPress: item.depth == 0
-                    ? () => widget.onEnterSelectionMode(node)
-                    : null,
-                onToggleSelect: item.depth == 0
-                    ? () => widget.onToggleSelection(node)
-                    : null,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final columnCount = canUseGrid
+                ? responsiveLibraryCardColumnCount(constraints.maxWidth)
+                : 1;
+            final offsets = fixedExtents
+                ? _offsetsFor(visibleItems, columnCount)
+                : null;
+            final itemCount = columnCount == 1
+                ? visibleItems.length + errorItemCount
+                : (visibleItems.length / columnCount).ceil();
+            return ScrollToTopListView.builder(
+              key: const ValueKey<String>('library_search_results_all'),
+              controller: widget.scrollController,
+              padding: EdgeInsets.fromLTRB(
+                LibraryLikeCardMetrics.listHorizontalPadding,
+                topPadding,
+                LibraryLikeCardMetrics.listHorizontalPadding,
+                AppSearchPageScaffold.contentBottomInset(context),
               ),
+              cacheExtent: 120,
+              physics: const ClampingScrollPhysics(),
+              itemCount: itemCount,
+              rowOffsets: offsets,
+              itemExtentBuilder: offsets == null
+                  ? null
+                  : (index, _) => offsets[index + 1] - offsets[index],
+              itemBuilder: (context, index) {
+                if (hasCurrentError && index == 0) {
+                  return Padding(
+                    key: const ValueKey<String>('library_search_stale_error'),
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: OperationStatusBanner(
+                      label: i18n.tr('operation_failed_retry'),
+                      error: _visibleSearchError,
+                      onRetry: _retrySearch,
+                      retryTooltip: i18n.tr('retry'),
+                    ),
+                  );
+                }
+                if (columnCount == 1) {
+                  return buildSearchItem(index - errorItemCount);
+                }
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (var column = 0; column < columnCount; column++) ...[
+                      if (column > 0)
+                        const SizedBox(width: kResponsiveLibraryCardSpacing),
+                      Expanded(
+                        child: index * columnCount + column < visibleItems.length
+                            ? buildSearchItem(index * columnCount + column)
+                            : const SizedBox.shrink(),
+                      ),
+                    ],
+                  ],
+                );
+              },
             );
           },
         ),

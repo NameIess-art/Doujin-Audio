@@ -73,7 +73,7 @@ class SubtitleWindowPreviewCard extends StatelessWidget {
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
+                padding: const EdgeInsets.fromLTRB(18, 10, 18, 10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -84,14 +84,17 @@ class SubtitleWindowPreviewCard extends StatelessWidget {
                         color: cs.onSurface,
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     Expanded(
                       child: Center(
-                        child: SubtitleWindowVisual(
-                          settings: settings,
-                          text: sampleText,
-                          maxTextWidth: 260,
-                          fallbackBackgroundColor: Colors.black,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: SubtitleWindowVisual(
+                            settings: settings,
+                            text: sampleText,
+                            maxTextWidth: 260,
+                            fallbackBackgroundColor: Colors.black,
+                          ),
                         ),
                       ),
                     ),

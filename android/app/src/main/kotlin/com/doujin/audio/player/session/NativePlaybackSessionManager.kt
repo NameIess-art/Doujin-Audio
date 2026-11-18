@@ -43,18 +43,16 @@ internal class NativePlaybackSessionManager(
         return true
     }
 
+    private fun NativePlaybackSession.isPlaybackActive(): Boolean =
+        playerOrNull()?.let { player ->
+            player.playbackState != Player.STATE_ENDED && (player.isPlaying || player.playWhenReady)
+        } == true
+
     fun activePlaybackSessionIds(): List<String> = sessions.values
-        .filter { session ->
-            session.playerOrNull()?.let { player ->
-                player.playbackState != Player.STATE_ENDED && (player.isPlaying || player.playWhenReady)
-            } == true
-        }
+        .filter { it.isPlaybackActive() }
         .map(NativePlaybackSession::sessionId)
 
-    fun hasActivePlayback(): Boolean = sessions.values.any {
-        val p = it.playerOrNull()
-        p != null && p.playbackState != Player.STATE_ENDED && (p.isPlaying || p.playWhenReady)
-    }
+    fun hasActivePlayback(): Boolean = sessions.values.any { it.isPlaybackActive() }
 
     fun usageItems(): List<Map<String, Any?>> = sessions.values.mapNotNull(NativePlaybackSession::usageItem)
 
@@ -87,18 +85,22 @@ internal class NativePlaybackSessionManager(
     }
 
     fun mediaSessionCandidate(): NativePlaybackSession? {
-        focusedSessionId?.let { sessions[it] }?.takeIf { it.playerOrNull() != null }?.let {
-            return it
+        val focused = focusedSessionId?.let { sessions[it] }?.takeIf { it.playerOrNull() != null }
+        if (focused != null && focused.isPlaybackActive()) {
+            return focused
         }
-        return sessions.values.firstOrNull { it.playerOrNull() != null }
+        return sessions.values.firstOrNull { it.playerOrNull() != null && it.isPlaybackActive() }
+            ?: focused
+            ?: sessions.values.firstOrNull { it.playerOrNull() != null }
     }
 
     fun foregroundSessionCandidate(): NativePlaybackSession? {
-        return focusedSessionId?.let { sessions[it] }
-            ?: sessions.values.firstOrNull { session ->
-                val player = session.playerOrNull()
-                player != null && (player.isPlaying || player.playWhenReady)
-            }
+        val focused = focusedSessionId?.let { sessions[it] }
+        if (focused != null && focused.isPlaybackActive()) {
+            return focused
+        }
+        return sessions.values.firstOrNull { it.isPlaybackActive() }
+            ?: focused
             ?: sessions.values.firstOrNull()
     }
 

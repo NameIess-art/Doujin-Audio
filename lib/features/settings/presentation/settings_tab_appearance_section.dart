@@ -71,6 +71,11 @@ List<Widget> _buildSettingsAppearanceSection({
             value: themeProvider.pureBlackTheme,
             onChanged: (value) {
               unawaited(
+                AppInteractionFeedback.trigger(
+                  AppInteractionFeedbackType.selection,
+                ),
+              );
+              unawaited(
                 _applyThemeChange(
                   context: context,
                   i18n: i18n,
@@ -86,6 +91,11 @@ List<Widget> _buildSettingsAppearanceSection({
           title: _settingsTitle(i18n.tr('bar_glass_enabled')),
           value: themeProvider.barGlassEnabled,
           onChanged: (value) {
+            unawaited(
+              AppInteractionFeedback.trigger(
+                AppInteractionFeedbackType.selection,
+              ),
+            );
             unawaited(
               _applyThemeChange(
                 context: context,
@@ -164,7 +174,7 @@ List<Widget> _buildSettingsAppearanceSection({
             return SwitchListTile(
               key: const ValueKey<String>('prefer_embedded_cover_switch'),
               value: enabled,
-              onChanged: (value) => saveSettingsWithFeedback(
+              onChanged: (value) => _saveSettingsSwitch(
                 context,
                 () => settingsController.setPreferEmbeddedCover(value),
               ),

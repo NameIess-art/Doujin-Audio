@@ -69,6 +69,7 @@ internal class NativePlaybackForegroundCoordinator(
     private var watchdogScheduled = false
     private val pendingPlaybackStarts = linkedMapOf<String, Runnable>()
     val hasPendingPlaybackStarts: Boolean get() = pendingPlaybackStarts.isNotEmpty()
+    fun isHoldingPlaybackStart(sessionId: String): Boolean = pendingPlaybackStarts.containsKey(sessionId)
 
     fun holdPlaybackStart(sessionId: String) {
         settlePlaybackStart(sessionId)

@@ -17,6 +17,8 @@ internal class NativeMediaSessionHost(
     onPlayerCommand: (Int) -> Unit,
     private val onSetPlayWhenReady: (NativePlaybackSession, Boolean) -> Boolean,
     private val onPaused: (NativePlaybackSession) -> Unit,
+    private val onSessionCreated: (MediaSession) -> Unit = {},
+    private val onSessionReleased: (MediaSession) -> Unit = {},
     logSecurityEvent: (String, Throwable?) -> Unit,
     private val logInfo: (String, NativePlaybackSession?) -> Unit,
     private val logWarn: (String, Throwable) -> Unit
@@ -29,6 +31,8 @@ internal class NativeMediaSessionHost(
     )
     private val resources = NativeMediaSessionResourceLease<MediaSession, ExoPlayer>()
 
+    fun current(): MediaSession? = resources.currentSession
+
     fun isAttachedTo(player: ExoPlayer?): Boolean =
         player != null && (resources.currentSession?.player as? MediaSessionPlayer)?.delegate === player
 
@@ -37,14 +41,10 @@ internal class NativeMediaSessionHost(
         try {
             resources.installBootstrap(
                 createPlayer = { ExoPlayer.Builder(context).build() },
-                createSession = { player ->
-                    MediaSession.Builder(context, player)
-                        .setId("Doujin Audio Bootstrap")
-                        .setCallback(callback)
-                        .build()
-                },
+                createSession = ::buildMediaSession,
                 releasePlayer = ExoPlayer::release
             )
+            resources.currentSession?.let(onSessionCreated)
         } catch (error: Exception) {
             logWarn("ensure_media_session_for_bootstrap_failed", error)
         }
@@ -57,26 +57,35 @@ internal class NativeMediaSessionHost(
             attachPlayer(existing, player, playbackSession)
             return existing
         }
+        return resources.installSession {
+            buildMediaSession(sessionPlayer(player, playbackSession))
+        }.also { session ->
+            logInfo("media_session_create", playbackSession)
+            onSessionCreated(session)
+        }
+    }
+
+    private fun buildMediaSession(player: androidx.media3.common.Player): MediaSession {
+        val builder = MediaSession.Builder(context, player)
+            .setId("Doujin Audio")
+            .setCallback(callback)
+        sessionActivityPendingIntent()?.let(builder::setSessionActivity)
+        return builder.build()
+    }
+
+    private fun sessionActivityPendingIntent(): PendingIntent? {
         val launchIntent = Intent(context, MainActivity::class.java).apply {
             action = Intent.ACTION_MAIN
             addCategory(Intent.CATEGORY_LAUNCHER)
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
-        val pendingIntent = if (context.packageManager.resolveActivity(launchIntent, 0) != null) {
-            PendingIntent.getActivity(
-                context,
-                0,
-                launchIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-        } else null
-        val builder = MediaSession.Builder(context, sessionPlayer(player, playbackSession))
-            .setId("Doujin Audio")
-            .setCallback(callback)
-        if (pendingIntent != null) builder.setSessionActivity(pendingIntent)
-        return resources.installSession(builder::build).also {
-            logInfo("media_session_create", playbackSession)
-        }
+        if (context.packageManager.resolveActivity(launchIntent, 0) == null) return null
+        return PendingIntent.getActivity(
+            context,
+            0,
+            launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
     }
 
     fun update() {
@@ -104,6 +113,7 @@ internal class NativeMediaSessionHost(
     fun release(reason: String) {
         if (!resources.hasResources) return
         logInfo("media_session_release reason=$reason", null)
+        resources.currentSession?.let(onSessionReleased)
         resources.release(MediaSession::release, ExoPlayer::release)
     }
 

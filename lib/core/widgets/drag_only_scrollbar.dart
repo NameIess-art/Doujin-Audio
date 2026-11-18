@@ -242,18 +242,19 @@ class AppScrollBehavior extends MaterialScrollBehavior {
     ScrollableDetails details,
   ) {
     final controller = details.controller;
-    if (defaultTargetPlatform == TargetPlatform.windows &&
-        controller is WindowsSmoothScrollController &&
-        axisDirectionToAxis(details.direction) == Axis.horizontal) {
-      child = controller.handleWheelReversal(context, child);
-    }
-    if (axisDirectionToAxis(details.direction) != Axis.vertical) {
-      return child;
-    }
-    return DragOnlyScrollbar(
-      controller: details.controller,
-      thumbVisibility: defaultTargetPlatform == TargetPlatform.windows,
-      child: child,
+    final wrapWheel =
+        defaultTargetPlatform == TargetPlatform.windows &&
+        controller is WindowsSmoothScrollController;
+    final scrollbarChild = axisDirectionToAxis(details.direction) == Axis.vertical
+        ? DragOnlyScrollbar(
+            controller: controller,
+            thumbVisibility: defaultTargetPlatform == TargetPlatform.windows,
+            child: child,
+          )
+        : child;
+    if (!wrapWheel) return scrollbarChild;
+    return _WindowsWheelReversalProxy(
+      child: controller.handleWheelReversal(context, scrollbarChild),
     );
   }
 
@@ -266,7 +267,8 @@ class AppScrollBehavior extends MaterialScrollBehavior {
     // Some pages hide the scrollbar, while refreshable lists hide overscroll.
     final controller = details.controller;
     if (defaultTargetPlatform == TargetPlatform.windows &&
-        controller is WindowsSmoothScrollController) {
+        controller is WindowsSmoothScrollController &&
+        child is! _WindowsWheelReversalProxy) {
       child = controller.handleWheelReversal(context, child);
     }
     if (details.direction == AxisDirection.left ||
@@ -278,5 +280,14 @@ class AppScrollBehavior extends MaterialScrollBehavior {
       child: child,
     );
   }
+}
+
+class _WindowsWheelReversalProxy extends StatelessWidget {
+  const _WindowsWheelReversalProxy({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => child;
 }
 

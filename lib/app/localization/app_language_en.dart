@@ -16,6 +16,7 @@ const Map<String, String> appLanguageEn = {
   'metadata_invalid_date': 'Enter a valid date in YYYY-MM-DD format',
   'metadata_invalid_duration': 'Enter a valid duration in HH:MM:SS format',
   'metadata_invalid_rating': 'Rating must be a finite number from 0 to 5',
+  'metadata_invalid_name': 'Name cannot be empty',
   'metadata_unsaved_title': 'Discard unsaved changes?',
   'metadata_unsaved_message':
       'These metadata changes have not been saved. Discard them and continue?',
@@ -703,9 +704,12 @@ const Map<String, String> appLanguageEn = {
   'asmr_download_folder_field_work_title': 'Work title',
   'section_data_storage': 'Data & storage',
   'section_data_storage_subtitle': 'Cache and data management',
+  'section_data_storage_windows_subtitle': 'Backup, restore, and folders',
   'section_updates_permissions': 'Updates & permissions',
   'section_updates_permissions_subtitle':
       'Permissions, updates, and background use',
+  'section_updates_permissions_windows_subtitle':
+      'In-app updates and version check',
   'permission_enabled': 'Enabled',
   'permission_not_enabled': 'Disabled',
   'permission_state_authorized': 'Allowed',

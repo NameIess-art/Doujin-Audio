@@ -3,7 +3,6 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/presentation/app_orientation_controller.dart';
@@ -11,6 +10,7 @@ import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/media/time_text_formatters.dart';
 import '../../../core/platform/power_platform_gateway.dart';
 import '../../../core/platform/video_display_platform_gateway.dart';
+import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../application/playback_session.dart';
 
@@ -106,7 +106,11 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
 
     _holdExitController.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
-        HapticFeedback.heavyImpact();
+        unawaited(
+          AppInteractionFeedback.trigger(
+            AppInteractionFeedbackType.confirmation,
+          ),
+        );
         if (mounted) {
           Navigator.of(context).pop();
         }
@@ -275,8 +279,8 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     final sessions = playback.sessions.values;
     final anyPlaying = sessions.any((s) => s.effectivePlaying);
 
-    unawaited(HapticFeedback.lightImpact());
     if (anyPlaying) {
+      unawaited(AppInteractionFeedback.trigger(AppInteractionFeedbackType.tap));
       final playing = sessions.where((s) => s.effectivePlaying).toList();
       _targetSessionIds
         ..clear()
@@ -286,6 +290,9 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     } else {
       final targets = _resolveTargetSessions();
       if (targets.isNotEmpty) {
+        unawaited(
+          AppInteractionFeedback.trigger(AppInteractionFeedbackType.tap),
+        );
         for (final session in targets) {
           if (!session.effectivePlaying) {
             await playback.toggleSessionPlayPause(session.id);

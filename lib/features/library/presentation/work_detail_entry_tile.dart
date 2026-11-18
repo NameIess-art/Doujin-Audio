@@ -133,19 +133,12 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
             unawaited(
               AppInteractionFeedback.trigger(
                 AppInteractionFeedbackType.selection,
-                context: context,
               ),
             );
             widget.onAction(WorkEntryAction.copy);
           };
 
     void onTap() {
-      unawaited(
-        AppInteractionFeedback.trigger(
-          AppInteractionFeedbackType.tap,
-          context: context,
-        ),
-      );
       widget.onAction(
         item.type == WorkEntryType.audio
             ? WorkEntryAction.play
@@ -155,6 +148,7 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
 
     final tile = ListTile(
       dense: true,
+      enableFeedback: false,
       minTileHeight: 44,
       minVerticalPadding: 4,
       titleAlignment: ListTileTitleAlignment.center,

@@ -12,6 +12,7 @@ const Map<String, String> appLanguageJa = {
   'metadata_invalid_date': '有効な日付を YYYY-MM-DD 形式で入力してください',
   'metadata_invalid_duration': '有効な時間を HH:MM:SS 形式で入力してください',
   'metadata_invalid_rating': '評価は 0 から 5 の有効な数値で入力してください',
+  'metadata_invalid_name': '名前を入力してください',
   'metadata_unsaved_title': '未保存の変更を破棄しますか？',
   'metadata_unsaved_message': 'この情報はまだ保存されていません。変更を破棄して続行しますか？',
   'batch_added_to_playlist_result':
@@ -662,8 +663,10 @@ const Map<String, String> appLanguageJa = {
   'asmr_download_folder_field_work_title': '作品名',
   'section_data_storage': 'データとストレージ',
   'section_data_storage_subtitle': 'キャッシュとデータ管理',
+  'section_data_storage_windows_subtitle': 'バックアップ、復元、フォルダ管理',
   'section_updates_permissions': '更新と権限',
   'section_updates_permissions_subtitle': '権限・更新・バックグラウンド',
+  'section_updates_permissions_windows_subtitle': 'アプリ内更新とバージョン確認',
   'permission_state_authorized': '許可済み',
   'permission_state_unauthorized': '未許可',
   'permission_state_restricted': '制限あり',

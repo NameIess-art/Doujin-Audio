@@ -284,7 +284,7 @@ class GlobalShortcuts extends ConsumerWidget {
                           ('Ctrl + ← / →', 'skip'),
                           ('← / →', 'seek'),
                           ('↑ / ↓', 'volume'),
-                          ('Ctrl + 1–4', 'tabs'),
+                          ('Ctrl + 1–5 / Ctrl + Tab', 'tabs'),
                           ('Tab / Shift + Tab', 'focus'),
                           ('Enter / Space', 'activate'),
                           (i18n.tr('keyboard_shortcuts_arrows'), 'adjust'),

@@ -68,22 +68,6 @@ Widget _buildScrollableHeader({bool barGlassEnabled = false}) {
   );
 }
 
-Widget _buildPageAppBar({bool barGlassEnabled = false}) {
-  return ProviderScope(
-    child: MaterialApp(
-      theme: ThemeData(
-        extensions: [
-          AppDesignTokens.light.copyWith(barGlassEnabled: barGlassEnabled),
-        ],
-      ),
-      home: const Scaffold(
-        appBar: AppPageAppBar(title: Text('Secondary page')),
-        body: SizedBox.expand(),
-      ),
-    ),
-  );
-}
-
 LibraryLikeWorkCardContent _buildFeaturedCard({
   required String title,
   required List<LibraryLikeInfoLineData> lines,
@@ -236,27 +220,6 @@ void main() {
     await tester.pump(const Duration(milliseconds: 170));
 
     expectBoundedGlass();
-  });
-
-  testWidgets('secondary page app bar confines backdrop blur to its bar', (
-    tester,
-  ) async {
-    await tester.pumpWidget(_buildPageAppBar(barGlassEnabled: true));
-    await tester.pump();
-
-    expect(find.byType(BackdropFilter), findsOneWidget);
-    expect(
-      tester.getSize(find.byType(BackdropFilter)).height,
-      tester.getSize(find.byType(AppBar)).height,
-    );
-    expect(tester.getSize(find.byType(BackdropFilter)).height, lessThan(100));
-    expect(
-      find.ancestor(
-        of: find.byType(BackdropFilter),
-        matching: find.byType(ClipRRect),
-      ),
-      findsOneWidget,
-    );
   });
 
   testWidgets('placeholder content fades over the shared duration', (

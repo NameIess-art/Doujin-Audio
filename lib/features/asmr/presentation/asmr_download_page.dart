@@ -56,6 +56,7 @@ class AsmrDownloadPage extends ConsumerStatefulWidget {
 class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
   final GlobalKey _headerKey = GlobalKey();
   double _headerHeight = 0;
+  bool _headerMeasurementScheduled = false;
   AsmrDownloadSelectionModel? _selection;
   String? _destinationRoot;
   AsmrWork? _work;
@@ -395,6 +396,21 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     }
   }
 
+  void _scheduleHeaderMeasurement() {
+    if (_headerMeasurementScheduled) return;
+    _headerMeasurementScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _headerMeasurementScheduled = false;
+      if (!mounted) return;
+      final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
+      if (box == null) return;
+      final h = box.size.height;
+      if (h > 0 && (_headerHeight == 0 || (h - _headerHeight).abs() > 0.5)) {
+        setState(() => _headerHeight = h);
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final selection = _selection;
@@ -422,16 +438,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
         MediaQuery.paddingOf(context).bottom + MobileOverlayInset.of(context);
     final listBottomPadding = 76 + bottomInset;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
-      if (box != null) {
-        final h = box.size.height;
-        if (h > 0 && (_headerHeight == 0 || (h - _headerHeight).abs() > 0.5)) {
-          setState(() => _headerHeight = h);
-        }
-      }
-    });
+    _scheduleHeaderMeasurement();
 
     final defaultHeaderHeight = MediaQuery.paddingOf(context).top + 140.0;
     final effectiveHeaderHeight = _headerHeight > 0
@@ -529,7 +536,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                 key: _headerKey,
                 icon: Icons.download_rounded,
                 iconColor: Theme.of(context).colorScheme.primary,
-                leading: BackButton(
+                leading: AppHeaderBackButton(
                   onPressed: () => Navigator.of(
                     context,
                   ).maybePop(AsmrDownloadPageResult.canceled),

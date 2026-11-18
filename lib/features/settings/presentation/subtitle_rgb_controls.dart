@@ -139,6 +139,7 @@ class _RgbSliderRowState extends State<_RgbSliderRow> {
   }
 
   void _submit() {
+    if (!_editing) return;
     _editing = false;
     final parsed = int.tryParse(_controller.text);
     if (parsed != null) {
@@ -174,7 +175,7 @@ class _RgbSliderRowState extends State<_RgbSliderRow> {
           ),
         ),
         SizedBox(
-          width: 36,
+          width: 46,
           child: TextField(
             controller: _controller,
             keyboardType: TextInputType.number,

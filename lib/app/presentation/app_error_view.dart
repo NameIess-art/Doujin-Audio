@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -73,7 +74,7 @@ class _AppErrorViewState extends State<AppErrorView> {
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 520),
-            child: Padding(
+            child: SingleChildScrollView(
               padding: AppSpacing.edgeInsetsAllMd,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -130,7 +131,8 @@ class _AppErrorViewState extends State<AppErrorView> {
                           icon: Icons.archive_outlined,
                           label: tr('export_diagnostics'),
                         ),
-                  if (!canRetry) ...[
+                  if (!canRetry &&
+                      defaultTargetPlatform != TargetPlatform.windows) ...[
                     const SizedBox(height: AppSpacing.sm),
                     AppSecondaryButton(
                       onPressed: SystemNavigator.pop,

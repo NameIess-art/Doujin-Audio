@@ -11,6 +11,27 @@ COLORREF ParseColor(const std::string& value, COLORREF previous) {
     return RGB((rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255);
   } catch (...) { return previous; }
 }
+
+const wchar_t* ResolveSubtitleFontFamily(const std::wstring& family) {
+  if (family.empty() || family == L"sans-serif") return L"Segoe UI";
+  if (family == L"serif") return L"Times New Roman";
+  if (family == L"monospace") return L"Consolas";
+  return family.c_str();
+}
+
+DWORD BlendAndScalePremul(DWORD outer, DWORD inner, double inner_cov, double outer_cov) {
+  if (outer_cov <= 0.0) return 0;
+  const auto blend_channel = [&](int shift) -> DWORD {
+    const double o = static_cast<double>((outer >> shift) & 255);
+    const double i = static_cast<double>((inner >> shift) & 255);
+    const double mixed = (o + (i - o) * inner_cov) * outer_cov;
+    return static_cast<DWORD>(std::clamp(std::lround(mixed), 0L, 255L));
+  };
+  return (blend_channel(24) << 24)
+      | (blend_channel(16) << 16)
+      | (blend_channel(8) << 8)
+      | blend_channel(0);
+}
 }
 
 SubtitleWindow::SubtitleWindow(HINSTANCE instance) {
@@ -112,7 +133,7 @@ bool SubtitleWindow::EnsureFont(UINT dpi) {
   if (font_ && height == font_height_ && family_ == font_family_) return true;
   auto font = CreateFontW(-height, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
       DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
-      DEFAULT_PITCH, family_.empty() ? L"Segoe UI" : family_.c_str());
+      DEFAULT_PITCH, ResolveSubtitleFontFamily(family_));
   if (!font) return false;
   if (font_) DeleteObject(font_);
   font_ = font;
@@ -199,17 +220,22 @@ void SubtitleWindow::Paint(HDC screen) {
     const double half_width = width / 2.0, half_height = rows / 2.0;
     const double radius = std::min({font_size_ * 1.2 * scale, half_width, half_height});
     const double border = border_depth_ * 4 * scale;
-    const double right_border = width - border, bottom_border = rows - border;
-    // Match the preview's rounded surface and translucent white frame.
+    // Match the preview's rounded surface and translucent white frame with anti-aliased edges.
     for (int y = 0; y < rows; ++y) {
-      const double dy = std::max(std::abs(y + 0.5 - half_height) - (half_height - radius), 0.0);
-      const bool row_border = y < border || y >= bottom_border;
+      const double qy = std::abs(y + 0.5 - half_height) - (half_height - radius);
       for (int x = 0; x < width; ++x) {
-        const double dx = std::max(std::abs(x + 0.5 - half_width) - (half_width - radius), 0.0);
-        const double distance = dy == 0 ? dx : dx == 0 ? dy : std::sqrt(dx * dx + dy * dy);
-        const double edge = radius - distance;
-        const bool in_frame = row_border || x < border || x >= right_border || edge < border;
-        background_pixels_[y * width + x] = edge < 0 ? 0 : in_frame ? frame : background;
+        const double qx = std::abs(x + 0.5 - half_width) - (half_width - radius);
+        const double out_x = std::max(qx, 0.0);
+        const double out_y = std::max(qy, 0.0);
+        const double signed_dist = std::sqrt(out_x * out_x + out_y * out_y)
+            + std::min(std::max(qx, qy), 0.0) - radius;
+        const double edge = -signed_dist;
+        const double outer_cov = std::clamp(edge + 0.5, 0.0, 1.0);
+        const double inner_cov = border > 0.0
+            ? std::clamp(edge - border + 0.5, 0.0, 1.0)
+            : 1.0;
+        background_pixels_[y * width + x] =
+            BlendAndScalePremul(frame, background, inner_cov, outer_cov);
       }
     }
     background_dirty_ = false;
@@ -225,19 +251,46 @@ void SubtitleWindow::Paint(HDC screen) {
       InflateRect(&rect, -static_cast<int>((20 + border_depth_ * 4) * scale),
           -static_cast<int>((10 + border_depth_ * 4) * scale));
       const auto flags = DT_CENTER | DT_WORDBREAK | DT_NOPREFIX;
+      RECT measured = rect;
+      DrawTextW(mask_dc_, text_.c_str(), -1, &measured, flags | DT_CALCRECT);
+      const int text_height = measured.bottom - measured.top;
+      const int available_height = rect.bottom - rect.top;
+      if (text_height > 0 && available_height > text_height) {
+        rect.top += (available_height - text_height) / 2;
+      }
       SetTextColor(mask_dc_, RGB(255, 255, 255));
       DrawTextW(mask_dc_, text_.c_str(), -1, &rect, flags);
       GdiFlush();
       const DWORD red = GetRValue(text_color_), green = GetGValue(text_color_);
       const DWORD blue = GetBValue(text_color_);
-      for (int i = 0; i < width * rows; ++i) {
-        const DWORD a = coverage_[i] & 255;
-        if (a == 0) continue;
-        const DWORD inverse = 255 - a, destination = pixels_[i];
-        pixels_[i] = ((a+((destination>>24)*inverse/255))<<24)
-          | (((red*a+((destination>>16)&255)*inverse)/255)<<16)
-          | (((green*a+((destination>>8)&255)*inverse)/255)<<8)
-          | ((blue*a+(destination&255)*inverse)/255);
+      const int shadow_dy = std::max(1, static_cast<int>(std::lround(2.0 * scale)));
+      for (int y = 0; y < rows; ++y) {
+        for (int x = 0; x < width; ++x) {
+          const int i = y * width + x;
+          const DWORD a = coverage_[i] & 255;
+          const DWORD shadow_src =
+              y >= shadow_dy ? (coverage_[(y - shadow_dy) * width + x] & 255) : 0;
+          const DWORD alpha_s = (shadow_src * 128) / 255;
+          if (a == 0 && alpha_s == 0) continue;
+          DWORD destination = pixels_[i];
+          if (alpha_s > 0) {
+            const DWORD inv_s = 255 - alpha_s;
+            destination =
+                ((alpha_s + ((destination >> 24) * inv_s) / 255) << 24)
+                | (((((destination >> 16) & 255) * inv_s) / 255) << 16)
+                | (((((destination >> 8) & 255) * inv_s) / 255) << 8)
+                | (((destination & 255) * inv_s) / 255);
+          }
+          if (a == 0) {
+            pixels_[i] = destination;
+            continue;
+          }
+          const DWORD inverse = 255 - a;
+          pixels_[i] = ((a + ((destination >> 24) * inverse / 255)) << 24)
+            | (((red * a + ((destination >> 16) & 255) * inverse) / 255) << 16)
+            | (((green * a + ((destination >> 8) & 255) * inverse) / 255) << 8)
+            | ((blue * a + (destination & 255) * inverse) / 255);
+        }
       }
       SelectObject(mask_dc_, previous);
     }
@@ -257,21 +310,38 @@ LRESULT CALLBACK SubtitleWindow::WndProc(HWND hwnd, UINT message, WPARAM wp, LPA
   }
   if (!self) return DefWindowProc(hwnd, message, wp, lp);
   if (message == WM_NCHITTEST) {
-    RECT rect; GetWindowRect(hwnd,&rect);
+    RECT rect; GetWindowRect(hwnd, &rect);
+    const int hit_border =
+        std::max(4, static_cast<int>(std::lround(8.0 * GetDpiForWindow(hwnd) / 96.0)));
     const int x = static_cast<short>(LOWORD(lp)), y = static_cast<short>(HIWORD(lp));
-    const bool left = x < rect.left+8, right = x >= rect.right-8;
-    const bool top = y < rect.top+8, bottom = y >= rect.bottom-8;
+    const bool left = x < rect.left + hit_border, right = x >= rect.right - hit_border;
+    const bool top = y < rect.top + hit_border, bottom = y >= rect.bottom - hit_border;
     if (top) return left ? HTTOPLEFT : right ? HTTOPRIGHT : HTTOP;
     if (bottom) return left ? HTBOTTOMLEFT : right ? HTBOTTOMRIGHT : HTBOTTOM;
     return left ? HTLEFT : right ? HTRIGHT : HTCAPTION;
   }
   if (message == WM_GETMINMAXINFO) {
-    reinterpret_cast<MINMAXINFO*>(lp)->ptMinTrackSize = {160,50}; return 0;
+    const double scale = GetDpiForWindow(hwnd) / 96.0;
+    reinterpret_cast<MINMAXINFO*>(lp)->ptMinTrackSize = {
+        static_cast<LONG>(std::lround(160 * scale)),
+        static_cast<LONG>(std::lround(50 * scale))};
+    return 0;
   }
-  if (message == WM_SIZE || message == WM_DPICHANGED) {
+  if (message == WM_DPICHANGED) {
+    const auto* suggested = reinterpret_cast<const RECT*>(lp);
+    SetWindowPos(hwnd, nullptr, suggested->left, suggested->top,
+        suggested->right - suggested->left, suggested->bottom - suggested->top,
+        SWP_NOZORDER | SWP_NOACTIVATE);
+    self->background_dirty_ = true;
     self->content_dirty_ = true;
     self->FitText();
-    InvalidateRect(hwnd,nullptr,FALSE);
+    InvalidateRect(hwnd, nullptr, FALSE);
+    return 0;
+  }
+  if (message == WM_SIZE) {
+    self->content_dirty_ = true;
+    self->FitText();
+    InvalidateRect(hwnd, nullptr, FALSE);
   }
   if (message == WM_PAINT) {
     PAINTSTRUCT ps;

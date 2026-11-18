@@ -41,6 +41,7 @@ class _AsmrDownloadDetailsPageState
     with SingleTickerProviderStateMixin {
   final GlobalKey _headerKey = GlobalKey();
   double _headerHeight = 0;
+  bool _headerMeasurementScheduled = false;
   final Set<String> _collapsedPaths = {};
   List<AsmrTrackFile>? _rowsSource;
   List<_DownloadDetailsRow> _rows = const [];
@@ -121,6 +122,21 @@ class _AsmrDownloadDetailsPageState
     super.dispose();
   }
 
+  void _scheduleHeaderMeasurement() {
+    if (_headerMeasurementScheduled) return;
+    _headerMeasurementScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _headerMeasurementScheduled = false;
+      if (!mounted) return;
+      final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
+      if (box == null) return;
+      final h = box.size.height;
+      if (h > 0 && (_headerHeight == 0 || (h - _headerHeight).abs() > 0.5)) {
+        setState(() => _headerHeight = h);
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
@@ -157,7 +173,7 @@ class _AsmrDownloadDetailsPageState
               child: TopPageHeader(
                 icon: Icons.info_outline_rounded,
                 iconColor: Theme.of(context).colorScheme.primary,
-                leading: const BackButton(),
+                leading: const AppHeaderBackButton(),
                 title: i18n.tr('asmr_download_details_title'),
               ),
             ),
@@ -168,16 +184,7 @@ class _AsmrDownloadDetailsPageState
 
     final tracks = structure.roots;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
-      if (box != null) {
-        final h = box.size.height;
-        if (h > 0 && (_headerHeight == 0 || (h - _headerHeight).abs() > 0.5)) {
-          setState(() => _headerHeight = h);
-        }
-      }
-    });
+    _scheduleHeaderMeasurement();
 
     final defaultHeaderHeight = MediaQuery.paddingOf(context).top + 140.0;
     final effectiveHeaderHeight = _headerHeight > 0
@@ -327,7 +334,7 @@ class _AsmrDownloadDetailsPageState
                 key: _headerKey,
                 icon: Icons.info_outline_rounded,
                 iconColor: Theme.of(context).colorScheme.primary,
-                leading: const BackButton(),
+                leading: const AppHeaderBackButton(),
                 title: i18n.tr('asmr_download_details_title'),
                 additionalChild: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),

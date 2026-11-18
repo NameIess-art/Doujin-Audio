@@ -1565,7 +1565,7 @@ void main() {
             find.byKey(const ValueKey<String>('subtitle_window_preview_card')),
           )
           .height,
-      176,
+      136,
     );
     final previewText = tester.widget<Text>(
       find.text(i18n.tr('subtitle_preview_sample')),
@@ -1584,6 +1584,22 @@ void main() {
     );
     expect((previewDecoration.border! as Border).top.width, 2);
     expect(find.text('下方继续滚动调节参数，这里会固定位置并同步刷新。'), findsNothing);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SubtitleWindowSettingsSheet)),
+      listen: false,
+    );
+    container.read(subtitleSettingsProvider.notifier).setFontSize(32);
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey<String>('subtitle_window_preview_card')),
+          )
+          .height,
+      136,
+    );
   });
 
   testWidgets('subtitle preview fallback text stays white in both themes', (
@@ -2144,9 +2160,12 @@ void main() {
         if (defaultTargetPlatform == TargetPlatform.android) ...[
           'audio_focus_strategy',
           'transient_audio_focus_loss_behavior',
+          'interruption_resume_behavior',
         ],
-        'interruption_resume_behavior',
       ];
+      if (defaultTargetPlatform == TargetPlatform.windows) {
+        expect(find.text(i18n.tr('interruption_resume_behavior')), findsNothing);
+      }
       for (final key in keys) {
         final tile = find.widgetWithText(ListTile, i18n.tr(key));
         await tester.scrollUntilVisible(tile, 200);

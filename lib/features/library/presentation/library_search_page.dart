@@ -12,7 +12,6 @@ import '../../../core/media/search_query_utils.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_search_page.dart';
 import '../../../core/widgets/app_transitions.dart';
-import '../../../core/widgets/drag_only_scrollbar.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../settings/presentation/settings_providers.dart';
@@ -151,7 +150,6 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   }
 
   void _exitSelectionMode() {
-    AppInteractionFeedback.trigger(AppInteractionFeedbackType.tap);
     setState(_clearSelection);
   }
 
@@ -392,64 +390,58 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                       })
                     : null,
               );
-              return DragOnlyScrollbar(
+              return CustomScrollView(
+                key: const ValueKey('library_search_suggestions'),
                 controller: _suggestionsScrollController,
-                padding: EdgeInsets.only(top: topInset),
-                child: CustomScrollView(
-                  key: const ValueKey('library_search_suggestions'),
-                  controller: _suggestionsScrollController,
-                  physics: const ClampingScrollPhysics(),
-                  slivers: [
-                    SliverPadding(
-                      padding: EdgeInsets.only(
-                        top: topInset,
-                        bottom: AppSearchPageScaffold.contentBottomInset(
-                          context,
-                        ),
-                      ),
-                      sliver: SliverMainAxisGroup(
-                        slivers: [
-                          SliverToBoxAdapter(
-                            child: AppSearchElementTabs(
-                              draft: draft,
-                              matchAll: _matchAll,
-                              onSelected: (value) =>
-                                  setState(() => _matchAll = value),
-                              translate: i18n.tr,
-                            ),
-                          ),
-                          section(
-                            'library_search_history',
-                            i18n.tr('search_history'),
-                            history,
-                            i18n.tr('search_history_empty'),
-                            isHistory: true,
-                            onClear: () => unawaited(
-                              clearSearchHistoryWithFeedback(
-                                context,
-                                online: false,
-                              ),
-                            ),
-                          ),
-                          section(
-                            'library_search_voices',
-                            i18n.tr('library_category_voice_actors'),
-                            state.data?.voiceActorTerms ?? const [],
-                            i18n.tr('library_category_no_voice_actors'),
-                            metadata: true,
-                          ),
-                          section(
-                            'library_search_tags',
-                            i18n.tr('library_category_tags'),
-                            state.data?.tagTerms ?? const [],
-                            i18n.tr('library_category_no_tags'),
-                            metadata: true,
-                          ),
-                        ],
-                      ),
+                physics: const ClampingScrollPhysics(),
+                slivers: [
+                  SliverPadding(
+                    padding: EdgeInsets.only(
+                      top: topInset,
+                      bottom: AppSearchPageScaffold.contentBottomInset(context),
                     ),
-                  ],
-                ),
+                    sliver: SliverMainAxisGroup(
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: AppSearchElementTabs(
+                            draft: draft,
+                            matchAll: _matchAll,
+                            onSelected: (value) =>
+                                setState(() => _matchAll = value),
+                            translate: i18n.tr,
+                          ),
+                        ),
+                        section(
+                          'library_search_history',
+                          i18n.tr('search_history'),
+                          history,
+                          i18n.tr('search_history_empty'),
+                          isHistory: true,
+                          onClear: () => unawaited(
+                            clearSearchHistoryWithFeedback(
+                              context,
+                              online: false,
+                            ),
+                          ),
+                        ),
+                        section(
+                          'library_search_voices',
+                          i18n.tr('library_category_voice_actors'),
+                          state.data?.voiceActorTerms ?? const [],
+                          i18n.tr('library_category_no_voice_actors'),
+                          metadata: true,
+                        ),
+                        section(
+                          'library_search_tags',
+                          i18n.tr('library_category_tags'),
+                          state.data?.tagTerms ?? const [],
+                          i18n.tr('library_category_no_tags'),
+                          metadata: true,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               );
             },
           );
@@ -459,6 +451,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   }
 
   Widget _buildSelectionHeader(AppLanguageProvider i18n) {
+    final coreReady = ref.watch(coreRuntimeReadyProvider);
     final pinnedLibraryPaths = ref
         .watch(
           settingsStateProvider.select(
@@ -476,7 +469,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
       i18n: i18n,
       selectedCount: _selectedLibraryPaths.length,
       isPinned: isAllPinned,
-      onAddToPlaylist: _selectedLibraryPaths.isEmpty
+      onAddToPlaylist: !coreReady || _selectedLibraryPaths.isEmpty
           ? null
           : () => unawaited(_addCurrentSelectionsToPlaylist()),
       onCompleteMetadata: _selectedLibraryPaths.isEmpty

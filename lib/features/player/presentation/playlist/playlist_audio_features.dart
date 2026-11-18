@@ -9,8 +9,7 @@ import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/ui/undoable_removal_service.dart';
-import '../../../../core/widgets/app_buttons.dart';
-import '../../../../core/widgets/app_dialog.dart';
+import '../../../../core/widgets/app_edit_panel.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/unified_dropdown.dart';
 import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
@@ -238,8 +237,8 @@ class VolumeBalancePage extends ConsumerWidget {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -324,7 +323,7 @@ class VolumeBalancePage extends ConsumerWidget {
             ),
           ],
         ),
-      ),
+      ).withWindowsSmoothScroll(),
     );
   }
 }
@@ -586,40 +585,21 @@ class EqualizerPage extends ConsumerWidget {
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    final controller = TextEditingController();
-    final name = await showAppDialog<String>(
+    final strings = MaterialLocalizations.of(context);
+    final name = await showAppTextInputPanel<String>(
       context: context,
-      builder: (dialogContext) {
-        return AppDialog(
-          title: i18n.tr('eq_save_preset'),
-          icon: Icons.graphic_eq_rounded,
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: InputDecoration(labelText: i18n.tr('eq_preset_name')),
-            onSubmitted: (value) =>
-                Navigator.of(dialogContext).pop(value.trim()),
-          ),
-          actions: AppDialogActions(
-            children: [
-              AppSecondaryButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                label: MaterialLocalizations.of(
-                  dialogContext,
-                ).cancelButtonLabel,
-              ),
-              AppPrimaryButton(
-                onPressed: () =>
-                    Navigator.of(dialogContext).pop(controller.text.trim()),
-                label: MaterialLocalizations.of(dialogContext).okButtonLabel,
-              ),
-            ],
-          ),
-        );
-      },
+      barrierLabel: i18n.tr('close'),
+      header: AppEditPanelHeader(
+        title: i18n.tr('eq_save_preset'),
+        icon: Icons.graphic_eq_rounded,
+      ),
+      initialValue: '',
+      decoration: InputDecoration(labelText: i18n.tr('eq_preset_name')),
+      cancelLabel: strings.cancelButtonLabel,
+      submitLabel: strings.okButtonLabel,
+      parse: (value) => value.trim(),
     );
-    controller.dispose();
-    if (name == null || name.trim().isEmpty || !context.mounted) return;
+    if (name == null || name.isEmpty || !context.mounted) return;
     unawaited(
       saveSettingsWithFeedback(
         context,

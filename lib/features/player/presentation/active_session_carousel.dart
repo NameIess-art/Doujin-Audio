@@ -271,7 +271,6 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     BuildContext context,
     PlaybackSessionSnapshot session,
   ) {
-    AppInteractionFeedback.trigger(AppInteractionFeedbackType.tap);
     final onOpenSession = widget.onOpenSession;
     if (onOpenSession != null) {
       onOpenSession(session.id, context);

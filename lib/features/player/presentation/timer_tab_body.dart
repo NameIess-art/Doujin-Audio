@@ -46,12 +46,6 @@ extension _TimerTabBody on _TimerTabState {
     }
 
     Future<void> pickAutoResumeTime() async {
-      unawaited(
-        AppInteractionFeedback.trigger(
-          AppInteractionFeedbackType.tap,
-          context: context,
-        ),
-      );
       final picked = await showAutoResumeTimePicker();
       if (picked != null) {
         timer.setAutoResume(
@@ -199,9 +193,11 @@ extension _TimerTabBody on _TimerTabState {
           showSubtitle: !compactMode,
           compact: compactMode,
           onChanged: (mode) {
-            AppInteractionFeedback.trigger(
-              AppInteractionFeedbackType.selection,
-            );
+            if (_selectedMode != mode) {
+              AppInteractionFeedback.trigger(
+                AppInteractionFeedbackType.selection,
+              );
+            }
             if (timerConfigured && timerSlice.mode != mode) {
               timer.configureTimer(mode, _pickedDuration);
               if (mode == TimerMode.manual) {
@@ -512,12 +508,6 @@ extension _TimerTabBody on _TimerTabState {
                                           Icons.chevron_right_rounded,
                                         ),
                                         onTap: () async {
-                                          unawaited(
-                                            AppInteractionFeedback.trigger(
-                                              AppInteractionFeedbackType.tap,
-                                              context: context,
-                                            ),
-                                          );
                                           final picked =
                                               await showAutoResumeTimePicker();
                                           if (picked != null) {

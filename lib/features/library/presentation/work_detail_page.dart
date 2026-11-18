@@ -30,7 +30,7 @@ import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_buttons.dart';
-import '../../../core/widgets/app_dialog.dart';
+import '../../../core/widgets/app_edit_panel.dart';
 import '../../../core/widgets/drag_only_scrollbar.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
@@ -935,36 +935,22 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                 item.fullPathOrUrl,
               )
         : item.fullPathOrUrl;
-    var name = PathDisplay.fileName(
+    final name = PathDisplay.fileName(
       sourcePath,
       withoutExtension: item.type != WorkEntryType.folder,
     );
-    final targetName = await showAppDialog<String>(
+    final targetName = await showAppTextInputPanel<String>(
       context: context,
-      builder: (dialogContext) => AppDialog(
+      barrierLabel: i18n.tr('close'),
+      header: AppEditPanelHeader(
         title: i18n.tr('rename'),
         icon: Icons.drive_file_rename_outline_rounded,
-        content: TextFormField(
-          initialValue: name,
-          autofocus: true,
-          textInputAction: TextInputAction.done,
-          decoration: InputDecoration(hintText: i18n.tr('rename')),
-          onChanged: (value) => name = value,
-          onFieldSubmitted: (value) => Navigator.of(dialogContext).pop(value),
-        ),
-        actions: AppDialogActions(
-          children: [
-            AppSecondaryButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              label: i18n.tr('cancel'),
-            ),
-            AppPrimaryButton(
-              onPressed: () => Navigator.of(dialogContext).pop(name),
-              label: i18n.tr('save'),
-            ),
-          ],
-        ),
       ),
+      initialValue: name,
+      decoration: InputDecoration(hintText: i18n.tr('rename')),
+      cancelLabel: i18n.tr('cancel'),
+      submitLabel: i18n.tr('save'),
+      parse: (value) => value,
     );
     if (targetName == null || !mounted) return;
     try {

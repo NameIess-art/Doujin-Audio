@@ -56,7 +56,7 @@ class _SubtitleWindowSettingsSheetState
     'KaiTi',
     'SimHei',
   ];
-  static const double _previewHeight = 176;
+  static const double _previewHeight = 136;
   static const double _previewTopInset = 8;
   static const double _previewSideInset = 24;
   static const double _previewBottomGap = 20;
@@ -77,28 +77,16 @@ class _SubtitleWindowSettingsSheetState
       builder: (context, ref, child) {
         final settings = ref.watch(subtitleSettingsProvider);
         final notifier = ref.read(subtitleSettingsProvider.notifier);
-
         final currentFontColor = settings.fontColor;
         final currentBgColor = settings.backgroundColor;
-        const contentTopPadding =
-            _previewTopInset + _previewHeight + _previewBottomGap;
 
-        final panel = SizedBox(
-          width: double.infinity,
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(
-                    24,
-                    contentTopPadding,
-                    24,
-                    32,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+        final previewCard = SubtitleWindowPreviewCard(
+          height: _previewHeight,
+          settings: settings,
+          title: i18n.tr('subtitle_window_preview'),
+          sampleText: i18n.tr('subtitle_preview_sample'),
+        );
+        final controls = <Widget>[
                       if (settings.appearanceSaveFailed)
                         ListTile(
                           leading: Icon(Icons.error_outline, color: cs.error),
@@ -299,25 +287,51 @@ class _SubtitleWindowSettingsSheetState
                           ),
                         ],
                       ),
-                    ],
-                  ),
-                ).withWindowsSmoothScroll(),
-              ),
-              Positioned(
-                top: _previewTopInset,
-                left: _previewSideInset,
-                right: _previewSideInset,
-                child: IgnorePointer(
-                  child: SubtitleWindowPreviewCard(
-                    height: _previewHeight,
-                    settings: settings,
-                    title: i18n.tr('subtitle_window_preview'),
-                    sampleText: i18n.tr('subtitle_preview_sample'),
-                  ),
+        ];
+        final panel = LayoutBuilder(
+          builder: (context, constraints) {
+            final pinPreview =
+                !constraints.hasBoundedHeight || constraints.maxHeight >= 420;
+            if (!pinPreview) {
+              return SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    previewCard,
+                    const SizedBox(height: _previewBottomGap),
+                    ...controls,
+                  ],
                 ),
-              ),
-            ],
-          ),
+              ).withWindowsSmoothScroll();
+            }
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    _previewSideInset,
+                    _previewTopInset,
+                    _previewSideInset,
+                    16,
+                  ),
+                  child: previewCard,
+                ),
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(24, 4, 24, 32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: controls,
+                    ),
+                  ).withWindowsSmoothScroll(),
+                ),
+              ],
+            );
+          },
         );
         return SafeArea(
           child: Column(

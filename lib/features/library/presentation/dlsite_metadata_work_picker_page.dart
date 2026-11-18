@@ -153,7 +153,7 @@ class _DlsiteMetadataWorkPickerPageState
                 right: 0,
                 child: TopPageHeader(
                   key: const ValueKey<String>('batch_metadata_picker_header'),
-                  leading: const BackButton(),
+                  leading: const AppHeaderBackButton(),
                   titleWidget: HeaderFloatingSurface(
                     key: const ValueKey<String>('batch_metadata_picker_search'),
                     child: TextSelectionTheme(

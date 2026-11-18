@@ -565,6 +565,24 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                                     key: const ValueKey<String>(
                                       'app_search_close',
                                     ),
+                                    tooltip:
+                                        widget.controller.text.isEmpty &&
+                                            (widget.committedElements == null ||
+                                                (widget
+                                                        .committedElements!
+                                                        .all
+                                                        .isEmpty &&
+                                                    widget
+                                                        .committedElements!
+                                                        .any
+                                                        .isEmpty))
+                                        ? MaterialLocalizations.of(
+                                            context,
+                                          ).closeButtonTooltip
+                                        : (widget.translate?.call('clear') ??
+                                              MaterialLocalizations.of(
+                                                context,
+                                              ).closeButtonTooltip),
                                     onPressed: widget.onCloseOrClear,
                                     icon: const Icon(
                                       Icons.close_rounded,

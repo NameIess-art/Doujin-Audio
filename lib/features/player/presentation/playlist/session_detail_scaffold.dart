@@ -6,7 +6,6 @@ import 'dart:ui' as ui show Image, ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/presentation/app_presentation_providers.dart';
@@ -17,6 +16,7 @@ import '../../../../app/state/subtitle_settings_provider.dart';
 import '../../../../app/theme/app_styles.dart';
 import '../../../../core/ui/permission_action_controller.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
+import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/app_buttons.dart';
 import '../../application/playback_session_snapshot.dart';
@@ -206,7 +206,9 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
     if (crossed != _dragThresholdReached) {
       _dragThresholdReached = crossed;
       if (crossed) {
-        unawaited(HapticFeedback.selectionClick());
+        unawaited(
+          AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+        );
       }
     }
     _dragOffset.value = nextOffset;

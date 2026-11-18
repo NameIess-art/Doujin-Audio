@@ -456,7 +456,6 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
             if (selectionActive) {
               onToggleSelect?.call();
             } else {
-              AppInteractionFeedback.trigger(AppInteractionFeedbackType.tap);
               onOpen(context);
             }
           },

@@ -1,3 +1,4 @@
+import 'package:doujin_audio/core/widgets/app_edit_panel.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/unified_dropdown.dart';
 import 'package:doujin_audio/features/player/presentation/playback_providers.dart';
@@ -166,9 +167,10 @@ class _PagedQueueRepository extends TestPersistenceRepository
 }
 
 class _RecordingPlaybackCoverCacheService extends CoverArtworkCacheService {
-  _RecordingPlaybackCoverCacheService()
+  _RecordingPlaybackCoverCacheService({this.fixedCoverPath})
     : super(libraryService: LibraryService());
 
+  final String? fixedCoverPath;
   final List<String> requestedPaths = <String>[];
   final List<String> resolvedPlaybackPaths = <String>[];
 
@@ -176,8 +178,16 @@ class _RecordingPlaybackCoverCacheService extends CoverArtworkCacheService {
   String? resolvedForPlaybackTrack(MusicTrack? track, {String? trackPath}) {
     final resolvedPath = track?.path ?? trackPath;
     if (resolvedPath != null) resolvedPlaybackPaths.add(resolvedPath);
-    return null;
+    return fixedCoverPath;
   }
+
+  @override
+  Future<String?>? cachedFutureForPlaybackTrack(
+    MusicTrack? track, {
+    String? trackPath,
+  }) => fixedCoverPath == null
+      ? super.cachedFutureForPlaybackTrack(track, trackPath: trackPath)
+      : SynchronousFuture<String?>(fixedCoverPath);
 
   @override
   Future<String?> futureForPlaybackTrack(
@@ -188,12 +198,12 @@ class _RecordingPlaybackCoverCacheService extends CoverArtworkCacheService {
     if (path != null) {
       requestedPaths.add(path);
     }
-    return SynchronousFuture<String?>(null);
+    return SynchronousFuture<String?>(fixedCoverPath);
   }
 
   @override
   Future<String?> futureForTrack(MusicTrack? track, {String? trackPath}) {
-    return SynchronousFuture<String?>(null);
+    return SynchronousFuture<String?>(fixedCoverPath);
   }
 }
 
@@ -4551,6 +4561,22 @@ void main() {
       isNotNull,
     );
 
+    await tester.tap(saveEqualizerPresetButton);
+    await tester.pumpAndSettle();
+    final presetForm = find.byType(AppEditPanelForm);
+    expect(tester.getSize(presetForm).height, 192);
+    await tester.enterText(
+      find.descendant(of: presetForm, matching: find.byType(TextField)),
+      '  My saved preset  ',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(presetForm, findsNothing);
+    expect(
+      runtimeGraph.settings.customEqPresets.single.labelKey,
+      'My saved preset',
+    );
+
     await tester.tap(equalizerResetButton);
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 200)),
@@ -4761,6 +4787,34 @@ void main() {
         find.descendant(of: startRow, matching: find.text('00:18')),
         findsOneWidget,
       );
+
+      await tester.tap(
+        find.descendant(of: startRow, matching: find.text('00:18')),
+      );
+      await tester.pumpAndSettle();
+      final timeForm = find.byType(AppEditPanelForm);
+      expect(tester.getSize(timeForm).height, 192);
+      final timeInput = find.descendant(
+        of: timeForm,
+        matching: find.byType(TextField),
+      );
+      expect(tester.widget<TextField>(timeInput).controller?.text, '00:18');
+      await tester.enterText(timeInput, 'invalid');
+      await tester.tap(find.widgetWithText(TextButton, i18n.tr('confirm')));
+      await tester.pumpAndSettle();
+      expect(timeForm, findsOneWidget);
+      await tester.enterText(timeInput, '00:00:20');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      expect(timeForm, findsNothing);
+      expect(
+        find.descendant(of: startRow, matching: find.text('00:20')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.widgetWithText(FilledButton, i18n.tr('segment_start')),
+      );
+      await tester.pump();
 
       session.setOptimisticPosition(const Duration(seconds: 42));
       await tester.pump();
@@ -5591,6 +5645,122 @@ void main() {
       }),
     );
   }
+
+  testWidgets(
+    'volume input matches the queue name editor and validates the percentage',
+    (tester) async {
+      final windows = defaultTargetPlatform == TargetPlatform.windows;
+      final harness = await _pumpSubtitleDetail(
+        tester: tester,
+        subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+        initialPosition: Duration.zero,
+        physicalSize: windows ? const Size(2880, 1800) : const Size(1170, 2100),
+        queueTracks: [
+          testMusicTrack(
+            name: 'Track',
+            path: '/library/volume/track.mp3',
+            groupKey: '/library/volume',
+            groupTitle: 'Volume test',
+          ),
+        ],
+        queueColorValue: 0xff425bb4,
+      );
+      addTearDown(tester.view.resetViewInsets);
+      final i18n = harness.fixture.languageProvider;
+      final nameInput = find.byKey(const ValueKey('playback_queue_name_input'));
+      final nameSurface = find.byKey(
+        const ValueKey('playback_queue_panel_surface'),
+      );
+      final volumeInput = find.byKey(const ValueKey('session_volume_input'));
+      final volumeSurface = find.byKey(
+        const ValueKey('session_volume_input_surface'),
+      );
+      final keyboard = FakeViewPadding(bottom: windows ? 1080 : 1290);
+
+      unawaited(
+        showPlaybackQueueEditPanel(
+          tester.element(find.byType(SessionDetailContent)),
+          harness.session.id,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(i18n.tr('edit_queue_name')));
+      await tester.pumpAndSettle();
+      final nameRect = tester.getRect(nameInput);
+      final surfaceRect = tester.getRect(nameSurface);
+      final nameDecoration = InputDecorationTheme.of(tester.element(nameInput));
+      final nameIcon = tester.widget<Icon>(
+        find.byKey(const ValueKey('playback_queue_name_header_icon')),
+      );
+      tester.view.viewInsets = keyboard;
+      await tester.pumpAndSettle();
+      final nameRectWithKeyboard = tester.getRect(nameInput);
+      final surfaceRectWithKeyboard = tester.getRect(nameSurface);
+      tester.view.resetViewInsets();
+      Navigator.of(tester.element(nameInput)).pop();
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey('session_volume_button_anchor')),
+      );
+      await tester.pumpAndSettle();
+      final percent = find.byKey(const ValueKey('session_volume_percent_text'));
+      await tester.tap(percent);
+      await tester.pumpAndSettle();
+
+      expect(tester.getRect(volumeInput), nameRect);
+      expect(tester.getRect(volumeSurface), surfaceRect);
+      expect(
+        InputDecorationTheme.of(tester.element(volumeInput)),
+        nameDecoration,
+      );
+      final volumeIcon = tester.widget<Icon>(
+        find.descendant(
+          of: volumeSurface,
+          matching: find.byIcon(Icons.volume_up_rounded),
+        ),
+      );
+      expect(volumeIcon.color, nameIcon.color);
+      expect(volumeIcon.size, nameIcon.size);
+      final field = tester.widget<TextField>(volumeInput);
+      expect(field.keyboardType, TextInputType.number);
+      expect(field.controller!.text, '100');
+      tester.view.viewInsets = keyboard;
+      await tester.pumpAndSettle();
+      expect(tester.getRect(volumeInput), nameRectWithKeyboard);
+      expect(tester.getRect(volumeSurface), surfaceRectWithKeyboard);
+
+      final confirm = find.widgetWithText(TextButton, i18n.tr('confirm'));
+      final cancel = find
+          .widgetWithText(TextButton, i18n.tr('cancel'))
+          .hitTestable();
+      await tester.enterText(volumeInput, '151');
+      await tester.tap(confirm);
+      await tester.pumpAndSettle();
+      expect(volumeInput, findsOneWidget);
+      expect(harness.session.volume, 1);
+      await tester.enterText(volumeInput, '75');
+      await tester.tap(cancel);
+      tester.view.resetViewInsets();
+      await tester.pumpAndSettle();
+      expect(volumeInput, findsNothing);
+      expect(harness.session.volume, 1);
+
+      await tester.tap(percent);
+      await tester.pumpAndSettle();
+      await tester.enterText(volumeInput, '75');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      expect(volumeInput, findsNothing);
+      expect(harness.session.volume, 0.75);
+      expect(find.text('75%'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   for (final action in ['cancel', 'save', 'submit', 'back']) {
     testWidgets(
@@ -8856,6 +9026,460 @@ void main() {
       expect(find.text('Saved work title', findRichText: true), findsNothing);
       expect(find.text('Disc 1'), findsNothing);
       await tester.pump(const Duration(seconds: 1));
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'queue audio edit page uses thumbnail cache width and reuses retained covers',
+    (tester) async {
+      tester.view.devicePixelRatio = 2;
+      tester.view.physicalSize = defaultTargetPlatform == TargetPlatform.windows
+          ? const Size(1920, 1200)
+          : const Size(780, 1688);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final interaction = UiInteractionCoordinator.instance;
+      interaction.resetForTest();
+      addTearDown(interaction.resetForTest);
+
+      final directory = (await tester.runAsync(
+        () => Directory.systemTemp.createTemp('queue-editor-cover-reuse-'),
+      ))!;
+      final coverFile = File('${directory.path}/cover.png');
+      await tester.runAsync(
+        () => coverFile.writeAsBytes(
+          base64Decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+          ),
+        ),
+      );
+      final expectedWidth = coverThumbnailCacheWidth(
+        logicalWidth: 40,
+        devicePixelRatio: 2,
+        resolution: CoverImageResolution.balanced,
+      );
+      final provider = resizeFileImageIfNeeded(
+        path: coverFile.path,
+        cacheWidth: expectedWidth,
+      );
+      addTearDown(() async {
+        releaseRetainedCoverImage(provider);
+        await provider.evict();
+        await tester.runAsync(() async {
+          for (var attempt = 0; attempt < 5; attempt++) {
+            try {
+              if (await directory.exists()) {
+                await directory.delete(recursive: true);
+              }
+              return;
+            } on FileSystemException {
+              if (attempt == 4) rethrow;
+              await Future<void>.delayed(const Duration(milliseconds: 50));
+            }
+          }
+        });
+      });
+
+      final coverCache = _RecordingPlaybackCoverCacheService(
+        fixedCoverPath: coverFile.path,
+      );
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: coverCache,
+        configureSettingsRepository: (settings) => settings
+          ..workNameDisplay = WorkNameDisplay.folderName
+          ..coverImageResolution = CoverImageResolution.balanced
+          ..syncSlice(isInitialized: true),
+      );
+      addTearDown(fixture.dispose);
+
+      await tester.pumpWidget(fixture.build(const SizedBox.shrink()));
+      final scaffoldContext = tester.element(find.byType(Scaffold));
+      await tester.runAsync(() => precacheImage(provider, scaffoldContext));
+      retainCoverImage(
+        provider,
+        createLocalImageConfiguration(scaffoldContext),
+      );
+
+      final track = testMusicTrack(
+        name: 'Track 1',
+        path: '${directory.path}/work/01.mp3',
+        groupKey: '${directory.path}/work',
+        groupTitle: 'Work',
+      ).copyWith(manualCoverPath: coverFile.path);
+      fixture.library.addTracks([track], persist: false);
+      final sourceSession = fixture.playback.createTrackSession(
+        track,
+        customQueueTracks: [track],
+      );
+      final queueSession = fixture.playback.createPlaybackQueue('Queue');
+      await fixture.playback.addWorkToPlaybackQueue(
+        queueSession.id,
+        title: 'Work',
+        workRootPath: '${directory.path}/work',
+        tracks: [track],
+      );
+      addTearDown(sourceSession.shutdown);
+      addTearDown(queueSession.shutdown);
+      fixture.playbackService.syncSlice(
+        activeSessions: [sourceSession, queueSession],
+        playingSessionCount: 0,
+        focusedSessionId: queueSession.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      final navigation = Object();
+      interaction.beginNavigation(navigation);
+      await tester.pumpWidget(
+        fixture.build(PlaybackQueueAudioEditPage(sessionId: queueSession.id)),
+      );
+      await tester.pump();
+
+      final covers = tester.widgetList<QueueTrackCover>(
+        find.byType(QueueTrackCover),
+      );
+      expect(covers, hasLength(2));
+      for (final cover in covers) {
+        expect(cover.coverCacheWidth, expectedWidth);
+      }
+      final decodedArtwork = find.descendant(
+        of: find.descendant(
+          of: find.byType(QueueTrackCover),
+          matching: find.byWidgetPredicate(
+            (widget) => widget is Image && widget.image == provider,
+          ),
+        ),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is RawImage && widget.image != null,
+        ),
+      );
+      expect(decodedArtwork, findsNWidgets(2));
+
+      interaction.endNavigation(navigation);
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'queue audio edit page reuses unaffected row elements on expand, collapse and reorder',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = defaultTargetPlatform == TargetPlatform.windows
+          ? const Size(960, 600)
+          : const Size(390, 844);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
+        configureSettingsRepository: (settings) => settings
+          ..workNameDisplay = WorkNameDisplay.folderName
+          ..syncSlice(isInitialized: true),
+      );
+      addTearDown(fixture.dispose);
+
+      fixture.library.addWatchedLibrary('/library');
+      final workATrack = testMusicTrack(
+        name: 'Track A',
+        path: '/library/Work A/Disc 1/track_a.mp3',
+        groupKey: '/library/Work A',
+        groupTitle: 'Work A',
+      );
+      final workBTrack = testMusicTrack(
+        name: 'Track B',
+        path: '/library/Work B/track_b.mp3',
+        groupKey: '/library/Work B',
+        groupTitle: 'Work B',
+      );
+      final source1Track = testMusicTrack(
+        name: 'Source Track 1',
+        path: '/library/Source Work 1/Disc S1/source_1.mp3',
+        groupKey: '/library/Source Work 1',
+        groupTitle: 'Source Work 1',
+      );
+      final source2Track = testMusicTrack(
+        name: 'Source Track 2',
+        path: '/library/Source Work 2/source_2.mp3',
+        groupKey: '/library/Source Work 2',
+        groupTitle: 'Source Work 2',
+      );
+      fixture.library.addTracks([
+        workATrack,
+        workBTrack,
+        source1Track,
+        source2Track,
+      ], persist: false);
+
+      final source1 = fixture.playback.createTrackSession(
+        source1Track,
+        customQueueTracks: [source1Track],
+      );
+      final source2 = fixture.playback.createTrackSession(
+        source2Track,
+        customQueueTracks: [source2Track],
+      );
+      final queue = fixture.playback.createPlaybackQueue('Queue');
+      await fixture.playback.addWorkToPlaybackQueue(
+        queue.id,
+        title: 'Work A',
+        workRootPath: '/library/Work A',
+        tracks: [workATrack],
+      );
+      await fixture.playback.addWorkToPlaybackQueue(
+        queue.id,
+        title: 'Work B',
+        workRootPath: '/library/Work B',
+        tracks: [workBTrack],
+      );
+      addTearDown(source1.shutdown);
+      addTearDown(source2.shutdown);
+      addTearDown(queue.shutdown);
+
+      fixture.playbackService.syncSlice(
+        activeSessions: [source1, source2, queue],
+        playingSessionCount: 0,
+        focusedSessionId: queue.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      await tester.pumpWidget(
+        fixture.build(PlaybackQueueAudioEditPage(sessionId: queue.id)),
+      );
+      await tester.pumpAndSettle();
+
+      final entries = queue.playbackQueue!.entries;
+      final entryAId = entries[0].id;
+      final entryBId = entries[1].id;
+
+      Element rowElementForKey(String key) => find
+          .descendant(
+            of: find.byKey(ValueKey(key)),
+            matching: find.byType(FileTreeRow),
+          )
+          .evaluate()
+          .single;
+
+      Element rowElementForChildText(Finder rootScope, String title) => find
+          .descendant(
+            of: rootScope,
+            matching: find.byWidgetPredicate(
+              (widget) => widget is FileTreeRow && widget.title == title,
+            ),
+          )
+          .evaluate()
+          .single;
+
+      final addedList = find.byType(ReorderableListView);
+      final sourceList = find
+          .ancestor(
+            of: find.byKey(ValueKey(source1.id)),
+            matching: find.byType(ListView),
+          )
+          .first;
+
+      final entryAElement = rowElementForKey(entryAId);
+      final entryBElement = rowElementForKey(entryBId);
+      final source2Element = rowElementForKey(source2.id);
+
+      // Expand Work A in left pane: Disc 1 stays mounted through settle, and
+      // Work B + right pane rows keep their exact Element instances.
+      await tester.tap(find.byKey(ValueKey(entryAId)));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      final disc1ElementMid = rowElementForChildText(addedList, 'Disc 1');
+      expect(identical(rowElementForKey(entryBId), entryBElement), isTrue);
+      expect(identical(rowElementForKey(source2.id), source2Element), isTrue);
+
+      await tester.pumpAndSettle();
+      expect(
+        identical(rowElementForChildText(addedList, 'Disc 1'), disc1ElementMid),
+        isTrue,
+      );
+      expect(identical(rowElementForKey(entryBId), entryBElement), isTrue);
+
+      // Collapse Work A: Disc 1 keeps its Element when collapse starts, and
+      // Work B keeps its Element when indices shift back.
+      await tester.tap(find.byKey(ValueKey(entryAId)));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(
+        identical(rowElementForChildText(addedList, 'Disc 1'), disc1ElementMid),
+        isTrue,
+      );
+      await tester.pumpAndSettle();
+      expect(identical(rowElementForKey(entryBId), entryBElement), isTrue);
+
+      // Expand Source 1 in right pane: findChildIndexCallback keeps Source 2's
+      // Element intact while left pane remains unaffected.
+      await tester.tap(find.byKey(ValueKey(source1.id)));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      final sourceDisc1Mid = rowElementForChildText(sourceList, 'Disc S1');
+      expect(identical(rowElementForKey(source2.id), source2Element), isTrue);
+      expect(identical(rowElementForKey(entryBId), entryBElement), isTrue);
+
+      await tester.pumpAndSettle();
+      expect(
+        identical(
+          rowElementForChildText(sourceList, 'Disc S1'),
+          sourceDisc1Mid,
+        ),
+        isTrue,
+      );
+      expect(identical(rowElementForKey(source2.id), source2Element), isTrue);
+      expect(identical(rowElementForKey(entryBId), entryBElement), isTrue);
+
+      // Drag Work B above Work A: both rows keep their Element instances.
+      final target =
+          tester.getCenter(find.byKey(ValueKey(entryAId))) +
+          const Offset(0, 12);
+      final drag = await tester.startGesture(
+        tester.getCenter(find.byKey(ValueKey(entryBId))),
+      );
+      await tester.pump(kLongPressTimeout);
+      await drag.moveBy(const Offset(0, -22));
+      await tester.pump();
+      await drag.moveTo(target);
+      await tester.pump(const Duration(milliseconds: 250));
+      await drag.up();
+      await tester.pumpAndSettle();
+
+      expect(queue.playbackQueue!.entries.map((entry) => entry.id), [
+        entryBId,
+        entryAId,
+      ]);
+      expect(identical(rowElementForKey(entryAId), entryAElement), isTrue);
+      expect(identical(rowElementForKey(entryBId), entryBElement), isTrue);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'queue audio edit page upper list reuses cached library tree lazily for nested removals',
+    (tester) async {
+      final disc1Track = testMusicTrack(
+        name: 'Disc 1 Track',
+        path: '/library/Work/Disc 1/01.mp3',
+        groupKey: '/library/Work',
+        groupTitle: 'Work',
+      );
+      final disc2Track = testMusicTrack(
+        name: 'Disc 2 Track',
+        path: '/library/Work/Disc 2/02.mp3',
+        groupKey: '/library/Work',
+        groupTitle: 'Work',
+      );
+      final rootFolder = FolderNode('Work', '/library/Work', depth: 1);
+      final disc1 = FolderNode('Disc 1', '/library/Work/Disc 1', depth: 2)
+        ..addChild(TrackNode(disc1Track));
+      final disc2 = FolderNode('Disc 2', '/library/Work/Disc 2', depth: 2)
+        ..addChild(TrackNode(disc2Track));
+      rootFolder
+        ..addChild(disc1)
+        ..addChild(disc2);
+
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
+        libraryTreeSnapshotBuilder: (_) async => LibraryTreeSnapshot(
+          tree: [rootFolder],
+          leafFolderCount: 2,
+        ),
+        configureSettingsRepository: (settings) => settings
+          ..workNameDisplay = WorkNameDisplay.folderName
+          ..syncSlice(isInitialized: true),
+      );
+      addTearDown(fixture.dispose);
+
+      await tester.runAsync(() async {
+        fixture.library.addWatchedLibrary('/library');
+        fixture.library.addTracks([disc1Track, disc2Track], persist: false);
+        await fixture.library.ensureCardSnapshot();
+        await fixture.library.loadLibraryFolderTree('/library/Work');
+      });
+
+      final queue = fixture.playback.createPlaybackQueue('Queue');
+      await fixture.playback.addWorkToPlaybackQueue(
+        queue.id,
+        title: 'Work',
+        workRootPath: '/library/Work',
+        tracks: [disc1Track, disc2Track],
+      );
+      addTearDown(queue.shutdown);
+
+      fixture.playbackService.syncSlice(
+        activeSessions: [queue],
+        playingSessionCount: 0,
+        focusedSessionId: queue.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      await tester.pumpWidget(
+        fixture.build(PlaybackQueueAudioEditPage(sessionId: queue.id)),
+      );
+      await tester.pumpAndSettle();
+
+      final list = find.byType(ReorderableListView);
+      final entryId = queue.playbackQueue!.entries.single.id;
+      await tester.tap(find.byKey(ValueKey(entryId)));
+      await tester.pumpAndSettle();
+
+      // Nested tracks stay unmounted while subfolders are collapsed, then
+      // expanding Disc 2 reveals only Disc 2 Track.
+      expect(
+        find.descendant(of: list, matching: find.text('Disc 1 Track')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: list, matching: find.text('Disc 2 Track')),
+        findsNothing,
+      );
+      await tester.tap(find.descendant(of: list, matching: find.text('Disc 2')));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: list, matching: find.text('Disc 2 Track')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: list, matching: find.text('Disc 1 Track')),
+        findsNothing,
+      );
+
+      // Removing unpopulated Disc 1 computes its exact index even after Disc 2
+      // was opened first.
+      final disc1Row = find.ancestor(
+        of: find.descendant(of: list, matching: find.text('Disc 1')),
+        matching: find.byType(FileTreeRow),
+      );
+      await tester.tap(
+        find.descendant(of: disc1Row, matching: find.byType(IconButton)),
+      );
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pumpAndSettle();
+
+      expect(
+        queue.playbackQueue!.entries.single.tracks.map((track) => track.path),
+        [disc2Track.path],
+      );
+      expect(tester.takeException(), isNull);
     },
     variant: const TargetPlatformVariant({
       TargetPlatform.android,

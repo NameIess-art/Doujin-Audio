@@ -13,11 +13,14 @@ import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../app/theme/app_styles.dart';
+import '../../../../core/app_language.dart';
 import '../../../../core/logging/app_log_service.dart';
+import '../../../../core/media/audio_detail.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/media/path_display.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/ui/undoable_removal_service.dart';
+import '../../../../core/ui/visual_settings_providers.dart';
 import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_edge_fade_mask.dart';
 import '../../../../core/widgets/app_feedback.dart';
@@ -34,8 +37,8 @@ import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../application/audio_state_services.dart';
 import '../../application/session_switcher_tree.dart';
 import '../../domain/playback_queue.dart';
+import '../../../library/application/library_facade.dart';
 import '../../../library/domain/library_node.dart';
-import '../../../settings/application/settings_state.dart';
 import 'playlist_shared_helpers.dart';
 
 import 'playback_queue_cover.dart';
@@ -43,6 +46,7 @@ import 'playback_queue_cover.dart';
 const _queueEntryRemovalDuration = Duration(milliseconds: 250);
 const _queueEntryPageSize = 128;
 const _queueChildRowMinHeight = 48.0;
+const _inlineQueueTreeTrackLimit = 64;
 
 class PlaybackQueueAudioEditPage extends ConsumerStatefulWidget {
   const PlaybackQueueAudioEditPage({
@@ -73,16 +77,26 @@ class _PlaybackQueueAudioEditPageState
   bool _didPop = false;
   int? _dragPointerId;
   double? _latestDragPointerY;
+  double? _dragTriggerY;
   double _dragRowTopOffset = 0;
   double _addedQueueTopInset = 0;
   bool _isTopAutoScrolling = false;
   PlaybackQueueDefinition? _pagedQueue;
   final List<PlaybackQueueEntryPreview> _entryPreviews = [];
+  int _previewVersion = 0;
+  Object? _queueIndexKey;
+  final _queueRootIndices = <String, int>{};
+  (List<PlaybackQueueEntry>, _SessionRemovalKeys)? _filteredEntriesKey;
+  List<PlaybackQueueEntry>? _filteredEntries;
+  (int, _SessionRemovalKeys)? _filteredPreviewsKey;
+  List<PlaybackQueueEntryPreview>? _filteredPreviews;
+  (String, double, EdgeInsets, double)? _sourceSectionKey;
+  Widget? _cachedSourceSection;
   bool _pageLoading = false;
   bool _pageFailed = false;
   bool _pageExhausted = false;
+  bool _awaitingPageLayout = false;
   bool _savingRestoredDrop = false;
-  bool _showLocalLibrary = false;
 
   @override
   void initState() {
@@ -94,6 +108,7 @@ class _PlaybackQueueAudioEditPageState
   }
 
   void _loadNearQueueEnd() {
+    if (_awaitingPageLayout) return;
     if (_addedQueueScrollController.hasClients &&
         _addedQueueScrollController.position.extentAfter < 450) {
       _scheduleQueuePage();
@@ -128,7 +143,7 @@ class _PlaybackQueueAudioEditPageState
         identical(_pagedQueue, queue) &&
         identical(playback.sessionById(sessionId)?.playbackQueue, queue);
     try {
-      if (_entryPreviews.isNotEmpty) setState(() {});
+      if (_entryPreviews.isNotEmpty && _dragFinished == null) setState(() {});
       final page = await playback.loadQueueEntryPreviews(
         sessionId,
         start: _entryPreviews.length,
@@ -144,8 +159,13 @@ class _PlaybackQueueAudioEditPageState
         _pageLoading = false;
         _pageExhausted = page.length < _queueEntryPageSize;
         _entryPreviews.addAll(page);
+        _previewVersion++;
+        // Wait for the new entries to update maxScrollExtent before checking
+        // extentAfter from scroll notifications on the same frame.
+        _awaitingPageLayout = page.isNotEmpty;
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        _awaitingPageLayout = false;
         if (isCurrent()) _loadNearQueueEnd();
       });
     } catch (error, stackTrace) {
@@ -172,6 +192,11 @@ class _PlaybackQueueAudioEditPageState
     } else {
       _dragRowTopOffset = 0;
     }
+    final sectionBox =
+        _addedQueueSectionKey.currentContext?.findRenderObject() as RenderBox?;
+    _dragTriggerY = sectionBox != null && sectionBox.hasSize
+        ? sectionBox.localToGlobal(Offset(0, _addedQueueTopInset)).dy
+        : null;
   }
 
   void _updateQueueDrag(PointerMoveEvent event) {
@@ -192,14 +217,17 @@ class _PlaybackQueueAudioEditPageState
             _addedQueueScrollController.position.minScrollExtent) {
       return 0;
     }
-    final sectionBox =
-        _addedQueueSectionKey.currentContext?.findRenderObject() as RenderBox?;
-    if (sectionBox == null || !sectionBox.hasSize) return 0;
-    // Keep scrolled rows extending behind the floating capsules while driving
-    // upward auto-scroll from the boundary below the section heading capsule.
-    final triggerY = sectionBox
-        .localToGlobal(Offset(0, _addedQueueTopInset))
-        .dy;
+    var triggerY = _dragTriggerY;
+    if (triggerY == null) {
+      final sectionBox =
+          _addedQueueSectionKey.currentContext?.findRenderObject()
+              as RenderBox?;
+      if (sectionBox == null || !sectionBox.hasSize) return 0;
+      // Keep scrolled rows extending behind the floating capsules while driving
+      // upward auto-scroll from the boundary below the section heading capsule.
+      triggerY = sectionBox.localToGlobal(Offset(0, _addedQueueTopInset)).dy;
+      _dragTriggerY = triggerY;
+    }
     final proxyTop = pointerY - _dragRowTopOffset;
     return math.max(0.0, triggerY - proxyTop);
   }
@@ -233,6 +261,7 @@ class _PlaybackQueueAudioEditPageState
     if (mounted && _dragPointerId == event.pointer) {
       _dragPointerId = null;
       _latestDragPointerY = null;
+      _dragTriggerY = null;
       if (event is PointerCancelEvent) _finishQueueReorder(_dragFinished);
       UiInteractionCoordinator.instance.endInteraction(this);
     }
@@ -241,6 +270,8 @@ class _PlaybackQueueAudioEditPageState
   void _handlePop(bool didPop, Object? _) {
     if (!didPop) return;
     _didPop = true;
+    _treeMotion.pause();
+    _dragTriggerY = null;
     if (_dragPointerId != null) {
       _dragPointerId = null;
       _latestDragPointerY = null;
@@ -256,12 +287,13 @@ class _PlaybackQueueAudioEditPageState
 
   void _finishQueueReorder(Completer<void>? drag) {
     if (drag == null || !identical(drag, _dragFinished)) return;
+    final hadMotion = _treeMotion.hasActiveMotion;
     _treeMotion.finish();
-    _addedTrees.remove(_draggedEntryId);
+    final removedTree = _addedTrees.remove(_draggedEntryId) != null;
     _dragFinished = null;
     _draggedEntryId = null;
     _draggedIndex = null;
-    if (mounted && !_didPop) setState(() {});
+    if ((hadMotion || removedTree) && mounted && !_didPop) setState(() {});
     drag.complete();
   }
 
@@ -275,6 +307,15 @@ class _PlaybackQueueAudioEditPageState
           !MediaQuery.disableAnimationsOf(context),
         ),
       );
+      return;
+    }
+    if (loaded != null) {
+      _loadingAddedTrees.remove(id);
+      final tree = _treeForAddedEntry(loaded);
+      setState(() {
+        _addedTrees[id] = tree;
+        if (!MediaQuery.disableAnimationsOf(context)) _treeMotion.openRoot(id);
+      });
       return;
     }
     if (_loadingAddedTrees.containsKey(id)) return;
@@ -292,8 +333,10 @@ class _PlaybackQueueAudioEditPageState
       }
       if (!mounted || _didPop || !isCurrent()) return;
       if (entry == null) throw StateError('Queue entry no longer exists');
+      final tree = await _buildAddedTreeAsync(entry);
+      if (!mounted || _didPop || !isCurrent()) return;
       setState(() {
-        _addedTrees[id] = _treeForAddedEntry(entry);
+        _addedTrees[id] = tree;
         if (!MediaQuery.disableAnimationsOf(context)) _treeMotion.openRoot(id);
       });
     } catch (error, stackTrace) {
@@ -307,24 +350,73 @@ class _PlaybackQueueAudioEditPageState
     }
   }
 
-  _QueueEditorTree _treeForAddedEntry(
-    PlaybackQueueEntry entry, {
-    Set<String>? expanded,
-  }) {
+  String? _workRootForEntry(PlaybackQueueEntry entry) {
     final track = entry.tracks.firstOrNull;
-    final root =
-        entry.workRootPath ??
+    return entry.workRootPath ??
         (track == null
             ? null
             : ref
                   .read(audioPathCoordinatorProvider)
                   .workRootForTrack(track.path, knownTrack: track));
-    return _QueueEditorTree(
-      entry.tracks,
-      root,
+  }
+
+  _QueueEditorTree? _tryTreeFromCachedLibraryFolder(
+    PlaybackQueueEntry entry,
+    String? root, {
+    Set<String>? expanded,
+  }) {
+    final firstTrack = entry.tracks.firstOrNull;
+    if (root == null || firstTrack == null || firstTrack.isRemoteAsmr) {
+      return null;
+    }
+    final cachedFolder = ref
+        .read(libraryFacadeProvider)
+        .resolvedLibraryFolderTree(root);
+    if (cachedFolder == null || !_folderMatchesEntry(cachedFolder, entry)) {
+      return null;
+    }
+    return _QueueEditorTree.fromFolderNode(
+      cachedFolder,
       entry: entry,
       expanded: expanded,
     );
+  }
+
+  Future<_QueueEditorTree> _buildAddedTreeAsync(PlaybackQueueEntry entry) async {
+    final root = _workRootForEntry(entry);
+    final cached = _tryTreeFromCachedLibraryFolder(entry, root);
+    if (cached != null) return cached;
+    if (entry.tracks.length <= _inlineQueueTreeTrackLimit) {
+      return _QueueEditorTree(entry.tracks, root, entry: entry);
+    }
+    final firstTrack = entry.tracks.firstOrNull;
+    if (root != null && firstTrack != null && !firstTrack.isRemoteAsmr) {
+      final loadedFolder = await ref
+          .read(libraryFacadeProvider)
+          .loadLibraryFolderTree(root);
+      if (loadedFolder != null && _folderMatchesEntry(loadedFolder, entry)) {
+        return _QueueEditorTree.fromFolderNode(loadedFolder, entry: entry);
+      }
+    }
+    final preparedRoot = await compute(_buildQueueEditorRootOffIsolate, (
+      tracks: entry.tracks,
+      workRoot: root,
+    ));
+    return _QueueEditorTree.fromPrepared(
+      entry.tracks,
+      root,
+      preparedRoot,
+      entry: entry,
+    );
+  }
+
+  _QueueEditorTree _treeForAddedEntry(
+    PlaybackQueueEntry entry, {
+    Set<String>? expanded,
+  }) {
+    final root = _workRootForEntry(entry);
+    return _tryTreeFromCachedLibraryFolder(entry, root, expanded: expanded) ??
+        _QueueEditorTree(entry.tracks, root, entry: entry, expanded: expanded);
   }
 
   Future<void> _removeEntry(
@@ -387,6 +479,7 @@ class _PlaybackQueueAudioEditPageState
     _dragFinished = null;
     _dragPointerId = null;
     _latestDragPointerY = null;
+    _dragTriggerY = null;
     UiInteractionCoordinator.instance.cancelInteraction(this);
     _addedQueueScrollController
       ..removeListener(_loadNearQueueEnd)
@@ -398,23 +491,6 @@ class _PlaybackQueueAudioEditPageState
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final sessionId = widget.sessionId;
-    final showLocalLibrary = _showLocalLibrary;
-    final ordinarySessions = showLocalLibrary
-        ? const <PlaybackDirectoryEntry>[]
-        : ref
-              .watch(
-                playlistStructureUiProvider.select(
-                  (structure) => _OrdinarySourceSessions(
-                    structure.entries
-                        .where((entry) => entry.queueName == null)
-                        .toList(growable: false),
-                  ),
-                ),
-              )
-              .sessions;
-    final localWorks = showLocalLibrary
-        ? ref.watch(libraryListUiProvider.select((state) => state.rawTree))
-        : const <LibraryNode>[];
     final playback = ref.read(playbackFacadeProvider);
 
     final sessionProvider = playbackSessionProvider(sessionId);
@@ -447,76 +523,33 @@ class _PlaybackQueueAudioEditPageState
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
+    final language = i18n.language;
     if (queue == null) return const SizedBox.shrink();
+    final coverCacheWidth = coverThumbnailCacheWidth(
+      logicalWidth: 40,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      resolution: ref.watch(coverImageResolutionProvider),
+    );
+    final workNameDisplay = ref.watch(
+      settingsStateProvider.select(
+        (state) =>
+            state.value?.workNameDisplay ??
+            ref.read(settingsRepositoryProvider).slice.state.workNameDisplay,
+      ),
+    );
     final pagedQueue = requiresLoad ? queue : null;
     if (!identical(_pagedQueue, pagedQueue)) {
       _pagedQueue = pagedQueue;
       _entryPreviews.clear();
-      _pageLoading = _pageFailed = _pageExhausted = false;
+      _previewVersion++;
+      _pageLoading = _pageFailed = _pageExhausted = _awaitingPageLayout = false;
       _scheduleQueuePage();
     }
 
     final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final playlistAreaBackground = isDark
-        ? cs.surfaceContainerLowest
-        : cs.surfaceContainer;
-
     final headerHeight = AppPageHeaderMetrics.contentTopInset(context);
     final addedQueueTop = headerHeight + 44;
     final horizontalPadding = AppPageHeaderMetrics.padding.copyWith(top: 0);
-
-    Widget sectionHeading(Widget child) {
-      return Listener(
-        behavior: HitTestBehavior.opaque,
-        child: Padding(
-          padding: horizontalPadding.copyWith(bottom: AppSpacing.xs),
-          child: Align(alignment: Alignment.centerLeft, child: child),
-        ),
-      );
-    }
-
-    Widget sectionCapsule(String label, IconData icon) {
-      return HeaderFloatingSurface(
-        height: 32,
-        radius: 16,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 18, color: cs.primary),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                label,
-                style: appPageHeaderTitleStyle(context),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    Widget sourceTab(String label, IconData icon, {required bool local}) {
-      final selected = showLocalLibrary == local;
-      return Semantics(
-        selected: selected,
-        child: selected
-            ? sectionCapsule(label, icon)
-            : TextButton(
-                onPressed: () => setState(() => _showLocalLibrary = local),
-                style: TextButton.styleFrom(
-                  foregroundColor: cs.onSurfaceVariant,
-                  minimumSize: const Size(0, 32),
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  textStyle: appPageHeaderTitleStyle(context),
-                ),
-                child: Text(label, overflow: TextOverflow.ellipsis),
-              ),
-      );
-    }
 
     final page = Scaffold(
       backgroundColor: Colors.transparent,
@@ -532,27 +565,54 @@ class _PlaybackQueueAudioEditPageState
                     final isLandscape =
                         defaultTargetPlatform == TargetPlatform.windows ||
                         constraints.maxWidth > constraints.maxHeight;
-                    final removalState = ref.watch(
-                      undoableRemovalStateProvider,
+                    final paneWidth = isLandscape
+                        ? math.max(0.0, (constraints.maxWidth - 1) / 2)
+                        : constraints.maxWidth;
+                    final rowAvailableWidth = math.max(
+                      0.0,
+                      paneWidth - horizontalPadding.horizontal,
                     );
-                    bool isVisible(String id) => !removalState.isHidden(
-                      playbackQueueEntryRemovalKey(sessionId, id),
+                    final removalKeys = ref.watch(
+                      undoableRemovalStateProvider.select(
+                        (state) =>
+                            _SessionRemovalKeys.fromState(state, sessionId),
+                      ),
                     );
-                    final filterHidden = removalState.hiddenKeys.any(
-                      (key) =>
-                          key.namespace == 'playback-queue-entry' &&
-                          key.id.startsWith('$sessionId:'),
-                    );
-                    final queueEntries = requiresLoad || !filterHidden
-                        ? queue.entries
-                        : queue.entries
-                              .where((entry) => isVisible(entry.id))
-                              .toList();
-                    final previews = !requiresLoad || !filterHidden
-                        ? _entryPreviews
-                        : _entryPreviews
-                              .where((entry) => isVisible(entry.id))
-                              .toList();
+                    final filterHidden = removalKeys.entryIds.isNotEmpty;
+                    final List<PlaybackQueueEntry> queueEntries;
+                    if (requiresLoad || !filterHidden) {
+                      queueEntries = queue.entries;
+                    } else {
+                      final previousKey = _filteredEntriesKey;
+                      if (previousKey == null ||
+                          !identical(previousKey.$1, queue.entries) ||
+                          previousKey.$2 != removalKeys ||
+                          _filteredEntries == null) {
+                        _filteredEntriesKey = (queue.entries, removalKeys);
+                        _filteredEntries = queue.entries
+                            .where(
+                              (entry) => !removalKeys.isEntryHidden(entry.id),
+                            )
+                            .toList(growable: false);
+                      }
+                      queueEntries = _filteredEntries!;
+                    }
+                    final List<PlaybackQueueEntryPreview> previews;
+                    if (!requiresLoad || !filterHidden) {
+                      previews = _entryPreviews;
+                    } else {
+                      final key = (_previewVersion, removalKeys);
+                      if (_filteredPreviewsKey != key ||
+                          _filteredPreviews == null) {
+                        _filteredPreviewsKey = key;
+                        _filteredPreviews = _entryPreviews
+                            .where(
+                              (entry) => !removalKeys.isEntryHidden(entry.id),
+                            )
+                            .toList(growable: false);
+                      }
+                      previews = _filteredPreviews!;
+                    }
                     final rowCount = requiresLoad
                         ? previews.length
                         : queueEntries.length;
@@ -563,6 +623,30 @@ class _PlaybackQueueAudioEditPageState
                     String idAt(int index) => requiresLoad
                         ? previews[index].id
                         : queueEntries[index].id;
+
+                    List<int>? expandedQueueRoots;
+                    if (_addedTrees.isNotEmpty) {
+                      final indexKey = (
+                        requiresLoad,
+                        requiresLoad ? _previewVersion : queue.entries,
+                        filterHidden ? removalKeys : null,
+                      );
+                      if (_queueIndexKey != indexKey) {
+                        _queueRootIndices.clear();
+                        for (var i = 0; i < rowCount; i++) {
+                          _queueRootIndices[idAt(i)] = i;
+                        }
+                        _queueIndexKey = indexKey;
+                      }
+                      expandedQueueRoots = <int>[];
+                      for (final id in _addedTrees.keys) {
+                        final root = _queueRootIndices[id];
+                        if (root != null) expandedQueueRoots.add(root);
+                      }
+                      if (expandedQueueRoots.length > 1) {
+                        expandedQueueRoots.sort();
+                      }
+                    }
 
                     final rows = _QueueEditorRows(
                       rowCount,
@@ -582,27 +666,27 @@ class _PlaybackQueueAudioEditPageState
                                   expanded: tree.expanded,
                                 );
                               }
-                              final hasHidden = _hiddenKeysContainChildren(
-                                removalState,
-                                sessionId,
-                                id,
-                              );
+                              final childPrefix = '$sessionId:$id:';
+                              final hasHidden =
+                                  removalKeys.childKeys.isNotEmpty &&
+                                  removalKeys.childKeys.any(
+                                    (key) => key.startsWith(childPrefix),
+                                  );
                               final children = tree.rows(
-                                hiddenRevision: hasHidden
-                                    ? removalState.hiddenKeys
-                                    : null,
+                                hiddenRevision: hasHidden ? removalKeys : null,
                                 hidden: hasHidden
-                                    ? (node) => removalState.isHidden(
+                                    ? (node) => removalKeys.childKeys.contains(
                                         _queueChildRemovalKey(
                                           sessionId,
                                           id,
                                           node,
-                                        ),
+                                        ).id,
                                       )
                                     : null,
                               );
                               return _treeMotion.project(context, id, children);
                             },
+                      expandedRoots: expandedQueueRoots,
                     );
 
                     VoidCallback? captureDrop(int oldRow, int newRow) {
@@ -686,6 +770,7 @@ class _PlaybackQueueAudioEditPageState
                                 source < target ? target - 1 : target,
                                 item,
                               );
+                              _previewVersion++;
                             });
                           }
                           if (requiresLoad &&
@@ -745,6 +830,7 @@ class _PlaybackQueueAudioEditPageState
                                 if (index >= 0) {
                                   final item = _entryPreviews.removeAt(index);
                                   _entryPreviews.insert(previousIndex, item);
+                                  _previewVersion++;
                                 }
                               }
                             });
@@ -824,14 +910,24 @@ class _PlaybackQueueAudioEditPageState
                                   footer: footer,
                                   onReorderStart: (index) {
                                     _finishQueueReorder(_dragFinished);
-                                    setState(() {
+                                    final id = idAt(rows.at(index).root);
+                                    final hadTree = _addedTrees.containsKey(id);
+                                    final wasLoading =
+                                        _loadingAddedTrees.remove(id) != null;
+                                    final hadMotion =
+                                        _treeMotion.hasActiveMotion;
+                                    void begin() {
                                       _treeMotion.pause();
                                       _dragFinished = Completer<void>();
                                       _draggedIndex = index;
-                                      final id = idAt(rows.at(index).root);
                                       _draggedEntryId = id;
-                                      _loadingAddedTrees.remove(id);
-                                    });
+                                    }
+
+                                    if (hadTree || wasLoading || hadMotion) {
+                                      setState(begin);
+                                    } else {
+                                      begin();
+                                    }
                                     _pendingDrop = null;
                                     unawaited(
                                       AppInteractionFeedback.trigger(
@@ -895,11 +991,14 @@ class _PlaybackQueueAudioEditPageState
                                         entry.id,
                                         childIndex,
                                         _QueueAudioRow(
-                                          key: key,
                                           title: node.title,
                                           depth: child.depth,
                                           folder: node.isFolder,
                                           removing: true,
+                                          language: language,
+                                          coverCacheWidth: coverCacheWidth,
+                                          workNameDisplay: workNameDisplay,
+                                          availableWidth: rowAvailableWidth,
                                           count: node.isFolder
                                               ? tree.count(node)
                                               : null,
@@ -938,6 +1037,7 @@ class _PlaybackQueueAudioEditPageState
                                             ),
                                           ),
                                         ),
+                                        key: key,
                                       );
                                     }
                                     final isFolder =
@@ -960,13 +1060,22 @@ class _PlaybackQueueAudioEditPageState
                                       content: (
                                         entry,
                                         loadedEntry,
-                                        dragIndex,
                                         expanded,
                                         loading,
                                         expanded
                                             ? tree.count(tree.root)
                                             : entry.trackCount,
                                       ),
+                                      display: (
+                                        language,
+                                        coverCacheWidth,
+                                        workNameDisplay,
+                                        rowAvailableWidth,
+                                      ),
+                                      dragIndex: dragIndex,
+                                      onStartDrag: dragIndex == null
+                                          ? null
+                                          : _startQueueDrag,
                                       onRemove: () {
                                         if (_addedTrees.remove(entry.id) !=
                                             null) {
@@ -974,45 +1083,30 @@ class _PlaybackQueueAudioEditPageState
                                         }
                                         unawaited(_removeEntry(entry.id));
                                       },
-                                      builder: (triggerRemove) {
-                                        final row = _QueueAudioRow(
-                                          track: entry.firstTrack,
-                                          title: entry.title,
-                                          folder: isFolder,
-                                          removing: true,
-                                          count: expanded
-                                              ? tree.count(tree.root)
-                                              : entry.trackCount,
-                                          expanded: expanded,
-                                          loading: loading,
-                                          toggle: isFolder
-                                              ? () => unawaited(
-                                                  _toggleAddedTree(
-                                                    entry.id,
-                                                    loadedEntry,
-                                                  ),
-                                                )
-                                              : null,
-                                          action: triggerRemove,
-                                        );
-                                        return dragIndex == null
-                                            ? row
-                                            : Builder(
-                                                builder: (rowContext) =>
-                                                    ReorderableDelayedDragStartListener(
-                                                      index: dragIndex,
-                                                      child: Listener(
-                                                        onPointerDown:
-                                                            (event) =>
-                                                                _startQueueDrag(
-                                                                  event,
-                                                                  rowContext,
-                                                                ),
-                                                        child: row,
-                                                      ),
-                                                    ),
-                                              );
-                                      },
+                                      builder: (triggerRemove) => _QueueAudioRow(
+                                        track: entry.firstTrack,
+                                        title: entry.title,
+                                        folder: isFolder,
+                                        removing: true,
+                                        language: language,
+                                        coverCacheWidth: coverCacheWidth,
+                                        workNameDisplay: workNameDisplay,
+                                        availableWidth: rowAvailableWidth,
+                                        count: expanded
+                                            ? tree.count(tree.root)
+                                            : entry.trackCount,
+                                        expanded: expanded,
+                                        loading: loading,
+                                        toggle: isFolder
+                                            ? () => unawaited(
+                                                _toggleAddedTree(
+                                                  entry.id,
+                                                  loadedEntry,
+                                                ),
+                                              )
+                                            : null,
+                                        action: triggerRemove,
+                                      ),
                                     );
                                   },
                                 ),
@@ -1021,10 +1115,11 @@ class _PlaybackQueueAudioEditPageState
                           top: headerHeight,
                           left: 0,
                           right: 0,
-                          child: sectionHeading(
-                            sectionCapsule(
-                              i18n.tr('queue_added_audio'),
-                              Icons.playlist_play_rounded,
+                          child: _QueueSectionHeading(
+                            horizontalPadding: horizontalPadding,
+                            child: _QueueSectionCapsule(
+                              label: i18n.tr('queue_added_audio'),
+                              icon: Icons.playlist_play_rounded,
                             ),
                           ),
                         ),
@@ -1036,71 +1131,35 @@ class _PlaybackQueueAudioEditPageState
                         onPointerMove: _updateQueueDrag,
                         onPointerUp: _finishQueueDrag,
                         onPointerCancel: _finishQueueDrag,
-                        child: ScrollActivityGate(child: addedToQueueSection),
+                        child: ScrollActivityGate(
+                          onMetricsChanged: ref
+                              .read(libraryCoverUiControllerProvider)
+                              .viewportChanged,
+                          child: addedToQueueSection,
+                        ),
                       ),
                     );
 
                     final sectionTopOffset = isLandscape
                         ? headerHeight
                         : AppSpacing.xs;
-
-                    final sourceSection = DecoratedBox(
-                      decoration: BoxDecoration(color: playlistAreaBackground),
-                      child: Stack(
-                        children: [
-                          Positioned.fill(
-                            child: _QueueAudioSourceList(
-                              key: ValueKey(showLocalLibrary),
-                              showLibrary: showLocalLibrary,
-                              works: localWorks,
-                              sessions: ordinarySessions,
-                              sessionId: sessionId,
-                              padding: horizontalPadding.copyWith(
-                                top: sectionTopOffset + 44,
-                                bottom: AppSpacing.xs,
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            height: sectionTopOffset + 48,
-                            child: AppEdgeFadeMask(
-                              direction: AppEdgeFadeDirection.towardTop,
-                              color: playlistAreaBackground,
-                            ),
-                          ),
-                          Positioned(
-                            top: sectionTopOffset,
-                            left: 0,
-                            right: 0,
-                            child: sectionHeading(
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Flexible(
-                                    child: sourceTab(
-                                      i18n.tr('playback_sessions'),
-                                      Icons.playlist_play_rounded,
-                                      local: false,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Flexible(
-                                    child: sourceTab(
-                                      i18n.tr('show_local_library'),
-                                      Icons.library_music_rounded,
-                                      local: true,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                    final sourceKey = (
+                      sessionId,
+                      sectionTopOffset,
+                      horizontalPadding,
+                      rowAvailableWidth,
                     );
+                    if (_sourceSectionKey != sourceKey ||
+                        _cachedSourceSection == null) {
+                      _sourceSectionKey = sourceKey;
+                      _cachedSourceSection = _QueueAudioSourceSection(
+                        sessionId: sessionId,
+                        topOffset: sectionTopOffset,
+                        horizontalPadding: horizontalPadding,
+                        rowAvailableWidth: rowAvailableWidth,
+                      );
+                    }
+                    final sourceSection = _cachedSourceSection!;
 
                     if (isLandscape) {
                       return Row(
@@ -1166,15 +1225,57 @@ UndoableRemovalKey _queueChildRemovalKey(
   return UndoableRemovalKey('playback-queue-child', '$sessionId:$entryId:$key');
 }
 
-bool _hiddenKeysContainChildren(
-  UndoableRemovalState state,
-  String sessionId,
-  String entryId,
-) => state.hiddenKeys.any(
-  (key) =>
-      key.namespace == 'playback-queue-child' &&
-      key.id.startsWith('$sessionId:$entryId:'),
-);
+@immutable
+class _SessionRemovalKeys {
+  const _SessionRemovalKeys({
+    required this.entryIds,
+    required this.childKeys,
+  });
+
+  static const empty = _SessionRemovalKeys(
+    entryIds: <String>{},
+    childKeys: <String>{},
+  );
+
+  final Set<String> entryIds;
+  final Set<String> childKeys;
+
+  bool isEntryHidden(String id) => entryIds.contains(id);
+
+  factory _SessionRemovalKeys.fromState(
+    UndoableRemovalState state,
+    String sessionId,
+  ) {
+    final prefix = '$sessionId:';
+    Set<String>? entryIds;
+    Set<String>? childKeys;
+    for (final key in state.hiddenKeys) {
+      if (key.namespace == 'playback-queue-entry' &&
+          key.id.startsWith(prefix)) {
+        (entryIds ??= <String>{}).add(key.id.substring(prefix.length));
+      } else if (key.namespace == 'playback-queue-child' &&
+          key.id.startsWith(prefix)) {
+        (childKeys ??= <String>{}).add(key.id);
+      }
+    }
+    if (entryIds == null && childKeys == null) return empty;
+    return _SessionRemovalKeys(
+      entryIds: entryIds ?? const <String>{},
+      childKeys: childKeys ?? const <String>{},
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is _SessionRemovalKeys &&
+          setEquals(other.entryIds, entryIds) &&
+          setEquals(other.childKeys, childKeys);
+
+  @override
+  int get hashCode =>
+      Object.hash(Object.hashAllUnordered(entryIds), Object.hashAllUnordered(childKeys));
+}
 
 class _QueueDragProxy extends StatefulWidget {
   const _QueueDragProxy({required this.child, required this.onDisposed});
@@ -1207,6 +1308,8 @@ class _QueueExpansionMotion {
     : _motion = FileTreeExpansionMotion(vsync, onSettled);
 
   final FileTreeExpansionMotion<_QueueBranch, _QueueChildRow> _motion;
+
+  bool get hasActiveMotion => _motion.branch != null;
 
   bool isClosingRoot(String id) =>
       _motion.isClosing((entryId: id, folderKey: null));
@@ -1284,12 +1387,54 @@ class _QueueExpansionMotion {
     );
   }
 
-  Widget wrap(String id, int childIndex, Widget child) =>
-      _motion.branch?.entryId == id ? _motion.wrap(childIndex, child) : child;
+  Widget wrap(String id, int childIndex, Widget child, {Key? key}) =>
+      _motion.wrap(
+        childIndex,
+        child,
+        key: key,
+        active: _motion.branch?.entryId == id,
+      );
 
   void pause() => _motion.pause();
   void finish() => _motion.finish();
   void dispose() => _motion.dispose();
+}
+
+typedef _QueueTreeBuildRequest = ({List<MusicTrack> tracks, String? workRoot});
+
+SessionSwitcherNode _buildQueueEditorRootOffIsolate(
+  _QueueTreeBuildRequest request,
+) {
+  final root = SessionSwitcherNode.folder('');
+  for (var i = 0; i < request.tracks.length; i++) {
+    final track = request.tracks[i];
+    root
+        .folderForTrack(track, workRoot: request.workRoot)
+        .children
+        .add(
+          SessionSwitcherNode.track(
+            track,
+            selected: false,
+            queueIndex: i,
+            sourceIndex: i,
+          ),
+        );
+  }
+  root.sortChildrenNaturally();
+  return root;
+}
+
+bool _folderMatchesEntry(FolderNode folder, PlaybackQueueEntry entry) {
+  if (folder.children.isEmpty ||
+      folder.totalTrackCount != entry.tracks.length) {
+    return false;
+  }
+  final folderTracks = folder.allTracks;
+  if (folderTracks.length != entry.tracks.length) return false;
+  for (var i = 0; i < folderTracks.length; i++) {
+    if (folderTracks[i].path != entry.tracks[i].path) return false;
+  }
+  return true;
 }
 
 class _QueueEditorTree {
@@ -1298,7 +1443,9 @@ class _QueueEditorTree {
     this.workRoot, {
     this.entry,
     Set<String>? expanded,
-  }) : expanded = expanded ?? <String>{} {
+  }) : sourceFolder = null,
+       expanded = expanded ?? <String>{},
+       root = SessionSwitcherNode.folder('') {
     for (var i = 0; i < tracks.length; i++) {
       final track = tracks[i];
       root
@@ -1317,15 +1464,87 @@ class _QueueEditorTree {
     _count(root, null);
   }
 
+  _QueueEditorTree.fromPrepared(
+    this.tracks,
+    this.workRoot,
+    this.root, {
+    this.entry,
+    Set<String>? expanded,
+  }) : sourceFolder = null,
+       expanded = expanded ?? <String>{} {
+    final pending = <SessionSwitcherNode>[root];
+    while (pending.isNotEmpty) {
+      final node = pending.removeLast();
+      if (node.isFolder) {
+        for (final child in node.children) {
+          pending.add(child);
+        }
+      } else if (node.sourceIndex >= 0 && node.sourceIndex < tracks.length) {
+        node.track = tracks[node.sourceIndex];
+      }
+    }
+    _count(root, null);
+  }
+
+  _QueueEditorTree.fromFolderNode(
+    FolderNode folder, {
+    this.entry,
+    Set<String>? expanded,
+  }) : tracks = entry?.tracks ?? folder.allTracks,
+       workRoot = folder.path,
+       sourceFolder = folder,
+       expanded = expanded ?? <String>{},
+       root = SessionSwitcherNode.folder('') {
+    _folderStartIndices[root.key] = 0;
+    _counts[root] = folder.totalTrackCount;
+    _populateFolder(root, folder);
+  }
+
   final List<MusicTrack> tracks;
   final String? workRoot;
   final PlaybackQueueEntry? entry;
+  final FolderNode? sourceFolder;
   final Set<String> expanded;
-  final root = SessionSwitcherNode.folder('');
+  final SessionSwitcherNode root;
   final _counts = <SessionSwitcherNode, int>{};
+  final Map<String, FolderNode> _folderNodes = {};
+  final Map<String, int> _folderStartIndices = {};
+  final Set<String> _populatedFolders = {};
   List<_QueueChildRow>? _rows;
   List<_QueueChildRow> get projectedRows => _rows ?? const [];
-  Set<UndoableRemovalKey>? _hiddenRevision;
+  Object? _hiddenRevision;
+
+  void _populateFolder(SessionSwitcherNode target, FolderNode folder) {
+    if (!_populatedFolders.add(target.key)) return;
+    var cursor = _folderStartIndices[target.key] ?? 0;
+    for (final child in folder.children) {
+      if (child is FolderNode) {
+        final key = '${target.key}/${Uri.encodeComponent(child.name)}';
+        final node = SessionSwitcherNode.folder(child.name, key: key);
+        _counts[node] = child.totalTrackCount;
+        _folderNodes[key] = child;
+        _folderStartIndices[key] = cursor;
+        cursor += child.totalTrackCount;
+        target.children.add(node);
+        if (expanded.contains(key)) {
+          _populateFolder(node, child);
+        }
+      } else if (child is TrackNode) {
+        final index = cursor++;
+        final resolvedTrack = entry != null && index < tracks.length
+            ? tracks[index]
+            : child.track;
+        target.children.add(
+          SessionSwitcherNode.track(
+            resolvedTrack,
+            selected: false,
+            queueIndex: index,
+            sourceIndex: index,
+          ),
+        );
+      }
+    }
+  }
 
   int _count(
     SessionSwitcherNode node,
@@ -1333,6 +1552,11 @@ class _QueueEditorTree {
   ) {
     if (hidden?.call(node) == true) return 0;
     if (!node.isFolder) return 1;
+    final folder = _folderNodes[node.key];
+    if (folder != null && !_populatedFolders.contains(node.key)) {
+      if (hidden == null) return _counts[node] = folder.totalTrackCount;
+      _populateFolder(node, folder);
+    }
     return _counts[node] = node.children.fold<int>(
       0,
       (count, child) => count + _count(child, hidden),
@@ -1341,16 +1565,29 @@ class _QueueEditorTree {
 
   int count(SessionSwitcherNode node) => _counts[node] ?? 0;
 
+  MusicTrack trackForNode(SessionSwitcherNode node) =>
+      node.track ?? tracks[node.sourceIndex];
+
+  List<MusicTrack> tracksForFolder(SessionSwitcherNode node) {
+    final folder = _folderNodes[node.key];
+    if (folder != null) return folder.allTracks;
+    return [for (final index in trackIndices(node)) tracks[index]];
+  }
+
   void toggle(SessionSwitcherNode node) {
-    if (!expanded.remove(node.key)) expanded.add(node.key);
+    if (!expanded.remove(node.key)) {
+      expanded.add(node.key);
+      final folder = _folderNodes[node.key];
+      if (folder != null) _populateFolder(node, folder);
+    }
     _rows = null;
   }
 
   List<_QueueChildRow> rows({
-    Set<UndoableRemovalKey>? hiddenRevision,
+    Object? hiddenRevision,
     bool Function(SessionSwitcherNode)? hidden,
   }) {
-    final changed = !identical(hiddenRevision, _hiddenRevision);
+    final changed = hiddenRevision != _hiddenRevision;
     if (_rows != null && !changed) return _rows!;
     if (changed) _count(root, hidden);
     _hiddenRevision = hiddenRevision;
@@ -1369,6 +1606,10 @@ class _QueueEditorTree {
 
   Iterable<int> trackIndices(SessionSwitcherNode node) sync* {
     if (node.isFolder) {
+      final folder = _folderNodes[node.key];
+      if (folder != null && !_populatedFolders.contains(node.key)) {
+        _populateFolder(node, folder);
+      }
       for (final child in node.children) {
         yield* trackIndices(child);
       }
@@ -1380,22 +1621,62 @@ class _QueueEditorTree {
 
 // Collapsed roots remain implicit so large lists don't allocate a row model
 // for each root. Only open folders contribute groups of extra row indices.
+class _QueueRowGroup {
+  _QueueRowGroup({
+    required this.root,
+    required this.first,
+    required this.rows,
+  });
+
+  final int root;
+  final int first;
+  final List<_QueueChildRow> rows;
+  Map<String, int>? _indices;
+
+  int indexOf(String nodeKey) {
+    if (rows.length <= 16) {
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].node.key == nodeKey) return i;
+      }
+      return -1;
+    }
+    final indices = _indices ??= {
+      for (var i = 0; i < rows.length; i++) rows[i].node.key: i,
+    };
+    return indices[nodeKey] ?? -1;
+  }
+}
+
 class _QueueEditorRows {
   _QueueEditorRows(
     this.rootCount,
-    List<_QueueChildRow> Function(int)? children,
-  ) {
+    List<_QueueChildRow> Function(int)? children, {
+    List<int>? expandedRoots,
+  }) {
     if (children == null) return;
+    if (expandedRoots != null) {
+      for (final root in expandedRoots) {
+        final rows = children(root);
+        if (rows.isEmpty) continue;
+        _groups.add(
+          _QueueRowGroup(root: root, first: root + 1 + _childCount, rows: rows),
+        );
+        _childCount += rows.length;
+      }
+      return;
+    }
     for (var root = 0; root < rootCount; root++) {
       final rows = children(root);
       if (rows.isEmpty) continue;
-      _groups.add((root: root, first: root + 1 + _childCount, rows: rows));
+      _groups.add(
+        _QueueRowGroup(root: root, first: root + 1 + _childCount, rows: rows),
+      );
       _childCount += rows.length;
     }
   }
 
   final int rootCount;
-  final _groups = <({int root, int first, List<_QueueChildRow> rows})>[];
+  final _groups = <_QueueRowGroup>[];
   int _childCount = 0;
   int get length => rootCount + _childCount;
 
@@ -1421,6 +1702,327 @@ class _QueueEditorRows {
             childIndex: -1,
           );
   }
+
+  int? indexOfKey(Key key, int? Function(String) rootIndexOf) {
+    if (key is ValueKey<String>) {
+      final root = rootIndexOf(key.value);
+      if (root == null || root < 0 || root >= rootCount) return null;
+      return _flatRootIndex(root);
+    }
+    if (key is ValueKey<(String, String)>) {
+      final (id, nodeKey) = key.value;
+      final root = rootIndexOf(id);
+      if (root == null || root < 0 || root >= rootCount) return null;
+      final group = _groupForRoot(root);
+      if (group == null) return null;
+      final offset = group.indexOf(nodeKey);
+      return offset < 0 ? null : group.first + offset;
+    }
+    return null;
+  }
+
+  int _flatRootIndex(int root) {
+    if (_groups.isEmpty) return root;
+    var low = 0;
+    var high = _groups.length;
+    while (low < high) {
+      final middle = (low + high) ~/ 2;
+      if (_groups[middle].root < root) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    if (low == 0) return root;
+    final group = _groups[low - 1];
+    return root + (group.first - group.root - 1) + group.rows.length;
+  }
+
+  _QueueRowGroup? _groupForRoot(int root) {
+    if (_groups.isEmpty) return null;
+    var low = 0;
+    var high = _groups.length;
+    while (low < high) {
+      final middle = (low + high) ~/ 2;
+      if (_groups[middle].root < root) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    if (low < _groups.length && _groups[low].root == root) {
+      return _groups[low];
+    }
+    return null;
+  }
+}
+
+class _QueueSectionHeading extends StatelessWidget {
+  const _QueueSectionHeading({
+    required this.horizontalPadding,
+    required this.child,
+  });
+
+  final EdgeInsets horizontalPadding;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: horizontalPadding.copyWith(bottom: AppSpacing.xs),
+        child: Align(alignment: Alignment.centerLeft, child: child),
+      ),
+    );
+  }
+}
+
+class _QueueSectionCapsule extends StatelessWidget {
+  const _QueueSectionCapsule({required this.label, required this.icon});
+
+  final String label;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return HeaderFloatingSurface(
+      height: 32,
+      radius: 16,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 18, color: cs.primary),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              label,
+              style: appPageHeaderTitleStyle(context),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QueueAudioSourceSection extends ConsumerStatefulWidget {
+  const _QueueAudioSourceSection({
+    required this.sessionId,
+    required this.topOffset,
+    required this.horizontalPadding,
+    required this.rowAvailableWidth,
+  });
+
+  final String sessionId;
+  final double topOffset;
+  final EdgeInsets horizontalPadding;
+  final double rowAvailableWidth;
+
+  @override
+  ConsumerState<_QueueAudioSourceSection> createState() =>
+      _QueueAudioSourceSectionState();
+}
+
+class _QueueAudioSourceSectionState
+    extends ConsumerState<_QueueAudioSourceSection> {
+  bool _showLocalLibrary = false;
+  int? _cardSnapshotRequestRevision;
+  late final String _cardSnapshotCommitKey =
+      'queue_source_library_snapshot_${identityHashCode(this)}';
+
+  void _ensureLibraryCardSnapshot({
+    required LibraryFacade libraryFacade,
+    required int snapshotRevision,
+  }) {
+    final structureRevision = libraryFacade.structureRevision;
+    if (snapshotRevision == structureRevision ||
+        _cardSnapshotRequestRevision == structureRevision) {
+      return;
+    }
+    _cardSnapshotRequestRevision = structureRevision;
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _cardSnapshotCommitKey,
+      priority: 20,
+      structural: true,
+      commit: () {
+        if (!mounted ||
+            !_showLocalLibrary ||
+            _cardSnapshotRequestRevision != structureRevision ||
+            libraryFacade.structureRevision != structureRevision) {
+          if (_cardSnapshotRequestRevision == structureRevision) {
+            _cardSnapshotRequestRevision = null;
+          }
+          return;
+        }
+        unawaited(
+          libraryFacade
+              .ensureCardSnapshot()
+              .catchError((Object error, StackTrace stackTrace) {
+                AppLogService.error(
+                  'queue_library_card_snapshot_failed',
+                  error: error,
+                  stackTrace: stackTrace,
+                );
+                return LibraryTreeSnapshot(
+                  tree: const <LibraryNode>[],
+                  leafFolderCount: 0,
+                );
+              })
+              .whenComplete(() {
+                if (mounted &&
+                    _cardSnapshotRequestRevision == structureRevision) {
+                  _cardSnapshotRequestRevision = null;
+                }
+              }),
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    UiInteractionCoordinator.instance.cancelCommit(_cardSnapshotCommitKey);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final playlistAreaBackground = isDark
+        ? cs.surfaceContainerLowest
+        : cs.surfaceContainer;
+    final showLocalLibrary = _showLocalLibrary;
+    final ordinarySessions = showLocalLibrary
+        ? const <PlaybackDirectoryEntry>[]
+        : ref
+              .watch(
+                playlistStructureUiProvider.select(
+                  (structure) => _OrdinarySourceSessions(
+                    structure.entries
+                        .where((entry) => entry.queueName == null)
+                        .toList(growable: false),
+                  ),
+                ),
+              )
+              .sessions;
+    final List<LibraryNode> localWorks;
+    if (showLocalLibrary) {
+      final libraryFacade = ref.read(libraryFacadeProvider);
+      final libraryReady = ref.watch(
+        libraryListUiProvider.select(
+          (state) => (
+            isInitialized: state.isInitialized,
+            revision: state.structureRevision,
+          ),
+        ),
+      );
+      if (libraryReady.isInitialized) {
+        _ensureLibraryCardSnapshot(
+          libraryFacade: libraryFacade,
+          snapshotRevision: libraryReady.revision,
+        );
+      }
+      final sorted = ref.watch(librarySortedTreeUiProvider);
+      final rawTree = ref.watch(
+        libraryListUiProvider.select((state) => state.rawTree),
+      );
+      localWorks = sorted.isNotEmpty || rawTree.isEmpty ? sorted : rawTree;
+    } else {
+      UiInteractionCoordinator.instance.cancelCommit(_cardSnapshotCommitKey);
+      _cardSnapshotRequestRevision = null;
+      localWorks = const <LibraryNode>[];
+    }
+
+    Widget sourceTab(String label, IconData icon, {required bool local}) {
+      final selected = showLocalLibrary == local;
+      return Semantics(
+        selected: selected,
+        child: selected
+            ? _QueueSectionCapsule(label: label, icon: icon)
+            : TextButton(
+                onPressed: () => setState(() => _showLocalLibrary = local),
+                style: TextButton.styleFrom(
+                  foregroundColor: cs.onSurfaceVariant,
+                  minimumSize: const Size(0, 32),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  textStyle: appPageHeaderTitleStyle(context),
+                ),
+                child: Text(label, overflow: TextOverflow.ellipsis),
+              ),
+      );
+    }
+
+    return ScrollActivityGate(
+      onMetricsChanged: ref.read(libraryCoverUiControllerProvider).viewportChanged,
+      child: DecoratedBox(
+        decoration: BoxDecoration(color: playlistAreaBackground),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: _QueueAudioSourceList(
+                key: ValueKey(showLocalLibrary),
+                showLibrary: showLocalLibrary,
+                works: localWorks,
+                sessions: ordinarySessions,
+                sessionId: widget.sessionId,
+                rowAvailableWidth: widget.rowAvailableWidth,
+                padding: widget.horizontalPadding.copyWith(
+                  top: widget.topOffset + 44,
+                  bottom: AppSpacing.xs,
+                ),
+              ),
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: widget.topOffset + 48,
+              child: AppEdgeFadeMask(
+                direction: AppEdgeFadeDirection.towardTop,
+                color: playlistAreaBackground,
+              ),
+            ),
+            Positioned(
+              top: widget.topOffset,
+              left: 0,
+              right: 0,
+              child: _QueueSectionHeading(
+                horizontalPadding: widget.horizontalPadding,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: sourceTab(
+                        i18n.tr('playback_sessions'),
+                        Icons.playlist_play_rounded,
+                        local: false,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: sourceTab(
+                        i18n.tr('show_local_library'),
+                        Icons.library_music_rounded,
+                        local: true,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _QueueAudioSourceList extends ConsumerStatefulWidget {
@@ -1430,6 +2032,7 @@ class _QueueAudioSourceList extends ConsumerStatefulWidget {
     required this.works,
     required this.sessions,
     required this.sessionId,
+    required this.rowAvailableWidth,
     required this.padding,
   });
 
@@ -1437,6 +2040,7 @@ class _QueueAudioSourceList extends ConsumerStatefulWidget {
   final List<LibraryNode> works;
   final List<PlaybackDirectoryEntry> sessions;
   final String sessionId;
+  final double rowAvailableWidth;
   final EdgeInsetsGeometry padding;
 
   @override
@@ -1450,6 +2054,14 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
   late final _QueueExpansionMotion _treeMotion;
   final _loading = <String, Object>{};
   final _sourcePaths = <String, String>{};
+  List<LibraryNode>? _indexedWorks;
+  List<PlaybackDirectoryEntry>? _indexedSessions;
+  bool? _indexedShowLibrary;
+  final _rootIndices = <String, int>{};
+  int? _treesLibraryRevision;
+  List<PlaybackDirectoryEntry>? _cachedTrackSessions;
+  int? _cachedTrackContentRevision;
+  final _sessionTracksById = <String, MusicTrack?>{};
 
   @override
   void initState() {
@@ -1465,14 +2077,35 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
     super.dispose();
   }
 
+  void _ensureRootIndices() {
+    final showLibrary = widget.showLibrary;
+    if (_indexedShowLibrary == showLibrary &&
+        (showLibrary
+            ? identical(_indexedWorks, widget.works)
+            : identical(_indexedSessions, widget.sessions))) {
+      return;
+    }
+    _rootIndices.clear();
+    if (showLibrary) {
+      for (var i = 0; i < widget.works.length; i++) {
+        _rootIndices[widget.works[i].path] = i;
+      }
+      _indexedWorks = widget.works;
+      _indexedSessions = null;
+    } else {
+      for (var i = 0; i < widget.sessions.length; i++) {
+        _rootIndices[widget.sessions[i].id] = i;
+      }
+      _indexedSessions = widget.sessions;
+      _indexedWorks = null;
+    }
+    _indexedShowLibrary = showLibrary;
+  }
+
   String _idAt(int index) =>
       widget.showLibrary ? widget.works[index].path : widget.sessions[index].id;
 
-  Future<List<MusicTrack>> _loadTracks(
-    MusicTrack track,
-    FolderNode? work,
-  ) async {
-    if (work != null) return work.allTracks;
+  Future<List<MusicTrack>> _loadTracks(MusicTrack track) async {
     final tracks = await ref
         .read(audioPathCoordinatorProvider)
         .tracksInSameWorkAsync(track);
@@ -1492,6 +2125,29 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
       });
       return;
     }
+    if (work != null) {
+      final ready = work.children.isNotEmpty
+          ? work
+          : ref.read(libraryFacadeProvider).resolvedLibraryFolderTree(work.path);
+      final _QueueEditorTree? tree;
+      if (ready != null) {
+        tree = _QueueEditorTree.fromFolderNode(ready);
+      } else if (work.totalTrackCount <= _inlineQueueTreeTrackLimit &&
+          work.allTracks.isNotEmpty) {
+        tree = _QueueEditorTree(work.allTracks, work.path);
+      } else {
+        tree = null;
+      }
+      if (tree != null) {
+        setState(() {
+          _trees[id] = tree!;
+          if (!MediaQuery.disableAnimationsOf(context)) {
+            _treeMotion.openRoot(id);
+          }
+        });
+        return;
+      }
+    }
     await _loadTree(id, track, work);
   }
 
@@ -1501,11 +2157,55 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
     setState(() => _loading[id] = request);
     bool isCurrent() => identical(_loading[id], request);
     try {
+      if (work != null) {
+        final library = ref.read(libraryFacadeProvider);
+        final loadedFolder = await library.loadLibraryFolderTree(work.path);
+        if (!mounted || !isCurrent()) return;
+        final rootIndex = _rootIndices[id];
+        if (rootIndex == null ||
+            rootIndex >= widget.works.length ||
+            widget.works[rootIndex] is! FolderNode) {
+          return;
+        }
+        final latestWork = widget.works[rootIndex] as FolderNode;
+        final expanded = _trees[id]?.expanded;
+        final tree = loadedFolder != null
+            ? _QueueEditorTree.fromFolderNode(loadedFolder, expanded: expanded)
+            : _QueueEditorTree(
+                latestWork.allTracks,
+                latestWork.path,
+                expanded: expanded,
+              );
+        setState(() {
+          final opening = !_trees.containsKey(id);
+          _trees[id] = tree;
+          if (opening && !MediaQuery.disableAnimationsOf(context)) {
+            _treeMotion.openRoot(id);
+          }
+        });
+        return;
+      }
       final paths = ref.read(audioPathCoordinatorProvider);
-      final root =
-          work?.path ?? paths.workRootForTrack(track.path, knownTrack: track);
-      final tracks = await _loadTracks(track, work);
+      final root = paths.workRootForTrack(track.path, knownTrack: track);
+      final tracks = await _loadTracks(track);
       if (!mounted || !isCurrent()) return;
+      final existingExpanded = _trees[id]?.expanded;
+      final _QueueEditorTree tree;
+      if (tracks.length <= _inlineQueueTreeTrackLimit) {
+        tree = _QueueEditorTree(tracks, root, expanded: existingExpanded);
+      } else {
+        final preparedRoot = await compute(_buildQueueEditorRootOffIsolate, (
+          tracks: tracks,
+          workRoot: root,
+        ));
+        if (!mounted || !isCurrent()) return;
+        tree = _QueueEditorTree.fromPrepared(
+          tracks,
+          root,
+          preparedRoot,
+          expanded: existingExpanded,
+        );
+      }
       if (!widget.showLibrary) {
         final source = widget.sessions
             .where((source) => source.id == id)
@@ -1517,11 +2217,7 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
       }
       setState(() {
         final opening = !_trees.containsKey(id);
-        _trees[id] = _QueueEditorTree(
-          tracks,
-          root,
-          expanded: _trees[id]?.expanded,
-        );
+        _trees[id] = tree;
         if (opening && !MediaQuery.disableAnimationsOf(context)) {
           _treeMotion.openRoot(id);
         }
@@ -1548,27 +2244,24 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
     );
     try {
       if (child != null && !child.isFolder) {
-        await queue.addTrack(sessionId, tree!.tracks[child.sourceIndex]);
+        await queue.addTrack(sessionId, tree!.trackForNode(child));
       } else if (track.isSingle) {
         await queue.addTrack(sessionId, track);
       } else if (tree != null || work != null) {
         final tracks = child == null
-            ? tree?.tracks ?? work!.allTracks
-            : tree!
-                  .trackIndices(child)
-                  .map((index) => tree.tracks[index])
-                  .toList();
+            ? work?.allTracks ?? tree!.tracks
+            : tree!.tracksForFolder(child);
         await queue.addWork(
           sessionId,
           track,
           selectedTracks: tracks,
-          workRootPath: tree?.workRoot ?? work?.path,
+          workRootPath: work?.path ?? tree?.workRoot,
         );
       } else {
         await queue.addWork(
           sessionId,
           track,
-          selectedTracks: await _loadTracks(track, null),
+          selectedTracks: await _loadTracks(track),
         );
       }
     } catch (error, stackTrace) {
@@ -1578,50 +2271,126 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(appLanguageStateProvider);
+    final language = ref.read(appLanguageProviderInstanceProvider).language;
+    final coverCacheWidth = coverThumbnailCacheWidth(
+      logicalWidth: 40,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      resolution: ref.watch(coverImageResolutionProvider),
+    );
+    final workNameDisplay = ref.watch(
+      settingsStateProvider.select(
+        (state) =>
+            state.value?.workNameDisplay ??
+            ref.read(settingsRepositoryProvider).slice.state.workNameDisplay,
+      ),
+    );
     final paths = ref.read(audioPathCoordinatorProvider);
     final showLibrary = widget.showLibrary;
     final roots = showLibrary ? widget.works.length : widget.sessions.length;
+    final libraryContentRevision = showLibrary
+        ? 0
+        : ref.watch(
+            libraryStateProvider.select(
+              (state) => state.value?.contentRevision ?? 0,
+            ),
+          );
+    if (!showLibrary &&
+        (!identical(_cachedTrackSessions, widget.sessions) ||
+            _cachedTrackContentRevision != libraryContentRevision)) {
+      _cachedTrackSessions = widget.sessions;
+      _cachedTrackContentRevision = libraryContentRevision;
+      _sessionTracksById.clear();
+    }
     MusicTrack? sessionTrack(PlaybackDirectoryEntry source) =>
-        paths.sessionTrackForPath(source.id, source.currentTrackPath);
+        _sessionTracksById.putIfAbsent(
+          source.id,
+          () => paths.sessionTrackForPath(source.id, source.currentTrackPath),
+        );
 
-    if (_trees.isNotEmpty) {
-      if (showLibrary) {
-        for (final node in widget.works.whereType<FolderNode>()) {
-          final opened = _trees[node.path];
-          if (opened != null && !identical(opened.tracks, node.allTracks)) {
-            _trees[node.path] = _QueueEditorTree(
-              node.allTracks,
-              node.path,
+    _ensureRootIndices();
+    if (!showLibrary) {
+      ref.listen(
+        libraryStateProvider.select((state) => state.value?.contentRevision),
+        (_, _) {
+          if (_trees.isEmpty) return;
+          for (final source in widget.sessions) {
+            if (!_trees.containsKey(source.id)) continue;
+            final track = paths.sessionTrackForPath(
+              source.id,
+              source.currentTrackPath,
+            );
+            if (track != null && !track.isSingle) {
+              unawaited(_loadTree(source.id, track, null));
+            }
+          }
+        },
+      );
+    }
+
+    if (showLibrary) {
+      final libraryRevision = ref.watch(
+        libraryListUiProvider.select((state) => state.structureRevision),
+      );
+      if (_trees.isEmpty) {
+        _treesLibraryRevision = libraryRevision;
+      } else if (_treesLibraryRevision != libraryRevision) {
+        _treesLibraryRevision = libraryRevision;
+        final library = ref.read(libraryFacadeProvider);
+        for (final id in _trees.keys.toList(growable: false)) {
+          final root = _rootIndices[id];
+          if (root == null) {
+            _trees.remove(id);
+            _loading.remove(id);
+            continue;
+          }
+          final node = widget.works[root];
+          if (node is! FolderNode) {
+            _trees.remove(id);
+            _loading.remove(id);
+            continue;
+          }
+          final opened = _trees[id]!;
+          final cachedFolder = node.children.isNotEmpty
+              ? node
+              : library.resolvedLibraryFolderTree(node.path);
+          if (cachedFolder != null) {
+            _trees[id] = _QueueEditorTree.fromFolderNode(
+              cachedFolder,
               expanded: opened.expanded,
             );
+          } else {
+            final track = node.firstTrack;
+            if (track != null) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted && _trees.containsKey(id)) {
+                  unawaited(_loadTree(id, track, node));
+                }
+              });
+            }
           }
         }
-      } else {
-        ref.listen(
-          libraryStateProvider.select((state) => state.value?.contentRevision),
-          (_, _) {
-            for (final source in widget.sessions) {
-              if (!_trees.containsKey(source.id)) continue;
-              final track = sessionTrack(source);
-              if (track != null && !track.isSingle) {
-                unawaited(_loadTree(source.id, track, null));
-              }
-            }
-          },
-        );
-        for (final source in widget.sessions) {
-          if (_trees.containsKey(source.id) &&
-              _sourcePaths[source.id] != source.currentTrackPath) {
-            final track = sessionTrack(source);
-            final opened = _trees[source.id]!;
-            if (track == null ||
-                track.groupKey != opened.tracks.firstOrNull?.groupKey) {
-              _trees.remove(source.id);
-              _sourcePaths.remove(source.id);
-              _loading.remove(source.id);
-            } else {
-              _sourcePaths[source.id] = source.currentTrackPath;
-            }
+      }
+    } else if (_trees.isNotEmpty) {
+      for (final id in _trees.keys.toList(growable: false)) {
+        final root = _rootIndices[id];
+        if (root == null) {
+          _trees.remove(id);
+          _sourcePaths.remove(id);
+          _loading.remove(id);
+          continue;
+        }
+        final source = widget.sessions[root];
+        if (_sourcePaths[id] != source.currentTrackPath) {
+          final track = sessionTrack(source);
+          final opened = _trees[id]!;
+          if (track == null ||
+              track.groupKey != opened.tracks.firstOrNull?.groupKey) {
+            _trees.remove(id);
+            _sourcePaths.remove(id);
+            _loading.remove(id);
+          } else {
+            _sourcePaths[id] = source.currentTrackPath;
           }
         }
       }
@@ -1637,6 +2406,15 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
         ),
       );
     }
+    List<int>? expandedRoots;
+    if (_trees.isNotEmpty) {
+      expandedRoots = <int>[];
+      for (final id in _trees.keys) {
+        final root = _rootIndices[id];
+        if (root != null) expandedRoots.add(root);
+      }
+      if (expandedRoots.length > 1) expandedRoots.sort();
+    }
     final rows = _QueueEditorRows(
       roots,
       _trees.isEmpty
@@ -1648,11 +2426,15 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
                   ? const []
                   : _treeMotion.project(context, id, tree.rows());
             },
+      expandedRoots: expandedRoots,
     );
     return ListView.builder(
       key: PageStorageKey<bool>(showLibrary),
       padding: widget.padding,
+      addAutomaticKeepAlives: false,
       itemCount: rows.length,
+      findChildIndexCallback: (key) =>
+          rows.indexOfKey(key, (id) => _rootIndices[id]),
       itemBuilder: (context, index) {
         final (:root, :child, :childIndex) = rows.at(index);
         final id = _idAt(root);
@@ -1666,7 +2448,7 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
                 _ => null,
               })
             : sessionTrack(widget.sessions[root]);
-        if (track == null) return const SizedBox.shrink();
+        if (track == null) return SizedBox.shrink(key: ValueKey(id));
         final tree = _trees[id];
         if (child == null) {
           return _QueueAudioRow(
@@ -1674,6 +2456,12 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
             track: track,
             title: track.displayName,
             folder: !track.isSingle,
+            language: language,
+            coverCacheWidth: coverCacheWidth,
+            workNameDisplay: workNameDisplay,
+            availableWidth: widget.rowAvailableWidth,
+            workRootPath: work?.path,
+            folderCoverPath: work?.path,
             subtitle: track.isSingle ? null : track.displayName,
             count: tree?.tracks.length ?? work?.totalTrackCount,
             expanded: tree != null && !_treeMotion.isClosingRoot(id),
@@ -1689,10 +2477,13 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
           id,
           childIndex,
           _QueueAudioRow(
-            key: ValueKey((id, node.key)),
             title: node.title,
             depth: child.depth,
             folder: node.isFolder,
+            language: language,
+            coverCacheWidth: coverCacheWidth,
+            workNameDisplay: workNameDisplay,
+            availableWidth: widget.rowAvailableWidth,
             count: node.isFolder ? tree!.count(node) : null,
             expanded: tree!.expanded.contains(node.key),
             toggle: node.isFolder
@@ -1708,6 +2499,7 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
             action: () =>
                 unawaited(_add(track, work: work, tree: tree, child: node)),
           ),
+          key: ValueKey((id, node.key)),
         );
       },
     ).withWindowsSmoothScroll();
@@ -1732,13 +2524,19 @@ void _showQueueEditorReadFailure(
   );
 }
 
-class _QueueAudioRow extends ConsumerWidget {
+class _QueueAudioRow extends ConsumerStatefulWidget {
   const _QueueAudioRow({
     super.key,
     this.track,
     required this.title,
     required this.folder,
     required this.action,
+    required this.language,
+    required this.coverCacheWidth,
+    required this.workNameDisplay,
+    this.availableWidth,
+    this.workRootPath,
+    this.folderCoverPath,
     this.depth = 0,
     this.removing = false,
     this.expanded = false,
@@ -1752,6 +2550,12 @@ class _QueueAudioRow extends ConsumerWidget {
   final String title;
   final bool folder;
   final VoidCallback action;
+  final AppLanguage language;
+  final int? coverCacheWidth;
+  final WorkNameDisplay workNameDisplay;
+  final double? availableWidth;
+  final String? workRootPath;
+  final String? folderCoverPath;
   final int depth;
   final bool removing;
   final bool expanded;
@@ -1761,65 +2565,110 @@ class _QueueAudioRow extends ConsumerWidget {
   final VoidCallback? toggle;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    ref.watch(appLanguageStateProvider);
+  ConsumerState<_QueueAudioRow> createState() => _QueueAudioRowState();
+}
+
+class _QueueAudioRowState extends ConsumerState<_QueueAudioRow> {
+  Widget? _cachedChild;
+  String? _cachedTitle;
+
+  void _handleToggle() => widget.toggle?.call();
+  void _handleAction() => widget.action();
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _cachedChild = null;
+  }
+
+  @override
+  void didUpdateWidget(covariant _QueueAudioRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.track, widget.track) ||
+        oldWidget.title != widget.title ||
+        oldWidget.folder != widget.folder ||
+        oldWidget.language != widget.language ||
+        oldWidget.coverCacheWidth != widget.coverCacheWidth ||
+        oldWidget.workNameDisplay != widget.workNameDisplay ||
+        oldWidget.availableWidth != widget.availableWidth ||
+        oldWidget.workRootPath != widget.workRootPath ||
+        oldWidget.folderCoverPath != widget.folderCoverPath ||
+        oldWidget.depth != widget.depth ||
+        oldWidget.removing != widget.removing ||
+        oldWidget.expanded != widget.expanded ||
+        oldWidget.loading != widget.loading ||
+        oldWidget.subtitle != widget.subtitle ||
+        oldWidget.count != widget.count ||
+        (oldWidget.toggle != null) != (widget.toggle != null)) {
+      _cachedChild = null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final representative = widget.track;
+    final root = widget.depth == 0;
+    final resolvedTitle = root && widget.folder && representative != null
+        ? _workTitle(ref, representative)
+        : widget.title;
+    if (_cachedChild != null && _cachedTitle == resolvedTitle) {
+      return _cachedChild!;
+    }
+    _cachedTitle = resolvedTitle;
+
     final cs = Theme.of(context).colorScheme;
-    final representative = track;
-    final root = depth == 0;
     Widget? cover;
     if (root) {
       final library = ref.read(libraryFacadeProvider);
+      final folderPath = widget.folderCoverPath;
       cover = CoverArtworkFrame(
         showShadow: false,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: const BorderRadius.all(Radius.circular(20)),
         child: representative == null
             ? const CoverFallbackArtwork()
             : QueueTrackCover(
                 track: representative,
-                coverPath: library.resolvedPlaybackCoverPathForTrack(
-                  representative,
-                ),
-                coverCacheWidth: coverCacheWidthForResolution(
-                  ref.watch(
-                    settingsStateProvider.select(
-                      (state) =>
-                          state.value?.coverImageResolution ??
-                          CoverImageResolution.balanced,
-                    ),
-                  ),
-                ),
+                folderPath: folderPath,
+                coverPath: folderPath != null
+                    ? library.resolvedCoverPathForFolder(folderPath)
+                    : library.resolvedPlaybackCoverPathForTrack(
+                        representative,
+                      ),
+                coverCacheWidth: widget.coverCacheWidth,
+                browseThumbnail: true,
               ),
       );
     }
-    final addHint = folder
+    final addHint = widget.folder
         ? (root ? 'add_work_to_queue' : 'add')
         : 'add_audio_to_queue';
     final tile = FileTreeRow(
-      title: root && folder && representative != null
-          ? _workTitle(ref, representative)
-          : title,
-      subtitle: folder && count != null
-          ? i18n.tr('audio_count', {'count': count})
-          : subtitle,
-      depth: depth,
-      minHeight: root && folder ? 64 : _queueChildRowMinHeight,
-      titleMaxLines: !root && folder ? 1 : 2,
-      verticalPadding: root && folder ? 4 : 2,
-      reserveSubtitleSpace: folder,
-      isFolder: folder,
-      onTap: toggle,
-      titleColor: expanded ? cs.primary : null,
+      availableWidth: widget.availableWidth,
+      title: resolvedTitle,
+      subtitle: widget.folder && widget.count != null
+          ? i18n.tr('audio_count', {'count': widget.count})
+          : widget.subtitle,
+      depth: widget.depth,
+      minHeight: root && widget.folder ? 64 : _queueChildRowMinHeight,
+      titleMaxLines: !root && widget.folder ? 1 : 2,
+      verticalPadding: root && widget.folder ? 4 : 2,
+      reserveSubtitleSpace: widget.folder,
+      isFolder: widget.folder,
+      onTap: widget.toggle == null ? null : _handleToggle,
+      titleColor: widget.expanded ? cs.primary : null,
       leading: root
           ? SizedBox.square(dimension: 40, child: cover)
           : Icon(
-              folder
-                  ? (expanded
+              widget.folder
+                  ? (widget.expanded
                         ? AppDesignTokens.openFolderIcon
                         : AppDesignTokens.folderIcon)
                   : AppDesignTokens.audioFileIcon,
               size: AppDesignTokens.fileEntryIconSize,
-              color: folder ? AppDesignTokens.folderIconColor : cs.primary,
+              color: widget.folder
+                  ? AppDesignTokens.folderIconColor
+                  : cs.primary,
             ),
       trailingSpacing: AppSpacing.xxs,
       trailing: Row(
@@ -1827,11 +2676,11 @@ class _QueueAudioRow extends ConsumerWidget {
         children: [
           Flexible(
             child: IconButton(
-              tooltip: i18n.tr(removing ? 'remove' : addHint),
-              onPressed: action,
+              tooltip: i18n.tr(widget.removing ? 'remove' : addHint),
+              onPressed: _handleAction,
               style: appIconButtonStyle(
                 IconButton.styleFrom(
-                  foregroundColor: removing ? cs.error : cs.primary,
+                  foregroundColor: widget.removing ? cs.error : cs.primary,
                   minimumSize: const Size.square(44),
                   maximumSize: const Size.square(44),
                   padding: EdgeInsets.zero,
@@ -1839,51 +2688,59 @@ class _QueueAudioRow extends ConsumerWidget {
                 ),
               ),
               icon: Icon(
-                removing
+                widget.removing
                     ? Icons.remove_circle_outline_rounded
                     : Icons.add_circle_outline_rounded,
                 size: 22,
               ),
             ),
           ),
-          if (folder) ...[
+          if (widget.folder) ...[
             const SizedBox(width: 2),
-            if (loading)
+            if (widget.loading)
               const SizedBox.square(
                 dimension: 20,
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
             else
               FileTreeExpansionArrow(
-                expanded: expanded,
-                color: expanded ? cs.primary : null,
+                expanded: widget.expanded,
+                color: widget.expanded ? cs.primary : null,
               ),
           ],
         ],
       ),
     );
-    return folder ? Semantics(expanded: expanded, child: tile) : tile;
+    return _cachedChild = widget.folder
+        ? Semantics(expanded: widget.expanded, child: tile)
+        : tile;
   }
 
   String _workTitle(WidgetRef ref, MusicTrack track) {
-    final paths = ref.read(audioPathCoordinatorProvider);
-    if (track.isRemoteAsmr) return paths.workTitleForTrack(track);
+    if (track.isRemoteAsmr) {
+      return ref.read(audioPathCoordinatorProvider).workTitleForTrack(track);
+    }
 
-    final settings = ref.read(settingsRepositoryProvider);
-    final mode = ref.watch(
-      settingsStateProvider.select(
-        (state) =>
-            state.value?.workNameDisplay ??
-            settings.slice.state.workNameDisplay,
-      ),
-    );
-    final target = ref
-        .read(libraryFacadeProvider)
-        .audioDetailTargetForTrack(track);
-    if (mode == WorkNameDisplay.workTitle) {
+    final workRootPath = widget.workRootPath;
+    final AudioDetailTarget resolvedTarget;
+    if (workRootPath != null) {
+      if (widget.workNameDisplay != WorkNameDisplay.workTitle) {
+        if (track.isSingle) {
+          return PathDisplay.fileName(track.path, withoutExtension: true);
+        }
+        return _folderDisplayTitle(workRootPath, track);
+      }
+      resolvedTarget = AudioDetailTarget.libraryRootFolder(workRootPath);
+    } else {
+      resolvedTarget = ref
+          .read(libraryFacadeProvider)
+          .audioDetailTargetForTrack(track);
+    }
+
+    if (widget.workNameDisplay == WorkNameDisplay.workTitle) {
       final title = ref.watch(
         libraryDetailForTargetProvider(
-          target,
+          resolvedTarget,
         ).select((detail) => detail.value?.workTitle.trim() ?? ''),
       );
       if (title.isNotEmpty) return title;
@@ -1892,7 +2749,11 @@ class _QueueAudioRow extends ConsumerWidget {
     if (track.isSingle) {
       return PathDisplay.fileName(track.path, withoutExtension: true);
     }
-    final folder = PathDisplay.folderName(target.targetPath);
+    return _folderDisplayTitle(resolvedTarget.targetPath, track);
+  }
+
+  String _folderDisplayTitle(String folderPath, MusicTrack track) {
+    final folder = PathDisplay.folderName(folderPath);
     final groupTitle = track.groupTitle.trim();
     if (folder.isNotEmpty) {
       return groupTitle.toLowerCase() == folder.toLowerCase()
@@ -1904,14 +2765,20 @@ class _QueueAudioRow extends ConsumerWidget {
 }
 
 class _AnimatedQueueEntry extends StatefulWidget {
-  final (PlaybackQueueEntryPreview, PlaybackQueueEntry?, int?, bool, bool, int)
+  final (PlaybackQueueEntryPreview, PlaybackQueueEntry?, bool, bool, int)
   content;
+  final (AppLanguage, int?, WorkNameDisplay, double?) display;
+  final int? dragIndex;
+  final void Function(PointerDownEvent, BuildContext)? onStartDrag;
   final Widget Function(VoidCallback triggerRemove) builder;
   final VoidCallback onRemove;
 
   const _AnimatedQueueEntry({
     super.key,
     required this.content,
+    required this.display,
+    required this.dragIndex,
+    required this.onStartDrag,
     required this.builder,
     required this.onRemove,
   });
@@ -1922,16 +2789,37 @@ class _AnimatedQueueEntry extends StatefulWidget {
 
 class _AnimatedQueueEntryState extends State<_AnimatedQueueEntry> {
   bool _isRemoving = false;
-  late Widget _entry = widget.builder(_triggerRemove);
+  late Widget _row = widget.builder(_triggerRemove);
+  late Widget _entry = _wrapDrag(_row);
+
+  Widget _wrapDrag(Widget row) {
+    final dragIndex = widget.dragIndex;
+    if (dragIndex == null) return row;
+    return ReorderableDelayedDragStartListener(
+      index: dragIndex,
+      child: Listener(
+        onPointerDown: (event) => widget.onStartDrag?.call(event, context),
+        child: row,
+      ),
+    );
+  }
 
   @override
   void didUpdateWidget(covariant _AnimatedQueueEntry oldWidget) {
     super.didUpdateWidget(oldWidget);
     // The reorderable sliver calls its builder on pointer moves. Reuse the
-    // artwork and labels while the entry data and index are stable.
-    if (!identical(oldWidget.content.$2, widget.content.$2) ||
-        oldWidget.content != widget.content) {
-      _entry = widget.builder(_triggerRemove);
+    // row widget when entry data is stable and only rewrap if dragIndex moved.
+    final contentChanged =
+        !identical(oldWidget.content.$2, widget.content.$2) ||
+        oldWidget.content != widget.content ||
+        oldWidget.display != widget.display;
+    if (contentChanged) {
+      _row = widget.builder(_triggerRemove);
+    }
+    if (contentChanged ||
+        oldWidget.dragIndex != widget.dragIndex ||
+        (oldWidget.onStartDrag == null) != (widget.onStartDrag == null)) {
+      _entry = _wrapDrag(_row);
     }
   }
 

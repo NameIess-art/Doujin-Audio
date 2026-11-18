@@ -129,6 +129,9 @@ class NativePlaybackService : MediaSessionService() {
         override fun run() {
             updateUsage()
             usageLedger.checkpoint()
+            if (hasPlaybackToKeepAlive()) {
+                refreshWakeLock(logRefresh = false)
+            }
             mainHandler.postDelayed(this, 15_000L)
         }
     }
@@ -275,6 +278,8 @@ class NativePlaybackService : MediaSessionService() {
                     publishResumePauseBatch(listOf(session.sessionId))
                 }
             },
+            onSessionCreated = ::addSession,
+            onSessionReleased = ::removeSession,
             logSecurityEvent = ::logSecurityEvent,
             logInfo = ::logInfo,
             logWarn = { message, error -> logWarn(message, error = error) }
@@ -487,8 +492,11 @@ class NativePlaybackService : MediaSessionService() {
                     get() = sessionManager.isNotEmpty
                 override val playbackSuspended: Boolean
                     get() = this@NativePlaybackService.playbackSuspended
-                override fun playbackSignature(): String? =
-                    if (foregroundSession() != null) "playback" else null
+                override fun playbackSignature(): String? {
+                    val session = foregroundSession() ?: return null
+                    val hasMediaSession = mediaSessionHost.current() != null
+                    return "playback:${session.sessionId}:$hasMediaSession:${session.title}:${session.subtitle.orEmpty()}"
+                }
 
                 override fun onActiveSync() {
                     acquireWakeLock()
@@ -533,10 +541,16 @@ class NativePlaybackService : MediaSessionService() {
                 }
 
                 override fun startPlaybackForeground() {
+                    val session = foregroundSession()
+                    val mediaSession = ensureMediaSession()
                     ServiceCompat.startForeground(
                         this@NativePlaybackService,
                         FOREGROUND_NOTIFICATION_ID,
-                        foregroundNotificationFactory.buildNotification(),
+                        foregroundNotificationFactory.buildNotification(
+                            mediaSession = mediaSession,
+                            title = session?.title,
+                            subtitle = session?.subtitle
+                        ),
                         ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
                     )
                 }
@@ -546,7 +560,9 @@ class NativePlaybackService : MediaSessionService() {
                     ServiceCompat.startForeground(
                         this@NativePlaybackService,
                         FOREGROUND_NOTIFICATION_ID,
-                        foregroundNotificationFactory.buildNotification(),
+                        foregroundNotificationFactory.buildNotification(
+                            mediaSession = mediaSessionHost.current()
+                        ),
                         ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
                     )
                     acquireWakeLock()
@@ -1258,7 +1274,10 @@ class NativePlaybackService : MediaSessionService() {
             isIntended = playbackRecovery::isIntended,
             isFocusPending = focusRecovery::isPending,
             isRecoveryPending = playbackRecovery::isPending,
-            shouldRetainPlayer = ::shouldRetainVideoPlayer,
+            shouldRetainPlayer = { session ->
+                shouldRetainVideoPlayer(session) ||
+                    foregroundCoordinator.isHoldingPlaybackStart(session.sessionId)
+            },
             beforeRelease = { session ->
                 videoOutputs.detachPlayer(session.sessionId)
                 if (mediaSessionHost.isAttachedTo(session.playerOrNull())) {
@@ -1554,9 +1573,9 @@ class NativePlaybackService : MediaSessionService() {
         playbackWakeLock.acquire()
     }
 
-    private fun refreshWakeLock() {
+    private fun refreshWakeLock(logRefresh: Boolean = true) {
         updateWakeLockNetworkState()
-        playbackWakeLock.refresh()
+        playbackWakeLock.refresh(logRefresh = logRefresh)
     }
 
     private fun releaseWakeLock() = playbackWakeLock.release()

@@ -586,6 +586,12 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
         fontSize: 14,
         height: 1.25,
       ),
+      titleSmall: const TextStyle(
+        fontFamily: 'Raleway',
+        fontWeight: FontWeight.w600,
+        fontSize: 13,
+        height: 1.3,
+      ),
       titleLarge: const TextStyle(
         fontFamily: 'Outfit',
         fontWeight: FontWeight.w700,
@@ -640,7 +646,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
       extensions: <ThemeExtension<dynamic>>[tokens],
       visualDensity: VisualDensity.standard,
       colorScheme: scheme,
-      fontFamily: isWindows ? 'Segoe UI' : null,
+      fontFamily: isWindows ? 'Segoe UI' : 'Raleway',
       textTheme: textTheme,
       tooltipTheme: const TooltipThemeData(
         triggerMode: TooltipTriggerMode.manual,

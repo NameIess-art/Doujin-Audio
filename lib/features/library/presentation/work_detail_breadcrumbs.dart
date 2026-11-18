@@ -1,8 +1,5 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import '../../../app/localization/app_language_provider.dart';
-import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/windows_horizontal_wheel_scroll.dart';
 import '../../../core/widgets/page_translation_scope.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
@@ -73,15 +70,7 @@ class _WorkDetailBreadcrumbsState extends State<WorkDetailBreadcrumbs> {
                     InkWell(
                       mouseCursor: WidgetStateMouseCursor.clickable,
                       borderRadius: BorderRadius.circular(8),
-                      onTap: () {
-                        unawaited(
-                          AppInteractionFeedback.trigger(
-                            AppInteractionFeedbackType.tap,
-                            context: context,
-                          ),
-                        );
-                        widget.onNavigate(-1);
-                      },
+                      onTap: () => widget.onNavigate(-1),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,
@@ -122,15 +111,7 @@ class _WorkDetailBreadcrumbsState extends State<WorkDetailBreadcrumbs> {
                       InkWell(
                         mouseCursor: WidgetStateMouseCursor.clickable,
                         borderRadius: BorderRadius.circular(8),
-                        onTap: () {
-                          unawaited(
-                            AppInteractionFeedback.trigger(
-                              AppInteractionFeedbackType.tap,
-                              context: context,
-                            ),
-                          );
-                          widget.onNavigate(i);
-                        },
+                        onTap: () => widget.onNavigate(i),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 4,

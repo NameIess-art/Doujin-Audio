@@ -442,6 +442,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
         !ref.read(coreRuntimeReadyProvider)) {
       return;
     }
+    if (!_appInForeground) {
+      _sleepModeAutoEntryTimer?.cancel();
+      _sleepModeAutoEntryTimer = null;
+      return;
+    }
     final settings = ref.read(settingsStateProvider).value;
     final trigger =
         settings?.sleepModeAutoTrigger ?? SleepModeAutoTrigger.manual;
@@ -483,7 +488,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   void _onSleepModeAutoEntryTimerFired() {
     _sleepModeAutoEntryTimer = null;
-    if (!mounted || defaultTargetPlatform == TargetPlatform.windows) return;
+    if (!mounted ||
+        defaultTargetPlatform == TargetPlatform.windows ||
+        !_appInForeground) {
+      return;
+    }
     final settings = ref.read(settingsStateProvider).value;
     final trigger =
         settings?.sleepModeAutoTrigger ?? SleepModeAutoTrigger.manual;
@@ -564,6 +573,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
   }
 
   void _toggleMobilePlaybackRow() {
+    unawaited(
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+    );
     final raised = !_isMobilePlaybackRaised;
     _mobilePlaybackRaised.value = raised;
     unawaited(AppPreferences.setBool(_mobilePlaybackRaisedKey, raised));
@@ -720,6 +732,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       _appInForeground = false;
+      _evaluateSleepModeAutoTrigger();
       _cancelForegroundProtection();
       unawaited(ref.read(audioRuntimeCoordinatorProvider).enterBackground());
       _subtitleOverlay.requestRuntimeSync();
@@ -729,6 +742,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       return;
     }
     _appInForeground = true;
+    _evaluateSleepModeAutoTrigger();
     _protectForegroundFrame(reconcileRuntime: true);
     if (shouldRunGlobalSubtitleOverlay(appInForeground: _appInForeground)) {
       _subtitleOverlay.requestRuntimeSync();
@@ -915,7 +929,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
           .tr('asmr_online_optional_notice'),
       icon: Icons.cloud_outlined,
       duration: const Duration(seconds: 4),
-      provideHapticFeedback: false,
     );
   }
 
@@ -1004,8 +1017,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
       ]),
       builder: (context, _) {
         final splitContent = isLandscape && (detailNavigation?.isOpen ?? false);
-        final menuCollapsed =
-            _isMenuCollapsed || (splitContent && width - 260 < 641);
+        final forcedCollapsed = splitContent && width - 260 < 641;
+        final menuCollapsed = _isMenuCollapsed || forcedCollapsed;
         final sidebarWidth = isDesktop
             ? (isLandscape
                   ? (menuCollapsed ? 80.0 : 260.0)
@@ -1151,6 +1164,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
                                     i18n,
                                     overlaySessions,
                                     isMenuCollapsed: menuCollapsed,
+                                    canToggleMenu: !forcedCollapsed,
                                   );
                                 },
                               ),

@@ -133,26 +133,39 @@ class WindowsWindowTitleBar extends ConsumerWidget {
                     children: [
                       Image.asset(appBrandIconAsset, width: 16, height: 16),
                       const SizedBox(width: 6),
-                      Text(language.tr('app_title')),
+                      Flexible(
+                        child: Text(
+                          language.tr('app_title'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     ],
                   ),
                 ),
               ),
             ),
-            button(
-              WindowsWindowCommand.minimize,
-              'window_minimize',
-              Icons.remove,
-            ),
-            ValueListenableBuilder<bool>(
-              valueListenable: controls.maximized,
-              builder: (context, maximized, _) => button(
-                WindowsWindowCommand.toggleMaximized,
-                maximized ? 'window_restore' : 'window_maximize',
-                maximized ? Icons.filter_none : Icons.crop_square,
+            ExcludeFocus(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  button(
+                    WindowsWindowCommand.minimize,
+                    'window_minimize',
+                    Icons.remove,
+                  ),
+                  ValueListenableBuilder<bool>(
+                    valueListenable: controls.maximized,
+                    builder: (context, maximized, _) => button(
+                      WindowsWindowCommand.toggleMaximized,
+                      maximized ? 'window_restore' : 'window_maximize',
+                      maximized ? Icons.filter_none : Icons.crop_square,
+                    ),
+                  ),
+                  button(WindowsWindowCommand.close, 'close', Icons.close),
+                ],
               ),
             ),
-            button(WindowsWindowCommand.close, 'close', Icons.close),
           ],
         ),
       ),

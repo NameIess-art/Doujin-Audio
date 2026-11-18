@@ -7,8 +7,23 @@ import 'app_transitions.dart';
 import 'search_highlight.dart';
 import 'shimmer_loading.dart';
 
+typedef _FileTreeRowHeightKey = (
+  TextStyle?,
+  TextStyle?,
+  TextDirection,
+  TextScaler,
+  double,
+  int,
+  int,
+  bool,
+  double,
+);
+
 /// Shared presentation only; callers own expansion, selection and actions.
 class FileTreeRow extends StatelessWidget {
+  static const int _maxCachedHeights = 64;
+  static final Map<_FileTreeRowHeightKey, double> _layoutHeightCache = {};
+
   const FileTreeRow({
     super.key,
     required this.title,
@@ -31,6 +46,7 @@ class FileTreeRow extends StatelessWidget {
     this.titleColor,
     this.backgroundColor,
     this.surfaceKey,
+    this.availableWidth,
   }) : assert(subtitle == null || subtitleWidget == null);
 
   static const borderRadius = BorderRadius.all(Radius.circular(12));
@@ -56,6 +72,7 @@ class FileTreeRow extends StatelessWidget {
   final Color? titleColor;
   final Color? backgroundColor;
   final Key? surfaceKey;
+  final double? availableWidth;
 
   // Use the same text capacity for every row, regardless of the actual name
   // length or whether this particular row has a count below its name.
@@ -68,11 +85,31 @@ class FileTreeRow extends StatelessWidget {
     double verticalPadding = 4,
   }) {
     final theme = Theme.of(context);
+    final textDirection = Directionality.of(context);
+    final textScaler = MediaQuery.textScalerOf(context);
+    final baseTitleStyle = theme.textTheme.bodyMedium;
+    final baseSubtitleStyle = reserveSubtitleSpace
+        ? theme.textTheme.labelSmall
+        : null;
+    final cacheKey = (
+      baseTitleStyle,
+      baseSubtitleStyle,
+      textDirection,
+      textScaler,
+      minHeight,
+      titleMaxLines,
+      subtitleMaxLines,
+      reserveSubtitleSpace,
+      verticalPadding,
+    );
+    final cached = _layoutHeightCache[cacheKey];
+    if (cached != null) return cached;
+
     double lineHeight(TextStyle? style) {
       final painter = TextPainter(
         text: TextSpan(text: 'Ag', style: style),
-        textDirection: Directionality.of(context),
-        textScaler: MediaQuery.textScalerOf(context),
+        textDirection: textDirection,
+        textScaler: textScaler,
       )..layout();
       final height = painter.height;
       painter.dispose();
@@ -80,131 +117,138 @@ class FileTreeRow extends StatelessWidget {
     }
 
     final titleHeight = lineHeight(
-      theme.textTheme.bodyMedium?.copyWith(
+      baseTitleStyle?.copyWith(
         height: titleMaxLines > 1 ? 1.2 : null,
         fontWeight: FontWeight.w700,
       ),
     );
     final subtitleHeight = reserveSubtitleSpace
-        ? lineHeight(theme.textTheme.labelSmall) * subtitleMaxLines + 2
+        ? lineHeight(baseSubtitleStyle) * subtitleMaxLines + 2
         : 0.0;
-    return math.max(
+    final height = math.max(
       minHeight,
       math.max(
         titleHeight * titleMaxLines + subtitleHeight + verticalPadding * 2,
         titleHeight + 16 + verticalPadding * 2,
       ),
     );
+    if (_layoutHeightCache.length >= _maxCachedHeights) {
+      _layoutHeightCache.remove(_layoutHeightCache.keys.first);
+    }
+    return _layoutHeightCache[cacheKey] = height;
   }
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) {
-      final theme = Theme.of(context);
-      final cs = theme.colorScheme;
-      // Preserve room for names and actions even in deeply nested directories.
-      final indent = math.min(
-        depth * indentWidth,
-        math.max(0.0, constraints.maxWidth - 240),
-      );
-      final inkWell = navigationEntry ? AppEntryInkWell.new : InkWell.new;
-      return Padding(
-        padding: EdgeInsetsDirectional.only(start: indent),
-        child: Material(
-          key: surfaceKey,
-          color: backgroundColor ?? Colors.transparent,
+  Widget build(BuildContext context) {
+    final width = availableWidth;
+    if (width != null) return _buildContent(context, width);
+    return LayoutBuilder(
+      builder: (context, constraints) =>
+          _buildContent(context, constraints.maxWidth),
+    );
+  }
+
+  Widget _buildContent(BuildContext context, double maxWidth) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    // Preserve room for names and actions even in deeply nested directories.
+    final indent = math.min(
+      depth * indentWidth,
+      math.max(0.0, maxWidth - 240),
+    );
+    final inkWell = navigationEntry ? AppEntryInkWell.new : InkWell.new;
+    return Padding(
+      padding: EdgeInsetsDirectional.only(start: indent),
+      child: Material(
+        key: surfaceKey,
+        color: backgroundColor ?? Colors.transparent,
+        borderRadius: borderRadius,
+        clipBehavior: Clip.antiAlias,
+        child: inkWell(
+          mouseCursor: WidgetStateMouseCursor.clickable,
           borderRadius: borderRadius,
-          clipBehavior: Clip.antiAlias,
-          child: inkWell(
-            mouseCursor: WidgetStateMouseCursor.clickable,
-            borderRadius: borderRadius,
-            onTap: onTap,
-            child: SizedBox(
-              height: layoutHeight(
-                context,
-                minHeight: minHeight,
-                titleMaxLines: titleMaxLines,
-                subtitleMaxLines: subtitleMaxLines,
-                reserveSubtitleSpace:
-                    reserveSubtitleSpace ||
-                    subtitle != null ||
-                    subtitleWidget != null,
-                verticalPadding: verticalPadding,
+          onTap: onTap,
+          child: SizedBox(
+            height: layoutHeight(
+              context,
+              minHeight: minHeight,
+              titleMaxLines: titleMaxLines,
+              subtitleMaxLines: subtitleMaxLines,
+              reserveSubtitleSpace:
+                  reserveSubtitleSpace ||
+                  subtitle != null ||
+                  subtitleWidget != null,
+              verticalPadding: verticalPadding,
+            ),
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: 6,
+                vertical: verticalPadding,
               ),
-              child: Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: 6,
-                  vertical: verticalPadding,
-                ),
-                child: Row(
-                  children: [
-                    if (selectionControl != null) ...[
-                      selectionControl!,
-                      const SizedBox(width: 4),
-                    ],
-                    if (leading != null) ...[
-                      leading!,
-                      const SizedBox(width: 10),
-                    ],
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SearchHighlightedText(
-                            text: title,
-                            maxLines: titleMaxLines,
-                            style:
-                                (theme.textTheme.bodyMedium ??
-                                        const TextStyle())
-                                    .copyWith(
-                                      color: titleColor ?? cs.onSurface,
-                                      fontSize: isFolder ? null : 13,
-                                      height: titleMaxLines > 1 ? 1.2 : null,
-                                      fontWeight: isFolder || emphasized
-                                          ? FontWeight.w700
-                                          : FontWeight.w600,
-                                    ),
-                          ),
-                          if (subtitle != null || subtitleWidget != null) ...[
-                            const SizedBox(height: 2),
-                            subtitleWidget ??
-                                SearchHighlightedText(
-                                  text: subtitle!,
-                                  maxLines: subtitleMaxLines,
-                                  style:
-                                      (theme.textTheme.labelSmall ??
-                                              const TextStyle())
-                                          .copyWith(
-                                            color: cs.onSurfaceVariant,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    if (trailing != null) ...[
-                      SizedBox(width: trailingSpacing),
-                      ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxWidth: math.max(
-                            0.0,
-                            (constraints.maxWidth - indent - 12) / 2,
-                          ),
-                        ),
-                        child: trailing!,
-                      ),
-                    ],
+              child: Row(
+                children: [
+                  if (selectionControl != null) ...[
+                    selectionControl!,
+                    const SizedBox(width: 4),
                   ],
-                ),
+                  if (leading != null) ...[
+                    leading!,
+                    const SizedBox(width: 10),
+                  ],
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SearchHighlightedText(
+                          text: title,
+                          maxLines: titleMaxLines,
+                          style:
+                              (theme.textTheme.bodyMedium ?? const TextStyle())
+                                  .copyWith(
+                                    color: titleColor ?? cs.onSurface,
+                                    fontSize: isFolder ? null : 13,
+                                    height: titleMaxLines > 1 ? 1.2 : null,
+                                    fontWeight: isFolder || emphasized
+                                        ? FontWeight.w700
+                                        : FontWeight.w600,
+                                  ),
+                        ),
+                        if (subtitle != null || subtitleWidget != null) ...[
+                          const SizedBox(height: 2),
+                          subtitleWidget ??
+                              SearchHighlightedText(
+                                text: subtitle!,
+                                maxLines: subtitleMaxLines,
+                                style:
+                                    (theme.textTheme.labelSmall ??
+                                            const TextStyle())
+                                        .copyWith(
+                                          color: cs.onSurfaceVariant,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                              ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (trailing != null) ...[
+                    SizedBox(width: trailingSpacing),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: math.max(0.0, (maxWidth - indent - 12) / 2),
+                      ),
+                      child: trailing!,
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
         ),
-      );
-    },
-  );
+      ),
+    );
+  }
 }
 
 class FileTreeSkeleton extends StatelessWidget {

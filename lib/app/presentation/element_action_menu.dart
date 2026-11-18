@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/widgets/app_bottom_sheet.dart';
+import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/app_search_page.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/windows_smooth_scroll_controller.dart';
@@ -111,7 +114,16 @@ class ElementActionMenu extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       excludeFromSemantics: isWindows,
-      onLongPress: isWindows ? null : () => _show(context),
+      onLongPress: isWindows
+          ? null
+          : () {
+              unawaited(
+                AppInteractionFeedback.trigger(
+                  AppInteractionFeedbackType.selection,
+                ),
+              );
+              _show(context);
+            },
       onSecondaryTap: isWindows ? () => _show(context) : null,
       child: child,
     );

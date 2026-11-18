@@ -262,7 +262,6 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
   }
 
   void _exitSelectionMode() {
-    AppInteractionFeedback.trigger(AppInteractionFeedbackType.tap);
     final wasActive = _isSelectionMode;
     _clearSelection();
     if (wasActive) setState(() {});
@@ -288,10 +287,16 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
   );
 
   Future<void> _addSelectedWorksToPlaylist() async {
+    final works = _selectedWorks();
+    if (works.isNotEmpty) {
+      unawaited(
+        AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+      );
+    }
     await _addAsmrWorksToPlaylist(
       context: context,
       ref: ref,
-      works: _selectedWorks(),
+      works: works,
       onFinished: (failedIds) {
         final wasActive = _isSelectionMode;
         _selectedWorkIds
@@ -305,10 +310,16 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
   }
 
   Future<void> _toggleSelectedFavorites() async {
+    final works = _selectedWorks();
+    if (works.isNotEmpty) {
+      unawaited(
+        AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+      );
+    }
     await _toggleSelectedAsmrWorksFavorite(
       context: context,
       ref: ref,
-      works: _selectedWorks(),
+      works: works,
       refreshSelectionState: _syncSelectionListenable,
     );
   }
@@ -560,6 +571,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final coreReady = ref.watch(coreRuntimeReadyProvider);
     final accent = Theme.of(context).colorScheme.primary;
     final categories = kAsmrSelectableCategories
         .map(
@@ -646,7 +658,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
                       keyPrefix: 'asmr_search',
                       i18n: i18n,
                       selectedWorks: selectedWorks,
-                      onAddToPlaylist: selectedWorks.isEmpty
+                      onAddToPlaylist: !coreReady || selectedWorks.isEmpty
                           ? null
                           : _addSelectedWorksToPlaylist,
                       onDownload: selectedWorks.isEmpty

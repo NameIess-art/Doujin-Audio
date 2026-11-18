@@ -7,10 +7,10 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
 
 import '../ui/ui_interaction_coordinator.dart';
 import 'app_edge_fade_mask.dart';
+import 'app_feedback.dart';
 
 const kAppFadeDuration = Duration(milliseconds: 360);
 const kAppFadeCurve = Curves.easeInOutCubic;
@@ -1638,8 +1638,8 @@ class UndoableRemovalTransition extends StatefulWidget {
 
 class _UndoableRemovalTransitionState extends State<UndoableRemovalTransition>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final CurvedAnimation _animation;
+  AnimationController? _controller;
+  CurvedAnimation? _animation;
 
   bool get _instantMotion =>
       MediaQuery.disableAnimationsOf(context) ||
@@ -1648,75 +1648,86 @@ class _UndoableRemovalTransitionState extends State<UndoableRemovalTransition>
   bool get _skipMotion =>
       _instantMotion || !TickerMode.valuesOf(context).enabled;
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_instantMotion ||
-        (!widget.retainFrameWhenMuted && !TickerMode.valuesOf(context).enabled)) {
-      _controller.value = widget.hidden ? 0 : 1;
-    }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
+  void _ensureController({required double initialValue}) {
+    if (_controller != null) return;
+    final controller = AnimationController(
       vsync: this,
       duration: widget.duration,
-      value: widget.hidden ? 0.0 : 1.0,
+      value: initialValue,
     );
+    _controller = controller;
     _animation = CurvedAnimation(
-      parent: _controller,
+      parent: controller,
       curve: widget.reverseCurve,
       reverseCurve: widget.curve,
     );
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final controller = _controller;
+    if (controller != null &&
+        (_instantMotion ||
+            (!widget.retainFrameWhenMuted &&
+                !TickerMode.valuesOf(context).enabled))) {
+      controller.value = widget.hidden ? 0 : 1;
+    }
+  }
+
+  @override
   void didUpdateWidget(UndoableRemovalTransition oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.duration != oldWidget.duration) {
-      _controller.duration = widget.duration;
+      _controller?.duration = widget.duration;
     }
     if (widget.curve != oldWidget.curve ||
         widget.reverseCurve != oldWidget.reverseCurve) {
-      _animation.curve = widget.reverseCurve;
-      _animation.reverseCurve = widget.curve;
+      _animation?.curve = widget.reverseCurve;
+      _animation?.reverseCurve = widget.curve;
     }
     if (widget.hidden != oldWidget.hidden) {
       if (_skipMotion) {
-        _controller.value = widget.hidden ? 0.0 : 1.0;
-      } else if (widget.hidden) {
-        _controller.reverse();
+        _controller?.value = widget.hidden ? 0.0 : 1.0;
       } else {
-        _controller.forward();
+        _ensureController(initialValue: oldWidget.hidden ? 0.0 : 1.0);
+        if (widget.hidden) {
+          _controller!.reverse();
+        } else {
+          _controller!.forward();
+        }
       }
     }
   }
 
   @override
   void dispose() {
-    _animation.dispose();
-    _controller.dispose();
+    _animation?.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final controller = _controller;
+    final animation = _animation;
+    if (controller == null || animation == null) {
+      return widget.hidden ? const SizedBox.shrink() : widget.child;
+    }
     return AnimatedBuilder(
-      animation: _controller,
+      animation: controller,
       builder: (context, child) {
-        if (_controller.value == 0.0 && widget.hidden) {
+        if (controller.value == 0.0 && widget.hidden) {
           return const SizedBox.shrink();
         }
-        if (_controller.value == 1.0 && !widget.hidden) {
+        if (controller.value == 1.0 && !widget.hidden) {
           return child!;
         }
         return SizeTransition(
-          sizeFactor: _animation,
+          sizeFactor: animation,
           axisAlignment: -1.0,
           child: FadeTransition(
-            opacity: _animation,
+            opacity: animation,
             child: IgnorePointer(
               ignoring: widget.hidden,
               child: ExcludeSemantics(excluding: widget.hidden, child: child),
@@ -3450,7 +3461,9 @@ class _EdgeSwipeBackLayerState extends State<_EdgeSwipeBackLayer> {
     if (value == null) return;
     if (!_thresholdHapticTriggered && value <= 0.68) {
       _thresholdHapticTriggered = true;
-      unawaited(HapticFeedback.selectionClick());
+      unawaited(
+        AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+      );
     } else if (_thresholdHapticTriggered && value > 0.72) {
       _thresholdHapticTriggered = false;
     }

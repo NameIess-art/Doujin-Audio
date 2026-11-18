@@ -7,6 +7,7 @@ import 'package:lottie/lottie.dart';
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
+import '../../../core/ui/ui_operation_service.dart';
 import '../application/library_scanner_service.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../app/presentation/screen_view_models.dart';
@@ -57,6 +58,7 @@ class LibraryEmptyState extends StatelessWidget {
     required this.onImportFolder,
     required this.onImportFile,
     required this.isBusy,
+    this.activeImportScope,
     required this.bottomInset,
     this.topInset = AppSpacing.md,
     this.physics,
@@ -66,6 +68,7 @@ class LibraryEmptyState extends StatelessWidget {
   final VoidCallback onImportFolder;
   final VoidCallback onImportFile;
   final bool isBusy;
+  final UiOperationScope? activeImportScope;
   final double bottomInset;
   final double topInset;
   final ScrollPhysics? physics;
@@ -96,9 +99,11 @@ class LibraryEmptyState extends StatelessWidget {
                 minHeight: availableHeight > 0 ? availableHeight : 0,
               ),
               child: Center(
-                child: Container(
-                  key: const ValueKey('library_empty_state_card'),
-                  width: double.infinity,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: Container(
+                    key: const ValueKey('library_empty_state_card'),
+                    width: double.infinity,
                   decoration: BoxDecoration(
                     borderRadius: AppRadius.borderDialog,
                     gradient: LinearGradient(
@@ -184,7 +189,12 @@ class LibraryEmptyState extends StatelessWidget {
                               width: 220,
                               child: AppSecondaryButton(
                                 onPressed: isBusy ? null : onImportFolder,
-                                isLoading: isBusy,
+                                isLoading:
+                                    isBusy &&
+                                    (activeImportScope == null ||
+                                        activeImportScope ==
+                                            UiOperationScope
+                                                .libraryImportFolder),
                                 icon: Icons.create_new_folder_rounded,
                                 label: i18n.tr('import_folder'),
                               ),
@@ -194,6 +204,10 @@ class LibraryEmptyState extends StatelessWidget {
                               width: 220,
                               child: AppSecondaryButton(
                                 onPressed: isBusy ? null : onImportFile,
+                                isLoading:
+                                    isBusy &&
+                                    activeImportScope ==
+                                        UiOperationScope.libraryImportFiles,
                                 icon: Icons.upload_file_rounded,
                                 label: i18n.tr('import_file'),
                               ),
@@ -203,6 +217,10 @@ class LibraryEmptyState extends StatelessWidget {
                               width: 220,
                               child: AppSecondaryButton(
                                 onPressed: isBusy ? null : onImportLibrary,
+                                isLoading:
+                                    isBusy &&
+                                    activeImportScope ==
+                                        UiOperationScope.libraryImportLibrary,
                                 icon: Icons.library_add_rounded,
                                 label: i18n.tr('import_library'),
                               ),
@@ -212,6 +230,7 @@ class LibraryEmptyState extends StatelessWidget {
                       ],
                     ),
                   ),
+                ),
                 ),
               ),
             ),
@@ -371,26 +390,29 @@ class LibraryScanProgressCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              Row(
-                children: [
-                  LibraryScanCountChip(
-                    label: i18n.tr('scan_found'),
-                    count: scanState.foundCount,
-                    color: cs.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  LibraryScanCountChip(
-                    label: i18n.tr('scan_duplicate'),
-                    count: scanState.duplicateCount,
-                    color: cs.tertiary,
-                  ),
-                  const SizedBox(width: 8),
-                  LibraryScanCountChip(
-                    label: i18n.tr('scan_failure'),
-                    count: scanState.failureCount,
-                    color: cs.error,
-                  ),
-                ],
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    LibraryScanCountChip(
+                      label: i18n.tr('scan_found'),
+                      count: scanState.foundCount,
+                      color: cs.primary,
+                    ),
+                    LibraryScanCountChip(
+                      label: i18n.tr('scan_duplicate'),
+                      count: scanState.duplicateCount,
+                      color: cs.tertiary,
+                    ),
+                    LibraryScanCountChip(
+                      label: i18n.tr('scan_failure'),
+                      count: scanState.failureCount,
+                      color: cs.error,
+                    ),
+                  ],
+                ),
               ),
             ],
           ),

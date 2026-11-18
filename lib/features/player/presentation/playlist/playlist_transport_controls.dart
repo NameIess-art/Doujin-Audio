@@ -9,7 +9,7 @@ import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_buttons.dart';
-import '../../../../core/widgets/app_dialog.dart';
+import '../../../../core/widgets/app_edit_panel.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_glass_surface.dart';
 import '../../../../core/widgets/app_transitions.dart';
@@ -380,64 +380,45 @@ class _PlaybackSecondaryControlsState
     }
   }
 
-  void _showVolumeInputDialog(BuildContext context) {
+  Future<void> _showVolumeInput(BuildContext context) async {
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    var inputValue =
-        '${(sessionVolumeDisplayValueFromGain(_dragVolume ?? _currentVolume) * 100).round()}';
-    unawaited(
-      showAppDialog<void>(
-        context: context,
-        builder: (dialogContext) => AppDialog(
-          title: i18n.tr('volume'),
-          icon: Icons.volume_up_rounded,
-          content: TextFormField(
-            initialValue: inputValue,
-            keyboardType: TextInputType.number,
-            autofocus: true,
-            decoration: InputDecoration(
-              hintText: i18n.tr('volume_range_hint'),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-            onFieldSubmitted: (text) {
-              _applyVolumeInput(text, dialogContext);
-            },
-            onChanged: (text) => inputValue = text,
-          ),
-          actions: AppDialogActions(
-            children: [
-              AppSecondaryButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                label: i18n.tr('cancel'),
-              ),
-              AppPrimaryButton(
-                onPressed: () {
-                  _applyVolumeInput(inputValue, dialogContext);
-                },
-                label: i18n.tr('confirm'),
-              ),
-            ],
-          ),
-        ),
-      ),
+    final sessionId = widget.session.id;
+    final queueColor = widget.session.playbackQueue?.colorValue;
+    final initialVolume = sessionVolumeDisplayValueFromGain(
+      _dragVolume ?? _currentVolume,
     );
-  }
-
-  void _applyVolumeInput(String text, BuildContext dialogContext) {
-    final parsed = int.tryParse(text.trim());
-    if (parsed == null ||
-        parsed < 0 ||
-        parsed > sessionVolumeDisplayMaximumPercent) {
-      return;
-    }
-    final volumeGain = sessionVolumeGainFromDisplayValue(parsed / 100);
-    Navigator.of(dialogContext).pop();
+    final percent = await showAppTextInputPanel<int>(
+      context: context,
+      barrierLabel: i18n.tr('close'),
+      header: AppEditPanelHeader(
+        icon: Icons.volume_up_rounded,
+        title: i18n.tr('volume'),
+        accentColor: queueColor == null ? null : Color(queueColor),
+      ),
+      surfaceKey: const ValueKey('session_volume_input_surface'),
+      inputKey: const ValueKey('session_volume_input'),
+      initialValue: '${(initialVolume * 100).round()}',
+      keyboardType: TextInputType.number,
+      decoration: InputDecoration(hintText: i18n.tr('volume_range_hint')),
+      cancelLabel: i18n.tr('cancel'),
+      submitLabel: i18n.tr('confirm'),
+      parse: (text) {
+        final value = int.tryParse(text.trim());
+        if (value == null ||
+            value < 0 ||
+            value > sessionVolumeDisplayMaximumPercent) {
+          return null;
+        }
+        return value;
+      },
+    );
+    if (!mounted || widget.session.id != sessionId || percent == null) return;
+    final volumeGain = sessionVolumeGainFromDisplayValue(percent / 100);
     setState(() => _dragVolume = null);
-    widget.playback.setSessionVolume(widget.session.id, volumeGain);
+    await widget.playback.setSessionVolume(sessionId, volumeGain);
   }
 
   @override
@@ -534,7 +515,7 @@ class _PlaybackSecondaryControlsState
             InkWell(
               mouseCursor: WidgetStateMouseCursor.clickable,
               key: const ValueKey('session_volume_percent_text'),
-              onTap: () => _showVolumeInputDialog(context),
+              onTap: () => _showVolumeInput(context),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6),
                 child: Text(

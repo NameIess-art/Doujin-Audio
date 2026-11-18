@@ -506,16 +506,30 @@ internal class NativePlaybackSession(
         preparedQueue: NativePlaybackQueue? = null
     ) {
         if (queue.isEmpty()) return
+        val clampedStartIndex = queueStartIndex.coerceIn(0, queue.lastIndex)
+        val selected = queue[clampedStartIndex]
         val p = _player
-        val selected = queue[queueStartIndex.coerceIn(0, queue.lastIndex)]
+        if (p != null && canUpdateQueueInPlace(p, selected)) {
+            applyInPlaceQueueUpdate(
+                player = p,
+                queue = queue,
+                queueStartIndex = clampedStartIndex,
+                selected = selected,
+                repeatOne = repeatOne,
+                repeatAll = repeatAll,
+                shuffleModeEnabled = shuffleModeEnabled,
+                preparedQueue = preparedQueue
+            )
+            return
+        }
         val currentPositionMs = if (selected.path == path) {
             p?.currentPosition?.coerceAtLeast(0L) ?: lastPositionMs
         } else 0L
         val shouldResume = p?.let { it.playWhenReady || it.isPlaying } ?: lastPlayWhenReady
         configure(
-            descriptor = queue[queueStartIndex.coerceIn(0, queue.lastIndex)],
+            descriptor = selected,
             queue = queue,
-            queueStartIndex = queueStartIndex,
+            queueStartIndex = clampedStartIndex,
             startPositionMs = currentPositionMs,
             volume = volume,
             speed = speed,
@@ -526,6 +540,84 @@ internal class NativePlaybackSession(
             deferPlayerCreation = !hasPlayer(),
             preparedQueue = preparedQueue
         )
+    }
+
+    private fun canUpdateQueueInPlace(
+        player: ExoPlayer,
+        selected: NativeMediaItemDescriptor
+    ): Boolean {
+        if (player.playbackState == Player.STATE_IDLE || player.playerError != null) {
+            return false
+        }
+        val activeIndex = player.currentMediaItemIndex
+        if (activeIndex !in 0 until player.mediaItemCount) return false
+        if (player.currentMediaItem?.mediaId != selected.path) return false
+        val currentDescriptor = queue.getOrNull(activeIndex) ?: return false
+        return currentDescriptor.path == selected.path &&
+            currentDescriptor.uri == selected.uri &&
+            currentDescriptor.clipStartMs == selected.clipStartMs &&
+            currentDescriptor.clipEndMs == selected.clipEndMs &&
+            currentDescriptor.httpHeaders == selected.httpHeaders
+    }
+
+    private fun applyInPlaceQueueUpdate(
+        player: ExoPlayer,
+        queue: List<NativeMediaItemDescriptor>,
+        queueStartIndex: Int,
+        selected: NativeMediaItemDescriptor,
+        repeatOne: Boolean,
+        repeatAll: Boolean,
+        shuffleModeEnabled: Boolean,
+        preparedQueue: NativePlaybackQueue?
+    ) {
+        val nextQueueStructure = preparedQueue ?: NativePlaybackQueue(queue)
+        val nextItems = nextQueueStructure.mediaItems
+        if (nextItems.size != queue.size || queueStartIndex !in nextItems.indices) {
+            val currentPositionMs = player.currentPosition.coerceAtLeast(0L)
+            val shouldResume = player.playWhenReady || player.isPlaying
+            configure(
+                descriptor = selected,
+                queue = queue,
+                queueStartIndex = queueStartIndex,
+                startPositionMs = currentPositionMs,
+                volume = volume,
+                speed = speed,
+                repeatOne = repeatOne,
+                repeatAll = repeatAll,
+                shuffleModeEnabled = shuffleModeEnabled,
+                autoPlay = shouldResume,
+                deferPlayerCreation = false,
+                preparedQueue = preparedQueue
+            )
+            return
+        }
+        this.queue = queue
+        this.queueStructure = nextQueueStructure
+        this.currentQueueIndex = queueStartIndex
+        this.path = selected.path
+        this.uri = selected.uri
+        this.title = selected.title
+        this.subtitle = selected.subtitle
+        this.artUri = selected.artUri
+        this.repeatOne = repeatOne
+        this.repeatAll = repeatAll
+        this.shuffleModeEnabled = shuffleModeEnabled
+
+        val activeIndex = player.currentMediaItemIndex
+        val afterItems = nextItems.subList(queueStartIndex + 1, nextItems.size)
+        if (activeIndex + 1 < player.mediaItemCount) {
+            player.replaceMediaItems(activeIndex + 1, player.mediaItemCount, afterItems)
+        } else if (afterItems.isNotEmpty()) {
+            player.addMediaItems(afterItems)
+        }
+
+        val beforeItems = nextItems.subList(0, queueStartIndex)
+        if (activeIndex > 0 || beforeItems.isNotEmpty()) {
+            player.replaceMediaItems(0, activeIndex, beforeItems)
+        }
+
+        player.repeatMode = repeatModeFor(this.queue.size)
+        player.shuffleModeEnabled = shuffleModeEnabled && this.queue.size > 1
     }
 
     fun clearQueue() {
@@ -749,7 +841,9 @@ internal class NativePlaybackSession(
     private fun repeatModeFor(queueSize: Int): Int {
         return when {
             repeatOne -> Player.REPEAT_MODE_ONE
-            repeatAll && queueSize > 1 -> Player.REPEAT_MODE_ALL
+            // Single-item playlists/folders with repeat-all must loop inside ExoPlayer
+            // rather than hitting STATE_ENDED while the screen is off and waking Dart.
+            repeatAll && queueSize > 0 -> Player.REPEAT_MODE_ALL
             else -> Player.REPEAT_MODE_OFF
         }
     }

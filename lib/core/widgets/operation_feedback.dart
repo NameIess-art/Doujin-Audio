@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/theme/app_design_tokens.dart';
 import 'shimmer_loading.dart';
+import 'windows_smooth_scroll_controller.dart';
 
 enum OperationStatusTone { info, success, warning, error }
 
@@ -253,7 +254,7 @@ class AppEmptyState extends StatelessWidget {
       child: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: tokens.compactContentMaxWidth),
-          child: Padding(
+          child: SingleChildScrollView(
             padding: EdgeInsets.all(tokens.spaceXl),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -286,7 +287,7 @@ class AppEmptyState extends StatelessWidget {
                 ],
               ],
             ),
-          ),
+          ).withWindowsSmoothScroll(),
         ),
       ),
     );

@@ -21,12 +21,10 @@ class AppBottomSheet {
     bool isDismissible = true,
     Color? backgroundColor,
     double? elevation,
+    ShapeBorder? shape,
     Clip? clipBehavior,
     AnimationStyle? sheetAnimationStyle,
   }) {
-    final size = MediaQuery.sizeOf(context);
-    final isWindows = defaultTargetPlatform == TargetPlatform.windows;
-    final useHalfWidth = isWindows || size.width > size.height;
     final effectiveAnimationStyle = MediaQuery.disableAnimationsOf(context)
         ? AnimationStyle.noAnimation
         : sheetAnimationStyle ??
@@ -41,7 +39,6 @@ class AppBottomSheet {
     final localizations = MaterialLocalizations.of(context);
     return navigator.push<T>(
       _AppBottomSheetRoute<T>(
-        halfWidth: useHalfWidth,
         capturedThemes: InheritedTheme.capture(
           from: context,
           to: navigator.context,
@@ -58,16 +55,16 @@ class AppBottomSheet {
         sheetAnimationStyle: effectiveAnimationStyle,
         backgroundColor: backgroundColor,
         elevation: elevation,
+        shape:
+            shape ??
+            Theme.of(context).bottomSheetTheme.shape ??
+            const RoundedRectangleBorder(
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(AppRadius.dialog),
+              ),
+            ),
         clipBehavior: clipBehavior,
-        constraints: BoxConstraints(
-          minWidth: useHalfWidth ? double.infinity : 0,
-          maxHeight: size.height * 0.75,
-        ),
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(
-            top: Radius.circular(AppRadius.dialog),
-          ),
-        ),
+        constraints: const BoxConstraints(minWidth: double.infinity),
         builder: (ctx) => ScrollConfiguration(
           behavior: ScrollConfiguration.of(ctx).copyWith(scrollbars: false),
           child: RepaintBoundary(child: builder(ctx)),
@@ -101,6 +98,8 @@ class AppBottomSheetHeader extends StatelessWidget {
         Expanded(
           child: Text(
             title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: theme.textTheme.titleLarge?.copyWith(
               fontSize: 22,
               fontWeight: FontWeight.w700,
@@ -115,7 +114,6 @@ class AppBottomSheetHeader extends StatelessWidget {
 
 class _AppBottomSheetRoute<T> extends ModalBottomSheetRoute<T> {
   _AppBottomSheetRoute({
-    required this.halfWidth,
     required super.builder,
     required super.isScrollControlled,
     super.capturedThemes,
@@ -128,12 +126,11 @@ class _AppBottomSheetRoute<T> extends ModalBottomSheetRoute<T> {
     super.sheetAnimationStyle,
     super.backgroundColor,
     super.elevation,
+    super.shape,
     super.clipBehavior,
     super.constraints,
-    super.shape,
   });
 
-  final bool halfWidth;
   double _visibleOpacity = 0;
 
   @override
@@ -145,10 +142,23 @@ class _AppBottomSheetRoute<T> extends ModalBottomSheetRoute<T> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
   ) {
-    final page = super.buildPage(context, animation, secondaryAnimation);
-    final constrainedPage = halfWidth
-        ? FractionallySizedBox(widthFactor: 0.5, child: page)
-        : page;
+    final size = MediaQuery.sizeOf(context);
+    final isWindows = defaultTargetPlatform == TargetPlatform.windows;
+    final halfWidth = isWindows || size.width > size.height;
+    final rawPage = super.buildPage(context, animation, secondaryAnimation);
+    final page = isScrollControlled
+        ? ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: size.height * 0.75),
+            child: rawPage,
+          )
+        : rawPage;
+    final constrainedPage = Align(
+      alignment: Alignment.bottomCenter,
+      child: FractionallySizedBox(
+        widthFactor: halfWidth ? 0.5 : 1.0,
+        child: page,
+      ),
+    );
     return AnimatedBuilder(
       animation: animation,
       child: constrainedPage,

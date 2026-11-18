@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/widgets/app_entry_ink_well.dart';
+import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 
@@ -55,7 +59,12 @@ class BatchMetadataSetupView extends StatelessWidget {
             MobileOverlayInset.of(context),
       ),
       children: [
-        Card(
+        Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: AppDesignTokens.of(context).readableContentMaxWidth,
+            ),
+            child: Card(
           elevation: 0,
           margin: EdgeInsets.zero,
           color: Theme.of(context).colorScheme.surfaceContainerHigh,
@@ -67,7 +76,14 @@ class BatchMetadataSetupView extends StatelessWidget {
             key: const ValueKey('batch_metadata_scope_group'),
             groupValue: scope,
             onChanged: (value) {
-              if (value != null) onScopeChanged(value);
+              if (value != null && value != scope) {
+                unawaited(
+                  AppInteractionFeedback.trigger(
+                    AppInteractionFeedbackType.selection,
+                  ),
+                );
+                onScopeChanged(value);
+              }
             },
             child: Column(
               children: [
@@ -117,6 +133,8 @@ class BatchMetadataSetupView extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+          ),
           ),
         ),
       ],

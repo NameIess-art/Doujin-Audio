@@ -47,13 +47,17 @@ class PushPinOffPainter extends CustomPainter {
           color: iconColor,
         ),
       ),
-    )..layout();
-
-    final textOffset = Offset(
-      (canvasSize.width - textPainter.width) / 2,
-      (canvasSize.height - textPainter.height) / 2,
     );
-    textPainter.paint(canvas, textOffset);
+    try {
+      textPainter.layout();
+      final textOffset = Offset(
+        (canvasSize.width - textPainter.width) / 2,
+        (canvasSize.height - textPainter.height) / 2,
+      );
+      textPainter.paint(canvas, textOffset);
+    } finally {
+      textPainter.dispose();
+    }
 
     final scale = size / 24.0;
     final p1 = Offset(3.5 * scale, 3.5 * scale);

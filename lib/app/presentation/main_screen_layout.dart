@@ -592,6 +592,7 @@ extension _MainScreenLayout on _MainScreenState {
     AppLanguageProvider i18n,
     List<PlaybackSessionSnapshot> overlaySessions, {
     required bool isMenuCollapsed,
+    bool canToggleMenu = true,
   }) {
     final destinations = ref.watch(_mainDestinationsProvider);
 
@@ -605,7 +606,7 @@ extension _MainScreenLayout on _MainScreenState {
       menuIconLinks: _menuIconLinks,
       collapseOffset: _menuIconCollapseOffset,
       onSwitchPage: _switchPage,
-      onToggleMenu: _toggleMenuCollapsed,
+      onToggleMenu: canToggleMenu ? _toggleMenuCollapsed : null,
       playbackGeometryKey: _desktopPlaybackGeometryKey,
       onReportPlaybackRect: _reportDesktopPlaybackRect,
       pageDragPosition: _pageDragPosition,
@@ -728,7 +729,6 @@ class _MobileBottomBarDragScrubberState
     if (nearest != _lastNotifiedIndex) {
       _lastNotifiedIndex = nearest;
       if (nearest != widget.activeIndex) {
-        AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
         widget.onSelectIndex(nearest);
       }
     }

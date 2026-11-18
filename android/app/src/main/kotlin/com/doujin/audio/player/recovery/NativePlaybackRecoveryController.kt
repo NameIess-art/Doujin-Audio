@@ -420,7 +420,11 @@ internal class NativePlaybackRecoveryController(
         }
         triggerInProgress = true
         try {
-            checkPlaybackHealth(reason)
+            val resumeUnexpectedPauses =
+                reason == "keep_alive_heartbeat" ||
+                    reason == "foreground_watchdog" ||
+                    reason == "screen_on"
+            checkPlaybackHealth(reason, resumeUnexpectedPauses = resumeUnexpectedPauses)
             if (pending.isNotEmpty()) {
                 host.logInfo("playback_recovery_trigger trigger=$reason pending=${pending.size}")
                 pending.toList().forEach { retry(it, reason) }
@@ -696,6 +700,8 @@ internal class NativePlaybackRecoveryController(
             val monitoredHealth = healthStates[sessionId]
             if (player.playerError == null &&
                 player.playWhenReady &&
+                (player.playbackState == Player.STATE_READY ||
+                    player.playbackState == Player.STATE_BUFFERING) &&
                 monitoredHealth != null
             ) {
                 val evaluation = evaluateNativePlaybackHealth(
@@ -829,7 +835,8 @@ internal class NativePlaybackRecoveryController(
         if (baseline == null || current == null) return false
         if (current.hasPlayerError || !current.playWhenReady || !current.isPlaying) return false
         return current.mediaItemIndex != baseline.mediaItemIndex ||
-            current.positionMs - baseline.positionMs >= 250L
+            current.positionMs - baseline.positionMs >= 250L ||
+            baseline.positionMs - current.positionMs >= 250L
     }
 
     private fun ensureHealthCheck() {

@@ -143,9 +143,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   int get tabIndex => widget.tabIndex;
 
   @override
-  double get headerControlsFullHeight => 0;
-
-  @override
   ScrollController get mainScrollController => _scrollController;
 
   void _openSearchPage() {
@@ -247,7 +244,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   }
 
   void _exitSelectionMode() {
-    AppInteractionFeedback.trigger(AppInteractionFeedbackType.tap);
     setState(() {
       _isSelectionMode = false;
       _selectedLibraryPaths.clear();
@@ -634,16 +630,20 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         UiOperationScope.libraryRefresh,
       ).select((s) => s.isBusy),
     );
-    final libraryImportBusy =
-        <UiOperationScope>[
-          UiOperationScope.libraryImportFolder,
-          UiOperationScope.libraryImportLibrary,
-          UiOperationScope.libraryImportFiles,
-        ].any(
-          (scope) => ref.watch(
-            uiOperationForScopeProvider(scope).select((s) => s.isBusy),
-          ),
-        );
+    UiOperationScope? activeImportScope;
+    for (final scope in const <UiOperationScope>[
+      UiOperationScope.libraryImportFolder,
+      UiOperationScope.libraryImportLibrary,
+      UiOperationScope.libraryImportFiles,
+    ]) {
+      final isScopeBusy = ref.watch(
+        uiOperationForScopeProvider(scope).select((s) => s.isBusy),
+      );
+      if (isScopeBusy) {
+        activeImportScope ??= scope;
+      }
+    }
+    final libraryImportBusy = activeImportScope != null;
     final libraryRefreshBusy =
         !ref.watch(coreRuntimeReadyProvider) ||
         libraryRefreshOperationBusy ||
@@ -657,16 +657,14 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     }
     final bottomInset = MobileOverlayInset.of(context);
 
-    final headerControlsFullHeight = this.headerControlsFullHeight;
     final topTotalHeight =
         headerHeight + AppPageHeaderMetrics.firstContentSpacing;
-    final headerContentHeight = topTotalHeight + headerControlsFullHeight;
     // Remove the extra 96px to make content flush with the bottom dock.
     final listBottomInset = bottomInset;
     final isLandscape =
         widget.isLandscapeLayout ??
         (MediaQuery.orientationOf(context) == Orientation.landscape);
-    final listTopPadding = headerContentHeight;
+    final listTopPadding = topTotalHeight;
     final listBottomPadding = listBottomInset + 16.0;
     // Reduced cacheExtent to significantly lower memory footprint and improve
     // scroll/swipe performance.
@@ -682,6 +680,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         onImportFolder: _addFolder,
         onImportFile: _addFiles,
         isBusy: libraryRefreshBusy,
+        activeImportScope: activeImportScope,
         bottomInset: relativeBottom,
         topInset: relativeTop,
         physics: canPullRefresh
@@ -808,7 +807,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
             ),
             // Scan progress card
             Positioned(
-              top: headerContentHeight + 10,
+              top: listTopPadding + 10,
               left: 12,
               right: 12,
               child: AppDeferredFade(

@@ -35,9 +35,6 @@ mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
   /// The tab index this state responds to for scroll-to-top events.
   int get tabIndex;
 
-  /// Override to return the height of static controls inside the header.
-  double get headerControlsFullHeight => 0.0;
-
   /// Override to provide the default header height before measurement.
   double get defaultHeaderHeight => AppPageHeaderMetrics.toolbarHeight;
 
@@ -109,7 +106,7 @@ mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
   void measureHeader() {
     final box = headerKey.currentContext?.findRenderObject() as RenderBox?;
     if (box != null && mounted) {
-      final h = box.size.height - headerControlsFullHeight;
+      final h = box.size.height;
       if (h > 0 && h != headerHeight) {
         setState(() => headerHeight = h);
       }

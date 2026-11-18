@@ -24,6 +24,7 @@ import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/cover_image_retention.dart';
+import 'package:doujin_audio/core/widgets/app_edit_panel.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/core/widgets/app_edge_fade_mask.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
@@ -2629,10 +2630,14 @@ void main() {
         }
       });
       final textFile = File('${root.path}${Platform.pathSeparator}notes.txt');
-      final imageFile = File('${root.path}${Platform.pathSeparator}cover.jpg');
+      final imageFile = File('${root.path}${Platform.pathSeparator}cover.png');
       await tester.runAsync(() async {
         await textFile.writeAsString('notes');
-        await imageFile.writeAsBytes(const <int>[0xFF, 0xD8, 0xFF, 0xD9]);
+        await imageFile.writeAsBytes(
+          base64Decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC',
+          ),
+        );
       });
       fixture.library.addWatchedFolder(root.path, notify: false);
       final target = AudioDetailTarget.libraryRootFolder(root.path);
@@ -2656,7 +2661,7 @@ void main() {
         i < 40 &&
             (find.text('notes').evaluate().isEmpty ||
                 find
-                    .byKey(const ValueKey<String>('work_entry_more_cover.jpg'))
+                    .byKey(const ValueKey<String>('work_entry_more_cover.png'))
                     .evaluate()
                     .isEmpty);
         i++
@@ -2671,7 +2676,7 @@ void main() {
         const ValueKey<String>('work_entry_more_notes.txt'),
       );
       final imageMore = find.byKey(
-        const ValueKey<String>('work_entry_more_cover.jpg'),
+        const ValueKey<String>('work_entry_more_cover.png'),
       );
       expect(textMore, findsOneWidget);
       expect(imageMore, findsOneWidget);
@@ -2693,6 +2698,25 @@ void main() {
         findsNothing,
       );
       expect(find.text(fixture.languageProvider.tr('rename')), findsOneWidget);
+      await tester.tap(find.text(fixture.languageProvider.tr('rename')));
+      await _settleDetail(tester);
+      final renameForm = find.byType(AppEditPanelForm);
+      expect(tester.getSize(renameForm).height, 192);
+      final nameInput = find.descendant(
+        of: renameForm,
+        matching: find.byType(TextField),
+      );
+      expect(tester.widget<TextField>(nameInput).controller?.text, 'notes');
+      await tester.enterText(nameInput, 'Meeting notes');
+      await tester.tap(
+        find.widgetWithText(TextButton, fixture.languageProvider.tr('save')),
+      );
+      await _settleDetail(tester);
+      expect(renameForm, findsNothing);
+      final renamed = File(
+        '${root.path}${Platform.pathSeparator}Meeting notes.txt',
+      );
+      expect(await tester.runAsync(renamed.readAsString), 'notes');
       await tester.pumpWidget(const SizedBox.shrink());
       PaintingBinding.instance.imageCache
         ..clear()
@@ -5597,22 +5621,25 @@ void main() {
           expect(listTile.splashColor ?? theme.splashColor, theme.splashColor);
           expect(listTile.hoverColor ?? theme.hoverColor, theme.hoverColor);
 
+          calls.clear();
           await tester.tap(listTileFinder);
           await tester.pump();
 
           expect(performedAction, WorkEntryAction.open);
           expect(
-            calls.any(
-              (call) =>
-                  call.method == 'SystemSound.play' ||
-                  call.method == 'HapticFeedback.vibrate',
-            ),
-            isTrue,
+            calls.where((call) => call.method == 'HapticFeedback.vibrate'),
+            isEmpty,
           );
 
           await tester.longPress(listTileFinder);
           await tester.pump();
           expect(performedAction, WorkEntryAction.copy);
+          expect(
+            calls
+                .where((call) => call.method == 'HapticFeedback.vibrate')
+                .map((call) => call.arguments),
+            ['HapticFeedbackType.selectionClick'],
+          );
 
           await tester.pumpWidget(const SizedBox.shrink());
         } finally {

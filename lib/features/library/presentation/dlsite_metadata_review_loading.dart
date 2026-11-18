@@ -21,10 +21,15 @@ class MetadataReviewSkeleton extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (showCover) ...[
-            const AspectRatio(
-              key: ValueKey<String>('dlsite_review_skeleton_cover'),
-              aspectRatio: kStandardCoverAspectRatio,
-              child: ShimmerContainer(borderRadius: 16),
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480, maxHeight: 360),
+                child: const AspectRatio(
+                  key: ValueKey<String>('dlsite_review_skeleton_cover'),
+                  aspectRatio: kStandardCoverAspectRatio,
+                  child: ShimmerContainer(borderRadius: 16),
+                ),
+              ),
             ),
             const ListTile(
               contentPadding: EdgeInsets.symmetric(horizontal: 16),

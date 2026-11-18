@@ -1736,9 +1736,7 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(find.byType(AppPageAppBar), findsNothing);
         final header = tester.widget<TopPageHeader>(find.byType(TopPageHeader));
-        expect(header.floating, isTrue);
         expect(header.leading, isA<BackButton>());
         expect(
           find.descendant(

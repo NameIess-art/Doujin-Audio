@@ -116,10 +116,7 @@ class _SortOptionsSheetState<T> extends State<_SortOptionsSheet<T>> {
       nextAscending = false;
     }
     unawaited(
-      AppInteractionFeedback.trigger(
-        AppInteractionFeedbackType.selection,
-        context: context,
-      ),
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
     );
     setState(() {
       _ascending = nextAscending;
@@ -156,7 +153,14 @@ class _SortOptionsSheetState<T> extends State<_SortOptionsSheet<T>> {
                           RadioGroup<T>(
                             groupValue: _selectedCriterion,
                             onChanged: (value) {
-                              if (value == null) return;
+                              if (value == null || value == _selectedCriterion) {
+                                return;
+                              }
+                              unawaited(
+                                AppInteractionFeedback.trigger(
+                                  AppInteractionFeedbackType.selection,
+                                ),
+                              );
                               setState(() => _selectedCriterion = value);
                             },
                             child: Column(
@@ -188,17 +192,29 @@ class _SortOptionsSheetState<T> extends State<_SortOptionsSheet<T>> {
                               ButtonSegment<_SortControl>(
                                 value: _SortControl.groupByLibrary,
                                 icon: const Icon(Icons.library_music_rounded),
-                                label: Text(widget.groupByLibraryLabel),
+                                label: Text(
+                                  widget.groupByLibraryLabel,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
                               ButtonSegment<_SortControl>(
                                 value: _SortControl.ascending,
                                 icon: const Icon(Icons.arrow_upward_rounded),
-                                label: Text(widget.ascendingLabel),
+                                label: Text(
+                                  widget.ascendingLabel,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
                               ButtonSegment<_SortControl>(
                                 value: _SortControl.descending,
                                 icon: const Icon(Icons.arrow_downward_rounded),
-                                label: Text(widget.descendingLabel),
+                                label: Text(
+                                  widget.descendingLabel,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
                             ],
                             selected: _selectedControls,

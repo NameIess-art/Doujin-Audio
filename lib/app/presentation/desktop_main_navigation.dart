@@ -41,7 +41,7 @@ class DesktopMainNavigation extends StatefulWidget {
   final Offset Function(MainDestinationType source, MainDestinationType target)
   collapseOffset;
   final ValueChanged<int> onSwitchPage;
-  final VoidCallback onToggleMenu;
+  final VoidCallback? onToggleMenu;
   final GlobalKey playbackGeometryKey;
   final void Function({
     required bool dockCollapsed,
@@ -442,6 +442,9 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
                                             ).copyWith(colorScheme: cs),
                                             child: IconButton(
                                               key: _menuToggleKey,
+                                              tooltip: MaterialLocalizations.of(
+                                                context,
+                                              ).drawerLabel,
                                               style: appIconButtonStyle(
                                                 IconButton.styleFrom(
                                                   shape: const CircleBorder(),
@@ -476,6 +479,10 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
                                                 ).copyWith(colorScheme: cs),
                                                 child: IconButton(
                                                   key: _menuToggleKey,
+                                                  tooltip:
+                                                      MaterialLocalizations.of(
+                                                        context,
+                                                      ).drawerLabel,
                                                   style: appIconButtonStyle(
                                                     IconButton.styleFrom(
                                                       shape:
@@ -531,6 +538,10 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
                                                     ).copyWith(colorScheme: cs),
                                                     child: IconButton(
                                                       key: _menuToggleKey,
+                                                      tooltip:
+                                                          MaterialLocalizations.of(
+                                                            context,
+                                                          ).drawerLabel,
                                                       style: appIconButtonStyle(
                                                         IconButton.styleFrom(
                                                           shape:

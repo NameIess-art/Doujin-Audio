@@ -1543,107 +1543,6 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('top page header expands after reverse scroll away from top', (
-    WidgetTester tester,
-  ) async {
-    final fixture = AppRuntimeWidgetTestFixture();
-    addTearDown(fixture.dispose);
-    final runtimeGraph = fixture.runtimeGraph;
-    final persistenceRepository = fixture.persistenceRepository;
-    final nativePlaybackRepository = fixture.nativePlaybackRepository;
-    const playbackCommandRunner =
-        AppRuntimeWidgetTestFixture.playbackCommandRunner;
-    final libraryService = fixture.libraryService;
-    final playbackService = fixture.playbackService;
-    final timerService = fixture.timerService;
-    final notificationCoordinatorService =
-        fixture.notificationCoordinatorService;
-    final settingsRepository = fixture.settings;
-    final languageProvider = fixture.languageProvider;
-    final controller = ScrollController();
-    var additionalChildBuilds = 0;
-
-    addTearDown(controller.dispose);
-
-    await tester.pumpWidget(
-      buildAppRuntimeTestApp(
-        runtimeGraph: runtimeGraph,
-        persistenceRepository: persistenceRepository,
-        nativePlaybackRepository: nativePlaybackRepository,
-        playbackCommandRunner: playbackCommandRunner,
-        libraryService: libraryService,
-        playbackService: playbackService,
-        timerService: timerService,
-        notificationCoordinatorService: notificationCoordinatorService,
-        settingsRepository: settingsRepository,
-        languageProvider: languageProvider,
-        child: Stack(
-          children: [
-            ListView.builder(
-              controller: controller,
-              itemCount: 80,
-              itemBuilder: (context, index) => const SizedBox(height: 48),
-            ),
-            TopPageHeader(
-              title: 'Library',
-              subtitle: '198 audio',
-              trailing: IconButton(
-                key: const ValueKey('top_page_header_trailing'),
-                onPressed: () {},
-                icon: const Icon(Icons.more_horiz),
-              ),
-              collapseController: controller,
-              floatingReveal: true,
-              floatingRevealDistance: 40,
-              floatingRevealTriggerDistance: 40,
-              additionalChild: Builder(
-                builder: (context) {
-                  additionalChildBuilds++;
-                  return const SizedBox(height: 20);
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-    await tester.pump();
-
-    controller.jumpTo(120);
-    await tester.pump();
-    final collapsedHeight = tester.getSize(find.byType(TopPageHeader)).height;
-    final collapsedTrailing = find.byKey(
-      const ValueKey('top_page_header_trailing'),
-    );
-    final collapsedOpacity = tester.widget<Opacity>(
-      find
-          .ancestor(of: collapsedTrailing, matching: find.byType(Opacity))
-          .first,
-    );
-    expect(collapsedOpacity.opacity, 0);
-
-    controller.jumpTo(104);
-    await tester.pump();
-    final beforeThresholdHeight = tester
-        .getSize(find.byType(TopPageHeader))
-        .height;
-
-    controller.jumpTo(40);
-    await tester.pump();
-    final revealedHeight = tester.getSize(find.byType(TopPageHeader)).height;
-    final revealedOpacity = tester.widget<Opacity>(
-      find
-          .ancestor(of: collapsedTrailing, matching: find.byType(Opacity))
-          .first,
-    );
-    expect(revealedOpacity.opacity, greaterThan(0));
-
-    expect(additionalChildBuilds, 1);
-
-    expect(beforeThresholdHeight, collapsedHeight);
-    expect(revealedHeight, greaterThan(collapsedHeight));
-  });
-
   testWidgets('top page header with topCapsule only hides capsule on scroll', (
     WidgetTester tester,
   ) async {
@@ -4218,7 +4117,7 @@ void main() {
     );
     final batchBackButton = find.descendant(
       of: batchHeader,
-      matching: find.byType(BackButton),
+      matching: find.byType(AppHeaderBackButton),
     );
     final headerRect = tester.getRect(batchBackButton);
     final headerFade = find.ancestor(
@@ -6725,4 +6624,24 @@ void main() {
       await finishLibraryTest(tester, fixture);
     },
   );
+
+  testWidgets('LibraryEditPage header ellipsizes long folder name on narrow screen', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(320, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    const longName =
+        'Very_Long_Library_Folder_Name_That_Must_Ellipsize_Without_Overflow';
+    await tester.pumpWidget(
+      fixture.build(const LibraryEditPage(libraryPath: '/audio/$longName')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.text(longName), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await finishLibraryTest(tester, fixture);
+  });
 }

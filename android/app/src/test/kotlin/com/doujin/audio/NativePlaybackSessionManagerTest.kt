@@ -1,9 +1,13 @@
 package com.doujin.audio
 
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import com.doujin.audio.player.session.*
+import java.lang.reflect.Proxy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -107,5 +111,51 @@ class NativePlaybackSessionManagerTest {
         assertEquals(0, manager.size)
         assertNull(manager.focusedSessionId)
         assertEquals(emptySet<String>(), manager.sessionIds)
+    }
+
+    @Test
+    fun `mediaSessionCandidate and foregroundSessionCandidate prioritize actively playing sessions`() {
+        val manager = NativePlaybackSessionManager(::createTestSession)
+        val focusedPaused = manager.getOrCreate("paused")
+        val playing = manager.getOrCreate("playing")
+        var focusedPlayingState = false
+        var focusedPlayWhenReady = false
+        attachFakePlayer(focusedPaused) { method ->
+            when (method) {
+                "getPlaybackState" -> Player.STATE_READY
+                "isPlaying" -> focusedPlayingState
+                "getPlayWhenReady" -> focusedPlayWhenReady
+                else -> error("Unexpected player call: $method")
+            }
+        }
+        attachFakePlayer(playing) { method ->
+            when (method) {
+                "getPlaybackState" -> Player.STATE_READY
+                "isPlaying", "getPlayWhenReady" -> true
+                else -> error("Unexpected player call: $method")
+            }
+        }
+
+        manager.focus("paused")
+        assertSame(playing, manager.mediaSessionCandidate())
+        assertSame(playing, manager.foregroundSessionCandidate())
+
+        focusedPlayingState = true
+        focusedPlayWhenReady = true
+        assertSame(focusedPaused, manager.mediaSessionCandidate())
+        assertSame(focusedPaused, manager.foregroundSessionCandidate())
+    }
+
+    private fun attachFakePlayer(
+        session: NativePlaybackSession,
+        handler: (String) -> Any?
+    ) {
+        val fakePlayer = Proxy.newProxyInstance(
+            ExoPlayer::class.java.classLoader,
+            arrayOf(ExoPlayer::class.java)
+        ) { _, method, _ -> handler(method.name) } as ExoPlayer
+        val field = NativePlaybackSession::class.java.getDeclaredField("_player")
+        field.isAccessible = true
+        field.set(session, fakePlayer)
     }
 }

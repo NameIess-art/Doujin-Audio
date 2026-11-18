@@ -912,6 +912,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     Duration delay = const Duration(milliseconds: 800),
   }) {
     if (!_persistenceEnabled ||
+        (_backgroundMode && defaultTargetPlatform == TargetPlatform.android) ||
         _pendingSessionDefinitionIds.contains(sessionId) ||
         !_service.sessions.containsKey(sessionId)) {
       return;

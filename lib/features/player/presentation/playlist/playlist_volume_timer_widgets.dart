@@ -46,13 +46,9 @@ class TimerCountdownCapsule extends StatelessWidget {
           borderRadius: BorderRadius.circular(19),
           child: InkWell(
             mouseCursor: WidgetStateMouseCursor.clickable,
+            enableFeedback: false,
             borderRadius: BorderRadius.circular(19),
-            onTap: () {
-              AppInteractionFeedback.trigger(
-                AppInteractionFeedbackType.selection,
-              );
-              onTap?.call();
-            },
+            onTap: onTap,
             onLongPress: () {
               AppInteractionFeedback.trigger(
                 AppInteractionFeedbackType.selection,

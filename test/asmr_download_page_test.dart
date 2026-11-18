@@ -6,6 +6,7 @@ import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/file_tree_row.dart';
 import 'package:doujin_audio/core/widgets/operation_feedback.dart';
+import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
@@ -258,7 +259,7 @@ void main() {
         firstManager.holdDestinationCheck = false;
         await tester.tap(find.text('Open download'));
         await tester.pumpAndSettle();
-        await tester.tap(find.byType(BackButton));
+        await tester.tap(find.byType(AppHeaderBackButton));
         await tester.pumpAndSettle();
         expect(result, AsmrDownloadPageResult.canceled);
         await tester.pumpWidget(const SizedBox.shrink());

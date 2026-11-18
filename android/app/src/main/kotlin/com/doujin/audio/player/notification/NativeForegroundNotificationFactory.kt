@@ -9,7 +9,11 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import androidx.annotation.OptIn
 import androidx.core.app.NotificationCompat
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.session.MediaSession
+import androidx.media3.session.MediaStyleNotificationHelper
 
 internal class NativeForegroundNotificationFactory(
     private val context: Context,
@@ -31,22 +35,36 @@ internal class NativeForegroundNotificationFactory(
         )
     }
 
-    // Android requires a notification while the playback service is foreground.
-    // A plain service notification keeps background playback without media controls.
-    fun buildNotification(): Notification = NotificationCompat.Builder(context, channelId)
-        .setSmallIcon(R.drawable.ic_launcher_foreground)
-        .setContentTitle(context.getString(R.string.app_name))
-        .setContentText(context.getString(R.string.keep_alive_playback_active))
-        .setCategory(NotificationCompat.CATEGORY_SERVICE)
-        .setContentIntent(launchPendingIntent())
-        .setShowWhen(false)
-        .setOngoing(true)
-        .setOnlyAlertOnce(true)
-        .setSilent(true)
-        .setPriority(NotificationCompat.PRIORITY_LOW)
-        .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-        .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-        .build()
+    // Android requires a MediaStyle foreground notification bound to the active MediaSession
+    // so the system treats playback as an active media session during screen-off.
+    @OptIn(UnstableApi::class)
+    fun buildNotification(
+        mediaSession: MediaSession? = null,
+        title: String? = null,
+        subtitle: String? = null
+    ): Notification {
+        val resolvedTitle = title?.trim()?.takeIf { it.isNotEmpty() }
+            ?: context.getString(R.string.app_name)
+        val resolvedSubtitle = subtitle?.trim()?.takeIf { it.isNotEmpty() }
+            ?: context.getString(R.string.keep_alive_playback_active)
+        val builder = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(resolvedTitle)
+            .setContentText(resolvedSubtitle)
+            .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+            .setContentIntent(launchPendingIntent())
+            .setShowWhen(false)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+        if (mediaSession != null) {
+            builder.setStyle(MediaStyleNotificationHelper.MediaStyle(mediaSession))
+        }
+        return builder.build()
+    }
 
     private fun launchPendingIntent(): PendingIntent {
         val launchIntent = Intent(context, MainActivity::class.java).apply {

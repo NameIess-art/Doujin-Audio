@@ -801,6 +801,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
       -60000,
       60000,
     );
+    if (nextMs == currentOffset.inMilliseconds) return;
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     unawaited(
       subtitles.setTrackOffset(trackPath, Duration(milliseconds: nextMs)),
@@ -809,6 +810,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
 
   void _resetOffset(PlaybackSubtitleService subtitles) {
     final trackPath = widget.session.currentTrackPath;
+    if (subtitles.getOffset(trackPath) == Duration.zero) return;
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     unawaited(subtitles.setTrackOffset(trackPath, Duration.zero));
   }
@@ -964,28 +966,24 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                         ),
                         const SizedBox(height: 16),
                         Expanded(
-                          child: ScrollConfiguration(
-                            behavior: ScrollConfiguration.of(
-                              context,
-                            ).copyWith(scrollbars: false),
-                            child: SingleChildScrollView(
-                              key: ValueKey(
-                                subtitleFiles != null
-                                    ? 'subtitle_files'
-                                    : 'subtitle_script_files',
-                              ),
-                              child: Container(
-                                decoration: cardDecoration,
-                                clipBehavior: Clip.antiAlias,
-                                child: Column(
-                                  children: [
-                                    for (
-                                      var index = 0;
-                                      index < selectionFiles.length;
-                                      index++
-                                    ) ...[
-                                      if (index > 0)
-                                        Divider(
+                          child: SingleChildScrollView(
+                            key: ValueKey(
+                              subtitleFiles != null
+                                  ? 'subtitle_files'
+                                  : 'subtitle_script_files',
+                            ),
+                            child: Container(
+                              decoration: cardDecoration,
+                              clipBehavior: Clip.antiAlias,
+                              child: Column(
+                                children: [
+                                  for (
+                                    var index = 0;
+                                    index < selectionFiles.length;
+                                    index++
+                                  ) ...[
+                                    if (index > 0)
+                                      Divider(
                                           height: 1,
                                           thickness: 0.5,
                                           indent: 16,
@@ -1043,11 +1041,10 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                                               ),
                                       ),
                                     ],
-                                  ],
-                                ),
+                                ],
                               ),
-                            ).withWindowsSmoothScroll(),
-                          ),
+                            ),
+                          ).withWindowsSmoothScroll(),
                         ),
                       ],
                     ),
@@ -1102,6 +1099,9 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                           onChanged: !hasSubtitle
                               ? null
                               : (_) {
+                                  AppInteractionFeedback.trigger(
+                                    AppInteractionFeedbackType.selection,
+                                  );
                                   ref
                                       .read(subtitleSettingsProvider.notifier)
                                       .toggleShowSubtitles(widget.session.id);
@@ -1143,6 +1143,9 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                           onChanged: !hasSubtitle
                               ? null
                               : (_) {
+                                  AppInteractionFeedback.trigger(
+                                    AppInteractionFeedbackType.selection,
+                                  );
                                   widget.onToggleGlobalSubtitle?.call();
                                 },
                         ),
@@ -1153,6 +1156,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
 
                   // Import Subtitle Card
                   Container(
+                    clipBehavior: Clip.antiAlias,
                     decoration: BoxDecoration(
                       color: cs.surfaceContainerHighest.withValues(alpha: 0.45),
                       borderRadius: BorderRadius.circular(16),
@@ -1208,9 +1212,6 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                         ListTile(
                           key: const ValueKey('subtitle_import_tile'),
                           enabled: importEnabled,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
                           leading: _importing
                               ? SizedBox(
                                   width: 24,
@@ -1326,7 +1327,14 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                               ? () => _translateSubtitle(subtitleLanguage)
                               : null,
                         ),
-                        if (generationJob != null)
+                        if (generationJob != null) ...[
+                          Divider(
+                            height: 1,
+                            thickness: 0.5,
+                            indent: 16,
+                            endIndent: 16,
+                            color: cs.outlineVariant.withValues(alpha: 0.35),
+                          ),
                           ListTile(
                             key: const ValueKey(
                               'subtitle_generation_status_tile',
@@ -1355,6 +1363,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                             trailing: const Icon(Icons.chevron_right_rounded),
                             onTap: () => _showGeneration(subtitles),
                           ),
+                        ],
                       ],
                     ),
                   ),

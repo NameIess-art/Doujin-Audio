@@ -632,7 +632,6 @@ class SessionListCard extends ConsumerWidget {
               if (selectionActive) {
                 onToggleSelect?.call();
               } else {
-                AppInteractionFeedback.trigger(AppInteractionFeedbackType.tap);
                 onOpen(context);
               }
             },

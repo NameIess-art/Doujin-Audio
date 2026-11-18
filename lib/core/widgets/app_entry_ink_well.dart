@@ -36,6 +36,7 @@ class AppEntryInkWell extends InkWell {
       splashColor: splashColor ?? appPressedTint(theme.colorScheme),
       hoverColor: hoverColor ?? appHoverTint(theme.colorScheme),
       autofocus: autofocus,
+      enableFeedback: false,
       onTap: onTap,
       onLongPress: onLongPress,
       borderRadius: borderRadius,

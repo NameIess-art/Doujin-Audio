@@ -215,7 +215,7 @@ class AboutPage extends ConsumerWidget {
               right: 0,
               child: TopPageHeader(
                 icon: Icons.info_outline_rounded,
-                leading: const BackButton(),
+                leading: const AppHeaderBackButton(),
                 title: i18n.tr('about'),
               ),
             ),
@@ -306,10 +306,7 @@ class _AboutLinkTile extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: rowRadius),
       child: AppEntryInkWell(
         borderRadius: rowRadius,
-        onTap: () {
-          AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
-          onTap();
-        },
+        onTap: onTap,
         child: ListTile(
           shape: RoundedRectangleBorder(borderRadius: rowRadius),
           leading: _AboutIconContainer(icon: icon),

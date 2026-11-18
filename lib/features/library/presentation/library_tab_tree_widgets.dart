@@ -697,6 +697,7 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
         ? card
         : InkWell(
           mouseCursor: WidgetStateMouseCursor.clickable,
+          enableFeedback: false,
             highlightColor: Colors.transparent,
             canRequestFocus: widget.isSelectionMode,
             onLongPress: widget.onLongPress,
@@ -793,12 +794,6 @@ class _TrackNodeWidget extends ConsumerWidget {
     const cardShape = LibraryLikeCardMetrics.cardShape;
 
     Future<void> playSingleTrack() async {
-      unawaited(
-        AppInteractionFeedback.trigger(
-          AppInteractionFeedbackType.tap,
-          context: context,
-        ),
-      );
       final succeeded = await playback.playDirect([track]);
       if (!context.mounted) return;
       if (!succeeded) {

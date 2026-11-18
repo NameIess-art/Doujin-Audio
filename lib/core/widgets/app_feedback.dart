@@ -120,19 +120,14 @@ abstract final class AppInteractionFeedback {
   static DateTime? _lastContinuousFeedbackAt;
   static Object? _lastContinuousValue;
 
-  static Future<void> trigger(
-    AppInteractionFeedbackType type, {
-    BuildContext? context,
-  }) {
+  static Future<void> trigger(AppInteractionFeedbackType type) {
     if (defaultTargetPlatform == TargetPlatform.windows ||
         !hapticFeedbackEnabled) {
       return Future<void>.value();
     }
     switch (type) {
       case AppInteractionFeedbackType.tap:
-        return context == null
-            ? HapticFeedback.lightImpact()
-            : Feedback.forTap(context);
+        return HapticFeedback.lightImpact();
       case AppInteractionFeedbackType.selection:
         return HapticFeedback.selectionClick();
       case AppInteractionFeedbackType.confirmation:
@@ -180,7 +175,7 @@ void showAppSnackBar(
   Object? replacementGroup,
   Object? replacementOwner,
   ValueChanged<AppFeedbackDismissReason>? onDismissed,
-  bool provideHapticFeedback = true,
+  bool? provideHapticFeedback,
   bool? showCountdown,
   bool isUndoAction = false,
 }) {
@@ -202,7 +197,11 @@ void showAppSnackBar(
     replacementGroup: replacementGroup,
     replacementOwner: replacementOwner,
     onDismissed: onDismissed,
-    provideHapticFeedback: provideHapticFeedback,
+    provideHapticFeedback:
+        provideHapticFeedback ??
+        (!isUndoAction &&
+            (tone == AppFeedbackTone.warning ||
+                tone == AppFeedbackTone.destructive)),
     showCountdown:
         isUndoAction ||
         (showCountdown ?? (tone == AppFeedbackTone.destructive)),
@@ -291,9 +290,6 @@ void showPendingUndoableRemovalFeedback(
       _activeFeedbackUpdateMessage != null) {
     _activeFeedbackUpdateMessage!(nextMessage);
     _activeFeedbackResetDuration?.call(kUndoableRemovalFeedbackDuration, true);
-    unawaited(
-      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
-    );
     return;
   }
   showAppSnackBar(

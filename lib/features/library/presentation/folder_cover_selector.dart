@@ -481,13 +481,16 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
                   if (widget.compactNavigation) ...[
                     Positioned(
                       left: 12,
-                      bottom: 12,
-                      child: _buildCompactCoverAction(i18n),
-                    ),
-                    Positioned(
                       right: 12,
                       bottom: 12,
-                      child: _buildCompactNavigation(i18n),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Flexible(child: _buildCompactCoverAction(i18n)),
+                          const SizedBox(width: 8),
+                          _buildCompactNavigation(i18n),
+                        ],
+                      ),
                     ),
                   ] else ...[
                     if (defaultTargetPlatform == TargetPlatform.windows &&

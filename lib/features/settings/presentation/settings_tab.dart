@@ -267,7 +267,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
               left: 0,
               right: 0,
               child: TopPageHeader(
-                key: headerKey,
                 icon: Icons.settings_rounded,
                 topCapsuleTitle: i18n.tr('settings'),
               ),
@@ -336,6 +335,19 @@ enum _SettingsCategory {
   final String labelKey;
   final String subtitleKey;
   final IconData icon;
+
+  String subtitleKeyFor(TargetPlatform platform) {
+    if (platform == TargetPlatform.windows) {
+      return switch (this) {
+        _SettingsCategory.dataStorage =>
+          'section_data_storage_windows_subtitle',
+        _SettingsCategory.updatesPermissions =>
+          'section_updates_permissions_windows_subtitle',
+        _ => subtitleKey,
+      };
+    }
+    return subtitleKey;
+  }
 }
 
 class _SettingsCategoryTile extends StatelessWidget {
@@ -375,7 +387,7 @@ class _SettingsCategoryTile extends StatelessWidget {
                 style: theme.textTheme.titleMedium,
               ),
               Text(
-                i18n.tr(category.subtitleKey),
+                i18n.tr(category.subtitleKeyFor(defaultTargetPlatform)),
                 maxLines: 1,
                 softWrap: true,
                 overflow: TextOverflow.ellipsis,

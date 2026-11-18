@@ -76,7 +76,7 @@ abstract final class PlaylistBatchActions {
   }) async {
     if (selectedSessionIds.isEmpty) return;
     unawaited(
-      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.destructive),
     );
     final toRemove = selectedSessionIds.toList(growable: false);
     await stagePlaybackSessionRemovals(context, ref, toRemove);

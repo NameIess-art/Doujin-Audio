@@ -74,6 +74,18 @@ class NativePlaybackFocusRecoveryCoordinatorTest {
     }
 
     @Test
+    fun `request succeeds during soft ducking interruption`() {
+        val host = FakeFocusRecoveryHost(activeIds = linkedSetOf("a"))
+        val focus = FakeAudioFocusAccess(isHeld = true)
+        val coordinator = NativePlaybackFocusRecoveryCoordinator(host, focus)
+        coordinator.onFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK)
+
+        assertTrue(coordinator.interruptionActive)
+        assertTrue(coordinator.requestIfNeeded())
+        assertEquals(0, focus.requestCount)
+    }
+
+    @Test
     fun `player callback preserves only native transient focus pause`() {
         val host = FakeFocusRecoveryHost(activeIds = linkedSetOf("a"))
         val coordinator = NativePlaybackFocusRecoveryCoordinator(host, FakeAudioFocusAccess())

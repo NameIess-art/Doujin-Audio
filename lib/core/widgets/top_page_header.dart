@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'dart:ui' as dart_ui;
 
 import 'package:flutter/foundation.dart';
@@ -17,68 +16,6 @@ import 'sliding_selection_indicator.dart';
 import 'unified_popup_menu.dart';
 import 'windows_horizontal_wheel_scroll.dart';
 
-class AppPageAppBar extends StatelessWidget implements PreferredSizeWidget {
-  const AppPageAppBar({
-    super.key,
-    required this.title,
-    this.icon,
-    this.iconColor,
-    this.leading,
-    this.actions,
-    this.automaticallyImplyLeading = true,
-    this.titleSpacing,
-  });
-
-  final Widget title;
-  final IconData? icon;
-  final Color? iconColor;
-  final Widget? leading;
-  final List<Widget>? actions;
-  final bool automaticallyImplyLeading;
-  final double? titleSpacing;
-
-  @override
-  Size get preferredSize =>
-      const Size.fromHeight(AppPageHeaderMetrics.toolbarHeight);
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    Widget resolvedTitle = title;
-    if (icon != null) {
-      resolvedTitle = Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            icon,
-            size: AppDesignTokens.opticalIconSize(icon, 18),
-            color: iconColor ?? cs.primary,
-          ),
-          const SizedBox(width: 8),
-          Flexible(child: title),
-        ],
-      );
-    }
-    final appBar = AppBar(
-      title: resolvedTitle,
-      leading: leading,
-      actions: actions,
-      automaticallyImplyLeading: automaticallyImplyLeading,
-      titleSpacing: titleSpacing,
-      toolbarHeight: AppPageHeaderMetrics.toolbarHeight,
-      elevation: 0,
-      scrolledUnderElevation: 0,
-      backgroundColor: Colors.transparent,
-      surfaceTintColor: Colors.transparent,
-      shadowColor: Colors.transparent,
-      forceMaterialTransparency: true,
-    );
-    return AppPageHeaderTransition(
-      child: _AppHeaderSurface(floating: false, child: appBar),
-    );
-  }
-}
-
 class TopPageHeader extends StatefulWidget {
   const TopPageHeader({
     super.key,
@@ -90,9 +27,6 @@ class TopPageHeader extends StatefulWidget {
     this.trailing,
     this.titleSuffix,
     this.subtitle,
-    this.subtitleMaxLines = 1,
-    this.subtitleFontSize,
-    this.fitSubtitleToWidth = false,
     this.padding = AppPageHeaderMetrics.padding,
     this.useSafeAreaTop = true,
     this.additionalChild,
@@ -100,16 +34,12 @@ class TopPageHeader extends StatefulWidget {
     this.forceMarqueeTitle = false,
     this.collapseController,
     this.collapseDistance = 56,
-    this.floatingReveal = false,
-    this.floatingRevealDistance = 64,
-    this.floatingRevealTriggerDistance = 124,
     this.collapsedPadding = const EdgeInsets.fromLTRB(
       AppSpacing.md,
       AppSpacing.xxs,
       AppSpacing.sm,
       0,
     ),
-    this.floating = true,
     this.showFadeMask = true,
     this.topCapsuleTitle,
     this.topCapsuleData,
@@ -127,9 +57,6 @@ class TopPageHeader extends StatefulWidget {
   final Widget? trailing;
   final Widget? titleSuffix;
   final String? subtitle;
-  final int subtitleMaxLines;
-  final double? subtitleFontSize;
-  final bool fitSubtitleToWidth;
   final EdgeInsetsGeometry padding;
   final bool useSafeAreaTop;
   final Widget? additionalChild;
@@ -137,11 +64,7 @@ class TopPageHeader extends StatefulWidget {
   final bool forceMarqueeTitle;
   final ScrollController? collapseController;
   final double collapseDistance;
-  final bool floatingReveal;
-  final double floatingRevealDistance;
-  final double floatingRevealTriggerDistance;
   final EdgeInsetsGeometry collapsedPadding;
-  final bool floating;
   final bool showFadeMask;
   final String? topCapsuleTitle;
   final String? topCapsuleData;
@@ -155,47 +78,30 @@ class TopPageHeader extends StatefulWidget {
 }
 
 class _TopPageHeaderState extends State<TopPageHeader> {
-  static double _stableTopPadding = 0;
   final ValueNotifier<double> _collapseProgress = ValueNotifier<double>(0);
   final BackdropKey _rowBackdropKey = BackdropKey();
-  double _floatingReveal = 0;
-  double _floatingRevealPendingDistance = 0;
-  double? _lastOffset;
 
   @override
   void initState() {
     super.initState();
-    widget.collapseController?.addListener(_handleScrollChanged);
+    widget.collapseController?.addListener(_updateCollapseProgress);
   }
 
   @override
   void didUpdateWidget(covariant TopPageHeader oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.collapseController != widget.collapseController) {
-      oldWidget.collapseController?.removeListener(_handleScrollChanged);
-      widget.collapseController?.addListener(_handleScrollChanged);
-      _lastOffset = null;
-      _floatingReveal = 0;
-      _floatingRevealPendingDistance = 0;
-    }
-    if (!widget.floatingReveal && _floatingReveal != 0) {
-      _floatingReveal = 0;
-      _floatingRevealPendingDistance = 0;
-      _lastOffset = null;
+      oldWidget.collapseController?.removeListener(_updateCollapseProgress);
+      widget.collapseController?.addListener(_updateCollapseProgress);
     }
     _updateCollapseProgress();
   }
 
   @override
   void dispose() {
-    widget.collapseController?.removeListener(_handleScrollChanged);
+    widget.collapseController?.removeListener(_updateCollapseProgress);
     _collapseProgress.dispose();
     super.dispose();
-  }
-
-  void _handleScrollChanged() {
-    _updateFloatingReveal();
-    _updateCollapseProgress();
   }
 
   void _updateCollapseProgress() {
@@ -205,66 +111,12 @@ class _TopPageHeaderState extends State<TopPageHeader> {
       final offset = controller.positions.length == 1
           ? controller.positions.single.pixels
           : 0.0;
-      final absoluteProgress = widget.collapseDistance <= 0
+      progress = widget.collapseDistance <= 0
           ? 1.0
           : (offset / widget.collapseDistance).clamp(0.0, 1.0);
-      progress = absoluteProgress * (1 - _floatingReveal);
     }
     // Fully collapsed/expanded headers need no work for further scroll ticks.
     _collapseProgress.value = progress;
-  }
-
-  void _updateFloatingReveal() {
-    if (!widget.floatingReveal || widget.floatingRevealDistance <= 0) {
-      _lastOffset = null;
-      _floatingRevealPendingDistance = 0;
-      return;
-    }
-    final controller = widget.collapseController;
-    if (controller == null || controller.positions.length != 1) {
-      _lastOffset = null;
-      _floatingRevealPendingDistance = 0;
-      return;
-    }
-
-    final offset = controller.positions.single.pixels;
-    final lastOffset = _lastOffset;
-    _lastOffset = offset;
-    if (lastOffset == null) return;
-
-    final delta = offset - lastOffset;
-    if (delta == 0) return;
-
-    double nextReveal;
-    if (delta < 0) {
-      var revealDistance = -delta;
-      if (_floatingReveal == 0 &&
-          _floatingRevealPendingDistance <
-              widget.floatingRevealTriggerDistance) {
-        final remainingTrigger =
-            widget.floatingRevealTriggerDistance -
-            _floatingRevealPendingDistance;
-        if (revealDistance <= remainingTrigger) {
-          _floatingRevealPendingDistance += revealDistance;
-          return;
-        }
-        _floatingRevealPendingDistance = widget.floatingRevealTriggerDistance;
-        revealDistance -= remainingTrigger;
-      }
-      nextReveal =
-          (_floatingReveal + revealDistance / widget.floatingRevealDistance)
-              .clamp(0.0, 1.0);
-    } else {
-      _floatingRevealPendingDistance = 0;
-      nextReveal = (_floatingReveal - delta / widget.floatingRevealDistance)
-          .clamp(0.0, 1.0);
-      if (nextReveal == 0) {
-        _floatingRevealPendingDistance = 0;
-      }
-    }
-
-    if (nextReveal == _floatingReveal) return;
-    _floatingReveal = nextReveal;
   }
 
   @override
@@ -272,17 +124,9 @@ class _TopPageHeaderState extends State<TopPageHeader> {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final isWindows = theme.platform == TargetPlatform.windows;
-    final isLandscape =
-        defaultTargetPlatform == TargetPlatform.windows ||
-        MediaQuery.orientationOf(context) == Orientation.landscape;
-    final rawTop = MediaQuery.paddingOf(context).top;
-    if (!isLandscape && rawTop > _stableTopPadding) {
-      _stableTopPadding = rawTop;
-    }
-    final resolvedTop = !isLandscape && _stableTopPadding > 0
-        ? math.max(rawTop, _stableTopPadding)
-        : rawTop;
-    final topPadding = widget.useSafeAreaTop ? resolvedTop : 0.0;
+    final topPadding = widget.useSafeAreaTop
+        ? MediaQuery.paddingOf(context).top
+        : 0.0;
     final resolvedTitle = widget.title;
 
     final hasTopCapsule =
@@ -371,7 +215,7 @@ class _TopPageHeaderState extends State<TopPageHeader> {
               ),
               if (widget.titleSuffix != null) ...[
                 const SizedBox(width: 6),
-                widget.titleSuffix!,
+                Flexible(child: widget.titleSuffix!),
               ],
             ],
           ),
@@ -548,7 +392,6 @@ class _TopPageHeaderState extends State<TopPageHeader> {
       ),
     );
     final surface = _AppHeaderSurface(
-      floating: widget.floating,
       showFadeMask: widget.showFadeMask,
       child: headerContent,
     );
@@ -564,52 +407,26 @@ class _TopPageHeaderState extends State<TopPageHeader> {
 class _AppHeaderSurface extends StatelessWidget {
   const _AppHeaderSurface({
     required this.child,
-    this.floating = true,
     this.showFadeMask = true,
   });
 
   final Widget child;
-  final bool floating;
   final bool showFadeMask;
 
   @override
   Widget build(BuildContext context) {
-    if (floating) {
-      if (!showFadeMask ||
-          context.findAncestorWidgetOfExactType<AppHeaderTransition>() !=
-              null) {
-        return child;
-      }
-      return Stack(
-        fit: StackFit.passthrough,
-        children: [
-          const Positioned.fill(
-            child: AppEdgeFadeMask(direction: AppEdgeFadeDirection.towardTop),
-          ),
-          child,
-        ],
-      );
+    if (!showFadeMask ||
+        context.findAncestorWidgetOfExactType<AppHeaderTransition>() != null) {
+      return child;
     }
-    final cs = Theme.of(context).colorScheme;
-    final tokens = AppDesignTokens.of(context);
-    return AppGlassSurface(
-      enabled: tokens.barGlassEnabled,
-      backgroundColor: tokens.barGlassEnabled
-          ? cs.surface.withValues(alpha: cs.surface.a * 0.9)
-          : cs.surface,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: cs.outlineVariant.withValues(
-                alpha: tokens.subtleBorderAlpha,
-              ),
-              width: 0.5,
-            ),
-          ),
+    return Stack(
+      fit: StackFit.passthrough,
+      children: [
+        const Positioned.fill(
+          child: AppEdgeFadeMask(direction: AppEdgeFadeDirection.towardTop),
         ),
-        child: child,
-      ),
+        child,
+      ],
     );
   }
 }
@@ -667,8 +484,7 @@ class HeaderFloatingSurface extends StatelessWidget {
         AppDesignTokens.of(context).barGlassEnabled &&
         (followBarGlass ||
             context.findAncestorWidgetOfExactType<AppPageHeaderTransition>() !=
-                null) &&
-        headerSurface?.floating != false;
+                null);
     final restBackground = background.withValues(
       alpha: background.a * backgroundOpacity * (useGlass ? 0.9 : 1),
     );
@@ -883,7 +699,10 @@ class AppHeaderBackButton extends BackButton {
     super.color,
     super.style,
     super.onPressed,
+    this.enabled = true,
   });
+
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -892,13 +711,15 @@ class AppHeaderBackButton extends BackButton {
       color: color,
       style: style,
       tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-      onPressed: () {
-        if (onPressed != null) {
-          onPressed!();
-        } else {
-          Navigator.maybePop(context);
-        }
-      },
+      onPressed: enabled
+          ? () {
+              if (onPressed != null) {
+                onPressed!();
+              } else {
+                Navigator.maybePop(context);
+              }
+            }
+          : null,
     );
   }
 }

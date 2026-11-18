@@ -146,11 +146,7 @@ class _LibraryManagementPageState extends ConsumerState<LibraryManagementPage> {
                 child: TopPageHeader(
                   icon: Icons.edit_note_rounded,
                   title: i18n.tr('edit_library'),
-                  leading: IconButton(
-                    tooltip: i18n.tr('close'),
-                    onPressed: () => Navigator.of(context).maybePop(),
-                    icon: const Icon(Icons.arrow_back_rounded),
-                  ),
+                  leading: const AppHeaderBackButton(),
                   additionalChild: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
                     child: HeaderFloatingSurface(

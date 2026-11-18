@@ -7,8 +7,10 @@ import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/subtitle_parser.dart';
 import '../../../../core/widgets/app_dialog.dart';
+import '../../../../core/widgets/app_edit_panel.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_transitions.dart';
+import '../../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../../core/widgets/page_header_inset.dart';
 import '../../../../core/widgets/swipe_reveal_card.dart';
 import '../../../../core/widgets/top_page_header.dart';
@@ -85,73 +87,73 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
         ? cue.text.substring(original.length + 1)
         : '';
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final next = await showAppDialog<({String text, String? originalText})>(
+    final header = AppEditPanelHeader(
+      title: i18n.tr('subtitle_edit_text'),
+      icon: Icons.edit_note_rounded,
+    );
+    final next = await showAppInputPanel<({String text, String? originalText})>(
       context: context,
-      builder: (context) => AppAlertDialog(
-        title: Text(i18n.tr('subtitle_edit_text')),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (bilingual) ...[
-                TextFormField(
-                  key: const ValueKey('subtitle_original_text'),
-                  initialValue: originalText,
-                  onChanged: (value) => originalText = value,
-                  autofocus: true,
-                  minLines: 2,
-                  maxLines: 8,
-                  decoration: InputDecoration(
-                    labelText: i18n.tr('subtitle_original_text'),
-                  ),
+      barrierLabel: i18n.tr('close'),
+      header: header,
+      preferredHeight: bilingual ? 320 : 240,
+      builder: (context, height) => AppEditPanelForm(
+        height: height,
+        header: header,
+        fields: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (bilingual) ...[
+              TextFormField(
+                key: const ValueKey('subtitle_original_text'),
+                initialValue: originalText,
+                onChanged: (value) => originalText = value,
+                autofocus: true,
+                minLines: 2,
+                maxLines: 8,
+                decoration: InputDecoration(
+                  labelText: i18n.tr('subtitle_original_text'),
                 ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  key: const ValueKey('subtitle_translated_text'),
-                  initialValue: translatedText,
-                  onChanged: (value) => translatedText = value,
-                  minLines: 2,
-                  maxLines: 8,
-                  decoration: InputDecoration(
-                    labelText: i18n.tr('subtitle_translated_text'),
-                  ),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                key: const ValueKey('subtitle_translated_text'),
+                initialValue: translatedText,
+                onChanged: (value) => translatedText = value,
+                minLines: 2,
+                maxLines: 8,
+                decoration: InputDecoration(
+                  labelText: i18n.tr('subtitle_translated_text'),
                 ),
-              ] else
-                TextFormField(
-                  initialValue: cue.text,
-                  onChanged: (value) => text = value,
-                  autofocus: true,
-                  minLines: 2,
-                  maxLines: 8,
-                  decoration: InputDecoration(
-                    hintText: i18n.tr('subtitle_edit_text'),
-                  ),
+              ),
+            ] else
+              TextFormField(
+                initialValue: cue.text,
+                onChanged: (value) => text = value,
+                autofocus: true,
+                minLines: 2,
+                maxLines: 8,
+                decoration: InputDecoration(
+                  hintText: i18n.tr('subtitle_edit_text'),
                 ),
-            ],
-          ),
-        ).withWindowsSmoothScroll(),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(i18n.tr('cancel')),
-          ),
-          AppPillButton(
-            onPressed: () {
-              final source = normalizeLines(originalText);
-              final translated = normalizeLines(translatedText);
-              var combined = text.trim();
-              if (bilingual) {
-                combined = translated.isEmpty ? source : '$source\n$translated';
-              }
-              if (combined.isEmpty || (bilingual && source.isEmpty)) return;
-              Navigator.pop(context, (
-                text: combined,
-                originalText: bilingual ? source : null,
-              ));
-            },
-            child: Text(i18n.tr('save')),
-          ),
-        ],
+              ),
+          ],
+        ),
+        cancelLabel: i18n.tr('cancel'),
+        submitLabel: i18n.tr('save'),
+        onCancel: () => Navigator.pop(context),
+        onSubmit: () {
+          final source = normalizeLines(originalText);
+          final translated = normalizeLines(translatedText);
+          var combined = text.trim();
+          if (bilingual) {
+            combined = translated.isEmpty ? source : '$source\n$translated';
+          }
+          if (combined.isEmpty || (bilingual && source.isEmpty)) return;
+          Navigator.pop(context, (
+            text: combined,
+            originalText: bilingual ? source : null,
+          ));
+        },
       ),
     );
     if (!mounted ||
@@ -185,12 +187,20 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     var endText = hasTime ? _formatTime(cue.end) : '';
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     String? validationError;
-    final next = await showAppDialog<(Duration, Duration)>(
+    final header = AppEditPanelHeader(
+      title: i18n.tr('subtitle_edit_time'),
+      icon: Icons.schedule_rounded,
+    );
+    final next = await showAppInputPanel<(Duration, Duration)>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AppAlertDialog(
-          title: Text(i18n.tr('subtitle_edit_time')),
-          content: Column(
+      barrierLabel: i18n.tr('close'),
+      header: header,
+      preferredHeight: 288,
+      builder: (context, height) => StatefulBuilder(
+        builder: (context, setDialogState) => AppEditPanelForm(
+          height: height,
+          header: header,
+          fields: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextFormField(
@@ -213,43 +223,37 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
               ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(i18n.tr('cancel')),
-            ),
-            AppPillButton(
-              onPressed: () {
-                if (_saving ||
-                    generation != _saveGeneration ||
-                    _cues!.indexOf(cue) != index) {
-                  return;
-                }
-                final start = _parseTime(startText);
-                final end = _parseTime(endText);
-                final previousEnd = index == 0
-                    ? Duration.zero
-                    : _cues![index - 1].end;
-                final nextStart =
-                    index + 1 == _cues!.length ||
-                        _cues![index + 1].end <= _cues![index + 1].start
-                    ? null
-                    : _cues![index + 1].start;
-                if (start == null ||
-                    end == null ||
-                    start < previousEnd ||
-                    end <= start ||
-                    (nextStart != null && end > nextStart)) {
-                  setDialogState(
-                    () => validationError = i18n.tr('subtitle_invalid_time'),
-                  );
-                  return;
-                }
-                Navigator.pop(context, (start, end));
-              },
-              child: Text(i18n.tr('save')),
-            ),
-          ],
+          cancelLabel: i18n.tr('cancel'),
+          submitLabel: i18n.tr('save'),
+          onCancel: () => Navigator.pop(context),
+          onSubmit: () {
+            if (_saving ||
+                generation != _saveGeneration ||
+                _cues!.indexOf(cue) != index) {
+              return;
+            }
+            final start = _parseTime(startText);
+            final end = _parseTime(endText);
+            final previousEnd = index == 0
+                ? Duration.zero
+                : _cues![index - 1].end;
+            final nextStart =
+                index + 1 == _cues!.length ||
+                    _cues![index + 1].end <= _cues![index + 1].start
+                ? null
+                : _cues![index + 1].start;
+            if (start == null ||
+                end == null ||
+                start < previousEnd ||
+                end <= start ||
+                (nextStart != null && end > nextStart)) {
+              setDialogState(
+                () => validationError = i18n.tr('subtitle_invalid_time'),
+              );
+              return;
+            }
+            Navigator.pop(context, (start, end));
+          },
         ),
       ),
     );
@@ -473,7 +477,9 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                             16,
                             contentTopInset,
                             16,
-                            16,
+                            16 +
+                                MediaQuery.paddingOf(context).bottom +
+                                MobileOverlayInset.of(context),
                           ),
                           itemCount: cues.length,
                           separatorBuilder: (_, _) => const SizedBox(height: 8),
@@ -604,7 +610,10 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
               child: TopPageHeader(
                 icon: Icons.edit_note_rounded,
                 title: i18n.tr('subtitle_edit'),
-                leading: BackButton(onPressed: _saving ? null : _requestExit),
+                leading: AppHeaderBackButton(
+                  enabled: !_saving,
+                  onPressed: _requestExit,
+                ),
                 trailing: IconButton(
                   tooltip: i18n.tr('save'),
                   onPressed: _canSave ? _save : null,

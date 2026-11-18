@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/theme/app_design_tokens.dart';
@@ -64,6 +65,8 @@ class AsmrDownloadTaskCard extends StatelessWidget {
                   Expanded(
                     child: Text(
                       task.work.title,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                         height: 1.3,
@@ -159,11 +162,30 @@ class AsmrDownloadTaskCard extends StatelessWidget {
     );
 
     if (defaultTargetPlatform == TargetPlatform.windows) {
-      return GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onSecondaryTapDown: (details) =>
-            _showContextMenu(context, details.globalPosition),
-        child: card,
+      void showKeyboardMenu() {
+        final box = context.findRenderObject() as RenderBox?;
+        if (box == null || !box.hasSize) return;
+        _showContextMenu(
+          context,
+          box.localToGlobal(box.size.center(Offset.zero)),
+        );
+      }
+
+      return CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.f10, shift: true):
+              showKeyboardMenu,
+          const SingleActivator(LogicalKeyboardKey.contextMenu):
+              showKeyboardMenu,
+        },
+        child: Focus(
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onSecondaryTapDown: (details) =>
+                _showContextMenu(context, details.globalPosition),
+            child: card,
+          ),
+        ),
       );
     }
     return card;
@@ -193,20 +215,20 @@ class AsmrDownloadTaskCard extends StatelessWidget {
           label: i18n.tr('asmr_download_details_title'),
           icon: Icons.info_outline_rounded,
         ),
-        if (task.status != AsmrDownloadTaskStatus.completed &&
-            onTogglePause != null)
+        if (task.status != AsmrDownloadTaskStatus.completed)
           UnifiedMenuEntry.action(
-            value: onTogglePause!,
+            value: onTogglePause ?? () {},
             label: pauseResumeLabel,
             icon: pauseResumeIcon,
+            enabled: onTogglePause != null,
           ),
-        if (onRemove != null)
-          UnifiedMenuEntry.action(
-            value: onRemove!,
-            label: i18n.tr('asmr_download_remove_task'),
-            icon: Icons.delete_outline_rounded,
-            destructive: true,
-          ),
+        UnifiedMenuEntry.action(
+          value: onRemove ?? () {},
+          label: i18n.tr('asmr_download_remove_task'),
+          icon: Icons.delete_outline_rounded,
+          destructive: true,
+          enabled: onRemove != null,
+        ),
       ],
     );
     action?.call();

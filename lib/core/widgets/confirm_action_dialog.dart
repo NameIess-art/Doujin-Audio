@@ -25,6 +25,7 @@ Future<bool> showConfirmActionDialog({
 
       return AppDialog(
         title: title,
+        scrollable: true,
         icon:
             icon ??
             (isDestructive

@@ -92,17 +92,19 @@ final class FileTreeExpansionMotion<Branch extends Object, Entry> {
     return [...projected.take(_end), ...projected.skip(end)];
   }
 
-  Widget wrap(int index, Widget child, {Key? key}) {
-    if (_branch == null || index < _start || index >= _end) {
-      return key == null ? child : KeyedSubtree(key: key, child: child);
-    }
-    final collapsing = _outgoing != null;
+  Widget wrap(int index, Widget child, {Key? key, bool active = true}) {
+    final animating =
+        active && _branch != null && index >= _start && index < _end;
+    final factor = animating ? _factor : kAlwaysCompleteAnimation;
+    final collapsing = animating && _outgoing != null;
+    // Keep the wrapper structure constant so row elements stay mounted when
+    // expansion animations begin or finish.
     return SizeTransition(
       key: key ?? child.key,
       axisAlignment: -1,
-      sizeFactor: _factor,
+      sizeFactor: factor,
       child: FadeTransition(
-        opacity: _factor,
+        opacity: factor,
         child: IgnorePointer(
           ignoring: collapsing,
           child: ExcludeSemantics(excluding: collapsing, child: child),

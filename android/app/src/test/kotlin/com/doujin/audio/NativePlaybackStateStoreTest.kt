@@ -39,6 +39,7 @@ class NativePlaybackStateStoreTest {
     @After
     fun clearStore() {
         NativePlaybackStateStore.removeTemporarySession("T")
+        NativePlaybackStateStore.clearSessions(context)
     }
 
     @Test
@@ -207,6 +208,37 @@ class NativePlaybackStateStoreTest {
         saveProgress(StoredNativePlaybackProgress("T", 8_000L, playing = false, playWhenReady = false))
         assertTrue(NativePlaybackStateStore.loadActiveSessionRevisions(context).isEmpty())
         assertEquals(8_000L, NativePlaybackStateStore.loadSessions(context, setOf("T")).single().positionMs)
+    }
+
+    @Test
+    fun `staged sessions override stale SQLite rows before persistence completes`() {
+        try {
+            val initial = session("S1", 1_000L).copy(playing = true, playWhenReady = true)
+            NativePlaybackStateStore.upsertSessions(context, listOf(initial))
+            assertEquals(setOf("S1"), NativePlaybackStateStore.loadActiveSessionRevisions(context).keys)
+
+            val newRevision = NativePlaybackStateStore.invalidateSession("S1")
+            assertTrue(NativePlaybackStateStore.loadSessions(context, setOf("S1")).isEmpty())
+
+            val stagedActive = session("S1", 5_000L).copy(playing = true, playWhenReady = true)
+            NativePlaybackStateStore.stageSessions(listOf(stagedActive), mapOf("S1" to newRevision))
+            assertEquals(5_000L, NativePlaybackStateStore.loadSessions(context, setOf("S1")).single().positionMs)
+            assertEquals(newRevision, NativePlaybackStateStore.loadActiveSessionRevisions(context)["S1"])
+
+            val staleSqlActive = session("S2", 2_000L).copy(playing = true, playWhenReady = true)
+            NativePlaybackStateStore.upsertSessions(context, listOf(staleSqlActive))
+            val s2Revision = NativePlaybackStateStore.sessionRevision("S2")
+            NativePlaybackStateStore.stageSessions(
+                listOf(staleSqlActive.copy(playing = false, playWhenReady = false, positionMs = 9_000L)),
+                mapOf("S2" to s2Revision)
+            )
+            val activeSessions = NativePlaybackStateStore.loadSessions(context, activeOnly = true)
+            assertEquals(listOf("S1"), activeSessions.map { it.sessionId })
+            assertEquals(setOf("S1"), NativePlaybackStateStore.loadActiveSessionRevisions(context).keys)
+            assertEquals(9_000L, NativePlaybackStateStore.loadSessions(context, setOf("S2")).single().positionMs)
+        } finally {
+            NativePlaybackStateStore.clearSessions(context)
+        }
     }
 
     private fun seedLegacy(session: StoredNativePlaybackSession, value: StoredNativePlaybackProgress) {

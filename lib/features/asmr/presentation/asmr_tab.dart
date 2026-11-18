@@ -352,9 +352,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   int get tabIndex => widget.tabIndex;
 
   @override
-  double get headerControlsFullHeight => 0;
-
-  @override
   ScrollController get mainScrollController => _scrollController;
 
   UiOperationService get _operations => ref.read(uiOperationServiceProvider);
@@ -719,7 +716,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   }
 
   void _exitSelectionMode() {
-    AppInteractionFeedback.trigger(AppInteractionFeedbackType.tap);
     _isSelectionMode = false;
     _selectedWorkIds.clear();
     _syncSelectionListenable();
@@ -744,10 +740,16 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   }
 
   Future<void> _addSelectedWorksToPlaylist() async {
+    final works = _selectedWorks();
+    if (works.isNotEmpty) {
+      unawaited(
+        AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+      );
+    }
     await _addAsmrWorksToPlaylist(
       context: context,
       ref: ref,
-      works: _selectedWorks(),
+      works: works,
       onFinished: (failedIds) {
         _selectedWorkIds
           ..clear()
@@ -759,10 +761,16 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   }
 
   Future<void> _toggleSelectedFavorites() async {
+    final works = _selectedWorks();
+    if (works.isNotEmpty) {
+      unawaited(
+        AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+      );
+    }
     await _toggleSelectedAsmrWorksFavorite(
       context: context,
       ref: ref,
-      works: _selectedWorks(),
+      works: works,
       refreshSelectionState: _syncSelectionListenable,
     );
   }

@@ -44,7 +44,11 @@ class _AsmrPanelCard extends StatelessWidget {
             children: [
               _AsmrPanelTitle(icon: icon, title: title),
               const SizedBox(height: 18),
-              Flexible(child: child),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: child,
+                ).withWindowsSmoothScroll(),
+              ),
               if (actions.isNotEmpty) ...[
                 const SizedBox(height: 18),
                 Wrap(

@@ -225,7 +225,7 @@ List<Widget> _buildSettingsGeneralSection({
             return SwitchListTile(
               title: _settingsTitle(i18n.tr('reduce_animations')),
               value: enabled,
-              onChanged: (value) => saveSettingsWithFeedback(
+              onChanged: (value) => _saveSettingsSwitch(
                 context,
                 () => settings.setReduceAnimations(value),
               ),
@@ -245,10 +245,19 @@ List<Widget> _buildSettingsGeneralSection({
               return SwitchListTile(
                 title: _settingsTitle(i18n.tr('haptic_feedback_enabled')),
                 value: enabled,
-                onChanged: (value) => saveSettingsWithFeedback(
-                  context,
-                  () => settings.setHapticFeedbackEnabled(value),
-                ),
+                onChanged: (value) async {
+                  final saved = await saveSettingsWithFeedback(
+                    context,
+                    () => settings.setHapticFeedbackEnabled(value),
+                  );
+                  if (saved && value) {
+                    unawaited(
+                      AppInteractionFeedback.trigger(
+                        AppInteractionFeedbackType.selection,
+                      ),
+                    );
+                  }
+                },
                 secondary: _settingsIcon(Icons.vibration_rounded, cs.primary),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               );
@@ -283,11 +292,9 @@ List<Widget> _buildSettingsPageDisplaySection({
                   title: _settingsTitle(i18n.tr('show_asmr_one')),
                   value: showAsmr,
                   onChanged: showLocal
-                      ? (value) => unawaited(
-                          saveSettingsWithFeedback(
-                            context,
-                            () => settings.setShowAsmrOne(value),
-                          ),
+                      ? (value) => _saveSettingsSwitch(
+                          context,
+                          () => settings.setShowAsmrOne(value),
                         )
                       : null,
                   secondary: _settingsIcon(Icons.cloud_outlined, cs.primary),
@@ -300,11 +307,9 @@ List<Widget> _buildSettingsPageDisplaySection({
                   title: _settingsTitle(i18n.tr('show_local_library')),
                   value: showLocal,
                   onChanged: showAsmr
-                      ? (value) => unawaited(
-                          saveSettingsWithFeedback(
-                            context,
-                            () => settings.setShowLocalLibrary(value),
-                          ),
+                      ? (value) => _saveSettingsSwitch(
+                          context,
+                          () => settings.setShowLocalLibrary(value),
                         )
                       : null,
                   secondary: _settingsIcon(
@@ -317,11 +322,9 @@ List<Widget> _buildSettingsPageDisplaySection({
                   key: const ValueKey<String>('settings_show_my_page_switch'),
                   title: _settingsTitle(i18n.tr('nav_my')),
                   value: settingsState?.showMyPage ?? true,
-                  onChanged: (value) => unawaited(
-                    saveSettingsWithFeedback(
-                      context,
-                      () => settings.setShowMyPage(value),
-                    ),
+                  onChanged: (value) => _saveSettingsSwitch(
+                    context,
+                    () => settings.setShowMyPage(value),
                   ),
                   secondary: _settingsIcon(
                     Icons.person_outline_rounded,

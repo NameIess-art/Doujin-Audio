@@ -46,7 +46,7 @@ List<Widget> _buildSettingsUpdateSection({
             );
             return SwitchListTile(
               value: autoCheckUpdates,
-              onChanged: (value) => saveSettingsWithFeedback(
+              onChanged: (value) => _saveSettingsSwitch(
                 context,
                 () => settings.setAutoCheckUpdates(value),
               ),

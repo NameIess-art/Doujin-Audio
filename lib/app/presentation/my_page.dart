@@ -161,6 +161,9 @@ class _MyPageState extends ConsumerState<MyPage>
 
   Future<void> _copyInterest(String name) async {
     await Clipboard.setData(ClipboardData(text: name));
+    unawaited(
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+    );
     if (!mounted) return;
     showAppSnackBar(
       context,
@@ -632,7 +635,6 @@ class _MyPageState extends ConsumerState<MyPage>
               left: 0,
               right: 0,
               child: TopPageHeader(
-                key: headerKey,
                 icon: Icons.person_rounded,
                 topCapsuleTitle: i18n.tr('nav_my'),
               ),

@@ -2743,41 +2743,29 @@ void main() {
   }
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
-    for (final appBar in [false, true]) {
-      testWidgets(
-        'whole page header crossfades on $platform (appBar: $appBar)',
-        (tester) async {
-          final index = ValueNotifier(0);
-          addTearDown(index.dispose);
-          Widget page(String name) {
-            final title = Text(name, key: ValueKey('$name-title'));
-            final leading = IconButton(
-              key: ValueKey('$name-leading'),
-              onPressed: () {},
-              icon: const Icon(Icons.arrow_back),
-            );
-            final action = IconButton(
-              key: ValueKey('$name-action'),
-              onPressed: () {},
-              icon: const Icon(Icons.more_horiz),
-            );
-            return Scaffold(
-              appBar: appBar
-                  ? AppPageAppBar(
-                      title: title,
-                      leading: leading,
-                      actions: [action],
-                    )
-                  : null,
-              body: appBar
-                  ? const SizedBox.expand()
-                  : TopPageHeader(
-                      titleWidget: title,
-                      leading: leading,
-                      trailing: action,
-                    ),
-            );
-          }
+    testWidgets('whole page header crossfades on $platform', (tester) async {
+      final index = ValueNotifier(0);
+      addTearDown(index.dispose);
+      Widget page(String name) {
+        final title = Text(name, key: ValueKey('$name-title'));
+        final leading = IconButton(
+          key: ValueKey('$name-leading'),
+          onPressed: () {},
+          icon: const Icon(Icons.arrow_back),
+        );
+        final action = IconButton(
+          key: ValueKey('$name-action'),
+          onPressed: () {},
+          icon: const Icon(Icons.more_horiz),
+        );
+        return Scaffold(
+          body: TopPageHeader(
+            titleWidget: title,
+            leading: leading,
+            trailing: action,
+          ),
+        );
+      }
 
           FadeTransition fade(String name, String part) =>
               tester.widget<FadeTransition>(
@@ -2833,7 +2821,6 @@ void main() {
           expect(tester.takeException(), isNull);
         },
       );
-    }
   }
 
   testWidgets('tab headers stay fixed while content slides independently', (

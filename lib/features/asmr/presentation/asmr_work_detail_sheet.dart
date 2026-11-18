@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/presentation/work_detail_navigation.dart';
+import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../app/localization/app_language_provider.dart';
 import '../../../core/ui/interaction_deferred_stream.dart';
@@ -106,6 +107,9 @@ class _AsmrWorkDetail implements RemoteWorkDetail {
 
   @override
   Future<void> toggleFavorite(BuildContext context, WidgetRef ref) async {
+    unawaited(
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+    );
     await setAsmrWorksFavoriteWithFeedback(context, ref, [work]);
   }
 

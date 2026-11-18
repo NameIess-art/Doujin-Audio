@@ -7,12 +7,16 @@ import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
+import com.doujin.audio.player.common.NativePrepareSessionArguments
 import com.doujin.audio.player.effects.NativeSessionAudioEffectsRuntime
 import com.doujin.audio.player.effects.NativePlaybackResumeFade
 import com.doujin.audio.player.effects.PlaybackVolumeMapper
+import com.doujin.audio.player.notification.PlaybackKeepAliveAlarmScheduler
 import com.doujin.audio.player.service.NativePlaybackForegroundCoordinator
 import com.doujin.audio.player.service.NativePlaybackService
 import com.doujin.audio.player.session.NativeAudioEffects
+import com.doujin.audio.player.session.NativeMediaSessionHost
+import com.doujin.audio.player.session.NativePlaybackStateStore
 import com.doujin.audio.player.session.NativePlaybackSession
 import com.doujin.audio.player.session.NativeMediaItemDescriptor
 import com.doujin.audio.player.session.NativePlaybackSessionManager
@@ -367,6 +371,104 @@ class NativePlaybackCommandSnapshotTest {
         } finally {
             service.removeStateListener("test")
             shutdownPersistence(service)
+        }
+    }
+
+    @Test
+    fun `single track repeatAll uses REPEAT_MODE_ALL and unchanged queue updates in place`() {
+        val player = ExoPlayer.Builder(RuntimeEnvironment.getApplication()).setUsePlatformDiagnostics(false).build()
+        val session = NativePlaybackSession("loop", { _, _ -> player }, { _, _, _ -> })
+        val track1 = NativeMediaItemDescriptor("/t1.mp3", "file:///t1.mp3", "Track 1", null, null)
+        val track0 = NativeMediaItemDescriptor("/t0.mp3", "file:///t0.mp3", "Track 0", null, null)
+        val track2 = NativeMediaItemDescriptor("/t2.mp3", "file:///t2.mp3", "Track 2", null, null)
+        try {
+            session.configure(
+                descriptor = track1,
+                queue = listOf(track1),
+                queueStartIndex = 0,
+                startPositionMs = 4_321L,
+                volume = 1f,
+                speed = 1f,
+                repeatOne = false,
+                repeatAll = true,
+                shuffleModeEnabled = false,
+                autoPlay = true
+            )
+            assertEquals(Player.REPEAT_MODE_ALL, player.repeatMode)
+            val initialState = player.playbackState
+            assertTrue(initialState != Player.STATE_IDLE)
+
+            session.updateQueue(
+                queue = listOf(track0, track1, track2),
+                queueStartIndex = 1,
+                repeatOne = false,
+                repeatAll = true,
+                shuffleModeEnabled = false
+            )
+            assertEquals(3, player.mediaItemCount)
+            assertEquals(1, player.currentMediaItemIndex)
+            assertEquals("/t1.mp3", player.currentMediaItem?.mediaId)
+            assertEquals(initialState, player.playbackState)
+            assertTrue(player.playWhenReady)
+            assertEquals(4_321L, player.currentPosition)
+        } finally {
+            session.release()
+        }
+    }
+
+    @Test
+    fun `mediaSession registers with MediaSessionService and prepareSession retains player before play`() {
+        val service = Robolectric.buildService(NativePlaybackService::class.java).get()
+        val sessions = ReflectionHelpers.callInstanceMethod<NativePlaybackSessionManager>(
+            service, "getSessionManager"
+        )
+        val foreground = ReflectionHelpers.callInstanceMethod<NativePlaybackForegroundCoordinator>(
+            service, "getForegroundCoordinator"
+        )
+        val mediaHost = ReflectionHelpers.callInstanceMethod<NativeMediaSessionHost>(
+            service, "getMediaSessionHost"
+        )
+        val existingPlayer = ExoPlayer.Builder(service).setUsePlatformDiagnostics(false).build()
+        val existing = sessions.getOrCreate("prep")
+        ReflectionHelpers.setField(existing, "_player", existingPlayer)
+        try {
+            val mediaSession = ReflectionHelpers.callInstanceMethod<MediaSession>(service, "ensureMediaSession")
+            assertTrue(service.sessions.contains(mediaSession))
+
+            val track = NativeMediaItemDescriptor("/next.mp3", "file:///next.mp3", "Next", "Artist", null)
+            val args = NativePrepareSessionArguments(
+                sessionId = "prep",
+                uri = track.uri,
+                path = track.path,
+                title = track.title,
+                subtitle = track.subtitle,
+                artUri = track.artUri,
+                startPositionMs = 0L,
+                autoPlay = false,
+                volume = 1f,
+                speed = 1f,
+                audioEffects = NativeAudioEffects(),
+                repeatOne = false,
+                queue = listOf(track),
+                queueStartIndex = 0,
+                repeatAll = false,
+                shuffle = false,
+                candidateUris = listOf(track.uri),
+                deferPlayerCreation = false
+            )
+            val result = service.prepareSession(args)
+            assertEquals(true, result["ok"])
+            assertTrue(foreground.isHoldingPlaybackStart("prep"))
+            assertSame(existing, sessions.get("prep"))
+            assertSame(existingPlayer, existing.playerOrNull())
+
+            mediaHost.release("test")
+            assertFalse(service.sessions.contains(mediaSession))
+        } finally {
+            sessions.get("prep")?.release()
+            shutdownPersistence(service)
+            PlaybackKeepAliveAlarmScheduler.cancel(service)
+            NativePlaybackStateStore.clearSessions(service)
         }
     }
 }

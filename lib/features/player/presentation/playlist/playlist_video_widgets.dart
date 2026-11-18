@@ -1126,6 +1126,11 @@ class _SessionVideoFullscreenPageState
                                 onPressed: () {
                                   _showControls();
                                   unawaited(
+                                    AppInteractionFeedback.trigger(
+                                      AppInteractionFeedbackType.confirmation,
+                                    ),
+                                  );
+                                  unawaited(
                                     _playback.toggleSessionPlayPause(
                                       widget.sessionId,
                                     ),

@@ -52,10 +52,7 @@ class _LoopModeSheetState extends ConsumerState<LoopModeSheet> {
 
   void _triggerSelectionFeedback() {
     unawaited(
-      AppInteractionFeedback.trigger(
-        AppInteractionFeedbackType.selection,
-        context: context,
-      ),
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
     );
   }
 
@@ -385,7 +382,6 @@ class SessionLoopModeButton extends ConsumerWidget {
         ),
       ),
       onPressed: () {
-        AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
         showLoopModeBottomSheet(
           context: context,
           session: playback.sessionSnapshotById(session.id) ?? session,

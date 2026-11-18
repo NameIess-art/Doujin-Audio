@@ -393,6 +393,11 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   }
 
   void _selectSegment(TimeSegmentLabel label) {
+    if (_selectedSegmentId != label.id || !_segmentEditorVisible) {
+      unawaited(
+        AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+      );
+    }
     _flushSegmentNameDraft();
     setState(() {
       _segmentDraftGeneration++;
@@ -403,6 +408,9 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   }
 
   void _startNewSegment() {
+    unawaited(
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+    );
     _flushSegmentNameDraft();
     final defaultName = _nextSegmentDefaultName();
     setState(() {
@@ -441,6 +449,9 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   void _toggleSelectedSegmentLoop() {
     final selected = _selectedSegment;
     if (selected == null) return;
+    unawaited(
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+    );
     _timeSegments.toggleLoop(sessionId: widget.session.id, label: selected);
     setState(() {});
   }
@@ -450,6 +461,9 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   }
 
   void _setDraftStartToCurrent() {
+    unawaited(
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+    );
     setState(() {
       _draftStart = _clampToDuration(_currentSessionPosition);
       _draftColorValue ??= _timeSegments.nextColor(_segmentLabels);
@@ -458,6 +472,9 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   }
 
   void _setDraftEndToCurrent() {
+    unawaited(
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+    );
     setState(() {
       _draftEnd = _clampToDuration(_currentSessionPosition);
       _draftColorValue ??= _timeSegments.nextColor(_segmentLabels);
@@ -615,6 +632,9 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
           .where((label) => label.id == selected.id)
           .firstOrNull;
       if (removedLabel == null) return;
+      unawaited(
+        AppInteractionFeedback.trigger(AppInteractionFeedbackType.destructive),
+      );
       final backupSucceeded = await timeSegments.deleteLabel(removedLabel);
       if (!mounted || _segmentTrackKey != selected.trackKey) return;
       setState(() {
@@ -919,12 +939,6 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
               selectionStarted = true;
               final route = readAppRoute(ctx)!;
               unawaited(() async {
-                unawaited(
-                  AppInteractionFeedback.trigger(
-                    AppInteractionFeedbackType.tap,
-                    context: ctx,
-                  ),
-                );
                 Navigator.of(ctx).pop();
                 if (!mounted) return;
                 final current = _playback.sessionSnapshotById(session.id);

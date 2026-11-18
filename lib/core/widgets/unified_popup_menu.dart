@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -258,14 +259,14 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
     final textAlign = _menuTextAlign(context, overlayBox, anchorRect.center);
     final screenWidth = overlayBox.size.width;
     final availableWidth = (screenWidth - 20).clamp(0.0, double.infinity);
-    final menuWidth = widget.menuWidth.clamp(0.0, availableWidth);
+    final menuWidth = widget.menuWidth.clamp(0.0, availableWidth).toDouble();
     if (menuWidth == 0) return;
-    final left = (anchorRect.right - menuWidth).clamp(
-      10.0,
-      screenWidth - menuWidth - 10.0,
-    );
-    final maxTop = (overlayBox.size.height - 64).clamp(8.0, double.infinity);
-    final top = anchorRect.top.clamp(8.0, maxTop);
+    final left = (anchorRect.right - menuWidth)
+        .clamp(10.0, screenWidth - menuWidth - 10.0)
+        .toDouble();
+    final top = anchorRect.top
+        .clamp(8.0, math.max(8.0, overlayBox.size.height - 8.0))
+        .toDouble();
 
     var hoverEnabled = false;
     final entry = OverlayEntry(
@@ -499,42 +500,56 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
                     ),
                   ),
                 ),
-                Positioned(
-                  left: widget.rect.left,
-                  top: widget.rect.top,
-                  width: widget.rect.width,
-                  // Keep the fade's hit bounds inside the animated transforms.
-                  child: SlideTransition(
-                    position: _slide,
-                    child: _AnchoredMenuScale(
-                      anchorInMenu: (_) => widget.anchor - widget.rect.topLeft,
-                      scale: _scale,
-                      child: FadeTransition(
-                        opacity: _curved,
-                        child: ExcludeFocus(
-                          excluding:
-                              widget.animation.status == AnimationStatus.reverse,
-                          child: ExcludeSemantics(
-                            excluding:
-                                widget.animation.status ==
-                                AnimationStatus.reverse,
-                            child: IgnorePointer(
-                              ignoring:
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final size = constraints.biggest;
+                    final layout = _PopupMenuPositionDelegate(
+                      left: widget.rect.left,
+                      preferredTop: widget.rect.top,
+                      menuWidth: widget.rect.width,
+                    );
+                    return CustomSingleChildLayout(
+                      delegate: layout,
+                      // Keep the fade's hit bounds inside the animated transforms.
+                      child: SlideTransition(
+                        position: _slide,
+                        child: _AnchoredMenuScale(
+                          anchorInMenu: (menuSize) =>
+                              widget.anchor -
+                              layout.getPositionForChild(size, menuSize),
+                          scale: _scale,
+                          child: FadeTransition(
+                            opacity: _curved,
+                            child: ExcludeFocus(
+                              excluding:
                                   widget.animation.status ==
                                   AnimationStatus.reverse,
-                              child: _UnifiedPopupMenuCard<T>(
-                                entries: widget.entries,
-                                textAlign: widget.textAlign,
-                                suppressHover: !widget.hoverEnabled,
-                                onSelected: widget.onSelected,
-                                onTrailingSelected: widget.onTrailingSelected,
+                              child: ExcludeSemantics(
+                                excluding:
+                                    widget.animation.status ==
+                                    AnimationStatus.reverse,
+                                child: IgnorePointer(
+                                  ignoring:
+                                      widget.animation.status ==
+                                      AnimationStatus.reverse,
+                                  child: SingleChildScrollView(
+                                    child: _UnifiedPopupMenuCard<T>(
+                                      entries: widget.entries,
+                                      textAlign: widget.textAlign,
+                                      suppressHover: !widget.hoverEnabled,
+                                      onSelected: widget.onSelected,
+                                      onTrailingSelected:
+                                          widget.onTrailingSelected,
+                                    ),
+                                  ).withWindowsSmoothScroll(),
+                                ),
                               ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 ),
               ],
             ),
@@ -542,6 +557,48 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
         ),
       ),
     );
+  }
+}
+
+class _PopupMenuPositionDelegate extends SingleChildLayoutDelegate {
+  const _PopupMenuPositionDelegate({
+    required this.left,
+    required this.preferredTop,
+    required this.menuWidth,
+  });
+
+  final double left;
+  final double preferredTop;
+  final double menuWidth;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
+    final maxWidth = math.min(
+      menuWidth,
+      math.max(0.0, constraints.maxWidth - 20.0),
+    );
+    final maxHeight = math.max(0.0, constraints.maxHeight - 16.0);
+    return BoxConstraints(
+      minWidth: maxWidth,
+      maxWidth: maxWidth,
+      maxHeight: maxHeight,
+    );
+  }
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    final maxLeft = math.max(10.0, size.width - childSize.width - 10.0);
+    final resolvedLeft = left.clamp(10.0, maxLeft);
+    final maxTop = math.max(8.0, size.height - childSize.height - 8.0);
+    final resolvedTop = preferredTop.clamp(8.0, maxTop);
+    return Offset(resolvedLeft, resolvedTop);
+  }
+
+  @override
+  bool shouldRelayout(covariant _PopupMenuPositionDelegate oldDelegate) {
+    return left != oldDelegate.left ||
+        preferredTop != oldDelegate.preferredTop ||
+        menuWidth != oldDelegate.menuWidth;
   }
 }
 
@@ -717,8 +774,8 @@ class _UnifiedPopupMenuContent<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final foreground = entry.destructive ? cs.error : cs.onSurface;
-    return SizedBox(
-      height: compact ? 40 : 48,
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: compact ? 40 : 48),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14),
         child: Row(

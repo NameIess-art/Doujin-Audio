@@ -1582,4 +1582,47 @@ void main() {
     expect(coordinator.isInteracting, isFalse);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('tall popup menu clamps inside short viewport and scrolls', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(400, 320));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    int? chosen;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.bottomRight,
+            child: UnifiedPopupMenuButton<int>(
+              icon: Icons.more_vert,
+              tooltip: 'TallMenu',
+              entries: [
+                for (var i = 1; i <= 12; i++)
+                  UnifiedMenuEntry.action(value: i, label: 'Option $i'),
+              ],
+              onSelected: (value) => chosen = value,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byTooltip('TallMenu'));
+    await tester.pumpAndSettle();
+
+    final firstRect = tester.getRect(find.text('Option 1'));
+    expect(firstRect.top, greaterThanOrEqualTo(0));
+    final scrollable = find.byType(Scrollable).last;
+    await tester.scrollUntilVisible(
+      find.text('Option 12'),
+      120,
+      scrollable: scrollable,
+    );
+    final lastRect = tester.getRect(find.text('Option 12'));
+    expect(lastRect.bottom, lessThanOrEqualTo(320));
+    await tester.tap(find.text('Option 12'));
+    await tester.pumpAndSettle();
+    expect(chosen, 12);
+    expect(tester.takeException(), isNull);
+  });
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../../../app/presentation/app_presentation_providers.dart';
 import 'settings_providers.dart';
 
@@ -8,6 +10,7 @@ import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
+import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../asmr/domain/asmr_download.dart';
 
@@ -67,11 +70,17 @@ class _AsmrDownloadFolderNameSettingsSheetState
 
   void _remove(AsmrDownloadFolderNameField field) {
     if (_saving || _selected.length == 1) return;
+    unawaited(
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+    );
     setState(() => _selected.remove(field));
   }
 
   void _add(AsmrDownloadFolderNameField field) {
     if (_saving || _selected.contains(field)) return;
+    unawaited(
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+    );
     setState(() => _selected.add(field));
   }
 
@@ -120,6 +129,11 @@ class _AsmrDownloadFolderNameSettingsSheetState
                 physics: const NeverScrollableScrollPhysics(),
                 buildDefaultDragHandles: false,
                 itemCount: _selected.length,
+                onReorderStart: (_) => unawaited(
+                  AppInteractionFeedback.trigger(
+                    AppInteractionFeedbackType.confirmation,
+                  ),
+                ),
                 onReorder: _reorder,
                 itemBuilder: (context, index) {
                   final field = _selected[index];

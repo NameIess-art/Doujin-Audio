@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
@@ -296,8 +298,48 @@ class SessionSwitcherNode {
 
   bool get isFolder => track == null;
   Map<String, SessionSwitcherNode>? _foldersByName;
+  Map<(String?, String), SessionSwitcherNode>? _foldersByParentDir;
 
   SessionSwitcherNode folderForTrack(MusicTrack track, {String? workRoot}) {
+    final remoteRelative = track.remoteMetadata?['trackRelativePath']
+        ?.toString()
+        .trim();
+    if (remoteRelative != null && remoteRelative.isNotEmpty) {
+      final sep = math.max(
+        remoteRelative.lastIndexOf('/'),
+        remoteRelative.lastIndexOf('\\'),
+      );
+      if (sep < 0) return this;
+      final dir = remoteRelative.substring(0, sep);
+      return (_foldersByParentDir ??=
+              <(String?, String), SessionSwitcherNode>{})
+          .putIfAbsent(
+            ('remote', dir),
+            () => _resolveFoldersForTrack(track, workRoot: workRoot),
+          );
+    }
+    if (!track.path.contains('%')) {
+      final sep = math.max(
+        track.path.lastIndexOf('/'),
+        track.path.lastIndexOf('\\'),
+      );
+      if (sep >= 0) {
+        final dir = track.path.substring(0, sep);
+        return (_foldersByParentDir ??=
+                <(String?, String), SessionSwitcherNode>{})
+            .putIfAbsent(
+              (workRoot ?? track.groupKey, dir),
+              () => _resolveFoldersForTrack(track, workRoot: workRoot),
+            );
+      }
+    }
+    return _resolveFoldersForTrack(track, workRoot: workRoot);
+  }
+
+  SessionSwitcherNode _resolveFoldersForTrack(
+    MusicTrack track, {
+    String? workRoot,
+  }) {
     var parent = this;
     for (final folder in _queueFolderSegments(track, workRoot: workRoot)) {
       parent = parent.folderChild(folder);
@@ -320,9 +362,11 @@ class SessionSwitcherNode {
   }
 
   void sortChildrenNaturally() {
+    if (children.isEmpty) return;
     for (final child in children) {
-      child.sortChildrenNaturally();
+      if (child.isFolder) child.sortChildrenNaturally();
     }
+    if (children.length < 2) return;
     children.sort(
       (left, right) => compareNaturalTreeEntries(
         leftIsFolder: left.isFolder,

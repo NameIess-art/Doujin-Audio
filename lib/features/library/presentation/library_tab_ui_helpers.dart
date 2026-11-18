@@ -99,12 +99,6 @@ Future<void> runLibraryCardAction({
   final playback = ref.read(playbackFacadeProvider);
   final library = ref.read(libraryFacadeProvider);
   final i18n = ref.read(appLanguageProviderInstanceProvider);
-  unawaited(
-    AppInteractionFeedback.trigger(
-      AppInteractionFeedbackType.tap,
-      context: context,
-    ),
-  );
   final succeeded = temporary
       ? await playback.playDirect(
           selection.removalTarget == LibraryRemovalTarget.folder
@@ -133,6 +127,11 @@ Future<void> addLibraryBatchSelectionsToPlaylist({
   required List<LibraryBatchSelection> selections,
   required VoidCallback exitSelectionMode,
 }) async {
+  if (selections.any((selection) => selection.firstTrack != null)) {
+    unawaited(
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+    );
+  }
   final playback = ref.read(playbackFacadeProvider);
   var addedCount = 0;
   for (final selection in selections) {
@@ -204,6 +203,11 @@ Future<void> removeLibraryBatchSelections({
   required List<LibraryBatchSelection> selections,
   required VoidCallback exitSelectionMode,
 }) async {
+  if (selections.isNotEmpty) {
+    unawaited(
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.destructive),
+    );
+  }
   exitSelectionMode();
   for (final selection in selections) {
     await stageLibraryRemoval(

@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/presentation/app_presentation_providers.dart';
@@ -74,6 +73,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
       OverlayPortalController();
   double _headerHeight = 0;
   double _switcherHeight = 0;
+  bool _layoutMeasurementScheduled = false;
   late int _currentIndex;
   late final PageController _pageController;
   int? _targetVirtualPage;
@@ -183,7 +183,9 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
     if (crossed != _dismissThresholdReached) {
       _dismissThresholdReached = crossed;
       if (crossed) {
-        unawaited(HapticFeedback.selectionClick());
+        unawaited(
+          AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+        );
       }
     }
     setState(() {});
@@ -399,6 +401,41 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
     );
   }
 
+  void _scheduleLayoutMeasurement() {
+    if (_layoutMeasurementScheduled) return;
+    _layoutMeasurementScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _layoutMeasurementScheduled = false;
+      if (!mounted) return;
+      var updatedHeaderHeight = _headerHeight;
+      var updatedSwitcherHeight = _switcherHeight;
+      final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
+      if (box != null) {
+        final height = box.size.height;
+        if (height > 0 &&
+            (_headerHeight == 0 || (height - _headerHeight).abs() > 0.5)) {
+          updatedHeaderHeight = height;
+        }
+      }
+      final switcherBox =
+          _switcherKey.currentContext?.findRenderObject() as RenderBox?;
+      if (switcherBox != null) {
+        final height = switcherBox.size.height;
+        if (height > 0 &&
+            (_switcherHeight == 0 || (height - _switcherHeight).abs() > 0.5)) {
+          updatedSwitcherHeight = height;
+        }
+      }
+      if (updatedHeaderHeight != _headerHeight ||
+          updatedSwitcherHeight != _switcherHeight) {
+        setState(() {
+          _headerHeight = updatedHeaderHeight;
+          _switcherHeight = updatedSwitcherHeight;
+        });
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
@@ -519,26 +556,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
     }
 
     final currentImage = widget.images[_currentIndex];
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
-      if (box != null) {
-        final height = box.size.height;
-        if (height > 0 &&
-            (_headerHeight == 0 || (height - _headerHeight).abs() > 0.5)) {
-          setState(() => _headerHeight = height);
-        }
-      }
-      final switcherBox =
-          _switcherKey.currentContext?.findRenderObject() as RenderBox?;
-      if (switcherBox != null) {
-        final height = switcherBox.size.height;
-        if (height > 0 &&
-            (_switcherHeight == 0 || (height - _switcherHeight).abs() > 0.5)) {
-          setState(() => _switcherHeight = height);
-        }
-      }
-    });
+    _scheduleLayoutMeasurement();
     final imageTop =
         (_headerHeight > 0
             ? _headerHeight

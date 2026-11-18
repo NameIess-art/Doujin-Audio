@@ -583,18 +583,21 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
                                   ),
                                 ),
                                 const SizedBox(height: 6),
-                                placeholderFor(
-                                  FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    child: Text(
-                                      label(period),
-                                      maxLines: 1,
-                                      style: labelStyle,
+                                SizedBox(
+                                  height: labelHeight.ceilToDouble() + 2,
+                                  child: placeholderFor(
+                                    FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Text(
+                                        label(period),
+                                        maxLines: 1,
+                                        style: labelStyle,
+                                      ),
                                     ),
+                                    width: 30,
+                                    height: 12,
+                                    alignment: Alignment.center,
                                   ),
-                                  width: 30,
-                                  height: 12,
-                                  alignment: Alignment.center,
                                 ),
                               ],
                             ),

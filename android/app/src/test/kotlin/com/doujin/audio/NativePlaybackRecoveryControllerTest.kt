@@ -2,6 +2,7 @@ package com.doujin.audio
 
 import com.doujin.audio.player.recovery.*
 import com.doujin.audio.player.session.*
+import com.doujin.audio.player.service.isRecoverablePlaybackErrorCode
 import com.doujin.audio.player.service.shouldClearPlaybackIntentForPlayWhenReadyChange
 
 import androidx.media3.common.PlaybackException
@@ -680,6 +681,48 @@ class NativePlaybackRecoveryControllerTest {
         assertEquals(0, host.requestAudioFocusCalls)
         assertFalse(controller.isPending("player"))
     }
+
+    @Test
+    fun `keep alive and screen on triggers resume unexpected pauses and recover idle players`() {
+        val environment = FakeRecoveryEnvironment()
+        val paused = HealthCheckPlayer("paused", environment)
+        val idle = HealthCheckPlayer("idle", environment).apply { playWhenReady = true }
+        val host = healthCheckHost(paused, idle).apply {
+            onEnsurePlayer = { session ->
+                when (session.sessionId) {
+                    "idle" -> idle.player
+                    else -> paused.player
+                }
+            }
+        }
+        val controller = NativePlaybackRecoveryController(host, environment)
+        controller.markIntended("paused")
+        controller.markIntended("idle")
+
+        // Record health state for idle and verify keep_alive_heartbeat resumes paused.
+        controller.trigger("keep_alive_heartbeat")
+        assertEquals(1, paused.playCalls)
+        assertTrue(paused.playWhenReady)
+        assertEquals(0, idle.playCalls)
+
+        // Transition idle session to STATE_IDLE with existing monitoredHealth entry
+        // and verify screen_on recovers both unexpected pause and idle player.
+        idle.playbackState = Player.STATE_IDLE
+        paused.playWhenReady = false
+
+        controller.trigger("screen_on")
+        assertEquals(2, paused.playCalls)
+        assertTrue(paused.playWhenReady)
+        assertEquals(1, idle.playCalls)
+    }
+
+    @Test
+    fun `recoverable error policy includes timeout decoder query and audio offload failures`() {
+        assertTrue(isRecoverablePlaybackErrorCode(PlaybackException.ERROR_CODE_TIMEOUT))
+        assertTrue(isRecoverablePlaybackErrorCode(PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED))
+        assertTrue(isRecoverablePlaybackErrorCode(PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_INIT_FAILED))
+        assertTrue(isRecoverablePlaybackErrorCode(PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_WRITE_FAILED))
+    }
 }
 
 private class FakeRecoveryEnvironment : NativePlaybackRecoveryEnvironment {
@@ -754,7 +797,8 @@ private class HealthCheckPlayer(sessionId: String, environment: FakeRecoveryEnvi
         arrayOf(ExoPlayer::class.java)
     ) { _, method, _ ->
         when (method.name) {
-            "getPlayWhenReady", "isPlaying" -> playWhenReady
+            "getPlayWhenReady" -> playWhenReady
+            "isPlaying" -> playWhenReady && playbackState == Player.STATE_READY
             "getPlaybackState" -> playbackState
             "getPlaybackSuppressionReason" -> suppressionReason
             "getPlayerError" -> null
@@ -762,6 +806,7 @@ private class HealthCheckPlayer(sessionId: String, environment: FakeRecoveryEnvi
             "getBufferedPosition" -> 15_000L
             "getDuration" -> 60_000L
             "getCurrentMediaItemIndex" -> 2
+            "setVolume" -> null
             "play" -> {
                 playCalls++
                 playWhenReady = true
@@ -804,6 +849,7 @@ private class FakeRecoveryHost(
     var requestAudioFocusCalls = 0
     var audioFocusAllowed = true
     var onRequestAudioFocus: () -> Unit = {}
+    var onEnsurePlayer: ((NativePlaybackSession) -> ExoPlayer)? = null
     var onHealthSample: (String, Long) -> NativePlaybackHealthSample? = { _, _ -> null }
     val recoveryTimeouts = mutableListOf<String>()
     var foregroundPlaybackAllowed = true
@@ -840,7 +886,8 @@ private class FakeRecoveryHost(
     override fun establishForegroundPlayback(sessionId: String): Boolean =
         foregroundPlaybackAllowed
     override fun focusSession(sessionId: String) = Unit
-    override fun ensurePlayer(session: NativePlaybackSession): ExoPlayer = error("unused")
+    override fun ensurePlayer(session: NativePlaybackSession): ExoPlayer =
+        onEnsurePlayer?.invoke(session) ?: error("unused")
     override fun onRecoveryTimedOut(sessionId: String) {
         recoveryTimeouts += sessionId
     }

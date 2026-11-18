@@ -7,12 +7,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../core/media/time_text_formatters.dart';
 import '../../../../core/widgets/app_buttons.dart';
-import '../../../../core/widgets/app_dialog.dart';
+import '../../../../core/widgets/app_edit_panel.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/scroll_activity_gate.dart';
 import '../../../../core/widgets/top_page_header.dart';
 import '../../../../core/widgets/windows_horizontal_wheel_scroll.dart';
+import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../application/playback_facade.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../domain/time_segment_label.dart';
@@ -241,11 +242,16 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SizedBox(
-          height: 42,
+    return SingleChildScrollView(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.paddingOf(context).bottom + 8,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            height: 42,
           child: Row(
             children: [
               Expanded(
@@ -358,7 +364,7 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
             ],
           ),
           if (selected != null) ...[
-            const Spacer(),
+            const SizedBox(height: 16),
             Row(
               children: [
                 Expanded(
@@ -424,7 +430,8 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
           ],
         ],
       ],
-    );
+      ),
+    ).withWindowsSmoothScroll();
   }
 }
 
@@ -606,47 +613,23 @@ class SegmentTimeRow extends StatelessWidget {
 Future<Duration?> showSegmentTimeInputDialog(
   BuildContext context, {
   Duration? initial,
-}) async {
+}) {
   final i18n = ProviderScope.containerOf(
     context,
     listen: false,
   ).read(appLanguageProviderInstanceProvider);
-  final controller = TextEditingController(
-    text: initial == null ? '' : formatDurationCompact(initial),
-  );
-  return showAppDialog<Duration>(
+  return showAppTextInputPanel<Duration>(
     context: context,
-    builder: (dialogContext) => AppDialog(
+    barrierLabel: i18n.tr('close'),
+    header: AppEditPanelHeader(
       title: i18n.tr('segment_time_input_title'),
       icon: Icons.schedule_rounded,
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        keyboardType: TextInputType.datetime,
-        decoration: InputDecoration(
-          hintText: 'MM:SS / HH:MM:SS',
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-        ),
-        onSubmitted: (value) {
-          final parsed = parseDurationCompact(value);
-          if (parsed != null) Navigator.of(dialogContext).pop(parsed);
-        },
-      ),
-      actions: AppDialogActions(
-        children: [
-          AppSecondaryButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            label: i18n.tr('cancel'),
-          ),
-          AppPrimaryButton(
-            onPressed: () {
-              final parsed = parseDurationCompact(controller.text);
-              if (parsed != null) Navigator.of(dialogContext).pop(parsed);
-            },
-            label: i18n.tr('confirm'),
-          ),
-        ],
-      ),
     ),
-  ).whenComplete(controller.dispose);
+    initialValue: initial == null ? '' : formatDurationCompact(initial),
+    keyboardType: TextInputType.datetime,
+    decoration: const InputDecoration(hintText: 'MM:SS / HH:MM:SS'),
+    cancelLabel: i18n.tr('cancel'),
+    submitLabel: i18n.tr('confirm'),
+    parse: parseDurationCompact,
+  );
 }

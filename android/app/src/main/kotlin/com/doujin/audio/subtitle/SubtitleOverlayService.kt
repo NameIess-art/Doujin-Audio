@@ -17,6 +17,8 @@ import android.view.WindowManager
 import android.widget.TextView
 import kotlin.math.roundToInt
 
+private const val INITIAL_WIDTH_DP = 160f
+
 class SubtitleOverlayService : Service() {
 
     private lateinit var windowManager: WindowManager
@@ -52,7 +54,7 @@ class SubtitleOverlayService : Service() {
         }
 
         params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            dpInt(INITIAL_WIDTH_DP),
             WindowManager.LayoutParams.WRAP_CONTENT,
             layoutType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
@@ -64,8 +66,7 @@ class SubtitleOverlayService : Service() {
         params.x = 0
 
         val textView = TextView(this).apply {
-            text = ""
-            visibility = View.GONE
+            minLines = 1
             setTextColor(Color.WHITE)
             textSize = 16f
             setPadding(dpInt(20f), dpInt(10f), dpInt(20f), dpInt(10f))
@@ -114,18 +115,23 @@ class SubtitleOverlayService : Service() {
     fun updateSubtitle(text: String) {
         subtitleTextView?.post {
             val view = subtitleTextView ?: return@post
-            val nextVisibility = if (text.isEmpty()) View.GONE else View.VISIBLE
-            if (view.text.toString() != text) {
-                view.text = text
+            if (view.text.toString() == text) return@post
+
+            val wasEmpty = view.text.isEmpty()
+            val isEmpty = text.isEmpty()
+            view.text = text
+            if (wasEmpty == isEmpty) return@post
+
+            if (isEmpty) {
+                // Keep the last rendered size while the window has no cue to measure.
+                params.width = view.width.takeIf { it > 0 } ?: dpInt(INITIAL_WIDTH_DP)
+                params.height = view.height.takeIf { it > 0 }
+                    ?: WindowManager.LayoutParams.WRAP_CONTENT
+            } else {
+                params.width = WindowManager.LayoutParams.WRAP_CONTENT
+                params.height = WindowManager.LayoutParams.WRAP_CONTENT
             }
-            if (view.visibility != nextVisibility) {
-                view.visibility = nextVisibility
-                if (nextVisibility == View.VISIBLE) {
-                    try {
-                        windowManager.updateViewLayout(view, params)
-                    } catch (_: Exception) {}
-                }
-            }
+            windowManager.updateViewLayout(view, params)
         }
     }
 
@@ -166,8 +172,8 @@ class SubtitleOverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        subtitleTextView?.let {
-            windowManager.removeView(it)
-        }
+        val view = subtitleTextView
+        subtitleTextView = null
+        if (view != null) windowManager.removeView(view)
     }
 }

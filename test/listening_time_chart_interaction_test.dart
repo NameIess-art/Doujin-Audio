@@ -937,6 +937,13 @@ void main() {
           .data;
       await tester.tap(selector);
       await tester.pumpAndSettle();
+      expect(
+        find.ancestor(
+          of: find.byKey(const ValueKey('app_dialog_scrim')),
+          matching: find.byType(BackdropFilter),
+        ),
+        findsOneWidget,
+      );
       final localizations = MaterialLocalizations.of(
         tester.element(find.byType(DatePickerDialog)),
       );

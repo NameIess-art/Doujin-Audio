@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_styles.dart';
@@ -5,28 +7,35 @@ import 'app_glass_surface.dart';
 import 'app_transitions.dart';
 import 'windows_smooth_scroll_controller.dart';
 
-class _AppAnimatedScrim extends StatelessWidget {
-  const _AppAnimatedScrim({required this.animation, required this.scrimKey});
+class _AppModalBackground extends StatelessWidget {
+  const _AppModalBackground({required this.animation, required this.scrimKey});
+
+  static const double _blurSigma = 8;
 
   final Animation<double> animation;
   final Key scrimKey;
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: animation,
-      builder: (context, _) {
-        final curve = animation.status == AnimationStatus.reverse
-            ? kSecondaryOverlayConfig.reverseCurve
-            : kSecondaryOverlayConfig.curve;
-        return ColoredBox(
-          key: scrimKey,
-          color: kSecondaryOverlayConfig.scrimColor(
-            context,
-            curve.transform(animation.value),
-          ),
-        );
-      },
+    return ClipRect(
+      child: AnimatedBuilder(
+        animation: animation,
+        builder: (context, _) {
+          final curve = animation.status == AnimationStatus.reverse
+              ? kSecondaryOverlayConfig.reverseCurve
+              : kSecondaryOverlayConfig.curve;
+          final progress = curve.transform(animation.value).clamp(0.0, 1.0);
+          final sigma = _blurSigma * progress;
+          return BackdropFilter(
+            enabled: sigma > 0,
+            filter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+            child: ColoredBox(
+              key: scrimKey,
+              color: kSecondaryOverlayConfig.scrimColor(context, progress),
+            ),
+          );
+        },
+      ),
     );
   }
 }
@@ -112,7 +121,7 @@ class _AppOverlayPanelShell extends StatelessWidget {
               onTap: barrierDismissible
                   ? () => Navigator.of(context).maybePop()
                   : null,
-              child: _AppAnimatedScrim(
+              child: _AppModalBackground(
                 animation: animation,
                 scrimKey: const ValueKey('app_overlay_panel_scrim'),
               ),
@@ -153,6 +162,7 @@ Future<T?> showAppDialog<T>({
   required WidgetBuilder builder,
   bool barrierDismissible = true,
   double maxWidth = 420,
+  EdgeInsets outerPadding = const EdgeInsets.all(AppSpacing.xl),
 }) {
   final capturedThemes = InheritedTheme.capture(
     from: context,
@@ -178,7 +188,7 @@ Future<T?> showAppDialog<T>({
                   onTap: barrierDismissible
                       ? () => Navigator.of(dialogContext).maybePop()
                       : null,
-                  child: _AppAnimatedScrim(
+                  child: _AppModalBackground(
                     animation: animation,
                     scrimKey: const ValueKey('app_dialog_scrim'),
                   ),
@@ -201,10 +211,7 @@ Future<T?> showAppDialog<T>({
                   child: SafeArea(
                     child: Center(
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.xl,
-                          vertical: AppSpacing.xl,
-                        ),
+                        padding: outerPadding,
                         child: ConstrainedBox(
                           constraints: BoxConstraints(maxWidth: maxWidth),
                           child: buildAppScaleFadeTransition(

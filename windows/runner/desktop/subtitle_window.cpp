@@ -96,7 +96,8 @@ void SubtitleWindow::Style(const flutter::EncodableMap& style) {
   InvalidateRect(window_, nullptr, TRUE);
 }
 void SubtitleWindow::FitText() {
-  if (!window_ || fitting_text_) return;
+  // Keep the current window bounds during gaps between cues.
+  if (!window_ || fitting_text_ || text_.empty()) return;
   fitting_text_ = true;
   RECT bounds{}; GetWindowRect(window_, &bounds);
   const double scale = GetDpiForWindow(window_) / 96.0;
@@ -112,7 +113,7 @@ void SubtitleWindow::FitText() {
   }
   auto previous = SelectObject(dc, font_);
   RECT text{0, 0, std::max(1L, bounds.right - bounds.left - 2 * padding), 0};
-  DrawTextW(dc, text_.empty() ? L" " : text_.c_str(), -1, &text,
+  DrawTextW(dc, text_.c_str(), -1, &text,
       DT_CENTER | DT_WORDBREAK | DT_NOPREFIX | DT_CALCRECT);
   SelectObject(dc, previous); ReleaseDC(window_, dc);
   MONITORINFO monitor{sizeof(MONITORINFO)};

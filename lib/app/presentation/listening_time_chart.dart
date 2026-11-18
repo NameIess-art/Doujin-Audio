@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import '../../core/widgets/app_buttons.dart';
+import '../../core/widgets/app_dialog.dart';
 import '../../core/widgets/app_feedback.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -232,18 +233,22 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
     ListeningPeriod selected,
   ) async {
     final latest = periods.last;
-    final date = await showDatePicker(
+    final date = await showAppDialog<DateTime>(
       context: context,
-      initialDate: _containsSelection(selected) ? _selected : selected.start,
-      firstDate: widget.style == ListeningChartStyle.heatmap
-          ? _moveListeningPeriod(
-              latest.start,
-              _interval,
-              1 - _heatmapColumnCount * _heatmapRows,
-            )
-          : periods.first.start,
-      lastDate: DateTime(latest.end.year, latest.end.month, latest.end.day - 1),
-      initialEntryMode: DatePickerEntryMode.input,
+      maxWidth: double.infinity,
+      outerPadding: EdgeInsets.zero,
+      builder: (_) => DatePickerDialog(
+        initialDate: _containsSelection(selected) ? _selected : selected.start,
+        firstDate: widget.style == ListeningChartStyle.heatmap
+            ? _moveListeningPeriod(
+                latest.start,
+                _interval,
+                1 - _heatmapColumnCount * _heatmapRows,
+              )
+            : periods.first.start,
+        lastDate: DateTime(latest.end.year, latest.end.month, latest.end.day - 1),
+        initialEntryMode: DatePickerEntryMode.input,
+      ),
     );
     if (!mounted || date == null) return;
     setState(() => _selected = date);

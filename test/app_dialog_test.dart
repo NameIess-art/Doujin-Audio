@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,6 +9,119 @@ import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 
 void main() {
+  for (final usePanel in [false, true]) {
+    testWidgets(
+      '${usePanel ? 'Overlay panel' : 'Dialog'} blurs only the page behind it',
+      (tester) async {
+        final size = defaultTargetPlatform == TargetPlatform.windows
+            ? const Size(960, 600)
+            : const Size(390, 700);
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = size;
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        final captureKey = GlobalKey();
+        const foreground = SizedBox(
+          width: 160,
+          height: 80,
+          child: Row(
+            key: ValueKey('modal_foreground'),
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: ColoredBox(color: Colors.red)),
+              Expanded(child: ColoredBox(color: Colors.blue)),
+            ],
+          ),
+        );
+        await tester.pumpWidget(
+          RepaintBoundary(
+            key: captureKey,
+            child: MaterialApp(
+              home: Scaffold(
+                body: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    const Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(child: ColoredBox(color: Colors.black)),
+                        Expanded(child: ColoredBox(color: Colors.white)),
+                      ],
+                    ),
+                    Align(
+                      alignment: Alignment.topLeft,
+                      child: Builder(
+                        builder: (context) => TextButton(
+                          onPressed: () => usePanel
+                              ? showAppOverlayPanel<void>(
+                                  context: context,
+                                  mobileAlignment: Alignment.center,
+                                  builder: (_) => foreground,
+                                )
+                              : showAppDialog<void>(
+                                  context: context,
+                                  builder: (_) => foreground,
+                                ),
+                          child: const Text('Open'),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+
+        Future<List<int>> redAt(List<Offset> points) async {
+          final boundary =
+              captureKey.currentContext!.findRenderObject()!
+                  as RenderRepaintBoundary;
+          final image = boundary.toImageSync();
+          final bytes = (await tester.runAsync(() => image.toByteData()))!;
+          final samples = [
+            for (final point in points)
+              bytes.getUint8(
+                (point.dy.floor() * image.width + point.dx.floor()) * 4,
+              ),
+          ];
+          image.dispose();
+          return samples;
+        }
+
+        final background = [
+          Offset(size.width / 2 - 2, 40),
+          Offset(size.width / 2 + 2, 40),
+        ];
+        expect(await redAt(background), [0, 255]);
+        await tester.tap(find.text('Open'));
+        await tester.pumpAndSettle();
+
+        final blurred = await redAt(background);
+        expect(blurred.first, greaterThan(20));
+        expect(blurred.last - blurred.first, lessThan(55));
+        final center = tester.getCenter(
+          find.byKey(const ValueKey('modal_foreground')),
+        );
+        expect(
+          await redAt([
+            center - const Offset(2, 0),
+            center + const Offset(2, 0),
+          ]),
+          [(Colors.red.r * 255).round(), (Colors.blue.r * 255).round()],
+        );
+
+        await tester.tapAt(const Offset(1, 1));
+        await tester.pumpAndSettle();
+        expect(await redAt(background), [0, 255]);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   for (final scenario in [
     (platform: TargetPlatform.android, textScale: 1.0),
     (platform: TargetPlatform.android, textScale: 2.0),

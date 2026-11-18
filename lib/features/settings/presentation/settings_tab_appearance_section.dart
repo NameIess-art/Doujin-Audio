@@ -9,7 +9,7 @@ List<Widget> _buildSettingsAppearanceSection({
   required ColorScheme cs,
   required VoidCallback onShowSubtitleWindowSettings,
 }) {
-  final themeProvider = ref.watch(themeProviderInstanceProvider);
+  final themeProvider = ref.read(themeProviderInstanceProvider);
   final coverResolutionLabels = <CoverImageResolution, String>{
     CoverImageResolution.memorySaver: i18n.tr('cover_image_resolution_300'),
     CoverImageResolution.balanced: i18n.tr('cover_image_resolution_600'),
@@ -24,9 +24,9 @@ List<Widget> _buildSettingsAppearanceSection({
       children: [
         Consumer(
           builder: (context, ref, _) {
-            final themeMode = ref
-                .watch(themeProviderInstanceProvider)
-                .themeMode;
+            final themeMode = ref.watch(
+              themeProviderInstanceProvider.select((t) => t.themeMode),
+            );
             final modeLabels = <ThemeMode, String>{
               ThemeMode.system: i18n.tr('theme_system'),
               ThemeMode.light: i18n.tr('theme_light'),
@@ -65,63 +65,84 @@ List<Widget> _buildSettingsAppearanceSection({
           },
         ),
         if (Theme.of(context).brightness == Brightness.dark)
-          SwitchListTile(
-            key: const ValueKey<String>('pure_black_theme_tile'),
-            title: _settingsTitle(i18n.tr('black_theme')),
-            value: themeProvider.pureBlackTheme,
-            onChanged: (value) {
-              unawaited(
-                AppInteractionFeedback.trigger(
-                  AppInteractionFeedbackType.selection,
-                ),
+          Consumer(
+            builder: (context, ref, _) {
+              final pureBlack = ref.watch(
+                themeProviderInstanceProvider.select((t) => t.pureBlackTheme),
               );
-              unawaited(
-                _applyThemeChange(
-                  context: context,
-                  i18n: i18n,
-                  change: () => themeProvider.setPureBlackTheme(value),
-                ),
+              return SwitchListTile(
+                key: const ValueKey<String>('pure_black_theme_tile'),
+                title: _settingsTitle(i18n.tr('black_theme')),
+                value: pureBlack,
+                onChanged: (value) {
+                  unawaited(
+                    AppInteractionFeedback.trigger(
+                      AppInteractionFeedbackType.selection,
+                    ),
+                  );
+                  unawaited(
+                    _applyThemeChange(
+                      context: context,
+                      i18n: i18n,
+                      change: () => themeProvider.setPureBlackTheme(value),
+                    ),
+                  );
+                },
+                secondary: _settingsIcon(Icons.contrast_rounded, cs.primary),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               );
             },
-            secondary: _settingsIcon(Icons.contrast_rounded, cs.primary),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 8),
           ),
-        SwitchListTile(
-          key: const ValueKey<String>('bar_glass_enabled_tile'),
-          title: _settingsTitle(i18n.tr('bar_glass_enabled')),
-          value: themeProvider.barGlassEnabled,
-          onChanged: (value) {
-            unawaited(
-              AppInteractionFeedback.trigger(
-                AppInteractionFeedbackType.selection,
-              ),
+        Consumer(
+          builder: (context, ref, _) {
+            final barGlassEnabled = ref.watch(
+              themeProviderInstanceProvider.select((t) => t.barGlassEnabled),
             );
-            unawaited(
-              _applyThemeChange(
+            return SwitchListTile(
+              key: const ValueKey<String>('bar_glass_enabled_tile'),
+              title: _settingsTitle(i18n.tr('bar_glass_enabled')),
+              value: barGlassEnabled,
+              onChanged: (value) {
+                unawaited(
+                  AppInteractionFeedback.trigger(
+                    AppInteractionFeedbackType.selection,
+                  ),
+                );
+                unawaited(
+                  _applyThemeChange(
+                    context: context,
+                    i18n: i18n,
+                    change: () => themeProvider.setBarGlassEnabled(value),
+                  ),
+                );
+              },
+              secondary: _settingsIcon(Icons.blur_on_rounded, cs.primary),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+            );
+          },
+        ),
+        Consumer(
+          builder: (context, ref, _) {
+            final appThemeColor = ref.watch(
+              themeProviderInstanceProvider.select((t) => t.appThemeColor),
+            );
+            return _ThemeColorTile(
+              key: const ValueKey<String>('app_theme_color_tile'),
+              title: i18n.tr('app_theme_color'),
+              indicatorKey: const ValueKey<String>('app_theme_color_indicator'),
+              color: appThemeColor
+                  .colorScheme(Theme.of(context).brightness)
+                  .primary,
+              iconColor: cs.primary,
+              onTap: () => _showThemeColorPicker(
                 context: context,
                 i18n: i18n,
-                change: () => themeProvider.setBarGlassEnabled(value),
+                title: i18n.tr('app_theme_color'),
+                selected: themeProvider.appThemeColor,
+                onSelected: themeProvider.setAppThemeColor,
               ),
             );
           },
-          secondary: _settingsIcon(Icons.blur_on_rounded, cs.primary),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-        ),
-        _ThemeColorTile(
-          key: const ValueKey<String>('app_theme_color_tile'),
-          title: i18n.tr('app_theme_color'),
-          indicatorKey: const ValueKey<String>('app_theme_color_indicator'),
-          color: themeProvider.appThemeColor
-              .colorScheme(Theme.of(context).brightness)
-              .primary,
-          iconColor: cs.primary,
-          onTap: () => _showThemeColorPicker(
-            context: context,
-            i18n: i18n,
-            title: i18n.tr('app_theme_color'),
-            selected: themeProvider.appThemeColor,
-            onSelected: themeProvider.setAppThemeColor,
-          ),
         ),
       ],
     ),

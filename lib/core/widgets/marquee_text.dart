@@ -150,8 +150,8 @@ class MarqueeText extends StatefulWidget {
 class _MarqueeTextState extends State<MarqueeText>
     with SingleTickerProviderStateMixin {
   // Marquee progress must not share PageStorage offsets with the parent list.
-  final _controller = ScrollController(keepScrollOffset: false);
-  late final Ticker _ticker = createTicker(_tick);
+  ScrollController? _controller;
+  Ticker? _ticker;
   Timer? _pauseTimer;
   Duration? _previousTick;
   bool _atEnd = false;
@@ -166,6 +166,11 @@ class _MarqueeTextState extends State<MarqueeText>
   ValueListenable<bool>? _scrollActivity;
   ValueListenable<TickerModeData>? _tickerMode;
 
+  ScrollController _ensureController() =>
+      _controller ??= ScrollController(keepScrollOffset: false);
+
+  Ticker _ensureTicker() => _ticker ??= createTicker(_tick);
+
   bool get _usesStaticAndroidText =>
       defaultTargetPlatform == TargetPlatform.android && !widget.animateOnAndroid;
 
@@ -174,17 +179,24 @@ class _MarqueeTextState extends State<MarqueeText>
   bool get _animationAllowed =>
       !_pauseRequested && (_tickerMode?.value.enabled ?? true);
 
-  bool get _shouldRun =>
-      _animationAllowed &&
-      !_pointerDown &&
-      !_userScrolling &&
-      _controller.hasClients &&
-      _controller.position.hasContentDimensions &&
-      _controller.position.maxScrollExtent > 0;
+  bool get _shouldRun {
+    final controller = _controller;
+    return _animationAllowed &&
+        !_pointerDown &&
+        !_userScrolling &&
+        controller != null &&
+        controller.hasClients &&
+        controller.position.hasContentDimensions &&
+        controller.position.maxScrollExtent > 0;
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (_usesStaticAndroidText) {
+      _canAnimate = false;
+      return;
+    }
     _canAnimate =
         !MediaQuery.disableAnimationsOf(context) &&
         !MarqueePauseScope.isPausedOf(context);
@@ -205,10 +217,18 @@ class _MarqueeTextState extends State<MarqueeText>
 
   void _handleScrollActivity() {
     _syncTicker();
-    if (_pauseRequested && _controller.hasClients && _controller.offset != 0) {
+    final controller = _controller;
+    if (_pauseRequested &&
+        controller != null &&
+        controller.hasClients &&
+        controller.offset != 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _pauseRequested && _controller.hasClients) {
-          _controller.jumpTo(0);
+        final current = _controller;
+        if (mounted &&
+            _pauseRequested &&
+            current != null &&
+            current.hasClients) {
+          current.jumpTo(0);
         }
       });
     }
@@ -219,8 +239,9 @@ class _MarqueeTextState extends State<MarqueeText>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.text != widget.text) {
       _cancelPauseTimer();
-      if (_ticker.isActive) _ticker.stop();
-      if (_controller.hasClients) _controller.jumpTo(0);
+      _ticker?.stop();
+      final controller = _controller;
+      if (controller != null && controller.hasClients) controller.jumpTo(0);
       _atEnd = false;
     }
     _syncTicker();
@@ -232,13 +253,14 @@ class _MarqueeTextState extends State<MarqueeText>
   }
 
   void _schedulePause(Duration duration) {
-    if (_ticker.isActive) _ticker.stop();
+    _ticker?.stop();
     _cancelPauseTimer();
     _pauseTimer = Timer(duration, () {
       _pauseTimer = null;
       if (!mounted || !_shouldRun) return;
-      if (_atEnd) {
-        _controller.jumpTo(0);
+      final controller = _controller;
+      if (_atEnd && controller != null) {
+        controller.jumpTo(0);
         _atEnd = false;
         if (widget.pauseDuration > Duration.zero) {
           _schedulePause(widget.pauseDuration);
@@ -246,13 +268,13 @@ class _MarqueeTextState extends State<MarqueeText>
         }
       }
       _previousTick = null;
-      _ticker.start();
+      _ensureTicker().start();
     });
   }
 
   void _syncTicker() {
     final shouldRun = _shouldRun;
-    if (shouldRun && !_ticker.isActive && _pauseTimer == null) {
+    if (shouldRun && !(_ticker?.isActive ?? false) && _pauseTimer == null) {
       _previousTick = null;
       final hoverToRun =
           context
@@ -263,21 +285,23 @@ class _MarqueeTextState extends State<MarqueeText>
           defaultTargetPlatform == TargetPlatform.windows && hoverToRun
           ? Duration.zero
           : widget.pauseDuration;
-      _atEnd = _controller.offset >= _controller.position.maxScrollExtent;
+      final controller = _controller!;
+      _atEnd = controller.offset >= controller.position.maxScrollExtent;
       if (initialPause > Duration.zero) {
         _schedulePause(initialPause);
       } else {
-        _ticker.start();
+        _ensureTicker().start();
       }
     } else if (!shouldRun) {
       _cancelPauseTimer();
-      if (_ticker.isActive) _ticker.stop();
+      _ticker?.stop();
     }
   }
 
   void _tick(Duration elapsed) {
-    if (!_controller.hasClients) {
-      _ticker.stop();
+    final controller = _controller;
+    if (controller == null || !controller.hasClients) {
+      _ticker?.stop();
       return;
     }
     final previous = _previousTick;
@@ -285,19 +309,19 @@ class _MarqueeTextState extends State<MarqueeText>
     if (previous == null) return;
     final seconds = (elapsed - previous).inMicroseconds / 1000000;
     if (_atEnd) {
-      _controller.jumpTo(0);
+      controller.jumpTo(0);
       _atEnd = false;
       if (widget.pauseDuration > Duration.zero) {
         _schedulePause(widget.pauseDuration);
       }
       return;
     }
-    final position = _controller.position;
+    final position = controller.position;
     final target = (position.pixels + widget.scrollSpeed * seconds).clamp(
       position.minScrollExtent,
       position.maxScrollExtent,
     );
-    _controller.jumpTo(target);
+    controller.jumpTo(target);
     if (target == position.maxScrollExtent) {
       _atEnd = true;
       if (widget.pauseDuration > Duration.zero) {
@@ -337,8 +361,8 @@ class _MarqueeTextState extends State<MarqueeText>
     _cancelPauseTimer();
     _scrollActivity?.removeListener(_handleScrollActivity);
     _tickerMode?.removeListener(_syncTicker);
-    _ticker.dispose();
-    _controller.dispose();
+    _ticker?.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
@@ -396,7 +420,7 @@ class _MarqueeTextState extends State<MarqueeText>
                 _syncTicker();
               },
               child: HorizontalEdgeFadeScroll(
-                controller: _controller,
+                controller: _ensureController(),
                 builder: (controller) =>
                     NotificationListener<ScrollNotification>(
                       onNotification: (notification) {

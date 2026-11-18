@@ -14,6 +14,11 @@ class AsmrPreferencesStore {
   static const String _voiceActorPreferencesKey =
       'asmr_voice_actor_preferences_v1';
   static const String _circlePreferencesKey = 'asmr_circle_preferences_v1';
+  static const interestSettingKeys = [
+    _tagPreferencesKey,
+    _voiceActorPreferencesKey,
+    _circlePreferencesKey,
+  ];
   static const String _lastSyncAtKey = 'asmr_last_sync_at_v1';
   static const String _syncOutboxSeededKey = 'asmr_sync_outbox_seeded_v2';
   static const String _contentLanguageKey = 'asmr_content_language_v1';
@@ -21,13 +26,41 @@ class AsmrPreferencesStore {
 
   final AsmrPersistenceRepository _repository;
 
+  static bool keepLocalInterestOnRestore(String local, String? backup) {
+    final localData = _decodeInterestSetting(local);
+    const timeKey = AsmrTagPreferences.updatedAtMsKey;
+    final localTime = localData?[timeKey];
+    final backupTime = _decodeInterestSetting(backup)?[timeKey];
+    if (localTime is int && backupTime is int) return localTime >= backupTime;
+
+    // Older settings lack timestamps. Keep local selections and learned
+    // interests when their order is unknown, but allow catalog-only settings
+    // to be replaced by a backup that contains personal data.
+    return localTime is int ||
+        switch (localData) {
+          {'manualInterests': List(isNotEmpty: true)} ||
+          {'excluded': List(isNotEmpty: true)} ||
+          {'learned': Map(isNotEmpty: true)} ||
+          {'weights': Map(isNotEmpty: true)} => true,
+          _ => false,
+        };
+  }
+
+  static Map<String, dynamic>? _decodeInterestSetting(String? value) {
+    if (value == null) return null;
+    try {
+      final decoded = jsonDecode(value);
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
   Future<void> clearForTest() async {
     await _repository.clearForTest();
     for (final key in [
       _contentLanguageKey,
-      _tagPreferencesKey,
-      _voiceActorPreferencesKey,
-      _circlePreferencesKey,
+      ...interestSettingKeys,
       _lastSyncAtKey,
       _searchSuggestionsKey,
       _syncOutboxSeededKey,

@@ -13,7 +13,8 @@ internal data class DirectoryDocument(
     val uri: Uri,
     val name: String,
     val mime: String,
-    val sizeBytes: Long? = null
+    val sizeBytes: Long? = null,
+    val modifiedAtMs: Long? = null
 )
 
 internal fun listReadableDirectoryDocuments(context: Context, folder: Uri): List<DirectoryDocument> {
@@ -26,20 +27,31 @@ internal fun listReadableDirectoryDocuments(context: Context, folder: Uri): List
         DocumentsContract.Document.COLUMN_DOCUMENT_ID,
         DocumentsContract.Document.COLUMN_DISPLAY_NAME,
         DocumentsContract.Document.COLUMN_MIME_TYPE,
-        DocumentsContract.Document.COLUMN_SIZE
+        DocumentsContract.Document.COLUMN_SIZE,
+        DocumentsContract.Document.COLUMN_LAST_MODIFIED
     ), null, null, null) ?: throw IOException("Document provider query failed: $children")
     return cursor.use {
         val idColumn = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
         val nameColumn = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
         val mimeColumn = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
         val sizeColumn = it.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+        val modifiedColumn = it.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
         buildList {
             while (it.moveToNext()) {
                 val id = it.getString(idColumn) ?: throw IOException("Document ID is missing: $children")
                 val name = it.getString(nameColumn) ?: throw IOException("Document name is missing: $children")
                 val mime = it.getString(mimeColumn) ?: throw IOException("Document type is missing: $children")
                 val sizeBytes = if (sizeColumn >= 0 && !it.isNull(sizeColumn)) it.getLong(sizeColumn) else null
-                add(DirectoryDocument(DocumentsContract.buildDocumentUriUsingTree(folder, id), name, mime, sizeBytes))
+                val modifiedAtMs = if (modifiedColumn >= 0 && !it.isNull(modifiedColumn)) it.getLong(modifiedColumn) else null
+                add(
+                    DirectoryDocument(
+                        DocumentsContract.buildDocumentUriUsingTree(folder, id),
+                        name,
+                        mime,
+                        sizeBytes,
+                        modifiedAtMs
+                    )
+                )
             }
         }
     }

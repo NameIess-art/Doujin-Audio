@@ -694,11 +694,11 @@ const Map<String, String> appLanguageJa = {
   'export_backup': 'バックアップを出力',
   'export_backup_subtitle': 'アプリデータ・再生履歴・ASMR.ONE ログイン情報を保存。',
   'restore_backup': 'バックアップを復元',
-  'restore_backup_subtitle': '現在のデータを置き換え、次回起動時に適用。',
+  'restore_backup_subtitle': '次回起動時に復元し、マイページの新しいローカルデータは保持します。',
   'backup_sensitive_warning':
       'バックアップは暗号化されず、ASMR.ONE のアカウント名・パスワード・ログイントークンを含みます。入手した人がログインできる恐れがあります。続行しますか？',
   'restore_backup_warning':
-      '現在のアプリデータをすべて置き換え、再生を停止します。音声ファイルとフォルダ権限は復元されません。完了後はアプリを閉じ、手動で開き直してください。',
+      '復元すると再生が停止し、アプリデータが置き換わります。マイページにある新しい再生記録と興味の設定は保持されます。音声ファイルとフォルダ権限は復元されません。完了後はアプリを閉じ、手動で開き直してください。',
   'select_backup': 'バックアップを選択',
   'backup_exported': 'バックアップ出力先：{path}',
   'backup_ready_to_restore': '復元準備完了',

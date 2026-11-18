@@ -393,9 +393,10 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
               theme: themeProvider.lightTheme,
               darkTheme: themeProvider.darkTheme,
               themeMode: themeProvider.themeMode,
-              themeAnimationStyle: disableAnimations
-                  ? AnimationStyle.noAnimation
-                  : null,
+              // AnimatedTheme interpolates the entire multi-tab widget tree via
+              // ThemeData.lerp across every frame; snap theme changes cleanly
+              // in one frame so appearance toggles do not drop frames.
+              themeAnimationStyle: AnimationStyle.noAnimation,
               scrollBehavior: const AppScrollBehavior().copyWith(
                 scrollbars: true,
                 physics: AppScrollBehavior.defaultScrollPhysics,

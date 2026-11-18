@@ -383,7 +383,10 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
       duration: disableAnimations ? Duration.zero : kAppFadeDuration,
       curve: kAppFadeCurve,
       builder: (context, opacity, child) {
-        return Opacity(opacity: opacity, child: child);
+        return FadeTransition(
+          opacity: AlwaysStoppedAnimation<double>(opacity),
+          child: child,
+        );
       },
       child: child,
     );

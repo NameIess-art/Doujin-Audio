@@ -2,6 +2,28 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_tag_interest.dart';
 
 void main() {
+  test('interest timestamps survive catalog refresh and preference reload', () {
+    const timeKey = AsmrTagPreferences.updatedAtMsKey;
+    final state = AsmrTagPreferences.fromJson({timeKey: 1});
+    final key = state.resolve('Tag');
+    state.setExcluded(key, false);
+    state.recordListeningBatch('test:1', []);
+    expect(state.toJson()[timeKey], 1);
+
+    state.setExcluded(key, true);
+    expect(state.toJson()[timeKey], greaterThan(1));
+    state.setExcluded(key, false);
+    final saved = state.copy().toJson();
+    expect(saved['excluded'], isEmpty);
+    expect(AsmrTagPreferences.fromJson(saved).toJson(), saved);
+
+    final learned = AsmrTagPreferences()
+      ..recordListeningBatch('test:1', [
+        (tags: ['Tag'], duration: const Duration(minutes: 1)),
+      ]);
+    expect(learned.toJson()[timeKey], isA<int>());
+  });
+
   test(
     'batch directory merge retains sequential aliases and preference signals',
     () {

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/presentation/app_settings_group_card.dart';
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/state/listening_activity_provider.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../application/data_support_file_service.dart';
 import '../../../core/ui/ui_operation_service.dart';
@@ -108,6 +109,7 @@ class _DataSupportSettingsControlsState
         if (!mounted) return;
         final navigator = Navigator.of(context, rootNavigator: true);
         final playback = ref.read(playbackFacadeProvider).nativeRepository;
+        final listeningActivity = ref.read(listeningActivityServiceProvider);
         final lifecycle = ref.read(appLifecyclePlatformServiceProvider);
         final dismissProgress = showAppProgressFeedback(
           context,
@@ -123,6 +125,7 @@ class _DataSupportSettingsControlsState
           if (result == null) return;
           staged = true;
           await playback.clearAll();
+          await listeningActivity?.refresh(forceReload: false);
         } finally {
           dismissProgress();
           // A staged backup requires a restart even if playback cleanup fails.

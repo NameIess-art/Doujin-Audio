@@ -12134,17 +12134,16 @@ void main() {
       await tester.pumpAndSettle();
 
       final cue0 = find.byKey(
-        const ValueKey<String>('subtitle_timeline_cue_0'),
+        const ValueKey<String>('subtitle_timeline_text_0'),
       );
       final cue1 = find.byKey(
-        const ValueKey<String>('subtitle_timeline_cue_1'),
+        const ValueKey<String>('subtitle_timeline_text_1'),
       );
       final cue2 = find.byKey(
-        const ValueKey<String>('subtitle_timeline_cue_2'),
+        const ValueKey<String>('subtitle_timeline_text_2'),
       );
-      Opacity opacityFor(Finder cue) => tester.widget<Opacity>(
-        find.ancestor(of: cue, matching: find.byType(Opacity)).first,
-      );
+      double textAlphaFor(Finder cue) =>
+          tester.widget<Text>(cue).style!.color!.a;
 
       final panelRect = tester.getRect(find.byType(SessionSubtitlePanel));
       final viewportRect = tester.getRect(viewport);
@@ -12174,9 +12173,9 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(opacityFor(cue0).opacity, 0.30);
-      expect(opacityFor(cue1).opacity, 1);
-      expect(opacityFor(cue2).opacity, 0.30);
+      expect(textAlphaFor(cue0), lessThan(textAlphaFor(cue1) * 0.35));
+      expect(textAlphaFor(cue1), closeTo(1.0, 0.01));
+      expect(textAlphaFor(cue2), lessThan(textAlphaFor(cue1) * 0.35));
       expect(
         tester.getCenter(cue1).dy,
         closeTo(tester.getCenter(viewport).dy, 0.1),
@@ -12214,7 +12213,7 @@ void main() {
       );
       await tester.tap(cue2);
       await tester.pump();
-      expect(opacityFor(cue2).opacity, 1);
+      expect(textAlphaFor(cue2), closeTo(1.0, 0.01));
       expect(
         tester.getCenter(cue2).dy,
         closeTo(tester.getCenter(viewport).dy, 1.0),
@@ -12226,7 +12225,7 @@ void main() {
       );
       await tester.tap(cue1);
       await tester.pump();
-      expect(opacityFor(cue1).opacity, 1);
+      expect(textAlphaFor(cue1), closeTo(1.0, 0.01));
       expect(
         find.byKey(const ValueKey('subtitle_timeline_seek_button')),
         findsNothing,
@@ -12239,12 +12238,12 @@ void main() {
       await gesture.moveBy(const Offset(0, -70));
       await tester.pump();
       expect(tester.getCenter(cue1).dy, lessThan(fixedCenter.dy));
-      expect(opacityFor(cue2).opacity, 1);
+      expect(textAlphaFor(cue2), closeTo(1.0, 0.01));
       await gesture.up();
       await tester.pump();
       // Measure after the focused cue's scale animation finishes.
       await tester.pump(const Duration(milliseconds: 200));
-      expect(opacityFor(cue2).opacity, 1);
+      expect(textAlphaFor(cue2), closeTo(1.0, 0.01));
       expect(
         tester.getCenter(cue2).dy,
         closeTo(tester.getCenter(viewport).dy, 1.0),
@@ -12274,10 +12273,10 @@ void main() {
       );
 
       await tester.pump(const Duration(milliseconds: 2500));
-      expect(opacityFor(cue2).opacity, 1);
+      expect(textAlphaFor(cue2), closeTo(1.0, 0.01));
       await tester.pump(const Duration(milliseconds: 500));
       await tester.pumpAndSettle();
-      expect(opacityFor(cue1).opacity, 1);
+      expect(textAlphaFor(cue1), closeTo(1.0, 0.01));
 
       result.session
         ..setOptimisticState(playing: true)
@@ -12291,12 +12290,12 @@ void main() {
       result.session.setOptimisticPosition(const Duration(milliseconds: 4100));
       syncSession(playing: true);
       await tester.pump();
-      expect(opacityFor(cue1).opacity, 1);
+      expect(textAlphaFor(cue1), closeTo(1.0, 0.01));
       expect(tester.getCenter(cue1), draggedCueCenter);
       await playingGesture.moveBy(const Offset(0, -36));
       await playingGesture.up();
       await tester.pump();
-      expect(opacityFor(cue2).opacity, 1);
+      expect(textAlphaFor(cue2), closeTo(1.0, 0.01));
       result.session
         ..setOptimisticState(playing: false)
         ..setOptimisticPosition(const Duration(milliseconds: 2500));

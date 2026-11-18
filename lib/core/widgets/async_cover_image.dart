@@ -109,6 +109,12 @@ class _BrowseThumbnailLoad {
       stream = provider.resolve(configuration);
       listener = ImageStreamListener(
         (info, _) {
+          retainCoverImage(
+            provider,
+            configuration,
+            stream: stream,
+            info: info,
+          );
           info.dispose();
           if (!ready.isCompleted) ready.complete();
         },
@@ -118,7 +124,6 @@ class _BrowseThumbnailLoad {
       );
       stream.addListener(listener);
       await ready.future;
-      retainCoverImage(provider, configuration);
     } catch (error, stack) {
       if (!result.isCompleted) result.completeError(error, stack);
     } finally {

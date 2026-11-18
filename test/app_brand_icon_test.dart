@@ -37,7 +37,10 @@ void main() {
     );
 
     final image = tester.widget<Image>(find.byType(Image));
-    expect((image.image as AssetImage).assetName, appBrandIconAsset);
+    final provider = image.image is ResizeImage
+        ? (image.image as ResizeImage).imageProvider
+        : image.image;
+    expect((provider as AssetImage).assetName, appBrandIconAsset);
     expect(image.color, primary);
     expect(image.colorBlendMode, BlendMode.srcIn);
   });
@@ -50,5 +53,8 @@ String _renderedAsset(WidgetTester tester) {
       matching: find.byType(Image),
     ),
   );
-  return (image.image as AssetImage).assetName;
+  final provider = image.image is ResizeImage
+      ? (image.image as ResizeImage).imageProvider
+      : image.image;
+  return (provider as AssetImage).assetName;
 }

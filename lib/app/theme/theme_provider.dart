@@ -128,7 +128,21 @@ extension ThemeAccentPresetValue on ThemeAccentPreset {
     };
   }
 
+  static final Map<(ThemeAccentPreset, Brightness, bool), ColorScheme>
+  _colorSchemeCache = <(ThemeAccentPreset, Brightness, bool), ColorScheme>{};
+
   ColorScheme colorScheme(Brightness brightness, {bool pureBlack = false}) {
+    final effectivePureBlack = pureBlack && brightness == Brightness.dark;
+    return _colorSchemeCache.putIfAbsent(
+      (this, brightness, effectivePureBlack),
+      () => _computeColorScheme(brightness, pureBlack: effectivePureBlack),
+    );
+  }
+
+  ColorScheme _computeColorScheme(
+    Brightness brightness, {
+    bool pureBlack = false,
+  }) {
     if (this == ThemeAccentPreset.gray) {
       return _grayColorScheme(brightness, pureBlack: pureBlack);
     }
@@ -368,22 +382,23 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
   int _pureBlackThemeMutation = 0;
   int _barGlassEnabledMutation = 0;
   int _appThemeColorMutation = 0;
-  late ThemeData _lightTheme;
-  late ThemeData _darkTheme;
+  ThemeData? _lightTheme;
+  ThemeData? _darkTheme;
 
   ThemeMode get themeMode => _themeMode;
   bool get pureBlackTheme => _pureBlackTheme;
   bool get barGlassEnabled => _barGlassEnabled;
   ThemeAccentPreset get appThemeColor => _appThemeColor;
-  ThemeData get lightTheme => _lightTheme;
-  ThemeData get darkTheme => _darkTheme;
+  ThemeData get lightTheme =>
+      _lightTheme ??= _buildTheme(_colorSchemeFor(Brightness.light));
+  ThemeData get darkTheme =>
+      _darkTheme ??= _buildTheme(_colorSchemeFor(Brightness.dark));
 
   ThemeProvider({
     ThemePreferenceWriter? preferenceWriter,
     bool loadPersistedState = true,
   }) : _preferenceWriter = preferenceWriter ?? _writePreference {
     _loadThemeSync(readPreferences: loadPersistedState);
-    _rebuildThemes();
   }
 
   final ThemePreferenceWriter _preferenceWriter;
@@ -469,7 +484,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     if (_pureBlackTheme == value) return true;
     final mutation = ++_pureBlackThemeMutation;
     _pureBlackTheme = value;
-    _rebuildThemes();
+    _darkTheme = null;
     notifyListeners();
     final persisted = await _writePreferenceInOrder(_pureBlackThemeKey, value);
     if (persisted) {
@@ -478,7 +493,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     }
     if (mutation != _pureBlackThemeMutation) return false;
     _pureBlackTheme = _persistedPureBlackTheme;
-    _rebuildThemes();
+    _darkTheme = null;
     notifyListeners();
     return false;
   }
@@ -524,14 +539,24 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
 
   @override
   Future<void> reloadPersistedState() async {
+    final previousMode = _themeMode;
+    final previousPureBlack = _pureBlackTheme;
+    final previousBarGlass = _barGlassEnabled;
+    final previousColor = _appThemeColor;
     _loadThemeSync();
+    if (_themeMode == previousMode &&
+        _pureBlackTheme == previousPureBlack &&
+        _barGlassEnabled == previousBarGlass &&
+        _appThemeColor == previousColor) {
+      return;
+    }
     _rebuildThemes();
     notifyListeners();
   }
 
   void _rebuildThemes() {
-    _lightTheme = _buildTheme(_colorSchemeFor(Brightness.light));
-    _darkTheme = _buildTheme(_colorSchemeFor(Brightness.dark));
+    _lightTheme = null;
+    _darkTheme = null;
   }
 
   ColorScheme _colorSchemeFor(Brightness brightness) {

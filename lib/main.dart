@@ -58,9 +58,12 @@ Future<void> main() async {
 
       late final AppBootstrapController appBootstrapController;
       Future<void> initialize() async {
-        await initializePlatformRuntime();
-        await AppPreferences.init();
-        await AppNetwork.instance.install();
+        await Future.wait<void>([
+          initializePlatformRuntime(),
+          AppPreferences.init(),
+          AppNetwork.instance.install(),
+          AppLogService.initialize(),
+        ]);
         startupRestoreOutcome = await _initializeAudioPlayerApp();
         await themeProvider.reloadPersistedState();
         unawaited(
@@ -104,7 +107,6 @@ Future<void> main() async {
 }
 
 Future<StartupRestoreOutcome?> _initializeAudioPlayerApp() async {
-  await AppLogService.initialize();
   applyCoverImageCachePolicy(CoverImageResolution.balanced);
 
   // Initialize platform UI policy alongside the startup services.

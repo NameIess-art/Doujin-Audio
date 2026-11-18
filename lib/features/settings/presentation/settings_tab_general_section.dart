@@ -279,11 +279,16 @@ List<Widget> _buildSettingsPageDisplaySection({
       children: [
         Consumer(
           builder: (context, ref, _) {
-            final settingsState = ref.watch(settingsStateProvider).value;
-            final showLocal = settingsState?.showLocalLibrary ?? true;
-            final showAsmr = settingsState?.showAsmrOne ?? true;
-            final displayMode =
-                settingsState?.workNameDisplay ?? WorkNameDisplay.workTitle;
+            final (showLocal, showAsmr, showMyPage, displayMode) = ref.watch(
+              settingsStateProvider.select(
+                (state) => (
+                  state.value?.showLocalLibrary ?? true,
+                  state.value?.showAsmrOne ?? true,
+                  state.value?.showMyPage ?? true,
+                  state.value?.workNameDisplay ?? WorkNameDisplay.workTitle,
+                ),
+              ),
+            );
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -321,7 +326,7 @@ List<Widget> _buildSettingsPageDisplaySection({
                 SwitchListTile(
                   key: const ValueKey<String>('settings_show_my_page_switch'),
                   title: _settingsTitle(i18n.tr('nav_my')),
-                  value: settingsState?.showMyPage ?? true,
+                  value: showMyPage,
                   onChanged: (value) => _saveSettingsSwitch(
                     context,
                     () => settings.setShowMyPage(value),

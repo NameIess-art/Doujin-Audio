@@ -36,6 +36,8 @@ class AsmrTagInterest {
 /// Persisted taste signals and directory share stable keys across content languages.
 class AsmrTagPreferences {
   AsmrTagPreferences({this.limit = 20}) : assert(limit > 0);
+  static const updatedAtMsKey = 'updatedAtMs';
+
   final int limit;
   final Map<String, AsmrTag> tags = {};
   final Map<String, double> learned = {};
@@ -43,6 +45,7 @@ class AsmrTagPreferences {
   final Set<String> excluded = {};
   final Map<String, int> consumedSequences = {};
   bool catalogComplete = false;
+  int? _updatedAtMs;
 
   String resolve(String name) {
     final normalized = normalizeAsmrTag(name);
@@ -158,12 +161,17 @@ class AsmrTagPreferences {
   }
 
   void setInterested(String key, bool value) {
+    _setSelection(manualInterests, key, value);
+  }
+
+  void setExcluded(String key, bool value) {
+    _setSelection(excluded, key, value);
+  }
+
+  void _setSelection(Set<String> selection, String key, bool value) {
     if (!tags.containsKey(key)) throw ArgumentError.value(key, 'key');
-    if (value) {
-      manualInterests.add(key);
-    } else {
-      manualInterests.remove(key);
-    }
+    final changed = value ? selection.add(key) : selection.remove(key);
+    if (changed) _updatedAtMs = DateTime.now().millisecondsSinceEpoch;
   }
 
   bool recordListeningBatch(
@@ -177,12 +185,14 @@ class AsmrTagPreferences {
     final epoch = batchId.substring(0, split);
     final sequence = int.parse(batchId.substring(split + 1));
     if (sequence <= (consumedSequences[epoch] ?? -1)) return false;
+    var learnedChanged = false;
     for (final contribution in contributions) {
       final keys = contribution.tags
           .where((e) => e.trim().isNotEmpty)
           .map(resolve)
           .toSet();
       if (keys.isEmpty || contribution.duration <= Duration.zero) continue;
+      learnedChanged = true;
       // Every associated tag or creator was heard for the full playback time.
       final minutes =
           contribution.duration.inMilliseconds / Duration.millisecondsPerMinute;
@@ -190,6 +200,7 @@ class AsmrTagPreferences {
         learned[key] = (learned[key] ?? 0) + minutes;
       }
     }
+    if (learnedChanged) _updatedAtMs = DateTime.now().millisecondsSinceEpoch;
     consumedSequences[epoch] = sequence;
     return true;
   }
@@ -251,6 +262,7 @@ class AsmrTagPreferences {
       ..manualInterests.addAll(manualInterests)
       ..excluded.addAll(excluded)
       ..consumedSequences.addAll(consumedSequences)
+      .._updatedAtMs = _updatedAtMs
       ..catalogComplete = catalogComplete;
     return next;
   }
@@ -263,6 +275,7 @@ class AsmrTagPreferences {
     'sequences': consumedSequences,
     'complete': catalogComplete,
     'limit': limit,
+    if (_updatedAtMs != null) updatedAtMsKey: _updatedAtMs,
   };
   factory AsmrTagPreferences.fromJson(Map<String, dynamic> json) {
     final state = AsmrTagPreferences(
@@ -299,6 +312,7 @@ class AsmrTagPreferences {
       ),
     );
     state.catalogComplete = json['complete'] == true;
+    state._updatedAtMs = json[updatedAtMsKey] as int?;
     return state;
   }
 }

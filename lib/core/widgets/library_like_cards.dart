@@ -661,10 +661,13 @@ class _LibraryLikeCardActionsState extends State<LibraryLikeCardActions>
       final baseColor = !enabled
           ? colors.onSurface.withValues(alpha: 0.38)
           : colors.onSurfaceVariant;
+      final resolvedColor = motion.resolveColor(baseColor);
       final iconWidget = Icon(
         icon,
         size: _libraryLikeInfoLineHeight,
-        color: motion.resolveColor(baseColor),
+        color: motion.opacity < 1
+            ? resolvedColor.withValues(alpha: resolvedColor.a * motion.opacity)
+            : resolvedColor,
       );
       return Tooltip(
         message: label,
@@ -695,9 +698,7 @@ class _LibraryLikeCardActionsState extends State<LibraryLikeCardActions>
                 child: Transform.scale(
                   scale: motion.controller.value,
                   transformHitTests: false,
-                  child: motion.opacity < 1
-                      ? Opacity(opacity: motion.opacity, child: iconWidget)
-                      : iconWidget,
+                  child: iconWidget,
                 ),
               ),
             ),

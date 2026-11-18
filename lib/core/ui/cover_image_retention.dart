@@ -25,8 +25,10 @@ void configureRetainedCoverBudget({
 
 void retainCoverImage(
   ImageProvider<Object> provider,
-  ImageConfiguration configuration,
-) {
+  ImageConfiguration configuration, {
+  ImageStream? stream,
+  ImageInfo? info,
+}) {
   final retained = _retainedCovers.remove(provider);
   if (retained != null) {
     _retainedCovers[provider] = retained;
@@ -43,6 +45,33 @@ void retainCoverImage(
   if (cover.sourceKey case final source?) {
     _providersBySource.putIfAbsent(source, () => {}).add(provider);
   }
+  final completer = stream?.completer;
+  if (stream != null && info != null && completer != null) {
+    cover.stream = stream;
+    cover.handle = completer.keepAlive();
+    cover.bytes = info.sizeBytes;
+    cover.width = info.image.width;
+    cover.height = info.image.height;
+    _retainedCoverBytes += cover.bytes;
+    _trimRetainedCovers();
+    unawaited(
+      provider
+          .obtainKey(configuration)
+          .then<void>(
+            (key) {
+              if (identical(_retainedCovers[provider], cover)) {
+                cover.key = key;
+              }
+            },
+            onError: (Object error, StackTrace stackTrace) {
+              if (identical(_retainedCovers[provider], cover)) {
+                _removeRetainedCover(provider);
+              }
+            },
+          ),
+    );
+    return;
+  }
   _trimRetainedCovers();
   unawaited(
     provider
@@ -51,20 +80,20 @@ void retainCoverImage(
           (key) {
             if (!identical(_retainedCovers[provider], cover)) return;
             cover.key = key;
-            final stream = provider.resolve(configuration);
-            cover.stream = stream;
+            final resolved = provider.resolve(configuration);
+            cover.stream = resolved;
             cover.listener = ImageStreamListener(
-              (info, _) {
+              (resolvedInfo, _) {
                 try {
                   if (!identical(_retainedCovers[provider], cover)) return;
-                  cover.handle = stream.completer!.keepAlive();
-                  cover.bytes = info.sizeBytes;
-                  cover.width = info.image.width;
-                  cover.height = info.image.height;
+                  cover.handle = resolved.completer!.keepAlive();
+                  cover.bytes = resolvedInfo.sizeBytes;
+                  cover.width = resolvedInfo.image.width;
+                  cover.height = resolvedInfo.image.height;
                   _retainedCoverBytes += cover.bytes;
                   _trimRetainedCovers();
                 } finally {
-                  info.dispose();
+                  resolvedInfo.dispose();
                   cover.stopListening();
                 }
               },
@@ -74,7 +103,7 @@ void retainCoverImage(
                 }
               },
             );
-            stream.addListener(cover.listener!);
+            resolved.addListener(cover.listener!);
           },
           onError: (Object error, StackTrace stackTrace) {
             if (identical(_retainedCovers[provider], cover)) {
@@ -87,13 +116,12 @@ void retainCoverImage(
 
 void restoreRetainedCoverImage(ImageProvider<Object> provider) {
   final cover = _retainedCovers[provider];
-  if (cover?.handle == null) return;
+  final key = cover?.key;
+  final completer = cover?.stream?.completer;
+  if (cover?.handle == null || key == null || completer == null) return;
   // ImageCache's live index disappears when its last listener is removed. Put
   // the retained completer back under the original key before Image resolves.
-  PaintingBinding.instance.imageCache.putIfAbsent(
-    cover!.key!,
-    () => cover.stream!.completer!,
-  );
+  PaintingBinding.instance.imageCache.putIfAbsent(key, () => completer);
 }
 
 ({ImageProvider<Object> provider, bool isAdequate})? retainedCoverImageFor(

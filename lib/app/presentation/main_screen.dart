@@ -185,6 +185,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
     });
   }
 
+  bool _desktopPlaybackRectQueued = false;
+  ({bool dockCollapsed, double dockAreaWidth, double expandedDockWidth})?
+  _pendingDesktopPlaybackRect;
+
   void _reportDesktopPlaybackRect({
     required bool dockCollapsed,
     required double dockAreaWidth,
@@ -192,8 +196,18 @@ class _MainScreenState extends ConsumerState<MainScreen>
   }) {
     final geometry = widget.playbackDockGeometry;
     if (geometry == null) return;
+    _pendingDesktopPlaybackRect = (
+      dockCollapsed: dockCollapsed,
+      dockAreaWidth: dockAreaWidth,
+      expandedDockWidth: expandedDockWidth,
+    );
+    if (_desktopPlaybackRectQueued) return;
+    _desktopPlaybackRectQueued = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      _desktopPlaybackRectQueued = false;
+      final args = _pendingDesktopPlaybackRect;
+      _pendingDesktopPlaybackRect = null;
+      if (!mounted || args == null) return;
       final box =
           _desktopPlaybackGeometryKey.currentContext?.findRenderObject()
               as RenderBox?;
@@ -203,10 +217,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
       final landscape =
           defaultTargetPlatform == TargetPlatform.windows ||
           MediaQuery.orientationOf(context) == Orientation.landscape;
-      final collapsedLeadingInset = dockCollapsed && !landscape
-          ? (dockAreaWidth - box.size.width) / 2
+      final collapsedLeadingInset = args.dockCollapsed && !landscape
+          ? (args.dockAreaWidth - box.size.width) / 2
           : 0.0;
-      final expandedOrigin = dockCollapsed
+      final expandedOrigin = args.dockCollapsed
           ? origin - Offset(collapsedLeadingInset, 0)
           : origin;
       geometry.updateMainGeometry(
@@ -215,8 +229,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
             Size.square(box.size.height - inset * 2),
         dockRect: origin & box.size,
         expandedDockRect:
-            expandedOrigin & Size(expandedDockWidth, box.size.height),
-        dockCollapsed: dockCollapsed,
+            expandedOrigin & Size(args.expandedDockWidth, box.size.height),
+        dockCollapsed: args.dockCollapsed,
       );
     });
   }
@@ -1026,157 +1040,153 @@ class _MainScreenState extends ConsumerState<MainScreen>
             : 0.0;
         final snapSidebarWidth = navigationLayoutChanged;
         navigationLayoutChanged = false;
-        return TweenAnimationBuilder<double>(
-          tween: Tween<double>(begin: sidebarWidth, end: sidebarWidth),
-          // A newly mounted sidebar already has its final width on rotation.
-          duration:
-              isLandscape ||
-                  snapSidebarWidth ||
-                  MediaQuery.disableAnimationsOf(context)
-              ? Duration.zero
-              : kThemeAnimationDuration,
-          curve: Curves.easeInOut,
-          builder: (context, animatedSidebarWidth, child) {
-            final shell = AnnotatedRegion<SystemUiOverlayStyle>(
-              value: overlayStyle,
-              child: Scaffold(
-                resizeToAvoidBottomInset: false,
-                backgroundColor: Theme.of(context).colorScheme.surface,
-                body: WorkDetailPane(
-                  isLandscape: isLandscape,
-                  sidebarWidth: animatedSidebarWidth,
-                  geometry: widget.playbackDockGeometry,
-                  child: child!,
-                ),
-              ),
-            );
-            // Forward live IME metrics without rebuilding the main shell.
-            return Builder(
-              builder: (context) => MediaQuery(
-                data: MediaQuery.of(context).copyWith(
-                  padding: effectivePadding,
-                  viewPadding: effectiveViewPadding,
-                ),
-                child: shell,
-              ),
-            );
-          },
-          // Only the detail pane needs the animated sidebar width. Retain the
-          // navigation and dock instead of rebuilding them on every frame.
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              _AmbientBackground(tinyMode: isTinyWindow),
-              Column(
-                children: [
-                  Expanded(
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        if (isLandscape)
-                          ColoredBox(
-                            color: landscapeNavigationBackground(
-                              Theme.of(context).colorScheme,
-                            ),
+        final bodyChild = Stack(
+          fit: StackFit.expand,
+          children: [
+            _AmbientBackground(tinyMode: isTinyWindow),
+            Column(
+              children: [
+                Expanded(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (isLandscape)
+                        ColoredBox(
+                          color: landscapeNavigationBackground(
+                            Theme.of(context).colorScheme,
                           ),
-                        Row(
-                          // Paint the left rail over the content while its
-                          // closing animation extends past the layout slot.
-                          textDirection: TextDirection.rtl,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Expanded(
-                              child: Align(
-                                alignment: Alignment.topLeft,
-                                child: LayoutBuilder(
-                                  builder: (context, constraints) {
-                                    final contentWidth = splitContent
-                                        ? max(0.0, constraints.maxWidth - 1) *
-                                              WorkDetailPane.mainWidthFraction
-                                        : constraints.maxWidth;
-                                    final navigatorContent =
-                                        _wrapMobileOverlayInset(
-                                          isDesktop: isDesktop,
-                                          hasOverlaySessions:
-                                              hasOverlaySessions,
-                                          menuDismiss:
-                                              detailNavigation?.menuDismiss,
-                                          child: Stack(
-                                            fit: StackFit.expand,
-                                            children: [
-                                              _buildContentNavigator(
-                                                context,
-                                                isDesktop: isDesktop,
-                                                isLandscapeLayout: isLandscape,
-                                                hasOverlaySessions:
-                                                    hasOverlaySessions,
-                                                tinyMode: isTinyWindow,
-                                              ),
-                                              Overlay(key: _mainMenuOverlayKey),
-                                            ],
-                                          ),
-                                        );
-                                    return SizedBox(
-                                      key: const ValueKey(
-                                        'main_content_region',
-                                      ),
-                                      width: contentWidth,
-                                      height: constraints.maxHeight,
-                                      child: Builder(
-                                        builder: (context) => MediaQuery(
-                                          data: MediaQuery.of(context).copyWith(
-                                            size: Size(
-                                              contentWidth,
-                                              constraints.maxHeight,
+                        ),
+                      Row(
+                        // Paint the left rail over the content while its
+                        // closing animation extends past the layout slot.
+                        textDirection: TextDirection.rtl,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.topLeft,
+                              child: LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final contentWidth = splitContent
+                                      ? max(0.0, constraints.maxWidth - 1) *
+                                            WorkDetailPane.mainWidthFraction
+                                      : constraints.maxWidth;
+                                  final navigatorContent =
+                                      _wrapMobileOverlayInset(
+                                        isDesktop: isDesktop,
+                                        hasOverlaySessions: hasOverlaySessions,
+                                        menuDismiss:
+                                            detailNavigation?.menuDismiss,
+                                        child: Stack(
+                                          fit: StackFit.expand,
+                                          children: [
+                                            _buildContentNavigator(
+                                              context,
+                                              isDesktop: isDesktop,
+                                              isLandscapeLayout: isLandscape,
+                                              hasOverlaySessions:
+                                                  hasOverlaySessions,
+                                              tinyMode: isTinyWindow,
                                             ),
+                                            Overlay(key: _mainMenuOverlayKey),
+                                          ],
+                                        ),
+                                      );
+                                  return SizedBox(
+                                    key: const ValueKey('main_content_region'),
+                                    width: contentWidth,
+                                    height: constraints.maxHeight,
+                                    child: Builder(
+                                      builder: (context) => MediaQuery(
+                                        data: MediaQuery.of(context).copyWith(
+                                          size: Size(
+                                            contentWidth,
+                                            constraints.maxHeight,
                                           ),
-                                          child: ColoredBox(
-                                            color: isLandscape
-                                                ? landscapeNavigationBackground(
-                                                    Theme.of(context).colorScheme,
-                                                  )
-                                                : Colors.transparent,
-                                            child: ClipRRect(
-                                              key: const ValueKey(
-                                                'main_content_clip',
-                                              ),
-                                              borderRadius: contentRadius,
-                                              child: navigatorContent,
+                                        ),
+                                        child: ColoredBox(
+                                          color: isLandscape
+                                              ? landscapeNavigationBackground(
+                                                  Theme.of(context).colorScheme,
+                                                )
+                                              : Colors.transparent,
+                                          child: ClipRRect(
+                                            key: const ValueKey(
+                                              'main_content_clip',
                                             ),
+                                            borderRadius: contentRadius,
+                                            child: navigatorContent,
                                           ),
                                         ),
                                       ),
-                                    );
-                                  },
-                                ),
-                              ),
-                            ),
-                            if (isDesktop)
-                              Consumer(
-                                builder: (context, ref, _) {
-                                  final overlaySessions = ref.watch(
-                                    mainOverlayUiProvider.select(
-                                      (state) => state.overlaySessions,
                                     ),
-                                  );
-                                  return _buildDesktopNavigation(
-                                    context,
-                                    i18n,
-                                    overlaySessions,
-                                    isMenuCollapsed: menuCollapsed,
-                                    canToggleMenu: !forcedCollapsed,
                                   );
                                 },
                               ),
-                          ],
-                        ),
-                      ],
-                    ),
+                            ),
+                          ),
+                          if (isDesktop)
+                            Consumer(
+                              builder: (context, ref, _) {
+                                final overlaySessions = ref.watch(
+                                  mainOverlayUiProvider.select(
+                                    (state) => state.overlaySessions,
+                                  ),
+                                );
+                                return _buildDesktopNavigation(
+                                  context,
+                                  i18n,
+                                  overlaySessions,
+                                  isMenuCollapsed: menuCollapsed,
+                                  canToggleMenu: !forcedCollapsed,
+                                );
+                              },
+                            ),
+                        ],
+                      ),
+                    ],
                   ),
-                ],
+                ),
+              ],
+            ),
+            const _GlobalUpdateOperationBanner(),
+          ],
+        );
+        final shell = AnnotatedRegion<SystemUiOverlayStyle>(
+          value: overlayStyle,
+          child: Scaffold(
+            resizeToAvoidBottomInset: false,
+            backgroundColor: Theme.of(context).colorScheme.surface,
+            // Only the detail pane needs the animated sidebar width. Retain
+            // navigation, dock, Scaffold, and MediaQuery across animation frames.
+            body: TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: sidebarWidth, end: sidebarWidth),
+              // A newly mounted sidebar already has its final width on rotation.
+              duration:
+                  isLandscape ||
+                      snapSidebarWidth ||
+                      MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : kThemeAnimationDuration,
+              curve: Curves.easeInOut,
+              builder: (context, animatedSidebarWidth, child) => WorkDetailPane(
+                isLandscape: isLandscape,
+                sidebarWidth: animatedSidebarWidth,
+                geometry: widget.playbackDockGeometry,
+                child: child!,
               ),
-              const _GlobalUpdateOperationBanner(),
-            ],
+              child: bodyChild,
+            ),
+          ),
+        );
+        // Forward live IME metrics without rebuilding the main shell.
+        return Builder(
+          builder: (context) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              padding: effectivePadding,
+              viewPadding: effectiveViewPadding,
+            ),
+            child: shell,
           ),
         );
       },

@@ -1216,28 +1216,32 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    // Find Opacity ancestor of the Text widget
+    // Find FadeTransition ancestor of the Text widget
     final textFinder = find.text('台本文本淡入测试');
     expect(textFinder, findsOneWidget);
 
-    final opacityFinder = find.ancestor(
-      of: textFinder,
-      matching: find.byType(Opacity),
-    );
-    expect(opacityFinder, findsOneWidget);
+    final fadeFinder = find
+        .ancestor(of: textFinder, matching: find.byType(FadeTransition))
+        .first;
 
-    final initialOpacity = tester.widget<Opacity>(opacityFinder).opacity;
+    final initialOpacity = tester
+        .widget<FadeTransition>(fadeFinder)
+        .opacity
+        .value;
     expect(initialOpacity, lessThan(0.5));
 
     // Advance by 200ms
     await tester.pump(const Duration(milliseconds: 200));
-    final midOpacity = tester.widget<Opacity>(opacityFinder).opacity;
+    final midOpacity = tester.widget<FadeTransition>(fadeFinder).opacity.value;
     expect(midOpacity, greaterThan(initialOpacity));
     expect(midOpacity, lessThan(1.0));
 
     // Advance past 450ms (200 + 300 = 500ms > 450ms)
     await tester.pump(const Duration(milliseconds: 300));
-    final finalOpacity = tester.widget<Opacity>(opacityFinder).opacity;
+    final finalOpacity = tester
+        .widget<FadeTransition>(fadeFinder)
+        .opacity
+        .value;
     expect(finalOpacity, equals(1.0));
   });
 }

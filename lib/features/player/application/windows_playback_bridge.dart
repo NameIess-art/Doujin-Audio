@@ -46,7 +46,13 @@ class WindowsPlaybackBridge
     return _instance!;
   }
 
+  static bool _mediaKitInitialized = false;
+
   static Player _defaultPlayer() {
+    if (!_mediaKitInitialized) {
+      MediaKit.ensureInitialized();
+      _mediaKitInitialized = true;
+    }
     final player = Player(
       configuration: const PlayerConfiguration(title: 'Doujin Audio'),
     );
@@ -122,6 +128,7 @@ class WindowsPlaybackBridge
   final Future<String> Function(Player)? _readNativePlaylist;
   final VideoControllerConfiguration _videoControllerConfiguration;
   final _sessions = <String, _WindowsPlaybackSession>{};
+  final _configuredProxyUrl = Expando<String>();
   final _snapshots = StreamController<NativePlaybackSnapshot>.broadcast();
   final _progress = StreamController<NativePlaybackProgressUpdate>.broadcast();
   final _clock = Stopwatch()..start();
@@ -536,14 +543,18 @@ class WindowsPlaybackBridge
       final platform = player.platform;
       if (platform is NativePlayer) {
         await AppNetwork.instance.ensureStarted();
-        final proxy = 'http_proxy=${AppNetwork.instance.proxyUrl}';
-        // Current libmpv uses curl for the initial request; FFmpeg opens HLS
-        // child streams. Configure both backends, including HTTPS CONNECT.
-        await platform.setProperty('http-proxy', AppNetwork.instance.proxyUrl);
-        for (final option in ['stream-lavf-o', 'demuxer-lavf-o']) {
-          // Reading this map as text loses escaping in values such as the
-          // protocol whitelist. Update its key without rewriting other values.
-          await platform.command(['change-list', option, 'append', proxy]);
+        final proxyUrl = AppNetwork.instance.proxyUrl;
+        if (_configuredProxyUrl[platform] != proxyUrl) {
+          _configuredProxyUrl[platform] = proxyUrl;
+          final proxy = 'http_proxy=$proxyUrl';
+          // Current libmpv uses curl for the initial request; FFmpeg opens HLS
+          // child streams. Configure both backends, including HTTPS CONNECT.
+          await platform.setProperty('http-proxy', proxyUrl);
+          for (final option in ['stream-lavf-o', 'demuxer-lavf-o']) {
+            // Reading this map as text loses escaping in values such as the
+            // protocol whitelist. Update its key without rewriting other values.
+            await platform.command(['change-list', option, 'append', proxy]);
+          }
         }
       }
       if (platform is NativePlayer && session.videoController == null) {

@@ -740,11 +740,11 @@ const Map<String, String> appLanguageEn = {
   'export_backup_subtitle':
       'Back up app data, playback history, and your ASMR.ONE account.',
   'restore_backup': 'Restore backup',
-  'restore_backup_subtitle': 'Replace all current data on next startup.',
+  'restore_backup_subtitle': 'Restore on next startup and keep newer local data in My.',
   'backup_sensitive_warning':
       'This unencrypted backup includes your ASMR.ONE username, password, and sign-in token. Anyone with the file may be able to sign in. Continue?',
   'restore_backup_warning':
-      'Restore replaces all app data and stops playback. Audio files and folder permissions are not restored. Close the app when prompted, then reopen it manually.',
+      'Restoring stops playback and replaces app data. Newer local listening activity and interests in My are kept. Audio files and folder permissions are not restored. Close the app when prompted, then reopen it manually.',
   'select_backup': 'Select backup',
   'backup_exported': 'Backup exported to {path}',
   'backup_ready_to_restore': 'Backup ready',

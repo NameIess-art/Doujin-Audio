@@ -53,10 +53,17 @@ class AppDatabase {
     final db = await openDatabase(
       p.join(dbPath, fileName),
       version: schemaVersion,
+      onConfigure: _onConfigure,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
     return db;
+  }
+
+  Future<void> _onConfigure(Database db) async {
+    // Use rawQuery for journal_mode because Android SQLite returns a result row.
+    await db.rawQuery('PRAGMA journal_mode = WAL');
+    await db.execute('PRAGMA synchronous = NORMAL');
   }
 
   Future<Database> _openDatabase() async {

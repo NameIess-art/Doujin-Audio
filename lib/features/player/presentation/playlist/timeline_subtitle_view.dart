@@ -518,12 +518,13 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
       fontSize: 16,
       height: 1.3,
     );
+    final unfocusedColor = sessionDetailForeground(
+      cs,
+      SessionDetailForegroundLevel.muted,
+      darkFallback: cs.onSurface.withValues(alpha: 0.72),
+    );
     final unfocusedTextStyle = focusedTextStyle.copyWith(
-      color: sessionDetailForeground(
-        cs,
-        SessionDetailForegroundLevel.muted,
-        darkFallback: cs.onSurface.withValues(alpha: 0.72),
-      ),
+      color: unfocusedColor.withValues(alpha: unfocusedColor.a * 0.30),
       fontWeight: FontWeight.w500,
       fontSize: 14,
     );
@@ -668,51 +669,48 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
                                   onTap: isFocused
                                       ? null
                                       : () => _browseToIndex(index),
-                                  child: Opacity(
-                                    opacity: isFocused ? 1 : 0.30,
-                                    child: SizedBox(
+                                  child: SizedBox(
+                                    key: ValueKey(
+                                      'subtitle_timeline_cue_$index',
+                                    ),
+                                    child: Padding(
                                       key: ValueKey(
-                                        'subtitle_timeline_cue_$index',
+                                        'subtitle_timeline_text_padding_$index',
                                       ),
-                                      child: Padding(
-                                        key: ValueKey(
-                                          'subtitle_timeline_text_padding_$index',
-                                        ),
-                                        padding: EdgeInsets.fromLTRB(
-                                          textLeftInset,
-                                          _textVerticalPadding,
-                                          _textHorizontalPadding,
-                                          _textVerticalPadding,
-                                        ),
-                                        child: Center(
-                                          child: AnimatedScale(
-                                            alignment: widget.isLandscape
-                                                ? Alignment.centerLeft
-                                                : Alignment.center,
-                                            scale: isFocused ? 1.03 : 1,
-                                            duration:
-                                                MediaQuery.disableAnimationsOf(
-                                                  context,
-                                                )
-                                                ? Duration.zero
-                                                : const Duration(
-                                                    milliseconds: 180,
-                                                  ),
-                                            curve: Curves.easeOutCubic,
-                                            child: SizedBox(
-                                              width: double.infinity,
-                                              child: Text(
-                                                cue.text,
-                                                key: ValueKey(
-                                                  'subtitle_timeline_text_$index',
+                                      padding: EdgeInsets.fromLTRB(
+                                        textLeftInset,
+                                        _textVerticalPadding,
+                                        _textHorizontalPadding,
+                                        _textVerticalPadding,
+                                      ),
+                                      child: Center(
+                                        child: AnimatedScale(
+                                          alignment: widget.isLandscape
+                                              ? Alignment.centerLeft
+                                              : Alignment.center,
+                                          scale: isFocused ? 1.03 : 1,
+                                          duration:
+                                              MediaQuery.disableAnimationsOf(
+                                                context,
+                                              )
+                                              ? Duration.zero
+                                              : const Duration(
+                                                  milliseconds: 180,
                                                 ),
-                                                textAlign: widget.isLandscape
-                                                    ? TextAlign.left
-                                                    : TextAlign.center,
-                                                style: isFocused
-                                                    ? focusedTextStyle
-                                                    : unfocusedTextStyle,
+                                          curve: Curves.easeOutCubic,
+                                          child: SizedBox(
+                                            width: double.infinity,
+                                            child: Text(
+                                              cue.text,
+                                              key: ValueKey(
+                                                'subtitle_timeline_text_$index',
                                               ),
+                                              textAlign: widget.isLandscape
+                                                  ? TextAlign.left
+                                                  : TextAlign.center,
+                                              style: isFocused
+                                                  ? focusedTextStyle
+                                                  : unfocusedTextStyle,
                                             ),
                                           ),
                                         ),

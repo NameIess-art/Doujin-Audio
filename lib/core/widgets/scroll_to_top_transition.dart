@@ -23,11 +23,17 @@ class ScrollToTopTransition extends StatefulWidget {
 }
 
 class ScrollToTopTransitionState extends State<ScrollToTopTransition> {
+  static const double _maxSnapshotDpr = 1.5;
+  static const int _maxSnapshotPixels = 900000;
+  static const double _distantReturnViewports = 1.25;
+  static const Curve _returnCurve = Cubic(0.22, 0.61, 0.36, 1.0);
+
   final _boundaryKey = GlobalKey();
   ui.Image? _snapshot;
   ScrollPosition? _position;
   ScrollController? _activeController;
   ScrollPosition? _panZoomPosition;
+  _ScrollProgressOpacityAnimation? _snapshotOpacity;
   Size? _layoutSize;
   EdgeInsets _snapshotInsets = EdgeInsets.zero;
   double _start = 0;
@@ -73,6 +79,12 @@ class ScrollToTopTransitionState extends State<ScrollToTopTransition> {
           if (image == null) return;
           _top = position.minScrollExtent;
           _start = _animationStart(position);
+          _snapshotOpacity?.dispose();
+          _snapshotOpacity = _ScrollProgressOpacityAnimation(
+            position: position,
+            start: _start,
+            top: _top,
+          );
           setState(() => _snapshot = image);
           position.jumpTo(_start);
         }
@@ -83,16 +95,21 @@ class ScrollToTopTransitionState extends State<ScrollToTopTransition> {
       final screens = (position.pixels - top) / position.viewportDimension;
       await position.animateTo(
         top,
-        duration: Duration(milliseconds: (280 + 140 * screens).round()),
-        curve: Curves.easeInOutCubic,
+        duration: Duration(
+          milliseconds: (420 + 220 * screens).round().clamp(420, 860),
+        ),
+        curve: _returnCurve,
       );
     } finally {
-      if (mounted && generation == _generation) cancel();
+      if (mounted && generation == _generation) {
+        cancel(immediateRelease: false);
+      }
     }
   }
 
   double _animationStart(ScrollPosition position) =>
-      position.minScrollExtent + position.viewportDimension * 2;
+      position.minScrollExtent +
+      position.viewportDimension * _distantReturnViewports;
 
   ui.Image? _captureSnapshot() {
     final boundary =
@@ -117,24 +134,30 @@ class ScrollToTopTransitionState extends State<ScrollToTopTransition> {
         : EdgeInsets.only(right: margin + padding.right);
     final bounds = Offset.zero & boundary.size;
     final ratio = math.min(
-      math.min(MediaQuery.devicePixelRatioOf(context), 2.0),
-      math.sqrt(2000000 / (bounds.width * bounds.height)),
+      math.min(MediaQuery.devicePixelRatioOf(context), _maxSnapshotDpr),
+      math.sqrt(_maxSnapshotPixels / (bounds.width * bounds.height)),
     );
     // Like SnapshotWidget, rasterize on the raster thread.
     return boundary.toImageSync(pixelRatio: ratio);
   }
 
-  void cancel({bool notify = true}) {
+  void cancel({bool notify = true, bool immediateRelease = true}) {
     _generation++;
     final returning = _position != null;
     _position = null;
     _activeController = null;
     _panZoomPosition = null;
+    _snapshotOpacity?.dispose();
+    _snapshotOpacity = null;
     final image = _snapshot;
     _snapshot = null;
     image?.dispose();
     if (notify && image != null) setState(() {});
-    if (returning) UiInteractionCoordinator.instance.cancelInteraction(this);
+    if (immediateRelease) {
+      UiInteractionCoordinator.instance.cancelInteraction(this);
+    } else if (returning) {
+      UiInteractionCoordinator.instance.endInteraction(this);
+    }
   }
 
   void _interrupt({bool notify = true}) {
@@ -222,7 +245,7 @@ class ScrollToTopTransitionState extends State<ScrollToTopTransition> {
         fit: StackFit.passthrough,
         children: [
           RepaintBoundary(key: _boundaryKey, child: widget.child),
-          if (image != null && position != null)
+          if (image != null && position != null && _snapshotOpacity != null)
             Positioned.fill(
               // Consume a touch on the old image so it cannot activate a new
               // row underneath. The outer listener cancels the motion at once.
@@ -231,9 +254,18 @@ class ScrollToTopTransitionState extends State<ScrollToTopTransition> {
                 child: AbsorbPointer(
                   child: AnimatedBuilder(
                     animation: position,
-                    child: ColoredBox(
-                      color: Theme.of(context).colorScheme.surface,
-                      child: RawImage(image: image, fit: BoxFit.fill),
+                    child: FadeTransition(
+                      opacity: _snapshotOpacity!,
+                      child: RepaintBoundary(
+                        child: ColoredBox(
+                          color: Theme.of(context).colorScheme.surface,
+                          child: RawImage(
+                            image: image,
+                            fit: BoxFit.fill,
+                            filterQuality: FilterQuality.low,
+                          ),
+                        ),
+                      ),
                     ),
                     builder: (context, child) {
                       final progress =
@@ -248,7 +280,7 @@ class ScrollToTopTransitionState extends State<ScrollToTopTransition> {
                           0,
                           position.viewportDimension * 0.16 * progress,
                         ),
-                        child: Opacity(opacity: 1 - progress, child: child),
+                        child: child,
                       );
                     },
                   ),
@@ -258,6 +290,57 @@ class ScrollToTopTransitionState extends State<ScrollToTopTransition> {
         ],
       ),
     );
+  }
+}
+
+class _ScrollProgressOpacityAnimation extends Animation<double>
+    with
+        AnimationEagerListenerMixin,
+        AnimationLocalListenersMixin,
+        AnimationLocalStatusListenersMixin {
+  _ScrollProgressOpacityAnimation({
+    required this.position,
+    required this.start,
+    required this.top,
+  }) : _value = _compute(position, start, top) {
+    position.addListener(_onPositionChanged);
+  }
+
+  final ScrollPosition position;
+  final double start;
+  final double top;
+  double _value;
+  bool _disposed = false;
+
+  static double _compute(ScrollPosition position, double start, double top) {
+    if (!position.hasPixels || start <= top) return 1.0;
+    final progress = ((start - position.pixels) / (start - top)).clamp(
+      0.0,
+      1.0,
+    );
+    return 1.0 - progress;
+  }
+
+  void _onPositionChanged() {
+    if (_disposed) return;
+    final next = _compute(position, start, top);
+    if (next == _value) return;
+    _value = next;
+    notifyListeners();
+  }
+
+  @override
+  AnimationStatus get status => AnimationStatus.forward;
+
+  @override
+  double get value => _value;
+
+  @override
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    position.removeListener(_onPositionChanged);
+    super.dispose();
   }
 }
 

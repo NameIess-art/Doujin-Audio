@@ -63,7 +63,7 @@ void SubtitleWindow::Update(const std::string& text) {
   text_ = next;
   content_dirty_ = true;
   FitText();
-  InvalidateRect(window_, nullptr, TRUE);
+  InvalidateRect(window_, nullptr, FALSE);
 }
 void SubtitleWindow::Style(const flutter::EncodableMap& style) {
   const auto old_family = family_;
@@ -93,7 +93,7 @@ void SubtitleWindow::Style(const flutter::EncodableMap& style) {
   background_dirty_ = background_dirty_ || background_changed;
   content_dirty_ = true;
   if (layout_changed) FitText();
-  InvalidateRect(window_, nullptr, TRUE);
+  InvalidateRect(window_, nullptr, FALSE);
 }
 void SubtitleWindow::FitText() {
   // Keep the current window bounds during gaps between cues.

@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:audio_session/audio_session.dart';
-import 'package:media_kit/media_kit.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
@@ -14,7 +13,6 @@ import '../../features/player/application/native_playback_repository.dart';
 
 Future<void> initializePlatformRuntime() async {
   if (Platform.isWindows) {
-    MediaKit.ensureInitialized();
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
     final directory = await getApplicationSupportDirectory();

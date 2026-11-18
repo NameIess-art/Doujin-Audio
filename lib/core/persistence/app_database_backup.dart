@@ -121,6 +121,85 @@ extension AppDatabaseBackup on AppDatabase {
       await db.close();
     }
   }
+
+  Future<void> preserveNewerListeningData({
+    required String localPath,
+    required String candidatePath,
+    required List<String> interestKeys,
+    required bool Function(String local, String? backup) keepLocalInterest,
+  }) async {
+    final candidate = await openDatabase(candidatePath, singleInstance: false);
+    try {
+      await candidate.execute('ATTACH DATABASE ? AS local_restore', [
+        localPath,
+      ]);
+      await candidate.transaction((txn) async {
+        final localActivity = await _listeningRecency(txn, 'local_restore');
+        final backupActivity = await _listeningRecency(txn, 'main');
+        if (localActivity.lastPlayed > backupActivity.lastPlayed ||
+            (localActivity.lastPlayed == backupActivity.lastPlayed &&
+                localActivity.totalMs > backupActivity.totalMs)) {
+          // The totals, history and import IDs describe the same batch snapshot.
+          const tables = {
+            'listening_days': 'date, milliseconds',
+            'listening_work_days': 'date, work_key, milliseconds',
+            'listening_history':
+                'work_key, track_json, last_played_at_ms, legacy_order',
+            'listening_imports': 'batch_id',
+          };
+          for (final entry in tables.entries) {
+            final table = entry.key;
+            final columns = entry.value;
+            await txn.rawDelete('DELETE FROM main.$table');
+            await txn.execute(
+              'INSERT INTO main.$table ($columns) '
+              'SELECT $columns FROM local_restore.$table',
+            );
+          }
+        }
+        for (final key in interestKeys) {
+          final local = await _readRestoreSetting(txn, 'local_restore', key);
+          if (local == null) continue;
+          final backup = await _readRestoreSetting(txn, 'main', key);
+          if (keepLocalInterest(local, backup)) {
+            await txn.insert('app_kv_settings', {
+              'key': key,
+              'value': local,
+            }, conflictAlgorithm: ConflictAlgorithm.replace);
+          }
+        }
+      });
+    } finally {
+      await candidate.close();
+    }
+  }
+}
+
+Future<({int lastPlayed, int totalMs})> _listeningRecency(
+  Transaction txn,
+  String schema,
+) async {
+  final row = (await txn.rawQuery(
+    'SELECT (SELECT MAX(last_played_at_ms) FROM $schema.listening_history) '
+    'AS last_played, (SELECT SUM(milliseconds) FROM $schema.listening_days) '
+    'AS total_ms',
+  )).single;
+  return (
+    lastPlayed: (row['last_played'] as int?) ?? -1,
+    totalMs: (row['total_ms'] as int?) ?? 0,
+  );
+}
+
+Future<String?> _readRestoreSetting(
+  Transaction txn,
+  String schema,
+  String key,
+) async {
+  final rows = await txn.rawQuery(
+    'SELECT value FROM $schema.app_kv_settings WHERE key = ?',
+    [key],
+  );
+  return rows.singleOrNull?['value'] as String?;
 }
 
 Future<void> _validateRestoreSchema(

@@ -11,6 +11,10 @@ class _AppModalBackground extends StatelessWidget {
   const _AppModalBackground({required this.animation, required this.scrimKey});
 
   static const double _blurSigma = 8;
+  static final ui.ImageFilter _blurFilter = ui.ImageFilter.blur(
+    sigmaX: _blurSigma,
+    sigmaY: _blurSigma,
+  );
 
   final Animation<double> animation;
   final Key scrimKey;
@@ -25,14 +29,22 @@ class _AppModalBackground extends StatelessWidget {
               ? kSecondaryOverlayConfig.reverseCurve
               : kSecondaryOverlayConfig.curve;
           final progress = curve.transform(animation.value).clamp(0.0, 1.0);
-          final sigma = _blurSigma * progress;
-          return BackdropFilter(
-            enabled: sigma > 0,
-            filter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-            child: ColoredBox(
-              key: scrimKey,
-              color: kSecondaryOverlayConfig.scrimColor(context, progress),
-            ),
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              if (progress > 0)
+                Opacity(
+                  opacity: progress,
+                  child: BackdropFilter(
+                    filter: _blurFilter,
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+              ColoredBox(
+                key: scrimKey,
+                color: kSecondaryOverlayConfig.scrimColor(context, progress),
+              ),
+            ],
           );
         },
       ),

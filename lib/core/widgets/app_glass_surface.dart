@@ -14,6 +14,12 @@ class AppGlassSurface extends StatelessWidget {
     this.enabled = true,
   }) : assert(blurSigma >= 0 && blurSigma < double.infinity);
 
+  static final Map<double, ui.ImageFilter> _blurFilters =
+      <double, ui.ImageFilter>{};
+
+  static ui.ImageFilter _blurFilterFor(double sigma) => _blurFilters
+      .putIfAbsent(sigma, () => ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma));
+
   final Widget child;
   final Color backgroundColor;
   final BorderRadius borderRadius;
@@ -38,7 +44,7 @@ class AppGlassSurface extends StatelessWidget {
           ? BackdropFilter.grouped(
               enabled: backgroundColor.a > 0 && blurSigma > 0,
               blendMode: blendMode,
-              filter: ui.ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+              filter: _blurFilterFor(blurSigma),
               child: content,
             )
           : content,

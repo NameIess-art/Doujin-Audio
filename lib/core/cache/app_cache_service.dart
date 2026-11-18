@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as path;
@@ -113,23 +114,21 @@ class AppCacheService {
   }
 
   static Future<int> _estimateCacheBytes({List<String>? storageRoots}) async {
-    var totalBytes = 0;
-    for (final root in await _cacheRoots(includePersistent: true)) {
-      if (storageRoots != null &&
-          !storageRoots.any(
-            (volumeRoot) => PathMatcher.isWithinOrEqual(root.path, volumeRoot),
-          )) {
-        continue;
-      }
-      await for (final file in _files(root)) {
-        try {
-          totalBytes += await file.length();
-        } on FileSystemException {
-          // Entries may disappear while usage is being measured.
-        }
-      }
+    final roots = await _cacheRoots(includePersistent: true);
+    final rootPaths = [
+      for (final root in roots)
+        if (storageRoots == null ||
+            storageRoots.any(
+              (volumeRoot) => PathMatcher.isWithinOrEqual(root.path, volumeRoot),
+            ))
+          root.path,
+    ];
+    if (rootPaths.isEmpty) return 0;
+    final scan = await Isolate.run(() => _scanCacheRootsSync(rootPaths));
+    for (final error in scan.errors) {
+      AppLogService.warning('cache_directory_scan_failed', error: error);
     }
-    return totalBytes;
+    return scan.totalBytes;
   }
 
   static Future<Directory> persistentImportDirectory() async => Directory(
@@ -307,27 +306,6 @@ class AppCacheService {
     return unique;
   }
 
-  static Stream<File> _files(Directory root) async* {
-    try {
-      if (await FileSystemEntity.type(root.path, followLinks: false) !=
-          FileSystemEntityType.directory) {
-        return;
-      }
-      await for (final entity in root.list(
-        recursive: true,
-        followLinks: false,
-      )) {
-        if (entity is File) yield entity;
-      }
-    } on FileSystemException catch (error, stack) {
-      AppLogService.warning(
-        'cache_directory_scan_failed',
-        error: error,
-        stackTrace: stack,
-      );
-    }
-  }
-
   static Future<int> _deleteDirectoryChildren(Directory directory) async {
     var deletedBytes = 0;
     try {
@@ -384,32 +362,30 @@ class AppCacheService {
   }
 
   static Future<void> _enforceLimitOnce() async {
-    final entries = <_CacheFileEntry>[];
-    var totalBytes = 0;
-    for (final root in await _cacheRoots()) {
-      await for (final file in _files(root)) {
-        try {
-          final stat = await file.stat();
-          totalBytes += stat.size;
-          entries.add(_CacheFileEntry(file: file, modified: stat.modified));
-        } on FileSystemException {
-          // Files may disappear while scanning.
-        }
-      }
+    final rootPaths = [for (final root in await _cacheRoots()) root.path];
+    if (rootPaths.isEmpty) return;
+    final scan = await Isolate.run(
+      () => _scanCacheRootsSync(rootPaths, collectEntries: true),
+    );
+    for (final error in scan.errors) {
+      AppLogService.warning('cache_directory_scan_failed', error: error);
     }
+    var totalBytes = scan.totalBytes;
     if (totalBytes <= _maxCacheBytes) return;
     final target = applicationCacheTrimTargetBytes(_maxCacheBytes);
-    entries.removeWhere((entry) => _isProtected(entry.file.path));
+    final entries = scan.entries
+        .where((entry) => !_isProtected(entry.path))
+        .toList(growable: false);
     // A lease can end while another candidate is being deleted. Arrange its
     // retry before awaiting deletion so that the skipped files are revisited.
     _enforceAfterLeaseRelease = _protectedPaths.isNotEmpty;
     entries.sort((a, b) {
-      final order = a.modified.compareTo(b.modified);
-      return order == 0 ? a.file.path.compareTo(b.file.path) : order;
+      final order = a.modifiedMicros.compareTo(b.modifiedMicros);
+      return order == 0 ? a.path.compareTo(b.path) : order;
     });
     for (final entry in entries) {
       if (totalBytes <= target) break;
-      totalBytes -= await _deleteEntity(entry.file);
+      totalBytes -= await _deleteEntity(File(entry.path));
     }
     _enforceAfterLeaseRelease =
         totalBytes > target && _protectedPaths.isNotEmpty;
@@ -456,8 +432,43 @@ int applicationCacheTrimTargetBytes(int maxBytes) {
   return (normalized * 9 ~/ 10).clamp(1, normalized);
 }
 
-class _CacheFileEntry {
-  const _CacheFileEntry({required this.file, required this.modified});
-  final File file;
-  final DateTime modified;
+typedef _ScannedCacheEntry = ({String path, int modifiedMicros});
+
+({int totalBytes, List<_ScannedCacheEntry> entries, List<String> errors})
+_scanCacheRootsSync(
+  List<String> rootPaths, {
+  bool collectEntries = false,
+}) {
+  var totalBytes = 0;
+  final entries = <_ScannedCacheEntry>[];
+  final errors = <String>[];
+  for (final rootPath in rootPaths) {
+    final root = Directory(rootPath);
+    try {
+      if (FileSystemEntity.typeSync(rootPath, followLinks: false) !=
+          FileSystemEntityType.directory) {
+        continue;
+      }
+      for (final entity in root.listSync(recursive: true, followLinks: false)) {
+        if (entity is! File) continue;
+        try {
+          if (collectEntries) {
+            final stat = entity.statSync();
+            totalBytes += stat.size;
+            entries.add((
+              path: entity.path,
+              modifiedMicros: stat.modified.microsecondsSinceEpoch,
+            ));
+          } else {
+            totalBytes += entity.lengthSync();
+          }
+        } on FileSystemException {
+          // Entries may disappear while scanning or measuring.
+        }
+      }
+    } on FileSystemException catch (error) {
+      errors.add(error.toString());
+    }
+  }
+  return (totalBytes: totalBytes, entries: entries, errors: errors);
 }

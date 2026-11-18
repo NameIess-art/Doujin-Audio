@@ -442,17 +442,10 @@ class AsmrLibraryController extends ChangeNotifier
     required bool excluded,
   }) {
     for (final entry in changes.entries) {
-      if (!excluded) {
-        state.setInterested(entry.key, entry.value);
+      if (excluded) {
+        state.setExcluded(entry.key, entry.value);
       } else {
-        if (!state.tags.containsKey(entry.key)) {
-          throw ArgumentError.value(entry.key, 'key');
-        }
-        if (entry.value) {
-          state.excluded.add(entry.key);
-        } else {
-          state.excluded.remove(entry.key);
-        }
+        state.setInterested(entry.key, entry.value);
       }
     }
   }

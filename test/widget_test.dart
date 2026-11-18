@@ -4719,7 +4719,7 @@ void main() {
       listen: false,
     ).read(mainScreenControllerProvider).requestScrollToTop(0);
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
 
     final firstCard = find
         .descendant(of: contentList(), matching: find.byType(SwipeRevealCard))

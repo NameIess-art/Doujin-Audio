@@ -242,10 +242,13 @@ void main() {
 
         final brand = tester.widget<AppBrandIcon>(find.byType(AppBrandIcon));
         final image = tester.widget<Image>(find.byType(Image));
+        final provider = image.image is ResizeImage
+            ? (image.image as ResizeImage).imageProvider
+            : image.image;
         expect(brand.size, size.shortestSide);
         expect(image.color, scheme.primary);
         expect(image.colorBlendMode, BlendMode.srcIn);
-        expect((image.image as AssetImage).assetName, appBrandIconAsset);
+        expect((provider as AssetImage).assetName, appBrandIconAsset);
         expect(find.byType(Icon), findsNothing);
         expect(tester.takeException(), isNull);
       }
@@ -433,9 +436,13 @@ void main() {
               ),
             ),
           );
-          final coverImages = find.byWidgetPredicate(
-            (widget) => widget is Image && widget.image is! AssetImage,
-          );
+          final coverImages = find.byWidgetPredicate((widget) {
+            if (widget is! Image) return false;
+            final provider = widget.image is ResizeImage
+                ? (widget.image as ResizeImage).imageProvider
+                : widget.image;
+            return provider is! AssetImage;
+          });
           final coverFrames = find.byElementPredicate((element) {
             if (element.widget is! RawImage) return false;
             var isBrandIcon = false;

@@ -10,10 +10,13 @@ class AppBrandIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
+    final cacheWidth = (size * dpr).round().clamp(1, 2048);
     return Image.asset(
       appBrandIconAsset,
       width: size,
       height: size,
+      cacheWidth: cacheWidth,
       fit: BoxFit.contain,
       color: color,
       colorBlendMode: BlendMode.srcIn,

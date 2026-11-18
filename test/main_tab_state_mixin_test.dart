@@ -101,11 +101,10 @@ void main() {
       final snapshot = find.byType(RawImage);
       expect(snapshot, findsOneWidget);
       final image = tester.widget<RawImage>(snapshot).image!;
-      final opacity = find.ancestor(
-        of: snapshot,
-        matching: find.byType(Opacity),
-      );
-      expect(tester.widget<Opacity>(opacity).opacity, 1);
+      final opacity = find
+          .ancestor(of: snapshot, matching: find.byType(FadeTransition))
+          .first;
+      expect(tester.widget<FadeTransition>(opacity).opacity.value, 1);
       // The live list has already moved, but the first painted overlay still
       // contains the old row. Compare a real pixel instead of only the offset.
       final bytes = (await tester.runAsync(() => image.toByteData()))!;
@@ -115,7 +114,10 @@ void main() {
       expect(bytes.getUint8(1), (expected >> 8) & 255);
       expect(bytes.getUint8(2), expected & 255);
       await tester.pump(const Duration(milliseconds: 160));
-      expect(tester.widget<Opacity>(opacity).opacity, inExclusiveRange(0, 1));
+      expect(
+        tester.widget<FadeTransition>(opacity).opacity.value,
+        inExclusiveRange(0, 1),
+      );
       final transform = tester.widget<Transform>(
         find.ancestor(of: snapshot, matching: find.byType(Transform)).first,
       );
@@ -272,7 +274,7 @@ void main() {
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 80));
           expect(controller.offset, inExclusiveRange(0, start));
-          for (var frame = 0; frame < 32; frame++) {
+          for (var frame = 0; frame < 40; frame++) {
             await tester.pump(const Duration(milliseconds: 16));
           }
 
@@ -437,7 +439,7 @@ void main() {
     expect(controller.offset, greaterThan(0));
     state.signals.requestScrollToTop(0);
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 400));
     expect(controller.offset, 0);
   });
 

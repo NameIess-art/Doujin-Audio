@@ -688,11 +688,11 @@ const Map<String, String> appLanguageZh = {
   'export_backup': '导出备份',
   'export_backup_subtitle': '备份应用数据、播放记录以及 ASMR.ONE 登录账号。',
   'restore_backup': '恢复备份',
-  'restore_backup_subtitle': '完整替换当前数据，并在下次启动时生效。',
+  'restore_backup_subtitle': '下次启动时恢复，保留「我的」中较新的本地数据。',
   'backup_sensitive_warning':
       '备份包含 ASMR.ONE 账号、密码和登录令牌，且文件不加密。任何获得备份文件的人都可能直接登录该账号。是否继续？',
   'restore_backup_warning':
-      '恢复会完整替换当前应用数据并停止播放。音频文件和目录授权不会恢复。完成后请关闭应用，再手动重新打开。',
+      '恢复会停止播放并替换应用数据。「我的」中较新的本地收听记录和兴趣偏好会保留。音频文件和目录授权不会恢复。完成后请关闭应用，再手动重新打开。',
   'select_backup': '选择备份',
   'backup_exported': '备份已导出至：{path}',
   'backup_ready_to_restore': '备份已准备完成',

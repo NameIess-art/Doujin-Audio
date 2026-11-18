@@ -10,6 +10,8 @@ import 'package:flutter/material.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
+import 'package:doujin_audio/core/persistence/persistence_records.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_auth_service.dart';
 import 'package:doujin_audio/features/data_support/application/data_backup_service.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
@@ -529,6 +531,168 @@ void main() {
       ]);
     },
   );
+
+  for (final (keepLocalActivity, resumeCommit) in [
+    (true, false),
+    (false, false),
+    (true, true),
+  ]) {
+    test(
+      'restore selects newer My data (local activity: $keepLocalActivity, retry: $resumeCommit)',
+      () async {
+        final backupTime = DateTime.utc(2026, 11, 16).millisecondsSinceEpoch;
+        final localTime = DateTime.utc(
+          2026,
+          11,
+          keepLocalActivity ? 17 : 15,
+        ).millisecondsSinceEpoch;
+        Future<void> seedListening(Database db, String name, int time) async {
+          final totalMs = name == 'local' ? 120000 : 60000;
+          final work = ListeningWorkRecord(
+            workKey: name,
+            track: MusicTrack(
+              path: '/$name.mp3',
+              displayName: name,
+              groupKey: name,
+              groupTitle: name,
+              groupSubtitle: '',
+              isSingle: true,
+            ),
+            milliseconds: totalMs,
+            lastPlayedAtMs: time,
+          );
+          await AppDatabase.test(db).importListeningBatch('$name:1', [
+            ListeningDayRecord(
+              date: '2026-11-16',
+              totalMs: totalMs,
+              works: [work],
+            ),
+          ]);
+        }
+
+        Future<void> seedInterest(
+          Database db,
+          String kind,
+          Map<String, Object> data,
+        ) => AppDatabase.test(
+          db,
+        ).saveAppSetting('asmr_${kind}_preferences_v1', jsonEncode(data));
+
+        await seedListening(sourceDatabase, 'backup', backupTime);
+        await seedInterest(sourceDatabase, 'tag', {
+          'manualInterests': ['backup'],
+          'updatedAtMs': backupTime,
+        });
+        await seedInterest(sourceDatabase, 'voice_actor', {
+          'excluded': ['backup'],
+          'updatedAtMs': backupTime,
+        });
+        await seedInterest(sourceDatabase, 'circle', {
+          'learned': {'backup': 1},
+        });
+        await appDatabase.saveAppSetting('ordinary_setting', 'backup');
+
+        final exporter = DataBackupService(
+          database: appDatabase,
+          accountStore: accountStore,
+          appUpdateService: _FakeAppUpdateService(),
+          supportDirectoryProvider: () async => temporaryDirectory,
+          clock: () => DateTime.utc(2026, 11, 18),
+          platformName: 'test-platform',
+        );
+        final backup = await exporter.exportBackup(
+          '${temporaryDirectory.path}/my-data.dabackup',
+        );
+
+        await databaseDirectory.create();
+        final localPath = '${databaseDirectory.path}/${AppDatabase.fileName}';
+        final local = await databaseFactoryFfi.openDatabase(localPath);
+        addTearDown(() async {
+          if (local.isOpen) await local.close();
+        });
+        await local.rawQuery('PRAGMA journal_mode = WAL');
+        await AppDatabase.createSchemaForTest(local);
+        await seedListening(local, 'local', localTime);
+        final localAppDatabase = AppDatabase.test(local);
+        await seedInterest(local, 'tag', {
+          'manualInterests': <String>[],
+          'updatedAtMs': backupTime + 1,
+        });
+        await seedInterest(local, 'voice_actor', {
+          'excluded': ['local'],
+          'updatedAtMs': backupTime - 1,
+        });
+        await seedInterest(local, 'circle', {
+          'learned': {'local': 2},
+        });
+        await localAppDatabase.saveAppSetting('ordinary_setting', 'local');
+
+        final restorer = DataBackupService(
+          database: localAppDatabase,
+          accountStore: accountStore,
+          supportDirectoryProvider: () async => temporaryDirectory,
+          databasesPathProvider: () async => databaseDirectory.path,
+          platformName: 'test-platform',
+        );
+        await restorer.inspectAndStageRestore(backup.path);
+        if (resumeCommit) {
+          final pending = Directory(
+            '${temporaryDirectory.path}/backup_restore',
+          );
+          final rollback = await Directory('${pending.path}/rollback').create();
+          await local.close();
+          await File(
+            localPath,
+          ).rename('${rollback.path}/${AppDatabase.fileName}');
+          for (final name in ['preferences.json', 'asmr-account.json']) {
+            await File('${rollback.path}/$name').writeAsString('{}');
+          }
+          await File('${pending.path}/journal.json').writeAsString(
+            jsonEncode({
+              'phase': 'committing',
+              'createdAt': DateTime.utc(2026, 11, 18).toIso8601String(),
+            }),
+          );
+          await appDatabase.createPortableSnapshot(localPath);
+        }
+        expect((await restorer.applyAtStartup())?.succeeded, isTrue);
+
+        final restored = await databaseFactoryFfi.openDatabase(localPath);
+        addTearDown(restored.close);
+        final restoredAppDatabase = AppDatabase.test(restored);
+        final expectedWork = keepLocalActivity ? 'local' : 'backup';
+        final history = await restoredAppDatabase.loadListeningHistory();
+        expect(history.single['work_key'], expectedWork);
+        expect((await restoredAppDatabase.loadListeningDays()).single, {
+          'date': '2026-11-16',
+          'milliseconds': keepLocalActivity ? 120000 : 60000,
+        });
+        expect(
+          (await restored.query('listening_work_days')).single['work_key'],
+          expectedWork,
+        );
+        expect(
+          (await restored.query('listening_imports')).single['batch_id'],
+          '$expectedWork:1',
+        );
+
+        Future<Map<String, dynamic>> restoredInterest(String kind) async =>
+            jsonDecode(
+                  (await restoredAppDatabase.loadAppSetting(
+                    'asmr_${kind}_preferences_v1',
+                  ))!,
+                )
+                as Map<String, dynamic>;
+        expect((await restoredInterest('tag'))['manualInterests'], isEmpty);
+        expect((await restoredInterest('voice_actor'))['excluded'], ['backup']);
+        expect((await restoredInterest('circle'))['learned'], {'local': 2});
+        expect(
+          await restoredAppDatabase.loadAppSetting('ordinary_setting'),
+          'backup',
+        );
+      },
+    );
+  }
 
   for (final schemaVersion in [8, 12, AppDatabase.schemaVersion]) {
     test(

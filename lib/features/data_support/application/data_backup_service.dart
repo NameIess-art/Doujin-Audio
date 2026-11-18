@@ -12,6 +12,7 @@ import '../../../core/persistence/app_database.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../asmr/application/asmr_auth_service.dart';
+import '../../asmr/application/asmr_preferences.dart';
 import '../../../core/persistence/app_preferences.dart';
 import '../../settings/application/app_update_service.dart';
 
@@ -317,6 +318,15 @@ class DataBackupService {
         }
       }
 
+      // On a retried commit the installed database may already be the backup.
+      if (await rollbackDatabase.exists()) {
+        await _database.preserveNewerListeningData(
+          localPath: rollbackDatabase.path,
+          candidatePath: decoded.databaseFile.path,
+          interestKeys: AsmrPreferencesStore.interestSettingKeys,
+          keepLocalInterest: AsmrPreferencesStore.keepLocalInterestOnRestore,
+        );
+      }
       await _writeJournal(
         restoreDirectory,
         PendingRestoreJournal(phase: 'committing', createdAt: _clock()),

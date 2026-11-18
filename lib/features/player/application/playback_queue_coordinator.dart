@@ -24,15 +24,19 @@ final class PlaybackQueueCoordinator {
     await _playback.addTrackToPlaybackQueue(sessionId, track);
   }
 
-  Future<void> addWork(String sessionId, MusicTrack track) async {
+  Future<void> addWork(
+    String sessionId,
+    MusicTrack track, {
+    List<MusicTrack>? selectedTracks,
+    String? workRootPath,
+  }) async {
     unawaited(_library.playbackCoverPathFutureForTrack(track));
     if (track.isSingle) {
       await _playback.addTrackToPlaybackQueue(sessionId, track);
       return;
     }
 
-    final workRootPath = _paths.workRootForTrack(track.path);
-    final tracks = _paths.tracksInSameWork(track.path);
+    final tracks = selectedTracks ?? _paths.tracksInSameWork(track.path);
     if (tracks.isEmpty) return;
 
     for (final t in tracks.take(4)) {
@@ -43,7 +47,7 @@ final class PlaybackQueueCoordinator {
       sessionId,
       title: _paths.workTitleForTrack(track),
       tracks: tracks,
-      workRootPath: workRootPath,
+      workRootPath: workRootPath ?? _paths.workRootForTrack(track.path),
     );
   }
 }

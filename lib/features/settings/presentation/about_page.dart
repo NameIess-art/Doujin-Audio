@@ -19,6 +19,7 @@ import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../application/app_update_service.dart';
+import 'settings_tile_theme.dart';
 
 class AboutPage extends ConsumerWidget {
   const AboutPage({super.key, required this.versionFuture});
@@ -166,19 +167,14 @@ class AboutPage extends ConsumerWidget {
                                   leading: const _AboutIconContainer(
                                     icon: Icons.person_outline_rounded,
                                   ),
-                                  title: Text(
-                                    i18n.tr('about_author'),
-                                    style: theme.textTheme.titleMedium,
-                                  ),
+                                  title: Text(i18n.tr('about_author')),
                                   trailing: Text(
                                     'NameIess-art',
                                     style: theme.textTheme.bodyMedium?.copyWith(
+                                      fontSize: SettingsTileTheme.titleFontSize,
                                       color: cs.onSurfaceVariant,
                                       fontWeight: FontWeight.w600,
                                     ),
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: AppSpacing.xs,
                                   ),
                                 ),
                                 const SizedBox(height: AppSpacing.xs),
@@ -192,8 +188,15 @@ class AboutPage extends ConsumerWidget {
                                         unawaited(_openSponsor(context, ref)),
                                     icon: const Icon(
                                       Icons.favorite_border_rounded,
+                                      size: 24,
                                     ),
-                                    label: Text(i18n.tr('about_reward')),
+                                    label: Text(
+                                      i18n.tr('about_reward'),
+                                      style: const TextStyle(
+                                        fontSize:
+                                            SettingsTileTheme.titleFontSize,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ],
@@ -239,7 +242,7 @@ class _AboutCard extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       padding: const EdgeInsets.all(AppSpacing.sm),
-      child: Column(children: children),
+      child: SettingsTileTheme(child: Column(children: children)),
     );
   }
 }
@@ -310,14 +313,8 @@ class _AboutLinkTile extends StatelessWidget {
         child: ListTile(
           shape: RoundedRectangleBorder(borderRadius: rowRadius),
           leading: _AboutIconContainer(icon: icon),
-          title: Text(
-            title,
-            style: theme.textTheme.titleMedium?.copyWith(
-              color: cs.onSurface,
-            ),
-          ),
+          title: Text(title, style: TextStyle(color: cs.onSurface)),
           trailing: Icon(Icons.open_in_new_rounded, color: cs.onSurfaceVariant),
-          contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
         ),
       ),
     );
@@ -339,10 +336,7 @@ class _AboutVersionTile extends StatelessWidget {
     ).read(appLanguageProviderInstanceProvider);
     return ListTile(
       leading: const _AboutIconContainer(icon: Icons.info_outline_rounded),
-      title: Text(
-        i18n.tr('about_version'),
-        style: theme.textTheme.titleMedium,
-      ),
+      title: Text(i18n.tr('about_version')),
       trailing: FutureBuilder<AppVersionInfo>(
         future: versionFuture,
         builder: (context, snapshot) => Text(
@@ -350,12 +344,12 @@ class _AboutVersionTile extends StatelessWidget {
           softWrap: true,
           textAlign: TextAlign.end,
           style: theme.textTheme.bodyMedium?.copyWith(
+            fontSize: SettingsTileTheme.titleFontSize,
             color: cs.onSurfaceVariant,
             fontWeight: FontWeight.w600,
           ),
         ),
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
     );
   }
 }
@@ -368,12 +362,9 @@ class _AboutIconContainer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final tokens = AppDesignTokens.of(context);
-    return Container(
-      width: tokens.iconContainerSize,
-      height: tokens.iconContainerSize,
-      alignment: Alignment.center,
-      child: Icon(icon, color: cs.primary),
+    return SizedBox(
+      width: SettingsTileTheme.leadingWidth,
+      child: Icon(icon, color: cs.primary, size: SettingsTileTheme.iconSize),
     );
   }
 }

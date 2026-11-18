@@ -587,6 +587,8 @@ final _playlistBaseSortProvider = Provider((ref) {
 class PlaylistSortedEntriesNotifier
     extends Notifier<List<PlaybackDirectoryEntry>> {
   Set<String>? _knownSessionIds;
+  List<PlaybackDirectoryEntry>? _lastStructureEntries;
+  bool _lastStructureInitialized = false;
   final List<String> _newQueueIds = [];
   (PlaylistSortCriterion, bool, bool)? _sortOptions;
   List<String> _pinnedSessionIds = const [];
@@ -606,9 +608,6 @@ class PlaylistSortedEntriesNotifier
         (state) => state.value?.pinnedPlaylistSessionIds ?? const <String>[],
       ),
     );
-    final entriesBySessionId = <String, PlaybackDirectoryEntry>{
-      for (final entry in structureState.entries) entry.id: entry,
-    };
     final sortOptions = base.options;
     if (_sortOptions != sortOptions ||
         !listEquals(_pinnedSessionIds, pinnedSessionIds)) {
@@ -616,7 +615,13 @@ class PlaylistSortedEntriesNotifier
     }
     _sortOptions = sortOptions;
     _pinnedSessionIds = pinnedSessionIds;
-    if (structureState.isInitialized) {
+    final structureChanged =
+        !identical(_lastStructureEntries, structureState.entries) ||
+        _lastStructureInitialized != structureState.isInitialized;
+    _lastStructureEntries = structureState.entries;
+    _lastStructureInitialized = structureState.isInitialized;
+    if (structureState.isInitialized &&
+        (structureChanged || _knownSessionIds == null)) {
       if (_knownSessionIds case final known?) {
         // Keep newly created queues visible until the user applies a sort or pin.
         _newQueueIds.insertAll(0, [
@@ -627,10 +632,19 @@ class PlaylistSortedEntriesNotifier
               entry.id,
         ]);
       }
-      _knownSessionIds = entriesBySessionId.keys.toSet();
+      _knownSessionIds = {for (final entry in structureState.entries) entry.id};
     }
-    _newQueueIds.retainWhere(entriesBySessionId.containsKey);
     if (_newQueueIds.isEmpty && pinnedSessionIds.isEmpty) return base.entries;
+    Map<String, PlaybackDirectoryEntry>? entriesBySessionId;
+    if (_newQueueIds.isNotEmpty) {
+      entriesBySessionId = <String, PlaybackDirectoryEntry>{
+        for (final entry in structureState.entries) entry.id: entry,
+      };
+      _newQueueIds.retainWhere(entriesBySessionId.containsKey);
+      if (_newQueueIds.isEmpty && pinnedSessionIds.isEmpty) {
+        return base.entries;
+      }
+    }
     final newQueueIds = _newQueueIds.toSet();
     final pinned = pinnedSessionIds.toSet();
     final temporaryEntries = <PlaybackDirectoryEntry>[];
@@ -647,7 +661,7 @@ class PlaylistSortedEntriesNotifier
     }
     return List<PlaybackDirectoryEntry>.unmodifiable([
       ...temporaryEntries,
-      for (final id in _newQueueIds) entriesBySessionId[id]!,
+      for (final id in _newQueueIds) entriesBySessionId![id]!,
       ...pinnedEntries,
       ...ordinaryEntries,
     ]);

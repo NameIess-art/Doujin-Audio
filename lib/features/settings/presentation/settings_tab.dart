@@ -50,6 +50,7 @@ import '../../asmr/presentation/asmr_language_labels.dart';
 import 'permission_settings_controls.dart';
 import 'app_update_flow.dart';
 import 'about_page.dart';
+import 'settings_tile_theme.dart';
 import '../../../app/presentation/main_tab_state_mixin.dart';
 
 part 'settings_tab_actions.dart';
@@ -232,7 +233,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                           constraints: BoxConstraints(
                             maxWidth: tokens.readableContentMaxWidth,
                           ),
-                          child: _SettingsTileTheme.categories(
+                          child: SettingsTileTheme.categories(
                             child: Column(
                               children: [
                                 for (
@@ -383,7 +384,7 @@ class _SettingsCategoryTile extends StatelessWidget {
             ],
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-          minTileHeight: _settingsTileHeight,
+          minTileHeight: SettingsTileTheme.minTileHeight,
           minVerticalPadding: 0,
           titleAlignment: ListTileTitleAlignment.center,
         ),
@@ -575,7 +576,7 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
                         bottomInset + 24,
                       ),
                       children: [
-                        _SettingsTileTheme(child: Column(children: sections)),
+                        SettingsTileTheme(child: Column(children: sections)),
                       ],
                     ),
                   ),

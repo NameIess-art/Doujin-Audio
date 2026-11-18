@@ -390,6 +390,64 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     });
   }
 
+  Future<PlaybackQueueEntry?> loadQueueEntry(
+    String sessionId,
+    String entryId,
+  ) async {
+    final session = _service.sessions[sessionId];
+    if (session == null) return null;
+    if (session.queueLoadingRequired) {
+      final entry = await (databaseRepository as PlaybackQueueStorage)
+          .loadQueueEntry(sessionId, entryId);
+      if (!identical(_service.sessions[sessionId], session)) return null;
+      if (session.queueLoadingRequired) return entry;
+    }
+    return _queueEntryIn(session, entryId);
+  }
+
+  Future<List<MusicTrack>?> resolveQueueEntryTracksForEdit(
+    String sessionId,
+    PlaybackQueueEntry snapshot,
+    List<int> trackIndices,
+  ) async {
+    final session = _service.sessions[sessionId];
+    final indices = trackIndices.toSet();
+    if (session == null ||
+        indices.isEmpty ||
+        indices.any((index) => index < 0 || index >= snapshot.tracks.length)) {
+      return null;
+    }
+    if (session.queueLoadingRequired &&
+        !await ensureSessionQueueLoaded(sessionId)) {
+      return null;
+    }
+    if (!identical(_service.sessions[sessionId], session)) return null;
+    final entry = _queueEntryIn(session, snapshot.id);
+    if (entry == null || entry != snapshot) return null;
+
+    final selected = <MusicTrack>[];
+    for (final index in indices) {
+      final before = snapshot.tracks[index];
+      final track = entry.tracks[index];
+      // Queue entry equality omits remote occurrence identifiers.
+      if (before.remoteMetadataKind != track.remoteMetadataKind ||
+          before.remoteMetadata?['id'] != track.remoteMetadata?['id'] ||
+          before.remoteMetadata?['trackStableKey'] !=
+              track.remoteMetadata?['trackStableKey'] ||
+          before.remoteMetadata?['trackRelativePath'] !=
+              track.remoteMetadata?['trackRelativePath']) {
+        return null;
+      }
+      selected.add(track);
+    }
+    return selected;
+  }
+
+  PlaybackQueueEntry? _queueEntryIn(PlaybackSession session, String entryId) =>
+      session.playbackQueue?.entries
+          .where((entry) => entry.id == entryId)
+          .firstOrNull;
+
   Future<List<PlaybackQueueEntryPreview>> loadQueueEntryPreviews(
     String sessionId, {
     required int start,

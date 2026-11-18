@@ -20,6 +20,7 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
   final LibraryFacade _library;
   final PlaybackFacade _playback;
   static const _maxCachedWorks = 64;
+  static const _inlineWorkLookupLimit = 64;
   final Map<String, _WorkTracksCache> _workTracksCache = {};
   int _cachedStructureRevision = -1;
 
@@ -74,16 +75,23 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
   List<MusicTrack> tracksInSameGroup(String trackPath, {int? limit}) {
     final track = trackByPath(trackPath);
     if (track == null) return const <MusicTrack>[];
+    return _tracksInGroup(trackPath, track, limit: limit);
+  }
+
+  List<MusicTrack> _tracksInGroup(
+    String trackPath,
+    MusicTrack track, {
+    int? limit,
+  }) {
     final libraryTracks = _library.tracksInGroup(track.groupKey, limit: limit);
     if (libraryTracks.isNotEmpty) return libraryTracks;
     final resolvedPath = _playback.resolveRetargetedPath(trackPath);
-    final originalPath = _playback.originalPathForRetargeted(trackPath) ??
+    final originalPath =
+        _playback.originalPathForRetargeted(trackPath) ??
         _playback.originalPathForRetargeted(resolvedPath);
     for (final session in _playback.sessions.values) {
-      final sessionTrack = session.trackForPath(
-            trackPath,
-            resolvedPath: resolvedPath,
-          ) ??
+      final sessionTrack =
+          session.trackForPath(trackPath, resolvedPath: resolvedPath) ??
           (originalPath != null ? session.trackForPath(originalPath) : null) ??
           session.trackForPath(track.path);
       if (sessionTrack == null) continue;
@@ -136,10 +144,10 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
     if (track == null) return const <MusicTrack>[];
     if (track.isSingle) return <MusicTrack>[track];
     if (track.isRemoteAsmr || PathMatcher.isRemoteUri(track.path)) {
-      return tracksInSameGroup(trackPath, limit: limit);
+      return _tracksInGroup(trackPath, track, limit: limit);
     }
     final root = workRootForTrack(trackPath);
-    if (root == null) return tracksInSameGroup(trackPath, limit: limit);
+    if (root == null) return _tracksInGroup(trackPath, track, limit: limit);
     final cached = _cachedWork(root);
     if (cached?.tracks != null) {
       final tracks = cached!.tracks!;
@@ -147,16 +155,15 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
           ? tracks.toList(growable: false)
           : tracks.take(limit).toList(growable: false);
     }
+    final normalizedRoot = PathMatcher.normalize(root);
     final matches = _library.library.where(
-      (candidate) =>
-          PathMatcher.isWithinOrEqual(candidate.path, root) ||
-          PathMatcher.isWithinOrEqual(candidate.groupKey, root),
+      (candidate) => _isTrackInWork(candidate, normalizedRoot),
     );
     final tracks = (limit == null ? matches : matches.take(limit)).toList(
       growable: false,
     );
     if (tracks.isEmpty) {
-      final fallback = tracksInSameGroup(trackPath, limit: limit);
+      final fallback = _tracksInGroup(trackPath, track, limit: limit);
       if (limit == null && fallback.isNotEmpty) {
         _cacheWork(
           root,
@@ -200,55 +207,68 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
     _workTracksCache.clear();
   }
 
+  /// Resolves the work for an already selected track without scanning a large
+  /// catalog on the UI isolate.
+  Future<List<MusicTrack>> tracksInSameWorkAsync(MusicTrack knownTrack) async {
+    final trackPath = knownTrack.path;
+    while (true) {
+      final resolvedPath = _playback.resolveRetargetedPath(trackPath);
+      final track = _library.trackByPath(resolvedPath) ?? knownTrack;
+      if (track.isSingle) return [track];
+      if (track.isRemoteAsmr || PathMatcher.isRemoteUri(track.path)) {
+        return _tracksInGroup(trackPath, track);
+      }
+      final root = workRootForTrack(trackPath, knownTrack: track);
+      if (root == null) return _tracksInGroup(trackPath, track);
+      final cached = _cachedWork(root)?.tracks;
+      if (cached != null) return cached;
+
+      final revision = _library.structureRevision;
+      final source = _library.library;
+      final request = (tracks: source, root: root);
+      final indices = source.length <= _inlineWorkLookupLimit
+          ? await Future.microtask(() => _workTrackIndices(request))
+          : await compute(_workTrackIndices, request);
+      if (revision != _library.structureRevision) continue;
+
+      final tracks = <MusicTrack>[];
+      final budget = Stopwatch()..start();
+      for (final index in indices) {
+        tracks.add(source[index]);
+        if (budget.elapsedMicroseconds >= 1000) {
+          await Future<void>.delayed(Duration.zero);
+          // A scan can reorder the source while this slice yields.
+          if (revision != _library.structureRevision) break;
+          budget.reset();
+        }
+      }
+      if (revision != _library.structureRevision) continue;
+      if (tracks.isEmpty) return _tracksInGroup(trackPath, track);
+      final result = List<MusicTrack>.unmodifiable(tracks);
+      _cacheWork(
+        root,
+        _WorkTracksCache(hasSiblings: result.length > 1, tracks: result),
+      );
+      return result;
+    }
+  }
+
   Future<List<MusicTrack>> tracksForSessionSwitcher(String sessionId) async {
-    final session = _playback.sessionById(sessionId);
-    if (session == null) return const <MusicTrack>[];
-    final customQueue = session.customQueueTracks;
-    if (customQueue != null && customQueue.isNotEmpty) return customQueue;
-    final track = trackByPath(session.currentTrackPath);
-    if (track == null) return const <MusicTrack>[];
-    if (track.isSingle) return [track];
-    final root = workRootForTrack(track.path);
-    if (track.isRemoteAsmr ||
-        PathMatcher.isRemoteUri(track.path) ||
-        root == null) {
-      return tracksInSameGroup(track.path);
-    }
-    final cached = _cachedWork(root)?.tracks;
-    if (cached != null) return cached;
-    final revision = _library.structureRevision;
-    final source = _library.library;
-    final indices = await compute(_workSwitcherIndices, (
-      tracks: source,
-      root: root,
-    ));
-    if (revision != _library.structureRevision) {
-      return tracksForSessionSwitcher(sessionId);
-    }
-    final tracks = <MusicTrack>[];
-    final budget = Stopwatch()..start();
-    for (final index in indices) {
-      // The read-only view can change while a previous slice yields to a scan.
-      if (revision != _library.structureRevision) {
-        return tracksForSessionSwitcher(sessionId);
-      }
-      tracks.add(source[index]);
-      if (budget.elapsedMicroseconds >= 1000) {
-        await Future<void>.delayed(Duration.zero);
-        budget.reset();
+    while (true) {
+      final session = _playback.sessionById(sessionId);
+      if (session == null) return const <MusicTrack>[];
+      final customQueue = session.customQueueTracks;
+      if (customQueue != null && customQueue.isNotEmpty) return customQueue;
+      final trackPath = session.currentTrackPath;
+      final track = trackByPath(trackPath);
+      if (track == null) return const <MusicTrack>[];
+      final tracks = await tracksInSameWorkAsync(track);
+      if (identical(_playback.sessionById(sessionId), session) &&
+          session.currentTrackPath == trackPath &&
+          session.customQueueTracks?.isNotEmpty != true) {
+        return tracks;
       }
     }
-    if (revision != _library.structureRevision) {
-      return tracksForSessionSwitcher(sessionId);
-    }
-    final result = List<MusicTrack>.unmodifiable(
-      tracks.isEmpty ? tracksInSameGroup(track.path) : tracks,
-    );
-    _cacheWork(
-      root,
-      _WorkTracksCache(hasSiblings: result.length > 1, tracks: result),
-    );
-    return result;
   }
 
   @override
@@ -397,14 +417,11 @@ final class _WorkTracksCache {
   final List<MusicTrack>? tracks;
 }
 
-List<int> _workSwitcherIndices(
-  ({List<MusicTrack> tracks, String root}) request,
-) {
+List<int> _workTrackIndices(({List<MusicTrack> tracks, String root}) request) {
+  final normalizedRoot = PathMatcher.normalize(request.root);
   final indices = <int>[
     for (var i = 0; i < request.tracks.length; i++)
-      if (PathMatcher.isWithinOrEqual(request.tracks[i].path, request.root) ||
-          PathMatcher.isWithinOrEqual(request.tracks[i].groupKey, request.root))
-        i,
+      if (_isTrackInWork(request.tracks[i], normalizedRoot)) i,
   ];
   const organizer = LibraryOrganizer();
   indices.sort(
@@ -412,3 +429,13 @@ List<int> _workSwitcherIndices(
   );
   return indices;
 }
+
+bool _isTrackInWork(MusicTrack track, String normalizedRoot) =>
+    PathMatcher.isWithinOrEqualNormalized(
+      PathMatcher.normalize(track.path),
+      normalizedRoot,
+    ) ||
+    PathMatcher.isWithinOrEqualNormalized(
+      PathMatcher.normalize(track.groupKey),
+      normalizedRoot,
+    );

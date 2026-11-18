@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
-import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/file_tree_expansion_motion.dart';
 import '../../../core/widgets/file_tree_row.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../application/asmr_download_selection.dart';
@@ -26,30 +26,26 @@ class AsmrDownloadSelectionList extends StatefulWidget {
       _AsmrDownloadSelectionListState();
 }
 
+typedef _DownloadSelectionRow = ({
+  AsmrDownloadSelectionNode node,
+  int depth,
+  bool emptyFolder,
+});
+
 class _AsmrDownloadSelectionListState extends State<AsmrDownloadSelectionList>
     with SingleTickerProviderStateMixin {
   final Set<String> _expandedPaths = <String>{};
   Key _listKey = UniqueKey();
-  List<({AsmrDownloadSelectionNode node, int depth})> _rows = const [];
-  final Map<String, int> _rowIndices = {};
-  late final AnimationController _expansionController;
-  late final Animation<double> _opacity;
-  late final Animation<double> _sizeFactor;
-  String? _animatingPath;
-  int _animationStart = 0;
-  int _animationCount = 0;
+  List<_DownloadSelectionRow> _rows = const [];
+  Map<Key, int> _rowIndices = const {};
+  late final FileTreeExpansionMotion<String, _DownloadSelectionRow> _motion;
 
   @override
   void initState() {
     super.initState();
-    _expansionController = AnimationController(
-      vsync: this,
-      duration: kAppFadeDuration,
-      value: 1,
-    )..addStatusListener(_onAnimationStatus);
-    _opacity = _expansionController.drive(CurveTween(curve: kAppFadeCurve));
-    // A non-zero extent keeps the animated rows lazy even in large folders.
-    _sizeFactor = _opacity.drive(Tween<double>(begin: 0.2, end: 1));
+    _motion = FileTreeExpansionMotion(this, () {
+      if (mounted) setState(_motion.finish);
+    });
     _resetExpansion();
   }
 
@@ -60,8 +56,7 @@ class _AsmrDownloadSelectionListState extends State<AsmrDownloadSelectionList>
   }
 
   void _resetExpansion() {
-    _expansionController.stop();
-    _animatingPath = null;
+    _motion.finish();
     _listKey = UniqueKey();
     _expandedPaths
       ..clear()
@@ -71,14 +66,26 @@ class _AsmrDownloadSelectionListState extends State<AsmrDownloadSelectionList>
     _projectRows();
   }
 
+  Key _rowKey(_DownloadSelectionRow row) {
+    final path = row.node.track.relativePath;
+    return row.emptyFolder ? ValueKey((path, 'empty')) : ValueKey(path);
+  }
+
+  Map<Key, int> _indicesFor(List<_DownloadSelectionRow> rows) => {
+    for (var index = 0; index < rows.length; index++)
+      _rowKey(rows[index]): index,
+  };
+
   void _projectRows() {
-    final rows = <({AsmrDownloadSelectionNode node, int depth})>[];
+    final rows = <_DownloadSelectionRow>[];
     void visit(AsmrDownloadSelectionNode node, int depth) {
-      rows.add((node: node, depth: depth));
-      if (_expandedPaths.contains(node.track.relativePath)) {
-        for (final child in node.children) {
-          visit(child, depth + 1);
-        }
+      rows.add((node: node, depth: depth, emptyFolder: false));
+      if (!_expandedPaths.contains(node.track.relativePath)) return;
+      for (final child in node.children) {
+        visit(child, depth + 1);
+      }
+      if (node.track.isFolder && node.children.isEmpty) {
+        rows.add((node: node, depth: depth, emptyFolder: true));
       }
     }
 
@@ -86,115 +93,75 @@ class _AsmrDownloadSelectionListState extends State<AsmrDownloadSelectionList>
       visit(root, 0);
     }
     _rows = rows;
-    _rowIndices.clear();
-    for (var index = 0; index < rows.length; index++) {
-      _rowIndices[rows[index].node.track.relativePath] = index;
-    }
-  }
-
-  void _finishAnimation() {
-    _expansionController.stop();
-    _animatingPath = null;
-    _projectRows();
-  }
-
-  void _onAnimationStatus(AnimationStatus status) {
-    if (_animatingPath != null &&
-        (status == AnimationStatus.completed ||
-            status == AnimationStatus.dismissed)) {
-      setState(_finishAnimation);
-    }
+    _rowIndices = _indicesFor(rows);
   }
 
   void _toggleExpansion(String path) {
     setState(() {
-      // Only the active subtree needs an animation range. Repeated clicks on
-      // it reverse the same controller without remounting its rows.
-      if (_animatingPath != null && _animatingPath != path) {
-        _finishAnimation();
-      }
-      if (!_expandedPaths.remove(path)) _expandedPaths.add(path);
-      if (MediaQuery.disableAnimationsOf(context)) {
-        _finishAnimation();
-        return;
-      }
-      final expanding = _expandedPaths.contains(path);
-      if (_animatingPath != path) {
-        final folderIndex = _rowIndices[path]!;
-        final previousCount = _rows.length;
-        if (expanding) _projectRows();
-        _animationStart = folderIndex + 1;
-        if (expanding) {
-          _animationCount = _rows.length - previousCount;
-        } else {
-          final depth = _rows[folderIndex].depth;
-          var end = _animationStart;
-          while (end < _rows.length && _rows[end].depth > depth) {
-            end++;
-          }
-          _animationCount = end - _animationStart;
-        }
-        if (_animationCount == 0) return;
-        _expansionController.value = expanding ? 0 : 1;
-        _animatingPath = path;
-      }
-      if (expanding) {
-        _expansionController.forward();
-      } else {
-        _expansionController.reverse();
+      final progress = _motion.progressFor(path);
+      _motion.finish();
+      final opening = !_expandedPaths.remove(path);
+      if (opening) _expandedPaths.add(path);
+      final outgoing = opening ? null : _rows;
+      _projectRows();
+      if (!MediaQuery.disableAnimationsOf(context)) {
+        _motion.start(path, outgoing: outgoing, from: progress);
       }
     });
   }
 
-  Widget _buildRow(int index) {
-    final row = _rows[index];
-    final path = row.node.track.relativePath;
-    final animating =
-        _animatingPath != null &&
-        index >= _animationStart &&
-        index < _animationStart + _animationCount;
-    final collapsing = animating && !_expandedPaths.contains(_animatingPath);
-    final tile = AsmrDownloadNodeTile(
-      key: ValueKey<String>('asmr_download_node_$path'),
-      node: row.node,
-      depth: row.depth,
-      selection: widget.selection,
-      expanded: _expandedPaths.contains(path),
-      onToggleExpansion: () => _toggleExpansion(path),
-      onSelectionChanged: widget.onSelectionChanged,
-    );
-    if (!animating) {
-      return KeyedSubtree(key: ValueKey<String>(path), child: tile);
-    }
-    return SizeTransition(
-      key: ValueKey<String>(path),
-      sizeFactor: _sizeFactor,
-      axisAlignment: -1,
-      child: FadeTransition(
-        opacity: _opacity,
-        child: IgnorePointer(
-          ignoring: collapsing,
-          child: ExcludeSemantics(excluding: collapsing, child: tile),
-        ),
-      ),
-    );
-  }
-
   @override
   void dispose() {
-    _expansionController.dispose();
+    _motion.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => ListView.builder(
-    key: _listKey,
-    padding: widget.padding,
-    itemCount: _rows.length,
-    findChildIndexCallback: (key) =>
-        _rowIndices[(key as ValueKey<String>).value],
-    itemBuilder: (context, index) => _buildRow(index),
-  ).withWindowsSmoothScroll();
+  Widget build(BuildContext context) {
+    final rows = _motion.project(
+      context,
+      _rows,
+      parentIndex: (_, path) => _rowIndices[ValueKey<String>(path)],
+      // The empty notice is visually aligned with the folder title.
+      depth: (row) => row.depth + (row.emptyFolder ? 1 : 0),
+      minRowHeight: 28,
+    );
+    final indices = identical(rows, _rows) ? _rowIndices : _indicesFor(rows);
+    return ListView.builder(
+      key: _listKey,
+      padding: widget.padding,
+      itemCount: rows.length,
+      findChildIndexCallback: (key) => indices[key],
+      itemBuilder: (context, index) {
+        final row = rows[index];
+        final path = row.node.track.relativePath;
+        final tile = row.emptyFolder
+            ? Consumer(
+                builder: (context, ref, _) {
+                  ref.watch(appLanguageStateProvider);
+                  final i18n = ref.read(appLanguageProviderInstanceProvider);
+                  return FileTreeRow(
+                    title: i18n.tr('asmr_download_empty_folder'),
+                    depth: row.depth,
+                    minHeight: 28,
+                    leading: const SizedBox(width: 62),
+                    titleColor: Theme.of(context).colorScheme.onSurfaceVariant,
+                  );
+                },
+              )
+            : AsmrDownloadNodeTile(
+                key: ValueKey<String>('asmr_download_node_$path'),
+                node: row.node,
+                depth: row.depth,
+                selection: widget.selection,
+                expanded: _expandedPaths.contains(path),
+                onToggleExpansion: () => _toggleExpansion(path),
+                onSelectionChanged: widget.onSelectionChanged,
+              );
+        return _motion.wrap(index, tile, key: _rowKey(row));
+      },
+    ).withWindowsSmoothScroll();
+  }
 }
 
 class AsmrDownloadNodeTile extends ConsumerWidget {
@@ -281,23 +248,7 @@ class AsmrDownloadNodeTile extends ConsumerWidget {
           : () => _toggleSelection(value != true),
     );
     if (!isFolder) return row;
-    return Semantics(
-      expanded: expanded,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          row,
-          if (!hasChildren && expanded)
-            FileTreeRow(
-              title: i18n.tr('asmr_download_empty_folder'),
-              depth: depth,
-              minHeight: 28,
-              leading: const SizedBox(width: 62),
-              titleColor: cs.onSurfaceVariant,
-            ),
-        ],
-      ),
-    );
+    return Semantics(expanded: expanded, child: row);
   }
 }
 

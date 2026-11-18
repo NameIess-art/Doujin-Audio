@@ -976,15 +976,7 @@ PlaybackQueueRecord? _playbackQueueForSession(
     final trackRows =
         queueTracksByEntry[_queueEntryKey(sessionId, entryId)] ??
         const <Map<String, dynamic>>[];
-    entries.add(
-      PlaybackQueueEntryRecord(
-        id: entryId,
-        kind: entryRow['kind'] as String? ?? 'track',
-        title: entryRow['title'] as String? ?? '',
-        workRootPath: entryRow['work_root_path'] as String?,
-        tracks: trackRows.map(_queueTrackFromRow).toList(growable: false),
-      ),
-    );
+    entries.add(_queueEntryFromRows(entryRow, trackRows));
   }
   return PlaybackQueueRecord(
     name: queueName,
@@ -992,6 +984,17 @@ PlaybackQueueRecord? _playbackQueueForSession(
     entries: entries,
   );
 }
+
+PlaybackQueueEntryRecord _queueEntryFromRows(
+  Map<String, dynamic> entryRow,
+  List<Map<String, dynamic>> trackRows,
+) => PlaybackQueueEntryRecord(
+  id: entryRow['entry_id'] as String,
+  kind: entryRow['kind'] as String? ?? 'track',
+  title: entryRow['title'] as String? ?? '',
+  workRootPath: entryRow['work_root_path'] as String?,
+  tracks: trackRows.map(_queueTrackFromRow).toList(growable: false),
+);
 
 Iterable<List<String>> _sessionIdChunks(List<String> sessionIds) sync* {
   for (

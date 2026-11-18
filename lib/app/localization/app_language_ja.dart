@@ -967,7 +967,6 @@ const Map<String, String> appLanguageJa = {
   'remove_queue': 'キューを削除',
   'remove_queue_confirm': 'この再生キューを削除しますか？',
   'queue_added_audio': '追加済み',
-  'playback_list_audio': '再生リスト内の音声',
   'add_audio_to_queue': '音声をキューに追加',
   'add_work_to_queue': '作品をキューに追加',
   'empty_playback_queue': 'キューは空です',

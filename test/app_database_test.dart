@@ -157,6 +157,92 @@ void main() {
   });
 
   test(
+    'entry reads keep the queue unloaded and resolve the selected occurrence for editing',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final sqlite = SqlitePlaybackRepository(database: appDatabase);
+      final track = _playbackTrack('a');
+      final first = track.copyWith(
+        remoteMetadataKind: MusicTrack.remoteMetadataKindAsmrOne,
+        remoteMetadata: {'id': 17, 'trackRelativePath': 'first.mp3'},
+      );
+      final second = track.copyWith(
+        remoteMetadataKind: MusicTrack.remoteMetadataKindAsmrOne,
+        remoteMetadata: {'id': 17, 'trackRelativePath': 'second.mp3'},
+      );
+      final work = PlaybackQueueEntry(
+        id: 'work',
+        kind: PlaybackQueueEntryKind.work,
+        title: 'Work',
+        tracks: [first, second],
+        workRootPath: '/playback/作品',
+      );
+      final empty = PlaybackQueueEntry(
+        id: 'empty',
+        kind: PlaybackQueueEntryKind.work,
+        title: 'Empty',
+        tracks: [],
+      );
+      await sqlite.upsertSession(
+        _playbackSession(
+          'a',
+          queue: PlaybackQueueDefinition(name: 'Queue', entries: [work, empty]),
+        ),
+      );
+      await sqlite.upsertSession(_playbackSession('b'));
+      final playback = PlaybackFacade.create(databaseRepository: sqlite);
+      addTearDown(playback.dispose);
+      await playback.loadPersistedState();
+      final session = playback.sessionById('a')!;
+      final summary = session.playbackQueue;
+
+      final stored = (await playback.loadQueueEntry('a', 'work'))!;
+      expect(stored, work);
+      expect(stored.workRootPath, '/playback/作品');
+      expect(
+        stored.tracks.map(
+          (track) => track.remoteMetadata?['trackRelativePath'],
+        ),
+        ['first.mp3', 'second.mp3'],
+      );
+      expect(await playback.loadQueueEntry('b', 'work'), isNull);
+      expect((await playback.loadQueueEntry('a', 'empty'))!.tracks, isEmpty);
+      expect(
+        await playback.resolveQueueEntryTracksForEdit('a', stored, [2]),
+        isNull,
+      );
+      expect(session.queueLoadingRequired, isTrue);
+      expect(session.playbackQueue!.entries, isEmpty);
+      expect(session.playbackQueue, same(summary));
+
+      final selected = (await playback.resolveQueueEntryTracksForEdit(
+        'a',
+        stored,
+        [1],
+      ))!;
+      final hydrated = session.playbackQueue!.entries.first;
+      expect(selected.single, same(hydrated.tracks[1]));
+      expect(selected.single, isNot(same(hydrated.tracks[0])));
+      final stale = PlaybackQueueEntry(
+        id: stored.id,
+        title: stored.title,
+        kind: stored.kind,
+        tracks: stored.tracks.reversed.toList(),
+        workRootPath: stored.workRootPath,
+      );
+      expect(
+        await playback.resolveQueueEntryTracksForEdit('a', stale, [1]),
+        isNull,
+      );
+      await playback.removePlaybackQueueEntry('a', work.id, tracks: selected);
+      expect(
+        session.playbackQueue!.entries.first.tracks.single,
+        same(hydrated.tracks[0]),
+      );
+    },
+  );
+
+  test(
     'a failed queue delta rolls back entry order and summary, then retries',
     () async {
       final sqlite = SqlitePlaybackRepository(database: appDatabase);

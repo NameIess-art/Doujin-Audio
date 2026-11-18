@@ -849,6 +849,19 @@ Future<T?> showDockAwareMenu<T>({
   required RelativeRect position,
   required List<UnifiedMenuEntry<T>> entries,
   Listenable? dismissOn,
+}) => _showDockAwareMenu(
+  context: context,
+  position: position,
+  entries: entries,
+  dismissOn: dismissOn,
+);
+
+Future<T?> _showDockAwareMenu<T>({
+  required BuildContext context,
+  required RelativeRect position,
+  required List<UnifiedMenuEntry<T>> entries,
+  Listenable? dismissOn,
+  bool pointerAnchored = false,
 }) async {
   final overlayState =
       MobileOverlayInset.menuOverlayOf(context) ?? Overlay.maybeOf(context);
@@ -891,6 +904,7 @@ Future<T?> showDockAwareMenu<T>({
     builder: (_) => _DockMenuOverlay<T>(
       key: menuKey,
       position: position,
+      pointerAnchored: pointerAnchored,
       entries: entries,
       themes: themes,
       reducedMotion: reducedMotion,
@@ -935,6 +949,7 @@ class _DockMenuOverlay<T> extends StatefulWidget {
   const _DockMenuOverlay({
     super.key,
     required this.position,
+    required this.pointerAnchored,
     required this.entries,
     required this.themes,
     required this.reducedMotion,
@@ -945,6 +960,7 @@ class _DockMenuOverlay<T> extends StatefulWidget {
   });
 
   final RelativeRect position;
+  final bool pointerAnchored;
   final List<UnifiedMenuEntry<T>> entries;
   final CapturedThemes themes;
   final bool reducedMotion;
@@ -987,7 +1003,10 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
     );
     _scaleCurved = CurvedAnimation(
       parent: _controller,
-      curve: const Cubic(0.2, 0.92, 0.25, 1.032),
+      // Overshoot makes the free edges move back toward the pointer at rest.
+      curve: widget.pointerAnchored
+          ? kAppSpringCurve
+          : const Cubic(0.2, 0.92, 0.25, 1.032),
       reverseCurve: Curves.easeInCubic,
     );
     _scale = Tween<double>(begin: 0.88, end: 1).animate(_scaleCurved);
@@ -1158,9 +1177,10 @@ Future<T?> showUnifiedContextMenu<T>({
     point & Size.zero,
     Offset.zero & box.size,
   );
-  return showDockAwareMenu<T>(
+  return _showDockAwareMenu<T>(
     context: context,
     position: position,
     entries: entries,
+    pointerAnchored: true,
   );
 }

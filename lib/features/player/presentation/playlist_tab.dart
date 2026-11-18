@@ -818,62 +818,75 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       final track = isQueue
           ? null
           : paths.sessionTrackForPath(session.id, session.currentTrackPath);
-      final card = RepaintBoundary(
-        child: isQueue
-            ? PlaybackQueueCard(
-                sessionId: session.id,
-                library: library,
-                playback: playback,
-                coverCacheWidth: coverCacheWidth,
-                onLongPress: isTemporary
-                    ? null
-                    : () => _selectOnlySession(session.id),
-                onToggleSelect: () => _toggleSessionSelection(session.id),
-                onTogglePin: isTemporary
-                    ? null
-                    : () => saveSettingsWithFeedback(
-                        context,
-                        () => ref
-                            .read(settingsRepositoryProvider)
-                            .togglePlaylistSessionPinned(session.id),
-                      ),
-                onOpen: (coverOrigin) =>
-                    playback
-                            .sessionById(session.id)
-                            ?.currentTrackPath
-                            .isNotEmpty !=
-                        true
-                    ? showAppSnackBar(
-                        context,
-                        i18n.tr('queue_add_audio_first'),
-                        tone: AppFeedbackTone.warning,
-                        icon: Icons.featured_play_list_rounded,
-                      )
-                    : _openSessionDetail(coverOrigin, session.id),
-                onEdit: () => _openQueueEditor(context, session.id),
-              )
-            : SessionListCard(
-                sessionId: session.id,
-                track: track,
-                coverCacheWidth: coverCacheWidth,
-                library: library,
-                playback: playback,
-                isTemporary: isTemporary,
-                onLongPress: isTemporary
-                    ? null
-                    : () => _selectOnlySession(session.id),
-                onToggleSelect: () => _toggleSessionSelection(session.id),
-                onTogglePin: isTemporary
-                    ? null
-                    : () => saveSettingsWithFeedback(
-                        context,
-                        () => ref
-                            .read(settingsRepositoryProvider)
-                            .togglePlaylistSessionPinned(session.id),
-                      ),
-                onOpen: (coverOrigin) =>
-                    _openSessionDetail(coverOrigin, session.id),
-              ),
+      final card = _MemoizedPlaylistCard(
+        signature: (
+          session.id,
+          session.currentTrackPath,
+          track,
+          coverCacheWidth,
+          isQueue,
+          isTemporary,
+          library,
+          playback,
+          i18n.language,
+        ),
+        builder: (cardContext) => RepaintBoundary(
+          child: isQueue
+              ? PlaybackQueueCard(
+                  sessionId: session.id,
+                  library: library,
+                  playback: playback,
+                  coverCacheWidth: coverCacheWidth,
+                  onLongPress: isTemporary
+                      ? null
+                      : () => _selectOnlySession(session.id),
+                  onToggleSelect: () => _toggleSessionSelection(session.id),
+                  onTogglePin: isTemporary
+                      ? null
+                      : () => saveSettingsWithFeedback(
+                          cardContext,
+                          () => ref
+                              .read(settingsRepositoryProvider)
+                              .togglePlaylistSessionPinned(session.id),
+                        ),
+                  onOpen: (coverOrigin) =>
+                      playback
+                              .sessionById(session.id)
+                              ?.currentTrackPath
+                              .isNotEmpty !=
+                          true
+                      ? showAppSnackBar(
+                          cardContext,
+                          i18n.tr('queue_add_audio_first'),
+                          tone: AppFeedbackTone.warning,
+                          icon: Icons.featured_play_list_rounded,
+                        )
+                      : _openSessionDetail(coverOrigin, session.id),
+                  onEdit: () => _openQueueEditor(cardContext, session.id),
+                )
+              : SessionListCard(
+                  sessionId: session.id,
+                  track: track,
+                  coverCacheWidth: coverCacheWidth,
+                  library: library,
+                  playback: playback,
+                  isTemporary: isTemporary,
+                  onLongPress: isTemporary
+                      ? null
+                      : () => _selectOnlySession(session.id),
+                  onToggleSelect: () => _toggleSessionSelection(session.id),
+                  onTogglePin: isTemporary
+                      ? null
+                      : () => saveSettingsWithFeedback(
+                          cardContext,
+                          () => ref
+                              .read(settingsRepositoryProvider)
+                              .togglePlaylistSessionPinned(session.id),
+                        ),
+                  onOpen: (coverOrigin) =>
+                      _openSessionDetail(coverOrigin, session.id),
+                ),
+        ),
       );
       return AnimatedReorderItem(
         key: ValueKey(session.id),
@@ -951,6 +964,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 // Match the library's small prefetch window. A wide viewport
                 // already lays out more cards without another screen of cache.
                 cacheExtent: 320,
+                addRepaintBoundaries: false,
                 clipBehavior: Clip.none,
                 keyboardDismissBehavior:
                     ScrollViewKeyboardDismissBehavior.onDrag,
@@ -1217,4 +1231,35 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       ],
     );
   }
+}
+
+/// Caches the built row card until its structural inputs change so pin/sort
+/// reorders reuse live row elements instead of rebuilding every visible card.
+class _MemoizedPlaylistCard extends StatefulWidget {
+  const _MemoizedPlaylistCard({
+    required this.signature,
+    required this.builder,
+  });
+
+  final Object signature;
+  final WidgetBuilder builder;
+
+  @override
+  State<_MemoizedPlaylistCard> createState() => _MemoizedPlaylistCardState();
+}
+
+class _MemoizedPlaylistCardState extends State<_MemoizedPlaylistCard> {
+  Widget? _cachedChild;
+
+  @override
+  void didUpdateWidget(covariant _MemoizedPlaylistCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.signature != oldWidget.signature) {
+      _cachedChild = null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      _cachedChild ??= widget.builder(context);
 }

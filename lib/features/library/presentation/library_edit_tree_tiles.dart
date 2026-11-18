@@ -4,8 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/widgets/app_buttons.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
+import '../../../app/theme/app_styles.dart';
 import '../../../core/media/path_display.dart';
-import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/file_tree_expansion_motion.dart';
 import '../../../core/widgets/file_tree_row.dart';
 import '../../../core/widgets/shimmer_loading.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
@@ -13,7 +14,6 @@ import 'library_providers.dart';
 
 import 'library_edit_tree_projection.dart';
 
-const Size _libraryEditActionMinimumSize = Size(0, 36);
 const double _libraryEditRowMinHeight = 64;
 
 final _libraryEditTrackViewStateProvider =
@@ -120,17 +120,14 @@ class LibraryEditTreeList extends ConsumerStatefulWidget {
       _LibraryEditTreeListState();
 }
 
+typedef _LibraryEditTreeRow = ({LibraryEditTreeNode node, int depth});
+
 class _LibraryEditTreeListState extends ConsumerState<LibraryEditTreeList>
     with SingleTickerProviderStateMixin {
   final _expandedPaths = <String>{};
   final _rowIndices = <String, int>{};
-  List<({LibraryEditTreeNode node, int depth})> _rows = [];
-  late final AnimationController _animationController;
-  late final Animation<double> _opacity;
-  late final Animation<double> _sizeFactor;
-  String? _animatingPath;
-  int _animationStart = 0;
-  int _animationCount = 0;
+  List<_LibraryEditTreeRow> _rows = [];
+  late final FileTreeExpansionMotion<String, _LibraryEditTreeRow> _motion;
   List<LibraryEditTreeNode>? _countedNodes;
   int? _countedContentRevision;
   Map<String, int> _includedTrackCounts = const {};
@@ -138,17 +135,9 @@ class _LibraryEditTreeListState extends ConsumerState<LibraryEditTreeList>
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      vsync: this,
-      duration: kAppFadeDuration,
-      value: 1,
-    )..addStatusListener(_onAnimationStatus);
-    _opacity = CurvedAnimation(
-      parent: _animationController,
-      curve: kAppFadeCurve,
-    );
-    // Nonzero incoming heights let the sliver stop at its cache extent.
-    _sizeFactor = Tween<double>(begin: 0.2, end: 1).animate(_opacity);
+    _motion = FileTreeExpansionMotion(this, () {
+      if (mounted) setState(_motion.finish);
+    });
     _restoreExpansion();
     _updateNodes();
   }
@@ -189,8 +178,7 @@ class _LibraryEditTreeListState extends ConsumerState<LibraryEditTreeList>
   }
 
   void _updateNodes() {
-    _animationController.stop();
-    _animatingPath = null;
+    _motion.finish();
     if (widget.initiallyExpanded) {
       void expand(Iterable<LibraryEditTreeNode> nodes) {
         for (final folder in nodes.whereType<LibraryEditFolderTreeNode>()) {
@@ -206,7 +194,7 @@ class _LibraryEditTreeListState extends ConsumerState<LibraryEditTreeList>
   }
 
   void _projectRows() {
-    final rows = <({LibraryEditTreeNode node, int depth})>[];
+    final rows = <_LibraryEditTreeRow>[];
     void visit(LibraryEditTreeNode node, int depth) {
       _rowIndices[node.pathValue] = rows.length;
       rows.add((node: node, depth: depth));
@@ -225,61 +213,25 @@ class _LibraryEditTreeListState extends ConsumerState<LibraryEditTreeList>
     _rows = rows;
   }
 
-  void _finishAnimation() {
-    _animationController.stop();
-    _animatingPath = null;
-    _projectRows();
-  }
-
-  void _onAnimationStatus(AnimationStatus status) {
-    if (_animatingPath != null &&
-        (status == AnimationStatus.completed ||
-            status == AnimationStatus.dismissed)) {
-      setState(_finishAnimation);
-    }
-  }
-
   void _toggleFolder(LibraryEditFolderTreeNode folder) {
     setState(() {
       final key = folder.pathValue;
-      if (_animatingPath != null && _animatingPath != key) {
-        _finishAnimation();
-      }
+      final progress = _motion.progressFor(key);
+      _motion.finish();
       final expanding = !_expandedPaths.remove(key);
       if (expanding) _expandedPaths.add(key);
+      final outgoing = expanding ? null : _rows;
       _storeExpansion();
-      if (MediaQuery.disableAnimationsOf(context)) {
-        _finishAnimation();
-        return;
-      }
-      if (_animatingPath != key) {
-        _animationStart = _rowIndices[key]! + 1;
-        final previousCount = _rows.length;
-        if (expanding) {
-          _projectRows();
-          _animationCount = _rows.length - previousCount;
-        } else {
-          var end = _animationStart;
-          while (end < _rows.length && _rows[end].depth > folder.depth) {
-            end++;
-          }
-          _animationCount = end - _animationStart;
-        }
-        if (_animationCount == 0) return;
-        _animationController.value = expanding ? 0 : 1;
-        _animatingPath = key;
-      }
-      if (expanding) {
-        _animationController.forward();
-      } else {
-        _animationController.reverse();
+      _projectRows();
+      if (!MediaQuery.disableAnimationsOf(context)) {
+        _motion.start(key, outgoing: outgoing, from: progress);
       }
     });
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
+    _motion.dispose();
     super.dispose();
   }
 
@@ -310,54 +262,51 @@ class _LibraryEditTreeListState extends ConsumerState<LibraryEditTreeList>
       _countedNodes = widget.nodes;
       _countedContentRevision = contentRevision;
     }
+    final rows = _motion.project(
+      context,
+      _rows,
+      parentIndex: (rows, key) {
+        final index = rows.indexWhere((row) => row.node.pathValue == key);
+        return index < 0 ? null : index;
+      },
+      depth: (row) => row.depth,
+      minRowHeight: 48,
+    );
+    final indices = identical(rows, _rows)
+        ? _rowIndices
+        : {for (var i = 0; i < rows.length; i++) rows[i].node.pathValue: i};
     final offset = widget.leading == null ? 0 : 1;
     return ListView.builder(
       padding: widget.padding,
-      itemCount: _rows.isEmpty ? 1 : offset + _rows.length,
+      itemCount: rows.isEmpty ? 1 : offset + rows.length,
       findChildIndexCallback: (key) {
         if (key is! ValueKey<String>) return null;
-        final index = _rowIndices[key.value];
+        final index = indices[key.value];
         return index == null ? null : index + offset;
       },
       itemBuilder: (context, index) {
         if (index < offset) return widget.leading!;
-        if (_rows.isEmpty) return widget.empty ?? const SizedBox.shrink();
+        if (rows.isEmpty) return widget.empty ?? const SizedBox.shrink();
         final rowIndex = index - offset;
-        final row = _rows[rowIndex];
+        final row = rows[rowIndex];
         final node = row.node;
-        final animating =
-            _animatingPath != null &&
-            rowIndex >= _animationStart &&
-            rowIndex < _animationStart + _animationCount;
-        final collapsing =
-            animating && !_expandedPaths.contains(_animatingPath);
-        return SizeTransition(
+        return _motion.wrap(
+          rowIndex,
+          node is LibraryEditFolderTreeNode
+              ? _LibraryEditFolderTreeTile(
+                  libraryPath: widget.libraryPath,
+                  folder: node,
+                  includedCount: _includedTrackCounts[node.folderPath]!,
+                  expanded: _expandedPaths.contains(node.pathValue),
+                  onToggle: () => _toggleFolder(node),
+                  onRememberFolder: widget.onRememberFolder,
+                )
+              : _LibraryEditTrackTile(
+                  libraryPath: widget.libraryPath,
+                  trackPath: node.pathValue,
+                  depth: row.depth,
+                ),
           key: ValueKey(node.pathValue),
-          sizeFactor: animating ? _sizeFactor : const AlwaysStoppedAnimation(1),
-          axisAlignment: -1,
-          child: FadeTransition(
-            opacity: animating ? _opacity : const AlwaysStoppedAnimation(1),
-            child: IgnorePointer(
-              ignoring: collapsing,
-              child: ExcludeSemantics(
-                excluding: collapsing,
-                child: node is LibraryEditFolderTreeNode
-                    ? _LibraryEditFolderTreeTile(
-                        libraryPath: widget.libraryPath,
-                        folder: node,
-                        includedCount: _includedTrackCounts[node.folderPath]!,
-                        expanded: _expandedPaths.contains(node.pathValue),
-                        onToggle: () => _toggleFolder(node),
-                        onRememberFolder: widget.onRememberFolder,
-                      )
-                    : _LibraryEditTrackTile(
-                        libraryPath: widget.libraryPath,
-                        trackPath: node.pathValue,
-                        depth: row.depth,
-                      ),
-              ),
-            ),
-          ),
         );
       },
     ).withWindowsSmoothScroll();
@@ -429,52 +378,25 @@ class _LibraryEditFolderTreeTile extends ConsumerWidget {
           size: AppDesignTokens.fileEntryIconSize,
           color: muted ? cs.onSurfaceVariant : AppDesignTokens.folderIconColor,
         ),
+        trailingSpacing: AppSpacing.xxs,
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Flexible(
-              child: TextButtonTheme(
-                data: TextButtonThemeData(
-                  style: appTextButtonStyle(
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 4,
-                      ),
-                      minimumSize: _libraryEditActionMinimumSize,
-                      tapTargetSize: MaterialTapTargetSize.padded,
-                    ),
-                  ),
-                ),
-                child: AppLabelledButton(
-                  TextButton.icon,
-                  onPressed: inheritedExcluded
-                      ? null
-                      : () {
-                          if (folder.children.isNotEmpty) {
-                            onRememberFolder(folderPath, folder);
-                          }
-                          libraryService.setLibraryFolderExcluded(
-                            libraryPath,
-                            folderPath,
-                            !explicitExcluded,
-                          );
-                        },
-                  style: explicitExcluded
-                      ? null
-                      : TextButton.styleFrom(foregroundColor: cs.error),
-                  icon: Icon(
-                    explicitExcluded
-                        ? Icons.restore_rounded
-                        : Icons.block_rounded,
-                    size: 16,
-                  ),
-                  label: Text(
-                    explicitExcluded ? i18n.tr('restore') : i18n.tr('exclude'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
+              child: _LibraryEditExclusionButton(
+                excluded: explicitExcluded,
+                onPressed: inheritedExcluded
+                    ? null
+                    : () {
+                        if (folder.children.isNotEmpty) {
+                          onRememberFolder(folderPath, folder);
+                        }
+                        libraryService.setLibraryFolderExcluded(
+                          libraryPath,
+                          folderPath,
+                          !explicitExcluded,
+                        );
+                      },
               ),
             ),
             const SizedBox(width: 2),
@@ -504,11 +426,6 @@ class _LibraryEditTrackTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    ref.watch(appLanguageStateProvider);
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
     final viewState = ref.watch(
       _libraryEditTrackViewStateProvider(
         _LibraryEditTrackKey(libraryPath, trackPath),
@@ -532,44 +449,51 @@ class _LibraryEditTrackTile extends ConsumerWidget {
         color: viewState.muted ? cs.onSurfaceVariant : cs.primary,
         size: AppDesignTokens.fileEntryIconSize,
       ),
-      trailing: TextButtonTheme(
-        data: TextButtonThemeData(
-          style: appTextButtonStyle(
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-              minimumSize: _libraryEditActionMinimumSize,
-              tapTargetSize: MaterialTapTargetSize.padded,
-            ),
-          ),
-        ),
-        child: AppLabelledButton(
-          TextButton.icon,
-          onPressed: viewState.inheritedExcluded
+      trailingSpacing: AppSpacing.xxs,
+      trailing: _LibraryEditExclusionButton(
+        excluded: viewState.explicitExcluded,
+        onPressed: viewState.inheritedExcluded
+            ? null
+            : () => libraryFacade.setLibraryTrackExcluded(
+                libraryPath,
+                trackPath,
+                !viewState.explicitExcluded,
+              ),
+      ),
+    );
+  }
+}
+
+class _LibraryEditExclusionButton extends ConsumerWidget {
+  const _LibraryEditExclusionButton({
+    required this.excluded,
+    required this.onPressed,
+  });
+
+  final bool excluded;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    return IconButton(
+      tooltip: i18n.tr(excluded ? 'restore' : 'exclude'),
+      onPressed: onPressed,
+      style: appIconButtonStyle(
+        IconButton.styleFrom(
+          foregroundColor: excluded
               ? null
-              : () {
-                  libraryFacade.setLibraryTrackExcluded(
-                    libraryPath,
-                    trackPath,
-                    !viewState.explicitExcluded,
-                  );
-                },
-          style: viewState.explicitExcluded
-              ? null
-              : TextButton.styleFrom(foregroundColor: cs.error),
-          icon: Icon(
-            viewState.explicitExcluded
-                ? Icons.restore_rounded
-                : Icons.block_rounded,
-            size: 16,
-          ),
-          label: Text(
-            viewState.explicitExcluded
-                ? i18n.tr('restore')
-                : i18n.tr('exclude'),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+              : Theme.of(context).colorScheme.error,
+          minimumSize: const Size.square(44),
+          maximumSize: const Size.square(44),
+          padding: EdgeInsets.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
+      ),
+      icon: Icon(
+        excluded ? Icons.restore_rounded : Icons.block_rounded,
+        size: 22,
       ),
     );
   }
@@ -637,11 +561,16 @@ class LibraryEditTreeSkeleton extends StatelessWidget {
                         ],
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    const ShimmerContainer(
-                      width: 60,
-                      height: 32,
-                      borderRadius: 8,
+                    const SizedBox(width: AppSpacing.xxs),
+                    const SizedBox(
+                      width: 44,
+                      child: Center(
+                        child: ShimmerContainer(
+                          width: 22,
+                          height: 22,
+                          borderRadius: 11,
+                        ),
+                      ),
                     ),
                     const SizedBox(width: 4),
                     const ShimmerContainer(

@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:doujin_audio/core/widgets/app_buttons.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/theme/app_styles.dart';
@@ -180,6 +181,38 @@ void main() {
       expect(rewardButton.onPressed, isNotNull);
       expect(find.text('NameIess-art'), findsOneWidget);
       expect(find.byType(BackButton), findsOneWidget);
+
+      for (final text in [
+        i18n.tr('about_version'),
+        i18n.tr('about_source_code'),
+        i18n.tr('about_wiki'),
+        i18n.tr('about_feedback'),
+        i18n.tr('about_author'),
+        i18n.tr('about_reward'),
+        '1.2.3',
+        'NameIess-art',
+      ]) {
+        expect(
+          tester
+              .renderObject<RenderParagraph>(find.text(text))
+              .text
+              .style
+              ?.fontSize,
+          16,
+        );
+      }
+      for (final tile in tester.widgetList<ListTile>(find.byType(ListTile))) {
+        final icon = find.descendant(
+          of: find.byWidget(tile.leading!),
+          matching: find.byType(Icon),
+        );
+        expect(tester.widget<Icon>(icon).size, 30);
+        expect(
+          tester.getSize(find.byWidget(tile)).height,
+          greaterThanOrEqualTo(64),
+        );
+      }
+
       final headerRect = tester.getRect(find.byType(TopPageHeader));
       expect(
         tester.getSize(
@@ -226,6 +259,10 @@ void main() {
       expect(sourceY, lessThan(wikiY));
       expect(wikiY, lessThan(authorY));
     },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets('about identity shows its app name below the centered icon', (

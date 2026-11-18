@@ -956,7 +956,6 @@ const Map<String, String> appLanguageZh = {
   'remove_queue': '移除队列',
   'remove_queue_confirm': '要移除此播放队列及其队列配置吗？',
   'queue_added_audio': '已添加至队列',
-  'playback_list_audio': '播放列表中的音频',
   'add_audio_to_queue': '添加该音频至队列',
   'add_work_to_queue': '添加该音频所在作品至队列',
   'empty_playback_queue': '队列中暂无音频',

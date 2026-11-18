@@ -369,8 +369,8 @@ List<Widget> _buildSettingsPageDisplaySection({
 
 Widget _settingsIcon(IconData icon, Color color) {
   return Container(
-    width: 40,
+    width: SettingsTileTheme.leadingWidth,
     alignment: Alignment.center,
-    child: Icon(icon, color: color, size: 30),
+    child: Icon(icon, color: color, size: SettingsTileTheme.iconSize),
   );
 }

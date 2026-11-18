@@ -381,9 +381,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.tap(
-        find
-            .widgetWithText(TextButton, fixture.languageProvider.tr('exclude'))
-            .first,
+        find.byTooltip(fixture.languageProvider.tr('exclude')).first,
       );
       await tester.pumpAndSettle();
       service.snapshot = LibraryEntryDiskSnapshot(

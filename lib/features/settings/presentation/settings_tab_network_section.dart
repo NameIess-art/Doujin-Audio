@@ -377,7 +377,7 @@ class _NetworkSettingsControlsState
     String title,
     Uri uri,
   ) => ListTile(
-    minTileHeight: _settingsTileHeight,
+    minTileHeight: SettingsTileTheme.minTileHeight,
     contentPadding: const EdgeInsets.symmetric(horizontal: 16),
     title: Text(title, style: Theme.of(context).textTheme.titleMedium),
     trailing: _probeAction(i18n, key, uri),

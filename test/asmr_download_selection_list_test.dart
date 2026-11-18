@@ -280,6 +280,19 @@ void main() {
         await tester.tap(find.text('disc'));
         await tester.pumpAndSettle();
         expect(find.text('one'), findsOneWidget);
+
+        await tester.tap(find.text('disc'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 215));
+        final collapsing = find
+            .ancestor(
+              of: find.text('one'),
+              matching: find.byType(SizeTransition),
+            )
+            .first;
+        expect(tester.getSize(collapsing).height, inExclusiveRange(0, 1));
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(find.text('one'), findsNothing);
         expect(tester.takeException(), isNull);
       },
       variant: TargetPlatformVariant({platform}),

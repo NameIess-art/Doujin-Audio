@@ -205,15 +205,9 @@ List<SessionSwitcherNode> _buildQueueTree(_SwitcherRequest request) {
             latestTrack != null && latestTrack.duration > Duration.zero
             ? latestTrack
             : track;
-        var trackParent = parent;
-        if (showWorkRoot) {
-          for (final folder in _queueFolderSegments(
-            track,
-            workRoot: entryWorkRoot,
-          )) {
-            trackParent = trackParent.folderChild(folder);
-          }
-        }
+        final trackParent = showWorkRoot
+            ? parent.folderForTrack(track, workRoot: entryWorkRoot)
+            : parent;
         trackParent.children.add(
           SessionSwitcherNode.track(
             displayTrack,
@@ -232,10 +226,7 @@ List<SessionSwitcherNode> _buildQueueTree(_SwitcherRequest request) {
   }
   for (var index = 0; index < tracks.length; index++) {
     final track = tracks[index];
-    var parent = root;
-    for (final folder in _queueFolderSegments(track, workRoot: workRoot)) {
-      parent = parent.folderChild(folder);
-    }
+    final parent = root.folderForTrack(track, workRoot: workRoot);
     parent.children.add(
       SessionSwitcherNode.track(
         track,
@@ -305,6 +296,14 @@ class SessionSwitcherNode {
 
   bool get isFolder => track == null;
   Map<String, SessionSwitcherNode>? _foldersByName;
+
+  SessionSwitcherNode folderForTrack(MusicTrack track, {String? workRoot}) {
+    var parent = this;
+    for (final folder in _queueFolderSegments(track, workRoot: workRoot)) {
+      parent = parent.folderChild(folder);
+    }
+    return parent;
+  }
 
   SessionSwitcherNode folderChild(String name) {
     return (_foldersByName ??= <String, SessionSwitcherNode>{}).putIfAbsent(

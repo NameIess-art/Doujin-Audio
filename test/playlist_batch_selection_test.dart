@@ -288,7 +288,10 @@ void main() {
             .byKey(ValueKey<String>('playback_queue_name_${queueSession.id}'))
             .evaluate()
             .toSet();
-        final mountedCards = find.byType(SessionListCard).evaluate().toSet();
+        final mountedCards = {
+          ...find.byType(SessionListCard).evaluate(),
+          ...find.byType(PlaybackQueueCard).evaluate(),
+        };
         final headerTransition = find.byType(AppHeaderTransition).evaluate().single;
         expect(mountedLabels, isNotEmpty);
         expect(mountedQueueNames, hasLength(1));
@@ -348,9 +351,12 @@ void main() {
           expect(headerTransitionRebuilds, 0);
 
           // Batch pin exits selection mode and triggers pin indicator without
-          // rebuilding unrelated cards' labels.
+          // rebuilding card bodies, labels, or AppHeaderTransition.
           await tester.tap(find.byKey(const ValueKey('batch_pin_button')));
           await tester.pumpAndSettle();
+          expect(cardLabelRebuilds, 0);
+          expect(cardRebuilds, 0);
+          expect(headerTransitionRebuilds, 0);
           expect(
             find.byKey(
               ValueKey<String>('playlist_session_pinned_${queueSession.id}'),
@@ -362,6 +368,33 @@ void main() {
               ValueKey<String>('playlist_session_pinned_${sessions[2].id}'),
             ),
             findsOneWidget,
+          );
+
+          // Single-item pin and unpin reorders must also leave existing cards
+          // and their labels un-rebuilt.
+          final targetId = sessions[3].id;
+          await fixture.settingsRepository.togglePlaylistSessionPinned(
+            targetId,
+          );
+          await tester.pumpAndSettle();
+          expect(cardLabelRebuilds, 0);
+          expect(cardRebuilds, 0);
+          expect(headerTransitionRebuilds, 0);
+          expect(
+            find.byKey(ValueKey<String>('playlist_session_pinned_$targetId')),
+            findsOneWidget,
+          );
+
+          await fixture.settingsRepository.togglePlaylistSessionPinned(
+            targetId,
+          );
+          await tester.pumpAndSettle();
+          expect(cardLabelRebuilds, 0);
+          expect(cardRebuilds, 0);
+          expect(headerTransitionRebuilds, 0);
+          expect(
+            find.byKey(ValueKey<String>('playlist_session_pinned_$targetId')),
+            findsNothing,
           );
         } finally {
           debugOnRebuildDirtyWidget = previousHook;

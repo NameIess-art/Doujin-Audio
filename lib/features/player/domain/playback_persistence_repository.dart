@@ -102,6 +102,7 @@ abstract interface class PlaybackQueueStorage {
   >
   loadSessionSummaries();
   Future<PersistedPlaybackSession?> loadSessionQueue(String sessionId);
+  Future<PlaybackQueueEntry?> loadQueueEntry(String sessionId, String entryId);
   Future<List<PlaybackQueueEntryPreview>> loadQueueEntryPage(
     String sessionId, {
     required int start,

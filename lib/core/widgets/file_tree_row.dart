@@ -17,6 +17,7 @@ class FileTreeRow extends StatelessWidget {
     this.subtitleWidget,
     this.selectionControl,
     this.trailing,
+    this.trailingSpacing = 8,
     this.onTap,
     this.navigationEntry = false,
     this.depth = 0,
@@ -41,6 +42,7 @@ class FileTreeRow extends StatelessWidget {
   final Widget? leading;
   final Widget? selectionControl;
   final Widget? trailing;
+  final double trailingSpacing;
   final VoidCallback? onTap;
   final bool navigationEntry;
   final int depth;
@@ -183,7 +185,7 @@ class FileTreeRow extends StatelessWidget {
                       ),
                     ),
                     if (trailing != null) ...[
-                      const SizedBox(width: 8),
+                      SizedBox(width: trailingSpacing),
                       ConstrainedBox(
                         constraints: BoxConstraints(
                           maxWidth: math.max(

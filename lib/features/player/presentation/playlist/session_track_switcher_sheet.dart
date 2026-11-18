@@ -6,8 +6,8 @@ import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/media/time_text_formatters.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
+import '../../../../core/widgets/file_tree_expansion_motion.dart';
 import '../../../../core/widgets/file_tree_row.dart';
-import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/playing_sound_wave_indicator.dart';
 import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../application/playback_session_snapshot.dart';
@@ -43,24 +43,14 @@ class _SessionTrackSwitcherSheetState
   late final Set<String> _expandedFolders = Set.of(widget.tree.expanded);
   late List<SessionSwitcherRow> _rows = widget.tree.rows;
   late Map<String, int> _rowIndices = widget.tree.indices;
-  late final AnimationController _expansionController;
-  late final Animation<double> _opacity;
-  late final Animation<double> _sizeFactor;
-  String? _animatingKey;
-  int _animationStart = 0;
-  int _animationCount = 0;
+  late final FileTreeExpansionMotion<String, SessionSwitcherRow> _motion;
 
   @override
   void initState() {
     super.initState();
-    _expansionController = AnimationController(
-      vsync: this,
-      duration: kAppFadeDuration,
-      value: 1,
-    )..addStatusListener(_handleAnimationStatus);
-    _opacity = _expansionController.drive(CurveTween(curve: kAppFadeCurve));
-    // Non-zero row extents keep the lazy viewport bounded during expansion.
-    _sizeFactor = _opacity.drive(Tween<double>(begin: 0.2, end: 1));
+    _motion = FileTreeExpansionMotion(this, () {
+      if (mounted) setState(_motion.finish);
+    });
   }
 
   void _projectRows() {
@@ -83,110 +73,69 @@ class _SessionTrackSwitcherSheetState
     };
   }
 
-  void _finishAnimation() {
-    _expansionController.stop();
-    _animatingKey = null;
-    _projectRows();
-  }
-
-  void _handleAnimationStatus(AnimationStatus status) {
-    if (_animatingKey != null &&
-        (status == AnimationStatus.completed ||
-            status == AnimationStatus.dismissed)) {
-      setState(_finishAnimation);
-    }
-  }
-
   void _toggleFolder(String key) {
     setState(() {
-      if (_animatingKey != null && _animatingKey != key) {
-        _finishAnimation();
-      }
-      if (!_expandedFolders.remove(key)) _expandedFolders.add(key);
-      if (MediaQuery.disableAnimationsOf(context)) {
-        _finishAnimation();
-        return;
-      }
-      final expanding = _expandedFolders.contains(key);
-      if (_animatingKey != key) {
-        final folderIndex = _rowIndices[key]!;
-        final previousCount = _rows.length;
-        if (expanding) _projectRows();
-        _animationStart = folderIndex + 1;
-        if (expanding) {
-          _animationCount = _rows.length - previousCount;
-        } else {
-          final depth = _rows[folderIndex].depth;
-          var end = _animationStart;
-          while (end < _rows.length && _rows[end].depth > depth) {
-            end++;
-          }
-          _animationCount = end - _animationStart;
-        }
-        if (_animationCount == 0) return;
-        _expansionController.value = expanding ? 0 : 1;
-        _animatingKey = key;
-      }
-      if (expanding) {
-        _expansionController.forward();
-      } else {
-        _expansionController.reverse();
+      final progress = _motion.progressFor(key);
+      _motion.finish();
+      final expanding = !_expandedFolders.remove(key);
+      if (expanding) _expandedFolders.add(key);
+      final outgoing = expanding ? null : _rows;
+      _projectRows();
+      if (!MediaQuery.disableAnimationsOf(context)) {
+        _motion.start(key, outgoing: outgoing, from: progress);
       }
     });
   }
 
   @override
   void dispose() {
-    _expansionController.dispose();
+    _motion.dispose();
     super.dispose();
   }
 
-  Widget _buildRow(int index) {
-    final row = _rows[index];
-    final animating =
-        _animatingKey != null &&
-        index >= _animationStart &&
-        index < _animationStart + _animationCount;
-    final collapsing = animating && !_expandedFolders.contains(_animatingKey);
-    return SizeTransition(
-      key: ValueKey<String>(row.key),
-      sizeFactor: animating ? _sizeFactor : const AlwaysStoppedAnimation(1),
-      axisAlignment: -1,
-      child: FadeTransition(
-        opacity: animating ? _opacity : const AlwaysStoppedAnimation(1),
-        child: IgnorePointer(
-          ignoring: collapsing,
-          child: ExcludeSemantics(
-            excluding: collapsing,
-            child: KeyedSubtree(
-              key: ValueKey<String>('queue_switcher_row_${row.key}'),
-              child: _QueueTreeNodeTile(
-                node: row.node,
-                depth: row.depth,
-                expanded: _expandedFolders.contains(row.key),
-                isPlaying: widget.session.playbackRequested,
-                onToggleExpansion: () => _toggleFolder(row.key),
-                onTrackTap: (selected) => widget.onSelected(
-                  SessionTrackSelection(
-                    track: selected.track!,
-                    queueIndex: selected.queueIndex,
-                  ),
-                ),
-              ),
+  Widget _buildRow(SessionSwitcherRow row, int index) {
+    return _motion.wrap(
+      index,
+      KeyedSubtree(
+        key: ValueKey<String>('queue_switcher_row_${row.key}'),
+        child: _QueueTreeNodeTile(
+          node: row.node,
+          depth: row.depth,
+          expanded: _expandedFolders.contains(row.key),
+          isPlaying: widget.session.playbackRequested,
+          onToggleExpansion: () => _toggleFolder(row.key),
+          onTrackTap: (selected) => widget.onSelected(
+            SessionTrackSelection(
+              track: selected.track!,
+              queueIndex: selected.queueIndex,
             ),
           ),
         ),
       ),
+      key: ValueKey<String>(row.key),
     );
   }
 
-  Widget _buildContent() {
+  Widget _buildContent(BuildContext context) {
+    final rows = _motion.project(
+      context,
+      _rows,
+      parentIndex: (rows, key) {
+        final index = rows.indexWhere((row) => row.key == key);
+        return index < 0 ? null : index;
+      },
+      depth: (row) => row.depth,
+      minRowHeight: 44,
+    );
+    final indices = identical(rows, _rows)
+        ? _rowIndices
+        : {for (var i = 0; i < rows.length; i++) rows[i].key: i};
     return ListView.builder(
       padding: AppBottomSheet.contentPadding,
-      itemCount: _rows.length + 1,
+      itemCount: rows.length + 1,
       findChildIndexCallback: (key) {
         if (key == const ValueKey<String>('queue_switcher_header')) return 0;
-        final index = _rowIndices[(key as ValueKey<String>).value];
+        final index = indices[(key as ValueKey<String>).value];
         return index == null ? null : index + 1;
       },
       itemBuilder: (context, index) {
@@ -197,7 +146,8 @@ class _SessionTrackSwitcherSheetState
             child: _QueueSheetHeader(count: widget.trackCount),
           );
         }
-        return _buildRow(index - 1);
+        final rowIndex = index - 1;
+        return _buildRow(rows[rowIndex], rowIndex);
       },
     ).withWindowsSmoothScroll();
   }
@@ -213,7 +163,7 @@ class _SessionTrackSwitcherSheetState
         return SizedBox(
           width: double.infinity,
           height: height,
-          child: _buildContent(),
+          child: _buildContent(context),
         );
       },
     );

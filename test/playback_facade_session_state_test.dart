@@ -2964,6 +2964,68 @@ void main() {
     },
   );
 
+  test('queue child removal keeps the current track and other entries', () async {
+    final database = _RecordingTestPersistenceRepository();
+    final playback = PlaybackFacade.create(databaseRepository: database);
+    final session = _session('queue-child-removal');
+    addTearDown(() async {
+      await session.shutdown();
+      await playback.dispose();
+    });
+    final first = MusicTrack(
+      path: '/tracks/first.mp3',
+      displayName: 'First',
+      groupKey: '/tracks',
+      groupTitle: 'Tracks',
+      groupSubtitle: '',
+      isSingle: false,
+    );
+    final second = MusicTrack(
+      path: '/tracks/second.mp3',
+      displayName: 'Second',
+      groupKey: '/tracks',
+      groupTitle: 'Tracks',
+      groupSubtitle: '',
+      isSingle: false,
+    );
+    session
+      ..currentTrackPath = second.path
+      ..currentQueueIndex = 1
+      ..playbackQueue = PlaybackQueueDefinition(
+        name: 'Queue',
+        entries: [
+          PlaybackQueueEntry(
+            id: 'work',
+            kind: PlaybackQueueEntryKind.work,
+            title: 'Tracks',
+            tracks: [first, second],
+          ),
+          PlaybackQueueEntry(
+            id: 'standalone',
+            kind: PlaybackQueueEntryKind.track,
+            title: first.displayName,
+            tracks: [first],
+          ),
+        ],
+      );
+    playback.registerSession(session);
+    expect(
+      playback.replaceSessionTrackSnapshots(first.copyWith(isFavorite: true)),
+      isTrue,
+    );
+    await playback.removePlaybackQueueEntry(session.id, 'work', tracks: [first]);
+    await playback.flushSessionStatePersistence(sessionId: session.id);
+
+    final queue = session.playbackQueue!;
+    expect(queue.entries.map((entry) => entry.id), ['work', 'standalone']);
+    expect(queue.entries.first.tracks.single.path, second.path);
+    expect(queue.entries.last.tracks.single.path, first.path);
+    expect(session.currentQueueIndex, 0);
+    expect(session.currentTrackPath, second.path);
+    expect(database.lastPlaybackState?.currentQueueIndex, 0);
+    expect(database.sessionUpsertOptions.last.includeQueue, isTrue);
+  });
+
   _backgroundBucketTests();
 }
 

@@ -3,8 +3,9 @@ part of 'playback_facade.dart';
 extension PlaybackQueuePathCoordinator on PlaybackFacade {
   void _replacePlaybackQueueEntries(
     PlaybackSession session,
-    List<PlaybackQueueEntry> entries,
-  ) {
+    List<PlaybackQueueEntry> entries, {
+    int? Function(PlaybackQueueEntry, int)? mapOffset,
+  }) {
     final queue = session.playbackQueue!;
     var oldIndex = session.currentQueueIndex;
     if (session.hasDetachedQueueTrack) {
@@ -18,12 +19,15 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     var nextIndex = 0;
     var found = false;
     for (final entry in entries) {
-      if (current != null &&
-          entry.id == current.entry.id &&
-          current.offset < entry.tracks.length) {
-        nextIndex += current.offset;
-        found = true;
-        break;
+      if (current != null && entry.id == current.entry.id) {
+        final offset = mapOffset == null
+            ? current.offset
+            : mapOffset(current.entry, current.offset);
+        if (offset != null && offset < entry.tracks.length) {
+          nextIndex += offset;
+          found = true;
+          break;
+        }
       }
       nextIndex += entry.tracks.length;
     }
@@ -126,8 +130,9 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
 
   Future<void> removePlaybackQueueEntry(
     String sessionId,
-    String entryId,
-  ) async {
+    String entryId, {
+    List<MusicTrack>? tracks,
+  }) async {
     final session = _service.sessions[sessionId];
     if (session == null) return;
     if (session.queueLoadingRequired &&
@@ -136,11 +141,54 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     }
     final queue = session.playbackQueue;
     if (queue == null) return;
-    final entries = queue.entries
-        .where((entry) => entry.id != entryId)
-        .toList(growable: false);
-    if (entries.length == queue.entries.length) return;
-    _replacePlaybackQueueEntries(session, entries);
+    final index = queue.entries.indexWhere((entry) => entry.id == entryId);
+    if (index < 0) return;
+    final entries = queue.entries.toList();
+    final entry = entries[index];
+    final removedTracks = tracks == null
+        ? null
+        : (Set<MusicTrack>.identity()..addAll(tracks));
+    int? Function(PlaybackQueueEntry, int)? mapOffset;
+    if (removedTracks == null) {
+      entries.removeAt(index);
+    } else {
+      // Metadata refreshes can replace track snapshots while undo is offered.
+      final currentTracks = Set<MusicTrack>.identity()..addAll(entry.tracks);
+      final refreshed = removedTracks
+          .where((track) => !currentTracks.contains(track))
+          .toList();
+      if (refreshed.isNotEmpty) {
+        removedTracks.addAll(
+          entry.tracks.where(
+            (track) => refreshed.any((previous) => _sameTrack(previous, track)),
+          ),
+        );
+      }
+      final remaining = entry.tracks
+          .where((track) => !removedTracks.contains(track))
+          .toList();
+      if (remaining.length == entry.tracks.length) return;
+      if (remaining.isEmpty) {
+        entries.removeAt(index);
+      } else {
+        entries[index] = PlaybackQueueEntry(
+          id: entry.id,
+          kind: entry.kind,
+          title: entry.title,
+          tracks: remaining,
+          workRootPath: entry.workRootPath,
+        );
+        mapOffset = (currentEntry, offset) {
+          if (currentEntry.id != entryId) return offset;
+          if (removedTracks.contains(currentEntry.tracks[offset])) return null;
+          return currentEntry.tracks
+              .take(offset)
+              .where((track) => !removedTracks.contains(track))
+              .length;
+        };
+      }
+    }
+    _replacePlaybackQueueEntries(session, entries, mapOffset: mapOffset);
     _publishQueueReferencesChanged();
     await _synchronizePlaybackQueueSession?.call(session, selectFirst: false);
     _notifySessionStateChanged(session);

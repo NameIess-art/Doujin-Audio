@@ -13,6 +13,7 @@ import '../domain/asmr_models.dart';
 import '../application/asmr_download_models.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/file_tree_expansion_motion.dart';
 import '../../../core/widgets/file_tree_row.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/page_header_inset.dart';
@@ -29,28 +30,58 @@ class AsmrDownloadDetailsPage extends ConsumerStatefulWidget {
       _AsmrDownloadDetailsPageState();
 }
 
+typedef _DownloadDetailsRow = ({
+  AsmrTrackFile node,
+  int depth,
+  bool emptyFolder,
+});
+
 class _AsmrDownloadDetailsPageState
-    extends ConsumerState<AsmrDownloadDetailsPage> {
+    extends ConsumerState<AsmrDownloadDetailsPage>
+    with SingleTickerProviderStateMixin {
   final GlobalKey _headerKey = GlobalKey();
   double _headerHeight = 0;
   final Set<String> _collapsedPaths = {};
   List<AsmrTrackFile>? _rowsSource;
-  List<({AsmrTrackFile node, int depth, bool emptyFolder})> _rows = const [];
+  List<_DownloadDetailsRow> _rows = const [];
+  Map<Key, int> _rowIndices = const {};
+  late final FileTreeExpansionMotion<String, _DownloadDetailsRow> _motion;
 
-  void _toggleFolder(String path, bool expanded) {
-    setState(() {
-      if (expanded) {
-        _collapsedPaths.remove(path);
-      } else {
-        _collapsedPaths.add(path);
-      }
-      _rowsSource = null;
+  @override
+  void initState() {
+    super.initState();
+    _motion = FileTreeExpansionMotion(this, () {
+      if (mounted) setState(_motion.finish);
     });
   }
 
+  void _toggleFolder(String path) {
+    setState(() {
+      final progress = _motion.progressFor(path);
+      _motion.finish();
+      final opening = _collapsedPaths.remove(path);
+      if (!opening) _collapsedPaths.add(path);
+      final outgoing = opening ? null : _rows;
+      _rowsSource = null;
+      if (!MediaQuery.disableAnimationsOf(context)) {
+        _motion.start(path, outgoing: outgoing, from: progress);
+      }
+    });
+  }
+
+  Key _rowKey(_DownloadDetailsRow row) => ValueKey<String>(
+    'asmr_download_${row.emptyFolder ? "empty" : "node"}_row_${row.node.relativePath}',
+  );
+
+  Map<Key, int> _indicesFor(List<_DownloadDetailsRow> rows) => {
+    for (var index = 0; index < rows.length; index++)
+      _rowKey(rows[index]): index,
+  };
+
   void _ensureRows(List<AsmrTrackFile> roots) {
     if (identical(_rowsSource, roots)) return;
-    final rows = <({AsmrTrackFile node, int depth, bool emptyFolder})>[];
+    if (_rowsSource != null) _motion.finish();
+    final rows = <_DownloadDetailsRow>[];
     void visit(AsmrTrackFile node, int depth) {
       rows.add((node: node, depth: depth, emptyFolder: false));
       if (!node.isFolder || _collapsedPaths.contains(node.relativePath)) return;
@@ -68,17 +99,26 @@ class _AsmrDownloadDetailsPageState
     }
     _rowsSource = roots;
     _rows = rows;
+    _rowIndices = _indicesFor(rows);
   }
 
   @override
   void didUpdateWidget(covariant AsmrDownloadDetailsPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.workId != widget.workId) {
+      _motion.finish();
       _collapsedPaths.clear();
       _rowsSource = null;
       _rows = const [];
+      _rowIndices = const {};
       _headerHeight = 0;
     }
+  }
+
+  @override
+  void dispose() {
+    _motion.dispose();
+    super.dispose();
   }
 
   @override
@@ -97,8 +137,10 @@ class _AsmrDownloadDetailsPageState
     final cs = Theme.of(context).colorScheme;
 
     if (structure == null) {
+      _motion.finish();
       _rowsSource = null;
       _rows = const [];
+      _rowIndices = const {};
       _collapsedPaths.clear();
       return Scaffold(
         body: Stack(
@@ -158,12 +200,26 @@ class _AsmrDownloadDetailsPageState
                     listTopPadding,
                     16,
                     MediaQuery.paddingOf(context).bottom +
-                    MobileOverlayInset.of(context) +
-                    16,
+                        MobileOverlayInset.of(context) +
+                        16,
                   ),
                 ),
                 builder: (context) {
                   _ensureRows(tracks);
+                  final rows = _motion.project(
+                    context,
+                    _rows,
+                    parentIndex: (_, path) =>
+                        _rowIndices[ValueKey<String>(
+                          'asmr_download_node_row_$path',
+                        )],
+                    // An empty notice aligns with its header, but moves as a child.
+                    depth: (row) => row.depth + (row.emptyFolder ? 1 : 0),
+                    minRowHeight: 28,
+                  );
+                  final indices = identical(rows, _rows)
+                      ? _rowIndices
+                      : _indicesFor(rows);
                   return CustomScrollView(
                     physics: const ClampingScrollPhysics(),
                     slivers: [
@@ -183,20 +239,18 @@ class _AsmrDownloadDetailsPageState
                             listTopPadding,
                             16,
                             MediaQuery.paddingOf(context).bottom +
-                    MobileOverlayInset.of(context) +
-                    16,
+                                MobileOverlayInset.of(context) +
+                                16,
                           ),
                           sliver: SliverList.builder(
-                            itemCount: _rows.length,
+                            itemCount: rows.length,
+                            findChildIndexCallback: (key) => indices[key],
                             itemBuilder: (context, index) {
-                              final row = _rows[index];
+                              final row = rows[index];
                               final node = row.node;
-                              final rowKey = ValueKey<String>(
-                                'asmr_download_${row.emptyFolder ? "empty" : "node"}_row_${node.relativePath}',
-                              );
+                              final Widget tile;
                               if (row.emptyFolder) {
-                                return FileTreeRow(
-                                  key: rowKey,
+                                tile = FileTreeRow(
                                   title: i18n.tr('asmr_download_empty_folder'),
                                   depth: row.depth,
                                   minHeight: 28,
@@ -205,26 +259,22 @@ class _AsmrDownloadDetailsPageState
                                   ),
                                   titleColor: cs.onSurfaceVariant,
                                 );
-                              }
-                              if (node.isFolder) {
+                              } else if (node.isFolder) {
                                 final expanded = !_collapsedPaths.contains(
                                   node.relativePath,
                                 );
                                 final accent = Theme.of(
                                   context,
                                 ).colorScheme.primary;
-                                return Semantics(
-                                  key: rowKey,
+                                tile = Semantics(
                                   expanded: expanded,
                                   child: FileTreeRow(
                                     title: node.title,
                                     titleMaxLines: 2,
                                     depth: row.depth,
                                     isFolder: true,
-                                    onTap: () => _toggleFolder(
-                                      node.relativePath,
-                                      !expanded,
-                                    ),
+                                    onTap: () =>
+                                        _toggleFolder(node.relativePath),
                                     leading: Icon(
                                       expanded
                                           ? AppDesignTokens.openFolderIcon
@@ -240,21 +290,26 @@ class _AsmrDownloadDetailsPageState
                                     ),
                                   ),
                                 );
+                              } else {
+                                tile = _AsmrDownloadDetailsFileTile(
+                                  node: node,
+                                  depth: row.depth,
+                                  workId: widget.workId,
+                                  i18n: i18n,
+                                  onRetryFile:
+                                      downloadManager == null || !coreReady
+                                      ? null
+                                      : (relativePath) =>
+                                            downloadManager.retryFailedFile(
+                                              widget.workId,
+                                              relativePath,
+                                            ),
+                                );
                               }
-                              return _AsmrDownloadDetailsFileTile(
-                                key: rowKey,
-                                node: node,
-                                depth: row.depth,
-                                workId: widget.workId,
-                                i18n: i18n,
-                                onRetryFile:
-                                    downloadManager == null || !coreReady
-                                    ? null
-                                    : (relativePath) =>
-                                          downloadManager.retryFailedFile(
-                                            widget.workId,
-                                            relativePath,
-                                          ),
+                              return _motion.wrap(
+                                index,
+                                tile,
+                                key: _rowKey(row),
                               );
                             },
                           ),
@@ -360,7 +415,6 @@ class _AsmrDownloadDetailsTotals extends ConsumerWidget {
 
 class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
   const _AsmrDownloadDetailsFileTile({
-    super.key,
     required this.node,
     required this.depth,
     required this.workId,

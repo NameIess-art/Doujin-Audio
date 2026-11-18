@@ -57,6 +57,15 @@ class SqlitePlaybackRepository
   }
 
   @override
+  Future<PlaybackQueueEntry?> loadQueueEntry(
+    String sessionId,
+    String entryId,
+  ) async {
+    final entry = await _database.loadQueueEntry(sessionId, entryId);
+    return entry == null ? null : _entryFromRecord(entry);
+  }
+
+  @override
   Future<List<PlaybackQueueEntryPreview>> loadQueueEntryPage(
     String sessionId, {
     required int start,
@@ -262,6 +271,15 @@ PlaybackQueueEntryRecord _entryToRecord(PlaybackQueueEntry entry) =>
 PlaybackQueueEntryKind _entryKind(String kind) =>
     kind == 'work' ? PlaybackQueueEntryKind.work : PlaybackQueueEntryKind.track;
 
+PlaybackQueueEntry _entryFromRecord(PlaybackQueueEntryRecord entry) =>
+    PlaybackQueueEntry(
+      id: entry.id,
+      kind: _entryKind(entry.kind),
+      title: entry.title,
+      tracks: entry.tracks,
+      workRootPath: entry.workRootPath,
+    );
+
 PlaybackQueueDefinition? _queueFromRecord(
   PlaybackQueueRecord? queue, {
   int? entryCount,
@@ -273,17 +291,7 @@ PlaybackQueueDefinition? _queueFromRecord(
         colorValue: queue.colorValue,
         storedEntryCount: entryCount,
         storedTrackCount: trackCount,
-        entries: queue.entries
-            .map(
-              (entry) => PlaybackQueueEntry(
-                id: entry.id,
-                kind: _entryKind(entry.kind),
-                title: entry.title,
-                tracks: entry.tracks,
-                workRootPath: entry.workRootPath,
-              ),
-            )
-            .toList(growable: false),
+        entries: queue.entries.map(_entryFromRecord).toList(growable: false),
       );
 
 PlaybackQueueDeltaRecord _queueDelta(

@@ -426,7 +426,7 @@ void main() {
   });
 
   test(
-    'async switcher reloads a changed library and preserves track identity',
+    'async work lookup reloads a changed library and preserves track identity',
     () async {
       final graph = createTestRuntimeGraph();
       addTearDown(graph.runtime.dispose);
@@ -443,7 +443,7 @@ void main() {
       graph.library.addWatchedFolder('/library/work', notify: false);
       graph.library.addTracks([first], persist: false);
       final session = graph.playback.createTrackSession(first);
-      final pending = graph.audioPaths.tracksForSessionSwitcher(session.id);
+      final pending = graph.audioPaths.tracksInSameWorkAsync(first);
       graph.library.addTracks([second], persist: false);
       final result = await pending;
       expect(result, [second, first]);
@@ -482,6 +482,10 @@ void main() {
     );
     final session = graph.playback.ordinarySessions.single;
     expect(graph.audioPaths.hasOtherTracksInSameWork(selected.path), isTrue);
+    expect(await graph.audioPaths.tracksInSameWorkAsync(selected), [
+      selected,
+      sibling,
+    ]);
     expect(
       (await graph.audioPaths.tracksForSessionSwitcher(
         session.id,
@@ -527,7 +531,7 @@ void main() {
     );
   }
 
-  test('sibling lookup skips unrelated tracks and reuses the work cache', () async {
+  test('work lookup skips unrelated tracks and reuses cache', () async {
     final service = _CountingLibrary();
     final graph = createTestRuntimeGraph(libraryService: service);
     addTearDown(graph.runtime.dispose);
@@ -560,11 +564,19 @@ void main() {
     expect(graph.audioPaths.hasOtherTracksInSameWork(path), isTrue);
     expect(counted.reads, 0);
     expect(graph.audioPaths.cachedHasOtherTracksInSameWork(path), isTrue);
+    final workTracks = await graph.audioPaths.tracksInSameWorkAsync(
+      tracks[5000],
+    );
+    expect(workTracks.map((track) => track.path), [
+      tracks[5000].path,
+      tracks[5001].path,
+    ]);
+    expect(counted.reads, 2);
     expect(
-      (await graph.audioPaths.tracksForSessionSwitcher(
+      await graph.audioPaths.tracksForSessionSwitcher(
         graph.playback.createTrackSession(tracks[5000]).id,
-      )).map((track) => track.path),
-      [tracks[5000].path, tracks[5001].path],
+      ),
+      same(workTracks),
     );
     counted.reads = 0;
     expect(graph.audioPaths.tracksInSameWork(path).length, 2);

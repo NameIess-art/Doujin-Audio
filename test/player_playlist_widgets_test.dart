@@ -28,6 +28,7 @@ import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/application/playback_queue_resolver.dart';
+import 'package:doujin_audio/features/player/application/session_switcher_tree.dart';
 import 'package:doujin_audio/features/player/domain/playback_persistence_repository.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
@@ -51,6 +52,7 @@ import 'package:doujin_audio/core/widgets/app_brand_icon.dart';
 import 'package:doujin_audio/core/widgets/duration_overlay.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
+import 'package:doujin_audio/core/widgets/file_tree_row.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/widgets/horizontal_edge_fade_scroll.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
@@ -66,7 +68,21 @@ import 'support/test_playback_commands.dart';
 
 class _PagedQueueRepository extends TestPersistenceRepository
     implements PlaybackQueueStorage {
+  _PagedQueueRepository({this.firstPageFails = true, this.allWorks = false});
+
+  final bool firstPageFails;
+  final bool allWorks;
   final List<(int, int)> requests = [];
+  final List<String> entryLoads = [];
+  int queueLoads = 0;
+  Future<void>? queueLoadGate;
+  Future<void>? nextPageGate;
+  final workTrack = testMusicTrack(
+    name: 'Saved work audio',
+    path: '/library/saved-work/audio.mp3',
+    groupKey: '/library/saved-work',
+    groupTitle: 'Saved work',
+  );
 
   @override
   Future<List<PlaybackQueueEntryPreview>> loadQueueEntryPage(
@@ -75,17 +91,74 @@ class _PagedQueueRepository extends TestPersistenceRepository
     required int limit,
   }) async {
     requests.add((start, limit));
-    if (requests.length == 1) throw StateError('Failed to read queue');
+    if (firstPageFails && requests.length == 1) {
+      throw StateError('Failed to read queue');
+    }
+    if (start > 0) await nextPageGate;
     return [
       for (var index = start; index < start + limit && index < 260; index++)
         (
           id: 'saved-entry-$index',
-          kind: PlaybackQueueEntryKind.track,
-          title: 'Saved track $index',
+          kind: index == 0 || allWorks
+              ? PlaybackQueueEntryKind.work
+              : PlaybackQueueEntryKind.track,
+          title: index == 0 ? 'Saved work' : 'Saved track $index',
           trackCount: 1,
-          firstTrack: null,
+          firstTrack: index == 0 ? workTrack : null,
         ),
     ];
+  }
+
+  @override
+  Future<PlaybackQueueEntry?> loadQueueEntry(
+    String sessionId,
+    String entryId,
+  ) async {
+    entryLoads.add(entryId);
+    return entryId == 'saved-entry-0'
+        ? PlaybackQueueEntry(
+            id: entryId,
+            kind: PlaybackQueueEntryKind.work,
+            title: 'Saved work',
+            workRootPath: '/library/saved-work',
+            tracks: [workTrack],
+          )
+        : null;
+  }
+
+  @override
+  Future<PersistedPlaybackSession?> loadSessionQueue(String sessionId) async {
+    queueLoads++;
+    await queueLoadGate;
+    return PersistedPlaybackSession(
+      id: sessionId,
+      trackPath: workTrack.path,
+      loopModeIndex: SessionLoopMode.single.index,
+      volume: 1,
+      positionMs: 0,
+      durationMs: 0,
+      customQueueTracks: null,
+      channelSwapEnabled: false,
+      sortOrder: 0,
+      playbackQueue: PlaybackQueueDefinition(
+        name: 'Paged queue',
+        entries: [
+          PlaybackQueueEntry(
+            id: 'saved-entry-0',
+            kind: PlaybackQueueEntryKind.work,
+            title: 'Saved work',
+            tracks: [workTrack],
+          ),
+          for (var index = 1; index < 260; index++)
+            PlaybackQueueEntry(
+              id: 'saved-entry-$index',
+              kind: PlaybackQueueEntryKind.track,
+              title: 'Saved track $index',
+              tracks: [workTrack],
+            ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -3010,6 +3083,60 @@ void main() {
     expect(gestureDisplayValue, 1.5);
     expect(sessionVolumeGainFromDisplayValue(gestureDisplayValue), 3);
   });
+
+  testWidgets('audio switcher shrinks folder children to zero in 220 ms', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final session = fixture.playback.createPlaybackQueue('Switch audio');
+    final disc = SessionSwitcherNode.folder('Disc', key: 'disc');
+    final track = MusicTrack(
+      path: '/library/disc/audio.mp3',
+      displayName: 'Audio',
+      groupKey: '/library/disc',
+      groupTitle: 'Disc',
+      groupSubtitle: '',
+      isSingle: false,
+    );
+    final leaf = SessionSwitcherNode.track(
+      track,
+      selected: false,
+      queueIndex: 1,
+      sourceIndex: 0,
+    );
+    disc.children.add(leaf);
+    await tester.pumpWidget(
+      fixture.build(
+        SessionTrackSwitcherSheet(
+          session: PlaybackSessionSnapshot.fromRuntime(session),
+          trackCount: 1,
+          tree: (
+            roots: [disc],
+            rows: [
+              (node: disc, depth: 0, key: disc.key),
+              (node: leaf, depth: 1, key: leaf.key),
+            ],
+            indices: {disc.key: 0, leaf.key: 1},
+            expanded: {disc.key},
+          ),
+          onSelected: (_) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final audioRow = find.byKey(ValueKey<String>(leaf.key));
+    await tester.tap(find.text('Disc', findRichText: true));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 215));
+    expect(tester.getSize(audioRow).height, inExclusiveRange(0, 1));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(audioRow, findsNothing);
+  }, variant: const TargetPlatformVariant({
+    TargetPlatform.android,
+    TargetPlatform.windows,
+  }));
 
   test('ASMR session switcher displays tracks in natural path order', () {
     MusicTrack asmrTrack(String title) {
@@ -7069,6 +7196,9 @@ void main() {
       final repository = _PagedQueueRepository();
       final fixture = AppRuntimeWidgetTestFixture(
         providedPersistenceRepository: repository,
+        configureSettingsRepository: (settings) => settings
+          ..workNameDisplay = WorkNameDisplay.folderName
+          ..syncSlice(isInitialized: true),
       );
       addTearDown(fixture.dispose);
       final session = fixture.playback.createPlaybackQueue('Paged queue');
@@ -7095,14 +7225,286 @@ void main() {
       final list = find.byType(ReorderableListView);
       expect(tester.widget<ReorderableListView>(list).itemCount, 128);
       final controller = tester.widget<ReorderableListView>(list).scrollController!;
-      controller.jumpTo(controller.position.maxScrollExtent - 1);
+      controller.jumpTo(controller.position.maxScrollExtent - 400);
       await tester.pumpAndSettle();
       expect(tester.widget<ReorderableListView>(list).itemCount, 256);
       expect(repository.requests, [(0, 128), (0, 128), (128, 128)]);
       expect(session.queueLoadingRequired, isTrue);
+      expect(repository.queueLoads, 0);
+      controller.jumpTo(0);
+      await tester.pumpAndSettle();
+      final root = find.descendant(
+        of: find.byKey(const ValueKey('saved-entry-0')),
+        matching: find.byType(FileTreeRow),
+      );
+      expect(root, findsOneWidget);
+      await tester.tap(root);
+      await tester.pumpAndSettle();
+      expect(repository.queueLoads, 0);
+      expect(repository.entryLoads, ['saved-entry-0']);
+      expect(session.queueLoadingRequired, isTrue);
+      expect(tester.widget<ReorderableListView>(list).itemCount, 257);
+      expect(
+        find.text(repository.workTrack.displayName, findRichText: true),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
     },
   );
+
+  for (final loadFails in [false, true]) {
+    testWidgets(
+      'first queue reorder keeps its drop position until load completes (failure: $loadFails)',
+      (tester) async {
+        tester.view.physicalSize = defaultTargetPlatform == TargetPlatform.windows
+            ? const Size(960, 600)
+            : const Size(390, 844);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final load = Completer<void>();
+        addTearDown(() {
+          if (!load.isCompleted) load.complete();
+        });
+        final repository = _PagedQueueRepository()..queueLoadGate = load.future;
+        final fixture = AppRuntimeWidgetTestFixture(
+          providedPersistenceRepository: repository,
+          coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
+          configureSettingsRepository: (settings) => settings
+            ..workNameDisplay = WorkNameDisplay.folderName
+            ..syncSlice(isInitialized: true),
+        );
+        addTearDown(fixture.dispose);
+        final session = fixture.playback.createPlaybackQueue('Paged queue');
+        session
+          ..playbackQueue = PlaybackQueueDefinition(
+            name: 'Paged queue',
+            entries: const [],
+            storedEntryCount: 260,
+            storedTrackCount: 260,
+          )
+          ..queueLoadingRequired = true;
+        fixture.playback.publishSessionState(session.id);
+        await tester.pumpWidget(
+          fixture.build(PlaybackQueueAudioEditPage(sessionId: session.id)),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(fixture.languageProvider.tr('retry')));
+        await tester.pumpAndSettle();
+
+        final work = find.byKey(const ValueKey('saved-entry-0'));
+        final originalTop = tester.getTopLeft(work).dy;
+        expect(repository.queueLoads, 0);
+        final drag = await tester.startGesture(tester.getCenter(work));
+        await tester.pump(kLongPressTimeout);
+        await drag.moveBy(const Offset(0, 150));
+        await tester.pumpAndSettle();
+        await drag.up();
+        await tester.pumpAndSettle();
+
+        expect(repository.queueLoads, 1);
+        expect(session.queueLoadingRequired, isTrue);
+        final previewTop = tester.getTopLeft(work).dy;
+        expect(previewTop, greaterThan(originalTop));
+
+        if (loadFails) {
+          load.completeError(StateError('Failed to restore queue'));
+          await tester.pumpAndSettle();
+          expect(session.queueLoadingRequired, isTrue);
+          expect(tester.getTopLeft(work).dy, closeTo(originalTop, 0.01));
+          expect(find.byType(ReorderableDelayedDragStartListener), findsOneWidget);
+        } else {
+          load.complete();
+          await tester.pumpAndSettle();
+          expect(session.queueLoadingRequired, isFalse);
+          expect(session.playbackQueue!.entries.first.id, 'saved-entry-1');
+          expect(tester.getTopLeft(work).dy, closeTo(previewTop, 0.01));
+        }
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(seconds: 1));
+        await tester.pumpAndSettle();
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
+  testWidgets(
+    'queue editor defers a fetched page while edge scrolling a drag',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = defaultTargetPlatform == TargetPlatform.windows
+          ? const Size(960, 600)
+          : const Size(390, 844);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final nextPage = Completer<void>();
+      final repository = _PagedQueueRepository(
+        firstPageFails: false,
+        allWorks: true,
+      )..nextPageGate = nextPage.future;
+      final fixture = AppRuntimeWidgetTestFixture(
+        providedPersistenceRepository: repository,
+        coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
+        configureSettingsRepository: (settings) => settings
+          ..workNameDisplay = WorkNameDisplay.folderName
+          ..syncSlice(isInitialized: true),
+      );
+      addTearDown(fixture.dispose);
+      final session = fixture.playback.createPlaybackQueue('Paged queue');
+      session
+        ..playbackQueue = PlaybackQueueDefinition(
+          name: 'Paged queue',
+          entries: const [],
+          storedEntryCount: 260,
+          storedTrackCount: 260,
+        )
+        ..queueLoadingRequired = true;
+      fixture.playback.publishSessionState(session.id);
+      await tester.pumpWidget(
+        fixture.build(PlaybackQueueAudioEditPage(sessionId: session.id)),
+      );
+      await tester.pumpAndSettle();
+
+      final list = find.byType(ReorderableListView);
+      final scroll = tester.widget<ReorderableListView>(list).scrollController!;
+      scroll.jumpTo(scroll.position.maxScrollExtent - 550);
+      await tester.pumpAndSettle();
+      expect(repository.requests, [(0, 128)]);
+      final handle = find
+          .byType(ReorderableDelayedDragStartListener)
+          .hitTestable()
+          .first;
+      final colors = Theme.of(tester.element(handle)).colorScheme;
+      final dragColor = Color.alphaBlend(
+        colors.primary.withValues(alpha: 0.18),
+        colors.surface,
+      );
+      final proxy = find.byWidgetPredicate(
+        (widget) => widget is Material && widget.color == dragColor,
+      );
+      final start = tester.getCenter(handle);
+      final drag = await tester.startGesture(start);
+      await tester.pump(kLongPressTimeout);
+      await drag.moveTo(Offset(start.dx, tester.getRect(list).bottom - 2));
+      for (
+        var frame = 0;
+        frame < 40 && repository.requests.length == 1;
+        frame++
+      ) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(repository.requests, [(0, 128), (128, 128)]);
+      nextPage.complete();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(tester.widget<ReorderableListView>(list).itemCount, 128);
+      expect(proxy, findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await drag.cancel();
+      await tester.pumpAndSettle();
+      expect(tester.widget<ReorderableListView>(list).itemCount, 256);
+      expect(proxy, findsNothing);
+      expect(repository.queueLoads, 0);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets('queue editor animates expanded audio without mounting the full work', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final fixture = AppRuntimeWidgetTestFixture(
+      coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
+      configureSettingsRepository: (settings) => settings
+        ..workNameDisplay = WorkNameDisplay.folderName
+        ..syncSlice(isInitialized: true),
+    );
+    addTearDown(fixture.dispose);
+    final queue = fixture.playback.createPlaybackQueue('Queue');
+    await fixture.playback.addWorkToPlaybackQueue(
+      queue.id,
+      title: 'Large work',
+      workRootPath: '/library/work',
+      tracks: [
+        for (var index = 0; index < 600; index++)
+          testMusicTrack(
+            name: 'Audio $index',
+            path: '/library/work/$index.mp3',
+            groupKey: '/library/work',
+            groupTitle: 'Work',
+          ),
+      ],
+    );
+    await tester.pumpWidget(
+      fixture.build(PlaybackQueueAudioEditPage(sessionId: queue.id)),
+    );
+    await tester.pumpAndSettle();
+    final list = find.byType(ReorderableListView);
+    final rows = find.descendant(of: list, matching: find.byType(FileTreeRow));
+    final firstAudio = find.text('Audio 0', findRichText: true);
+    final transition = find.ancestor(
+      of: firstAudio,
+      matching: find.byType(SizeTransition),
+    ).first;
+    await tester.tap(rows);
+    await tester.pump();
+    expect(rows.evaluate().length, lessThan(100));
+    await tester.pump(const Duration(milliseconds: 100));
+    final expandingHeight = tester.getSize(transition).height;
+    expect(expandingHeight, inExclusiveRange(0, 48));
+    expect(rows.evaluate().length, lessThan(100));
+    await tester.pumpAndSettle();
+
+    await tester.tap(rows.first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    final collapsingHeight = tester.getSize(transition).height;
+    expect(collapsingHeight, inExclusiveRange(0, 48));
+    expect(firstAudio.hitTestable(), findsNothing);
+    await tester.tap(rows.first);
+    await tester.pump();
+    expect(tester.getSize(transition).height, closeTo(collapsingHeight, 0.01));
+    await tester.pumpAndSettle();
+
+    await tester.tap(rows.first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 215));
+    expect(tester.getSize(transition).height, lessThan(1.0));
+    expect(rows.evaluate().length, lessThan(100));
+    await tester.pumpAndSettle();
+    expect(rows, findsOneWidget);
+
+    await tester.tap(rows);
+    await tester.pumpAndSettle();
+    final widget = tester.widget<ReorderableListView>(list);
+    expect(widget.itemCount, 601);
+    expect(rows.evaluate().length, lessThan(30));
+    expect(find.text('Audio 599', findRichText: true), findsNothing);
+    final scroll = widget.scrollController!;
+    scroll.jumpTo(scroll.position.maxScrollExtent);
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Audio 599', findRichText: true).hitTestable(),
+      findsOneWidget,
+    );
+    expect(rows.evaluate().length, lessThan(30));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
 
   testWidgets(
     'queue reorder reuses rows, scrolls at the edges and survives quick back',
@@ -7113,6 +7515,18 @@ void main() {
           : const Size(390, 844);
       addTearDown(tester.view.resetDevicePixelRatio);
       addTearDown(tester.view.resetPhysicalSize);
+      final hapticCalls = <Object?>[];
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          hapticCalls.add(call.arguments);
+        }
+        return null;
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+      );
       final coverCache = _RecordingPlaybackCoverCacheService();
       final fixture = AppRuntimeWidgetTestFixture(
         coverArtworkCacheService: coverCache,
@@ -7123,15 +7537,17 @@ void main() {
       addTearDown(fixture.dispose);
       final queue = fixture.playback.createPlaybackQueue('Queue');
       for (var index = 0; index < 24; index++) {
-        await fixture.playback.addTrackToPlaybackQueue(
+        await fixture.playback.addWorkToPlaybackQueue(
           queue.id,
-          testMusicTrack(
-            name: 'Track $index',
-            path: '/library/track$index.mp3',
-            groupKey: '/library',
-            groupTitle: 'Work',
-            isSingle: true,
-          ),
+          title: 'Work $index',
+          tracks: [
+            testMusicTrack(
+              name: 'Track $index',
+              path: '/library/work$index/track.mp3',
+              groupKey: '/library/work$index',
+              groupTitle: 'Work $index',
+            ),
+          ],
         );
       }
       fixture.playbackService.syncSlice(
@@ -7174,7 +7590,10 @@ void main() {
         matching: find.byType(HeaderFloatingButton),
       );
       final backRect = tester.getRect(backCapsule);
-      final cards = find.descendant(of: list, matching: find.byType(Card));
+      final cards = find.descendant(
+        of: list,
+        matching: find.byType(FileTreeRow),
+      );
       final scrollBounds = tester.getRect(list);
       void expectCardsBehindFloatingCapsules() {
         expect(tester.getRect(list), scrollBounds);
@@ -7194,11 +7613,31 @@ void main() {
       }
 
       expectCardsBehindFloatingCapsules();
-      final handles = find.byType(ReorderableDragStartListener).hitTestable();
+      final handles = find
+          .byType(ReorderableDelayedDragStartListener)
+          .hitTestable();
       final handle = handles.at(handles.evaluate().length ~/ 2);
       final start = tester.getCenter(handle);
+      final colors = Theme.of(tester.element(handle)).colorScheme;
+      final dragColor = Color.alphaBlend(
+        colors.primary.withValues(alpha: 0.18),
+        colors.surface,
+      );
+      final dragHighlight = find.byWidgetPredicate(
+        (widget) => widget is Material && widget.color == dragColor,
+      );
+      hapticCalls.clear();
       final gesture = await tester.startGesture(start);
-      await tester.pump();
+      const lastMillisecond = Duration(milliseconds: 1);
+      await tester.pump(kLongPressTimeout - lastMillisecond);
+      expect(hapticCalls, isEmpty);
+      expect(dragHighlight, findsNothing);
+      await tester.pump(lastMillisecond);
+      expect(hapticCalls, [
+        if (defaultTargetPlatform == TargetPlatform.android)
+          'HapticFeedbackType.mediumImpact',
+      ]);
+      expect(dragHighlight, findsOneWidget);
       await gesture.moveBy(const Offset(0, -22));
       await tester.pump(const Duration(milliseconds: 100));
       expect(scroll.offset, 300);
@@ -7214,6 +7653,7 @@ void main() {
       await gesture.moveTo(Offset(start.dx, headerBottom + 8));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
+      expect(dragHighlight, findsOneWidget);
       expect(scroll.offset, lessThan(300));
       expectCardsBehindFloatingCapsules();
 
@@ -7226,25 +7666,41 @@ void main() {
       expect(scroll.offset, greaterThan(offset));
       await gesture.cancel();
       await tester.pumpAndSettle();
+      expect(dragHighlight, findsNothing);
       expect(tester.getRect(list), scrollBounds);
 
       for (final closeAfterDrop in [false, true]) {
         final visibleHandles = find
-            .byType(ReorderableDragStartListener)
+            .byType(ReorderableDelayedDragStartListener)
             .hitTestable();
         final handleIndex = visibleHandles.evaluate().length ~/ 2;
         final movedHandle = visibleHandles.at(handleIndex);
         final previousHandle = visibleHandles.at(handleIndex - 1);
         final entries = queue.playbackQueue!.entries;
         final from = tester
-            .widget<ReorderableDragStartListener>(movedHandle)
+            .widget<ReorderableDelayedDragStartListener>(movedHandle)
             .index;
         final to = tester
-            .widget<ReorderableDragStartListener>(previousHandle)
+            .widget<ReorderableDelayedDragStartListener>(previousHandle)
             .index;
+        final movedEntry = find.byKey(ValueKey(entries[from].id));
+        final movedTrack = find.text(
+          entries[from].tracks.single.displayName,
+          findRichText: true,
+        );
+        final movedFolder = find.descendant(
+          of: movedEntry,
+          matching: find.byType(ReorderableDelayedDragStartListener),
+        );
+        if (!closeAfterDrop) {
+          await tester.tap(movedFolder);
+          await tester.pumpAndSettle();
+          expect(movedTrack, findsOneWidget);
+        }
         final target = tester.getCenter(previousHandle) + const Offset(0, 12);
-        final drop = await tester.startGesture(tester.getCenter(movedHandle));
-        await tester.pump();
+        final drop = await tester.startGesture(tester.getCenter(movedFolder));
+        await tester.pump(kLongPressTimeout);
+        expect(movedTrack, findsNothing);
         await drop.moveBy(const Offset(0, -22));
         await tester.pump();
         await drop.moveTo(target);
@@ -7258,6 +7714,8 @@ void main() {
           expect(queue.playbackQueue!.entries, entries);
         }
         await tester.pumpAndSettle();
+        expect(dragHighlight, findsNothing);
+        expect(movedTrack, findsNothing);
         final expectedEntries = entries.toList();
         expectedEntries.insert(to, expectedEntries.removeAt(from));
         expect(queue.playbackQueue!.entries, expectedEntries);
@@ -7429,15 +7887,17 @@ void main() {
       final queueSession = playback.createPlaybackQueue('Queue');
       addTearDown(queueSession.shutdown);
       for (var index = 0; index < 4; index++) {
-        await playback.addTrackToPlaybackQueue(
+        await playback.addWorkToPlaybackQueue(
           queueSession.id,
-          testMusicTrack(
-            name: 'Track $index',
-            path: '/library/track$index.mp3',
-            groupKey: '/library',
-            groupTitle: 'Work',
-            isSingle: true,
-          ),
+          title: 'Work $index',
+          tracks: [
+            testMusicTrack(
+              name: 'Track $index',
+              path: '/library/work$index/track.mp3',
+              groupKey: '/library/work$index',
+              groupTitle: 'Work $index',
+            ),
+          ],
         );
       }
       fixture.playbackService.syncSlice(
@@ -7554,6 +8014,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.tap(find.text('Open queue editor'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Remote work', findRichText: true));
       await tester.pumpAndSettle();
       final add = find.byTooltip(
         fixture.languageProvider.tr('add_audio_to_queue'),
@@ -7751,7 +8213,7 @@ void main() {
   }
 
   testWidgets(
-    'queue edit rows arrange 44px actions horizontally and provide haptics',
+    'queue edit tree adds and removes nested audio with one action per row',
     (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 3;
@@ -7777,17 +8239,22 @@ void main() {
           ..syncSlice(isInitialized: true),
       );
       addTearDown(fixture.dispose);
+      fixture.library.addWatchedLibrary('/library');
       final track = MusicTrack(
-        path: '/library/work/track.mp3',
+        path: '/library/work/Disc 1/track.mp3',
         displayName: 'Track',
         groupKey: '/library/work',
         groupTitle: 'Work',
         groupSubtitle: '/library/work',
         isSingle: false,
       );
-      fixture.runtimeGraph.library.addTracks(<MusicTrack>[
-        track,
-      ], persist: false);
+      final sibling = testMusicTrack(
+        name: 'Loose track',
+        path: '/library/work/loose.mp3',
+        groupKey: track.groupKey,
+        groupTitle: track.groupTitle,
+      );
+      fixture.library.addTracks([track, sibling], persist: false);
       final sourceSession = PlaybackSession(
         id: 'queue-source',
         currentTrackPath: track.path,
@@ -7818,66 +8285,148 @@ void main() {
 
       expect(find.byType(TopPageHeader), findsOneWidget);
 
-      final addAudio = find.byTooltip(
-        fixture.languageProvider.tr('add_audio_to_queue'),
+      final i18n = fixture.languageProvider;
+      final source = find.ancestor(
+        of: find.byKey(ValueKey(sourceSession.id)),
+        matching: find.byType(ListView),
+      ).first;
+      Finder row(String title, Finder pane) => find.descendant(
+        of: pane,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is FileTreeRow && widget.title == title,
+        ),
       );
-      final addWork = find.byTooltip(
-        fixture.languageProvider.tr('add_work_to_queue'),
-      );
-      expect(tester.getSize(addAudio), const Size(44, 44));
-      expect(tester.getSize(addWork), const Size(44, 44));
-      expect(tester.getCenter(addAudio).dy, tester.getCenter(addWork).dy);
-      expect(
-        tester.getCenter(addAudio).dx,
-        lessThan(tester.getCenter(addWork).dx),
-      );
-      final sourceCard = tester.widget<Card>(
-        find.ancestor(of: addAudio, matching: find.byType(Card)).first,
-      );
-      final sourceElement = tester.element(addAudio);
-      final isDark = Theme.of(sourceElement).brightness == Brightness.dark;
-      final cs = Theme.of(sourceElement).colorScheme;
-      expect(
-        sourceCard.color,
-        isDark ? cs.surfaceContainerLowest : cs.surfaceContainer,
-      );
-      expect(
-        (sourceCard.shape! as RoundedRectangleBorder).side,
-        BorderSide.none,
-      );
+      Finder action(Finder row, String tooltip) {
+        final button = find.descendant(
+          of: row,
+          matching: find.byType(IconButton),
+        );
+        final arrow = find.descendant(
+          of: row,
+          matching: find.byType(FileTreeExpansionArrow),
+        );
+        expect(button, findsOneWidget);
+        final title = find.descendant(
+          of: row,
+          matching: find.text(
+            tester.widget<FileTreeRow>(row).title,
+            findRichText: true,
+          ),
+        );
+        final labels = find
+            .ancestor(of: title, matching: find.byType(Column))
+            .first;
+        expect(
+          tester.getRect(button).left - tester.getRect(labels).right,
+          closeTo(4, 0.01),
+        );
+        if (tester.widget<FileTreeRow>(row).isFolder) {
+          expect(
+            tester.getRect(arrow).left,
+            greaterThan(tester.getRect(button).right),
+          );
+        } else {
+          expect(arrow, findsNothing);
+        }
+        expect(
+          find.descendant(of: row, matching: find.byType(TextButton)),
+          findsNothing,
+        );
+        return find.descendant(
+          of: row,
+          matching: find.byTooltip(i18n.tr(tooltip)),
+        );
+      }
 
-      await tester.tap(addAudio);
-      await tester.pump();
+      expect(row('Disc 1', source), findsNothing);
+      await tester.tap(action(row('Work', source), 'add_work_to_queue'));
+      await tester.pumpAndSettle();
       expect(
         platformCalls.where((call) => call.method == 'HapticFeedback.vibrate'),
         hasLength(1),
       );
-      final removeAudio = find.byTooltip(fixture.languageProvider.tr('remove'));
-      expect(removeAudio, findsOneWidget);
-      final dragHandle = find.byIcon(Icons.drag_handle_rounded);
-      expect(dragHandle, findsOneWidget);
+      final entry = queueSession.playbackQueue!.entries.single;
       expect(
-        tester.getCenter(removeAudio).dy,
-        closeTo(tester.getCenter(dragHandle).dy, 1.0),
+        entry.tracks.map((track) => track.path),
+        unorderedEquals([track.path, sibling.path]),
       );
-      expect(
-        tester.getCenter(removeAudio).dx,
-        lessThan(tester.getCenter(dragHandle).dx),
-      );
-      expect(find.text('Work'), findsWidgets);
-      expect(find.text('Track', findRichText: true), findsWidgets);
-      await tester.tap(removeAudio);
-      await tester.pump(const Duration(milliseconds: 300));
+      final added = find.byType(ReorderableListView);
+      await tester.tap(row('Work', added));
       await tester.pumpAndSettle();
-      await tester.pump(const Duration(milliseconds: 800));
-      expect(
-        platformCalls.where((call) => call.method == 'HapticFeedback.vibrate'),
-        hasLength(3),
-      );
-      await tester.tap(
-        find.textContaining(fixture.languageProvider.tr('undo')),
-      );
+      expect(row('Disc 1', added), findsOneWidget);
+      expect(row('Track', added), findsNothing);
+      await tester.tap(row('Disc 1', added));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      final nestedMotion = find.ancestor(
+        of: row('Track', added),
+        matching: find.byType(SizeTransition),
+      ).first;
+      expect(tester.getSize(nestedMotion).height, inExclusiveRange(0, 48));
       await tester.pumpAndSettle();
+      expect(tester.widget<FileTreeRow>(row('Track', added)).depth, 2);
+      expect(
+        find.descendant(
+          of: added,
+          matching: find.byType(CoverArtworkFrame),
+        ),
+        findsOneWidget,
+      );
+      final drag = find.byType(ReorderableDelayedDragStartListener);
+      expect(drag, findsOneWidget);
+      expect(
+        find.descendant(of: drag, matching: row('Work', added)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: drag, matching: row('Track', added)),
+        findsNothing,
+      );
+      expect(find.byIcon(Icons.drag_handle_rounded), findsNothing);
+
+      await tester.tap(action(row('Track', added), 'remove'));
+      await tester.pumpAndSettle();
+      expect(row('Track', added), findsNothing);
+      expect(row('Loose track', added), findsOneWidget);
+      final removals = ProviderScope.containerOf(
+        tester.element(find.byType(PlaybackQueueAudioEditPage)),
+      ).read(undoableRemovalServiceProvider);
+      await removals.undoPending();
+      await tester.pumpAndSettle();
+      expect(row('Track', added), findsOneWidget);
+      await tester.tap(action(row('Disc 1', added), 'remove'));
+      await tester.pumpAndSettle();
+      await removals.commitPending();
+      await tester.pumpAndSettle();
+      expect(
+        queueSession.playbackQueue!.entries.single.tracks.single.path,
+        sibling.path,
+      );
+      expect(row('Disc 1', added), findsNothing);
+
+      await tester.tap(row('Work', source));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      final sourceMotion = find.ancestor(
+        of: row('Disc 1', source),
+        matching: find.byType(SizeTransition),
+      ).first;
+      expect(tester.getSize(sourceMotion).height, inExclusiveRange(0, 48));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: source,
+          matching: find.byType(CoverArtworkFrame),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(action(row('Disc 1', source), 'add'));
+      await tester.pumpAndSettle();
+      expect(
+        queueSession.playbackQueue!.entries.last.tracks.single.path,
+        track.path,
+      );
+      expect(find.descendant(of: source, matching: drag), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );
@@ -8015,13 +8564,16 @@ void main() {
           ? tester.getRect(find.byType(VerticalDivider)).right + leftEdge
           : leftEdge;
       expect(
-        tester.getRect(sectionCapsule('playback_list_audio')).left,
+        tester.getRect(sectionCapsule('playback_sessions')).left,
         sourceSectionLeft,
       );
       final emptyQueue = find.text(
         fixture.languageProvider.tr('empty_playback_queue'),
       );
-      expect(tester.getRect(emptyQueue).left, leftEdge);
+      final addedSectionRight = isWindows
+          ? tester.getRect(find.byType(VerticalDivider)).left
+          : tester.view.physicalSize.width;
+      expect(tester.getCenter(emptyQueue).dx, addedSectionRight / 2);
       expect(find.byType(HeaderFloatingSurface), findsNWidgets(4));
       expect(find.byType(Divider), findsNothing);
       expect(
@@ -8035,16 +8587,12 @@ void main() {
           (element) => identical(element, placeholder),
         );
         final card = find
-            .ancestor(of: cover, matching: find.byType(Card))
+            .ancestor(of: cover, matching: find.byType(FileTreeRow))
             .first;
         expect(tester.getRect(card).left, sourceSectionLeft);
         expect(tester.getRect(card).right, rightEdge);
         final labels = find.descendant(of: card, matching: find.byType(Text));
-        expect(
-          tester.getSize(cover),
-          Size.square(coverProgressInnerDimension(playlistCoverSize)),
-        );
-        expect(tester.widget<Card>(card).shape, playlistRowShape);
+        expect(tester.getSize(cover), const Size.square(40));
         expect(
           tester.getRect(cover).right,
           lessThan(tester.getRect(labels.first).left),
@@ -8061,7 +8609,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 350));
       final queuedCard = find.ancestor(
         of: find.byTooltip(fixture.languageProvider.tr('remove')),
-        matching: find.byType(Card),
+        matching: find.byType(FileTreeRow),
       );
       expect(tester.getRect(queuedCard).left, leftEdge);
       final queuedSectionRight = isWindows
@@ -8073,7 +8621,7 @@ void main() {
           .elementList(find.byType(Scrollable))
           .map((element) => element.findRenderObject())
           .toSet();
-      for (final title in ['queue_added_audio', 'playback_list_audio']) {
+      for (final title in ['queue_added_audio', 'playback_sessions']) {
         final header = find
             .ancestor(
               of: find.text(fixture.languageProvider.tr(title)),
@@ -8109,6 +8657,118 @@ void main() {
         expect(icon.color, primary);
       }
       await tester.pump(const Duration(seconds: 10));
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'queue editor switches between playlist and local library sources',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = defaultTargetPlatform == TargetPlatform.windows
+          ? const Size(960, 600)
+          : const Size(390, 844);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
+        configureSettingsRepository: (settings) => settings
+          ..workNameDisplay = WorkNameDisplay.folderName
+          ..syncSlice(isInitialized: true),
+      );
+      addTearDown(fixture.dispose);
+      final playlistTrack = testMusicTrack(
+        name: 'Playlist session track',
+        path: '/playlist/session.mp3',
+        groupKey: '/playlist',
+        groupTitle: 'Playlist',
+        isSingle: true,
+      );
+      final localTrack = testMusicTrack(
+        name: 'Local work audio',
+        path: '/library/Local work/Disc 1/audio.mp3',
+        groupKey: '/library/Local work/Disc 1',
+        groupTitle: 'Disc 1',
+      );
+      final localSingle = testMusicTrack(
+        name: 'Standalone audio',
+        path: '/library/single.mp3',
+        groupKey: '/library',
+        groupTitle: 'Library',
+        isSingle: true,
+      );
+      await tester.runAsync(() async {
+        fixture.library.addWatchedLibrary('/library');
+        fixture.library.addTracks([localTrack, localSingle], persist: false);
+        await fixture.library.ensureCardSnapshot();
+      });
+      final source = fixture.playback.createTrackSession(
+        playlistTrack,
+        customQueueTracks: [playlistTrack],
+      );
+      final queue = fixture.playback.createPlaybackQueue('Queue');
+      fixture.playbackService.syncSlice(
+        activeSessions: [source, queue],
+        playingSessionCount: 0,
+        focusedSessionId: source.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      await tester.pumpWidget(
+        fixture.build(PlaybackQueueAudioEditPage(sessionId: queue.id)),
+      );
+      await tester.pumpAndSettle();
+
+      final i18n = fixture.languageProvider;
+      final playlist = find.text(i18n.tr('playback_sessions'));
+      final library = find.text(i18n.tr('show_local_library'));
+      Finder capsule(Finder tab) => find.ancestor(
+        of: tab,
+        matching: find.byType(HeaderFloatingSurface),
+      );
+      Finder row(String label) => find.byWidgetPredicate(
+        (widget) => widget is FileTreeRow && widget.title == label,
+      );
+      expect(
+        tester.getCenter(library).dx,
+        greaterThan(tester.getCenter(playlist).dx),
+      );
+      expect(capsule(playlist), findsOneWidget);
+      expect(capsule(library), findsNothing);
+      expect(row(playlistTrack.displayName), findsOneWidget);
+      expect(row('Local work'), findsNothing);
+
+      await tester.tap(library);
+      await tester.pumpAndSettle();
+      expect(capsule(library), findsOneWidget);
+      expect(capsule(playlist), findsNothing);
+      expect(row(playlistTrack.displayName), findsNothing);
+      expect(row(localSingle.displayName), findsOneWidget);
+      await tester.tap(row('Local work'));
+      await tester.pumpAndSettle();
+      await tester.tap(row('Disc 1'));
+      await tester.pumpAndSettle();
+      expect(row(localTrack.displayName), findsOneWidget);
+      await tester.tap(find.byTooltip(i18n.tr('add_work_to_queue')));
+      await tester.pumpAndSettle();
+      final added = queue.playbackQueue!.entries.single;
+      expect(
+        PathMatcher.equalsNormalized(added.workRootPath!, '/library/Local work'),
+        isTrue,
+      );
+      expect(added.tracks.single.path, localTrack.path);
+
+      await tester.tap(playlist);
+      await tester.pumpAndSettle();
+      expect(capsule(playlist), findsOneWidget);
+      expect(capsule(library), findsNothing);
+      expect(row(playlistTrack.displayName), findsOneWidget);
+      expect(row(localSingle.displayName), findsNothing);
+      expect(queue.playbackQueue!.entries.single.id, added.id);
+      expect(tester.takeException(), isNull);
     },
     variant: const TargetPlatformVariant({
       TargetPlatform.android,
@@ -8165,31 +8825,35 @@ void main() {
           PlaybackQueueAudioEditPage(sessionId: queueSession.id),
           overrides: [
             libraryDetailForTargetProvider.overrideWith(
-              (_, target) =>
-                  AudioDetail.empty(target).copyWith(workTitle: 'Saved work title'),
+              (_, target) => AudioDetail.empty(
+                target,
+              ).copyWith(workTitle: 'Saved work title'),
             ),
           ],
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Saved work title'), findsOneWidget);
+      expect(find.text('Saved work title', findRichText: true), findsOneWidget);
       expect(find.text('Disc 1'), findsNothing);
       expect(find.text('Track 1', findRichText: true), findsOneWidget);
 
-      // Add to queue and verify added entry also displays work title
+      // Both panes resolve the work folder label from the same setting.
       final addAudio = find.byTooltip(
-        fixture.languageProvider.tr('add_audio_to_queue'),
+        fixture.languageProvider.tr('add_work_to_queue'),
       );
       await tester.tap(addAudio);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
 
-      expect(find.text('Saved work title'), findsNWidgets(2));
+      expect(
+        find.text('Saved work title', findRichText: true),
+        findsNWidgets(2),
+      );
       await fixture.settings.setWorkNameDisplay(WorkNameDisplay.folderName);
       await tester.pumpAndSettle();
-      expect(find.text('RJ123456_Work'), findsNWidgets(2));
-      expect(find.text('Saved work title'), findsNothing);
+      expect(find.text('RJ123456_Work', findRichText: true), findsNWidgets(2));
+      expect(find.text('Saved work title', findRichText: true), findsNothing);
       expect(find.text('Disc 1'), findsNothing);
       await tester.pump(const Duration(seconds: 1));
     },

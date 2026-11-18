@@ -374,6 +374,21 @@ final class PlaybackFacade {
     this,
   ).addPlaybackQueueEntries(sessionId, entries);
 
+  Future<PlaybackQueueEntry?> loadQueueEntry(
+    String sessionId,
+    String entryId,
+  ) => PlaybackSessionPersistenceCoordinator(
+    this,
+  ).loadQueueEntry(sessionId, entryId);
+
+  Future<List<MusicTrack>?> resolveQueueEntryTracksForEdit(
+    String sessionId,
+    PlaybackQueueEntry snapshot,
+    List<int> trackIndices,
+  ) => PlaybackSessionPersistenceCoordinator(
+    this,
+  ).resolveQueueEntryTracksForEdit(sessionId, snapshot, trackIndices);
+
   Future<List<PlaybackQueueEntryPreview>> loadQueueEntryPreviews(
     String sessionId, {
     required int start,
@@ -1123,10 +1138,13 @@ final class PlaybackFacade {
     tracks: tracks,
     workRootPath: workRootPath,
   );
-  Future<void> removePlaybackQueueEntry(String sessionId, String entryId) =>
-      PlaybackQueuePathCoordinator(
-        this,
-      ).removePlaybackQueueEntry(sessionId, entryId);
+  Future<void> removePlaybackQueueEntry(
+    String sessionId,
+    String entryId, {
+    List<MusicTrack>? tracks,
+  }) => PlaybackQueuePathCoordinator(
+    this,
+  ).removePlaybackQueueEntry(sessionId, entryId, tracks: tracks);
   Future<void> reorderPlaybackQueueEntry(
     String sessionId,
     int oldIndex,

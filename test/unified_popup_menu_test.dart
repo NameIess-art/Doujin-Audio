@@ -97,43 +97,53 @@ void main() {
   });
 
   for (final atLeft in [false, true]) {
-    testWidgets('context menu scales around its clamped pointer (left: $atLeft)', (
-      tester,
-    ) async {
-      late BuildContext hostContext;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Builder(builder: (context) {
-            hostContext = context;
-            return const Scaffold();
-          }),
-        ),
-      );
-      final point = Offset(atLeft ? 2 : 798, 596);
-      final result = showUnifiedContextMenu<int>(
-        context: hostContext,
-        globalPosition: point,
-        entries: const [UnifiedMenuEntry.action(value: 1, label: 'Anchored')],
-      );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 45));
-      final menuTransform = find.ancestor(
-        of: find.text('Anchored'),
-        matching: find.byElementPredicate(
-          (element) => element is RenderObjectElement &&
-              element.renderObject is RenderTransform,
-        ),
-      ).first;
-      final box = tester.renderObject<RenderTransform>(menuTransform).child!;
-      final corner = Offset(atLeft ? 0 : box.size.width, box.size.height);
-      final pinnedPoint = box.localToGlobal(corner);
-      expect(box.getTransformTo(null).entry(0, 0), lessThan(1));
-      await tester.pumpAndSettle();
-      expect(box.localToGlobal(corner), pinnedPoint);
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-      await tester.pumpAndSettle();
-      expect(await result, isNull);
-    });
+    testWidgets(
+      'context menu grows toward its final bounds (left: $atLeft)',
+      (tester) async {
+        late BuildContext hostContext;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Builder(
+              builder: (context) {
+                hostContext = context;
+                return const Scaffold();
+              },
+            ),
+          ),
+        );
+        final result = showUnifiedContextMenu<int>(
+          context: hostContext,
+          globalPosition: Offset(atLeft ? 2 : 798, 596),
+          entries: const [UnifiedMenuEntry.action(value: 1, label: 'Anchored')],
+        );
+        await tester.pump();
+        final menuTransform = find.ancestor(
+          of: find.text('Anchored'),
+          matching: find.byElementPredicate(
+            (element) =>
+                element is RenderObjectElement &&
+                element.renderObject is RenderTransform,
+          ),
+        ).first;
+        final box = tester.renderObject<RenderTransform>(menuTransform).child!;
+        final corner = Offset(atLeft ? 0 : box.size.width, box.size.height);
+        final pinnedPoint = box.localToGlobal(corner);
+        var scale = box.getTransformTo(null).entry(0, 0);
+        expect(scale, lessThan(1));
+        for (var frame = 0; frame < 14; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          final nextScale = box.getTransformTo(null).entry(0, 0);
+          expect(nextScale, inInclusiveRange(scale, 1));
+          expect(box.localToGlobal(corner), pinnedPoint);
+          scale = nextScale;
+        }
+        expect(scale, 1);
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(await result, isNull);
+      },
+      variant: const TargetPlatformVariant({TargetPlatform.windows}),
+    );
   }
 
   testWidgets('context menu highlights the first hover at its animated edge', (

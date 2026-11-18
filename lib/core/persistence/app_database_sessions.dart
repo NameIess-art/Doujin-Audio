@@ -151,6 +151,38 @@ extension AppDatabaseSessions on AppDatabase {
     );
   }
 
+  Future<PlaybackQueueEntryRecord?> loadQueueEntry(
+    String sessionId,
+    String entryId,
+  ) async {
+    final rows = await _runDatabaseRead(
+      (db) => db.rawQuery(
+        '''
+      SELECT e.entry_id, e.kind, e.title, e.work_root_path,
+        t.track_path, t.display_name, t.group_key, t.group_title,
+        t.group_subtitle, t.is_single, t.is_video, t.duration_ms,
+        t.file_size_bytes, t.remote_cover_url, t.remote_metadata_kind,
+        t.remote_metadata_json
+      FROM playback_queue_entries e
+      LEFT JOIN playback_queue_entry_tracks t ON t.session_id = e.session_id
+        AND t.entry_id = e.entry_id
+      WHERE e.session_id = ? AND e.entry_id = ?
+      ORDER BY t.sort_order
+    ''',
+        [sessionId, entryId],
+      ),
+    );
+    if (rows.isEmpty) return null;
+    return compute(
+      (rows) => _queueEntryFromRows(
+        rows.first,
+        rows.first['track_path'] == null ? const [] : rows,
+      ),
+      rows,
+      debugLabel: 'read_queue_entry',
+    );
+  }
+
   Future<List<PlaybackQueueEntryPreviewRecord>> loadQueueEntryPage(
     String sessionId, {
     required int start,

@@ -337,6 +337,12 @@ void main() {
     );
     expect(emptyFolder, findsOneWidget);
     await tester.tap(find.text('Folder'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 215));
+    final collapsing = find
+        .ancestor(of: emptyFolder, matching: find.byType(SizeTransition))
+        .first;
+    expect(tester.getSize(collapsing).height, inExclusiveRange(0, 1));
     await tester.pumpAndSettle();
     expect(emptyFolder, findsNothing);
     await tester.tap(find.text('Folder'));

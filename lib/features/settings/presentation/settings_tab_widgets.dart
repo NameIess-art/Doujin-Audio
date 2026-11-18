@@ -1,9 +1,5 @@
 part of 'settings_tab.dart';
 
-const double _settingsTileHeight = 64;
-const double _settingsTileTitleFontSize = 16;
-const double _settingsTileSubtitleFontSize = 13;
-
 Widget _settingsTitle(String text) {
   return Text(text, softWrap: true, overflow: TextOverflow.visible);
 }
@@ -71,63 +67,6 @@ Widget _settingsDropdown<T>(
       multilineItems: true,
     ),
   );
-}
-
-class _SettingsTileTheme extends StatelessWidget {
-  const _SettingsTileTheme({required this.child})
-    : minTileHeight = _settingsTileHeight,
-      titleFontSize = _settingsTileTitleFontSize,
-      subtitleFontSize = _settingsTileSubtitleFontSize,
-      titleFontWeight = null,
-      subtitleFontWeight = null;
-
-  const _SettingsTileTheme.categories({required this.child})
-    : minTileHeight = _settingsTileHeight,
-      titleFontSize = 18,
-      subtitleFontSize = 14,
-      titleFontWeight = FontWeight.bold,
-      subtitleFontWeight = FontWeight.normal;
-
-  final Widget child;
-  final double minTileHeight;
-  final double titleFontSize;
-  final double subtitleFontSize;
-  final FontWeight? titleFontWeight;
-  final FontWeight? subtitleFontWeight;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final titleTextStyle = theme.textTheme.titleMedium?.copyWith(
-      fontSize: titleFontSize,
-      fontWeight: titleFontWeight,
-    );
-    final subtitleTextStyle = theme.textTheme.bodyMedium?.copyWith(
-      fontSize: subtitleFontSize,
-      fontWeight: subtitleFontWeight,
-      color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.68),
-    );
-
-    return Theme(
-      data: theme.copyWith(
-        textTheme: theme.textTheme.copyWith(
-          titleMedium: titleTextStyle,
-          bodyMedium: subtitleTextStyle,
-        ),
-      ),
-      child: ListTileTheme.merge(
-        visualDensity: const VisualDensity(horizontal: -1),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-        minTileHeight: minTileHeight,
-        iconColor: theme.colorScheme.primary,
-        minVerticalPadding: 2,
-        titleTextStyle: titleTextStyle,
-        subtitleTextStyle: subtitleTextStyle,
-        titleAlignment: ListTileTitleAlignment.center,
-        child: child,
-      ),
-    );
-  }
 }
 
 class _SettingsSectionCard extends StatelessWidget {

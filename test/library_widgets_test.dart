@@ -153,6 +153,10 @@ class _NoCoverArtworkCacheService extends CoverArtworkCacheService {
       SynchronousFuture<String?>(null);
 }
 
+Finder _libraryEditAction(String tooltip) => find.byWidgetPredicate(
+  (widget) => widget is IconButton && widget.tooltip == tooltip,
+);
+
 Finder get _libraryListViews =>
     find.byWidgetPredicate((widget) => widget is ListView);
 
@@ -4368,28 +4372,24 @@ void main() {
     final rootExcludeButton = find
         .descendant(
           of: rootFolderTile,
-          matching: find.widgetWithText(
-            TextButton,
-            languageProvider.tr('exclude'),
-          ),
+          matching: _libraryEditAction(languageProvider.tr('exclude')),
         )
         .first;
     expect(tester.getSize(rootExcludeButton).height, greaterThanOrEqualTo(44));
-    final rootButtonHighlight = find.descendant(
-      of: rootExcludeButton,
-      matching: find.byType(InkWell),
+    expect(
+      (tester.widget<IconButton>(rootExcludeButton).icon as Icon).icon,
+      Icons.block_rounded,
     );
-    expect(rootButtonHighlight, findsOneWidget);
-    expect(tester.getSize(rootButtonHighlight).height, closeTo(36, 0.001));
 
     await tester.tap(
-      find.widgetWithText(TextButton, languageProvider.tr('exclude')).first,
+      _libraryEditAction(languageProvider.tr('exclude')).first,
     );
     await tester.pump();
 
     expect(find.text('WorkA', findRichText: true), findsOneWidget);
     expect(find.text('Disc1', findRichText: true), findsNothing);
-    expect(find.text(languageProvider.tr('restore')), findsOneWidget);
+    expect(_libraryEditAction(languageProvider.tr('restore')), findsOneWidget);
+    expect(find.text(languageProvider.tr('restore')), findsNothing);
     expect(
       tester.widget<Icon>(folderIcon).color,
       Theme.of(tester.element(rootFolderHeader)).colorScheme.onSurfaceVariant,
@@ -4397,8 +4397,8 @@ void main() {
     expect(find.text(languageProvider.tr('excluded')), findsNothing);
     expect(
       tester
-          .widget<TextButton>(
-            find.widgetWithText(TextButton, languageProvider.tr('restore')),
+          .widget<IconButton>(
+            _libraryEditAction(languageProvider.tr('restore')),
           )
           .style
           ?.foregroundColor,
@@ -4422,14 +4422,14 @@ void main() {
     expect(tester.widget<FileTreeRow>(childFolderHeader).titleMaxLines, 1);
     expect(tester.widget<FileTreeRow>(childFolderHeader).subtitleMaxLines, 1);
     final disabledChildActions = tester
-        .widgetList<TextButton>(
-          find.widgetWithText(TextButton, languageProvider.tr('exclude')),
+        .widgetList<IconButton>(
+          _libraryEditAction(languageProvider.tr('exclude')),
         )
         .where((button) => button.onPressed == null);
     expect(disabledChildActions, isNotEmpty);
 
     await tester.tap(
-      find.widgetWithText(TextButton, languageProvider.tr('restore')).first,
+      _libraryEditAction(languageProvider.tr('restore')).first,
     );
     await _waitForLibraryProjection(
       tester,
@@ -4441,7 +4441,8 @@ void main() {
     expect(find.text('1 \u9996\u97f3\u9891', findRichText: true), findsWidgets);
 
     expect(find.text('Disc1', findRichText: true), findsOneWidget);
-    expect(find.text(languageProvider.tr('exclude')), findsWidgets);
+    expect(_libraryEditAction(languageProvider.tr('exclude')), findsWidgets);
+    expect(find.text(languageProvider.tr('exclude')), findsNothing);
     await finishLibraryTest(tester, fixture);
   });
 
@@ -4974,7 +4975,8 @@ void main() {
 
     await pumpUntilFound(
       tester,
-      find.widgetWithText(TextButton, languageProvider.tr('exclude')).first
+      _libraryEditAction(languageProvider.tr('exclude'))
+          .first
           .hitTestable(),
     );
     await tester.pumpAndSettle();
@@ -4998,19 +5000,20 @@ void main() {
     }
 
     await tester.tap(
-      find.widgetWithText(TextButton, languageProvider.tr('exclude')).first,
+      _libraryEditAction(languageProvider.tr('exclude')).first,
     );
     await tester.pumpAndSettle();
 
     await tester.tap(
-      find.widgetWithText(TextButton, languageProvider.tr('exclude')).first,
+      _libraryEditAction(languageProvider.tr('exclude')).first,
     );
     await tester.pumpAndSettle();
 
     expect(find.text(firstTitle), findsOneWidget);
     expect(find.text(secondTitle), findsOneWidget);
     expect(find.textContaining('primary%3A'), findsNothing);
-    expect(find.text(languageProvider.tr('restore')), findsNWidgets(2));
+    expect(_libraryEditAction(languageProvider.tr('restore')), findsNWidgets(2));
+    expect(find.text(languageProvider.tr('restore')), findsNothing);
     expect(find.text(languageProvider.tr('excluded')), findsNothing);
     expect(tester.takeException(), isNull);
 
@@ -5022,10 +5025,7 @@ void main() {
       );
       final restoreFinder = find.descendant(
         of: tileFinder,
-        matching: find.widgetWithText(
-          TextButton,
-          languageProvider.tr('restore'),
-        ),
+        matching: _libraryEditAction(languageProvider.tr('restore')),
       );
       expect(tileFinder, findsOneWidget);
       expect(restoreFinder, findsOneWidget);
@@ -5039,14 +5039,10 @@ void main() {
         tester.widget<Icon>(audioIcon).color,
         Theme.of(tester.element(tileFinder)).colorScheme.onSurfaceVariant,
       );
-      expect(tester.widget<TextButton>(restoreFinder).style?.foregroundColor, isNull);
+      final restoreButton = tester.widget<IconButton>(restoreFinder);
+      expect(restoreButton.style?.foregroundColor, isNull);
       expect(tester.getSize(restoreFinder).height, greaterThanOrEqualTo(44));
-      final restoreHighlight = find.descendant(
-        of: restoreFinder,
-        matching: find.byType(InkWell),
-      );
-      expect(restoreHighlight, findsOneWidget);
-      expect(tester.getSize(restoreHighlight).height, closeTo(36, 0.001));
+      expect((restoreButton.icon as Icon).icon, Icons.restore_rounded);
 
       final path = title == firstTitle ? firstTrackPath : secondTrackPath;
       final surfaceFinder = find.byKey(
@@ -5057,6 +5053,10 @@ void main() {
       final tileRect = tester.getRect(surfaceFinder);
       final titleRect = tester.getRect(find.text(title));
       final restoreRect = tester.getRect(restoreFinder);
+      final labels = find
+          .ancestor(of: find.text(title), matching: find.byType(Column))
+          .first;
+      expect(restoreRect.left - tester.getRect(labels).right, closeTo(4, 0.01));
       expect(tileRect.height, initialSurfaceHeights[path]);
       expect(titleRect.right, lessThanOrEqualTo(restoreRect.left));
       expect(restoreRect.right, lessThanOrEqualTo(tileRect.right));
@@ -5166,27 +5166,27 @@ void main() {
         expect(find.byIcon(Icons.chevron_right_rounded), findsNothing);
         final parentButton = find.descendant(
           of: folderSurface,
-          matching: find.byType(TextButton),
+          matching: find.byType(IconButton),
         );
         await tester.tap(parentButton);
         await tester.pump();
         expect(find.text(title), findsOneWidget);
         final trackButton = find.descendant(
           of: trackSurface,
-          matching: find.byType(TextButton),
+          matching: find.byType(IconButton),
         );
-        expect(tester.widget<TextButton>(trackButton).onPressed, isNull);
+        expect(tester.widget<IconButton>(trackButton).onPressed, isNull);
         await tester.tap(parentButton);
         await tester.pump();
-        expect(tester.widget<TextButton>(trackButton).onPressed, isNotNull);
+        expect(tester.widget<IconButton>(trackButton).onPressed, isNotNull);
+        await tester.pumpAndSettle();
         await tester.tap(find.text('work'));
         await tester.pump();
-        await tester.pump(const Duration(milliseconds: 55));
         if (!reduceMotion) {
-          expect(tester.getSize(reveal).height, greaterThan(0));
-          expect(tester.getSize(reveal).height, lessThan(expandedHeight));
+          await tester.pump(const Duration(milliseconds: 215));
+          expect(tester.getSize(reveal).height, inExclusiveRange(0, 1));
+          await tester.pump(const Duration(milliseconds: 16));
         }
-        await tester.pump(const Duration(milliseconds: 315));
         expect(find.text(title), findsNothing);
         expect(tester.getSize(folderRow).height, collapsedHeight);
         await tester.tap(find.text('work'));

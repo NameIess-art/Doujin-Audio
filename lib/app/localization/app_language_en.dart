@@ -1039,7 +1039,6 @@ const Map<String, String> appLanguageEn = {
   'remove_queue': 'Remove queue',
   'remove_queue_confirm': 'Remove this queue and its settings?',
   'queue_added_audio': 'Added to queue',
-  'playback_list_audio': 'Playlist audio',
   'add_audio_to_queue': 'Add audio to queue',
   'add_work_to_queue': 'Add work to queue',
   'empty_playback_queue': 'No audio in queue',

@@ -100,7 +100,7 @@ internal class CoverArtworkOperations(
         modifiedAtMs: Long? = null,
         sizeBytes: Long? = null
     ): String? {
-        val extension = name.substringAfterLast('.', "").ifBlank { "img" }
+        val extension = sanitizeCacheExtension(name, "img")
         val document = if (modifiedAtMs == null || sizeBytes == null) {
             runCatching { DocumentFile.fromSingleUri(context, uri) }.getOrNull()
         } else {

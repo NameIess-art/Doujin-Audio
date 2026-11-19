@@ -1,7 +1,9 @@
 import '../../../settings/presentation/settings_providers.dart';
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/localization/app_language_provider.dart';
@@ -38,7 +40,7 @@ Future<void> _stageEqualizerPresetRemoval(
     ),
   );
   if (staged && context.mounted) {
-    showPlaybackRemovalFeedback(context, service, icon: Icons.tune_rounded);
+    showPlaybackRemovalFeedback(context, service, icon: Icons.equalizer_rounded);
   } else if (staged) {
     await service.commitPending();
   }
@@ -76,7 +78,7 @@ class AudioFeaturesPage extends ConsumerWidget {
         FeatureSwitchTile(
           title: i18n.tr('skip_silence'),
           subtitle: i18n.tr('skip_silence_desc'),
-          icon: Icons.fast_forward_rounded,
+          icon: Icons.keyboard_double_arrow_right_rounded,
           value: effects.skipSilenceEnabled,
           onChanged: (value) {
             AppInteractionFeedback.trigger(
@@ -89,7 +91,7 @@ class AudioFeaturesPage extends ConsumerWidget {
         FeatureSwitchTile(
           title: i18n.tr('noise_reduction'),
           subtitle: i18n.tr('noise_reduction_desc'),
-          icon: Icons.graphic_eq_rounded,
+          icon: Icons.noise_control_off_rounded,
           value: effects.noiseReductionEnabled,
           onChanged: (value) {
             AppInteractionFeedback.trigger(
@@ -210,7 +212,7 @@ class FeatureSwitchTile extends StatelessWidget {
   }
 }
 
-class VolumeBalancePage extends ConsumerWidget {
+class VolumeBalancePage extends ConsumerStatefulWidget {
   const VolumeBalancePage({
     super.key,
     required this.session,
@@ -221,107 +223,287 @@ class VolumeBalancePage extends ConsumerWidget {
   final PlaybackFacade playback;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<VolumeBalancePage> createState() => _VolumeBalancePageState();
+}
+
+class _VolumeBalancePageState extends ConsumerState<VolumeBalancePage> {
+  static const _thumbSize = 24.0;
+  static final _directions = {
+    LogicalKeyboardKey.arrowLeft: const Offset(-0.1, 0),
+    LogicalKeyboardKey.arrowRight: const Offset(0.1, 0),
+    LogicalKeyboardKey.arrowUp: const Offset(0, 0.1),
+    LogicalKeyboardKey.arrowDown: const Offset(0, -0.1),
+  };
+
+  final _padFocus = FocusNode();
+  Offset? _dragPosition;
+  int? _activePointer;
+
+  @override
+  void dispose() {
+    _padFocus.dispose();
+    super.dispose();
+  }
+
+  double _step(double value) => (value.clamp(-1, 1) * 10).round() / 10;
+
+  Offset _quantize(Offset position) =>
+      Offset(_step(position.dx), _step(position.dy));
+
+  Offset _takeStep(Offset position, Offset change) => Offset(
+    change.dx == 0 ? position.dx : _step(position.dx + change.dx),
+    change.dy == 0 ? position.dy : _step(position.dy + change.dy),
+  );
+
+  void _commit(Offset position) {
+    unawaited(
+      widget.playback.setSessionSoundField(
+        widget.session.id,
+        panning: position.dx,
+        frontBack: position.dy,
+      ),
+    );
+  }
+
+  void _cancelDrag() {
+    _activePointer = null;
+    if (_dragPosition == null) return;
+    AppInteractionFeedback.resetContinuous();
+    setState(() => _dragPosition = null);
+  }
+
+  Widget _buildPad({
+    required Offset current,
+    required String label,
+    required String value,
+  }) {
+    final colors = Theme.of(context).colorScheme;
+    final axisColor = colors.outlineVariant;
+    final position = _dragPosition ?? current;
+    return Focus(
+      focusNode: _padFocus,
+      onFocusChange: (_) => setState(() {}),
+      onKeyEvent: (_, event) {
+        final change = _directions[event.logicalKey];
+        if (change == null) return KeyEventResult.ignored;
+        if (event is KeyDownEvent || event is KeyRepeatEvent) {
+          final next = _takeStep(current, change);
+          if (next != current && _dragPosition == null) _commit(next);
+        }
+        return KeyEventResult.handled;
+      },
+      child: Semantics(
+        label: label,
+        value: value,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            Offset positionAt(Offset local) {
+              final width = constraints.maxWidth - _thumbSize;
+              final height = constraints.maxHeight - _thumbSize;
+              return _quantize(
+                Offset(
+                  width > 0 ? (2 * local.dx - constraints.maxWidth) / width : 0,
+                  (constraints.maxHeight - 2 * local.dy) / height,
+                ),
+              );
+            }
+
+            void preview(Offset local) {
+              final next = positionAt(local);
+              if (_dragPosition == next) return;
+              AppInteractionFeedback.continuous(next);
+              setState(() => _dragPosition = next);
+            }
+
+            return MouseRegion(
+              cursor: SystemMouseCursors.precise,
+              child: RawGestureDetector(
+                key: const ValueKey('sound_field_pad'),
+                excludeFromSemantics: true,
+                // Reserve drags that start here before the vertical scroll view
+                // applies its smaller drag threshold.
+                gestures: {
+                  EagerGestureRecognizer:
+                      GestureRecognizerFactoryWithHandlers<
+                        EagerGestureRecognizer
+                      >(
+                        () => EagerGestureRecognizer(
+                          allowedButtonsFilter: (buttons) =>
+                              buttons == kPrimaryButton,
+                        ),
+                        (_) {},
+                      ),
+                },
+                child: Listener(
+                  behavior: HitTestBehavior.opaque,
+                  onPointerDown: (event) {
+                    if (_activePointer != null ||
+                        event.buttons != kPrimaryButton) {
+                      return;
+                    }
+                    _activePointer = event.pointer;
+                    _padFocus.requestFocus();
+                    preview(event.localPosition);
+                  },
+                  onPointerMove: (event) {
+                    if (_activePointer == event.pointer) {
+                      preview(event.localPosition);
+                    }
+                  },
+                  onPointerUp: (event) {
+                    if (_activePointer != event.pointer) return;
+                    final target = positionAt(event.localPosition);
+                    _cancelDrag();
+                    if (target != current) _commit(target);
+                  },
+                  onPointerCancel: (event) {
+                    if (_activePointer == event.pointer) _cancelDrag();
+                  },
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: colors.surfaceContainerHighest.withValues(
+                        alpha: 0.4,
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: _padFocus.hasFocus ? colors.primary : axisColor,
+                      ),
+                    ),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Center(
+                          child: Divider(
+                            height: 1,
+                            thickness: 1,
+                            color: axisColor,
+                          ),
+                        ),
+                        Center(
+                          child: VerticalDivider(
+                            width: 1,
+                            thickness: 1,
+                            color: axisColor,
+                          ),
+                        ),
+                        Align(
+                          alignment: Alignment(position.dx, -position.dy),
+                          child: SizedBox.square(
+                            dimension: _thumbSize,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: colors.primary,
+                                border: Border.all(
+                                  color: colors.onPrimary,
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
-    final panning =
-        ref.watch(
-          sessionDetailTransportProvider(
-            session.id,
-          ).select((state) => state?.audioEffects.panning),
-        ) ??
-        session.audioEffects.panning;
+    final session = widget.session;
+    final (panning, frontBack) = ref.watch(
+      sessionDetailTransportProvider(session.id).select((state) {
+        final effects = state?.audioEffects ?? session.audioEffects;
+        return (effects.panning, effects.frontBack);
+      }),
+    );
+    final current = Offset(panning, frontBack);
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    final colorScheme = Theme.of(context).colorScheme;
+    final left = i18n.tr('sound_field_left');
+    final right = i18n.tr('sound_field_right');
+    final front = i18n.tr('sound_field_front');
+    final rear = i18n.tr('sound_field_rear');
+    final preview = _dragPosition ?? current;
+    final semanticValue = [
+      if (preview.dx != 0)
+        '${preview.dx < 0 ? left : right} ${(preview.dx.abs() * 100).round()}%',
+      if (preview.dy != 0)
+        '${preview.dy < 0 ? rear : front} ${(preview.dy.abs() * 100).round()}%',
+    ];
+    const buttonHeight = 48.0;
 
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Icon(
-                  Icons.headphones_outlined,
-                  color: colorScheme.onSurfaceVariant,
+    Widget direction(String label, LogicalKeyboardKey key, {String? glyph}) {
+      final next = _takeStep(current, _directions[key]!);
+      return TextButton(
+        onPressed: next == current
+            ? null
+            : () {
+                AppInteractionFeedback.trigger(
+                  AppInteractionFeedbackType.selection,
+                );
+                _commit(next);
+              },
+        style: TextButton.styleFrom(
+          minimumSize: const Size(buttonHeight, buttonHeight),
+        ),
+        child: Text(glyph ?? label, semanticsLabel: label),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        child: SizedBox(
+          height: constraints.maxHeight.clamp(200.0, double.infinity),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 8),
+              Center(child: direction(front, LogicalKeyboardKey.arrowUp)),
+              Expanded(
+                child: Row(
+                  children: [
+                    direction(left, LogicalKeyboardKey.arrowLeft, glyph: 'L'),
+                    Expanded(
+                      child: _buildPad(
+                        current: current,
+                        label: i18n.tr('volume_balance'),
+                        value: semanticValue.isEmpty
+                            ? i18n.tr('sound_field_centered')
+                            : semanticValue.join(', '),
+                      ),
+                    ),
+                    direction(right, LogicalKeyboardKey.arrowRight, glyph: 'R'),
+                  ],
                 ),
-                Icon(
-                  Icons.headphones_outlined,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Text(
-                  'L',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.primary,
-                  ),
-                ),
-                Expanded(
-                  child: Slider(
-                    value: panning,
-                    min: -1.0,
-                    divisions: 20,
-                    label: panning == 0 ? '0' : panning.toStringAsFixed(1),
-                    onChanged: (value) {
-                      AppInteractionFeedback.continuous((value * 10).round());
-                      UiInteractionCoordinator.instance.scheduleThrottledCommit(
-                        key: 'session_panning:${session.id}',
-                        commit: () => unawaited(
-                          playback.setSessionPanning(session.id, value),
-                        ),
-                      );
-                    },
-                    onChangeEnd: (value) {
-                      AppInteractionFeedback.resetContinuous();
-                      UiInteractionCoordinator.instance.cancelThrottledCommit(
-                        'session_panning:${session.id}',
-                      );
-                      unawaited(
-                        playback.setSessionPanning(
-                          session.id,
-                          value.abs() < 0.1 ? 0.0 : value,
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                Text(
-                  'R',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.primary,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            FilledButton.tonal(
-              key: const ValueKey<String>('restore_volume_balance'),
-              style: sessionDetailResetButtonStyle(context),
-              onPressed: panning.abs() < 0.001
-                  ? null
-                  : () {
-                      AppInteractionFeedback.trigger(
-                        AppInteractionFeedbackType.selection,
-                      );
-                      UiInteractionCoordinator.instance.cancelThrottledCommit(
-                        'session_panning:${session.id}',
-                      );
-                      unawaited(playback.setSessionPanning(session.id, 0.0));
-                    },
-              child: Text(i18n.tr('restore_default')),
-            ),
-          ],
+              ),
+              Center(child: direction(rear, LogicalKeyboardKey.arrowDown)),
+              const SizedBox(height: 8),
+              FilledButton.tonal(
+                key: const ValueKey<String>('restore_volume_balance'),
+                style: sessionDetailResetButtonStyle(context),
+                onPressed: current == Offset.zero
+                    ? null
+                    : () {
+                        _cancelDrag();
+                        AppInteractionFeedback.trigger(
+                          AppInteractionFeedbackType.selection,
+                        );
+                        _commit(Offset.zero);
+                      },
+                child: Text(i18n.tr('restore_default')),
+              ),
+            ],
+          ),
         ),
       ).withWindowsSmoothScroll(),
     );
@@ -588,10 +770,9 @@ class EqualizerPage extends ConsumerWidget {
     final strings = MaterialLocalizations.of(context);
     final name = await showAppTextInputPanel<String>(
       context: context,
-      barrierLabel: i18n.tr('close'),
       header: AppEditPanelHeader(
         title: i18n.tr('eq_save_preset'),
-        icon: Icons.graphic_eq_rounded,
+        icon: Icons.equalizer_rounded,
       ),
       initialValue: '',
       decoration: InputDecoration(labelText: i18n.tr('eq_preset_name')),
@@ -695,9 +876,6 @@ class _EqBandSliderState extends State<EqBandSlider> {
           child: Text(
             '${activeValue.toStringAsFixed(1)} dB',
             textAlign: TextAlign.end,
-            style: const TextStyle(
-              fontFeatures: [FontFeature.tabularFigures()],
-            ),
           ),
         ),
       ],

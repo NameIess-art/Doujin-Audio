@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/media/path_display.dart';
+import '../../../core/widgets/library_edit_icon.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../application/library_entry_editor_service.dart';
 import 'library_removal_feedback.dart';
@@ -48,7 +49,7 @@ class LibraryEditPage extends ConsumerWidget {
         libraryPath: libraryPath,
         entryEditorService: entryEditorService,
         headerBuilder: (context, searchBar) => TopPageHeader(
-          icon: Icons.edit_note_rounded,
+          iconWidget: const LibraryEditIcon(),
           title: i18n.tr('edit_library'),
           titleSuffix: Text(
             PathDisplay.folderName(libraryPath),

@@ -42,7 +42,8 @@ internal data class NativePrepareSessionArguments(
             repeatOne, repeatAll, shuffle, queueStartIndex,
             items.map { StoredNativePlaybackQueueItem(it.path, it.uri, it.title, it.subtitle,
                 it.artUri, it.candidateUris, it.usageDescriptor, it.clipStartMs, it.clipEndMs, it.httpHeaders) }, audioEffects.channelSwapEnabled,
-            playing = false, playWhenReady = false, isTemporary = isTemporary
+            playing = false, playWhenReady = false, isTemporary = isTemporary,
+            frontBack = audioEffects.frontBack
         )
     }
 
@@ -208,7 +209,8 @@ internal object NativePlaybackCommandPayloads {
             eqBandLevels = parseEqBandLevels(rawEffects.requiredList("eqBandLevels")),
             channelSwapEnabled = rawEffects.requiredBoolean("channelSwapEnabled"),
             volumeNormalizationEnabled = rawEffects.requiredBoolean("volumeNormalizationEnabled"),
-            panning = rawEffects.requiredFiniteDouble("panning", -1.0..1.0).toFloat()
+            panning = rawEffects.requiredFiniteDouble("panning", -1.0..1.0).toFloat(),
+            frontBack = rawEffects.requiredFiniteDouble("frontBack", -1.0..1.0).toFloat()
         )
     }
 

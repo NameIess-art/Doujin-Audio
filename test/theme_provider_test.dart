@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_audio_features.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,7 +17,57 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    'desktop typography follows the platform across themes and locales',
+    'changing a digit preserves the position of adjacent text',
+    (tester) async {
+      await tester.runAsync(() async {
+        final font = FontLoader('Outfit')
+          ..addFont(rootBundle.load('assets/fonts/Outfit-Variable.ttf'));
+        await font.load();
+      });
+      final provider = ThemeProvider(loadPersistedState: false);
+      addTearDown(provider.dispose);
+
+      const valueKey = ValueKey('changing_value');
+      const unitKey = ValueKey('fixed_unit');
+      double? previousUnitPosition;
+      for (var digit = 0; digit <= 9; digit++) {
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: provider.lightTheme,
+            home: Scaffold(
+              body: Row(
+                children: [
+                  Text(
+                    '01:0$digit',
+                    key: valueKey,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const Text(' min', key: unitKey),
+                ],
+              ),
+            ),
+          ),
+        );
+
+        expect(
+          DefaultTextStyle.of(
+            tester.element(find.byKey(valueKey)),
+          ).style.fontFeatures,
+          contains(const FontFeature.tabularFigures()),
+        );
+        final unitPosition = tester.getTopLeft(find.byKey(unitKey)).dx;
+        previousUnitPosition ??= unitPosition;
+        expect(unitPosition, closeTo(previousUnitPosition, 0.001));
+      }
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'typography uses tabular digits and platform sizes across themes and locales',
     (tester) async {
       final platform = defaultTargetPlatform;
       final provider = ThemeProvider(loadPersistedState: false);
@@ -45,15 +96,17 @@ void main() {
           final context = tester.element(sample);
           final theme = Theme.of(context).textTheme;
           expect(Localizations.localeOf(context), locale);
-          expect(
-            theme.bodyMedium!.fontFamily,
-            isWindows ? 'Segoe UI' : 'Raleway',
-          );
-          expect(
-            theme.titleLarge!.fontFamily,
-            isWindows ? 'Segoe UI' : 'Outfit',
-          );
+          expect(theme.bodyMedium!.fontFamily, 'Outfit');
+          expect(theme.titleLarge!.fontFamily, 'Outfit');
           expect(theme.labelSmall!.fontSize, isWindows ? 12 : 10);
+          expect(
+            theme.displayLarge!.fontFeatures,
+            contains(const FontFeature.tabularFigures()),
+          );
+          expect(
+            Theme.of(context).primaryTextTheme.bodyMedium!.fontFeatures,
+            contains(const FontFeature.tabularFigures()),
+          );
           expect(
             theme.titleMedium!.fontWeight,
             isWindows ? FontWeight.w600 : FontWeight.w700,

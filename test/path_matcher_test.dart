@@ -150,4 +150,47 @@ void main() {
     expect(PathMatcher.trimRightSlash('  foo/bar/  '), 'foo/bar');
     expect(PathMatcher.trimRightSlash('foo/bar'), 'foo/bar');
   });
+
+  test('SAF volume-root document ids ending in colon resolve hierarchy', () {
+    const root =
+        'content://com.android.externalstorage.documents/tree/primary%3A';
+    const folderDoc = '$root/document/primary%3AFolder';
+    const trackDoc = '$root/document/primary%3AFolder%2FTrack.mp3';
+    const syntheticFolder = '$root::Folder';
+    const syntheticTrack = '$root::Folder/Track.mp3';
+    const otherRoot =
+        'content://com.android.externalstorage.documents/tree/1234-5678%3A';
+
+    expect(PathMatcher.equalsNormalized(folderDoc, syntheticFolder), isTrue);
+    expect(PathMatcher.equalsNormalized(trackDoc, syntheticTrack), isTrue);
+    expect(PathMatcher.parentPath(root), isNull);
+    expect(PathMatcher.parentPath(folderDoc), root);
+    expect(PathMatcher.parentPath(trackDoc), syntheticFolder);
+    expect(PathMatcher.isWithinOrEqual(folderDoc, root), isTrue);
+    expect(PathMatcher.isWithinOrEqual(trackDoc, root), isTrue);
+    expect(PathMatcher.isWithinOrEqual(trackDoc, otherRoot), isFalse);
+    expect(PathMatcher.relativeWithin(trackDoc, root), 'Folder/Track.mp3');
+    expect(PathMatcher.relativeWithin(syntheticTrack, root), 'Folder/Track.mp3');
+    expect(
+      PathMatcher.replaceWithinOrEqual(trackDoc, root, otherRoot),
+      '$otherRoot/document/1234-5678%3AFolder%2FTrack.mp3',
+    );
+    expect(
+      PathMatcher.replaceWithinOrEqual(syntheticTrack, root, otherRoot),
+      '$otherRoot::Folder/Track.mp3',
+    );
+
+    final childIndex = PathMembershipIndex(<String>{trackDoc});
+    expect(childIndex.containsDescendantOrEqual(root), isTrue);
+    expect(childIndex.containsDescendantOrEqual(otherRoot), isFalse);
+
+    final rootIndex = PathMembershipIndex(<String>{root});
+    expect(rootIndex.containsAncestorOrEqual(folderDoc), isTrue);
+    expect(rootIndex.containsAncestorOrEqual(trackDoc), isTrue);
+    expect(rootIndex.containsAncestorOrEqual(root), isTrue);
+    expect(
+      rootIndex.containsAncestorOrEqual('$otherRoot/document/1234-5678%3AFolder'),
+      isFalse,
+    );
+  });
 }

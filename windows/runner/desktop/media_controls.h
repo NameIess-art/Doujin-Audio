@@ -32,6 +32,9 @@ class MediaControls {
   std::optional<std::array<bool, 5>> thumbnail_state_;
   bool taskbar_dark_ = false;
   std::vector<DWORD> thumbnail_cover_;
+  bool active_ = false;
+  bool has_next_ = false;
+  bool has_previous_ = false;
   bool metadata_ready_ = false;
   std::string title_, subtitle_, art_path_;
   std::array<bool, 4> hotkeys_{};

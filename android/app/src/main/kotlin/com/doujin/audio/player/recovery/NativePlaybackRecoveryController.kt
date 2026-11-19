@@ -563,6 +563,7 @@ internal class NativePlaybackRecoveryController(
             clear(sessionId)
             session.playerOrNull()?.pause()
             host.publishSession(sessionId)
+            host.persistNow()
             host.syncForeground()
             return
         }
@@ -670,8 +671,13 @@ internal class NativePlaybackRecoveryController(
         val sessionIds = intended.toList()
         if (sessionIds.isEmpty()) return
         if (!host.requestAudioFocus()) {
-            sessionIds.forEach(::clear)
+            sessionIds.forEach { sessionId ->
+                clear(sessionId)
+                host.session(sessionId)?.playerOrNull()?.pause()
+            }
             host.publishAllSessions()
+            host.persistNow()
+            host.syncForeground()
             return
         }
         var recovered = false

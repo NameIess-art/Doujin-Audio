@@ -94,12 +94,13 @@ final class SubtitleOverlayController {
       _runtimeSyncPending = true;
       return;
     }
-    if (!_runtimeEnabled) {
-      return;
-    }
     final generation = _runtimeGeneration;
     _runtimeSyncing = true;
     try {
+      if (!_runtimeEnabled) {
+        await stopRuntime(immediate: true);
+        return;
+      }
       final session = _runtimeSession?.call();
       if (session == null) {
         await stopRuntime(immediate: true);
@@ -109,7 +110,10 @@ final class SubtitleOverlayController {
       final trackPath = session.currentTrackPath;
       if (!_runtimeRunning) {
         final canDraw = await canDrawOverlays();
-        if (!_isRuntimeRequestCurrent(generation, sessionId, trackPath)) return;
+        if (!_isRuntimeRequestCurrent(generation, sessionId, trackPath)) {
+          if (!_runtimeEnabled) await stopRuntime(immediate: true);
+          return;
+        }
         if (!canDraw) {
           await stopRuntime(immediate: true);
           return;
@@ -118,21 +122,23 @@ final class SubtitleOverlayController {
         if (!started ||
             !_isRuntimeRequestCurrent(generation, sessionId, trackPath)) {
           if (started) await stopOverlay(immediate: true);
+          if (!_runtimeEnabled) await stopRuntime(immediate: true);
           return;
         }
         _runtimeRunning = true;
       }
       await _applyRuntimeStyle();
-      if (!_isRuntimeRequestCurrent(generation, sessionId, trackPath)) return;
+      if (!_isRuntimeRequestCurrent(generation, sessionId, trackPath)) {
+        if (!_runtimeEnabled) await stopRuntime(immediate: true);
+        return;
+      }
       _bindRuntimeSession(session);
       _updateRuntimeSession(session);
     } finally {
       _runtimeSyncing = false;
-      if (_runtimeSyncPending && _runtimeEnabled) {
+      if (_runtimeSyncPending) {
         _runtimeSyncPending = false;
         unawaited(_syncRuntime());
-      } else {
-        _runtimeSyncPending = false;
       }
     }
   }

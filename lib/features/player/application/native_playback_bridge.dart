@@ -438,7 +438,14 @@ class NativePlaybackBridge
     if (_attachQueued) return _attachSerial;
     _attachQueued = true;
     _attachSerial = _attachSerial
-        .then((_) => _attachEventListener())
+        .then<void>((_) => _attachEventListener())
+        .catchError((Object error, StackTrace stackTrace) {
+          AppLogService.error(
+            'native_playback_event_attach_failed',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        })
         .whenComplete(() {
           _attachQueued = false;
         });

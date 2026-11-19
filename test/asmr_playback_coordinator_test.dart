@@ -204,6 +204,31 @@ void main() {
       expect(launcher.launchCount, 0);
     },
   );
+
+  test(
+    'directPlayEpoch advances synchronously when another direct play supersedes',
+    () async {
+      final firstGate = Completer<List<MusicTrack>>();
+      final source = _FakeAsmrPlaybackSource();
+      final launcher = _SupersedingPlaybackSessionLauncher(firstGate);
+      final coordinator = AsmrPlaybackCoordinator(
+        source: source,
+        launcher: launcher,
+      );
+
+      final expectedEpoch = coordinator.directPlayEpoch + 1;
+      final firstCall = coordinator.playDirectWork(work);
+      expect(coordinator.directPlayEpoch, expectedEpoch);
+
+      final secondCall = coordinator.playDirectTrack(work, target);
+      expect(coordinator.directPlayEpoch, greaterThan(expectedEpoch));
+
+      firstGate.complete([_track('one')]);
+      expect(await firstCall, isFalse);
+      expect(await secondCall, isTrue);
+      expect(source.recordedWorks, [work]);
+    },
+  );
 }
 
 MusicTrack _track(String path) => MusicTrack(
@@ -288,4 +313,39 @@ class _RecordingPlaybackSessionLauncher implements PlaybackSessionLauncher {
     this.loopMode = loopMode;
     return true;
   }
+}
+
+class _SupersedingPlaybackSessionLauncher implements PlaybackSessionLauncher {
+  _SupersedingPlaybackSessionLauncher(this.firstGate);
+
+  final Completer<List<MusicTrack>> firstGate;
+  int _revision = 0;
+
+  @override
+  Future<bool> playDirect(
+    FutureOr<List<MusicTrack>> tracks, {
+    int startIndex = 0,
+    SessionLoopMode loopMode = SessionLoopMode.folderSequential,
+  }) async {
+    final revision = ++_revision;
+    if (revision == 1) {
+      await firstGate.future;
+    } else {
+      await tracks;
+    }
+    return revision == _revision;
+  }
+
+  @override
+  Future<bool> addTrackToPlaylist(
+    MusicTrack track, {
+    List<MusicTrack>? workTracks,
+  }) async => true;
+
+  @override
+  Future<bool> launchQueue(
+    List<MusicTrack> tracks, {
+    bool? autoPlay,
+    required SessionLoopMode loopMode,
+  }) async => true;
 }

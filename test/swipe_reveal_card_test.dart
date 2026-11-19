@@ -471,16 +471,26 @@ void main() {
         final item = find
             .ancestor(of: find.text(label), matching: find.byType(InkWell))
             .first;
-        final isEdgeRow = label == actions.first || label == actions.last;
-        expect(tester.getSize(item).height, isEdgeRow ? 46 : 40);
+        final longestLabel = tester.renderObject<RenderParagraph>(
+          find.text('Select multiple'),
+        );
+        expect(tester.getRect(item).height, closeTo(36, 0.01));
+        expect(
+          tester.getRect(item).width,
+          closeTo(
+            (longestLabel.getMaxIntrinsicWidth(double.infinity) + 61) * 0.75,
+            1,
+          ),
+        );
         final iconContext = tester.element(
           find.descendant(of: item, matching: find.byType(Icon)),
         );
         final colors = Theme.of(iconContext).colorScheme;
         expect(
           IconTheme.of(iconContext).color,
-          label == 'Remove' ? colors.error : colors.primary,
+          label == 'Remove' ? colors.error : colors.onSurface,
         );
+        expect(IconTheme.of(iconContext).size, 21);
         await tester.tap(find.text(label));
         await tester.pumpAndSettle();
       }

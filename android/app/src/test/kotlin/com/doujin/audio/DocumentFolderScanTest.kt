@@ -53,18 +53,50 @@ class DocumentFolderScanTest {
     }
 
     @Test
-    fun `unreadable child metadata marks scan incomplete`() {
-        for (column in 0..2) {
-            val row = audioRow.toMutableList().apply { this[column] = null }
-            val cursor = FakeCursor(listOf(row))
-            val discovered = mutableListOf<ScannedDocument>()
+    fun `unreadable child document id marks scan incomplete`() {
+        val row = audioRow.toMutableList().apply { this[0] = null }
+        val cursor = FakeCursor(listOf(row))
+        val discovered = mutableListOf<ScannedDocument>()
 
-            assertEquals(1, scanDocumentChildren(
-                { cursor.cursor }, NoopFolderScanObserver, discovered::add
-            ))
-            assertTrue(discovered.isEmpty())
-            assertTrue(cursor.closed)
-        }
+        assertEquals(1, scanDocumentChildren(
+            { cursor.cursor }, NoopFolderScanObserver, discovered::add
+        ))
+        assertTrue(discovered.isEmpty())
+        assertTrue(cursor.closed)
+    }
+
+    @Test
+    fun `null display name or mime skips malformed row without aborting directory scan`() {
+        val nullNameRow = audioRow.toMutableList().apply { this[1] = null }
+        val nullMimeRow = audioRow.toMutableList().apply { this[2] = null }
+        val cursor = FakeCursor(listOf(nullNameRow, nullMimeRow, audioRow))
+        val discovered = mutableListOf<ScannedDocument>()
+
+        assertEquals(0, scanDocumentChildren(
+            { cursor.cursor }, NoopFolderScanObserver, discovered::add
+        ))
+        assertEquals(listOf(ScannedDocument("track", "track.mp3", "audio/mpeg", 42L, 1000L)), discovered)
+        assertTrue(cursor.closed)
+    }
+
+    @Test
+    fun `missing optional size and modified columns fall back to null without failing`() {
+        val minimalColumns = listOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE
+        )
+        val cursor = FakeCursor(
+            rows = listOf(listOf("track", "track.mp3", "audio/mpeg")),
+            columns = minimalColumns
+        )
+        val discovered = mutableListOf<ScannedDocument>()
+
+        assertEquals(0, scanDocumentChildren(
+            { cursor.cursor }, NoopFolderScanObserver, discovered::add
+        ))
+        assertEquals(listOf(ScannedDocument("track", "track.mp3", "audio/mpeg", null, null)), discovered)
+        assertTrue(cursor.closed)
     }
 
     @Test
@@ -89,21 +121,22 @@ class DocumentFolderScanTest {
     // failures during iteration without adding a framework or device dependency.
     private class FakeCursor(
         private val rows: List<List<Any?>>,
-        private val failAtRow: Int? = null
-    ) {
-        var closed = false
-        private var row = -1
-        private val columns = listOf(
+        private val failAtRow: Int? = null,
+        private val columns: List<String> = listOf(
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
             DocumentsContract.Document.COLUMN_DISPLAY_NAME,
             DocumentsContract.Document.COLUMN_MIME_TYPE,
             DocumentsContract.Document.COLUMN_SIZE,
             DocumentsContract.Document.COLUMN_LAST_MODIFIED
         )
+    ) {
+        var closed = false
+        private var row = -1
         val cursor = Proxy.newProxyInstance(
             Cursor::class.java.classLoader, arrayOf(Cursor::class.java)
         ) { _, method, args ->
             when (method.name) {
+                "getColumnIndex" -> columns.indexOf(args!![0])
                 "getColumnIndexOrThrow" -> columns.indexOf(args!![0]).also { require(it >= 0) }
                 "moveToNext" -> {
                     row++

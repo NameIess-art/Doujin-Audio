@@ -20,6 +20,7 @@ class TopPageHeader extends StatefulWidget {
   const TopPageHeader({
     super.key,
     this.icon,
+    this.iconWidget,
     this.iconColor,
     this.title = '',
     this.titleWidget,
@@ -50,6 +51,7 @@ class TopPageHeader extends StatefulWidget {
   });
 
   final IconData? icon;
+  final Widget? iconWidget;
   final Color? iconColor;
   final String title;
   final Widget? titleWidget;
@@ -146,6 +148,32 @@ class _TopPageHeaderState extends State<TopPageHeader> {
       return button;
     }
 
+    Widget? buildHeaderIcon() {
+      final color = widget.iconColor ?? cs.primary;
+      if (widget.iconWidget != null) {
+        return IconTheme.merge(
+          data: IconThemeData(
+            size: AppPageHeaderMetrics.titleIconSize,
+            color: color,
+          ),
+          child: widget.iconWidget!,
+        );
+      }
+      if (widget.icon != null) {
+        return Icon(
+          widget.icon,
+          size: AppDesignTokens.opticalIconSize(
+            widget.icon,
+            AppPageHeaderMetrics.titleIconSize,
+          ),
+          color: color,
+        );
+      }
+      return null;
+    }
+
+    final headerIcon = buildHeaderIcon();
+
     Widget buildTitleContent() {
       if (widget.titleWidget != null) {
         return Align(
@@ -162,15 +190,8 @@ class _TopPageHeaderState extends State<TopPageHeader> {
           constraints: const BoxConstraints(minHeight: 38),
           child: Row(
             children: [
-              if (widget.icon != null) ...[
-                Icon(
-                  widget.icon,
-                  size: AppDesignTokens.opticalIconSize(
-                    widget.icon,
-                    AppPageHeaderMetrics.titleIconSize,
-                  ),
-                  color: widget.iconColor ?? cs.primary,
-                ),
+              if (headerIcon != null) ...[
+                headerIcon,
                 const SizedBox(width: 8),
               ],
               Expanded(
@@ -272,18 +293,7 @@ class _TopPageHeaderState extends State<TopPageHeader> {
                 title: widget.topCapsuleTitle!,
                 data: widget.topCapsuleData,
                 dataCount: widget.topCapsuleDataCount,
-                leading:
-                    widget.topCapsuleLeading ??
-                    (widget.icon != null
-                        ? Icon(
-                            widget.icon,
-                            size: AppDesignTokens.opticalIconSize(
-                              widget.icon,
-                              AppPageHeaderMetrics.titleIconSize,
-                            ),
-                            color: widget.iconColor ?? cs.primary,
-                          )
-                        : null),
+                leading: widget.topCapsuleLeading ?? headerIcon,
                 trailing: widget.topCapsuleTrailing,
               )
             : null);

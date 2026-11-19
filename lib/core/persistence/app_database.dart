@@ -22,13 +22,19 @@ part 'app_database_listening.dart';
 const int _sqliteInClauseBatchSize = 900;
 
 class AppDatabase {
-  AppDatabase._();
+  AppDatabase._({Future<Database> Function()? opener}) : _opener = opener;
 
-  static const int schemaVersion = 16;
+  static const int schemaVersion = 17;
   static const String fileName = 'audio_player.db';
 
   @visibleForTesting
-  AppDatabase.test(Database db) : _db = db;
+  AppDatabase.test(Database db, {Future<Database> Function()? opener})
+    : _db = db,
+      _opener = opener;
+
+  @visibleForTesting
+  AppDatabase.forTest({Future<Database> Function()? opener})
+    : _opener = opener;
 
   static AppDatabase? _instance;
   static AppDatabase get instance => _instance ??= AppDatabase._();
@@ -38,17 +44,21 @@ class AppDatabase {
     _instance = database;
   }
 
+  final Future<Database> Function()? _opener;
   Database? _db;
   Future<Database>? _openFuture;
+  Future<void>? _closeFuture;
+  int _generation = 0;
 
   Future<Database> get _database async {
-    if (_db != null) return _db!;
+    if (_db != null && _closeFuture == null) return _db!;
     return _openDatabase();
   }
 
   Future<Database> get databaseForTest => _database;
 
   Future<Database> _open() async {
+    if (_opener != null) return _opener();
     final dbPath = await getDatabasesPath();
     final db = await openDatabase(
       p.join(dbPath, fileName),
@@ -67,16 +77,37 @@ class AppDatabase {
   }
 
   Future<Database> _openDatabase() async {
-    if (_db != null) return _db!;
-    final opening = _openFuture ??= _open().then((db) {
-      _db = db;
-      return db;
-    });
-    try {
-      return await opening;
-    } finally {
-      if (identical(_openFuture, opening)) {
-        _openFuture = null;
+    while (true) {
+      final pendingClose = _closeFuture;
+      if (pendingClose != null) {
+        await pendingClose;
+      }
+      final existing = _db;
+      if (existing != null && _closeFuture == null) return existing;
+
+      final generation = _generation;
+      final opening = _openFuture ??= _open().then((db) {
+        if (generation == _generation && _closeFuture == null) {
+          _db = db;
+        }
+        return db;
+      });
+      final Database db;
+      try {
+        db = await opening;
+      } finally {
+        if (identical(_openFuture, opening)) {
+          _openFuture = null;
+        }
+      }
+      if (generation == _generation && identical(_db, db)) {
+        return db;
+      }
+      // close() intervened while _open() was pending; wait for it to finish
+      // closing `db` before opening a fresh connection.
+      final activeClose = _closeFuture;
+      if (activeClose != null) {
+        await activeClose;
       }
     }
   }
@@ -92,10 +123,42 @@ class AppDatabase {
   }
 
   Future<void> close() async {
-    await _openFuture;
+    _generation++;
+    final pendingClose = _closeFuture;
+    if (pendingClose != null) {
+      await pendingClose;
+    }
+    final closing = _closeInternal();
+    _closeFuture = closing;
+    try {
+      await closing;
+    } finally {
+      if (identical(_closeFuture, closing)) {
+        _closeFuture = null;
+      }
+    }
+  }
+
+  Future<void> _closeInternal() async {
+    final open = _openFuture;
+    if (open != null) {
+      try {
+        final db = await open;
+        if (identical(_db, db)) _db = null;
+        if (db.isOpen) await db.close();
+      } catch (_) {
+        // Failed opens have no open database handle to close.
+      } finally {
+        if (identical(_openFuture, open)) {
+          _openFuture = null;
+        }
+      }
+    }
     final db = _db;
     _db = null;
-    await db?.close();
+    if (db != null && db.isOpen) {
+      await db.close();
+    }
   }
 
   @visibleForTesting

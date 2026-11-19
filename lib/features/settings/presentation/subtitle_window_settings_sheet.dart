@@ -89,7 +89,10 @@ class _SubtitleWindowSettingsSheetState
         final controls = <Widget>[
                       if (settings.appearanceSaveFailed)
                         ListTile(
-                          leading: Icon(Icons.error_outline, color: cs.error),
+                          leading: Icon(
+                            Icons.error_outline_rounded,
+                            color: cs.error,
+                          ),
                           title: Text(i18n.tr('operation_failed_retry')),
                           trailing: TextButton(
                             onPressed: () => unawaited(
@@ -340,7 +343,7 @@ class _SubtitleWindowSettingsSheetState
               Padding(
                 padding: AppBottomSheet.contentPadding,
                 child: AppBottomSheetHeader(
-                  icon: Icons.subtitles_outlined,
+                  icon: Icons.subtitles_rounded,
                   title: i18n.tr('subtitle_window_settings'),
                 ),
               ),

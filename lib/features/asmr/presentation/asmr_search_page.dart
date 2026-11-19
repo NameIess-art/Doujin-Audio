@@ -23,7 +23,9 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
   };
   final _suggestionsScrollController = WindowsSmoothScrollController();
   late final ValueNotifier<int> _activeCategoryIndex;
-  String _query = '';
+  String? _submittedQuery;
+  String get _query => _submittedQuery ?? '';
+  SearchFilters _filters = emptySearchFilters;
   final ValueNotifier<String> _inputQuery = ValueNotifier('');
   bool _matchAll = true;
   late final ValueNotifier<(AsmrSearchSuggestions?, Object?)> _suggestions;
@@ -40,6 +42,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
       ids: Set<String>.unmodifiable(_selectedWorkIds),
     );
   }
+
   int _requestSerial = 0;
   bool _refreshPending = false;
   ModalRoute<dynamic>? _route;
@@ -125,19 +128,19 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
   }
 
   void _onChanged(String value) {
-    final input = canonicalElementQuery(value);
     final needsPageBuild =
-        _query.isNotEmpty ||
-        canonicalElementQuery(_inputQuery.value).isEmpty != input.isEmpty;
+        _submittedQuery != null ||
+        canSubmitSearch(_inputQuery.value, _filters) !=
+            canSubmitSearch(value, _filters);
     UiInteractionCoordinator.instance.cancelCommit(_refreshCommitKey);
     _refreshPending = false;
-    if (_query.isNotEmpty) {
+    if (_submittedQuery != null) {
       _searchController?.setSearchQuery('', _category);
       _resetScroll();
     }
     void updateDraft() {
       _inputQuery.value = value;
-      _query = '';
+      _submittedQuery = null;
       _requestSerial++;
       _showSearchPlaceholder = false;
       _clearSelection();
@@ -165,7 +168,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
   }
 
   void _removeElement(String query) {
-    if (query.isEmpty) {
+    if (query.isEmpty && _filters == emptySearchFilters) {
       _setDraft('');
     } else {
       unawaited(_onSubmitted(query, recordHistory: false));
@@ -173,14 +176,14 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
   }
 
   Future<void> _onSubmitted(String value, {bool recordHistory = true}) async {
+    if (!canSubmitSearch(value, _filters)) return;
     final query = canonicalElementQuery(value);
-    if (query.isEmpty) return;
     final current = _searchController?.categoryViewState(
       _category,
       searchQuery: query,
       searchSession: true,
     );
-    if (_query == query &&
+    if (_submittedQuery == query &&
         (_refreshPending ||
             current?.isLoading == true ||
             current?.isRefreshing == true)) {
@@ -194,12 +197,12 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
     _searchController?.setSearchQuery(query, _category);
     _resetScroll();
     setState(() {
-      _query = query;
+      _submittedQuery = query;
       _clearSelection();
     });
     FocusManager.instance.primaryFocus?.unfocus();
     _scheduleRefresh(showSearchPlaceholder: true);
-    if (!recordHistory) return;
+    if (!recordHistory || query.isEmpty) return;
     try {
       await ref
           .read(settingsRepositoryProvider)
@@ -222,7 +225,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
   }
 
   void _closeOrClear() {
-    if (_controller.text.isEmpty) {
+    if (_submittedQuery == null && _controller.text.isEmpty) {
       Navigator.of(context).maybePop();
       return;
     }
@@ -238,7 +241,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
     if (_isSelectionMode) setState(_clearSelection);
     final targetIndex = kAsmrSelectableCategories.indexOf(category);
     if (targetIndex >= 0) _activeCategoryIndex.value = targetIndex;
-    if (_query.isNotEmpty) {
+    if (_submittedQuery != null) {
       _searchController?.setSearchQuery(_query, category);
       _scheduleRefresh(showSearchPlaceholder: true);
     }
@@ -278,13 +281,20 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
     if (wasActive != _isSelectionMode) setState(() {});
   }
 
-  List<AsmrWork> _selectedWorks() => _selectedAsmrWorks(
-    ref,
-    category: _category,
-    searchQuery: _query,
-    searchSession: true,
-    selectedWorkIds: _selectedWorkIds,
-  );
+  List<AsmrWork> _selectedWorks() {
+    final works = _selectedAsmrWorks(
+      ref,
+      category: _category,
+      searchQuery: _query,
+      searchSession: true,
+      selectedWorkIds: _selectedWorkIds,
+    );
+    return _filters == emptySearchFilters
+        ? works
+        : works
+              .where((work) => work.matchesFilters(_filters))
+              .toList(growable: false);
+  }
 
   Future<void> _addSelectedWorksToPlaylist() async {
     final works = _selectedWorks();
@@ -331,7 +341,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
   }
 
   void _scheduleRefresh({bool showSearchPlaceholder = false}) {
-    if (_query.isEmpty) return;
+    if (_submittedQuery == null) return;
     _requestSerial++;
     _refreshPending = true;
     if (showSearchPlaceholder) {
@@ -342,7 +352,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
             searchQuery: _query,
             searchSession: true,
           );
-      final pending = _query.isNotEmpty && !(cached?.hasAttemptedLoad ?? false);
+      final pending = !(cached?.hasAttemptedLoad ?? false);
       if (_showSearchPlaceholder != pending) {
         setState(() => _showSearchPlaceholder = pending);
       }
@@ -365,8 +375,8 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
   }) async {
     UiInteractionCoordinator.instance.cancelCommit(_refreshCommitKey);
     _refreshPending = false;
-    final query = _query;
-    if (query.isEmpty) return;
+    final query = _submittedQuery;
+    if (query == null) return;
     final category = _category;
     final controller = ref.read(asmrLibraryControllerProvider);
     final cached = controller?.categoryViewState(
@@ -379,9 +389,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
     if (requestInProgress && !showSearchPlaceholder) return;
     final requestSerial = ++_requestSerial;
     final pending =
-        showSearchPlaceholder &&
-        query.isNotEmpty &&
-        !(cached?.hasAttemptedLoad ?? false);
+        showSearchPlaceholder && !(cached?.hasAttemptedLoad ?? false);
     if (_showSearchPlaceholder != pending) {
       setState(() => _showSearchPlaceholder = pending);
     }
@@ -420,12 +428,12 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
           ? controller.refreshCategory(
               category,
               searchQuery: query,
-              searchSession: true,
+              searchSession: query.isNotEmpty,
             )
           : controller.ensureCategoryLoaded(
               category,
               searchQuery: query,
-              searchSession: true,
+              searchSession: query.isNotEmpty,
             ),
     );
     if (!mounted || requestSerial != _requestSerial) return;
@@ -478,6 +486,9 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
                           onSelected: (value) =>
                               setState(() => _matchAll = value),
                           translate: i18n.tr,
+                          filters: _filters,
+                          onFiltersChanged: (value) =>
+                              setState(() => _filters = value),
                         ),
                       ),
                       AppSearchSuggestionSection(
@@ -588,7 +599,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
           )
         : AppSearchPageScaffold.controlsTopInset(context);
     final bottomInset = AppSearchPageScaffold.contentBottomInset(context);
-    final resultsBody = _query.isEmpty
+    final resultsBody = _submittedQuery == null
         ? null
         : AppFadeThroughIndexedStack.lazy(
             key: const ValueKey<String>('asmr_search_category_stack'),
@@ -596,6 +607,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
             itemCount: kAsmrSelectableCategories.length,
             contentRevision: (
               _query,
+              _filters,
               i18n.language,
               _showSearchPlaceholder,
               topInset,
@@ -606,11 +618,12 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
               return _AsmrCategoryList(
                 key: ValueKey<String>('asmr_search_${category.name}'),
                 isActive: () => category == _category,
-                isPageActive: () => _query.isNotEmpty,
+                isPageActive: () => _submittedQuery != null,
                 category: category,
                 isLoadPending: _showSearchPlaceholder,
                 scrollController: _scrollControllers[category]!,
                 searchQuery: _query,
+                filters: _filters,
                 searchSession: true,
                 topInset: topInset,
                 bottomInset: bottomInset,
@@ -642,11 +655,11 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
           onRemoveElement: _removeElement,
           translate: i18n.tr,
           accentColor: accent,
-          showConfirmButton: _query.isEmpty,
+          showConfirmButton: _submittedQuery == null,
           confirmLabel: i18n.tr('confirm'),
-          onConfirm: canonicalElementQuery(_inputQuery.value).isEmpty
-              ? null
-              : () => unawaited(_onSubmitted(_controller.text)),
+          onConfirm: canSubmitSearch(_inputQuery.value, _filters)
+              ? () => unawaited(_onSubmitted(_controller.text))
+              : null,
           controlsOverlay: _isSelectionMode
               ? ValueListenableBuilder<({bool active, Set<String> ids})>(
                   valueListenable: _selectionListenable,
@@ -684,17 +697,21 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
       builder: (context) {
         _route = ModalRoute.of(context);
         final isCurrent = _route?.isCurrent != false;
-        if (isCurrent && _query.isEmpty) {
+        if (isCurrent && _submittedQuery == null) {
           UiInteractionCoordinator.instance.scheduleCommitFrame();
         }
         final resumed = isCurrent && !_wasCurrent;
         _wasCurrent = isCurrent;
-        if (isCurrent && (_refreshPending || (resumed && _query.isNotEmpty))) {
+        if (isCurrent &&
+            (_refreshPending || (resumed && _submittedQuery != null))) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted || _route?.isCurrent == false || _query.isEmpty) {
+            if (!mounted ||
+                _route?.isCurrent == false ||
+                _submittedQuery == null) {
               return;
             }
             // A search opened from a work detail can replace the active query.
+            if (resumed) _searchController?.setSearchQuery(_query, _category);
             final view = _searchController?.categoryViewState(
               _category,
               searchQuery: _query,

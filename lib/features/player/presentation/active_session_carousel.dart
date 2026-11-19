@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show OverflowBoxFit;
+import 'package:flutter/scheduler.dart' show SchedulerBinding, SchedulerPhase;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
 
@@ -105,6 +106,8 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   bool _isNarrowDock = false;
   String? _lastCarouselSnapSessionId;
   String? _lastVisibleSessionId;
+  final List<PageController> _pendingDisposedControllers = <PageController>[];
+  bool _visibleSessionSyncScheduled = false;
 
   @override
   void initState() {
@@ -129,11 +132,40 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   }
 
   @override
+  void didUpdateWidget(covariant ActiveSessionCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_pageController.viewportFraction != _viewportFraction) {
+      _replacePageController(_viewportFraction);
+    }
+  }
+
+  void _replacePageController(double viewportFraction) {
+    final oldController = _pageController;
+    oldController.removeListener(_handlePageTick);
+    _pendingDisposedControllers.add(oldController);
+    _pageController = PageController(
+      initialPage: _pageNotifier.value.round(),
+      viewportFraction: viewportFraction,
+      keepPage: false,
+      onAttach: (_) => _pageController.jumpToPage(_pageNotifier.value.round()),
+    )..addListener(_handlePageTick);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_pendingDisposedControllers.remove(oldController)) {
+        oldController.dispose();
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _carouselSnapListenable.removeListener(_handleCarouselSnap);
     _pageController
       ..removeListener(_handlePageTick)
       ..dispose();
+    for (final controller in _pendingDisposedControllers) {
+      controller.dispose();
+    }
+    _pendingDisposedControllers.clear();
     _pageNotifier.dispose();
     _indicatorIndex.dispose();
     if (widget.presentation == ActiveSessionCarouselPresentation.card) {
@@ -155,9 +187,25 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     _notifyVisibleSessionChanged();
   }
 
-  void _notifyVisibleSessionChanged() {
+  void _scheduleVisibleSessionSync() {
+    if (_visibleSessionSyncScheduled) return;
+    _visibleSessionSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _visibleSessionSyncScheduled = false;
+      if (!mounted) return;
+      _notifyVisibleSessionChanged(postFrame: true);
+    });
+  }
+
+  void _notifyVisibleSessionChanged({bool postFrame = false}) {
     final sessions = _currentSessions;
     if (sessions.isEmpty) return;
+    if (!postFrame &&
+        SchedulerBinding.instance.schedulerPhase ==
+            SchedulerPhase.persistentCallbacks) {
+      _scheduleVisibleSessionSync();
+      return;
+    }
     final index = _sessionIndexForPage(
       _pageNotifier.value.round(),
       sessions.length,
@@ -166,7 +214,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     final sessionId = sessions[index].id;
     if (_lastVisibleSessionId == sessionId) return;
     _lastVisibleSessionId = sessionId;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    void notifyObservers() {
       if (!mounted || _lastVisibleSessionId != sessionId) return;
       if (widget.presentation == ActiveSessionCarouselPresentation.card) {
         ref
@@ -175,7 +223,13 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       }
       ref.read(notificationFacadeProvider).setFocusedSession(sessionId);
       widget.onVisibleSessionChanged?.call(sessionId);
-    });
+    }
+
+    if (postFrame) {
+      notifyObservers();
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) => notifyObservers());
+    }
   }
 
   void _handleCarouselSnap() {
@@ -285,19 +339,6 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
 
   @override
   Widget build(BuildContext context) {
-    final viewportFraction = _viewportFraction;
-    if (_pageController.viewportFraction != viewportFraction) {
-      _pageController.dispose();
-      _pageController = PageController(
-        initialPage: _pageNotifier.value.round(),
-        viewportFraction: viewportFraction,
-        keepPage: false,
-        onAttach: (_) =>
-            _pageController.jumpToPage(_pageNotifier.value.round()),
-      );
-      _pageController.addListener(_handlePageTick);
-    }
-
     final List<PlaybackSessionSnapshot> sessions;
     final providedSessions = widget.sessions;
     if (providedSessions != null) {
@@ -366,7 +407,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       _currentSessions = sessions;
     }
     final visibleSessions = _currentSessions;
-    _notifyVisibleSessionChanged();
+    _scheduleVisibleSessionSync();
 
     final snapSessionId = _carouselSnapListenable.value;
     if (snapSessionId != null && snapSessionId != _lastCarouselSnapSessionId) {
@@ -416,8 +457,10 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     // Width animation changes layout, not session data or the paging delegate.
     final roundCard = ValueListenableBuilder<int>(
       valueListenable: _indicatorIndex,
-      builder: (context, index, _) =>
-          buildSessionCard(index, dockCollapsed: embedded),
+      builder: (context, index, _) => buildSessionCard(
+        index % visibleSessions.length,
+        dockCollapsed: embedded,
+      ),
     );
     final pageChildren = SliverChildBuilderDelegate((context, index) {
       final card = buildSessionCard(

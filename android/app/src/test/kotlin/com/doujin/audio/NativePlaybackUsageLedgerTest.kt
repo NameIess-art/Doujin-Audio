@@ -98,4 +98,14 @@ class NativePlaybackUsageLedgerTest {
         first.acknowledge(setOf("unknown"))
         assertTrue(writes.isEmpty())
     }
+
+    @Test fun `corrupted persisted ledger falls back to an empty ledger`() {
+        context.getSharedPreferences("playback_usage", Context.MODE_PRIVATE)
+            .edit()
+            .putString("ledger", "{not-valid-json")
+            .commit()
+
+        val restored = ledger()
+        assertTrue(restored.read().isEmpty())
+    }
 }

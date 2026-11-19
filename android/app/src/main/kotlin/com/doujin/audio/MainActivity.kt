@@ -51,7 +51,11 @@ open class MainActivity : FlutterFragmentActivity() {
     private var audioPickerCoordinator: AudioPickerCoordinator? = null
     private var videoDisplayMethodChannel: MethodChannel? = null
     private var videoDisplayMethodHandler: VideoDisplayMethodHandler? = null
+    private var updateMethodChannel: MethodChannel? = null
+    private var subtitleOverlayMethodChannel: MethodChannel? = null
+    private var powerMethodChannel: MethodChannel? = null
     private var powerMethodHandler: PowerMethodHandler? = null
+    private var fileCacheScanEventChannel: EventChannel? = null
     private val subtitleOverlayCoordinator by lazy { SubtitleOverlayCoordinator(this) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -297,32 +301,43 @@ open class MainActivity : FlutterFragmentActivity() {
             PlatformChannelNames.NATIVE_PLAYBACK_EVENTS
         ).also { it.setStreamHandler(nativePlaybackBridge) }
 
-        MethodChannel(messenger, PlatformChannelNames.UPDATE)
-            .setMethodCallHandler(UpdateMethodHandler(this))
+        updateMethodChannel?.setMethodCallHandler(null)
+        updateMethodChannel = MethodChannel(messenger, PlatformChannelNames.UPDATE).also {
+            it.setMethodCallHandler(UpdateMethodHandler(this))
+        }
         videoDisplayMethodHandler?.dispose()
         val videoDisplayMethodHandler = VideoDisplayMethodHandler(this)
         this.videoDisplayMethodHandler = videoDisplayMethodHandler
+        videoDisplayMethodChannel?.setMethodCallHandler(null)
         videoDisplayMethodChannel = MethodChannel(
             messenger,
             PlatformChannelNames.VIDEO_DISPLAY
         ).also { it.setMethodCallHandler(videoDisplayMethodHandler) }
-        MethodChannel(messenger, PlatformChannelNames.SUBTITLE_OVERLAY)
-            .setMethodCallHandler(SubtitleOverlayMethodHandler(subtitleOverlayCoordinator))
+        subtitleOverlayMethodChannel?.setMethodCallHandler(null)
+        subtitleOverlayMethodChannel = MethodChannel(
+            messenger,
+            PlatformChannelNames.SUBTITLE_OVERLAY
+        ).also {
+            it.setMethodCallHandler(SubtitleOverlayMethodHandler(subtitleOverlayCoordinator))
+        }
         fileCacheMethodChannel?.setMethodCallHandler(null)
         fileCacheMethodHandler?.shutdown()
         fileExportCoordinator?.dispose()
         audioPickerCoordinator?.dispose()
         fileCacheTaskExecutor?.shutdownNow()
+        fileCacheScanEventChannel?.setStreamHandler(null)
         fileCacheScanStreamHandler?.shutdown()
 
         val fileCacheOperations = FileCacheOperations(applicationContext)
         val fileCacheTaskExecutor = FileCacheTaskExecutor()
         this.fileCacheTaskExecutor = fileCacheTaskExecutor
+        powerMethodChannel?.setMethodCallHandler(null)
         powerMethodHandler?.dispose()
         val powerMethodHandler = PowerMethodHandler(this, fileCacheTaskExecutor)
         this.powerMethodHandler = powerMethodHandler
-        MethodChannel(messenger, PlatformChannelNames.POWER)
-            .setMethodCallHandler(powerMethodHandler)
+        powerMethodChannel = MethodChannel(messenger, PlatformChannelNames.POWER).also {
+            it.setMethodCallHandler(powerMethodHandler)
+        }
         val audioPickerCoordinator = AudioPickerCoordinator(
             this,
             fileCacheTaskExecutor
@@ -336,8 +351,10 @@ open class MainActivity : FlutterFragmentActivity() {
         this.fileExportCoordinator = fileExportCoordinator
         val fileCacheScanStreamHandler = FileCacheScanStreamHandler(this, fileCacheOperations)
         this.fileCacheScanStreamHandler = fileCacheScanStreamHandler
-        EventChannel(messenger, PlatformChannelNames.FILE_CACHE_SCAN_EVENTS)
-            .setStreamHandler(fileCacheScanStreamHandler)
+        fileCacheScanEventChannel = EventChannel(
+            messenger,
+            PlatformChannelNames.FILE_CACHE_SCAN_EVENTS
+        ).also { it.setStreamHandler(fileCacheScanStreamHandler) }
         val fileCacheMethodHandler = FileCacheMethodHandler(
             operations = fileCacheOperations,
             scanStreamHandler = fileCacheScanStreamHandler,
@@ -363,20 +380,31 @@ open class MainActivity : FlutterFragmentActivity() {
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
-        networkMethodChannel?.setMethodCallHandler(null)
-        networkMethodChannel = null
-        disposeNativePlaybackBridge()
-        disposeVideoDisplayChannel()
+        disposeFlutterChannels()
         super.cleanUpFlutterEngine(flutterEngine)
     }
 
     override fun onDestroy() {
+        disposeFlutterChannels()
+        subtitleOverlayCoordinator.dispose()
+        super.onDestroy()
+    }
+
+    private fun disposeFlutterChannels() {
         networkMethodChannel?.setMethodCallHandler(null)
         networkMethodChannel = null
         disposeNativePlaybackBridge()
         disposeVideoDisplayChannel()
         appLifecycleMethodChannel?.setMethodCallHandler(null)
         appLifecycleMethodChannel = null
+        updateMethodChannel?.setMethodCallHandler(null)
+        updateMethodChannel = null
+        subtitleOverlayMethodChannel?.setMethodCallHandler(null)
+        subtitleOverlayMethodChannel = null
+        powerMethodChannel?.setMethodCallHandler(null)
+        powerMethodChannel = null
+        powerMethodHandler?.dispose()
+        powerMethodHandler = null
         fileCacheMethodChannel?.setMethodCallHandler(null)
         fileCacheMethodChannel = null
         fileCacheMethodHandler?.shutdown()
@@ -387,12 +415,10 @@ open class MainActivity : FlutterFragmentActivity() {
         audioPickerCoordinator = null
         fileCacheTaskExecutor?.shutdownNow()
         fileCacheTaskExecutor = null
+        fileCacheScanEventChannel?.setStreamHandler(null)
+        fileCacheScanEventChannel = null
         fileCacheScanStreamHandler?.shutdown()
         fileCacheScanStreamHandler = null
-        powerMethodHandler?.dispose()
-        powerMethodHandler = null
-        subtitleOverlayCoordinator.dispose()
-        super.onDestroy()
     }
 
     private fun disposeNativePlaybackBridge() {

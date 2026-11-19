@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../../../core/logging/app_log_service.dart';
 import '../../../core/network/network_route_settings.dart';
 import '../../asmr/domain/asmr_media_sources.dart';
 
@@ -26,8 +27,18 @@ class SettingsRepository {
        _writeProxyPassword = writeProxyPassword ?? _writeSecureProxyPassword;
 
   static const proxyPasswordKey = 'network_proxy_password_v1';
-  static Future<String?> _readSecureProxyPassword() =>
-      const FlutterSecureStorage().read(key: proxyPasswordKey);
+  static Future<String?> _readSecureProxyPassword() async {
+    try {
+      return await const FlutterSecureStorage().read(key: proxyPasswordKey);
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'settings_read_proxy_password_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return null;
+    }
+  }
   static Future<void> _writeSecureProxyPassword(String? value) => value == null
       ? const FlutterSecureStorage().delete(key: proxyPasswordKey)
       : const FlutterSecureStorage().write(key: proxyPasswordKey, value: value);
@@ -88,7 +99,10 @@ class SettingsRepository {
     SettingsState(),
   );
 
-  Future<void> loadPersistedState({bool enforceCacheLimit = true}) async {
+  Future<void> loadPersistedState({bool enforceCacheLimit = true}) =>
+      _enqueue(() => _loadPersistedState(enforceCacheLimit: enforceCacheLimit));
+
+  Future<void> _loadPersistedState({bool enforceCacheLimit = true}) async {
     _resetValues();
     final playback = await AppPreferences.readJson<Map<String, dynamic>>(
       _playbackSettingsKey,
@@ -246,7 +260,9 @@ class SettingsRepository {
     syncSlice(isInitialized: true);
   }
 
-  Future<void> resetPersistedState() async {
+  Future<void> resetPersistedState() => _enqueue(_resetPersistedState);
+
+  Future<void> _resetPersistedState() async {
     _resetValues();
     await _applyNetworkRoute();
     syncSlice();
@@ -737,41 +753,50 @@ class SettingsRepository {
   /// Waits for writes already submitted, preserving their failure results.
   Future<void> flushPendingWrites() => Future.wait(_pendingWrites.toList());
 
+  Future<void> _enqueue(
+    Future<void> Function() action, {
+    bool trackPendingWrite = false,
+  }) {
+    final operation = _writeTail.then((_) => action());
+    if (trackPendingWrite) _pendingWrites.add(operation);
+    _writeTail = operation.then<void>(
+      (_) {
+        if (trackPendingWrite) _pendingWrites.remove(operation);
+      },
+      onError: (Object _, StackTrace _) {
+        if (trackPendingWrite) _pendingWrites.remove(operation);
+      },
+    );
+    return operation;
+  }
+
   Future<void> _change(
     Future<void> Function() update, {
     Future<void> Function(SettingsState)? afterSave,
     Future<void> Function()? onFailure,
     bool forceSave = false,
-  }) {
-    final operation = _writeTail.then((_) async {
-      final snapshot = _snapshot(isInitialized: slice.state.isInitialized);
+  }) => _enqueue(() async {
+    final snapshot = _snapshot(isInitialized: slice.state.isInitialized);
+    try {
       try {
-        try {
-          await update();
-          if (!forceSave &&
-              _snapshot(isInitialized: snapshot.isInitialized) == snapshot) {
-            return;
-          }
-          await persist();
-        } catch (_) {
-          _restore(snapshot);
-          await onFailure?.call();
-          rethrow;
+        await update();
+        if (!forceSave &&
+            _snapshot(isInitialized: snapshot.isInitialized) == snapshot) {
+          return;
         }
-        // Side effects run after the commit while the queue is still held.
-        // Their failure must not undo only the in-memory copy of saved settings.
-        await afterSave?.call(snapshot);
-      } finally {
-        syncSlice(isInitialized: snapshot.isInitialized);
+        await persist();
+      } catch (_) {
+        _restore(snapshot);
+        await onFailure?.call();
+        rethrow;
       }
-    });
-    _pendingWrites.add(operation);
-    _writeTail = operation.then<void>(
-      (_) => _pendingWrites.remove(operation),
-      onError: (Object _, StackTrace _) => _pendingWrites.remove(operation),
-    );
-    return operation;
-  }
+      // Side effects run after the commit while the queue is still held.
+      // Their failure must not undo only the in-memory copy of saved settings.
+      await afterSave?.call(snapshot);
+    } finally {
+      syncSlice(isInitialized: snapshot.isInitialized);
+    }
+  }, trackPendingWrite: true);
 
   void _restore(SettingsState snapshot) {
     networkRouteSettings = snapshot.networkRouteSettings;

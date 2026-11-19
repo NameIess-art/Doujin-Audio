@@ -17,6 +17,7 @@ abstract interface class LibraryCatalogReader {
   List<LibraryEntry> libraryEntriesForLibrary(String libraryPath);
   LibraryEntrySnapshot libraryEntrySnapshotForLibrary(String libraryPath);
   LibraryExclusionMatcher libraryExclusionMatcherForLibrary(String libraryPath);
+  LibraryExclusionSnapshot snapshotLibraryExclusions(String libraryPath);
   bool hasLibraryExclusions(String libraryPath);
   bool isLibraryPathExcluded(String libraryPath, String entityPath);
   bool isScanGenerationActive(int generation);
@@ -86,6 +87,7 @@ abstract interface class LibraryCatalogWriter {
   void addWatchedLibrary(String folderPath, {bool notify = true});
   void removeWatchedFolder(String folderPath, {bool notify = true});
   Future<void> clearLibraryExclusions(String libraryPath);
+  Future<void> restoreLibraryExclusions(LibraryExclusionSnapshot snapshot);
   Future<void> prefillAudioDetailRjCodeFromText(
     String folderPath,
     String displayName,

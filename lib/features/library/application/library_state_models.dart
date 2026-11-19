@@ -98,29 +98,45 @@ class LibraryState {
   );
 }
 
+class LibraryExclusionSnapshot {
+  const LibraryExclusionSnapshot({
+    required this.libraryPath,
+    this.excludedFolders = const <String>[],
+    this.excludedTracks = const <String>[],
+    this.entries = const <LibraryEntry>[],
+  });
+
+  final String libraryPath;
+  final List<String> excludedFolders;
+  final List<String> excludedTracks;
+  final List<LibraryEntry> entries;
+}
+
 class LibraryExclusionMatcher {
   LibraryExclusionMatcher({
     required String libraryPath,
     Iterable<String> excludedTrackPaths = const <String>[],
     Iterable<String> excludedFolderPaths = const <String>[],
   }) : libraryPath = PathMatcher.normalize(libraryPath),
-       _excludedTrackPaths = excludedTrackPaths
-           .map(PathMatcher.normalize)
+       _excludedTrackKeys = excludedTrackPaths
+           .map(PathMatcher.equivalenceKey)
            .toSet(),
        _excludedFolderKeys = excludedFolderPaths
            .map(PathMatcher.equivalenceKey)
            .toSet();
 
   final String libraryPath;
-  final Set<String> _excludedTrackPaths;
+  final Set<String> _excludedTrackKeys;
   final Set<String> _excludedFolderKeys;
 
   bool get hasExclusions =>
-      _excludedTrackPaths.isNotEmpty || _excludedFolderKeys.isNotEmpty;
+      _excludedTrackKeys.isNotEmpty || _excludedFolderKeys.isNotEmpty;
 
   bool isExcluded(String entityPath) {
     final normalizedPath = PathMatcher.normalize(entityPath);
-    if (_excludedTrackPaths.contains(normalizedPath)) {
+    if (_excludedTrackKeys.contains(
+      PathMatcher.equivalenceKey(normalizedPath),
+    )) {
       return true;
     }
     if (_excludedFolderKeys.isEmpty) {
@@ -195,9 +211,15 @@ class LibraryEntrySnapshot {
     required String libraryPath,
     Iterable<LibraryEntry> entries = const <LibraryEntry>[],
   }) : libraryPath = PathMatcher.normalize(libraryPath),
-       _entriesByPath = <String, LibraryEntry>{
-         for (final entry in entries) PathMatcher.normalize(entry.path): entry,
-       } {
+       _entriesByPath = HashMap<String, LibraryEntry>(
+         equals: (first, second) =>
+             PathMatcher.equivalenceKey(first) ==
+             PathMatcher.equivalenceKey(second),
+         hashCode: (value) => PathMatcher.equivalenceKey(value).hashCode,
+       ) {
+    for (final entry in entries) {
+      _entriesByPath[PathMatcher.normalize(entry.path)] = entry;
+    }
     entriesByPath = UnmodifiableMapView<String, LibraryEntry>(_entriesByPath);
   }
 

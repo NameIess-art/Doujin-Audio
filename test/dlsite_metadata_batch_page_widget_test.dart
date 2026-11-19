@@ -89,6 +89,14 @@ void main() {
       findsOneWidget,
     );
     expect(
+      tester
+          .widget<TopPageHeader>(
+            find.byKey(const ValueKey<String>('batch_metadata_results_header')),
+          )
+          .icon,
+      Icons.cloud_download_rounded,
+    );
+    expect(
       find.byKey(const ValueKey<String>('batch_metadata_results_done')),
       findsOneWidget,
     );
@@ -99,7 +107,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey<String>('batch_metadata_status_0')),
-        matching: find.byIcon(Icons.check_circle_rounded),
+        matching: find.byIcon(Icons.pending_rounded),
       ),
       findsOneWidget,
     );
@@ -142,7 +150,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey<String>('batch_metadata_status_3')),
-        matching: find.byIcon(Icons.check_circle_rounded),
+        matching: find.byIcon(Icons.pending_rounded),
       ),
       findsOneWidget,
     );
@@ -491,6 +499,14 @@ void main() {
       find.byKey(const ValueKey<String>('batch_metadata_results_header')),
       findsOneWidget,
     );
+    expect(
+      tester
+          .widget<TopPageHeader>(
+            find.byKey(const ValueKey<String>('batch_metadata_results_header')),
+          )
+          .icon,
+      Icons.cloud_download_rounded,
+    );
   });
 
   testWidgets('batch setup hint floats in the header above the scope list', (
@@ -712,7 +728,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey<String>('batch_metadata_status_0')),
-        matching: find.byIcon(Icons.check_circle_rounded),
+        matching: find.byIcon(Icons.pending_rounded),
       ),
       findsOneWidget,
     );
@@ -749,7 +765,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey<String>('batch_metadata_status_0')),
-        matching: find.byIcon(Icons.check_circle_rounded),
+        matching: find.byIcon(Icons.pending_rounded),
       ),
       findsOneWidget,
     );

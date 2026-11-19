@@ -753,6 +753,59 @@ void main() {
     expect(session.state.playing, isTrue);
     expect(native.pausedSessionIds, <String>[session.id]);
   });
+
+  test(
+    'notification pause and toggle respect playbackRequested during buffering/starting',
+    () async {
+      final library = _createLibraryFacade();
+      final native = _RecordingNativePlaybackRepository();
+      final playback = PlaybackFacade.create(
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
+        nativeRepository: native,
+      );
+      final facade = NotificationFacade.create(
+        service: PlaybackNotificationService(),
+      );
+      final session = PlaybackSession(
+        id: 'starting-session',
+        currentTrackPath: '/tracks/starting.mp3',
+        loopMode: SessionLoopMode.folderSequential,
+        nonSingleLoopMode: SessionLoopMode.folderSequential,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(false, ProcessingState.loading),
+      )
+        ..loadedPath = '/tracks/starting.mp3'
+        ..beginPreparation(showLoading: true, autoPlay: true);
+      playback.registerSession(session);
+      facade.attachActions(
+        playback: playback,
+        resolveSession: ([sessionId]) => session,
+        resolveActionSession: () => session,
+        resumeSession: (_) async {},
+        setFocusSessionId: (_) {},
+        notify: () {},
+        syncKeepAlive: () {},
+        hasPlaybackToKeepAlive: () => true,
+        clearUnifiedNotifications: () async {},
+        preferredSessionId: () => session.id,
+        notifyNotificationChanged: () {},
+      );
+      addTearDown(() async {
+        await facade.dispose();
+        await playback.dispose();
+        await library.dispose();
+      });
+
+      expect(session.playbackRequested, isTrue);
+      await facade.toggleSessionPlayback(session.id);
+
+      expect(native.pausedSessionIds, <String>[session.id]);
+      expect(session.playbackRequested, isFalse);
+      facade.detachRuntime();
+    },
+  );
 }
 
 MusicTrack _notificationTrack(String path, String title) => MusicTrack(

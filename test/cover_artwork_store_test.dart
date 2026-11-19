@@ -715,6 +715,39 @@ void main() {
 
     expect(second, first);
   });
+
+  test('corrupt index is healed on disk for both Windows and Android', () async {
+    final index = File(
+      path.join(
+        supportDirectory.path,
+        coverArtworkStoreDirectoryName,
+        coverArtworkStoreIndexFileName,
+      ),
+    );
+    await index.parent.create(recursive: true);
+    await index.writeAsString('{corrupt');
+
+    final store = CoverArtworkStore(
+      persistentDirectory: () async => supportDirectory,
+      temporaryDirectory: () async => temporaryDirectory,
+      isAndroid: () => false,
+    );
+    await store.initialize();
+
+    final healed = jsonDecode(await index.readAsString()) as Map<String, dynamic>;
+    expect(healed['version'], 2);
+  });
+
+  test('video logical keys with fewer than two colons do not throw', () async {
+    final store = createStore();
+    await store.initialize();
+
+    await store.bind('video:/media/work.mp4', 'content://covers/video');
+    expect(
+      store.resolvedPath('video:/media/work.mp4'),
+      'content://covers/video',
+    );
+  });
 }
 
 class _DelayedStatFile implements File {

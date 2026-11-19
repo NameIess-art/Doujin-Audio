@@ -337,4 +337,152 @@ void main() {
       expect(tcpQueries, 2);
     },
   );
+
+  test('overlapping configure calls apply in order', () async {
+    final firstGate = Completer<void>();
+    final applied = <String>[];
+    final origin = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => origin.close(force: true));
+    origin.listen((request) async {
+      request.response.write('direct-second');
+      await request.response.close();
+    });
+    await network.close();
+    network = AppNetwork(
+      resolveSystemProxy: (_) async => 'DIRECT',
+      applyNativeRoute: (settings, _) async {
+        applied.add('${settings.proxyMode.name}:${settings.proxyPort}');
+        if (settings.proxyMode == AppProxyMode.http) {
+          await firstGate.future;
+        }
+      },
+    );
+
+    final first = network.configure(
+      const NetworkRouteSettings(
+        proxyMode: AppProxyMode.http,
+        proxyHost: '127.0.0.1',
+        proxyPort: 1,
+      ),
+      null,
+    );
+    final second = network.configure(const NetworkRouteSettings(), null);
+    await Future<void>.delayed(Duration.zero);
+    expect(applied, ['http:1']);
+    firstGate.complete();
+    await Future.wait([first, second]);
+
+    expect(applied, ['http:1', 'system:8080']);
+    final response = await (await proxiedClient().getUrl(
+      Uri.parse('http://127.0.0.1:${origin.port}/'),
+    )).close();
+    expect(await utf8.decodeStream(response), 'direct-second');
+  });
+
+  test(
+    'reconfiguring custom DNS keeps an in-flight proxy lookup alive until connect finishes',
+    () async {
+      final origin = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => origin.close(force: true));
+      origin.listen((request) async {
+        request.response.write('resolved');
+        await request.response.close();
+      });
+      final dnsSocket = await RawDatagramSocket.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      addTearDown(dnsSocket.close);
+      dnsSocket.listen((event) {
+        if (event != RawSocketEvent.read) return;
+        final packet = dnsSocket.receive();
+        if (packet == null) return;
+        final query = packet.data;
+        final type = query[query.length - 3];
+        final response = Uint8List.fromList([
+          ...query.take(2),
+          0x81,
+          0x80,
+          0,
+          1,
+          0,
+          type == 1 ? 1 : 0,
+          0,
+          0,
+          0,
+          0,
+          ...query.skip(12),
+          if (type == 1) ...[0xc0, 12, 0, 1, 0, 1, 0, 0, 0, 30, 0, 4, 127, 0, 0, 1],
+        ]);
+        dnsSocket.send(response, packet.address, packet.port);
+      });
+
+      final proxyLookupStarted = Completer<void>();
+      final releaseProxyLookup = Completer<void>();
+      final resolvers = <DnsServerResolver>[];
+      await network.close();
+      network = AppNetwork(
+        resolveSystemProxy: (_) async {
+          if (!proxyLookupStarted.isCompleted) {
+            proxyLookupStarted.complete();
+          }
+          await releaseProxyLookup.future;
+          return 'DIRECT';
+        },
+        applyNativeRoute: (_, _) async {},
+        createDnsResolver: (server) {
+          final resolver = DnsServerResolver(server, port: dnsSocket.port);
+          resolvers.add(resolver);
+          return resolver;
+        },
+      );
+      await network.configure(
+        const NetworkRouteSettings(customDnsServer: '127.0.0.1'),
+        null,
+      );
+
+      final responseFuture = proxiedClient()
+          .getUrl(Uri.parse('http://example.invalid:${origin.port}/'))
+          .then((request) => request.close());
+      await proxyLookupStarted.future;
+
+      await network.configure(
+        const NetworkRouteSettings(customDnsServer: '127.0.0.2'),
+        null,
+      );
+      expect(resolvers, hasLength(2));
+
+      releaseProxyLookup.complete();
+      final response = await responseFuture;
+      expect(await utf8.decodeStream(response), 'resolved');
+      await expectLater(
+        resolvers.first.lookup('localhost'),
+        throwsA(isA<SocketException>()),
+      );
+    },
+  );
+
+  test(
+    'system proxy policy handles trailing semicolons and scheme-prefixed hosts',
+    () async {
+      final upstream = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => upstream.close(force: true));
+      upstream.listen((request) async {
+        request.response.write('policy-ok');
+        await request.response.close();
+      });
+      await network.close();
+      network = AppNetwork(
+        resolveSystemProxy: (_) async =>
+            'PROXY http://127.0.0.1:${upstream.port}; ; DIRECT;',
+        applyNativeRoute: (_, _) async {},
+      );
+      await network.ensureStarted();
+
+      final response = await (await proxiedClient().getUrl(
+        Uri.parse('http://unresolvable.invalid/'),
+      )).close();
+      expect(await utf8.decodeStream(response), 'policy-ok');
+    },
+  );
 }

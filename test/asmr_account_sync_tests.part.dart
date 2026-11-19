@@ -798,6 +798,123 @@ void registerAsmrAccountSyncTests({
     },
   );
 
+  test(
+    '401 sync recovery preserves credentials on transient login failure',
+    () async {
+      await resetPrefs();
+      final api = _FakeAsmrApiService();
+      final tokenStore = _MemoryAsmrTokenStore();
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        apiService: api,
+        authService: AsmrAuthService(apiService: api, tokenStore: tokenStore),
+        persistenceRepository: _FakeTestPersistenceRepository(
+          const <MusicTrack>[],
+        ),
+      );
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+      await controller.loginAsmrAccount('alice', 'password');
+
+      api.fetchReviewAuthFailuresRemaining = 1;
+      api.checkSessionAuthFailuresRemaining = 1;
+      api.beforeLogin = (_) async => throw const SocketException('offline');
+      await controller.syncAsmrAccount(force: true);
+
+      expect(controller.isAsmrAccountLoggedIn, isTrue);
+      expect(controller.syncViewState.phase, AsmrSyncPhase.failed);
+      expect(controller.syncViewState.lastError, isA<SocketException>());
+      expect(await tokenStore.readCredentials(), <String, String>{
+        'name': 'alice',
+        'password': 'password',
+      });
+
+      api.beforeLogin = null;
+      api.loginTokenOverride = 'token-alice-recovered';
+      await controller.syncAsmrAccount(force: true);
+
+      expect(controller.isAsmrAccountLoggedIn, isTrue);
+      expect(controller.syncViewState.phase, AsmrSyncPhase.succeeded);
+      expect(tokenStore.token, 'token-alice-recovered');
+    },
+  );
+
+  test(
+    '401 sync recovery does not reuse expired token on transient checkSession error',
+    () async {
+      await resetPrefs();
+      final api = _FakeAsmrApiService();
+      final tokenStore = _MemoryAsmrTokenStore();
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        apiService: api,
+        authService: AsmrAuthService(apiService: api, tokenStore: tokenStore),
+        persistenceRepository: _FakeTestPersistenceRepository(
+          const <MusicTrack>[],
+        ),
+      );
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+      await controller.loginAsmrAccount('alice', 'password');
+
+      final loginCountBefore = api.loginCount;
+      api.fetchReviewAuthFailuresRemaining = 1;
+      api.beforeCheckSession = (_) async =>
+          throw const SocketException('checkSession offline');
+      api.loginTokenOverride = 'token-alice-fresh';
+      await controller.syncAsmrAccount(force: true);
+
+      expect(controller.syncViewState.phase, AsmrSyncPhase.succeeded);
+      expect(api.loginCount, loginCountBefore + 1);
+      expect(tokenStore.token, 'token-alice-fresh');
+
+      api.fetchReviewAuthFailuresRemaining = 1;
+      api.beforeLogin = (_) async => throw const SocketException('login offline');
+      await controller.syncAsmrAccount(force: true);
+
+      expect(controller.isAsmrAccountLoggedIn, isTrue);
+      expect(controller.syncViewState.phase, AsmrSyncPhase.failed);
+      expect(controller.syncViewState.lastError, isA<SocketException>());
+      expect(await tokenStore.readCredentials(), <String, String>{
+        'name': 'alice',
+        'password': 'password',
+      });
+    },
+  );
+
+  test(
+    'concurrent restoreSession calls serialize without racing token writes',
+    () async {
+      await resetPrefs();
+      final api = _FakeAsmrApiService();
+      final tokenStore = _MemoryAsmrTokenStore();
+      final auth = AsmrAuthService(apiService: api, tokenStore: tokenStore);
+      await auth.login('alice', 'password');
+
+      final started = Completer<void>();
+      final release = Completer<void>();
+      var checkCalls = 0;
+      api.checkSessionAuthFailuresRemaining = 1;
+      api.loginTokenOverride = 'token-alice-serialized';
+      api.beforeCheckSession = (_) async {
+        checkCalls++;
+        if (checkCalls == 1) {
+          started.complete();
+          await release.future;
+        }
+      };
+
+      final first = auth.restoreSession();
+      await started.future;
+      final second = auth.restoreSession();
+      release.complete();
+
+      final sessions = await Future.wait<AsmrAuthSession?>([first, second]);
+      expect(sessions[0]?.token, 'token-alice-serialized');
+      expect(sessions[1]?.token, 'token-alice-serialized');
+      expect(api.loginCount, 2);
+      expect(tokenStore.token, 'token-alice-serialized');
+    },
+  );
+
   test('ASMR sync pushes local changes before pulling remote state', () async {
     await resetPrefs();
     final api = _FakeAsmrApiService();

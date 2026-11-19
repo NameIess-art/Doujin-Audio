@@ -1,19 +1,45 @@
 import 'package:flutter/material.dart';
 
+import '../../core/widgets/playlist_icon.dart';
+import '../theme/app_design_tokens.dart';
+
 enum MainDestinationType { library, asmrOne, playlist, my, settings }
 
 class MainDestination {
   const MainDestination({
     required this.type,
-    required this.icon,
-    required this.selectedIcon,
+    this.icon,
+    this.selectedIcon,
     required this.labelKey,
   });
 
   final MainDestinationType type;
-  final IconData icon;
-  final IconData selectedIcon;
+  final IconData? icon;
+  final IconData? selectedIcon;
   final String labelKey;
+
+  Widget buildIcon({
+    Key? key,
+    required bool selected,
+    required double size,
+    Color? color,
+  }) {
+    if (type == MainDestinationType.playlist) {
+      return PlaylistIcon(
+        key: key,
+        filled: selected,
+        size: size,
+        color: color,
+      );
+    }
+    final glyph = selected ? selectedIcon! : icon!;
+    return Icon(
+      glyph,
+      key: key,
+      size: AppDesignTokens.opticalIconSize(glyph, size),
+      color: color,
+    );
+  }
 }
 
 List<MainDestination> resolveMainDestinations({
@@ -38,8 +64,6 @@ List<MainDestination> resolveMainDestinations({
       ),
     const MainDestination(
       type: MainDestinationType.playlist,
-      icon: Icons.playlist_play_rounded,
-      selectedIcon: Icons.playlist_play_rounded,
       labelKey: 'nav_sessions',
     ),
     if (showMyPage)

@@ -806,9 +806,6 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
                                           color: cs.primary,
                                           fontWeight: FontWeight.w700,
                                           fontSize: 11.5,
-                                          fontFeatures: const [
-                                            FontFeature.tabularFigures(),
-                                          ],
                                         ),
                                   ),
                                 ),

@@ -424,7 +424,7 @@ jobs:
       - name: Store Windows installer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: release-windows-${{ github.ref_name }}
+          name: ${{ github.event_name == 'pull_request' && format('release-windows-pr-{0}', github.event.pull_request.number) || format('release-windows-{0}', github.ref_name) }}
           if-no-files-found: error
           path: |
             dist/windows/*-setup.exe

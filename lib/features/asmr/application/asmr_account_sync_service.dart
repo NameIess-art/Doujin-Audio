@@ -264,11 +264,27 @@ class AsmrAccountSyncService {
       if (!AsmrApiException.isAuthenticationError(error)) {
         return AsmrAccountSyncResult(snapshot: _snapshot, failure: error);
       }
-      final recovered = await _authService.restoreSession();
+      final AsmrAuthSession? recovered;
+      try {
+        recovered = await _authService.refreshSession();
+      } catch (recoveryError) {
+        cancellationToken.throwIfCancelled();
+        if (AsmrApiException.isAuthenticationError(recoveryError) &&
+            identical(_snapshot.session, session)) {
+          await _authService.logout();
+          _snapshot = _snapshot.copyWith(clearSession: true);
+        }
+        return AsmrAccountSyncResult(
+          snapshot: _snapshot,
+          failure: recoveryError,
+        );
+      }
       cancellationToken.throwIfCancelled();
       if (recovered == null || !recovered.isValid) {
-        await _authService.logout();
-        _snapshot = _snapshot.copyWith(clearSession: true);
+        if (identical(_snapshot.session, session)) {
+          await _authService.logout();
+          _snapshot = _snapshot.copyWith(clearSession: true);
+        }
         return AsmrAccountSyncResult(snapshot: _snapshot, failure: error);
       }
       session = recovered;
@@ -277,7 +293,8 @@ class AsmrAccountSyncService {
         await _runSync(recovered, language, cancellationToken);
       } catch (retryError) {
         cancellationToken.throwIfCancelled();
-        if (AsmrApiException.isAuthenticationError(retryError)) {
+        if (AsmrApiException.isAuthenticationError(retryError) &&
+            identical(_snapshot.session, session)) {
           await _authService.logout();
           _snapshot = _snapshot.copyWith(clearSession: true);
         }

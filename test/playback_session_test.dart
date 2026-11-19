@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'support/runtime_test_models.dart';
@@ -871,6 +872,59 @@ void main() {
       expect(after.volume, 0.5);
       expect(after.state.playing, isTrue);
       expect(after.state.processing, PlaybackProcessingStatus.ready);
+    },
+  );
+
+  test(
+    'rapid synchronous transitions preserve previousState per event and Windows file URIs',
+    () async {
+      final session = createSession();
+      addTearDown(session.shutdown);
+      final transitions = <PlaybackStateTransition>[];
+      session.stateTransitionStream.listen(transitions.add);
+
+      session.applyNativeSnapshot(
+        NativePlaybackSnapshot(
+          sessionId: session.id,
+          uri: 'file:///C:/Music/one.mp3',
+          playing: true,
+          playWhenReady: true,
+          processingState: 'ready',
+          position: Duration.zero,
+          bufferedPosition: Duration.zero,
+          volume: 1,
+          boostGain: 1,
+          channelSwapEnabled: false,
+        ),
+      );
+      session.setOptimisticState(
+        playing: false,
+        processingState: ProcessingState.completed,
+      );
+      session.setOptimisticState(
+        playing: false,
+        processingState: ProcessingState.idle,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(session.state, const PlayerState(false, ProcessingState.idle));
+      expect(transitions, hasLength(3));
+      expect(
+        transitions[1].previousState.processingState,
+        ProcessingState.ready,
+      );
+      expect(
+        transitions[1].state.processingState,
+        ProcessingState.completed,
+      );
+      expect(
+        transitions[2].previousState.processingState,
+        ProcessingState.completed,
+      );
+      expect(transitions[2].state.processingState, ProcessingState.idle);
+      if (Platform.isWindows) {
+        expect(session.currentTrackPath, r'C:\Music\one.mp3');
+      }
     },
   );
 }

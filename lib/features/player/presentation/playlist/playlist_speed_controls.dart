@@ -34,6 +34,8 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
   bool _isAdjusting = false;
   int _adjustmentGeneration = 0;
   int _committedGeneration = -1;
+  int _externalSyncGeneration = 0;
+  bool _suppressWheelEvents = false;
 
   List<double> get _speeds => PlaybackFacade.playbackSpeedOptions;
 
@@ -79,10 +81,28 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
       if (nextIndex != _selectedIndex) {
         _selectedIndex = nextIndex;
         _wheelTargetIndex = null;
-        _controller.dispose();
-        _controller = FixedExtentScrollController(initialItem: _selectedIndex);
+        _scheduleControllerJumpToSelected();
       }
     }
+  }
+
+  void _scheduleControllerJumpToSelected() {
+    final generation = ++_externalSyncGeneration;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          _isAdjusting ||
+          generation != _externalSyncGeneration ||
+          !_controller.hasClients) {
+        return;
+      }
+      if (_controller.selectedItem == _selectedIndex) return;
+      _suppressWheelEvents = true;
+      try {
+        _controller.jumpToItem(_selectedIndex);
+      } finally {
+        _suppressWheelEvents = false;
+      }
+    });
   }
 
   @override
@@ -108,6 +128,7 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
     final nextIndex = index.clamp(0, _speeds.length - 1);
     _isAdjusting = true;
     _adjustmentGeneration++;
+    _externalSyncGeneration++;
     if (_selectedIndex != nextIndex) {
       AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
       setState(() => _selectedIndex = nextIndex);
@@ -141,6 +162,7 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
 
   void _scrollToSpeedIndex(int index, {required Duration duration}) {
     if (index == _selectedIndex &&
+        _controller.hasClients &&
         index == _controller.selectedItem &&
         !_controller.position.isScrollingNotifier.value) {
       _wheelTargetIndex = null;
@@ -183,8 +205,8 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
       );
       if (nextIndex != _selectedIndex) {
         _selectedIndex = nextIndex;
-        _controller.dispose();
-        _controller = FixedExtentScrollController(initialItem: _selectedIndex);
+        _wheelTargetIndex = null;
+        _scheduleControllerJumpToSelected();
       }
     }
 
@@ -206,7 +228,6 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
             style: Theme.of(context).textTheme.displaySmall?.copyWith(
               color: cs.onSurface,
               fontWeight: FontWeight.w900,
-              fontFeatures: const [FontFeature.tabularFigures()],
             ),
           ),
         ),
@@ -216,12 +237,14 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
             children: [
               NotificationListener<ScrollNotification>(
                 onNotification: (notification) {
+                  if (_suppressWheelEvents) return false;
                   if (notification is ScrollStartNotification) {
                     if (notification.dragDetails != null) {
                       _wheelTargetIndex = null;
                     }
                     _isAdjusting = true;
                     _adjustmentGeneration++;
+                    _externalSyncGeneration++;
                   } else if (notification is ScrollEndNotification) {
                     _finishAdjustment();
                   }
@@ -236,6 +259,7 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
                   magnification: 1.08,
                   physics: const FixedExtentScrollPhysics(),
                   onSelectedItemChanged: (index) {
+                    if (_suppressWheelEvents) return;
                     _setSpeedIndex(index);
                   },
                   childDelegate: ListWheelChildBuilderDelegate(
@@ -266,9 +290,6 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
                                     fontWeight: FontWeight.w900,
                                     fontSize: 28,
                                     letterSpacing: -0.5,
-                                    fontFeatures: const [
-                                      FontFeature.tabularFigures(),
-                                    ],
                                   )
                                 : Theme.of(
                                     context,
@@ -278,9 +299,6 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
                                     ),
                                     fontWeight: FontWeight.w600,
                                     fontSize: 17,
-                                    fontFeatures: const [
-                                      FontFeature.tabularFigures(),
-                                    ],
                                   ),
                             child: Text(formatSpeedValue(speed)),
                           ),

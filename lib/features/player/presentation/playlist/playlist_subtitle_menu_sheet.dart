@@ -162,7 +162,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
               .read(appLanguageProviderInstanceProvider)
               .tr('subtitle_selection_empty'),
           tone: AppFeedbackTone.warning,
-          icon: Icons.info_outline_rounded,
+          icon: Icons.subtitles_off_rounded,
         );
         return;
       }
@@ -333,7 +333,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
           context,
           i18n.tr('script_text_not_found'),
           tone: AppFeedbackTone.warning,
-          icon: Icons.info_outline_rounded,
+          icon: Icons.warning_amber_rounded,
         );
         return;
       }
@@ -663,8 +663,8 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                                 ),
                               ),
                               Icon(
-                                Icons.arrow_forward_ios_rounded,
-                                size: 14,
+                                Icons.chevron_right_rounded,
+                                size: 20,
                                 color: cs.onSurfaceVariant.withValues(
                                   alpha: 0.6,
                                 ),
@@ -742,8 +742,8 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                                 ),
                               ),
                               Icon(
-                                Icons.arrow_forward_ios_rounded,
-                                size: 14,
+                                Icons.chevron_right_rounded,
+                                size: 20,
                                 color: cs.onSurfaceVariant.withValues(
                                   alpha: 0.6,
                                 ),
@@ -1258,7 +1258,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                           key: const ValueKey('subtitle_script_tile'),
                           enabled: generateEnabled,
                           leading: Icon(
-                            Icons.text_snippet_rounded,
+                            Icons.auto_awesome_rounded,
                             color: generateEnabled
                                 ? cs.primary
                                 : cs.onSurface.withValues(alpha: 0.38),
@@ -1424,7 +1424,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  Icons.sync_rounded,
+                                  Icons.more_time_rounded,
                                   size: 20,
                                   color: !hasSubtitle
                                       ? cs.onSurface.withValues(alpha: 0.38)

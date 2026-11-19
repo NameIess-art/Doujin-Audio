@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/media/dlsite_metadata.dart';
 import '../../../core/media/time_text_formatters.dart';
+import '../../../core/widgets/unified_popup_menu.dart';
 
 String? metadataDateErrorKey(String value) =>
     value.trim().isNotEmpty && parseDateYmd(value) == null
@@ -193,7 +194,7 @@ class _ReviewInfoLine extends StatelessWidget {
       child: Row(
         children: [
           Icon(
-            Icons.confirmation_number_rounded,
+            Icons.numbers_rounded,
             size: 18,
             color: cs.onSurfaceVariant,
           ),
@@ -241,6 +242,7 @@ class _ReviewTextField extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: TextField(
+        contextMenuBuilder: buildAppEditableTextMenu,
         controller: controller,
         minLines: 1,
         maxLines: 3,

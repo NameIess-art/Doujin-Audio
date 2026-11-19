@@ -24,6 +24,14 @@ class LibraryService {
         hashCode: (value) => PathMatcher.equivalenceKey(value).hashCode,
       )..addAll(values ?? <String, T>{});
 
+  static Set<String> createPathSet([Iterable<String>? values]) =>
+      HashSet<String>(
+        equals: (first, second) =>
+            PathMatcher.equivalenceKey(first) ==
+            PathMatcher.equivalenceKey(second),
+        hashCode: (value) => PathMatcher.equivalenceKey(value).hashCode,
+      )..addAll(values ?? const <String>[]);
+
   List<MusicTrack> library = <MusicTrack>[];
   Map<String, MusicTrack> libraryByPath = createPathIndex<MusicTrack>();
 
@@ -37,11 +45,11 @@ class LibraryService {
   final List<String> watchedFolders = <String>[];
   final List<String> watchedLibraries = <String>[];
   final Map<String, Set<String>> excludedLibraryFolders =
-      <String, Set<String>>{};
+      createPathIndex<Set<String>>();
   final Map<String, Set<String>> excludedLibraryTracks =
-      <String, Set<String>>{};
+      createPathIndex<Set<String>>();
   Map<String, Map<String, LibraryEntry>> libraryEntriesByLibrary =
-      <String, Map<String, LibraryEntry>>{};
+      createPathIndex<Map<String, LibraryEntry>>();
   bool isScanning = false;
   bool isBackgroundScanning = false;
   String scanCurrentFolder = '';
@@ -231,7 +239,7 @@ class LibraryService {
     if (folders == null) return false;
     return folders.any(
       (folderPath) =>
-          normalizedPath != folderPath &&
+          !PathMatcher.equalsNormalized(normalizedPath, folderPath) &&
           isLibraryEntryWithin(
             libraryEntryForPath(normalizedLibraryPath, normalizedPath),
             normalizedPath,
@@ -269,7 +277,7 @@ class LibraryService {
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
     final folders = excludedLibraryFolders.putIfAbsent(
       normalizedLibraryPath,
-      () => <String>{},
+      createPathSet,
     );
     final changed = excluded
         ? folders.add(normalizedFolderPath)
@@ -306,7 +314,7 @@ class LibraryService {
     final normalizedTrackPath = PathMatcher.normalize(trackPath);
     final tracks = excludedLibraryTracks.putIfAbsent(
       normalizedLibraryPath,
-      () => <String>{},
+      createPathSet,
     );
     if (excluded && isLibraryPathInheritedExcluded(libraryPath, trackPath)) {
       return (changed: false, affectedEntryPaths: const <String>[]);
@@ -371,11 +379,11 @@ class LibraryService {
     final newLibraryRoot = PathMatcher.equalsNormalized(oldLibraryRoot, oldRoot)
         ? newRoot
         : oldLibraryRoot;
-    final retargetedTracks = <String, MusicTrack>{};
-    final tracks = <String, MusicTrack>{
+    final retargetedTracks = createPathIndex<MusicTrack>();
+    final tracks = createPathIndex<MusicTrack>({
       for (final track in retainedTracks) track.path: track,
       for (final track in library) track.path: track,
-    };
+    });
     for (final track in tracks.values) {
       if (!PathMatcher.isWithinOrEqual(track.path, oldRoot)) continue;
       final nextTrackPath = _replacePathPrefix(track.path, oldRoot, newRoot);
@@ -488,19 +496,19 @@ class LibraryService {
 
   void _retargetLibraryExclusions(String oldRoot, String newRoot) {
     Map<String, Set<String>> retarget(Map<String, Set<String>> source) {
-      final result = <String, Set<String>>{};
+      final result = createPathIndex<Set<String>>();
       for (final entry in source.entries) {
         final nextKey = PathMatcher.equalsNormalized(entry.key, oldRoot)
             ? newRoot
             : entry.key;
-        final nextValues = entry.value
-            .map(
-              (value) => PathMatcher.isWithinOrEqual(value, oldRoot)
-                  ? _replacePathPrefix(value, oldRoot, newRoot)
-                  : value,
-            )
-            .toSet();
-        result.putIfAbsent(nextKey, () => <String>{}).addAll(nextValues);
+        final nextValues = createPathSet(
+          entry.value.map(
+            (value) => PathMatcher.isWithinOrEqual(value, oldRoot)
+                ? _replacePathPrefix(value, oldRoot, newRoot)
+                : value,
+          ),
+        );
+        result.putIfAbsent(nextKey, createPathSet).addAll(nextValues);
       }
       return result;
     }
@@ -537,9 +545,9 @@ class LibraryService {
           ),
         )
         .toList(growable: false);
-    libraryEntriesByLibrary[newLibraryRoot] = <String, LibraryEntry>{
+    libraryEntriesByLibrary[newLibraryRoot] = createPathIndex<LibraryEntry>({
       for (final entry in retargetedEntries) entry.path: entry,
-    };
+    });
     return retargetedEntries;
   }
 
@@ -654,7 +662,7 @@ class LibraryService {
       final normalizedPath = PathMatcher.normalize(entry.path);
       libraryEntriesByLibrary.putIfAbsent(
         normalizedLibraryPath,
-        () => <String, LibraryEntry>{},
+        createPathIndex<LibraryEntry>,
       )[normalizedPath] = entry
           .copyWith();
     }
@@ -676,11 +684,75 @@ class LibraryService {
       final lib = PathMatcher.normalize(entry.libraryPath);
       final p = PathMatcher.normalize(entry.path);
       if (entry.isFolder) {
-        excludedLibraryFolders.putIfAbsent(lib, () => <String>{}).add(p);
+        excludedLibraryFolders.putIfAbsent(lib, createPathSet).add(p);
       } else {
-        excludedLibraryTracks.putIfAbsent(lib, () => <String>{}).add(p);
+        excludedLibraryTracks.putIfAbsent(lib, createPathSet).add(p);
       }
     }
+  }
+
+  LibraryExclusionSnapshot snapshotLibraryExclusions(String libraryPath) {
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    return LibraryExclusionSnapshot(
+      libraryPath: normalizedLibraryPath,
+      excludedFolders: List<String>.unmodifiable(
+        excludedLibraryFolders[normalizedLibraryPath] ?? const <String>{},
+      ),
+      excludedTracks: List<String>.unmodifiable(
+        excludedLibraryTracks[normalizedLibraryPath] ?? const <String>{},
+      ),
+      entries: List<LibraryEntry>.unmodifiable(
+        libraryEntriesForLibrary(
+          normalizedLibraryPath,
+        ).map((entry) => entry.copyWith()),
+      ),
+    );
+  }
+
+  ({List<String> excludedEntryPaths, List<String> activeEntryPaths})
+  restoreLibraryExclusions(LibraryExclusionSnapshot snapshot) {
+    final normalizedLibraryPath = PathMatcher.normalize(snapshot.libraryPath);
+    if (snapshot.excludedFolders.isEmpty) {
+      excludedLibraryFolders.remove(normalizedLibraryPath);
+    } else {
+      excludedLibraryFolders[normalizedLibraryPath] = createPathSet(
+        snapshot.excludedFolders,
+      );
+    }
+    if (snapshot.excludedTracks.isEmpty) {
+      excludedLibraryTracks.remove(normalizedLibraryPath);
+    } else {
+      excludedLibraryTracks[normalizedLibraryPath] = createPathSet(
+        snapshot.excludedTracks,
+      );
+    }
+
+    final excludedEntryPaths = <String>[];
+    final activeEntryPaths = <String>[];
+    final entries = libraryEntriesByLibrary[normalizedLibraryPath];
+    if (entries != null && snapshot.entries.isNotEmpty) {
+      for (final previous in snapshot.entries) {
+        final normalizedPath = PathMatcher.normalize(previous.path);
+        final current = entries[normalizedPath];
+        if (current == null || current.state == previous.state) continue;
+        entries[normalizedPath] = current.copyWith(state: previous.state);
+        if (previous.isExcluded) {
+          excludedEntryPaths.add(current.path);
+        } else {
+          activeEntryPaths.add(current.path);
+        }
+      }
+    }
+    if (excludedEntryPaths.isNotEmpty ||
+        activeEntryPaths.isNotEmpty ||
+        snapshot.excludedFolders.isNotEmpty ||
+        snapshot.excludedTracks.isNotEmpty) {
+      markStructureChanged();
+    }
+    return (
+      excludedEntryPaths: excludedEntryPaths,
+      activeEntryPaths: activeEntryPaths,
+    );
   }
 
   List<String> removeLibraryEntriesMissingFromFolderScan(
@@ -726,7 +798,9 @@ class LibraryService {
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
     final entries = libraryEntriesByLibrary[normalizedLibraryPath];
     if (entries == null || entries.isEmpty) return const <String>[];
-    final normalizedEntryPaths = entryPaths.map(PathMatcher.normalize).toSet();
+    final normalizedEntryPaths = createPathSet(
+      entryPaths.map(PathMatcher.normalize),
+    );
     if (normalizedEntryPaths.isEmpty) return const <String>[];
 
     final removedPaths = <String>[];
@@ -997,7 +1071,9 @@ class LibraryService {
     if (removedTracks.isEmpty) {
       return (tracks: const <MusicTrack>[], batched: false);
     }
-    final removedPaths = removedTracks.map((track) => track.path).toSet();
+    final removedPaths = createPathSet(
+      removedTracks.map((track) => track.path),
+    );
     library.removeWhere((track) => removedPaths.contains(track.path));
     for (final trackPath in removedPaths) {
       libraryByPath.remove(trackPath);

@@ -155,7 +155,9 @@ class AsmrDownloadPlanner {
   List<PlannedDownloadFile> collectTaskFiles(AsmrDownloadTaskSnapshot task) {
     final files = collectPlannedFiles(task.selectedRoots);
     final cover = task.saveCover ? plannedCoverFile(task.work) : null;
-    if (cover != null) files.add(cover);
+    if (cover != null && !hasRemoteCoverFile(files, cover)) {
+      files.add(cover);
+    }
     return files;
   }
 
@@ -230,7 +232,7 @@ class AsmrDownloadPlanner {
         path.posix.isAbsolute(normalized) ||
         path.windows.isAbsolute(normalized) ||
         normalized.startsWith('//') ||
-        RegExp(r'^[A-Za-z]:').hasMatch(normalized)) {
+        RegExp(r'^[A-Za-z]:(?:$|/)').hasMatch(normalized)) {
       throw FormatException('Invalid download path: $relativePath');
     }
     final segments = normalized.split('/');
@@ -279,6 +281,39 @@ class AsmrDownloadPlanner {
         .join('/');
   }
 
+  static const List<String> _coverExtensions = [
+    '.jpg',
+    '.jpeg',
+    '.png',
+    '.webp',
+    '.gif',
+  ];
+
+  String _outputCollisionKey(String relativePath) {
+    final local = localRelativePath(relativePath);
+    return Platform.isWindows ? local.toLowerCase() : local;
+  }
+
+  bool hasRemoteCoverFile(
+    Iterable<PlannedDownloadFile> files,
+    PlannedDownloadFile coverFile,
+  ) {
+    final stem = coverFile.coverFileStem;
+    if (stem == null || stem.isEmpty) return false;
+    final candidates = <String>{
+      for (final extension in _coverExtensions)
+        _outputCollisionKey('cover/$stem$extension'),
+    };
+    for (final file in files) {
+      if (file.isCover) continue;
+      final original = validatedDownloadRelativePath(file.relativePath);
+      if (candidates.contains(_outputCollisionKey(original))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   void validateLocalOutputs(
     List<PlannedDownloadFile> files, {
     required bool saveMetadata,
@@ -291,8 +326,7 @@ class AsmrDownloadPlanner {
       bool generated = false,
       String? origin,
     }) {
-      final local = localRelativePath(original);
-      final output = Platform.isWindows ? local.toLowerCase() : local;
+      final output = _outputCollisionKey(original);
       final owner = generated ? 'generated:${origin ?? original}' : original;
       if ((owners.containsKey(output) && owners[output] != owner) ||
           (kinds.containsKey(output) && kinds[output] != directory)) {
@@ -309,6 +343,9 @@ class AsmrDownloadPlanner {
       if (saveMetadata && original.toLowerCase() == 'doujin-audio.json') {
         continue;
       }
+      if (file.isCover && hasRemoteCoverFile(files, file)) {
+        continue;
+      }
       final segments = original.split('/');
       for (var count = 1; count < segments.length; count++) {
         register(segments.take(count).join('/'), directory: true);
@@ -319,7 +356,7 @@ class AsmrDownloadPlanner {
         register(hlsOutputPath(original), generated: true, origin: original);
       }
       if (file.isCover) {
-        for (final extension in ['.jpg', '.jpeg', '.png', '.webp', '.gif']) {
+        for (final extension in _coverExtensions) {
           register('cover/${file.coverFileStem}$extension', generated: true);
         }
       }

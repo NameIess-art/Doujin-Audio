@@ -33,6 +33,7 @@ import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_edit_panel.dart';
 import '../../../core/widgets/drag_only_scrollbar.dart';
 import '../../../core/widgets/operation_feedback.dart';
+import '../../../core/widgets/playlist_icon.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/library_like_cards.dart';
@@ -941,7 +942,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     );
     final targetName = await showAppTextInputPanel<String>(
       context: context,
-      barrierLabel: i18n.tr('close'),
       header: AppEditPanelHeader(
         title: i18n.tr('rename'),
         icon: Icons.drive_file_rename_outline_rounded,
@@ -994,7 +994,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       WorkEntryType.folder => [
         UnifiedMenuEntry<WorkEntryAction>.action(
           value: WorkEntryAction.open,
-          icon: Icons.folder_open_rounded,
+          icon: Icons.folder_rounded,
           label: i18n.tr('open'),
         ),
         UnifiedMenuEntry<WorkEntryAction>.action(
@@ -1017,7 +1017,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
         ),
         UnifiedMenuEntry<WorkEntryAction>.action(
           value: WorkEntryAction.add,
-          icon: Icons.playlist_add_rounded,
+          iconWidget: const PlaylistIcon.add(),
           label: i18n.tr('detail_add_to_queue'),
         ),
         UnifiedMenuEntry<WorkEntryAction>.action(
@@ -1265,7 +1265,13 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
 
   void _showDlsiteFailure(String messageKey) {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    showAppSnackBar(context, i18n.tr(messageKey), icon: Icons.info_outline);
+    showAppSnackBar(
+      context,
+      i18n.tr(messageKey),
+      icon: messageKey == 'work_dlsite_not_found'
+          ? Icons.search_off_rounded
+          : Icons.error_outline_rounded,
+    );
   }
 
   Future<void> _handleRemoteToggleFavorite() async {

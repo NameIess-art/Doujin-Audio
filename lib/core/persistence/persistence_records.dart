@@ -33,6 +33,7 @@ final class AudioEffectsRecord {
     this.eqPresetId,
     Map<int, double> eqBandLevels = const <int, double>{},
     this.panning = 0,
+    this.frontBack = 0,
   }) : eqBandLevels = Map<int, double>.unmodifiable(eqBandLevels);
 
   final bool skipSilenceEnabled;
@@ -42,6 +43,7 @@ final class AudioEffectsRecord {
   final String? eqPresetId;
   final Map<int, double> eqBandLevels;
   final double panning;
+  final double frontBack;
 }
 
 final class PlaybackQueueEntryRecord {

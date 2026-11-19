@@ -4,48 +4,36 @@ import '../../app/theme/app_design_tokens.dart';
 import 'app_buttons.dart';
 import 'app_dialog.dart';
 import 'windows_smooth_scroll_controller.dart';
+import 'unified_popup_menu.dart';
 
 const double _singleFieldPanelHeight = 192;
 
-Future<T?> showAppEditPanel<T>({
-  required BuildContext context,
-  required String barrierLabel,
-  required WidgetBuilder builder,
-}) => showAppOverlayPanel<T>(
-  context: context,
-  barrierLabel: barrierLabel,
-  mobileAlignment: Alignment.center,
-  mobileOuterPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-  builder: builder,
-);
-
 Future<T?> showAppInputPanel<T>({
   required BuildContext context,
-  required String barrierLabel,
   required AppEditPanelHeader header,
   double preferredHeight = _singleFieldPanelHeight,
   Key? surfaceKey,
   required Widget Function(BuildContext context, double height) builder,
-}) => showAppEditPanel<T>(
+}) => showAppDialog<T>(
   context: context,
-  barrierLabel: barrierLabel,
+  // The queue name editor uses the root theme in the overlay route.
+  captureLocalThemes: false,
   builder: (context) => Semantics(
     scopesRoute: true,
     namesRoute: true,
     explicitChildNodes: true,
     label: header.title,
-    child: AppEditPanel(
-      surfaceKey: surfaceKey,
-      editingInput: true,
-      preferredInputHeight: preferredHeight,
-      builder: (context, _, height) => builder(context, height),
+    child: LayoutBuilder(
+      builder: (context, constraints) => _AppEditPanelSurface(
+        surfaceKey: surfaceKey,
+        child: builder(context, constraints.constrainHeight(preferredHeight)),
+      ),
     ),
   ),
 );
 
 Future<T?> showAppTextInputPanel<T>({
   required BuildContext context,
-  required String barrierLabel,
   required AppEditPanelHeader header,
   required String initialValue,
   required String cancelLabel,
@@ -57,7 +45,6 @@ Future<T?> showAppTextInputPanel<T>({
   Key? surfaceKey,
 }) => showAppInputPanel<T>(
   context: context,
-  barrierLabel: barrierLabel,
   header: header,
   surfaceKey: surfaceKey,
   builder: (panelContext, height) => AppEditInput(
@@ -81,13 +68,11 @@ class AppEditPanel extends StatelessWidget {
   const AppEditPanel({
     super.key,
     this.surfaceKey,
-    this.preferredInputHeight = _singleFieldPanelHeight,
     required this.editingInput,
     required this.builder,
   });
 
   final Key? surfaceKey;
-  final double preferredInputHeight;
   final bool editingInput;
   final Widget Function(
     BuildContext context,
@@ -98,10 +83,6 @@ class AppEditPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final radius = BorderRadius.circular(
-      AppDesignTokens.of(context).radiusOverlay,
-    );
     return LayoutBuilder(
       builder: (context, constraints) {
         final height = constraints.maxHeight;
@@ -111,7 +92,7 @@ class AppEditPanel extends StatelessWidget {
             .clamp(0.0, height);
         final usableHeight = (height - keyboardHeight).clamp(0.0, anchorHeight);
         final editHeight = anchorHeight.clamp(0.0, 350.0);
-        final inputHeight = usableHeight.clamp(0.0, preferredInputHeight);
+        final inputHeight = usableHeight.clamp(0.0, _singleFieldPanelHeight);
         final editTop = (anchorHeight - editHeight) / 2;
         final top = editingInput
             ? editTop.clamp(0.0, usableHeight - inputHeight)
@@ -121,24 +102,9 @@ class AppEditPanel extends StatelessWidget {
           padding: EdgeInsets.only(top: top),
           child: Align(
             alignment: Alignment.topCenter,
-            child: DecoratedBox(
-              key: surfaceKey,
-              decoration: BoxDecoration(
-                borderRadius: radius,
-                boxShadow: [
-                  BoxShadow(
-                    color: colors.shadow.withValues(alpha: 0.22),
-                    blurRadius: 32,
-                    offset: const Offset(0, 18),
-                  ),
-                ],
-              ),
-              child: Material(
-                color: colors.surfaceContainerLow,
-                borderRadius: radius,
-                clipBehavior: Clip.antiAlias,
-                child: builder(context, editHeight, inputHeight),
-              ),
+            child: _AppEditPanelSurface(
+              surfaceKey: surfaceKey,
+              child: builder(context, editHeight, inputHeight),
             ),
           ),
         );
@@ -147,18 +113,54 @@ class AppEditPanel extends StatelessWidget {
   }
 }
 
+class _AppEditPanelSurface extends StatelessWidget {
+  const _AppEditPanelSurface({required this.surfaceKey, required this.child});
+
+  final Key? surfaceKey;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final radius = BorderRadius.circular(
+      AppDesignTokens.of(context).radiusOverlay,
+    );
+    return DecoratedBox(
+      key: surfaceKey,
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        boxShadow: [
+          BoxShadow(
+            color: colors.shadow.withValues(alpha: 0.22),
+            blurRadius: 32,
+            offset: const Offset(0, 18),
+          ),
+        ],
+      ),
+      child: Material(
+        color: colors.surfaceContainerLow,
+        borderRadius: radius,
+        clipBehavior: Clip.antiAlias,
+        child: child,
+      ),
+    );
+  }
+}
+
 class AppEditPanelHeader extends StatelessWidget {
   const AppEditPanelHeader({
     super.key,
     this.iconKey,
-    required this.icon,
+    this.icon,
+    this.iconWidget,
     required this.title,
     this.accentColor,
     this.titleColor,
-  });
+  }) : assert(icon != null || iconWidget != null);
 
   final Key? iconKey;
-  final IconData icon;
+  final IconData? icon;
+  final Widget? iconWidget;
   final String title;
   final Color? accentColor;
   final Color? titleColor;
@@ -177,7 +179,15 @@ class AppEditPanelHeader extends StatelessWidget {
               AppDesignTokens.of(context).radiusSmall,
             ),
           ),
-          child: Icon(icon, key: iconKey, color: accent, size: 22),
+          child: iconWidget == null
+              ? Icon(icon, key: iconKey, color: accent, size: 22)
+              : Center(
+                  key: iconKey,
+                  child: IconTheme.merge(
+                    data: IconThemeData(color: accent, size: 22),
+                    child: iconWidget!,
+                  ),
+                ),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -251,6 +261,7 @@ class _AppEditInputState extends State<AppEditInput> {
       height: widget.height,
       header: widget.header,
       fields: TextField(
+        contextMenuBuilder: buildAppEditableTextMenu,
         key: widget.inputKey,
         controller: _controller,
         autofocus: true,

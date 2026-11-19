@@ -370,7 +370,6 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
                           fontSize: 68,
                           fontWeight: FontWeight.w200,
                           letterSpacing: 2,
-                          fontFeatures: [FontFeature.tabularFigures()],
                         ),
                       ),
                       const SizedBox(height: 12),

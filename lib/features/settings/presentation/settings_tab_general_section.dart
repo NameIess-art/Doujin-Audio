@@ -66,7 +66,7 @@ List<Widget> _buildSettingsLanguageSection({
             );
             return ListTile(
               title: _settingsTitle(i18n.tr('dlsite_metadata_language')),
-              leading: _settingsIcon(Icons.public_rounded, cs.primary),
+              leading: _settingsIcon(Icons.storefront_rounded, cs.primary),
               trailing: _settingsDropdown<ContentLanguagePreference>(
                 context,
                 value: dlsiteLanguage,
@@ -108,7 +108,7 @@ List<Widget> _buildSettingsLanguageSection({
             final controller = ref.read(asmrLibraryControllerProvider);
             return ListTile(
               title: _settingsTitle(i18n.tr('asmr_page_language')),
-              leading: _settingsIcon(Icons.public_rounded, cs.primary),
+              leading: _settingsIcon(Icons.translate_rounded, cs.primary),
               trailing: _settingsDropdown<ContentLanguagePreference>(
                 context,
                 value: preference,
@@ -302,7 +302,7 @@ List<Widget> _buildSettingsPageDisplaySection({
                           () => settings.setShowAsmrOne(value),
                         )
                       : null,
-                  secondary: _settingsIcon(Icons.cloud_outlined, cs.primary),
+                  secondary: _settingsIcon(Icons.cloud_rounded, cs.primary),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 8),
                 ),
                 SwitchListTile(
@@ -332,7 +332,7 @@ List<Widget> _buildSettingsPageDisplaySection({
                     () => settings.setShowMyPage(value),
                   ),
                   secondary: _settingsIcon(
-                    Icons.person_outline_rounded,
+                    Icons.person_rounded,
                     cs.primary,
                   ),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 8),
@@ -379,6 +379,10 @@ Widget _settingsIcon(IconData icon, Color color) {
   return Container(
     width: SettingsTileTheme.leadingWidth,
     alignment: Alignment.center,
-    child: Icon(icon, color: color, size: SettingsTileTheme.iconSize),
+    child: Icon(
+      icon,
+      color: color,
+      size: AppDesignTokens.opticalIconSize(icon, SettingsTileTheme.iconSize),
+    ),
   );
 }

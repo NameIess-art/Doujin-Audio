@@ -723,6 +723,28 @@ class NativePlaybackRecoveryControllerTest {
         assertTrue(isRecoverablePlaybackErrorCode(PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_INIT_FAILED))
         assertTrue(isRecoverablePlaybackErrorCode(PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_WRITE_FAILED))
     }
+
+    @Test
+    fun `recoverIntendedPlayback pauses players persists and syncs foreground when audio focus is denied`() {
+        val environment = FakeRecoveryEnvironment()
+        val stalled = HealthCheckPlayer("stalled", environment).apply {
+            playWhenReady = true
+            playbackState = Player.STATE_IDLE
+        }
+        val host = healthCheckHost(stalled).apply {
+            audioFocusAllowed = false
+        }
+        val controller = NativePlaybackRecoveryController(host, environment)
+        controller.markIntended("stalled")
+
+        controller.trigger("keep_alive_heartbeat")
+
+        assertEquals(1, stalled.pauseCalls)
+        assertFalse(stalled.playWhenReady)
+        assertFalse(controller.isIntended("stalled"))
+        assertEquals(1, host.persistNowCalls)
+        assertEquals(1, host.syncForegroundCalls)
+    }
 }
 
 private class FakeRecoveryEnvironment : NativePlaybackRecoveryEnvironment {
@@ -792,6 +814,8 @@ private class HealthCheckPlayer(sessionId: String, environment: FakeRecoveryEnvi
     var hasPlayerError = false
     var playCalls = 0
         private set
+    var pauseCalls = 0
+        private set
     val player = Proxy.newProxyInstance(
         ExoPlayer::class.java.classLoader,
         arrayOf(ExoPlayer::class.java)
@@ -810,6 +834,11 @@ private class HealthCheckPlayer(sessionId: String, environment: FakeRecoveryEnvi
             "play" -> {
                 playCalls++
                 playWhenReady = true
+                null
+            }
+            "pause" -> {
+                pauseCalls++
+                playWhenReady = false
                 null
             }
             else -> error("Unexpected ExoPlayer access: ${method.name}")
@@ -845,6 +874,7 @@ private class FakeRecoveryHost(
 ) : NativePlaybackRecoveryHost {
     override var interruptionActive = false
     var syncForegroundCalls = 0
+    var persistNowCalls = 0
     var onSyncForeground: () -> Unit = {}
     var requestAudioFocusCalls = 0
     var audioFocusAllowed = true
@@ -893,7 +923,9 @@ private class FakeRecoveryHost(
     }
     override fun publishSession(sessionId: String) = Unit
     override fun publishAllSessions() = Unit
-    override fun persistNow() = Unit
+    override fun persistNow() {
+        persistNowCalls += 1
+    }
     override fun schedulePersist() = Unit
     override fun syncForeground() {
         syncForegroundCalls += 1

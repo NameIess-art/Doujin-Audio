@@ -241,11 +241,23 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
     );
   }
 
-  Future<void> setSessionPanning(String sessionId, double panning) {
+  Future<void> setSessionSoundField(
+    String sessionId, {
+    required double panning,
+    required double frontBack,
+  }) {
+    for (final (name, value) in [
+      ('panning', panning),
+      ('frontBack', frontBack),
+    ]) {
+      if (!value.isFinite || value < -1 || value > 1) {
+        throw ArgumentError.value(value, name, 'Expected a value from -1 to 1');
+      }
+    }
     return _updateSessionAudioEffects(
       sessionId,
-      (state) => state.copyWith(panning: panning),
-      errorLabel: 'setSessionPanning',
+      (state) => state.copyWith(panning: panning, frontBack: frontBack),
+      errorLabel: 'setSessionSoundField',
     );
   }
 

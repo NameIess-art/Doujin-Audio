@@ -325,6 +325,70 @@ void main() {
         expect(catalog.rollbackBatchDepth, 0);
       },
     );
+  }
+
+  test(
+    'folder re-import does not clear exclusions when another scan is active',
+    () async {
+      final catalog = _ExclusionFolderCatalog(
+        watchedFolders: <String>['C:/music'],
+        busy: true,
+        excludedFolders: <String>['C:/music/Sub'],
+      );
+      final outcome = await LibraryScannerService(
+        dataSource: _ChunkedRefreshDataSource(catalog: catalog),
+      ).addFolder(provider: catalog, labels: labels);
+
+      expect(outcome?.code, LibraryScanOutcomeCode.alreadyRunning);
+      expect(catalog.clearExclusionsCalls, 0);
+      expect(catalog.hasLibraryExclusions('C:/music'), isTrue);
+    },
+  );
+
+  for (final cancelled in <bool>[true, false]) {
+    test(
+      '${cancelled ? 'cancelled' : 'failed'} folder re-import restores cleared exclusions',
+      () async {
+        final catalog = _ExclusionFolderCatalog(
+          watchedFolders: <String>['C:/music'],
+          excludedFolders: <String>['C:/music/Sub'],
+          excludedTracks: <String>['C:/music/02.mp3'],
+          entries: <LibraryEntry>[
+            LibraryEntry.folder(
+              libraryPath: 'C:/music',
+              path: 'C:/music/Sub',
+              state: LibraryEntryState.excluded,
+            ),
+          ],
+        );
+        final source = _ChunkedRefreshDataSource(
+          catalog: catalog,
+          terminalFailureCount: cancelled ? 0 : 1,
+          chunks: <FolderScanChunk>[
+            FolderScanChunk(tracks: [_scannedTrack('C:/music/01.mp3')]),
+          ],
+        );
+        if (cancelled) {
+          source.onChunkDelivered = () => catalog.isScanning = false;
+        }
+
+        final outcome = await LibraryScannerService(
+          dataSource: source,
+        ).addFolder(provider: catalog, labels: labels);
+
+        expect(
+          outcome?.code,
+          cancelled
+              ? LibraryScanOutcomeCode.cancelled
+              : LibraryScanOutcomeCode.failed,
+        );
+        expect(catalog.clearExclusionsCalls, 1);
+        expect(catalog.restoreExclusionsCalls, 1);
+        expect(catalog.excludedFolders, <String>['C:/music/Sub']);
+        expect(catalog.excludedTracks, <String>['C:/music/02.mp3']);
+        expect(catalog.entries.single.isExcluded, isTrue);
+      },
+    );
 
     test(
       '${cancelled ? 'cancelled' : 'incomplete'} promotion restores scan fields but retains concurrent changes between chunks',
@@ -1256,5 +1320,66 @@ class _CancelledFilesCatalog extends _RefreshCatalog {
   void addTracks(List<MusicTrack> tracks, {bool persist = true}) {
     addTracksCalls++;
     library.addAll(tracks);
+  }
+}
+
+class _ExclusionFolderCatalog extends _RefreshCatalog {
+  _ExclusionFolderCatalog({
+    required super.watchedFolders,
+    this.busy = false,
+    List<String> excludedFolders = const <String>[],
+    List<String> excludedTracks = const <String>[],
+    List<LibraryEntry> entries = const <LibraryEntry>[],
+  }) : excludedFolders = List<String>.of(excludedFolders),
+       excludedTracks = List<String>.of(excludedTracks),
+       entries = List<LibraryEntry>.of(entries);
+
+  final bool busy;
+  List<String> excludedFolders;
+  List<String> excludedTracks;
+  List<LibraryEntry> entries;
+  int clearExclusionsCalls = 0;
+  int restoreExclusionsCalls = 0;
+
+  @override
+  int tryBeginScan({required String source, bool background = false}) {
+    if (busy) return 0;
+    return super.tryBeginScan(source: source, background: background);
+  }
+
+  @override
+  bool hasLibraryExclusions(String libraryPath) =>
+      excludedFolders.isNotEmpty || excludedTracks.isNotEmpty;
+
+  @override
+  List<LibraryEntry> libraryEntriesForLibrary(String libraryPath) => entries;
+
+  @override
+  LibraryExclusionSnapshot snapshotLibraryExclusions(String libraryPath) =>
+      LibraryExclusionSnapshot(
+        libraryPath: libraryPath,
+        excludedFolders: List<String>.of(excludedFolders),
+        excludedTracks: List<String>.of(excludedTracks),
+        entries: entries.map((e) => e.copyWith()).toList(growable: false),
+      );
+
+  @override
+  Future<void> clearLibraryExclusions(String libraryPath) async {
+    clearExclusionsCalls++;
+    excludedFolders = <String>[];
+    excludedTracks = <String>[];
+    entries = entries
+        .map((e) => e.copyWith(state: LibraryEntryState.active))
+        .toList(growable: false);
+  }
+
+  @override
+  Future<void> restoreLibraryExclusions(
+    LibraryExclusionSnapshot snapshot,
+  ) async {
+    restoreExclusionsCalls++;
+    excludedFolders = List<String>.of(snapshot.excludedFolders);
+    excludedTracks = List<String>.of(snapshot.excludedTracks);
+    entries = snapshot.entries.map((e) => e.copyWith()).toList(growable: false);
   }
 }

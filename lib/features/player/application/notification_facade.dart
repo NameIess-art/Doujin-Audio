@@ -253,7 +253,7 @@ final class NotificationFacade {
       _clearUnifiedPlaybackNotificationsOnPlatform();
   bool isActiveCoverKey(String key) => _isActiveCoverKey(key);
 
-  void prepareForPersistenceReset() {
+  void _cancelNotificationTimers() {
     _stateService.notificationProgressRefreshTimer?.cancel();
     _stateService.notificationProgressRefreshTimer = null;
     _stateService.unifiedNotificationSyncTimer?.cancel();
@@ -262,6 +262,10 @@ final class NotificationFacade {
     _stateService.notificationActionRefreshTimer = null;
     _stateService.notificationActionGuardTimeout?.cancel();
     _stateService.notificationActionGuardTimeout = null;
+  }
+
+  void prepareForPersistenceReset() {
+    _cancelNotificationTimers();
   }
 
   Future<void> resetPersistedState() async {
@@ -333,6 +337,7 @@ final class NotificationFacade {
   }
 
   void detachRuntime() {
+    _cancelNotificationTimers();
     _runtimeNotificationSyncPending = false;
     _notificationPresentations.clear();
     _lastNotificationItems = const <Map<String, dynamic>>[];
@@ -365,7 +370,9 @@ final class NotificationFacade {
     return _guardAction(() async {
       final session = _resolveActionSession();
       final playback = _playback;
-      if (session == null || playback == null || !session.state.playing) return;
+      if (session == null || playback == null || !session.playbackRequested) {
+        return;
+      }
       _setFocusSessionId(session.id);
       await _pauseNativeSession(playback, session);
     });
@@ -375,11 +382,12 @@ final class NotificationFacade {
     return _guardAction(() async {
       final session = _resolveSession();
       final playback = _playback;
-      if (session == null || playback == null || session.isLoading) return;
-      if (session.state.playing) {
+      if (session == null || playback == null) return;
+      if (session.playbackRequested) {
         await _pauseNativeSession(playback, session);
         return;
       }
+      if (session.isLoading) return;
       await _resumeSession(session);
     });
   }
@@ -408,12 +416,13 @@ final class NotificationFacade {
     return _guardAction(() async {
       final session = _resolveSession(sessionId);
       final playback = _playback;
-      if (session == null || playback == null || session.isLoading) return;
+      if (session == null || playback == null) return;
       _setFocusSessionId(session.id);
-      if (session.state.playing) {
+      if (session.playbackRequested) {
         await _pauseNativeSession(playback, session);
         return;
       }
+      if (session.isLoading) return;
       await _resumeSession(session);
     });
   }
@@ -484,24 +493,81 @@ final class NotificationFacade {
   ) => playback.pauseSessionForResume(
     session,
     pause: () async {
-      final generation = session.playbackCommandGeneration;
-      final response = await playback.nativeRepository.pause(session.id);
-      if (response.isOk) {
-        if (session.playbackCommandGeneration != generation ||
-            !playback.isRegisteredSession(session)) {
-          return false;
-        }
+      final hadNativeWork =
+          session.loadedPath != null ||
+          session.pendingNativeTrackPath != null ||
+          session.state.playing;
+      session.invalidatePreparation();
+      final preparationGeneration = session.loadGeneration;
+      final generation = playback.nextTransportCommandId();
+      final token = playback.commandRunner.start(
+        sessionId: session.id,
+        generation: generation,
+        isCurrent: () =>
+            playback.isRegisteredSession(session) &&
+            session.loadGeneration == preparationGeneration &&
+            session.playbackCommandGeneration == generation,
+      );
+      session.beginTransportCommand(commandId: generation, playing: false);
+      playback.publishSessionState(session.id);
+      if (!hadNativeWork) {
         session.confirmPaused();
+        session.setOptimisticState(processingState: ProcessingState.idle);
         playback.publishSessionState(session.id);
         return true;
       }
-      AppLogService.warning(
-        'NotificationFacade.pause failed '
-        'code=${response.errorCodeOrNull} '
-        'sessionId=${session.id} '
-        'error=${response.errorOrNull}',
-      );
-      return false;
+      try {
+        final response = await playback.nativeRepository.pause(
+          session.id,
+          transportCommandId: generation,
+        );
+        if (!playback.isRegisteredSession(session) ||
+            session.loadGeneration != preparationGeneration ||
+            session.playbackCommandGeneration != generation ||
+            !token.isCurrent) {
+          return false;
+        }
+        if (response.isOk) {
+          final snapshot = response.valueOrNull;
+          if (snapshot != null) {
+            playback.applyNativeSnapshot(
+              snapshot,
+              hasLibraryTrack: (path) =>
+                  session.trackForPath(path) != null ||
+                  _trackByPath(path) != null,
+            );
+          } else {
+            session.loadedPath = null;
+            session.setOptimisticState(processingState: ProcessingState.idle);
+          }
+          session.confirmPaused();
+          playback.publishSessionState(session.id);
+          return true;
+        }
+        session.failTransportCommand(generation);
+        playback.publishSessionState(session.id);
+        AppLogService.warning(
+          'NotificationFacade.pause failed '
+          'code=${response.errorCodeOrNull} '
+          'sessionId=${session.id} '
+          'error=${response.errorOrNull}',
+        );
+        return false;
+      } catch (error, stackTrace) {
+        if (playback.isRegisteredSession(session) &&
+            session.loadGeneration == preparationGeneration &&
+            session.playbackCommandGeneration == generation &&
+            token.isCurrent) {
+          session.failTransportCommand(generation);
+          playback.publishSessionState(session.id);
+        }
+        AppLogService.error(
+          'NotificationFacade.pause error',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        return false;
+      }
     },
   );
 
@@ -525,7 +591,10 @@ final class NotificationFacade {
     _onNotificationsRestored();
   }
 
-  Future<void> dispose() => _stateService.dispose();
+  Future<void> dispose() {
+    _cancelNotificationTimers();
+    return _stateService.dispose();
+  }
 }
 
 void _noop() {}

@@ -222,6 +222,7 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
                   context: context,
                   globalPosition: details.globalPosition,
                   entries: widget.menuEntries,
+                  dismissOn: _menuDismissal ??= ValueNotifier(false),
                 );
                 if (context.mounted && result != null) {
                   widget.onAction(result);

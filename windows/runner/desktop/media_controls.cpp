@@ -6,6 +6,7 @@
 #include <winrt/Windows.Storage.Streams.h>
 #include <wrl/implements.h>
 #include <algorithm>
+#include <iostream>
 #include <mutex>
 #include <utility>
 
@@ -140,22 +141,38 @@ bool Flag(const flutter::EncodableMap& map, const char* key) {
 }
 }
 MediaControls::MediaControls(HWND window) : window_(window) {
-  auto interop = winrt::get_activation_factory<SystemMediaTransportControls, ISystemMediaTransportControlsInterop>();
-  winrt::check_hresult(interop->GetForWindow(window, winrt::guid_of<SystemMediaTransportControls>(), winrt::put_abi(controls_)));
-  controls_.IsEnabled(false);
-  controls_.IsPlayEnabled(true); controls_.IsPauseEnabled(true);
-  button_token_ = controls_.ButtonPressed([window](auto const&, auto const& args) {
-    PostMessage(window, DesktopIntegration::kMediaAction, static_cast<WPARAM>(args.Button()), 0);
-  });
-  winrt::check_hresult(CoCreateInstance(__uuidof(MMDeviceEnumerator),nullptr,CLSCTX_ALL,IID_PPV_ARGS(&endpoints_)));
-  Microsoft::WRL::ComPtr<IMMDevice> device;
-  std::wstring id;
-  if (SUCCEEDED(endpoints_->GetDefaultAudioEndpoint(eRender,eMultimedia,&device))) {
-    LPWSTR text = nullptr;
-    if (SUCCEEDED(device->GetId(&text))) { id = text; CoTaskMemFree(text); }
+  try {
+    auto interop = winrt::get_activation_factory<SystemMediaTransportControls, ISystemMediaTransportControlsInterop>();
+    winrt::check_hresult(interop->GetForWindow(window, winrt::guid_of<SystemMediaTransportControls>(), winrt::put_abi(controls_)));
+    controls_.IsEnabled(false);
+    controls_.IsPlayEnabled(true); controls_.IsPauseEnabled(true);
+    button_token_ = controls_.ButtonPressed([window](auto const&, auto const& args) {
+      PostMessage(window, DesktopIntegration::kMediaAction, static_cast<WPARAM>(args.Button()), 0);
+    });
+  } catch (const winrt::hresult_error& e) {
+    controls_ = nullptr;
+    const auto message = "DoujinAudio: SMTC unavailable: " + winrt::to_string(e.message()) + "\n";
+    OutputDebugStringA(message.c_str());
+    std::cerr << message;
   }
-  endpoint_listener_ = Microsoft::WRL::Make<EndpointNotifications>(window,id);
-  winrt::check_hresult(endpoints_->RegisterEndpointNotificationCallback(endpoint_listener_.Get()));
+  try {
+    winrt::check_hresult(CoCreateInstance(__uuidof(MMDeviceEnumerator),nullptr,CLSCTX_ALL,IID_PPV_ARGS(&endpoints_)));
+    Microsoft::WRL::ComPtr<IMMDevice> device;
+    std::wstring id;
+    if (SUCCEEDED(endpoints_->GetDefaultAudioEndpoint(eRender,eMultimedia,&device))) {
+      LPWSTR text = nullptr;
+      if (SUCCEEDED(device->GetId(&text))) { id = text; CoTaskMemFree(text); }
+    }
+    auto listener = Microsoft::WRL::Make<EndpointNotifications>(window,id);
+    winrt::check_hresult(endpoints_->RegisterEndpointNotificationCallback(listener.Get()));
+    endpoint_listener_ = std::move(listener);
+  } catch (const winrt::hresult_error& e) {
+    endpoints_.Reset();
+    endpoint_listener_.Reset();
+    const auto message = "DoujinAudio: audio endpoint notifications unavailable: " + winrt::to_string(e.message()) + "\n";
+    OutputDebugStringA(message.c_str());
+    std::cerr << message;
+  }
   for (int i = 0; i < 4; ++i) {
     hotkeys_[i] = RegisterHotKey(window_, kControlId + i,
         MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, kHotkeyKeys[i]) != FALSE;
@@ -166,13 +183,25 @@ MediaControls::~MediaControls() {
     if (hotkeys_[i]) UnregisterHotKey(window_, kControlId + i);
   }
   if (endpoints_ && endpoint_listener_) endpoints_->UnregisterEndpointNotificationCallback(endpoint_listener_.Get());
-  if (controls_) { controls_.ButtonPressed(button_token_); controls_.IsEnabled(false); }
+  if (controls_) {
+    try {
+      controls_.ButtonPressed(button_token_);
+      controls_.IsEnabled(false);
+    } catch (const winrt::hresult_error&) {}
+  }
 }
 void MediaControls::Clear() {
   SetThumbnailCover(nullptr);
-  if (!controls_.IsEnabled() && !metadata_ready_) return;
-  controls_.IsEnabled(false);
-  controls_.DisplayUpdater().ClearAll();
+  if (!active_ && !metadata_ready_ && (!controls_ || !controls_.IsEnabled())) return;
+  active_ = false;
+  has_next_ = false;
+  has_previous_ = false;
+  if (controls_) {
+    try {
+      controls_.IsEnabled(false);
+      controls_.DisplayUpdater().ClearAll();
+    } catch (const winrt::hresult_error&) {}
+  }
   metadata_ready_ = false;
   title_.clear(); subtitle_.clear(); art_path_.clear();
   thumbnail_playing_ = false;
@@ -188,7 +217,9 @@ flutter::EncodableMap MediaControls::HotkeyStatus() const {
 std::optional<std::string> MediaControls::HandleMessage(UINT message, WPARAM wp,
                                                         LPARAM lp) {
   if (message == kAudioEndpointChanged) {
-    if (endpoint_listener_->TakeDisconnect(endpoints_.Get())) return "deviceDisconnected";
+    if (endpoint_listener_ && endpoints_ && endpoint_listener_->TakeDisconnect(endpoints_.Get())) {
+      return "deviceDisconnected";
+    }
     return std::string();
   }
   if (message == kTaskbarButtonCreated) {
@@ -223,20 +254,20 @@ std::optional<std::string> MediaControls::HandleMessage(UINT message, WPARAM wp,
   } else if (message == WM_COMMAND && HIWORD(wp) == THBN_CLICKED &&
       LOWORD(wp) >= kControlId && LOWORD(wp) < kControlId + 3) {
     action = LOWORD(wp) - kControlId;
-    if (action == 0 && controls_.IsEnabled()) return "taskbarToggle";
+    if (action == 0 && active_) return "taskbarToggle";
   }
   if (action < 0) return std::nullopt;
-  if (!controls_.IsEnabled() ||
-      (action == 1 && !controls_.IsPreviousEnabled()) ||
-      (action == 2 && !controls_.IsNextEnabled())) return std::string();
+  if (!active_ ||
+      (action == 1 && !has_previous_) ||
+      (action == 2 && !has_next_)) return std::string();
   return kHotkeyActions[action];
 }
 void MediaControls::UpdateThumbnailButtons() {
   if (!taskbar_) return;
-  const bool enabled = controls_.IsEnabled();
+  const bool enabled = active_;
   const bool playing = enabled && thumbnail_playing_;
-  const bool available[] = {enabled && controls_.IsPreviousEnabled(), enabled,
-      enabled && controls_.IsNextEnabled()};
+  const bool available[] = {enabled && has_previous_, enabled,
+      enabled && has_next_};
   const std::array<bool, 5> next_state{
       playing, available[0], available[1], available[2], taskbar_dark_};
   if (thumbnail_added_ && thumbnail_state_ == next_state) return;
@@ -337,37 +368,41 @@ void MediaControls::Update(const flutter::EncodableMap& payload) {
       break;
     }
   }
-  if (!controls_.IsEnabled()) controls_.IsEnabled(true);
-  const bool next = Flag(*selected,"hasNext");
-  const bool previous = Flag(*selected,"hasPrevious");
-  if (controls_.IsNextEnabled() != next) controls_.IsNextEnabled(next);
-  if (controls_.IsPreviousEnabled() != previous) controls_.IsPreviousEnabled(previous);
-  const auto status = Flag(*selected,"playing") ? MediaPlaybackStatus::Playing : MediaPlaybackStatus::Paused;
-  if (controls_.PlaybackStatus() != status) controls_.PlaybackStatus(status);
+  active_ = true;
+  has_next_ = Flag(*selected,"hasNext");
+  has_previous_ = Flag(*selected,"hasPrevious");
   UpdateThumbnailButtons();
-  const auto title = Text(*selected,"title");
-  const auto subtitle = Text(*selected,"subtitle");
-  const auto art = Text(*selected,"artPath");
-  if (metadata_ready_ && title_ == title && subtitle_ == subtitle && art_path_ == art) return;
-  auto updater = controls_.DisplayUpdater();
-  updater.Type(MediaPlaybackType::Music);
-  if (!metadata_ready_ || title_ != title) updater.MusicProperties().Title(winrt::to_hstring(title));
-  if (!metadata_ready_ || subtitle_ != subtitle) updater.MusicProperties().Artist(winrt::to_hstring(subtitle));
-  if (!metadata_ready_ || art_path_ != art) {
-    if (!art.empty()) {
-    try {
-      std::wstring uri = L"file:///";
-      for (const auto c : winrt::to_hstring(art)) {
-        if (c == L'\\') uri += L'/';
-        else if (c == L'#') uri += L"%23";
-        else if (c == L'%') uri += L"%25";
-        else uri += c;
-      }
-      updater.Thumbnail(winrt::Windows::Storage::Streams::RandomAccessStreamReference::CreateFromUri(
-          winrt::Windows::Foundation::Uri(uri)));
-    } catch (const winrt::hresult_error&) { updater.Thumbnail(nullptr); }
-    } else { updater.Thumbnail(nullptr); }
-  }
-  updater.Update();
-  title_ = title; subtitle_ = subtitle; art_path_ = art; metadata_ready_ = true;
+  if (!controls_) return;
+  try {
+    if (!controls_.IsEnabled()) controls_.IsEnabled(true);
+    if (controls_.IsNextEnabled() != has_next_) controls_.IsNextEnabled(has_next_);
+    if (controls_.IsPreviousEnabled() != has_previous_) controls_.IsPreviousEnabled(has_previous_);
+    const auto status = Flag(*selected,"playing") ? MediaPlaybackStatus::Playing : MediaPlaybackStatus::Paused;
+    if (controls_.PlaybackStatus() != status) controls_.PlaybackStatus(status);
+    const auto title = Text(*selected,"title");
+    const auto subtitle = Text(*selected,"subtitle");
+    const auto art = Text(*selected,"artPath");
+    if (metadata_ready_ && title_ == title && subtitle_ == subtitle && art_path_ == art) return;
+    auto updater = controls_.DisplayUpdater();
+    updater.Type(MediaPlaybackType::Music);
+    if (!metadata_ready_ || title_ != title) updater.MusicProperties().Title(winrt::to_hstring(title));
+    if (!metadata_ready_ || subtitle_ != subtitle) updater.MusicProperties().Artist(winrt::to_hstring(subtitle));
+    if (!metadata_ready_ || art_path_ != art) {
+      if (!art.empty()) {
+      try {
+        std::wstring uri = L"file:///";
+        for (const auto c : winrt::to_hstring(art)) {
+          if (c == L'\\') uri += L'/';
+          else if (c == L'#') uri += L"%23";
+          else if (c == L'%') uri += L"%25";
+          else uri += c;
+        }
+        updater.Thumbnail(winrt::Windows::Storage::Streams::RandomAccessStreamReference::CreateFromUri(
+            winrt::Windows::Foundation::Uri(uri)));
+      } catch (const winrt::hresult_error&) { updater.Thumbnail(nullptr); }
+      } else { updater.Thumbnail(nullptr); }
+    }
+    updater.Update();
+    title_ = title; subtitle_ = subtitle; art_path_ = art; metadata_ready_ = true;
+  } catch (const winrt::hresult_error&) {}
 }

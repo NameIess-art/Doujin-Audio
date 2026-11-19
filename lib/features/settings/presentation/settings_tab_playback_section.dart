@@ -61,7 +61,7 @@ List<Widget> _buildSettingsPlaybackSection({
                 () => settings.setRecordPlaybackProgress(value),
               ),
               title: _settingsTitle(i18n.tr('record_playback_progress')),
-              secondary: _settingsIcon(Icons.restore_rounded, cs.primary),
+              secondary: _settingsIcon(Icons.history_rounded, cs.primary),
             );
           },
         ),

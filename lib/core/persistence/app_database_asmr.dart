@@ -319,22 +319,12 @@ extension AppDatabaseAsmr on AppDatabase {
           }
         }
         if (!favorite) {
-          final workIds = works
-              .map((work) => work.workKey)
-              .toList(growable: false);
-          for (
-            var start = 0;
-            start < workIds.length;
-            start += _sqliteInClauseBatchSize
-          ) {
-            _deleteUnreferencedAsmrWorksInBatch(
-              batch,
-              workIds: workIds.sublist(
-                start,
-                (start + _sqliteInClauseBatchSize).clamp(0, workIds.length),
-              ),
-            );
-          }
+          _deleteUnreferencedAsmrWorksInBatch(
+            batch,
+            workIds: works
+                .map((work) => work.workKey)
+                .toList(growable: false),
+          );
         }
         for (final operation in operations) {
           batch.delete(

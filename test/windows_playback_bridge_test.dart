@@ -2738,6 +2738,55 @@ void main() {
       );
     },
   );
+
+  test(
+    'paused seek emits updated snapshot and restoreNativeQueue preserves retainedCurrentIndex',
+    () async {
+      final emitted = <NativePlaybackSnapshot>[];
+      final sub = bridge.snapshots.listen(emitted.add);
+      addTearDown(sub.cancel);
+      await prepare('one');
+      final player = players.single;
+      player.loaded();
+      await bridge.pause('one');
+      emitted.clear();
+
+      await bridge.seek('one', const Duration(seconds: 15));
+      await Future<void>.delayed(Duration.zero);
+      expect(emitted.any((s) => s.position == const Duration(seconds: 15)), isTrue);
+
+      await bridge.prepareSession(
+        sessionId: 'two',
+        uri: Uri.parse('https://example.com/a.mp4'),
+        title: 'a',
+        autoPlay: true,
+        queue: [
+          {'uri': 'https://example.com/a.mp4', 'title': 'a'},
+          {'uri': 'https://example.com/b.mp4', 'title': 'b'},
+        ],
+      );
+      players.last.loaded();
+      await bridge.updateQueue(
+        'two',
+        queue: [
+          {'uri': 'https://example.com/b.mp4', 'title': 'b'},
+        ],
+        queueRevision: 1,
+      );
+      expect((await bridge.snapshot()).valueOrNull!.sessions.last.retainedUris, [
+        'https://example.com/a.mp4',
+        'https://example.com/b.mp4',
+      ]);
+      await bridge.setStopAfterCurrentTrack('two', true);
+      await bridge.setStopAfterCurrentTrack('two', false);
+      players.last.advance(1);
+      await Future<void>.delayed(Duration.zero);
+      await bridge.setVolume('two', 1);
+      expect((await bridge.snapshot()).valueOrNull!.sessions.last.retainedUris, [
+        'https://example.com/b.mp4',
+      ]);
+    },
+  );
 }
 
 class _Player extends PlatformPlayer {

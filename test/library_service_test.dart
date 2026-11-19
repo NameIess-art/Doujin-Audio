@@ -454,4 +454,62 @@ void main() {
     expect(removed, isTrue);
     expect(service.structureRevision, greaterThan(afterAddRevision));
   });
+
+  test(
+    'Windows exclusions and library entries treat differing letter casing as equivalent',
+    () {
+      final service = LibraryService();
+      addTearDown(service.dispose);
+      const rootUpper = r'C:\Library\Root';
+      const rootLower = r'c:\library\root';
+      const folderUpper = r'C:\Library\Root\Work';
+      const folderLower = r'c:/library/root/work';
+      const trackUpper = r'C:\Library\Root\Work\01.mp3';
+      const trackLower = r'c:\library\root\work\01.mp3';
+      final track = MusicTrack(
+        path: trackUpper,
+        displayName: '01',
+        groupKey: folderUpper,
+        groupTitle: 'Work',
+        groupSubtitle: folderUpper,
+        isSingle: false,
+      );
+      service.replaceLibraryEntries(
+        service.buildLibraryEntries(rootUpper, <MusicTrack>[track]),
+      );
+
+      final excludeFolder = service.setLibraryFolderExcluded(
+        rootLower,
+        folderLower,
+        true,
+      );
+      expect(excludeFolder.changed, isTrue);
+      expect(service.isLibraryPathExcluded(rootUpper, trackLower), isTrue);
+      expect(
+        service.isLibraryPathInheritedExcluded(rootUpper, folderLower),
+        isFalse,
+      );
+      expect(
+        service.isLibraryPathInheritedExcluded(rootUpper, trackLower),
+        isTrue,
+      );
+      expect(service.libraryEntryForPath(rootLower, trackLower)!.isExcluded, isTrue);
+
+      final clearResult = service.clearLibraryExclusions(rootLower);
+      expect(clearResult.changed, isTrue);
+      expect(service.isLibraryPathExcluded(rootUpper, trackLower), isFalse);
+      expect(service.libraryEntryForPath(rootUpper, trackUpper)!.isActive, isTrue);
+
+      final excludeTrack = service.setLibraryTrackExcluded(
+        rootLower,
+        trackLower,
+        true,
+      );
+      expect(excludeTrack.changed, isTrue);
+      expect(
+        service.isLibraryTrackExplicitlyExcluded(rootUpper, trackUpper),
+        isTrue,
+      );
+    },
+  );
 }

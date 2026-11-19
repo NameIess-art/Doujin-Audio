@@ -55,7 +55,7 @@ List<Widget> _buildSettingsAsmrSection({
                           child: CircularProgressIndicator(strokeWidth: 2.2),
                         )
                       : const Icon(
-                          Icons.drive_folder_upload_rounded,
+                          Icons.folder_open_rounded,
                           key: ValueKey('idle'),
                           size: 20,
                         ),
@@ -167,7 +167,7 @@ List<Widget> _buildSettingsAsmrSection({
             );
             return ListTile(
               title: _settingsTitle(i18n.tr('asmr_download_thread_count')),
-              leading: _settingsIcon(Icons.dynamic_feed_rounded, cs.primary),
+              leading: _settingsIcon(Icons.alt_route_rounded, cs.primary),
               trailing: _settingsDropdown<int>(
                 context,
                 value: threadCount,

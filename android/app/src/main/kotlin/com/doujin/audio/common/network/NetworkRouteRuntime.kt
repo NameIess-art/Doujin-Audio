@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.AtomicFile
+import android.util.Log
 import okhttp3.Call
 import okhttp3.Credentials
 import okhttp3.Dns
@@ -82,14 +83,28 @@ internal class NetworkRouteRuntime private constructor(context: Context) : Call.
 
     private fun load(): NetworkRoute {
         if (!mirror.baseFile.exists()) return NetworkRoute()
-        val encrypted = mirror.openRead().use { it.readBytes() }
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
-            init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, encrypted.copyOfRange(0, 12)))
+        return try {
+            val encrypted = mirror.openRead().use { it.readBytes() }
+            if (encrypted.size <= 12) {
+                throw IllegalArgumentException("Encrypted network route payload is truncated (${encrypted.size} bytes)")
+            }
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
+                init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, encrypted.copyOfRange(0, 12)))
+            }
+            val json = JSONObject(String(cipher.doFinal(encrypted.copyOfRange(12, encrypted.size)), Charsets.UTF_8))
+            NetworkRoute(
+                json.getString("mode"),
+                json.getString("host"),
+                json.getInt("port"),
+                json.getBoolean("authentication"),
+                json.getString("username"),
+                if (json.isNull("password")) null else json.getString("password"),
+                json.getString("dns")
+            )
+        } catch (error: Exception) {
+            Log.w("NetworkRouteRuntime", "Could not load encrypted network route; falling back to default", error)
+            NetworkRoute()
         }
-        val json = JSONObject(String(cipher.doFinal(encrypted.copyOfRange(12, encrypted.size)), Charsets.UTF_8))
-        return NetworkRoute(json.getString("mode"), json.getString("host"), json.getInt("port"),
-            json.getBoolean("authentication"), json.getString("username"),
-            if (json.isNull("password")) null else json.getString("password"), json.getString("dns"))
     }
 
     private fun key(): SecretKey {

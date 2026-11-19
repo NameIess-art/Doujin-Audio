@@ -10,6 +10,7 @@ import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/widgets/app_bottom_sheet.dart';
+import 'package:doujin_audio/core/widgets/app_dialog.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/unified_dropdown.dart';
 import 'package:doujin_audio/core/widgets/operation_feedback.dart';
@@ -1231,6 +1232,7 @@ void main() {
 
       await tester.tap(label);
       await tester.pumpAndSettle();
+      expect(find.byType(AppModalBackground), findsOneWidget);
       expect(label, findsNWidgets(2));
       expect(tester.getTopLeft(label.last).dx, x);
       await tester.tapAt(const Offset(2, 2));
@@ -1434,8 +1436,10 @@ void main() {
       final label = find.text(harness.languageProvider.tr('system_default'));
       await tester.tap(find.descendant(of: field, matching: label));
       await tester.pumpAndSettle();
+      expect(find.byType(AppModalBackground), findsOneWidget);
       await tester.tap(find.text('monospace'));
       await tester.pumpAndSettle();
+      expect(find.byType(AppModalBackground), findsNothing);
 
       expect(
         find.descendant(of: field, matching: find.text('monospace')),
@@ -1775,6 +1779,7 @@ void main() {
               final dropdown = find.byType(UnifiedDropdownButton<StartupPage>);
               await tester.tap(dropdown);
               await tester.pumpAndSettle();
+              expect(find.byType(AppModalBackground), findsNothing);
               expect(
                 tester.takeException(),
                 isNull,

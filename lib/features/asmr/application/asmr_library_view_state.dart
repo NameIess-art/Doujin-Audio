@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../../core/immutable_collections.dart';
+import '../../../core/media/search_query_utils.dart';
 import '../../../core/app_language.dart';
 import '../domain/asmr_models.dart';
 
@@ -78,6 +79,25 @@ class AsmrCategoryViewState {
   final Object? paginationToken;
   final ({Object token, int length})? appendedTo;
 
+  AsmrCategoryViewState withFilteredWorks(List<AsmrWork> matches) =>
+      AsmrCategoryViewState(
+        category: category,
+        works: matches,
+        isLoading: isLoading,
+        isLoadingMore: isLoadingMore,
+        isRefreshing: isRefreshing,
+        isStale: isStale,
+        hasAttemptedLoad: hasAttemptedLoad,
+        hasMore: hasMore,
+        needsLoadMoreRetry: needsLoadMoreRetry,
+        totalCount: matches.length,
+        activeQuery: activeQuery,
+        lastError: lastError,
+        operationError: operationError,
+        revision: revision,
+        paginationToken: paginationToken,
+      );
+
   @override
   bool operator ==(Object other) {
     return other is AsmrCategoryViewState &&
@@ -120,6 +140,17 @@ class AsmrCategoryViewState {
     paginationToken,
     appendedTo,
   );
+}
+
+extension AsmrWorkSearchFilters on AsmrWork {
+  bool matchesFilters(SearchFilters filters) =>
+      (filters.hasSubtitle == null || filters.hasSubtitle == hasSubtitle) &&
+      matchesSearchMetadata(
+        filters,
+        rating: rating,
+        duration: duration > Duration.zero ? duration : null,
+        releaseDate: releaseDate,
+      );
 }
 
 class AsmrTrackTreeViewState {

@@ -37,6 +37,10 @@ void main() {
       onTrackLoaded: (_, _) => loadedCount++,
     );
 
+    expect(
+      await service.hasLocalSubtitleFile(audioPath, includeImported: true),
+      isTrue,
+    );
     final first = await service.load(audioPath);
     final second = await service.load(audioPath);
 
@@ -349,6 +353,13 @@ void main() {
       trackResolver: (_) => null,
       fileCacheGateway: _ContentSubtitleGateway(),
       subtitlesDirectoryResolver: () async => directory,
+    );
+    expect(
+      await service.hasLocalSubtitleFile(
+        'content://media/audio/1',
+        includeImported: true,
+      ),
+      isTrue,
     );
     final loaded = await service.load('content://media/audio/1');
     expect(loaded?.cues.single.text, 'ローカル字幕');

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/theme/app_design_tokens.dart';
+import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/widgets/app_edit_panel.dart';
 import '../../../../core/widgets/app_entry_ink_well.dart';
 import '../../../../core/widgets/app_transitions.dart';
@@ -23,9 +24,14 @@ Future<void> showPlaybackQueueEditPanel(
     context,
     listen: false,
   ).read(appLanguageProviderInstanceProvider);
-  return showAppEditPanel<void>(
+  return showAppOverlayPanel<void>(
     context: context,
     barrierLabel: i18n.tr('close'),
+    mobileAlignment: Alignment.center,
+    mobileOuterPadding: const EdgeInsets.symmetric(
+      horizontal: 20,
+      vertical: 24,
+    ),
     builder: (_) => PlaybackQueueEditPage(sessionId: sessionId),
   );
 }
@@ -84,7 +90,7 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             AppEditPanelHeader(
-              icon: Icons.edit_note_rounded,
+              icon: Icons.playlist_play_rounded,
               iconKey: const ValueKey('playback_queue_edit_header_icon'),
               title: queue.name,
               accentColor: queueColor,
@@ -98,7 +104,7 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
                   children: [
                     _queueEditTile(
                       context,
-                      Icons.playlist_play_rounded,
+                      Icons.edit_note_rounded,
                       i18n.tr('edit_queue_audio'),
                       () => Navigator.of(context).push(
                         buildAppPageRoute<void>(

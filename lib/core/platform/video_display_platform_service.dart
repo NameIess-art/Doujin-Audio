@@ -1,20 +1,34 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../errors/native_result.dart';
+import 'app_platform.dart';
 import 'platform_channels.dart';
 import 'platform_method_client.dart';
 import 'video_display_platform_gateway.dart';
 
 class VideoDisplayPlatformService implements VideoDisplayPlatformGateway {
-  VideoDisplayPlatformService({MethodChannel? channel})
-    : _client = PlatformMethodClient(
-        channel ?? const MethodChannel(VideoDisplayChannel.name),
-      );
+  VideoDisplayPlatformService({
+    MethodChannel? channel,
+    @visibleForTesting bool? isAndroidOverride,
+  }) : _client = PlatformMethodClient(
+         channel ?? const MethodChannel(VideoDisplayChannel.name),
+       ),
+       _isAndroidOverride = isAndroidOverride;
 
   final PlatformMethodClient _client;
+  final bool? _isAndroidOverride;
+
+  bool get _isAndroid => _isAndroidOverride ?? AppPlatform.isAndroid;
 
   @override
-  Future<NativeResult<PlatformBrightnessLease>> beginBrightnessControl() {
+  Future<NativeResult<PlatformBrightnessLease>> beginBrightnessControl() async {
+    if (!_isAndroid) {
+      return const NativeFailure<PlatformBrightnessLease>(
+        'Brightness control is unavailable on this platform.',
+        code: NativeErrorCode.serviceUnavailable,
+      );
+    }
     return _client.invoke<PlatformBrightnessLease>(
       VideoDisplayMethod.beginBrightnessControl,
       decode: (value) {
@@ -28,7 +42,16 @@ class VideoDisplayPlatformService implements VideoDisplayPlatformGateway {
   }
 
   @override
-  Future<NativeResult<void>> setBrightness(String token, double brightness) {
+  Future<NativeResult<void>> setBrightness(
+    String token,
+    double brightness,
+  ) async {
+    if (!_isAndroid) {
+      return const NativeFailure<void>(
+        'Brightness control is unavailable on this platform.',
+        code: NativeErrorCode.serviceUnavailable,
+      );
+    }
     return _client.invoke<void>(
       VideoDisplayMethod.setBrightness,
       arguments: <String, Object?>{'token': token, 'brightness': brightness},
@@ -37,7 +60,13 @@ class VideoDisplayPlatformService implements VideoDisplayPlatformGateway {
   }
 
   @override
-  Future<NativeResult<void>> endBrightnessControl(String token) {
+  Future<NativeResult<void>> endBrightnessControl(String token) async {
+    if (!_isAndroid) {
+      return const NativeFailure<void>(
+        'Brightness control is unavailable on this platform.',
+        code: NativeErrorCode.serviceUnavailable,
+      );
+    }
     return _client.invoke<void>(
       VideoDisplayMethod.endBrightnessControl,
       arguments: <String, Object?>{'token': token},

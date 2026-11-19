@@ -73,6 +73,31 @@ class FileCacheTaskExecutorTest {
     }
 
     @Test
+    fun `task errors reach the completion callback`() {
+        val executor = FileCacheTaskExecutor()
+        val finished = CountDownLatch(1)
+        var failure: Exception? = null
+
+        try {
+            assertTrue(
+                executor.submit(
+                    block = { throw OutOfMemoryError("heap exhausted") },
+                    completion = {
+                        failure = (it as FileCacheTaskResult.Failure).exception
+                        finished.countDown()
+                    }
+                )
+            )
+
+            assertTrue(finished.await(5, TimeUnit.SECONDS))
+            assertTrue(failure?.cause is OutOfMemoryError)
+            assertEquals("heap exhausted", failure?.message)
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
     fun `blocked transfers do not delay interactive tasks and remain serialized`() {
         val executor = FileCacheTaskExecutor()
         val transferStarted = CountDownLatch(1)

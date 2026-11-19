@@ -2,6 +2,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
+import 'package:doujin_audio/core/widgets/playlist_icon.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 
 Widget _buildThemedApp({required Widget child, ThemeData? theme}) {
@@ -18,8 +20,8 @@ void main() {
     tester,
   ) async {
     for (final topCapsule in [false, true]) {
-      for (final icon in [
-        Icons.playlist_play_rounded,
+      for (final icon in <IconData?>[
+        null,
         Icons.cloud_rounded,
         Icons.description_rounded,
       ]) {
@@ -31,6 +33,7 @@ void main() {
                 data: const MediaQueryData(textScaler: TextScaler.linear(2)),
                 child: TopPageHeader(
                   icon: icon,
+                  iconWidget: icon == null ? const PlaylistIcon() : null,
                   title: topCapsule ? 'Actions' : 'Playlist',
                   topCapsuleTitle: topCapsule ? 'Playlist' : null,
                   topCapsuleData: '12 selected',
@@ -40,20 +43,28 @@ void main() {
             ),
           ),
         );
-        final iconFinder = topCapsule
-            ? find.descendant(
-                of: find.byType(HeaderTopCapsule),
-                matching: find.byIcon(icon),
-              )
-            : find.byIcon(icon);
-        final size = tester.widget<Icon>(iconFinder).size;
-        expect(
-          size,
-          closeTo(
-            icon == Icons.playlist_play_rounded ? 22 * 1.15 : 22,
-            0.001,
-          ),
-        );
+        if (icon == null) {
+          final iconFinder = topCapsule
+              ? find.descendant(
+                  of: find.byType(HeaderTopCapsule),
+                  matching: find.byType(PlaylistIcon),
+                )
+              : find.byType(PlaylistIcon);
+          expect(iconFinder, findsOneWidget);
+          expect(tester.getSize(iconFinder).width, closeTo(22, 0.001));
+        } else {
+          final iconFinder = topCapsule
+              ? find.descendant(
+                  of: find.byType(HeaderTopCapsule),
+                  matching: find.byIcon(icon),
+                )
+              : find.byIcon(icon);
+          final size = tester.widget<Icon>(iconFinder).size;
+          expect(
+            size,
+            closeTo(AppDesignTokens.opticalIconSize(icon, 22), 0.001),
+          );
+        }
         expect(tester.widget<Text>(find.text('Playlist')).style!.fontSize, 16);
         if (topCapsule) {
           expect(

@@ -32,6 +32,7 @@ internal class FileCacheScanStreamHandler(
     private val tasks = ConcurrentHashMap<String, FolderScanTask>()
     private val closed = AtomicBoolean(false)
 
+    @Synchronized
     override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
         cancelAll()
         val raw = arguments as? Map<*, *>
@@ -39,6 +40,7 @@ internal class FileCacheScanStreamHandler(
         sink = events
     }
 
+    @Synchronized
     override fun onCancel(arguments: Any?) {
         sink = null
         listenerGenerationId = null
@@ -69,8 +71,9 @@ internal class FileCacheScanStreamHandler(
         }
     }
 
+    @Synchronized
     fun cancelFolderScan(taskId: String) {
-        tasks[taskId]?.cancel()
+        tasks.remove(taskId)?.cancel()
     }
 
     fun acknowledgeFolderScanChunk(taskId: String, chunkSequence: Long): Boolean =
@@ -85,8 +88,8 @@ internal class FileCacheScanStreamHandler(
             executor.execute {
                 val taskResult = try {
                     FileCacheTaskResult.Success(block())
-                } catch (exception: Exception) {
-                    FileCacheTaskResult.Failure(exception)
+                } catch (throwable: Throwable) {
+                    fileCacheTaskFailure(throwable)
                 }
                 completion(taskResult)
             }
@@ -205,8 +208,11 @@ internal class FileCacheScanStreamHandler(
         }
     }
 
+    @Synchronized
     private fun cancelAll() {
-        tasks.values.forEach { it.cancel() }
+        val activeTasks = tasks.values.toList()
+        tasks.clear()
+        activeTasks.forEach { it.cancel() }
     }
 
     private fun send(

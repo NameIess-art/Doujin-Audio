@@ -2679,6 +2679,57 @@ void registerAsmrControllerStateTests({
   );
 
   test(
+    'nested search session preserves outer search results until outermost session ends',
+    () async {
+      await resetPrefs();
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        apiService: _FakeAsmrApiService(),
+        persistenceRepository: persistenceRepository(),
+      );
+      addTearDown(controller.dispose);
+      await controller.initializeForVisiblePage();
+
+      controller.beginSearchSession();
+      controller.setSearchQuery('outer', AsmrCategoryType.release);
+      await controller.ensureCategoryLoaded(
+        AsmrCategoryType.release,
+        searchQuery: 'outer',
+        searchSession: true,
+      );
+      expect(
+        controller
+            .categoryViewState(
+              AsmrCategoryType.release,
+              searchQuery: 'outer',
+              searchSession: true,
+            )
+            .works,
+        isNotEmpty,
+      );
+
+      controller.beginSearchSession();
+      controller.endSearchSession();
+      final afterNested = controller.categoryViewState(
+        AsmrCategoryType.release,
+        searchQuery: 'outer',
+        searchSession: true,
+      );
+      expect(afterNested.hasAttemptedLoad, isTrue);
+      expect(afterNested.works, isNotEmpty);
+
+      controller.endSearchSession();
+      final afterOuter = controller.categoryViewState(
+        AsmrCategoryType.release,
+        searchQuery: 'outer',
+        searchSession: true,
+      );
+      expect(afterOuter.hasAttemptedLoad, isFalse);
+      expect(afterOuter.works, isEmpty);
+    },
+  );
+
+  test(
     'detail tree force refresh refetches while playback reads reuse the runtime tree',
     () async {
       await resetPrefs();

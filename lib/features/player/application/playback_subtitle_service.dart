@@ -282,8 +282,17 @@ class PlaybackSubtitleService extends ChangeNotifier {
   bool _isRemote(String trackPath) =>
       trackPath.startsWith('https://') || trackPath.startsWith('http://');
 
-  Future<bool> hasLocalSubtitleFile(String trackPath) async {
+  Future<bool> hasLocalSubtitleFile(
+    String trackPath, {
+    bool includeImported = false,
+  }) async {
     await _settingsReady;
+    final customPath = _customPaths[trackPath];
+    if (includeImported &&
+        customPath != null &&
+        await _loadFromFile(customPath) != null) {
+      return true;
+    }
     if (_isRemote(trackPath)) {
       return _customPaths.containsKey(trackPath) ||
           trackSync(trackPath) != null;

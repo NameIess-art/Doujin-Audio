@@ -273,11 +273,13 @@ class DlsiteMetadataService implements LibraryMetadataSource {
     _applyHeaders(request, language);
     final response = await request.close().timeout(_requestTimeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
+      await _discardResponse(response);
       throw DlsiteMetadataException(
         'Cover download failed: ${response.statusCode}',
       );
     }
     if (response.contentLength > _maxCoverBytes) {
+      await _discardResponse(response);
       throw const DlsiteMetadataException('Cover response is too large');
     }
 
@@ -346,6 +348,14 @@ class DlsiteMetadataService implements LibraryMetadataSource {
     }
   }
 
+  Future<void> _discardResponse(HttpClientResponse response) async {
+    try {
+      await response.listen(null).cancel();
+    } catch (_) {
+      // Best-effort socket cleanup before throwing.
+    }
+  }
+
   Future<String> _get(Uri uri, {required AppLanguage language}) async {
     Object? lastError;
     for (var attempt = 0; attempt < _maxRequestAttempts; attempt += 1) {
@@ -357,7 +367,7 @@ class DlsiteMetadataService implements LibraryMetadataSource {
             .fold<List<int>>(<int>[], (buffer, chunk) => buffer..addAll(chunk))
             .timeout(_requestTimeout);
         if (response.statusCode >= 200 && response.statusCode < 300) {
-          return utf8.decode(bytes);
+          return utf8.decode(bytes, allowMalformed: true);
         }
         final error = DlsiteMetadataException(
           'DLsite request failed: ${response.statusCode}',
@@ -503,6 +513,11 @@ DlsiteMetadata? decodeDlsiteProductHtml(
     AppLogService.warning('dlsite_metadata_region_restricted rj=$rjCode');
   }
 
+  final ogTitle = _htmlMetaContent(html, 'og:title');
+  final ogCircleMatch = ogTitle == null
+      ? null
+      : RegExp(r'^.*\[([^\]]+)\]\s*\|\s*DLsite.*$').firstMatch(ogTitle);
+  final ogCircleName = ogCircleMatch?.group(1)?.trim();
   final circleName =
       _htmlAttribute(html, 'data-maker-name') ??
       _htmlCapture(
@@ -513,10 +528,7 @@ DlsiteMetadata? decodeDlsiteProductHtml(
           dotAll: true,
         ),
       ) ??
-      _htmlMetaContent(
-        html,
-        'og:title',
-      )?.replaceFirst(RegExp(r'^.*\[([^\]]+)\]\s*\|\s*DLsite.*$'), r'$1');
+      (ogCircleName != null && ogCircleName.isNotEmpty ? ogCircleName : null);
   final coverUrl = _normalizeDlsiteUrl(_htmlMetaContent(html, 'og:image'));
   final rows = <String, String>{};
   for (final row in RegExp(
@@ -566,16 +578,28 @@ DlsiteMetadata? decodeDlsiteProductHtml(
 }
 
 String? _htmlMetaContent(String html, String property) {
-  return _htmlCapture(
-    html,
-    RegExp(
-      '<meta[^>]+(?:property|name|itemprop)=["\\\']${RegExp.escape(property)}["\\\']'
-      '[^>]+content=["\\\']([^"\\\']*)["\\\']',
-      caseSensitive: false,
-      dotAll: true,
-    ),
-    decodeTags: false,
+  final keyPattern = RegExp(
+    '(?:^|\\s)(?:property|name|itemprop)\\s*=\\s*(["\\\'])${RegExp.escape(property)}\\1',
+    caseSensitive: false,
   );
+  final contentPattern = RegExp(
+    r'''(?:^|\s)content\s*=\s*(["'])(.*?)\1''',
+    caseSensitive: false,
+    dotAll: true,
+  );
+  for (final tagMatch in RegExp(
+    r'<meta\b([^>]*)>',
+    caseSensitive: false,
+    dotAll: true,
+  ).allMatches(html)) {
+    final attrs = tagMatch.group(1)!;
+    if (!keyPattern.hasMatch(attrs)) continue;
+    final contentMatch = contentPattern.firstMatch(attrs);
+    if (contentMatch == null) continue;
+    final text = _htmlText(contentMatch.group(2)!, decodeTags: false);
+    if (text != null) return text;
+  }
+  return null;
 }
 
 String? _htmlAttribute(String html, String attributeName) {
@@ -615,12 +639,12 @@ String? _htmlText(String raw, {bool decodeTags = true}) {
 
 String _decodeHtmlEntities(String value) {
   return value
-      .replaceAll('&amp;', '&')
       .replaceAll('&lt;', '<')
       .replaceAll('&gt;', '>')
       .replaceAll('&quot;', '"')
       .replaceAll('&#39;', "'")
-      .replaceAll('&nbsp;', ' ');
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&amp;', '&');
 }
 
 String? _normalizeDlsiteUrl(String? rawUrl) {
@@ -724,10 +748,11 @@ List<String> extractDlsiteProductIdsFromSuggestResponse(String response) {
 }
 
 String _unwrapJsonp(String value) {
-  final start = value.indexOf('(');
-  final end = value.lastIndexOf(')');
-  if (start > 0 && end > start) {
-    return value.substring(start + 1, end);
+  final match = RegExp(
+    r'^[A-Za-z_$][\w$.]*\s*\(([\s\S]*)\)\s*;?\s*$',
+  ).firstMatch(value);
+  if (match != null) {
+    return match.group(1)!.trim();
   }
   return value;
 }

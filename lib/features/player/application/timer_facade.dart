@@ -220,7 +220,13 @@ final class TimerFacade {
   void setStopAfterCurrentTrack(bool enabled) {
     if (_service.stopAfterCurrentTrack == enabled) return;
     _service.stopAfterCurrentTrack = enabled;
-    if (!enabled) _clearTrackEndTargets();
+    if (!enabled) {
+      _clearTrackEndTargets();
+      if (!_service.timerActive && _service.timerRemaining == Duration.zero) {
+        _completeTrackEndWait();
+        return;
+      }
+    }
     _setFadeMultiplier(1.0);
     _changed();
     unawaited(saveRuntime());
@@ -310,7 +316,8 @@ final class TimerFacade {
               !session.nativeStopAfterCurrentTrack)) {
         if (session != null &&
             session.completedByTrackStop &&
-            session.currentTrackPath == entry.value) {
+            session.currentTrackPath == entry.value &&
+            !_service.pausedByTimerSessionIds.contains(entry.key)) {
           _service.pausedByTimerSessionIds.add(entry.key);
         }
         _trackEndTargets.remove(entry.key);
@@ -454,9 +461,11 @@ final class TimerFacade {
   /// This is completed before issuing the playback command so the native
   /// timer alarm cannot race a user-initiated restart with stale pause state.
   Future<void> clearTimerPauseForManualPlayback(String sessionId) async {
-    if (!_service.pausedByTimerSessionIds.remove(sessionId)) return;
+    final removedPaused = _service.pausedByTimerSessionIds.remove(sessionId);
+    final removedRestored = _restoredCountdownSessions.remove(sessionId);
+    if (!removedPaused && !removedRestored) return;
 
-    if (_service.pausedByTimerSessionIds.isEmpty) {
+    if (removedPaused && _service.pausedByTimerSessionIds.isEmpty) {
       _service.autoResumeTimer?.cancel();
       _service
         ..autoResumeTimer = null
@@ -636,7 +645,7 @@ final class TimerFacade {
     final playingSessions = _sessions()
         .where((session) => session.effectivePlaying)
         .toList(growable: false);
-    final pausedSessionIds = <String>[];
+    final pausedSessionIds = <String>{};
     if (_isWindows) {
       pausedSessionIds.addAll(
         _restoredCountdownSessions.where(
@@ -688,6 +697,10 @@ final class TimerFacade {
       return;
     }
     _service.stopAfterCurrentTrack = false;
+    _completeTrackEndWait();
+  }
+
+  void _completeTrackEndWait() {
     if (_service.autoResumeEnabled &&
         _service.pausedByTimerSessionIds.isNotEmpty) {
       scheduleAutoResumeTimer(

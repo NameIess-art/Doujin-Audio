@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:path_provider/path_provider.dart';
 
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
-
 import 'package:meta/meta.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import '../../../core/errors/native_result.dart';
 import '../../../core/logging/app_log_service.dart';
@@ -129,6 +129,7 @@ class WindowsPlaybackBridge
   final VideoControllerConfiguration _videoControllerConfiguration;
   final _sessions = <String, _WindowsPlaybackSession>{};
   final _configuredProxyUrl = Expando<String>();
+  final _appliedAudioFilters = Expando<String>();
   final _snapshots = StreamController<NativePlaybackSnapshot>.broadcast();
   final _progress = StreamController<NativePlaybackProgressUpdate>.broadcast();
   final _clock = Stopwatch()..start();
@@ -187,32 +188,41 @@ class WindowsPlaybackBridge
     if (session.videoController == null) {
       final generation = session.generation;
       final position = session.position;
-      // Changing from null output to the render context may emit an unload/EOF.
-      // Treat it as source preparation, preserving the user's playback intent.
-      session.opening = true;
       session.videoController = VideoController(
         player,
         configuration: _videoControllerConfiguration,
       );
       unawaited(
         _change(sessionId, (current) async {
+          if (generation != current.generation ||
+              !identical(current.player, player)) {
+            return;
+          }
+          final platform = player.platform;
+          if (platform == null) return;
+          // Changing from null output to the render context may emit an unload/EOF.
+          // Treat it as source preparation, preserving the user's playback intent.
+          current.opening = true;
           try {
-            await player
-                .platform!
-                .waitForVideoControllerInitializationIfAttached;
-            if (generation != current.generation ||
+            await platform.waitForVideoControllerInitializationIfAttached;
+            if (!_isCurrent(current) ||
+                generation != current.generation ||
                 !identical(current.player, player)) {
               return;
             }
-            final native = player.platform;
-            if (native is NativePlayer) {
+            if (platform is NativePlayer) {
               // Switching output before its render context exists can disable
               // video while audio keeps the file loaded. Reset the saved auto
               // selection before selecting again; another auto alone is ignored.
-              await native.setProperty('vid', 'no');
-              await native.setProperty('vid', 'auto');
+              await platform.setProperty('vid', 'no');
+              await platform.setProperty('vid', 'auto');
             }
             await _loadVideoIfIdle(current, position: position);
+            if (!_isCurrent(current) ||
+                generation != current.generation ||
+                !identical(current.player, player)) {
+              return;
+            }
             if (!current.wantsPlay &&
                 position > Duration.zero &&
                 current.pendingStart == null &&
@@ -239,10 +249,7 @@ class WindowsPlaybackBridge
               );
             }
           } finally {
-            if (generation == current.generation &&
-                identical(current.player, player)) {
-              current.opening = false;
-            }
+            current.opening = false;
           }
         }),
       );
@@ -322,6 +329,7 @@ class WindowsPlaybackBridge
         snapshot.transportCommandId,
         snapshot.stopAfterCurrentTrack,
         session.queueRevision,
+        session.seekRevision,
       );
       if (key == session.lastEventKey) return;
       session.lastEventKey = key;
@@ -445,6 +453,9 @@ class WindowsPlaybackBridge
     bool isTemporary = false,
   }) {
     try {
+      if (audioEffects != null) {
+        _finite(audioEffects.state.frontBack, -1, 1);
+      }
       if (sessionId.trim().isEmpty || uri.toString().isEmpty) {
         throw ArgumentError('sessionId and uri are required');
       }
@@ -589,7 +600,7 @@ class WindowsPlaybackBridge
         await platform.setProperty('volume-max', '300');
         await platform.setProperty('audio-pitch-correction', 'yes');
       }
-      await _applyEffects(session);
+      await _applyEffects(session, session.effects);
       await player.setVolume(session.volume * session.fade * 100);
       await player.setRate(session.temporarySpeed ?? session.speed);
       if (_isCurrent(session) &&
@@ -630,6 +641,29 @@ class WindowsPlaybackBridge
       });
     }
     session.subscriptions.addAll([
+      player.stream.audioParams.listen((_) {
+        if (!_isCurrent(session) ||
+            !identical(session.player, player) ||
+            session.effects.state.frontBack == 0) {
+          return;
+        }
+        // Decoder layout can change when a native playlist advances, without
+        // reopening the player or reapplying the saved effects.
+        unawaited(
+          _change(session.id, (current) async {
+            if (identical(current.player, player)) {
+              await _applyEffects(current, current.effects);
+            }
+          }, markPlaybackError: false).then((result) {
+            if (result.isFailure && identical(session.player, player)) {
+              AppLogService.error(
+                'Windows audio filter update failed',
+                error: result.errorOrNull,
+              );
+            }
+          }),
+        );
+      }),
       player.stream.playlist.listen((playlist) {
         if (!_isCurrent(session) ||
             !identical(session.player, player) ||
@@ -639,43 +673,51 @@ class WindowsPlaybackBridge
           return;
         }
         final generation = session.generation;
+        final preReadQueue = session.queue;
+        final preReadIndexFuture = session.currentNativeEntryId(player).then<int?>(
+          (id) => id == null ? null : session.nativeQueueIndices[id],
+          onError: (Object _, StackTrace _) => null,
+        );
         unawaited(
-          _run<void>(() async {
-            final id = await session.currentNativeEntryId(player);
-            if (!_isCurrent(session) ||
-                generation != session.generation ||
-                !identical(session.player, player) ||
-                session.opening ||
-                session.nativeQueueLimited) {
+          _change(session.id, (current) async {
+            if (!_isCurrent(current) ||
+                generation != current.generation ||
+                current.opening ||
+                current.nativeQueueLimited) {
               return;
             }
-            final index = session.nativeQueueIndices[id];
-            if (index == null || index == session.index) return;
-            session.index = index;
-            session.position = Duration.zero;
-            session.duration = session.relativeDuration(player.state.duration);
-            session.retryAttempt = 0;
-            session.error = null;
-            if (session.retainedCurrentIndex != null &&
-                index != session.retainedCurrentIndex) {
-              final cleanup = await _change(session.id, (current) async {
-                final retainedIndex = current.retainedCurrentIndex;
-                if (generation != current.generation ||
-                    retainedIndex == null ||
-                    current.index == retainedIndex) {
-                  return;
-                }
+            if (identical(current.player, player)) {
+              final id = await current.currentNativeEntryId(player);
+              if (!_isCurrent(current) ||
+                  generation != current.generation ||
+                  !identical(current.player, player) ||
+                  current.opening ||
+                  current.nativeQueueLimited) {
+                return;
+              }
+              final index = current.nativeQueueIndices[id];
+              if (index == null || index == current.index) return;
+              current.index = index;
+              current.position = Duration.zero;
+              current.duration = current.relativeDuration(
+                player.state.duration,
+              );
+              current.retryAttempt = 0;
+              current.error = null;
+              final retainedIndex = current.retainedCurrentIndex;
+              if (retainedIndex != null && index != retainedIndex) {
                 current.opening = true;
                 try {
-                  if (identical(current.player, player)) {
-                    final ids = await current.nativeEntryIds(player);
-                    final physicalIndex = ids.indexWhere(
-                      (id) => current.nativeQueueIndices[id] == retainedIndex,
-                    );
+                  final ids = await current.nativeEntryIds(player);
+                  final physicalIndex = ids.indexWhere(
+                    (entryId) =>
+                        current.nativeQueueIndices[entryId] == retainedIndex,
+                  );
+                  if (physicalIndex >= 0) {
                     await player.remove(physicalIndex);
                     current.nativeQueueIndices.remove(ids[physicalIndex]);
                     current.nativeQueueIndices.updateAll(
-                      (_, index) => index > retainedIndex ? index - 1 : index,
+                      (_, value) => value > retainedIndex ? value - 1 : value,
                     );
                   }
                   current.retainedCurrentIndex = null;
@@ -685,11 +727,35 @@ class WindowsPlaybackBridge
                 } finally {
                   current.opening = false;
                 }
-              });
-              if (cleanup.isFailure) throw StateError(cleanup.errorOrNull!);
+              }
+            } else if (current.player == null &&
+                identical(current.queue, preReadQueue) &&
+                current.retainedCurrentIndex != null) {
+              final preIndex = await preReadIndexFuture;
+              if (preIndex == null ||
+                  !_isCurrent(current) ||
+                  generation != current.generation ||
+                  current.player != null ||
+                  !identical(current.queue, preReadQueue)) {
+                return;
+              }
+              final retainedIndex = current.retainedCurrentIndex;
+              if (retainedIndex == null ||
+                  preIndex == current.index ||
+                  preIndex == retainedIndex) {
+                return;
+              }
+              current.index = preIndex;
+              current.position = Duration.zero;
+              current.duration = null;
+              current.retryAttempt = 0;
+              current.error = null;
+              current.retainedCurrentIndex = null;
+              current.queue.removeAt(retainedIndex);
+              current.invalidateRetainedUris();
+              if (current.index > retainedIndex) current.index--;
             }
-            _emit(session);
-          }).then((result) {
+          }, markPlaybackError: false).then((result) {
             if (result.isFailure &&
                 _isCurrent(session) &&
                 generation == session.generation &&
@@ -872,11 +938,42 @@ class WindowsPlaybackBridge
     );
   }
 
-  Future<void> _applyEffects(_WindowsPlaybackSession session) async {
+  Future<void> _applyEffects(
+    _WindowsPlaybackSession session,
+    NativeAudioEffects effects,
+  ) async {
+    final frontBack = _finite(effects.state.frontBack, -1, 1);
     final platform = session.player?.platform;
-    if (platform is NativePlayer) {
-      await platform.setProperty('af', windowsAudioFilter(session.effects));
+    if (platform is! NativePlayer) return;
+
+    String? impulsePath;
+    if (frontBack != 0 &&
+        await platform.getProperty('audio-params/channel-count') == '2') {
+      // libavfilter opens the WAV by path. The Windows runner installs
+      // Flutter assets beside its executable under data/flutter_assets.
+      impulsePath = p.join(
+        p.dirname(Platform.resolvedExecutable),
+        'data',
+        'flutter_assets',
+        'assets',
+        'audio',
+        frontBack > 0 ? 'spatial_front.wav' : 'spatial_back.wav',
+      );
     }
+    final filter = windowsAudioFilter(effects, spatialImpulsePath: impulsePath);
+    if (_appliedAudioFilters[platform] == filter) return;
+    if (impulsePath != null && !await File(impulsePath).exists()) {
+      throw FileSystemException('Missing spatial audio response', impulsePath);
+    }
+    await platform.setProperty('af', filter);
+    if (impulsePath != null) {
+      // media_kit's setter does not expose libmpv's return code.
+      final graph = filter.substring(filter.indexOf('%', 'lavfi=%'.length) + 1);
+      if (!(await platform.getProperty('af')).endsWith(graph)) {
+        throw StateError('libmpv rejected the spatial audio filter');
+      }
+    }
+    _appliedAudioFilters[platform] = filter;
   }
 
   @override
@@ -976,6 +1073,7 @@ class WindowsPlaybackBridge
       await session.player?.seek(session.absolutePosition(target));
     }
     session.position = target;
+    session.seekRevision++;
   }, markPlaybackError: false);
   @override
   Future<NativeResult<NativePlaybackSnapshot>> setVolume(
@@ -1092,9 +1190,9 @@ class WindowsPlaybackBridge
     String sessionId,
     NativeAudioEffects effects,
   ) => _change(sessionId, (session) async {
+    await _applyEffects(session, effects);
     session.effects = effects;
-    await _applyEffects(session);
-  });
+  }, markPlaybackError: false);
   @override
   Future<NativeResult<NativePlaybackSnapshot>> setFadeMultiplier(
     String sessionId,
@@ -1267,7 +1365,10 @@ final windowsEqCapabilities = EqCapabilities(
   ],
 );
 
-String windowsAudioFilter(NativeAudioEffects effects) {
+String windowsAudioFilter(
+  NativeAudioEffects effects, {
+  String? spatialImpulsePath,
+}) {
   final state = effects.state;
   final filters = <String>[];
   if (state.noiseReductionEnabled) filters.add('afftdn=nf=-25');
@@ -1287,15 +1388,49 @@ String windowsAudioFilter(NativeAudioEffects effects) {
     );
   }
   final pan = _finite(state.panning, -1, 1);
+  final spatialMix = _finite(state.frontBack, -1, 1).abs();
+  final left = pan > 0 ? 1 - pan : 1.0;
+  final right = pan < 0 ? 1 + pan : 1.0;
+  if (spatialImpulsePath != null && spatialMix > 0) {
+    // The bundled impulse responses are sampled at 48 kHz.
+    filters.add('aformat=channel_layouts=stereo:sample_rates=48000');
+    if (effects.channelSwapEnabled) {
+      filters.add('pan=stereo|c0=c1|c1=c0');
+    }
+    // Four independent convolutions, ordered by source and then by ear.
+    filters.add('asplit[dry][spatial]');
+    final impulse = _escapeFilterFilename(spatialImpulsePath);
+    const peak = 'max(1,max(abs(val(0)),abs(val(1))))';
+    final graph =
+        '${filters.join(',')};'
+        'amovie=filename=$impulse,aformat=channel_layouts=4.0[ir];'
+        '[spatial]pan=4.0|c0=c0|c1=c0|c2=c1|c3=c1[sides];'
+        '[sides][ir]afir=irnorm=-1:minp=32:maxp=64,'
+        'pan=stereo|c0=c0+c2|c1=c1+c3[wet];'
+        '[dry][wet]amix=normalize=0:duration=first:weights=${1 - spatialMix} $spatialMix,'
+        "aeval=exprs='val(0)/$peak|val(1)/$peak':channel_layout=stereo"
+        '${pan == 0 ? '' : ',pan=stereo|c0=$left*c0|c1=$right*c1'}';
+    // mpv's fixed-length quoting preserves the complete graph as one argument.
+    return 'lavfi=%${utf8.encode(graph).length}%$graph';
+  }
   if (effects.channelSwapEnabled || pan != 0) {
     filters.add('aformat=channel_layouts=stereo');
-    final left = pan > 0 ? 1 - pan : 1.0;
-    final right = pan < 0 ? 1 + pan : 1.0;
     filters.add(
       'pan=args=stereo|c0=$left*${effects.channelSwapEnabled ? 'c1' : 'c0'}|c1=$right*${effects.channelSwapEnabled ? 'c0' : 'c1'}',
     );
   }
   return filters.isEmpty ? '' : 'lavfi=[${filters.join(',')}]';
+}
+
+String _escapeFilterFilename(String path) {
+  // Escape the filter's option value first, then the outer filter graph syntax.
+  final option = path
+      .replaceAll(r'\', '/')
+      .replaceAllMapped(RegExp(r"[:']"), (match) => '\\${match[0]}');
+  return option.replaceAllMapped(
+    RegExp(r"[\\',;\[\]]"),
+    (match) => '\\${match[0]}',
+  );
 }
 
 final _mockMediaIds = Expando<int>();

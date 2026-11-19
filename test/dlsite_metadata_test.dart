@@ -538,6 +538,86 @@ void main() {
 
     expect(score, 2);
   });
+
+  test('HTML parser handles reverse meta order, entities, and missing circle', () {
+    final metadata = decodeDlsiteProductHtml('''
+      <meta content="Title &amp;lt;Test&amp;gt; | DLsite" property="og:title">
+      <meta content="4.5" itemprop="ratingValue">
+      <meta content="//img.dlsite.jp/cover.jpg" property="og:image">
+      ''', fallbackRjCode: 'RJ01014447');
+
+    expect(metadata, isNotNull);
+    expect(metadata!.workTitle, 'Title &lt;Test&gt; | DLsite');
+    expect(metadata.circleName, isEmpty);
+    expect(metadata.rating, 4.5);
+    expect(metadata.coverUrl, 'https://img.dlsite.jp/cover.jpg');
+  });
+
+  test('suggest JSON parser keeps plain JSON containing parentheses', () {
+    final ids = extractDlsiteProductIdsFromSuggestResponse(
+      '{"work":[{"workno":"RJ01553075","work_name":"Title (CV: Voice)"}],"maker":[]}',
+    );
+
+    expect(ids, const <String>['RJ01553075']);
+  });
+
+  test('cover download discards response stream on non-2xx status', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final root = await Directory.systemTemp.createTemp('dlsite_cover_404_');
+    final subscription = server.listen((request) async {
+      request.response.statusCode = HttpStatus.notFound;
+      request.response.write('not found');
+      await request.response.close();
+    });
+    addTearDown(() async {
+      await subscription.cancel();
+      await server.close(force: true);
+      if (await root.exists()) await root.delete(recursive: true);
+    });
+
+    await expectLater(
+      DlsiteMetadataService().downloadCover(
+        coverUrl: 'http://${server.address.address}:${server.port}/missing.jpg',
+        folderPath: root.path,
+        rjCode: 'RJ01014447',
+      ),
+      throwsA(
+        isA<DlsiteMetadataException>().having(
+          (error) => error.message,
+          'message',
+          'Cover download failed: 404',
+        ),
+      ),
+    );
+  });
+
+  test('fetchByRjCode tolerates malformed UTF-8 bytes in HTML response', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final transport = HttpClient();
+    server.listen((request) async {
+      if (request.uri.path.endsWith('product.json')) {
+        request.response.statusCode = HttpStatus.notFound;
+      } else {
+        request.response.add(<int>[
+          ...utf8.encode('<h1 id="work_name">Valid Title</h1><!-- '),
+          0xFF,
+          0xFE,
+          ...utf8.encode(' -->'),
+        ]);
+      }
+      await request.response.close();
+    });
+    try {
+      final metadata = await DlsiteMetadataService(
+        httpClient: _LocalDlsiteHttpClient(transport, server.port),
+      ).fetchByRjCode('RJ01726046');
+
+      expect(metadata.workTitle, 'Valid Title');
+    } finally {
+      transport.close(force: true);
+      await server.close(force: true);
+    }
+  });
 }
 
 class _HangingHttpClient implements HttpClient {

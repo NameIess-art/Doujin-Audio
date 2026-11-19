@@ -99,19 +99,25 @@ internal fun scanDocumentChildren(
     onDocument: (ScannedDocument) -> Unit
 ): Int = scanFolderQuery(query) {
     val idIndex = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
-    val nameIndex = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-    val mimeIndex = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
-    val sizeIndex = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_SIZE)
-    val modifiedIndex = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+    val nameIndex = it.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+    val mimeIndex = it.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+    val sizeIndex = it.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+    val modifiedIndex = it.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
     while (!observer.isCancelled() && it.moveToNext()) {
         observer.onEntryProcessed()
+        val id = requireNotNull(it.getString(idIndex))
+        val name = if (nameIndex >= 0) it.getString(nameIndex) else null
+        val mime = if (mimeIndex >= 0) it.getString(mimeIndex) else null
+        if (name == null || mime == null) continue
+        val size = if (sizeIndex >= 0) it.getLong(sizeIndex) else 0L
+        val modifiedAt = if (modifiedIndex >= 0) it.getLong(modifiedIndex) else 0L
         onDocument(
             ScannedDocument(
-                id = requireNotNull(it.getString(idIndex)),
-                name = requireNotNull(it.getString(nameIndex)),
-                mime = requireNotNull(it.getString(mimeIndex)),
-                size = it.getLong(sizeIndex).takeIf { value -> value > 0L },
-                modifiedAt = it.getLong(modifiedIndex).takeIf { value -> value > 0L }
+                id = id,
+                name = name,
+                mime = mime,
+                size = size.takeIf { value -> value > 0L },
+                modifiedAt = modifiedAt.takeIf { value -> value > 0L }
             )
         )
     }
@@ -311,11 +317,17 @@ internal class FolderScanOperations(
             folder = folder,
             primaryExternalStorageRoot = Environment.getExternalStorageDirectory().absolutePath
         )
+        val mediaTypeSelection =
+            "${MediaStore.Files.FileColumns.MEDIA_TYPE} IN (" +
+                "${MediaStore.Files.FileColumns.MEDIA_TYPE_AUDIO}, " +
+                "${MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO})"
+        val selection = folderQuery.selection?.let { "($it) AND $mediaTypeSelection" }
+            ?: mediaTypeSelection
         return scanFolderQuery(query = {
             resolver.query(
                 collection,
                 projection.toTypedArray(),
-                folderQuery.selection,
+                selection,
                 folderQuery.selectionArgs.takeIf { it.isNotEmpty() }?.toTypedArray(),
                 null
             )

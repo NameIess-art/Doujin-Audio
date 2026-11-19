@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:doujin_audio/core/media/search_query_utils.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/search_highlight.dart';
@@ -37,6 +38,90 @@ void main() {
   tearDownAll(() => AppRuntimeTestFixture.disposeSharedDatabase(database));
   setUp(UiInteractionCoordinator.instance.resetForTest);
   tearDown(UiInteractionCoordinator.instance.resetForTest);
+
+  test(
+    'work metadata and subtitle filters narrow keyword matches independently',
+    () async {
+      final matching = testMusicTrack(
+        name: 'Rain',
+        path: '/work/rain.mp3',
+        groupKey: '/work',
+        groupTitle: 'Work',
+      );
+      final sibling = testMusicTrack(
+        name: 'Credits',
+        path: '/work/credits.mp3',
+        groupKey: '/work',
+        groupTitle: 'Work',
+      );
+      final root = FolderNode('Work', '/work')
+        ..addChild(TrackNode(matching))
+        ..addChild(TrackNode(sibling));
+      final target = AudioDetailTarget.libraryRootFolder(root.path);
+      final date = DateTime(2024, 8, 12);
+      final snapshot = AudioLibraryCategorySnapshot(
+        entries: [
+          AudioLibraryCategoryEntry(
+            title: root.name,
+            path: root.path,
+            isFolder: true,
+            target: target,
+            detail: AudioDetail(
+              target: target,
+              rjCode: '',
+              workTitle: 'Work',
+              circleName: '',
+              voiceActors: const [],
+              tags: const [],
+              rating: 4.5,
+              releaseDate: date,
+              duration: const Duration(minutes: 40),
+            ),
+            tracks: [matching, sibling],
+          ),
+        ],
+        structureRevision: 1,
+        detailRevision: 1,
+      );
+      final index = LibrarySearchIndex();
+      final SearchFilters filters = (
+        hasSubtitle: true,
+        minimumRating: 4.5,
+        minimumDuration: null,
+        maximumDuration: const Duration(minutes: 40),
+        firstReleaseDate: date,
+        lastReleaseDate: null,
+      );
+      final result = await index.searchInBackground(
+        query: 'Rain',
+        tree: [root],
+        structureRevision: 1,
+        detailRevision: 1,
+        categorySnapshot: snapshot,
+        filters: filters,
+      );
+      expect(result.matchCount, 1);
+      expect(
+        (result.tree.single as FolderNode).children.single.path,
+        matching.path,
+      );
+      final withSubtitle = await result.filterSubtitles(
+        snapshot: snapshot,
+        hasSubtitle: true,
+        checkTrack: (path) async => path == sibling.path,
+        isActive: () => true,
+      );
+      expect(withSubtitle, same(result));
+      final withoutSubtitle = await result.filterSubtitles(
+        snapshot: snapshot,
+        hasSubtitle: false,
+        checkTrack: (path) async => path == sibling.path,
+        isActive: () => true,
+      );
+      expect(withoutSubtitle?.tree, isEmpty);
+      expect(withoutSubtitle?.expandedFolderPaths, isEmpty);
+    },
+  );
 
   test('search result cache invalidates structure and detail revisions', () {
     final index = LibrarySearchIndex();
@@ -658,6 +743,53 @@ void main() {
       expect(find.text('Recovered audio', findRichText: true), findsWidgets);
       expect(tester.takeException(), isNull);
     },
+  );
+
+  testWidgets(
+    'library search can submit a duration without a keyword',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      fixture.library.addTracks([
+        for (final (label, minutes) in [
+          ('Short audio', 20),
+          ('Long audio', 40),
+        ])
+          testMusicTrack(
+            name: label,
+            path: '/$label.mp3',
+            groupKey: '/$label.mp3',
+            groupTitle: label,
+            isSingle: true,
+          ).copyWith(duration: Duration(minutes: minutes)),
+      ], persist: false);
+      await tester.runAsync(fixture.library.audioLibraryCategorySnapshot);
+      await tester.runAsync(fixture.library.loadLibraryTree);
+      await tester.pumpWidget(fixture.build(const LibrarySearchPage()));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('search_other_filters')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('search_minimum_duration')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextFormField), '30');
+      await tester.tap(
+        find
+            .descendant(
+              of: find.byType(AlertDialog),
+              matching: find.byType(TextButton),
+            )
+            .last,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('app_search_confirm')));
+      await pumpUntilFound(tester, find.text('Long audio'));
+      expect(find.text('Short audio'), findsNothing);
+      expect(fixture.settings.slice.state.librarySearchHistory, isEmpty);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets('editing a confirmed page cancels its pending result', (

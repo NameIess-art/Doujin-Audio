@@ -75,6 +75,7 @@ Widget _settingsDropdown<T>(
       onChanged: onChanged,
       alignment: Alignment.centerRight,
       multilineItems: true,
+      blurBackground: false,
     ),
   );
 }

@@ -28,4 +28,29 @@ class MediaNameMetadataTest {
         assertEquals("episode", info?.title)
         assertTrue(info?.isVideo == true)
     }
+
+    @Test
+    fun `rejects blank extensions dotfiles directories and unknown extensions`() {
+        assertNull(MediaNameMetadata.mediaNameInfoOrNull(""))
+        assertNull(MediaNameMetadata.mediaNameInfoOrNull("README"))
+        assertNull(MediaNameMetadata.mediaNameInfoOrNull(".nomedia"))
+        assertNull(MediaNameMetadata.mediaNameInfoOrNull(".hidden"))
+        assertNull(MediaNameMetadata.mediaNameInfoOrNull("notes.ini"))
+        assertNull(MediaNameMetadata.mediaNameInfoOrNull("Subfolder", "vnd.android.document/directory"))
+    }
+
+    @Test
+    fun `recognizes supported audio extensions and explicit audio mime`() {
+        val mp3 = MediaNameMetadata.mediaNameInfoOrNull("track.mp3")
+        assertEquals("track", mp3?.title)
+        assertEquals(false, mp3?.isVideo)
+
+        val opus = MediaNameMetadata.mediaNameInfoOrNull("voice.opus")
+        assertEquals("voice", opus?.title)
+        assertEquals(false, opus?.isVideo)
+
+        val mimeOnly = MediaNameMetadata.mediaNameInfoOrNull("stream", "audio/mpeg")
+        assertEquals("stream", mimeOnly?.title)
+        assertEquals(false, mimeOnly?.isVideo)
+    }
 }

@@ -16,17 +16,29 @@ extension AppDatabaseListening on AppDatabase {
       );
       if (changes == 0) return false;
       for (final day in days) {
-        await txn.rawInsert(
-          'INSERT INTO listening_days(date, milliseconds) VALUES (?, ?) '
-          'ON CONFLICT(date) DO UPDATE SET milliseconds = milliseconds + excluded.milliseconds',
-          [day.date, day.totalMs],
+        final updatedDays = await txn.rawUpdate(
+          'UPDATE listening_days SET milliseconds = milliseconds + ? WHERE date = ?',
+          [day.totalMs, day.date],
         );
+        if (updatedDays == 0) {
+          await txn.insert('listening_days', {
+            'date': day.date,
+            'milliseconds': day.totalMs,
+          });
+        }
         for (final work in day.works) {
-          await txn.rawInsert(
-            'INSERT INTO listening_work_days(date, work_key, milliseconds) VALUES (?, ?, ?) '
-            'ON CONFLICT(date, work_key) DO UPDATE SET milliseconds = milliseconds + excluded.milliseconds',
-            [day.date, work.workKey, work.milliseconds],
+          final updatedWorkDays = await txn.rawUpdate(
+            'UPDATE listening_work_days SET milliseconds = milliseconds + ? '
+            'WHERE date = ? AND work_key = ?',
+            [work.milliseconds, day.date, work.workKey],
           );
+          if (updatedWorkDays == 0) {
+            await txn.insert('listening_work_days', {
+              'date': day.date,
+              'work_key': work.workKey,
+              'milliseconds': work.milliseconds,
+            });
+          }
           await _upsertListeningHistory(txn, work);
         }
       }
@@ -82,16 +94,34 @@ Future<void> _upsertListeningHistory(
   ListeningWorkRecord work, {
   int legacyOrder = 0,
 }) async {
-  await db.rawInsert(
-    'INSERT INTO listening_history(work_key, track_json, last_played_at_ms, legacy_order) VALUES (?, ?, ?, ?) '
-    'ON CONFLICT(work_key) DO UPDATE SET '
-    'track_json = CASE WHEN excluded.last_played_at_ms >= last_played_at_ms THEN excluded.track_json ELSE track_json END, '
-    'last_played_at_ms = MAX(last_played_at_ms, excluded.last_played_at_ms)',
-    [
-      work.workKey,
-      jsonEncode(work.track.toJson()),
-      work.lastPlayedAtMs,
-      legacyOrder,
-    ],
+  // Query-then-insert/update inside the enclosing transaction avoids SQLite
+  // UPSERT syntax (3.24+), which older Android libsqlite builds lack.
+  final existing = await db.query(
+    'listening_history',
+    columns: ['last_played_at_ms'],
+    where: 'work_key = ?',
+    whereArgs: [work.workKey],
+    limit: 1,
   );
+  if (existing.isEmpty) {
+    await db.insert('listening_history', {
+      'work_key': work.workKey,
+      'track_json': jsonEncode(work.track.toJson()),
+      'last_played_at_ms': work.lastPlayedAtMs,
+      'legacy_order': legacyOrder,
+    });
+    return;
+  }
+  final currentLastPlayed = (existing.single['last_played_at_ms'] as int?) ?? 0;
+  if (work.lastPlayedAtMs >= currentLastPlayed) {
+    await db.update(
+      'listening_history',
+      {
+        'track_json': jsonEncode(work.track.toJson()),
+        'last_played_at_ms': work.lastPlayedAtMs,
+      },
+      where: 'work_key = ?',
+      whereArgs: [work.workKey],
+    );
+  }
 }

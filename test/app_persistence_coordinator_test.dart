@@ -841,6 +841,99 @@ void main() {
       },
     );
   }
+
+  test(
+    'concurrent reloads are serialized and awaited by dispose',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final database = await databaseFactoryFfi.openDatabase(
+        inMemoryDatabasePath,
+      );
+      await AppDatabase.createSchemaForTest(database);
+      final repository = TestPersistenceRepository(
+        database: AppDatabase.test(database),
+      );
+      final library = LibraryFacade.create(databaseRepository: repository);
+      final native = _FakeNativePlaybackRepository();
+      final playback = PlaybackFacade.create(
+        databaseRepository: repository,
+        nativeRepository: native,
+      )..configurePersistence(enabled: false);
+      final timer = TimerFacade.create();
+      final notifications = NotificationFacade.create(
+        service: PlaybackNotificationService(),
+      );
+      final settings = _FailOnceSettingsRepository();
+      final paths = AudioPathCoordinator(library: library, playback: playback);
+      late final PlaybackSubtitleService subtitles;
+      subtitles = PlaybackSubtitleService(
+        trackResolver: library.trackByPath,
+        onTrackLoaded: notifications.handleSubtitleTrackLoaded,
+      );
+      final warmup = AudioUiWarmupCoordinator(
+        library: library,
+        playback: playback,
+        notifications: notifications,
+        subtitles: subtitles,
+      );
+      final keepAlive = PlaybackKeepAliveCoordinator(
+        playback: playback,
+        settings: settings,
+        enterBackgroundWarmup: warmup.enterBackground,
+        resumeForegroundWarmup: warmup.resumeForeground,
+      );
+      final commands = PlaybackCommandCoordinator(
+        library: library,
+        playback: playback,
+        timer: timer,
+        notifications: notifications,
+        asmrPlaybackCacheEnabled: () => settings.asmrPlaybackCacheEnabled,
+        audioPaths: paths,
+        subtitles: subtitles,
+        activateAudioSession: keepAlive.activateAudioSession,
+        asmrPlaybackCacheService: AsmrPlaybackCacheService(),
+        notifyPlaybackChanged: () {},
+        syncNotificationState: notifications.syncPlaybackState,
+      );
+      final coordinator = AppPersistenceCoordinator(
+        library: library,
+        playback: playback,
+        settings: settings,
+        timer: timer,
+        notifications: notifications,
+        keepAlive: keepAlive,
+        uiWarmup: warmup,
+        subtitles: subtitles,
+      );
+      addTearDown(() async {
+        await coordinator.dispose();
+        await warmup.shutdown();
+        await playback.dispose();
+        await commands.dispose();
+        await library.dispose();
+        await timer.dispose();
+        await notifications.dispose();
+        await settings.dispose();
+        await database.close();
+      });
+
+      settings.pendingLoad = Completer<void>();
+      final firstReload = coordinator.reloadPersistedState();
+      final secondReload = coordinator.reloadPersistedState();
+      await Future<void>.delayed(Duration.zero);
+      expect(settings.enforceCacheLimitValues, hasLength(1));
+
+      var disposed = false;
+      final disposeFuture = coordinator.dispose().then((_) => disposed = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(disposed, isFalse);
+
+      settings.pendingLoad!.complete();
+      await Future.wait([firstReload, secondReload, disposeFuture]);
+      expect(disposed, isTrue);
+      expect(settings.enforceCacheLimitValues, hasLength(1));
+    },
+  );
 }
 
 void _attachPausedRecovery(

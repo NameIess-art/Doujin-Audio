@@ -34,6 +34,7 @@ class SwipeRevealCard extends StatefulWidget {
     this.secondaryActionIcon = Icons.info_outline_rounded,
     this.secondaryActionIconWidget,
     this.primaryActionIcon = Icons.delete_outline_rounded,
+    this.primaryActionIconWidget,
     this.primaryActionTooltip,
     this.onTertiaryAction,
     this.tertiaryActionLabel,
@@ -74,6 +75,7 @@ class SwipeRevealCard extends StatefulWidget {
   final IconData secondaryActionIcon;
   final Widget? secondaryActionIconWidget;
   final IconData primaryActionIcon;
+  final Widget? primaryActionIconWidget;
   final String? primaryActionTooltip;
   final VoidCallback? onTertiaryAction;
   final String? tertiaryActionLabel;
@@ -326,6 +328,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
           value: widget.onRemove,
           label: widget.actionLabel,
           icon: widget.primaryActionIcon,
+          iconWidget: widget.primaryActionIconWidget,
           destructive: widget.destructive,
         ),
       ],
@@ -682,6 +685,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       ),
     SwipeRevealAction(
       icon: widget.primaryActionIcon,
+      iconWidget: widget.primaryActionIconWidget,
       tooltip: widget.primaryActionTooltip ?? widget.removeTooltip,
       onPressed: widget.onRemove,
       primary: true,

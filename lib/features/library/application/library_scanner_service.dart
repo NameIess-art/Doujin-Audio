@@ -16,6 +16,7 @@ import '../../../core/media/media_file_support.dart';
 import 'library_scan_data_source.dart';
 import 'library_scan_models.dart';
 import 'library_scan_rules.dart';
+import 'library_state_models.dart' show LibraryExclusionSnapshot;
 import 'library_refresh_chunk_planner.dart';
 import 'library_scan_importer.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
@@ -454,6 +455,7 @@ class LibraryScannerService {
     LibraryScanLabels labels,
   ) async {
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
+    var shouldClearExclusions = false;
     if (_rules.isFolderAlreadyInLibrary(
       folderPath: folderPath,
       watchedFolders: provider.watchedFolders,
@@ -469,7 +471,7 @@ class LibraryScannerService {
       if (isExistingStandaloneFolder &&
           !isManagedByWatchedLibrary &&
           provider.hasLibraryExclusions(normalizedFolderPath)) {
-        await provider.clearLibraryExclusions(normalizedFolderPath);
+        shouldClearExclusions = true;
       } else {
         return LibraryScanOutcome(
           code: LibraryScanOutcomeCode.folderExists,
@@ -487,7 +489,14 @@ class LibraryScannerService {
         source: 'import_folder',
       );
     }
-    final trackChanges = <String, ({MusicTrack? before, MusicTrack after})>{};
+    LibraryExclusionSnapshot? exclusionSnapshot;
+    final trackChanges =
+        HashMap<String, ({MusicTrack? before, MusicTrack after})>(
+          equals: (first, second) =>
+              PathMatcher.equivalenceKey(first) ==
+              PathMatcher.equivalenceKey(second),
+          hashCode: (value) => PathMatcher.equivalenceKey(value).hashCode,
+        );
     void recordTrackChange(MusicTrack? before, MusicTrack after) {
       final key = PathMatcher.normalize(after.path);
       final previous = trackChanges[key];
@@ -501,80 +510,96 @@ class LibraryScannerService {
       trackChanges[key] = (before: original, after: after);
     }
 
-    final existingEntryPaths = provider
-        .libraryEntriesForLibrary(normalizedFolderPath)
-        .map((entry) => PathMatcher.normalize(entry.path))
-        .toSet();
-    provider.beginLibraryBatch();
-
+    final existingEntryPaths =
+        HashSet<String>(
+          equals: (first, second) =>
+              PathMatcher.equivalenceKey(first) ==
+              PathMatcher.equivalenceKey(second),
+          hashCode: (value) => PathMatcher.equivalenceKey(value).hashCode,
+        )..addAll(
+          provider
+              .libraryEntriesForLibrary(normalizedFolderPath)
+              .map((entry) => PathMatcher.normalize(entry.path)),
+        );
+    var batchStarted = false;
     var added = 0;
     var completed = false;
     var wasCancelled = false;
 
     try {
-      provider.setScanProgress(
-        currentFolder: _displaySourceName(folderPath),
-        generation: generation,
-      );
-      final chunkedImport = await _importer.importNativeFolder(
-        sourceFolderPath: folderPath,
-        provider: provider,
-        libraryRoot: normalizedFolderPath,
-        labels: labels,
-        generation: generation,
-        onTrackCommitted: recordTrackChange,
-      );
-      if (chunkedImport != null) {
-        added = chunkedImport.added;
-        completed =
-            provider.isScanGenerationActive(generation) &&
-            chunkedImport.result.isComplete;
-      } else {
-        final nativeScan = await _dataSource.scanFolder(folderPath);
-        if (nativeScan.ok) {
-          added = await _importer.mergeScannedTracks(
-            sourceFolderPath: folderPath,
-            provider: provider,
-            scannedTracks: nativeScan.tracks,
-            libraryRoot: normalizedFolderPath,
-            labels: labels,
-            generation: generation,
-            onTrackCommitted: recordTrackChange,
-          );
+      if (shouldClearExclusions) {
+        exclusionSnapshot = provider.snapshotLibraryExclusions(
+          normalizedFolderPath,
+        );
+        await provider.clearLibraryExclusions(normalizedFolderPath);
+      }
+      if (provider.isScanGenerationActive(generation)) {
+        provider.beginLibraryBatch();
+        batchStarted = true;
+        provider.setScanProgress(
+          currentFolder: _displaySourceName(folderPath),
+          generation: generation,
+        );
+        final chunkedImport = await _importer.importNativeFolder(
+          sourceFolderPath: folderPath,
+          provider: provider,
+          libraryRoot: normalizedFolderPath,
+          labels: labels,
+          generation: generation,
+          onTrackCommitted: recordTrackChange,
+        );
+        if (chunkedImport != null) {
+          added = chunkedImport.added;
           completed =
               provider.isScanGenerationActive(generation) &&
-              nativeScan.isComplete;
-        } else if (nativeScan.notSupported ||
-            !PathMatcher.isContentUri(folderPath)) {
-          final failuresBefore = provider.scanFailureCount;
-          added = await _importer.importFolder(
-            folderPath,
-            provider,
-            normalizedFolderPath,
-            labels: labels,
-            generation: generation,
-            onTrackCommitted: recordTrackChange,
-          );
-          completed =
-              provider.isScanGenerationActive(generation) &&
-              provider.scanFailureCount == failuresBefore;
+              chunkedImport.result.isComplete;
         } else {
-          provider.setScanProgress(
-            failureCount: provider.scanFailureCount + 1,
-            generation: generation,
-          );
-          AppLogService.warning(
-            'library_native_scan_failed source=$folderPath '
-            'code=${nativeScan.errorCode}',
-            error: nativeScan.errorMessage,
-          );
+          final nativeScan = await _dataSource.scanFolder(folderPath);
+          if (nativeScan.ok) {
+            added = await _importer.mergeScannedTracks(
+              sourceFolderPath: folderPath,
+              provider: provider,
+              scannedTracks: nativeScan.tracks,
+              libraryRoot: normalizedFolderPath,
+              labels: labels,
+              generation: generation,
+              onTrackCommitted: recordTrackChange,
+            );
+            completed =
+                provider.isScanGenerationActive(generation) &&
+                nativeScan.isComplete;
+          } else if (nativeScan.notSupported ||
+              !PathMatcher.isContentUri(folderPath)) {
+            final failuresBefore = provider.scanFailureCount;
+            added = await _importer.importFolder(
+              folderPath,
+              provider,
+              normalizedFolderPath,
+              labels: labels,
+              generation: generation,
+              onTrackCommitted: recordTrackChange,
+            );
+            completed =
+                provider.isScanGenerationActive(generation) &&
+                provider.scanFailureCount == failuresBefore;
+          } else {
+            provider.setScanProgress(
+              failureCount: provider.scanFailureCount + 1,
+              generation: generation,
+            );
+            AppLogService.warning(
+              'library_native_scan_failed source=$folderPath '
+              'code=${nativeScan.errorCode}',
+              error: nativeScan.errorMessage,
+            );
+          }
         }
       }
     } finally {
       wasCancelled = !provider.isScanGenerationActive(generation);
       completed = completed && provider.isScanGenerationActive(generation);
       try {
-        if (!completed) {
+        if (!completed && batchStarted) {
           _rollbackScanAdditions(
             provider: provider,
             trackChanges: trackChanges,
@@ -582,7 +607,7 @@ class LibraryScannerService {
               normalizedFolderPath: existingEntryPaths,
             },
           );
-        } else {
+        } else if (completed) {
           provider.setScanProgress(
             generation: generation,
             stage: FolderScanStage.saving,
@@ -595,9 +620,17 @@ class LibraryScannerService {
         }
       } finally {
         try {
-          await provider.endLibraryBatch();
+          if (batchStarted) {
+            await provider.endLibraryBatch();
+          }
         } finally {
-          provider.finishScan(generation);
+          try {
+            if (!completed && exclusionSnapshot != null) {
+              await provider.restoreLibraryExclusions(exclusionSnapshot);
+            }
+          } finally {
+            provider.finishScan(generation);
+          }
         }
       }
       if (completed) {

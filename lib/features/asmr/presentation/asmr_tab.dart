@@ -22,6 +22,7 @@ import '../application/asmr_download_models.dart';
 import '../application/asmr_api_service.dart';
 import '../application/asmr_remote_catalog_service.dart';
 import '../application/asmr_library_controller.dart';
+import '../../../core/immutable_collections.dart';
 import '../../../core/media/search_query_utils.dart';
 import '../../../core/media/time_text_formatters.dart';
 import '../../../core/logging/app_log_service.dart';
@@ -37,6 +38,7 @@ import '../../../core/widgets/app_search_page.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/glass_refresh_indicator.dart';
 import '../../../core/widgets/library_like_cards.dart';
+import '../../../core/widgets/playlist_icon.dart';
 import '../../../core/widgets/duration_overlay.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/page_header_inset.dart';
@@ -54,6 +56,7 @@ import 'asmr_error_text.dart';
 import 'asmr_favorite_action.dart';
 import 'asmr_work_detail_sheet.dart';
 import '../../../app/presentation/main_tab_state_mixin.dart';
+import '../../../core/widgets/unified_popup_menu.dart';
 
 part 'asmr_tab_header.dart';
 part 'asmr_tab_category_list.dart';
@@ -235,7 +238,7 @@ class _AsmrBatchSelectionHeader extends ConsumerWidget {
           IconButton(
             key: ValueKey<String>('${keyPrefix}_batch_add_button'),
             onPressed: adding ? null : onAddToPlaylist,
-            icon: const Icon(Icons.playlist_add_rounded),
+            icon: const PlaylistIcon.add(),
             tooltip: i18n.tr('batch_add_to_playlist'),
             iconSize: 20,
             padding: EdgeInsets.zero,

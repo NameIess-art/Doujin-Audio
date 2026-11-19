@@ -18,6 +18,7 @@ import '../../core/widgets/top_page_header.dart';
 import '../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../features/asmr/presentation/asmr_providers.dart';
 import '../../features/asmr/application/asmr_library_controller.dart';
+import '../../core/widgets/unified_popup_menu.dart';
 
 enum MyInterestType {
   tags(
@@ -486,10 +487,10 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                     icon: widget.excluded
                         ? Icons.block_rounded
                         : switch (widget.type) {
-                            MyInterestType.tags => Icons.sell_outlined,
+                            MyInterestType.tags => Icons.local_offer_rounded,
                             MyInterestType.voiceActors =>
                               Icons.record_voice_over_rounded,
-                            MyInterestType.circles => Icons.groups_rounded,
+                            MyInterestType.circles => Icons.storefront_outlined,
                           },
                     leading: const BackButton(),
                     additionalChild: Padding(
@@ -497,6 +498,7 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                       child: HeaderFloatingSurface(
                         key: const ValueKey('my_tag_search_capsule'),
                         child: TextField(
+                          contextMenuBuilder: buildAppEditableTextMenu,
                           controller: _search,
                           textInputAction: TextInputAction.search,
                           textAlignVertical: TextAlignVertical.center,

@@ -314,8 +314,10 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
     if ((notification is ScrollStartNotification &&
             notification.dragDetails != null) ||
         notification is ScrollEndNotification) {
+      final page = _pageController.page;
+      if (page == null) return false;
       _targetVirtualPage = null;
-      _onPageChanged(_pageController.page!.round());
+      _onPageChanged(page.round());
     }
     return false;
   }

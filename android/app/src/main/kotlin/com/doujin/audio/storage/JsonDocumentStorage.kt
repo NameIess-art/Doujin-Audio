@@ -103,12 +103,15 @@ internal class JsonDocumentStorage(
         val temporary = runCatching {
             folder.createFile("application/octet-stream", temporaryName)
         }.getOrNull() ?: return jsonWriteConflict("staging_create_failed")
-        if (temporary.uri == existing?.uri ||
-            !paths.sameDocumentName(temporary.name, temporaryName)) {
-            return jsonWriteConflict("staging_collided_with_target")
-        }
         fun deleteTemporary() {
             runCatching { temporary.delete() }
+        }
+        if (temporary.uri == existing?.uri ||
+            !paths.sameDocumentName(temporary.name, temporaryName)) {
+            if (temporary.uri != existing?.uri) {
+                deleteTemporary()
+            }
+            return jsonWriteConflict("staging_collided_with_target")
         }
         val staged = runCatching {
             contentResolver.openOutputStream(temporary.uri, "w")?.use { output ->

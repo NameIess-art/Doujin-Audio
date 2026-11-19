@@ -25,7 +25,6 @@ import '../../../settings/application/settings_state.dart';
 import '../../application/playback_facade.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../playback_position_ui_gate.dart';
-import '../playlist_view_models.dart';
 import '../session_video_surface.dart';
 import '../session_video_viewport.dart';
 import 'playlist_shared_helpers.dart';
@@ -106,6 +105,8 @@ class _SessionVideoFullscreenPageState
   static const _controlsTimeout = Duration(seconds: 3);
   static const _feedbackTimeout = Duration(milliseconds: 800);
   static const _gestureThreshold = 8.0;
+  static const _controlRowHeight = 48.0;
+  static const _controlRowSpacing = 8.0;
 
   late final PlaybackFacade _playback;
   PlaybackSessionSnapshot? _initialSession;
@@ -123,7 +124,7 @@ class _SessionVideoFullscreenPageState
   bool _sliderInteracting = false;
   final _sliderPositionMs = ValueNotifier<double?>(null);
   double _brightness = 0.5;
-  final _dragVolume = ValueNotifier<double?>(null);
+  final _volumePreview = ValueNotifier<double?>(null);
   final _feedback = ValueNotifier<({IconData icon, String text})?>(null);
   late final Listenable _controlValues;
 
@@ -137,6 +138,9 @@ class _SessionVideoFullscreenPageState
   double _panStartBrightness = 0.5;
   Size _panViewportSize = Size.zero;
   Offset? _doubleTapPosition;
+
+  String get _volumeCommitKey =>
+      SessionVolumeControls.commitKey(widget.sessionId);
 
   bool _temporarySpeedRequested = false;
   int _temporarySpeedGeneration = 0;
@@ -154,11 +158,7 @@ class _SessionVideoFullscreenPageState
         deferDuringInteraction: false,
       );
     }
-    _controlValues = Listenable.merge([
-      ?_positionGate,
-      _sliderPositionMs,
-      _dragVolume,
-    ]);
+    _controlValues = Listenable.merge([?_positionGate, _sliderPositionMs]);
     _brightness = widget.fullscreenLease.initialBrightness ?? 0.5;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _scheduleControlsHide();
@@ -179,16 +179,16 @@ class _SessionVideoFullscreenPageState
     _feedbackTimer?.cancel();
     UiInteractionCoordinator.instance
       ..cancelThrottledCommit('video_brightness:${widget.sessionId}')
-      ..cancelThrottledCommit('video_volume:${widget.sessionId}');
+      ..cancelThrottledCommit(_volumeCommitKey);
     AppInteractionFeedback.resetContinuous();
-    final pendingVolume = _dragVolume.value;
+    final pendingVolume = _volumePreview.value;
     if (pendingVolume != null) {
       unawaited(_playback.setSessionVolume(widget.sessionId, pendingVolume));
     }
     unawaited(_restoreTemporarySpeed(showFailure: false));
     _positionGate?.dispose();
     _sliderPositionMs.dispose();
-    _dragVolume.dispose();
+    _volumePreview.dispose();
     _feedback.dispose();
     super.dispose();
   }
@@ -207,8 +207,8 @@ class _SessionVideoFullscreenPageState
     _controlsTimer?.cancel();
     UiInteractionCoordinator.instance
       ..cancelThrottledCommit('video_brightness:${widget.sessionId}')
-      ..cancelThrottledCommit('video_volume:${widget.sessionId}');
-    final pendingVolume = _dragVolume.value;
+      ..cancelThrottledCommit(_volumeCommitKey);
+    final pendingVolume = _volumePreview.value;
     if (pendingVolume != null) {
       final ok = await _playback.setSessionVolume(
         widget.sessionId,
@@ -217,7 +217,8 @@ class _SessionVideoFullscreenPageState
       if (!ok && _playback.hasSession(widget.sessionId)) {
         _showOperationFailure();
       }
-      _dragVolume.value = null;
+      if (!mounted) return;
+      _volumePreview.value = null;
     }
     await _restoreTemporarySpeed(showFailure: false);
     if (!mounted) return;
@@ -306,7 +307,9 @@ class _SessionVideoFullscreenPageState
         Duration.zero;
     _panSeekTarget = null;
     _panStartVolumeDisplayValue = sessionVolumeDisplayValueFromGain(
-      _initialSession?.volume ?? 1,
+      _playback.sessionById(widget.sessionId)?.volume ??
+          _initialSession?.volume ??
+          1,
     );
     _panStartBrightness = _brightness;
     _panViewportSize = viewportSize;
@@ -384,16 +387,16 @@ class _SessionVideoFullscreenPageState
           maximum: sessionVolumeDisplayMaximum,
         );
         final volumeGain = sessionVolumeGainFromDisplayValue(displayValue);
-        _dragVolume.value = volumeGain;
+        _volumePreview.value = volumeGain;
         AppInteractionFeedback.continuous((displayValue * 100).round());
         _setFeedback(
-          _volumeIcon(volumeGain),
+          sessionVolumeIcon(volumeGain),
           '${ref.read(appLanguageProviderInstanceProvider).tr('volume')} '
           '${(displayValue * 100).round()}%',
           persistent: true,
         );
         UiInteractionCoordinator.instance.scheduleThrottledCommit(
-          key: 'video_volume:${widget.sessionId}',
+          key: _volumeCommitKey,
           commit: () => _playback.setSessionVolume(
             widget.sessionId,
             volumeGain,
@@ -426,10 +429,10 @@ class _SessionVideoFullscreenPageState
         break;
       case _FullscreenVideoPanMode.volume:
         UiInteractionCoordinator.instance.cancelThrottledCommit(
-          'video_volume:${widget.sessionId}',
+          _volumeCommitKey,
         );
-        final volume = _dragVolume.value;
-        _dragVolume.value = null;
+        final volume = _volumePreview.value;
+        _volumePreview.value = null;
         if (volume != null) {
           unawaited(_commitVolume(volume));
         }
@@ -563,23 +566,34 @@ class _SessionVideoFullscreenPageState
     if (committedPosition != null) {
       _positionGate?.syncPosition(committedPosition);
     }
-    _sliderInteracting = false;
     _sliderPositionMs.value = null;
-    _scheduleControlsHide();
+    _endControlInteraction();
   }
 
-  void _endVolumeInteraction(double value) {
+  void _endControlInteraction() {
     _sliderInteracting = false;
-    _dragVolume.value = null;
-    UiInteractionCoordinator.instance.cancelThrottledCommit(
-      'video_volume:${widget.sessionId}',
-    );
-    AppInteractionFeedback.resetContinuous();
-    unawaited(_commitVolume(value));
     _scheduleControlsHide();
   }
 
-  double _controlBarHeight(BuildContext context) {
+  EdgeInsets _controlBarPadding(BuildContext context) {
+    final safeInsets = MediaQuery.viewPaddingOf(context);
+    return EdgeInsets.fromLTRB(
+      max(16, safeInsets.left + 8),
+      8,
+      max(16, safeInsets.right + 8),
+      8 + safeInsets.bottom,
+    );
+  }
+
+  double _bottomControlsHeight(bool stackVolumeControls) => stackVolumeControls
+      ? 2 * _controlRowHeight + _controlRowSpacing
+      : _controlRowHeight;
+
+  double _controlBarHeight(
+    BuildContext context,
+    EdgeInsets padding,
+    bool stackVolumeControls,
+  ) {
     final inlineTimecodes =
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final textHeight = MediaQuery.textScalerOf(context).scale(13) * 1.1;
@@ -587,16 +601,22 @@ class _SessionVideoFullscreenPageState
         ? max(20.0, textHeight)
         : 32 + max(24.0, textHeight);
     return timelineHeight +
-        8 +
-        48 +
-        16 +
-        MediaQuery.viewPaddingOf(context).bottom;
+        _controlRowSpacing +
+        _bottomControlsHeight(stackVolumeControls) +
+        padding.vertical;
   }
 
   @override
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
-    final detail = ref.watch(sessionDetailTransportProvider(widget.sessionId));
+    final transport = ref.watch(
+      sessionDetailTransportProvider(widget.sessionId).select(
+        (state) => (
+          playing: state?.isPlaying == true,
+          loading: state?.isPlaybackLoading == true,
+        ),
+      ),
+    );
     ref.watch(
       playbackSessionProvider(widget.sessionId).select(
         (session) => (session?.queueVersion, session?.currentQueueIndex),
@@ -650,7 +670,6 @@ class _SessionVideoFullscreenPageState
       _activeCoverRevision = coverRevision;
       _coverFuture = library.playbackCoverPathFutureForTrack(track);
     }
-    final playing = detail?.isPlaying == true;
     final coverCacheWidth = coverCacheWidthForResolution(
       ref.watch(
         settingsStateProvider.select(
@@ -695,10 +714,20 @@ class _SessionVideoFullscreenPageState
                     child: LayoutBuilder(
                       builder: (context, constraints) {
                         final viewportSize = constraints.biggest;
+                        final controlBarPadding = _controlBarPadding(context);
+                        // A separate row keeps the track usable beside the mute button.
+                        final stackVolumeControls =
+                            viewportSize.width - controlBarPadding.horizontal <
+                            320;
+                        final controlBarHeight = _controlBarHeight(
+                          context,
+                          controlBarPadding,
+                          stackVolumeControls,
+                        );
                         final gestureRect = sessionVideoFullscreenGestureRect(
                           viewportSize: viewportSize,
                           controlsVisible: _controlsVisible,
-                          controlBarHeight: _controlBarHeight(context),
+                          controlBarHeight: controlBarHeight,
                         );
                         return Stack(
                           fit: StackFit.expand,
@@ -770,8 +799,11 @@ class _SessionVideoFullscreenPageState
                               builder: (context) => _buildControls(
                                 context,
                                 activeSession,
-                                detail,
-                                playing,
+                                playing: transport.playing,
+                                loading: transport.loading,
+                                padding: controlBarPadding,
+                                height: controlBarHeight,
+                                stackVolumeControls: stackVolumeControls,
                               ),
                             ),
                           ],
@@ -841,15 +873,17 @@ class _SessionVideoFullscreenPageState
 
   Widget _buildControls(
     BuildContext context,
-    PlaybackSessionSnapshot session,
-    SessionDetailViewState? detail,
-    bool playing,
-  ) {
+    PlaybackSessionSnapshot session, {
+    required bool playing,
+    required bool loading,
+    required EdgeInsets padding,
+    required double height,
+    required bool stackVolumeControls,
+  }) {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final primaryColor = cs.primary;
     final onPrimaryColor = cs.onPrimary;
-    final showPauseIcon = detail?.showPauseIcon ?? playing;
     final hasPrevious = _playback.hasSessionAdjacentTrack(
       widget.sessionId,
       forward: false,
@@ -892,8 +926,10 @@ class _SessionVideoFullscreenPageState
                   // active, so use the same top origin as other page headers.
                   child: Padding(
                     padding: EdgeInsets.only(
-                      left:
-                          AppPageHeaderMetrics.padding.left + exitButtonOffset,
+                      right:
+                          MediaQuery.paddingOf(context).right +
+                          AppPageHeaderMetrics.padding.right +
+                          exitButtonOffset,
                       top:
                           MediaQuery.paddingOf(context).top +
                           AppPageHeaderMetrics.padding.top +
@@ -901,7 +937,7 @@ class _SessionVideoFullscreenPageState
                       bottom: 8,
                     ),
                     child: Align(
-                      alignment: Alignment.topLeft,
+                      alignment: Alignment.topRight,
                       child: AppOverlayIconButton(
                         key: const ValueKey<String>('fullscreen_video_exit'),
                         tooltip: i18n.tr('exit_fullscreen'),
@@ -918,7 +954,7 @@ class _SessionVideoFullscreenPageState
               left: 0,
               right: 0,
               bottom: 0,
-              height: _controlBarHeight(context),
+              height: height,
               child: DecoratedBox(
                 key: const ValueKey<String>('fullscreen_video_control_bar'),
                 decoration: BoxDecoration(
@@ -932,15 +968,26 @@ class _SessionVideoFullscreenPageState
                   ),
                 ),
                 child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    max(16, MediaQuery.viewPaddingOf(context).left + 8),
-                    8,
-                    max(16, MediaQuery.viewPaddingOf(context).right + 8),
-                    8 + MediaQuery.viewPaddingOf(context).bottom,
-                  ),
+                  padding: padding,
                   child: AnimatedBuilder(
                     animation: _controlValues,
-                    builder: (context, _) {
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxWidth: playbackSecondaryControlsWidth -
+                            playbackSecondaryControlButtonWidth,
+                      ),
+                      child: PlaybackSecondaryControlSurface(
+                        child: SessionVolumeControls(
+                          session: session,
+                          playback: _playback,
+                          volumePreview: _volumePreview,
+                          onInteractionStart: _beginControlInteraction,
+                          onInteractionEnd: _endControlInteraction,
+                          onOperationFailure: _showOperationFailure,
+                        ),
+                      ),
+                    ),
+                    builder: (context, volumeControls) {
                       final snapshot = _positionGate?.value;
                       final duration = snapshot?.duration ?? Duration.zero;
                       final maxMs = max(1, duration.inMilliseconds).toDouble();
@@ -951,15 +998,6 @@ class _SessionVideoFullscreenPageState
                                   0)
                               .clamp(0, maxMs)
                               .toDouble();
-                      final volumeGain =
-                          (_dragVolume.value ??
-                                  detail?.volume ??
-                                  session.volume)
-                              .clamp(0.0, PlaybackFacade.maxSessionVolume)
-                              .toDouble();
-                      final displayVolume = sessionVolumeDisplayValueFromGain(
-                        volumeGain,
-                      );
                       final canPrevious =
                           (snapshot != null &&
                               snapshot.position.inSeconds > 3) ||
@@ -982,10 +1020,7 @@ class _SessionVideoFullscreenPageState
                               playback: _playback,
                               inlineTimecodes: true,
                               onSeekStart: _beginControlInteraction,
-                              onManualSeek: (_) {
-                                _sliderInteracting = false;
-                                _scheduleControlsHide();
-                              },
+                              onManualSeek: (_) => _endControlInteraction(),
                             ),
                           ),
                         );
@@ -1120,7 +1155,7 @@ class _SessionVideoFullscreenPageState
                                 key: const ValueKey<String>(
                                   'fullscreen_video_play_pause',
                                 ),
-                                tooltip: showPauseIcon
+                                tooltip: playing
                                     ? i18n.tr('pause')
                                     : i18n.tr('play'),
                                 onPressed: () {
@@ -1150,9 +1185,7 @@ class _SessionVideoFullscreenPageState
                                   width: 48,
                                   height: 48,
                                 ),
-                                icon:
-                                    detail?.isPlaybackLoading == true &&
-                                        showPauseIcon
+                                icon: loading && playing
                                     ? SizedBox(
                                         width: 20,
                                         height: 20,
@@ -1162,7 +1195,7 @@ class _SessionVideoFullscreenPageState
                                         ),
                                       )
                                     : Icon(
-                                        showPauseIcon
+                                        playing
                                             ? Icons.pause_rounded
                                             : Icons.play_arrow_rounded,
                                       ),
@@ -1196,113 +1229,37 @@ class _SessionVideoFullscreenPageState
                           ],
                         ),
                       );
-                      final volumeSlider = Slider(
-                        key: const ValueKey<String>('fullscreen_video_volume'),
-                        semanticFormatterCallback: (value) =>
-                            '${(value * 100).round()}%',
-                        max: sessionVolumeDisplayMaximum,
-                        value: displayVolume,
-                        onChangeStart: (_) => _beginControlInteraction(),
-                        onChanged: (displayValue) {
-                          final volumeGain = sessionVolumeGainFromDisplayValue(
-                            displayValue,
-                          );
-                          _dragVolume.value = volumeGain;
-                          AppInteractionFeedback.continuous(
-                            (displayValue * 100).round(),
-                          );
-                          UiInteractionCoordinator.instance
-                              .scheduleThrottledCommit(
-                                key: 'video_volume:${widget.sessionId}',
-                                commit: () => _playback.setSessionVolume(
-                                  widget.sessionId,
-                                  volumeGain,
-                                  persist: false,
+                      return Column(
+                        children: [
+                          timeline,
+                          const SizedBox(height: _controlRowSpacing),
+                          SizedBox(
+                            height: _bottomControlsHeight(stackVolumeControls),
+                            child: Flex(
+                              direction: stackVolumeControls
+                                  ? Axis.vertical
+                                  : Axis.horizontal,
+                              children: [
+                                SizedBox(
+                                  height: _controlRowHeight,
+                                  child: transport,
                                 ),
-                              );
-                        },
-                        onChangeEnd: (value) => _endVolumeInteraction(
-                          sessionVolumeGainFromDisplayValue(value),
-                        ),
-                      );
-                      return SliderTheme(
-                        data:
-                            sessionDetailVolumeSliderTheme(
-                              context,
-                              isBoosted: volumeGain > 1,
-                            ).copyWith(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                              ),
-                            ),
-                        child: Column(
-                          children: [
-                            timeline,
-                            const SizedBox(height: 8),
-                            SizedBox(
-                              height: 48,
-                              child: LayoutBuilder(
-                                builder: (context, constraints) => Row(
-                                  children: [
-                                    transport,
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Align(
-                                        alignment: Alignment.centerRight,
-                                        child: ConstrainedBox(
-                                          constraints: const BoxConstraints(
-                                            maxWidth: 240,
-                                          ),
-                                          child: Row(
-                                            children: [
-                                              Icon(
-                                                _volumeIcon(volumeGain),
-                                                size: 18,
-                                                color: volumeGain > 1
-                                                    ? cs.primary
-                                                    : sessionDetailForeground(
-                                                        cs,
-                                                        SessionDetailForegroundLevel
-                                                            .muted,
-                                                      ),
-                                                semanticLabel: i18n.tr(
-                                                  'volume',
-                                                ),
-                                              ),
-                                              Expanded(child: volumeSlider),
-                                              if (constraints.maxWidth >= 480)
-                                                SizedBox(
-                                                  width: 56,
-                                                  child: Text(
-                                                    '${(displayVolume * 100).round()}%',
-                                                    key: const ValueKey<String>(
-                                                      'fullscreen_video_volume_value',
-                                                    ),
-                                                    textAlign: TextAlign.right,
-                                                    style: Theme.of(context)
-                                                        .textTheme
-                                                        .labelSmall
-                                                        ?.copyWith(
-                                                          fontWeight:
-                                                              FontWeight.w900,
-                                                          fontSize: 11,
-                                                          color: volumeGain > 1
-                                                              ? cs.primary
-                                                              : null,
-                                                        ),
-                                                  ),
-                                                ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                                const SizedBox(
+                                  width: 12,
+                                  height: _controlRowSpacing,
                                 ),
-                              ),
+                                Expanded(
+                                  child: Align(
+                                    alignment: stackVolumeControls
+                                        ? Alignment.center
+                                        : Alignment.centerRight,
+                                    child: volumeControls,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       );
                     },
                   ),
@@ -1314,10 +1271,4 @@ class _SessionVideoFullscreenPageState
       ),
     );
   }
-}
-
-IconData _volumeIcon(double volume) {
-  if (volume <= 0.001) return Icons.volume_off_rounded;
-  if (volume < 0.5) return Icons.volume_down_rounded;
-  return Icons.volume_up_rounded;
 }

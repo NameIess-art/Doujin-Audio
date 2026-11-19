@@ -670,6 +670,9 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     String libraryPath,
   ) => _service.libraryExclusionMatcherForLibrary(libraryPath);
   @override
+  LibraryExclusionSnapshot snapshotLibraryExclusions(String libraryPath) =>
+      _service.snapshotLibraryExclusions(libraryPath);
+  @override
   bool hasLibraryExclusions(String libraryPath) {
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
     return (_service
@@ -803,6 +806,10 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   @override
   Future<void> clearLibraryExclusions(String libraryPath) =>
       _mutationCoordinator.clearLibraryExclusions(libraryPath);
+
+  @override
+  Future<void> restoreLibraryExclusions(LibraryExclusionSnapshot snapshot) =>
+      _mutationCoordinator.restoreLibraryExclusions(snapshot);
 
   Future<LibraryRemovalKind?> removeTrack(String trackPath) =>
       _withScanPaused(() => _mutationCoordinator.removeTrack(trackPath));

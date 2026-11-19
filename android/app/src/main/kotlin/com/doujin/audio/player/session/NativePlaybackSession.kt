@@ -44,7 +44,8 @@ internal data class NativeAudioEffects(
     val eqBandLevels: Map<Int, Float> = emptyMap(),
     val channelSwapEnabled: Boolean = false,
     val volumeNormalizationEnabled: Boolean = false,
-    val panning: Float = 0f
+    val panning: Float = 0f,
+    val frontBack: Float = 0f
 )
 
 internal const val NOISE_REDUCTION_LOW_RUMBLE_CUTOFF_HZ = 90
@@ -137,9 +138,10 @@ internal class NativePlaybackSession(
     val sessionId: String,
     private val createPlayer: (String, Array<AudioProcessor>) -> ExoPlayer,
     private val logWarn: (String, NativePlaybackSession, RuntimeException) -> Unit,
-    private val elapsedRealtimeMs: () -> Long = SystemClock::elapsedRealtime
+    private val elapsedRealtimeMs: () -> Long = SystemClock::elapsedRealtime,
+    loadSpatialResponses: (() -> StereoSpatialResponses)? = null
 ) : NativePlaybackSessionSnapshotSource {
-    private val audioEffects = NativeSessionAudioEffectsRuntime { message, error ->
+    private val audioEffects = NativeSessionAudioEffectsRuntime(loadSpatialResponses) { message, error ->
         logWarn(message, this, error)
     }
     private var lastSyncedAudioSessionId: Int = C.AUDIO_SESSION_ID_UNSET
@@ -822,7 +824,8 @@ internal class NativePlaybackSession(
             playing = isP,
             playWhenReady = isPWR,
             isTemporary = isTemporary,
-            completed = p?.let { it.playbackState == Player.STATE_ENDED } ?: (lastPlaybackState == "completed")
+            completed = p?.let { it.playbackState == Player.STATE_ENDED } ?: (lastPlaybackState == "completed"),
+            frontBack = audioEffects.frontBack
         )
     }
 

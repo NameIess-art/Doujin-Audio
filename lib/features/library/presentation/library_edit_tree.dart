@@ -21,6 +21,7 @@ import 'library_providers.dart';
 
 import 'library_edit_tree_projection.dart';
 import 'library_edit_tree_tiles.dart';
+import '../../../core/widgets/unified_popup_menu.dart';
 
 class LibraryEditTree extends ConsumerStatefulWidget {
   const LibraryEditTree({
@@ -358,6 +359,7 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
     final hasText = _searchController.text.isNotEmpty;
     return HeaderFloatingSurface(
       child: TextField(
+        contextMenuBuilder: buildAppEditableTextMenu,
         controller: _searchController,
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 13.5),
         textAlignVertical: TextAlignVertical.center,

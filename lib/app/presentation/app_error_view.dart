@@ -119,7 +119,7 @@ class _AppErrorViewState extends State<AppErrorView> {
                           ),
                           onPressed: _exporting ? null : _exportDiagnostics,
                           isLoading: _exporting,
-                          icon: Icons.archive_outlined,
+                          icon: Icons.bug_report_outlined,
                           label: tr('export_diagnostics'),
                         )
                       : AppPrimaryButton(
@@ -128,7 +128,7 @@ class _AppErrorViewState extends State<AppErrorView> {
                           ),
                           onPressed: _exporting ? null : _exportDiagnostics,
                           isLoading: _exporting,
-                          icon: Icons.archive_outlined,
+                          icon: Icons.bug_report_outlined,
                           label: tr('export_diagnostics'),
                         ),
                   if (!canRetry &&

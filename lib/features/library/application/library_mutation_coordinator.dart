@@ -17,6 +17,7 @@ import 'library_persistence_coordinator.dart';
 import 'library_catalog_write_coordinator.dart';
 import 'library_service.dart';
 import 'library_snapshot_cache_service.dart';
+import 'library_state_models.dart';
 import 'library_track_merge.dart';
 
 export 'library_entry_editor_service.dart' show AudioDetailRenameException;
@@ -91,6 +92,45 @@ final class LibraryMutationCoordinator {
         databaseRepository.setLibraryEntriesState(
           normalizedLibraryPath,
           result.restoredEntryPaths,
+          LibraryEntryState.active,
+        ),
+      if (_persistenceCoordinator.enabled)
+        _persistenceCoordinator.saveExclusions(),
+    ]);
+  }
+
+  Future<void> restoreLibraryExclusions(
+    LibraryExclusionSnapshot snapshot,
+  ) async {
+    final normalizedLibraryPath = PathMatcher.normalize(snapshot.libraryPath);
+    final restored = _service.restoreLibraryExclusions(snapshot);
+    final matcher = _service.libraryExclusionMatcherForLibrary(
+      normalizedLibraryPath,
+    );
+    _catalogWrites.removeTracksMatching((track) {
+      if (!LibraryService.organizer.trackBelongsToLibrary(
+        normalizedLibraryPath,
+        track,
+      )) {
+        return false;
+      }
+      return matcher.isExcluded(track.path);
+    });
+    snapshotCacheService.markStructureChanged();
+    _syncStateSlice();
+    await Future.wait<void>([
+      if (_persistenceCoordinator.enabled &&
+          restored.excludedEntryPaths.isNotEmpty)
+        databaseRepository.setLibraryEntriesState(
+          normalizedLibraryPath,
+          restored.excludedEntryPaths,
+          LibraryEntryState.excluded,
+        ),
+      if (_persistenceCoordinator.enabled &&
+          restored.activeEntryPaths.isNotEmpty)
+        databaseRepository.setLibraryEntriesState(
+          normalizedLibraryPath,
+          restored.activeEntryPaths,
           LibraryEntryState.active,
         ),
       if (_persistenceCoordinator.enabled)

@@ -190,7 +190,6 @@ class _QueueSheetHeader extends StatelessWidget {
         style: Theme.of(context).textTheme.labelMedium?.copyWith(
           color: cs.onSurfaceVariant,
           fontWeight: FontWeight.w800,
-          fontFeatures: const [FontFeature.tabularFigures()],
         ),
       ),
     );
@@ -311,7 +310,6 @@ class _QueueTrackLeaf extends StatelessWidget {
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 color: cs.onSurfaceVariant,
                 fontWeight: FontWeight.w700,
-                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ),

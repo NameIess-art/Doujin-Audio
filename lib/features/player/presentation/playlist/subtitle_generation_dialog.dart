@@ -7,6 +7,7 @@ import '../../../../core/widgets/app_dialog.dart';
 import '../../application/playback_subtitle_service.dart';
 import '../../application/subtitle_generation.dart';
 import '../../application/subtitle_model_store.dart';
+import '../../../../core/widgets/unified_popup_menu.dart';
 
 class SubtitleGenerationDialog extends ConsumerWidget {
   const SubtitleGenerationDialog({
@@ -71,6 +72,7 @@ class SubtitleGenerationDialog extends ConsumerWidget {
                       job.errorMessage != null)) ...[
                 const SizedBox(height: 8),
                 SelectableText(
+                  contextMenuBuilder: buildAppEditableTextMenu,
                   job.errorMessageKey != null
                       ? i18n.tr(job.errorMessageKey!)
                       : job.errorMessage!,

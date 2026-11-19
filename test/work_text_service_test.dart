@@ -1011,4 +1011,45 @@ void main() {
       },
     );
   });
+
+  group('overrideEncoding BOM handling', () {
+    test('strips leading BOM when decoding with explicit UTF-8 or UTF-16', () {
+      const original = '台本テスト';
+      final utf8Bom = Uint8List.fromList(<int>[
+        0xEF,
+        0xBB,
+        0xBF,
+        ...utf8.encode(original),
+      ]);
+      final utf16LeBom = Uint8List.fromList(<int>[
+        0xFF,
+        0xFE,
+        for (final unit in original.codeUnits) ...[unit & 0xFF, unit >> 8],
+      ]);
+      final utf16BeBom = Uint8List.fromList(<int>[
+        0xFE,
+        0xFF,
+        for (final unit in original.codeUnits) ...[unit >> 8, unit & 0xFF],
+      ]);
+
+      expect(
+        decodeWorkText(utf8Bom, overrideEncoding: WorkTextEncoding.utf8).text,
+        original,
+      );
+      expect(
+        decodeWorkText(
+          utf16LeBom,
+          overrideEncoding: WorkTextEncoding.utf16Le,
+        ).text,
+        original,
+      );
+      expect(
+        decodeWorkText(
+          utf16BeBom,
+          overrideEncoding: WorkTextEncoding.utf16Be,
+        ).text,
+        original,
+      );
+    });
+  });
 }

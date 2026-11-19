@@ -22,6 +22,8 @@ class DesktopIntegration {
   void AttachContent(HWND content);
   void Show();
   void ShowInitial();
+  void OnFirstFrame(bool show_initially);
+  void Activate(bool show_window);
   static constexpr UINT kActivate = WM_APP + 40;
   static constexpr UINT kMediaAction = WM_APP + 41;
 
@@ -48,7 +50,12 @@ class DesktopIntegration {
   std::shared_ptr<FolderOpenState> folder_opens_;
   HWND window_;
   HWND content_ = nullptr;
+  std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
   bool ready_ = false;
+  bool first_frame_ready_ = false;
+  bool initial_shown_ = false;
+  bool pending_activate_ = false;
+  bool pending_activate_show_ = false;
   bool quitting_ = false;
   bool ending_session_ = false;
   bool fullscreen_ = false;
@@ -58,6 +65,15 @@ class DesktopIntegration {
   std::string theme_mode_ = "system";
   std::array<std::wstring, 5> tray_labels_ = {
       L"Open", L"Play / pause", L"Previous", L"Next", L"Exit"};
+  struct TrayMenuPalette {
+    COLORREF background;
+    COLORREF foreground;
+    COLORREF highlight;
+  };
+  TrayMenuPalette tray_light_palette_{
+      RGB(250, 250, 250), RGB(23, 23, 23), RGB(222, 234, 250)};
+  TrayMenuPalette tray_dark_palette_{
+      RGB(32, 32, 32), RGB(245, 245, 245), RGB(65, 65, 65)};
   struct TrayMenuAppearance;
   const TrayMenuAppearance* active_tray_menu_ = nullptr;
   EXECUTION_STATE power_flags_ = 0;

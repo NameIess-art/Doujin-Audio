@@ -384,7 +384,10 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
         icon: Icons.error_outline_rounded,
         iconColor: primaryColor,
         actionLabel: i18n.tr('retry'),
-        onAction: () => unawaited(_startDownload()),
+        onAction: () {
+          if (!mounted) return;
+          unawaited(_startDownload());
+        },
         duration: const Duration(seconds: 6),
       );
     } finally {

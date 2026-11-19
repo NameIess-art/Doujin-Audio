@@ -73,7 +73,7 @@ class SubtitleModelStore extends ChangeNotifier {
   final Duration _connectionTimeout;
   final Duration _responseTimeout;
   final Duration _idleTimeout;
-  final Map<String, Future<String>> _activeDownloads = {};
+  final Map<String, _ActiveModelDownload> _activeDownloads = {};
   final Map<String, SubtitleModelDownloadSnapshot> _snapshots = {};
   final Map<String, ({DateTime modified, DateTime changed, String sha256})>
   _verifiedFiles = {};
@@ -112,38 +112,58 @@ class SubtitleModelStore extends ChangeNotifier {
     void Function(double fraction, int received, int total)? onProgress,
     bool Function()? isCancelled,
   }) {
-    final active = _activeDownloads[spec.name];
-    if (active != null) return active;
-    final task = _download(
-      spec,
-      isCancelled: isCancelled,
-      onProgress: (fraction, received, total) {
-        final last = snapshot(spec);
-        _snapshots[spec.name] = SubtitleModelDownloadSnapshot(
-          received: received,
-          total: total,
-          active: true,
-        );
-        if (received == total ||
-            received ~/ 1048576 > last.received ~/ 1048576) {
-          notifyListeners();
-        }
-        onProgress?.call(fraction, received, total);
-      },
-    );
-    _activeDownloads[spec.name] = task;
+    if (isCancelled?.call() == true) {
+      return Future<String>.error(const SubtitleModelDownloadCancelled());
+    }
+    final existing = _activeDownloads[spec.name];
+    if (existing != null) {
+      if (onProgress == null && isCancelled == null) {
+        existing.hasUncancellableCaller = true;
+        return existing.task;
+      }
+      final entry = _ActiveDownloadEntry(
+        onProgress: onProgress,
+        isCancelled: isCancelled,
+      );
+      existing.entries.add(entry);
+      return entry.completer.future;
+    }
+
+    final active = _ActiveModelDownload();
+    _ActiveDownloadEntry? primaryEntry;
+    if (onProgress == null && isCancelled == null) {
+      active.hasUncancellableCaller = true;
+    } else {
+      primaryEntry = _ActiveDownloadEntry(
+        onProgress: onProgress,
+        isCancelled: isCancelled,
+      );
+      active.entries.add(primaryEntry);
+    }
+    _activeDownloads[spec.name] = active;
+    final task = _download(spec, active);
+    active.task = task;
     task.then(
-      (_) {
-        _activeDownloads.remove(spec.name);
+      (modelPath) {
+        if (identical(_activeDownloads[spec.name], active)) {
+          _activeDownloads.remove(spec.name);
+        }
         _snapshots[spec.name] = SubtitleModelDownloadSnapshot(
           received: spec.bytes,
           total: spec.bytes,
           active: false,
         );
         notifyListeners();
+        for (final entry in active.entries) {
+          if (!entry.completer.isCompleted) {
+            entry.completer.complete(modelPath);
+          }
+        }
       },
       onError: (Object error, StackTrace stack) {
-        _activeDownloads.remove(spec.name);
+        if (identical(_activeDownloads[spec.name], active)) {
+          _activeDownloads.remove(spec.name);
+        }
         final last = snapshot(spec);
         _snapshots[spec.name] = SubtitleModelDownloadSnapshot(
           received: last.received,
@@ -152,16 +172,53 @@ class SubtitleModelStore extends ChangeNotifier {
           error: error,
         );
         notifyListeners();
+        for (final entry in active.entries) {
+          if (!entry.completer.isCompleted) {
+            entry.completer.completeError(error, stack);
+          }
+        }
       },
     );
-    return task;
+    return primaryEntry?.completer.future ?? task;
   }
 
   Future<String> _download(
-    SubtitleModelSpec spec, {
-    void Function(double fraction, int received, int total)? onProgress,
-    bool Function()? isCancelled,
-  }) async {
+    SubtitleModelSpec spec,
+    _ActiveModelDownload active,
+  ) async {
+    void reportProgress(double fraction, int received, int total) {
+      final last = snapshot(spec);
+      _snapshots[spec.name] = SubtitleModelDownloadSnapshot(
+        received: received,
+        total: total,
+        active: true,
+      );
+      if (received == total ||
+          received ~/ 1048576 > last.received ~/ 1048576) {
+        notifyListeners();
+      }
+      for (final entry in List<_ActiveDownloadEntry>.of(active.entries)) {
+        if (!entry.cancelled) {
+          entry.onProgress?.call(fraction, received, total);
+        }
+      }
+    }
+
+    bool allCallersCancelled() {
+      for (final entry in List<_ActiveDownloadEntry>.of(active.entries)) {
+        if (!entry.cancelled && entry.isCancelled?.call() == true) {
+          entry.cancelled = true;
+          if (!entry.completer.isCompleted) {
+            entry.completer.completeError(
+              const SubtitleModelDownloadCancelled(),
+            );
+          }
+        }
+      }
+      if (active.hasUncancellableCaller) return false;
+      return active.entries.every((entry) => entry.cancelled);
+    }
+
     final directory = await _directoryResolver();
     await directory.create(recursive: true);
     final target = File(path.join(directory.path, spec.name));
@@ -183,13 +240,7 @@ class SubtitleModelStore extends ChangeNotifier {
       await partial.delete();
       received = 0;
     }
-    _snapshots[spec.name] = SubtitleModelDownloadSnapshot(
-      received: received,
-      total: spec.bytes,
-      active: true,
-    );
-    notifyListeners();
-    onProgress?.call(received / spec.bytes, received, spec.bytes);
+    reportProgress(received / spec.bytes, received, spec.bytes);
     final usage = await _storage.readStorageUsage();
     final requiredBytes = spec.bytes - received + 128 * 1024 * 1024;
     if (usage != null && usage.availableBytes < requiredBytes) {
@@ -199,22 +250,23 @@ class SubtitleModelStore extends ChangeNotifier {
       );
     }
 
-    if (isCancelled?.call() == true) {
+    if (allCallersCancelled()) {
       throw const SubtitleModelDownloadCancelled();
     }
     final client = _clientFactory();
     var cancelled = false;
     void Function()? cancelWait;
     // Cancellation must wake connection/header/body waits even when the peer
-    // sends no more bytes. The existing callback remains shared by this task.
-    final cancellationTimer = isCancelled == null
-        ? null
-        : Timer.periodic(const Duration(milliseconds: 100), (_) {
-            if (!cancelled && isCancelled()) {
-              cancelled = true;
-              cancelWait?.call();
-            }
-          });
+    // sends no more bytes.
+    final cancellationTimer = Timer.periodic(
+      const Duration(milliseconds: 100),
+      (_) {
+        if (!cancelled && allCallersCancelled()) {
+          cancelled = true;
+          cancelWait?.call();
+        }
+      },
+    );
     Future<T> wait<T>(Future<T> operation, Duration timeout) async {
       if (cancelled) {
         operation.ignore();
@@ -236,6 +288,7 @@ class SubtitleModelStore extends ChangeNotifier {
       try {
         return await Future.any<T>([operation, expired.future]);
       } finally {
+        operation.ignore();
         timer.cancel();
         cancelWait = null;
       }
@@ -279,7 +332,7 @@ class SubtitleModelStore extends ChangeNotifier {
       final chunks = StreamIterator(response);
       try {
         while (await wait(chunks.moveNext(), _idleTimeout)) {
-          if (isCancelled?.call() == true) {
+          if (allCallersCancelled()) {
             throw const SubtitleModelDownloadCancelled();
           }
           final chunk = chunks.current;
@@ -288,7 +341,7 @@ class SubtitleModelStore extends ChangeNotifier {
           if (received > spec.bytes) {
             throw const FormatException('Model exceeds expected size');
           }
-          onProgress?.call(received / spec.bytes, received, spec.bytes);
+          reportProgress(received / spec.bytes, received, spec.bytes);
         }
         await sink.flush();
       } finally {
@@ -299,7 +352,7 @@ class SubtitleModelStore extends ChangeNotifier {
         }
       }
       final valid = await _valid(partial, spec);
-      if (cancelled || isCancelled?.call() == true) {
+      if (cancelled || allCallersCancelled()) {
         throw const SubtitleModelDownloadCancelled();
       }
       if (!valid) {
@@ -311,7 +364,7 @@ class SubtitleModelStore extends ChangeNotifier {
       _verifiedFiles.remove(partial.path);
       return target.path;
     } finally {
-      cancellationTimer?.cancel();
+      cancellationTimer.cancel();
       client.close(force: true);
     }
   }
@@ -345,4 +398,19 @@ class SubtitleModelStore extends ChangeNotifier {
 
 class SubtitleModelDownloadCancelled implements Exception {
   const SubtitleModelDownloadCancelled();
+}
+
+class _ActiveDownloadEntry {
+  _ActiveDownloadEntry({required this.onProgress, required this.isCancelled});
+
+  final void Function(double fraction, int received, int total)? onProgress;
+  final bool Function()? isCancelled;
+  final Completer<String> completer = Completer<String>();
+  bool cancelled = false;
+}
+
+class _ActiveModelDownload {
+  final List<_ActiveDownloadEntry> entries = <_ActiveDownloadEntry>[];
+  bool hasUncancellableCaller = false;
+  late final Future<String> task;
 }

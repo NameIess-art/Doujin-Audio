@@ -3,6 +3,7 @@ package com.doujin.audio
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import com.doujin.audio.player.session.NativePlaybackRecoveryDatabase
+import com.doujin.audio.player.session.decodeDefinition
 import com.doujin.audio.player.session.encodeDefinition
 import com.doujin.audio.player.session.NativePlaybackStateStore
 import com.doujin.audio.player.session.StoredNativePlaybackProgress
@@ -95,6 +96,16 @@ class NativePlaybackStateStoreTest {
             assertEquals(24_000L, database.loadSessions(null, false).single().positionMs)
             assertFalse(definitions.contains("sessions"))
         }
+    }
+
+    @Test
+    fun `recovery preserves front back position and reads older definitions as neutral`() {
+        val stored = session("A", 1_000L).copy(frontBack = -0.75f)
+        NativePlaybackStateStore.upsertSessions(context, listOf(stored))
+        assertEquals(-0.75f, NativePlaybackStateStore.loadSessions(context, setOf("A")).single().frontBack)
+
+        val legacy = stored.encodeDefinition().apply { remove("frontBack") }
+        assertEquals(0f, legacy.decodeDefinition()!!.frontBack)
     }
 
     @Test

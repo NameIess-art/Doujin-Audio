@@ -237,7 +237,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         if (!nativeResult.succeeded) {
           final failureMessage =
               nativeResult.error ?? 'Failed to prepare the selected track.';
-          await _restorePreviousNativeTrack(
+          final restored = await _restorePreviousNativeTrack(
             session,
             generation: generation,
             previousLogicalPath: previousLogicalPath,
@@ -245,7 +245,9 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
             previousPosition: previousPosition,
             previousWasPlaying: previousWasPlaying,
           );
-          if (_isSessionLoadCurrent(session, generation)) {
+          if (_isSessionLoadCurrent(session, generation) &&
+              !(restored &&
+                  (previousWasPlaying || session.playbackRequested))) {
             preparationError = failureMessage;
           }
           return false;
@@ -265,7 +267,6 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
             snapshot.copyWith(
               volume: session.volume,
               audioEffects: session.audioEffects,
-              eqCapabilities: session.eqCapabilities,
               channelSwapEnabled: session.channelSwapEnabled,
             ),
           );
@@ -302,8 +303,9 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         error: e,
         stackTrace: stackTrace,
       );
+      var restored = false;
       if (_isSessionLoadCurrent(session, generation)) {
-        await _restorePreviousNativeTrack(
+        restored = await _restorePreviousNativeTrack(
           session,
           generation: generation,
           previousLogicalPath: previousLogicalPath,
@@ -312,7 +314,8 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
           previousWasPlaying: previousWasPlaying,
         );
       }
-      if (_isSessionLoadCurrent(session, generation)) {
+      if (_isSessionLoadCurrent(session, generation) &&
+          !(restored && (previousWasPlaying || session.playbackRequested))) {
         preparationError = e.toString();
       }
     } finally {
@@ -343,13 +346,20 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       return false;
     }
 
+    var shouldStartPlayback =
+        autoPlay && prepared && session.playbackRequested;
     if (prepared &&
         hadDetachedPlaybackQueueCurrent &&
         !_hasDetachedPlaybackQueueCurrent(session)) {
-      await _syncPlaybackQueueSession(session);
+      final synced = await _syncPlaybackQueueSession(
+        session,
+        preservePlaybackStarting: shouldStartPlayback,
+      );
+      shouldStartPlayback =
+          shouldStartPlayback && synced && session.playbackRequested;
     }
 
-    if (autoPlay && prepared && session.playbackRequested) {
+    if (shouldStartPlayback) {
       return _startSessionPlayback(
         session,
         shouldStartTriggerCountdown: shouldStartTriggerCountdown,

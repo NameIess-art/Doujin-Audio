@@ -68,6 +68,7 @@ class _AsmrCategoryList extends ConsumerStatefulWidget {
     required this.isLoadPending,
     required this.scrollController,
     required this.searchQuery,
+    this.filters = emptySearchFilters,
     this.searchSession = false,
     required this.topInset,
     required this.bottomInset,
@@ -83,6 +84,7 @@ class _AsmrCategoryList extends ConsumerStatefulWidget {
   final bool isLoadPending;
   final ScrollController scrollController;
   final String searchQuery;
+  final SearchFilters filters;
   final bool searchSession;
   final double topInset;
   final double bottomInset;
@@ -105,6 +107,8 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   AsmrCategoryStateRequest? _lastPresentedRequest;
   AsmrLibraryController? _lastPresentedController;
   AsmrCategoryViewState? _lastPresentedState;
+  (List<AsmrWork>, SearchFilters)? _filteredWorksKey;
+  List<AsmrWork> _filteredWorks = const [];
   late final String _automaticLoadMoreCommitKey =
       'asmr_load_more_${identityHashCode(this)}';
   final Map<String, _CollapsingAsmrWork> _collapsingWorks =
@@ -213,7 +217,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       return;
     }
     final state = _lastPresentedState;
-    if (state != null) _scheduleAutomaticLoadMore(state);
+    if (state != null) _scheduleAutomaticLoadMore(_applyFilters(state));
   }
 
   @override
@@ -221,6 +225,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.category != widget.category ||
         oldWidget.searchSession != widget.searchSession ||
+        oldWidget.filters != widget.filters ||
         canonicalElementQuery(oldWidget.searchQuery) !=
             canonicalElementQuery(widget.searchQuery)) {
       for (final entry in _collapsingWorks.values) {
@@ -234,6 +239,19 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       _lastLoadState = null;
     }
     _handleActivityChanged();
+  }
+
+  AsmrCategoryViewState _applyFilters(AsmrCategoryViewState state) {
+    final filters = widget.filters;
+    if (filters == emptySearchFilters) return state;
+    final key = (state.works, filters);
+    if (_filteredWorksKey != key) {
+      _filteredWorksKey = key;
+      _filteredWorks = immutableList(
+        state.works.where((work) => work.matchesFilters(filters)),
+      );
+    }
+    return state.withFilteredWorks(_filteredWorks);
   }
 
   @override
@@ -341,24 +359,25 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         controller?.hasLoadedCategory(widget.category) == true) {
       _lastPresentedState = controller!.categoryViewState(widget.category);
     }
-    final state =
-        _lastPresentedState ??
-        AsmrCategoryViewState(
-          category: widget.category,
-          works: const <AsmrWork>[],
-          isLoading: false,
-          isLoadingMore: false,
-          isRefreshing: false,
-          isStale: false,
-          hasAttemptedLoad: false,
-          hasMore: false,
-          needsLoadMoreRetry: false,
-          totalCount: 0,
-          activeQuery: widget.searchQuery,
-          lastError: null,
-          operationError: null,
-          revision: 0,
-        );
+    final state = _applyFilters(
+      _lastPresentedState ??
+          AsmrCategoryViewState(
+            category: widget.category,
+            works: const <AsmrWork>[],
+            isLoading: false,
+            isLoadingMore: false,
+            isRefreshing: false,
+            isStale: false,
+            hasAttemptedLoad: false,
+            hasMore: false,
+            needsLoadMoreRetry: false,
+            totalCount: 0,
+            activeQuery: widget.searchQuery,
+            lastError: null,
+            operationError: null,
+            revision: 0,
+          ),
+    );
     final queryMismatch =
         widget.category != AsmrCategoryType.favorites &&
         widget.category != AsmrCategoryType.history &&
@@ -676,7 +695,27 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                       duration: reduceMotion ? Duration.zero : kAppFadeDuration,
                       switchInCurve: kAppFadeCurve,
                       switchOutCurve: kAppFadeCurve,
-                      child: visibleWorks.isEmpty
+                      child:
+                          visibleWorks.isEmpty &&
+                              hasLoadMore &&
+                              widget.filters != emptySearchFilters &&
+                              state.lastError == null
+                          ? Padding(
+                              key: const ValueKey('asmr_filtered_load_more'),
+                              padding: const EdgeInsets.only(top: 24),
+                              child: state.isLoadingMore
+                                  ? const Center(
+                                      child: CircularProgressIndicator(),
+                                    )
+                                  : TextButton(
+                                      onPressed: () => _loadMore(
+                                        expectedPaginationToken:
+                                            state.paginationToken,
+                                      ),
+                                      child: Text(i18n.tr('my_load_more')),
+                                    ),
+                            )
+                          : visibleWorks.isEmpty
                           ? Padding(
                               key: ValueKey(('asmr_empty', state.lastError)),
                               padding: const EdgeInsets.only(top: 80),
@@ -838,7 +877,6 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                         sliver: SliverLayoutBuilder(
                           builder: (context, constraints) {
                             if (constraints.remainingCacheExtent > 0 &&
-                                visibleWorks.isNotEmpty &&
                                 !state.needsLoadMoreRetry) {
                               _scheduleAutomaticLoadMore(state);
                             }
@@ -909,9 +947,12 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   }
 
   void _scheduleAutomaticLoadMore(AsmrCategoryViewState state) {
+    final canSearchNextPage =
+        widget.filters != emptySearchFilters && widget.searchQuery.isNotEmpty;
     if (_automaticLoadMoreScheduled ||
         !_isActive ||
-        state.works.isEmpty ||
+        (state.works.isEmpty && !canSearchNextPage) ||
+        state.isLoading ||
         state.isLoadingMore ||
         !state.hasMore ||
         state.needsLoadMoreRetry) {
@@ -925,9 +966,11 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         if (!mounted || !_isActive) {
           return;
         }
-        final currentState = _lastPresentedState;
-        if (currentState == null ||
-            currentState.works.isEmpty ||
+        final rawState = _lastPresentedState;
+        if (rawState == null) return;
+        final currentState = _applyFilters(rawState);
+        if ((currentState.works.isEmpty && !canSearchNextPage) ||
+            currentState.isLoading ||
             currentState.isLoadingMore ||
             !currentState.hasMore ||
             currentState.needsLoadMoreRetry) {
@@ -949,7 +992,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         ?.loadMoreCategory(
           widget.category,
           searchQuery: widget.searchQuery,
-          searchSession: widget.searchSession,
+          searchSession: widget.searchSession && widget.searchQuery.isNotEmpty,
           expectedPaginationToken: expectedPaginationToken,
         );
   }

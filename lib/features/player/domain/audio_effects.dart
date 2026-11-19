@@ -11,6 +11,7 @@ class AudioEffectsState {
     this.eqPresetId,
     Map<int, double> eqBandLevels = const <int, double>{},
     this.panning = 0.0,
+    this.frontBack = 0.0,
   }) : eqBandLevels = immutableMap(eqBandLevels);
 
   static final AudioEffectsState flat = AudioEffectsState();
@@ -22,6 +23,7 @@ class AudioEffectsState {
   final String? eqPresetId;
   final Map<int, double> eqBandLevels;
   final double panning;
+  final double frontBack;
 
   bool get hasEnabledEffects =>
       skipSilenceEnabled ||
@@ -30,7 +32,8 @@ class AudioEffectsState {
       eqEnabled ||
       eqPresetId != null ||
       eqBandLevels.isNotEmpty ||
-      panning != 0.0;
+      panning != 0.0 ||
+      frontBack != 0.0;
 
   AudioEffectsState copyWith({
     bool? skipSilenceEnabled,
@@ -40,6 +43,7 @@ class AudioEffectsState {
     Object? eqPresetId = _sentinel,
     Map<int, double>? eqBandLevels,
     double? panning,
+    double? frontBack,
   }) {
     return AudioEffectsState(
       skipSilenceEnabled: skipSilenceEnabled ?? this.skipSilenceEnabled,
@@ -55,6 +59,7 @@ class AudioEffectsState {
         eqBandLevels ?? this.eqBandLevels,
       ),
       panning: panning ?? this.panning,
+      frontBack: frontBack ?? this.frontBack,
     );
   }
 
@@ -74,6 +79,7 @@ class AudioEffectsState {
           )
           .toList(growable: false),
       'panning': panning,
+      'frontBack': frontBack,
     };
   }
 
@@ -107,6 +113,7 @@ class AudioEffectsState {
         _decodeBandLevels(raw['eqBandLevels']),
       ),
       panning: (raw['panning'] as num?)?.toDouble() ?? 0.0,
+      frontBack: (raw['frontBack'] as num?)?.toDouble() ?? 0.0,
     );
   }
 
@@ -123,7 +130,8 @@ class AudioEffectsState {
         other.eqEnabled == eqEnabled &&
         other.eqPresetId == eqPresetId &&
         _mapEquals(other.eqBandLevels, eqBandLevels) &&
-        other.panning == panning;
+        other.panning == panning &&
+        other.frontBack == frontBack;
   }
 
   @override
@@ -137,6 +145,7 @@ class AudioEffectsState {
       eqBandLevels.entries.map((entry) => Object.hash(entry.key, entry.value)),
     ),
     panning,
+    frontBack,
   );
 }
 

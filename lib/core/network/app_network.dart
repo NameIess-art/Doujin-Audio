@@ -31,9 +31,12 @@ class AppNetwork extends HttpOverrides {
   _startSocketConnect;
   final _connectionAttempts = <ConnectionTask<Socket>>{};
   final _connecting = <Completer<Socket>>{};
-  DnsServerResolver? _dnsResolver;
+  final _retiredDnsResolvers = <_ManagedDnsResolver>{};
+  _ManagedDnsResolver? _dnsResolver;
   ServerSocket? _server;
   Future<void>? _starting;
+  Future<void> _configureTail = Future<void>.value();
+  int _lifecycleGeneration = 0;
   HttpOverrides? _previousOverrides;
   bool _installed = false;
   NetworkRouteSettings _settings = const NetworkRouteSettings();
@@ -73,26 +76,44 @@ class AppNetwork extends HttpOverrides {
   Future<void> configure(
     NetworkRouteSettings settings,
     String? password,
-  ) async {
+  ) {
     // A restored device may have preferences but no device-bound password.
     // Keep that route blocked until credentials are supplied, without making
     // the settings page itself inaccessible during startup.
     settings.validate(requireCredentials: false);
-    await ensureStarted();
-    // A native failure must not publish a route used only by Flutter.
-    await _applyNativeRoute(settings, password);
-    if (_settings != settings ||
-        _password != password ||
-        (_dnsResolver == null && settings.customDnsServer.isNotEmpty)) {
-      // Pending DNS belongs to the old route; established tunnels own their
-      // sockets and remain usable after its resolver is closed.
-      _dnsResolver?.close();
-      _dnsResolver = settings.customDnsServer.isEmpty
-          ? null
-          : _createDnsResolver(InternetAddress(settings.customDnsServer));
-    }
-    _settings = settings;
-    _password = password;
+    final generation = _lifecycleGeneration;
+    final operation = _configureTail.then((_) async {
+      if (generation != _lifecycleGeneration) return;
+      await ensureStarted();
+      if (generation != _lifecycleGeneration) return;
+      // A native failure must not publish a route used only by Flutter.
+      await _applyNativeRoute(settings, password);
+      if (generation != _lifecycleGeneration) return;
+      if (_settings != settings ||
+          _password != password ||
+          (_dnsResolver == null && settings.customDnsServer.isNotEmpty)) {
+        // Retire the previous resolver without closing it mid-lookup; active
+        // connections release their lease as soon as _connect finishes.
+        final previous = _dnsResolver;
+        _dnsResolver = settings.customDnsServer.isEmpty
+            ? null
+            : _ManagedDnsResolver(
+                _createDnsResolver(InternetAddress(settings.customDnsServer)),
+                onRetiredClosed: _retiredDnsResolvers.remove,
+              );
+        if (previous != null) {
+          _retiredDnsResolvers.add(previous);
+          previous.retire();
+        }
+      }
+      _settings = settings;
+      _password = password;
+    });
+    _configureTail = operation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return operation;
   }
 
   @override
@@ -111,6 +132,7 @@ class AppNetwork extends HttpOverrides {
   }
 
   Future<void> close() async {
+    _lifecycleGeneration++;
     if (_installed) {
       HttpOverrides.global = _previousOverrides;
       _installed = false;
@@ -134,8 +156,12 @@ class AppNetwork extends HttpOverrides {
     }
     _connectionAttempts.clear();
     _password = null;
-    _dnsResolver?.close();
+    _dnsResolver?.closeNow();
     _dnsResolver = null;
+    for (final retired in _retiredDnsResolvers.toList()) {
+      retired.closeNow();
+    }
+    _retiredDnsResolvers.clear();
   }
 
   Future<void> _handle(Socket socket) async {
@@ -169,42 +195,47 @@ class AppNetwork extends HttpOverrides {
       }
       final settings = _settings;
       final password = _password;
-      final dnsResolver = _dnsResolver;
-      final localTarget =
-          uri.host == 'localhost' ||
-          InternetAddress.tryParse(uri.host)?.isLoopback == true;
-      final routes = localTarget
-          ? [const _ProxyRoute('DIRECT', '', 0)]
-          : settings.proxyMode == AppProxyMode.system
-          ? _parsePolicy(await _resolveSystemProxy(uri))
-          : [
-              _ProxyRoute(
-                settings.proxyMode == AppProxyMode.http ? 'PROXY' : 'SOCKS5',
-                settings.proxyHost,
-                settings.proxyPort,
-              ),
-            ];
-      if (routes.isEmpty) throw const HttpException('Empty proxy policy');
-      Object? failure;
+      final dnsLease = _dnsResolver;
+      dnsLease?.acquire();
       _ProxyRoute? chosen;
-      for (final route in routes) {
-        try {
-          outgoing = await _connect(
-            uri,
-            route,
-            settings,
-            password,
-            connect,
-            dnsResolver,
-          );
-          chosen = route;
-          break;
-        } catch (error) {
-          failure = error;
+      try {
+        final localTarget =
+            uri.host == 'localhost' ||
+            InternetAddress.tryParse(uri.host)?.isLoopback == true;
+        final routes = localTarget
+            ? [const _ProxyRoute('DIRECT', '', 0)]
+            : settings.proxyMode == AppProxyMode.system
+            ? _parsePolicy(await _resolveSystemProxy(uri))
+            : [
+                _ProxyRoute(
+                  settings.proxyMode == AppProxyMode.http ? 'PROXY' : 'SOCKS5',
+                  settings.proxyHost,
+                  settings.proxyPort,
+                ),
+              ];
+        if (routes.isEmpty) throw const HttpException('Empty proxy policy');
+        Object? failure;
+        for (final route in routes) {
+          try {
+            outgoing = await _connect(
+              uri,
+              route,
+              settings,
+              password,
+              connect,
+              dnsLease?.resolver,
+            );
+            chosen = route;
+            break;
+          } catch (error) {
+            failure = error;
+          }
         }
-      }
-      if (outgoing == null || chosen == null) {
-        throw failure ?? const SocketException('No route');
+        if (outgoing == null || chosen == null) {
+          throw failure ?? const SocketException('No route');
+        }
+      } finally {
+        dnsLease?.release();
       }
       if (connect) {
         socket.add(ascii.encode('HTTP/1.1 200 Connection Established\r\n\r\n'));
@@ -471,10 +502,12 @@ class AppNetwork extends HttpOverrides {
 
   static List<_ProxyRoute> _parsePolicy(String policy) {
     final routes = <_ProxyRoute>[];
-    for (final entry in policy.split(';')) {
-      final parts = entry.trim().split(RegExp(r'\s+'));
+    for (final rawEntry in policy.split(';')) {
+      final entry = rawEntry.trim();
+      if (entry.isEmpty) continue;
+      final parts = entry.split(RegExp(r'\s+'));
       final type = parts.first.toUpperCase();
-      if (type == 'DIRECT') {
+      if (type == 'DIRECT' && parts.length == 1) {
         routes.add(const _ProxyRoute('DIRECT', '', 0));
       } else if (const {
             'PROXY',
@@ -484,20 +517,73 @@ class AppNetwork extends HttpOverrides {
             'SOCKS5',
           }.contains(type) &&
           parts.length == 2) {
-        final address = Uri.tryParse('http://${parts[1]}');
-        if (address == null ||
-            address.host.isEmpty ||
-            !address.hasPort ||
-            address.port < 1 ||
-            address.port > 65535) {
+        final target = parts[1];
+        if (target.endsWith(':')) {
           throw const FormatException('Invalid system proxy address');
         }
-        routes.add(_ProxyRoute(type, address.host, address.port));
+        final address = Uri.tryParse(
+          target.contains('://') ? target : 'http://$target',
+        );
+        if (address == null ||
+            address.host.isEmpty ||
+            address.userInfo.isNotEmpty ||
+            address.path.isNotEmpty ||
+            address.hasQuery ||
+            address.hasFragment) {
+          throw const FormatException('Invalid system proxy address');
+        }
+        final port = address.hasPort
+            ? address.port
+            : switch (type) {
+                'HTTPS' => 443,
+                'SOCKS' || 'SOCKS5' => 1080,
+                _ => 80,
+              };
+        if (port < 1 || port > 65535) {
+          throw const FormatException('Invalid system proxy address');
+        }
+        routes.add(_ProxyRoute(type, address.host, port));
       } else {
         throw const FormatException('Unsupported system proxy policy');
       }
     }
     return routes;
+  }
+}
+
+class _ManagedDnsResolver {
+  _ManagedDnsResolver(this.resolver, {required this.onRetiredClosed});
+
+  final DnsServerResolver resolver;
+  final void Function(_ManagedDnsResolver) onRetiredClosed;
+  int _activeUses = 0;
+  bool _retired = false;
+  bool _closed = false;
+
+  void acquire() {
+    _activeUses++;
+  }
+
+  void release() {
+    if (_activeUses > 0) _activeUses--;
+    if (_retired && _activeUses == 0) {
+      closeNow();
+    }
+  }
+
+  void retire() {
+    _retired = true;
+    if (_activeUses == 0) {
+      closeNow();
+    }
+  }
+
+  void closeNow() {
+    if (_closed) return;
+    _closed = true;
+    _retired = true;
+    onRetiredClosed(this);
+    resolver.close();
   }
 }
 

@@ -6,12 +6,14 @@ import 'package:doujin_audio/core/widgets/app_buttons.dart';
 import 'package:doujin_audio/core/widgets/app_dialog.dart';
 import 'package:doujin_audio/core/widgets/app_glass_surface.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/unified_dropdown.dart';
+import 'package:doujin_audio/core/widgets/unified_popup_menu.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 
 void main() {
-  for (final usePanel in [false, true]) {
+  for (final overlay in ['Dialog', 'Overlay panel', 'Dropdown']) {
     testWidgets(
-      '${usePanel ? 'Overlay panel' : 'Dialog'} blurs only the page behind it',
+      '$overlay blurs only the page behind it',
       (tester) async {
         final size = defaultTargetPlatform == TargetPlatform.windows
             ? const Size(960, 600)
@@ -51,19 +53,39 @@ void main() {
                     Align(
                       alignment: Alignment.topLeft,
                       child: Builder(
-                        builder: (context) => TextButton(
-                          onPressed: () => usePanel
-                              ? showAppOverlayPanel<void>(
-                                  context: context,
-                                  mobileAlignment: Alignment.center,
-                                  builder: (_) => foreground,
-                                )
-                              : showAppDialog<void>(
-                                  context: context,
-                                  builder: (_) => foreground,
+                        builder: (context) => overlay == 'Dropdown'
+                            ? SizedBox(
+                                width: 172,
+                                child: UnifiedDropdownButtonFormField<int>(
+                                  initialValue: 0,
+                                  decoration: const InputDecoration(),
+                                  multilineItems: true,
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: 0,
+                                      child: Text('Open'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 1,
+                                      child: foreground,
+                                    ),
+                                  ],
+                                  onChanged: (_) {},
                                 ),
-                          child: const Text('Open'),
-                        ),
+                              )
+                            : TextButton(
+                                onPressed: () => overlay == 'Overlay panel'
+                                    ? showAppOverlayPanel<void>(
+                                        context: context,
+                                        mobileAlignment: Alignment.center,
+                                        builder: (_) => foreground,
+                                      )
+                                    : showAppDialog<void>(
+                                        context: context,
+                                        builder: (_) => foreground,
+                                      ),
+                                child: const Text('Open'),
+                              ),
                       ),
                     ),
                   ],
@@ -101,7 +123,7 @@ void main() {
         expect(blurred.first, greaterThan(20));
         expect(blurred.last - blurred.first, lessThan(55));
         final center = tester.getCenter(
-          find.byKey(const ValueKey('modal_foreground')),
+          find.byKey(const ValueKey('modal_foreground')).last,
         );
         expect(
           await redAt([
@@ -111,7 +133,7 @@ void main() {
           [(Colors.red.r * 255).round(), (Colors.blue.r * 255).round()],
         );
 
-        await tester.tapAt(const Offset(1, 1));
+        await tester.tapAt(Offset(size.width - 1, 1));
         await tester.pumpAndSettle();
         expect(await redAt(background), [0, 255]);
       },
@@ -119,6 +141,156 @@ void main() {
         TargetPlatform.android,
         TargetPlatform.windows,
       }),
+    );
+  }
+
+  for (final menuKind in [
+    'Popup button',
+    'Dropdown button',
+    'Dropdown form field',
+  ]) {
+    testWidgets(
+      '$menuKind blur dissipates smoothly and feathers out on close',
+      (tester) async {
+        const size = Size(600, 500);
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = size;
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        final captureKey = GlobalKey();
+        await tester.pumpWidget(
+          RepaintBoundary(
+            key: captureKey,
+            child: MaterialApp(
+              home: Scaffold(
+                body: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    const Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(child: ColoredBox(color: Colors.black)),
+                        Expanded(child: ColoredBox(color: Colors.white)),
+                      ],
+                    ),
+                    Align(
+                      alignment: Alignment.topLeft,
+                      child: Builder(
+                        builder: (context) => switch (menuKind) {
+                          'Popup button' => UnifiedPopupMenuButton<int>(
+                            icon: Icons.add,
+                            tooltip: 'Open',
+                            entries: const [
+                              UnifiedMenuEntry.action(value: 1, label: 'Item'),
+                            ],
+                            onSelected: (_) {},
+                          ),
+                          'Dropdown button' => UnifiedDropdownButton<int>(
+                            value: 0,
+                            items: const [
+                              DropdownMenuItem(value: 0, child: Text('Open')),
+                              DropdownMenuItem(value: 1, child: Text('Item')),
+                            ],
+                            onChanged: (_) {},
+                          ),
+                          _ => SizedBox(
+                            width: 140,
+                            child: UnifiedDropdownButtonFormField<int>(
+                              initialValue: 0,
+                              decoration: const InputDecoration(),
+                              items: const [
+                                DropdownMenuItem(value: 0, child: Text('Open')),
+                                DropdownMenuItem(value: 1, child: Text('Item')),
+                              ],
+                              onChanged: (_) {},
+                            ),
+                          ),
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+
+        Future<int> contrastAtSeam() async {
+          final boundary =
+              captureKey.currentContext!.findRenderObject()!
+                  as RenderRepaintBoundary;
+          final image = boundary.toImageSync();
+          final bytes = (await tester.runAsync(() => image.toByteData()))!;
+          final left = bytes.getUint8(
+            (40 * image.width + (size.width / 2 - 2).floor()) * 4,
+          );
+          final right = bytes.getUint8(
+            (40 * image.width + (size.width / 2 + 2).floor()) * 4,
+          );
+          image.dispose();
+          return right - left;
+        }
+
+        await tester.tap(
+          menuKind == 'Popup button'
+              ? find.byTooltip('Open')
+              : find.text('Open'),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.descendant(
+            of: find.byType(AppModalBackground),
+            matching: find.byType(Opacity),
+          ),
+          findsNothing,
+        );
+        final openContrast = await contrastAtSeam();
+        expect(openContrast, lessThan(55));
+
+        await tester.tapAt(Offset(size.width - 1, 1));
+        await tester.pump();
+
+        if (menuKind == 'Popup button') {
+          await tester.pump(const Duration(milliseconds: 50));
+          final earlyContrast = await contrastAtSeam();
+          expect(earlyContrast, inExclusiveRange(openContrast, 255));
+
+          await tester.pump(const Duration(milliseconds: 50));
+          final midContrast = await contrastAtSeam();
+          expect(midContrast, inExclusiveRange(earlyContrast, 255));
+
+          await tester.pump(const Duration(milliseconds: 70));
+          final tailContrast = await contrastAtSeam();
+          expect(tailContrast, greaterThan(230));
+        } else {
+          await tester.pump(const Duration(milliseconds: 75));
+          final earlyContrast = await contrastAtSeam();
+          expect(earlyContrast, greaterThan(openContrast + 30));
+          expect(earlyContrast, lessThan(255));
+
+          await tester.pump(const Duration(milliseconds: 75));
+          final midContrast = await contrastAtSeam();
+          expect(midContrast, inExclusiveRange(earlyContrast, 255));
+
+          await tester.pump(const Duration(milliseconds: 70));
+          final tailContrast = await contrastAtSeam();
+          expect(tailContrast, greaterThan(240));
+
+          await tester.pump(const Duration(milliseconds: 30));
+          final filter = tester.widget<BackdropFilter>(
+            find.descendant(
+              of: find.byType(AppModalBackground),
+              matching: find.byType(BackdropFilter),
+            ),
+          );
+          expect(filter.enabled, isFalse);
+        }
+
+        await tester.pumpAndSettle();
+        expect(await contrastAtSeam(), 255);
+        expect(find.byType(AppModalBackground), findsNothing);
+      },
     );
   }
 
@@ -779,7 +951,9 @@ void main() {
         0.001,
       ),
     );
-    await tester.pump(kAppOverlayDuration ~/ 2 - const Duration(milliseconds: 1));
+    await tester.pump(
+      kAppOverlayDuration ~/ 2 - const Duration(milliseconds: 1),
+    );
     expect(panelOpacity(), lessThan(1));
     await tester.pump(const Duration(milliseconds: 1));
     expect(panelOpacity(), 1);
@@ -817,7 +991,9 @@ void main() {
     );
     expect(panelOpacity(), closeTo(middleOpacity, 0.001));
 
-    await tester.pump(kAppOverlayDuration ~/ 2 - const Duration(milliseconds: 1));
+    await tester.pump(
+      kAppOverlayDuration ~/ 2 - const Duration(milliseconds: 1),
+    );
     expect(find.text('Overlay content'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 1));
     expect(panelOpacity(), closeTo(0, 0.001));

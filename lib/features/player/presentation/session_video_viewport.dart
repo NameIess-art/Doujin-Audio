@@ -265,7 +265,7 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
             ),
           if (widget.videoReady)
             Positioned(
-              left: 12,
+              right: 12,
               top: 12,
               child: AnimatedOpacity(
                 curve: kAppFadeCurve,

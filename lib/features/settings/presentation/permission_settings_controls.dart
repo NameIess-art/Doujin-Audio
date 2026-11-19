@@ -109,7 +109,7 @@ class _PermissionSettingsControlsState
       confirmIcon: Icons.settings_rounded,
       isDestructive: false,
     );
-    if (!confirmed) return;
+    if (!mounted || !confirmed) return;
 
     _recentlyOpenedSettings = true;
     final opened = await ref
@@ -180,7 +180,7 @@ class _PermissionSettingsControlsState
         _PermissionActionTile(
           title: i18n.tr('overlay_permission_title'),
           description: i18n.tr('permission_overlay_description'),
-          icon: Icons.subtitles_rounded,
+          icon: Icons.layers_rounded,
           enabled: _enabled(PermissionCapability.overlay),
           enabledLabel: i18n.tr('permission_enabled'),
           disabledLabel: i18n.tr('permission_not_enabled'),

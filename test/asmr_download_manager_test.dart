@@ -2551,7 +2551,6 @@ void main() {
           selectedRoots: <AsmrTrackFile>[_file(downloadUrl: '$baseUrl/3.mp3')],
           destinationRoot: tempDir.path,
           conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
-          saveMetadata: false,
         );
         await Future<void>.delayed(const Duration(milliseconds: 80));
         expect(requests, 2);
@@ -2621,7 +2620,6 @@ void main() {
           ],
           destinationRoot: tempDir.path,
           conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
-          saveMetadata: false,
         );
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
@@ -5345,6 +5343,105 @@ void main() {
     }
   });
 
+  test(
+    'pausing a queued manual retry task clears retry-only state before resume',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_download_queued_retry_pause_',
+      );
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final blockerStarted = Completer<void>();
+      final releaseBlocker = Completer<void>();
+      var fixSecondTask = false;
+      unawaited(
+        server.forEach((request) async {
+          if (request.uri.path.endsWith('blocker.mp3')) {
+            if (!blockerStarted.isCompleted) blockerStarted.complete();
+            await releaseBlocker.future;
+            request.response.contentLength = 1;
+            request.response.add(const <int>[1]);
+          } else if (fixSecondTask) {
+            request.response.contentLength = 1;
+            request.response.add(const <int>[2]);
+          } else {
+            request.response.statusCode = HttpStatus.notFound;
+          }
+          await request.response.close();
+        }),
+      );
+      final manager = AsmrDownloadManager(
+        maxConcurrentDownloads: 1,
+        temporaryDirectoryProvider: () async => Directory.systemTemp,
+        automaticFileRetryDelay: const Duration(milliseconds: 200),
+        persistTasks: false,
+      );
+      try {
+        await manager.startDownload(
+          work: _work(id: 2),
+          selectedRoots: <AsmrTrackFile>[
+            _file(
+              downloadUrl:
+                  'http://${server.address.host}:${server.port}/first.mp3',
+              title: 'First.mp3',
+            ),
+            _file(
+              downloadUrl:
+                  'http://${server.address.host}:${server.port}/second.mp3',
+              title: 'Second.mp3',
+            ),
+          ],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        );
+        await _waitForTaskStatus(
+          manager,
+          2,
+          AsmrDownloadTaskStatus.failed,
+          allowFailure: true,
+        );
+
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: <AsmrTrackFile>[
+            _file(
+              downloadUrl:
+                  'http://${server.address.host}:${server.port}/blocker.mp3',
+              title: 'Blocker.mp3',
+            ),
+          ],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        );
+        await blockerStarted.future;
+
+        fixSecondTask = true;
+        expect(await manager.retryFailedFile(_key(2), 'First.mp3'), isTrue);
+        expect(manager.getTask(_key(2))?.status, AsmrDownloadTaskStatus.idle);
+
+        await manager.pauseTask(_key(2));
+        expect(manager.getTask(_key(2))?.status, AsmrDownloadTaskStatus.paused);
+
+        releaseBlocker.complete();
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+
+        await manager.resumeTask(_key(2));
+        await _waitForTaskStatus(manager, 2, AsmrDownloadTaskStatus.completed);
+
+        final completed = manager.getTask(_key(2));
+        expect(
+          completed?.completedFilePaths,
+          containsAll(<String>['First.mp3', 'Second.mp3']),
+        );
+        expect(completed?.failedFiles, 0);
+      } finally {
+        if (!releaseBlocker.isCompleted) releaseBlocker.complete();
+        manager.dispose();
+        await server.close(force: true);
+        if (await tempDir.exists()) await tempDir.delete(recursive: true);
+      }
+    },
+  );
+
   test('a permanent HTTP failure is not retried', () async {
     final tempDir = await Directory.systemTemp.createTemp(
       'asmr_download_no_retry_',
@@ -5694,7 +5791,6 @@ void main() {
           selectedRoots: selectedRoots,
           destinationRoot: tempDir.path,
           conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
-          saveMetadata: false,
         );
 
         final workDir = Directory(
@@ -5728,7 +5824,6 @@ void main() {
           selectedRoots: selectedRoots,
           destinationRoot: tempDir.path,
           conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
-          saveMetadata: false,
         );
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
         final completed = manager.getTask(_key(1));

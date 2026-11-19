@@ -32,6 +32,7 @@ import '../../../app/theme/app_styles.dart';
 import 'library_tab_tree_widgets.dart';
 import 'library_card_artwork.dart';
 import 'library_tab_ui_helpers.dart';
+import '../../../core/widgets/unified_popup_menu.dart';
 
 @visibleForTesting
 class LibraryCategoryTermBox extends StatefulWidget {
@@ -241,6 +242,7 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
                         child: SizedBox(
                           height: 28,
                           child: TextField(
+                            contextMenuBuilder: buildAppEditableTextMenu,
                             key: ValueKey<String>(
                               'library_category_term_search_field_'
                               '${widget.categoryType.name}',

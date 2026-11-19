@@ -32,14 +32,16 @@ final class LibraryCatalogWriteCoordinator {
   final void Function() _syncStateSlice;
   void Function(List<String>)? _trackRemovalHandler;
   _LibraryBatchSnapshot? _batchBefore;
-  final _refreshTrackWrites = <String, MusicTrack>{};
-  final _refreshEntryWrites = <String, Map<String, LibraryEntry>>{};
-  final _refreshRemovedTracks = <String, MusicTrack>{};
-  final _refreshRemovedEntries = <String, Map<String, LibraryEntry>>{};
-  final _refreshFolderWrites = <String, bool>{};
+  final _refreshTrackWrites = LibraryService.createPathIndex<MusicTrack>();
+  final _refreshEntryWrites =
+      LibraryService.createPathIndex<Map<String, LibraryEntry>>();
+  final _refreshRemovedTracks = LibraryService.createPathIndex<MusicTrack>();
+  final _refreshRemovedEntries =
+      LibraryService.createPathIndex<Map<String, LibraryEntry>>();
+  final _refreshFolderWrites = LibraryService.createPathIndex<bool>();
   bool _stagedRefresh = false;
-  final _removedTrackPaths = <String>{};
-  final _removedEntryPaths = <String, Set<String>>{};
+  final _removedTrackPaths = LibraryService.createPathSet();
+  final _removedEntryPaths = LibraryService.createPathIndex<Set<String>>();
   void attachTrackRemovalHandler(void Function(List<String>) handler) {
     _trackRemovalHandler ??= handler;
   }
@@ -108,7 +110,7 @@ final class LibraryCatalogWriteCoordinator {
       for (final entry in entries) {
         _refreshEntryWrites.putIfAbsent(
           PathMatcher.normalize(entry.libraryPath),
-          () => <String, LibraryEntry>{},
+          LibraryService.createPathIndex<LibraryEntry>,
         )[PathMatcher.normalize(entry.path)] = _service.libraryEntryForPath(
           entry.libraryPath,
           entry.path,
@@ -121,7 +123,7 @@ final class LibraryCatalogWriteCoordinator {
 
   void recordEntriesForTracks(List<MusicTrack> tracks, {bool persist = true}) {
     final entries = <LibraryEntry>[];
-    final tracksByLibrary = <String, List<MusicTrack>>{};
+    final tracksByLibrary = LibraryService.createPathIndex<List<MusicTrack>>();
     for (final track in tracks) {
       final libraryPath = _service.libraryPathForTrack(track);
       if (libraryPath == null || libraryPath.isEmpty) continue;
@@ -210,7 +212,7 @@ final class LibraryCatalogWriteCoordinator {
   }
 
   void removeTracksByPath(Iterable<String> trackPaths) {
-    final paths = trackPaths.toSet();
+    final paths = LibraryService.createPathSet(trackPaths);
     if (paths.isEmpty) return;
     removeTracksMatching((track) => paths.contains(track.path));
   }
@@ -263,7 +265,7 @@ final class LibraryCatalogWriteCoordinator {
   void _persistRemovedEntries(String libraryPath, List<String> removedPaths) {
     if (_service.libraryBatchDepth > 0) {
       _removedEntryPaths
-          .putIfAbsent(libraryPath, () => <String>{})
+          .putIfAbsent(libraryPath, LibraryService.createPathSet)
           .addAll(removedPaths);
     } else {
       unawaited(
@@ -310,14 +312,19 @@ final class LibraryCatalogWriteCoordinator {
     final currentExclusions = _service.libraryExclusionMatcherForLibrary(
       libraryRoot,
     );
-    final activeTracks = <String, MusicTrack>{
-      for (final track in tracks)
-        if (!currentExclusions.isExcluded(track.path)) track.path: track,
-      for (final track in entryTracks)
-        if (!currentExclusions.isExcluded(track.path) &&
-            !_service.libraryByPath.containsKey(track.path))
-          track.path: track,
-    }.values.toList(growable: false);
+    final activeTracksMap = LibraryService.createPathIndex<MusicTrack>();
+    for (final track in tracks) {
+      if (!currentExclusions.isExcluded(track.path)) {
+        activeTracksMap[track.path] = track;
+      }
+    }
+    for (final track in entryTracks) {
+      if (!currentExclusions.isExcluded(track.path) &&
+          !_service.libraryByPath.containsKey(track.path)) {
+        activeTracksMap[track.path] = track;
+      }
+    }
+    final activeTracks = activeTracksMap.values.toList(growable: false);
     for (final folderPath in removeWatchedFolders) {
       removeWatchedFolder(folderPath, notify: false);
       _refreshFolderWrites[PathMatcher.normalize(folderPath)] = false;
@@ -359,7 +366,7 @@ final class LibraryCatalogWriteCoordinator {
         if (current == null) continue;
         _refreshRemovedEntries.putIfAbsent(
           PathMatcher.normalize(libraryRoot),
-          () => <String, LibraryEntry>{},
+          LibraryService.createPathIndex<LibraryEntry>,
         )[PathMatcher.normalize(entryPath)] = current;
       }
       removeLibraryEntriesByPaths(libraryRoot, entriesToRemove);
@@ -384,9 +391,9 @@ final class LibraryCatalogWriteCoordinator {
   }
 
   void _rollbackRefreshWrites(_LibraryBatchSnapshot before) {
-    final originalTracks = {
+    final originalTracks = LibraryService.createPathIndex<MusicTrack>({
       for (final track in before.tracks) track.path: track,
-    };
+    });
     final tracks = <MusicTrack>[];
     for (final current in _service.library) {
       final scanned = _refreshTrackWrites[current.path];
@@ -526,12 +533,14 @@ final class LibraryCatalogWriteCoordinator {
         )
         .whereType<LibraryEntry>()
         .toList(growable: false);
-    final tracksToPersist = <String, MusicTrack>{
+    final tracksToPersist = LibraryService.createPathIndex<MusicTrack>({
       for (final track in _service.libraryBatchPersistTracks)
         if (_service.libraryByPath.containsKey(track.path))
           track.path: _service.libraryByPath[track.path]!,
-    }.values.toList(growable: false);
-    final initialPaths = before.tracks.map((track) => track.path).toSet();
+    }).values.toList(growable: false);
+    final initialPaths = LibraryService.createPathSet(
+      before.tracks.map((track) => track.path),
+    );
     final removedEntries = <String, List<String>>{
       for (final entry in _removedEntryPaths.entries)
         entry.key: <String>[
@@ -545,10 +554,10 @@ final class LibraryCatalogWriteCoordinator {
         ],
     };
     final removedTracks = <String>[
-      for (final path in <String>{
+      for (final path in LibraryService.createPathSet({
         ..._removedTrackPaths,
         ...removedEntries.values.expand((paths) => paths),
-      })
+      }))
         if ((initialPaths.contains(path) ||
                 before.entries.values.any(
                   (entries) => entries[path]?.isTrack == true,
@@ -596,7 +605,9 @@ final class LibraryCatalogWriteCoordinator {
   }
 
   List<MusicTrack> _affectedTracks(_LibraryBatchSnapshot before) {
-    final previous = {for (final track in before.tracks) track.path: track};
+    final previous = LibraryService.createPathIndex<MusicTrack>({
+      for (final track in before.tracks) track.path: track,
+    });
     final affected = <MusicTrack>[];
     for (final track in _service.library) {
       final original = previous.remove(track.path);
@@ -659,10 +670,10 @@ final class _LibraryBatchSnapshot {
       folders = List<String>.of(service.watchedFolders),
       libraries = List<String>.of(service.watchedLibraries),
       order = List<String>.of(service.groupOrder),
-      entries = {
+      entries = LibraryService.createPathIndex<Map<String, LibraryEntry>>({
         for (final entry in service.libraryEntriesByLibrary.entries)
-          entry.key: Map<String, LibraryEntry>.of(entry.value),
-      };
+          entry.key: LibraryService.createPathIndex<LibraryEntry>(entry.value),
+      });
 
   final List<MusicTrack> tracks;
   final List<String> folders;
@@ -693,6 +704,9 @@ final class _LibraryBatchSnapshot {
       ..addAll(order);
     service.libraryEntriesByLibrary
       ..clear()
-      ..addAll(entries);
+      ..addAll({
+        for (final entry in entries.entries)
+          entry.key: LibraryService.createPathIndex<LibraryEntry>(entry.value),
+      });
   }
 }

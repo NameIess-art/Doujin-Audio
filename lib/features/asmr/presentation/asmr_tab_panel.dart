@@ -129,7 +129,11 @@ class _AsmrAccountStatusLine extends StatelessWidget {
                 color: cs.primary.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(tokens.radiusSmall),
               ),
-              child: Icon(icon, size: 20, color: cs.primary),
+              child: Icon(
+                icon,
+                size: AppDesignTokens.opticalIconSize(icon, 20),
+                color: cs.primary,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -238,9 +242,9 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
     if (_submitting) {
       return;
     }
-    setState(() => _submitting = true);
     final controller = ref.read(asmrLibraryControllerProvider);
     if (controller == null) return;
+    setState(() => _submitting = true);
     try {
       await controller.syncAsmrAccount(force: true);
       if (!mounted) {
@@ -385,17 +389,25 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
+              contextMenuBuilder: buildAppEditableTextMenu,
               controller: _accountController,
               enabled: !syncing,
               textInputAction: TextInputAction.next,
               decoration: InputDecoration(
                 labelText: i18n.tr('asmr_login_account'),
-                prefixIcon: const Icon(Icons.person_outline_rounded),
+                prefixIcon: Icon(
+                  Icons.person_outline_rounded,
+                  size: AppDesignTokens.opticalIconSize(
+                    Icons.person_outline_rounded,
+                    24,
+                  ),
+                ),
               ),
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
             TextField(
+              contextMenuBuilder: buildAppEditableTextMenu,
               controller: _passwordController,
               enabled: !syncing,
               obscureText: true,

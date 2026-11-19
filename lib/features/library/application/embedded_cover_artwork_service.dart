@@ -266,21 +266,24 @@ class EmbeddedCoverArtworkService {
 
       int offset = 0;
       if (extHeader) {
+        if (offset + 4 > tagData.length) return null;
         if (majorVersion == 3) {
           final extSize = ByteData.sublistView(
             tagData,
             offset,
             offset + 4,
           ).getUint32(0);
-          offset += extSize;
+          offset += 4 + extSize;
         } else if (majorVersion == 4) {
           final extSize =
               ((tagData[offset] & 0x7f) << 21) |
               ((tagData[offset + 1] & 0x7f) << 14) |
               ((tagData[offset + 2] & 0x7f) << 7) |
               (tagData[offset + 3] & 0x7f);
+          if (extSize <= 0) return null;
           offset += extSize;
         }
+        if (offset > tagData.length) return null;
       }
 
       while (offset < tagData.length) {

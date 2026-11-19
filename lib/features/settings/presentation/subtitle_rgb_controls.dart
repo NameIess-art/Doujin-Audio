@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/widgets/unified_popup_menu.dart';
 
 class SubtitleRgbControls extends StatelessWidget {
   const SubtitleRgbControls({
@@ -177,6 +178,7 @@ class _RgbSliderRowState extends State<_RgbSliderRow> {
         SizedBox(
           width: 46,
           child: TextField(
+            contextMenuBuilder: buildAppEditableTextMenu,
             controller: _controller,
             keyboardType: TextInputType.number,
             textAlign: TextAlign.center,

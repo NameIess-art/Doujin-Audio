@@ -782,6 +782,71 @@ void main() {
       expect(fadeMultipliers.last, 1.0);
       expect(fadeMultipliers.length, greaterThan(2));
     });
+
+    test(
+      'disabling stopAfterCurrentTrack after expiry exits expired state cleanly',
+      () async {
+        final service = TimerService()
+          ..timerMode = TimerMode.manual
+          ..timerDuration = const Duration(minutes: 5)
+          ..timerRemaining = Duration.zero
+          ..timerActive = false
+          ..stopAfterCurrentTrack = true;
+        final timer = TimerFacade.create(
+          service: service,
+          powerPlatformService: _RecordingPowerPlatformService(),
+        );
+        addTearDown(timer.dispose);
+        _attachNoopRuntime(timer);
+
+        timer.setStopAfterCurrentTrack(false);
+
+        expect(service.stopAfterCurrentTrack, isFalse);
+        expect(service.timerRemaining, isNull);
+        expect(service.timerDuration, isNull);
+        expect(service.timerMode, isNull);
+      },
+    );
+
+    test(
+      'Windows restore filters missing pausedSessionIds and deduplicates restored countdown sessions',
+      () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+        try {
+          SharedPreferences.setMockInitialValues(<String, Object>{
+            'timer_runtime_v1': jsonEncode(<String, Object?>{
+              'timerMode': TimerMode.manual.index,
+              'timerDurationMs': 1000,
+              'timerEndsAtWallClockMs': DateTime.now()
+                  .subtract(const Duration(minutes: 5))
+                  .millisecondsSinceEpoch,
+              'timerWaitingForPlayback': false,
+              'autoResumeEnabled': true,
+              'autoResumeHour': 7,
+              'autoResumeMinute': 0,
+              'pausedSessionIds': <String>['live', 'live', 'stale'],
+              'countdownSessionIds': <String>['live', 'stale'],
+              'generation': 2,
+            }),
+          });
+          final service = TimerService();
+          final timer = TimerFacade.create(
+            service: service,
+            powerPlatformService: PowerPlatformService(isAndroidOverride: false),
+          );
+          addTearDown(timer.dispose);
+          _attachNoopRuntime(timer, sessions: () => [_TestSession('live')]);
+
+          await timer.loadRuntimeFromSystem();
+
+          expect(service.pausedByTimerSessionIds, <String>['live']);
+          await timer.clearTimerPauseForManualPlayback('live');
+          expect(service.pausedByTimerSessionIds, isEmpty);
+        } finally {
+          debugDefaultTargetPlatformOverride = null;
+        }
+      },
+    );
   });
 }
 

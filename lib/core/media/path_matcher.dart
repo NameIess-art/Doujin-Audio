@@ -112,9 +112,15 @@ abstract final class PathMatcher {
       final documentPath = _documentPath(normalized);
       if (documentPath != null) {
         final separator = documentPath.lastIndexOf('/');
-        final parent = separator < 0
-            ? documentPath
-            : documentPath.substring(0, separator);
+        final String parent;
+        if (separator >= 0) {
+          parent = documentPath.substring(0, separator);
+        } else {
+          final colon = documentPath.indexOf(':');
+          parent = colon >= 0
+              ? documentPath.substring(0, colon + 1)
+              : documentPath;
+        }
         return 'content:${_contentAuthority(normalized)}:$parent';
       }
       final uri = Uri.tryParse(normalized);
@@ -165,8 +171,10 @@ abstract final class PathMatcher {
       final docPath = _documentPath(normalized);
       if (treeBase != null && docPath != null) {
         final treeDocId = _documentPath(treeBase);
-        if (treeDocId != null && docPath.startsWith('$treeDocId/')) {
-          final relative = docPath.substring(treeDocId.length + 1);
+        final relative = treeDocId == null
+            ? null
+            : _relativeDocPath(docPath, treeDocId);
+        if (relative != null && relative.isNotEmpty) {
           final lastSlash = relative.lastIndexOf('/');
           if (lastSlash < 0) {
             return normalize(treeBase);
@@ -210,7 +218,7 @@ abstract final class PathMatcher {
       final childDoc = _documentPath(normalizedChild);
       final parentDoc = _documentPath(normalizedParent);
       if (childDoc != null && parentDoc != null) {
-        return childDoc == parentDoc || childDoc.startsWith('$parentDoc/');
+        return _relativeDocPath(childDoc, parentDoc) != null;
       }
       return normalizedChild == normalizedParent ||
           normalizedChild.startsWith('$normalizedParent/');
@@ -231,12 +239,10 @@ abstract final class PathMatcher {
     if (isContentUri(child) || isContentUri(parent)) {
       final childDoc = _documentPath(child);
       final parentDoc = _documentPath(parent);
-      if (childDoc == null ||
-          parentDoc == null ||
-          !childDoc.startsWith('$parentDoc/')) {
+      if (childDoc == null || parentDoc == null) {
         return null;
       }
-      return childDoc.substring(parentDoc.length + 1);
+      return _relativeDocPath(childDoc, parentDoc);
     }
 
     return _contextFor(
@@ -328,16 +334,14 @@ abstract final class PathMatcher {
     final oldDoc = _documentPath(oldParent);
     final newDoc = _documentPath(newParent);
     final valueDoc = _documentPath(value);
-    if (oldDoc == null ||
-        newDoc == null ||
-        valueDoc == null ||
-        !(valueDoc == oldDoc || valueDoc.startsWith('$oldDoc/'))) {
+    if (oldDoc == null || newDoc == null || valueDoc == null) {
+      return value;
+    }
+    final suffix = _relativeDocPath(valueDoc, oldDoc);
+    if (suffix == null) {
       return value;
     }
 
-    final suffix = valueDoc == oldDoc
-        ? ''
-        : valueDoc.substring(oldDoc.length + 1);
     final nextDoc = _joinDocumentPath(newDoc, suffix);
     if (value.contains('::')) {
       return _appendSyntheticRelative(newParent, suffix);
@@ -396,12 +400,40 @@ abstract final class PathMatcher {
   }
 
   static String _normalizeDocumentId(String rawId) {
-    return safeDecodeComponent(rawId).replaceAll('\\', '/').trimRightSlash();
+    final normalized = safeDecodeComponent(
+      rawId,
+    ).replaceAll('\\', '/').trimRightSlash();
+    final colonIndex = normalized.indexOf(':');
+    if (colonIndex > 0 &&
+        !normalized.startsWith('raw:/') &&
+        colonIndex + 1 < normalized.length &&
+        normalized[colonIndex + 1] == '/') {
+      final afterColon = normalized.substring(colonIndex + 1).trimLeftSlash();
+      return '${normalized.substring(0, colonIndex + 1)}$afterColon';
+    }
+    return normalized;
+  }
+
+  static String? _relativeDocPath(String childDoc, String parentDoc) {
+    if (childDoc == parentDoc) return '';
+    if (parentDoc.endsWith(':')) {
+      if (!childDoc.startsWith(parentDoc) ||
+          childDoc.length == parentDoc.length) {
+        return null;
+      }
+      final relative = childDoc.substring(parentDoc.length);
+      return relative.startsWith('/') ? relative.substring(1) : relative;
+    }
+    if (childDoc.startsWith('$parentDoc/')) {
+      return childDoc.substring(parentDoc.length + 1);
+    }
+    return null;
   }
 
   static String _joinDocumentPath(String basePath, String? relativePath) {
     final relative = relativePath?.trimLeftSlash();
     if (relative == null || relative.isEmpty) return basePath;
+    if (basePath.endsWith(':')) return '$basePath$relative';
     return '$basePath/$relative';
   }
 }
@@ -420,7 +452,10 @@ final class PathMembershipIndex {
   bool containsDescendantOrEqual(String value) {
     final key = PathMatcher.equivalenceKey(value);
     if (_keys.contains(key)) return true;
-    final prefix = key.endsWith('/') ? key : '$key/';
+    final prefix =
+        key.endsWith('/') || (key.startsWith('content:') && key.endsWith(':'))
+        ? key
+        : '$key/';
     var low = 0;
     var high = _sortedKeys.length;
     while (low < high) {
@@ -440,7 +475,21 @@ final class PathMembershipIndex {
     if (key.startsWith('remote:')) return false;
     while (true) {
       final separator = key.lastIndexOf('/');
-      if (separator < 0) return false;
+      if (separator < 0) {
+        if (key.startsWith('content:')) {
+          final authorityEnd = key.indexOf(':', 'content:'.length);
+          if (authorityEnd >= 0 &&
+              !key.startsWith('content://', authorityEnd + 1)) {
+            final rootColon = key.indexOf(':', authorityEnd + 1);
+            if (rootColon >= 0 &&
+                rootColon + 1 < key.length &&
+                _keys.contains(key.substring(0, rootColon + 1))) {
+              return true;
+            }
+          }
+        }
+        return false;
+      }
       // File-system roots retain their trailing separator in equivalence keys.
       if (_keys.contains(key.substring(0, separator + 1))) return true;
       key = key.substring(0, separator);

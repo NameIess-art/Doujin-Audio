@@ -297,18 +297,21 @@ Future<Map<String, List<String>>> _loadAsmrWorkTextValues(
   required List<String> ids,
 }) async {
   if (ids.isEmpty) return const <String, List<String>>{};
-  final placeholders = List.filled(ids.length, '?').join(', ');
-  final rows = await db.rawQuery(
-    'SELECT $idColumn, $valueColumn FROM $table '
-    'WHERE $idColumn IN ($placeholders) ORDER BY sort_order ASC',
-    ids,
-  );
   final valuesById = <String, List<String>>{};
-  for (final row in rows) {
-    final id = row[idColumn] as String?;
-    final value = row[valueColumn] as String?;
-    if (id == null || value == null) continue;
-    valuesById.putIfAbsent(id, () => <String>[]).add(value);
+  final uniqueIds = ids.toSet().toList(growable: false);
+  for (final chunk in _stringChunks(uniqueIds)) {
+    final placeholders = List.filled(chunk.length, '?').join(', ');
+    final rows = await db.rawQuery(
+      'SELECT $idColumn, $valueColumn FROM $table '
+      'WHERE $idColumn IN ($placeholders) ORDER BY sort_order ASC',
+      chunk,
+    );
+    for (final row in rows) {
+      final id = row[idColumn] as String?;
+      final value = row[valueColumn] as String?;
+      if (id == null || value == null) continue;
+      valuesById.putIfAbsent(id, () => <String>[]).add(value);
+    }
   }
   return valuesById.map(
     (id, values) => MapEntry(id, List<String>.unmodifiable(values)),
@@ -402,29 +405,43 @@ void _replaceAsmrWorkListMembershipInBatch(
 }
 
 void _deleteUnreferencedAsmrWorksInBatch(Batch batch, {List<String>? workIds}) {
-  if (workIds != null && workIds.isEmpty) return;
   const referencedWorkIds = 'SELECT work_id FROM asmr_work_lists';
-  final placeholders = workIds == null
-      ? null
-      : List.filled(workIds.length, '?').join(', ');
-  String unreferenced(String column) =>
-      '${placeholders == null ? '' : '$column IN ($placeholders) AND '}'
-      '$column NOT IN ($referencedWorkIds)';
-  batch.delete(
-    'asmr_work_voice_actors',
-    where: unreferenced('work_id'),
-    whereArgs: workIds,
-  );
-  batch.delete(
-    'asmr_work_tags',
-    where: unreferenced('work_id'),
-    whereArgs: workIds,
-  );
-  batch.delete(
-    'asmr_works',
-    where: unreferenced('work_key'),
-    whereArgs: workIds,
-  );
+  if (workIds == null) {
+    batch.delete(
+      'asmr_work_voice_actors',
+      where: 'work_id NOT IN ($referencedWorkIds)',
+    );
+    batch.delete(
+      'asmr_work_tags',
+      where: 'work_id NOT IN ($referencedWorkIds)',
+    );
+    batch.delete(
+      'asmr_works',
+      where: 'work_key NOT IN ($referencedWorkIds)',
+    );
+    return;
+  }
+  if (workIds.isEmpty) return;
+  for (final chunk in _stringChunks(workIds)) {
+    final placeholders = List.filled(chunk.length, '?').join(', ');
+    String unreferenced(String column) =>
+        '$column IN ($placeholders) AND $column NOT IN ($referencedWorkIds)';
+    batch.delete(
+      'asmr_work_voice_actors',
+      where: unreferenced('work_id'),
+      whereArgs: chunk,
+    );
+    batch.delete(
+      'asmr_work_tags',
+      where: unreferenced('work_id'),
+      whereArgs: chunk,
+    );
+    batch.delete(
+      'asmr_works',
+      where: unreferenced('work_key'),
+      whereArgs: chunk,
+    );
+  }
 }
 
 void _replaceAsmrSyncOperationsInBatch(
@@ -518,6 +535,7 @@ Map<String, dynamic> _sessionAudioEffectsRow(PlaybackSessionRecord session) => {
   'eq_enabled': session.audioEffects.eqEnabled ? 1 : 0,
   'eq_preset_id': session.audioEffects.eqPresetId,
   'panning': session.audioEffects.panning,
+  'front_back': session.audioEffects.frontBack,
 };
 
 void _writeSessionDetailsToBatch(
@@ -835,7 +853,7 @@ Future<Map<String, Map<int, double>>> _loadSessionEqBandsBySession(
   List<String> sessionIds,
 ) async {
   final levelsBySession = <String, Map<int, double>>{};
-  for (final ids in _sessionIdChunks(sessionIds)) {
+  for (final ids in _stringChunks(sessionIds)) {
     final placeholders = List.filled(ids.length, '?').join(', ');
     final rows = await db.rawQuery('''
         SELECT session_id, frequency_hz, gain_db
@@ -861,7 +879,7 @@ _loadPlaybackQueueEntriesBySession(
   List<String> sessionIds,
 ) async {
   final entriesBySession = <String, List<Map<String, dynamic>>>{};
-  for (final ids in _sessionIdChunks(sessionIds)) {
+  for (final ids in _stringChunks(sessionIds)) {
     final placeholders = List.filled(ids.length, '?').join(', ');
     final paged = sessionIds.length == 1;
     Map<String, dynamic>? last;
@@ -871,10 +889,17 @@ _loadPlaybackQueueEntriesBySession(
         SELECT session_id, entry_id, kind, title, work_root_path, sort_order
         FROM playback_queue_entries
         WHERE session_id IN ($placeholders)
-          ${cursor == null ? '' : 'AND (sort_order, entry_id) > (?, ?)'}
+          ${cursor == null ? '' : 'AND (sort_order > ? OR (sort_order = ? AND entry_id > ?))'}
         ORDER BY session_id ASC, sort_order ASC, entry_id ASC
         ${paged ? 'LIMIT 512' : ''}
-      ''', [...ids, if (cursor != null) ...[cursor['sort_order'], cursor['entry_id']]]);
+      ''', [
+        ...ids,
+        if (cursor != null) ...[
+          cursor['sort_order'],
+          cursor['sort_order'],
+          cursor['entry_id'],
+        ],
+      ]);
       for (final row in rows) {
         final sessionId = row['session_id'] as String;
         entriesBySession.putIfAbsent(sessionId, () => []).add(row);
@@ -890,7 +915,7 @@ Future<Map<String, List<Map<String, dynamic>>>> _loadQueueTracksByEntry(
   List<String> sessionIds,
 ) async {
   final tracksByEntry = <String, List<Map<String, dynamic>>>{};
-  for (final ids in _sessionIdChunks(sessionIds)) {
+  for (final ids in _stringChunks(sessionIds)) {
     final placeholders = List.filled(ids.length, '?').join(', ');
     final paged = sessionIds.length == 1;
     Map<String, dynamic>? last;
@@ -916,10 +941,17 @@ Future<Map<String, List<Map<String, dynamic>>>> _loadQueueTracksByEntry(
           sort_order
         FROM playback_queue_entry_tracks
         WHERE session_id IN ($placeholders)
-          ${cursor == null ? '' : 'AND (entry_id, sort_order) > (?, ?)'}
+          ${cursor == null ? '' : 'AND (entry_id > ? OR (entry_id = ? AND sort_order > ?))'}
         ORDER BY session_id ASC, entry_id ASC, sort_order ASC
         ${paged ? 'LIMIT 512' : ''}
-      ''', [...ids, if (cursor != null) ...[cursor['entry_id'], cursor['sort_order']]]);
+      ''', [
+        ...ids,
+        if (cursor != null) ...[
+          cursor['entry_id'],
+          cursor['entry_id'],
+          cursor['sort_order'],
+        ],
+      ]);
       for (final row in rows) {
         final sessionId = row['session_id'] as String;
         final entryId = row['entry_id'] as String;
@@ -946,6 +978,7 @@ AudioEffectsRecord _sessionAudioEffectsFromRow(
         : row['eq_preset_id'] as String?,
     eqBandLevels: Map<int, double>.unmodifiable(levels),
     panning: (row['panning'] as num?)?.toDouble() ?? 0.0,
+    frontBack: (row['front_back'] as num?)?.toDouble() ?? 0.0,
   );
 }
 
@@ -996,14 +1029,14 @@ PlaybackQueueEntryRecord _queueEntryFromRows(
   tracks: trackRows.map(_queueTrackFromRow).toList(growable: false),
 );
 
-Iterable<List<String>> _sessionIdChunks(List<String> sessionIds) sync* {
+Iterable<List<String>> _stringChunks(List<String> values) sync* {
   for (
     var start = 0;
-    start < sessionIds.length;
+    start < values.length;
     start += _sqliteInClauseBatchSize
   ) {
-    final end = (start + _sqliteInClauseBatchSize).clamp(0, sessionIds.length);
-    yield sessionIds.sublist(start, end);
+    final end = (start + _sqliteInClauseBatchSize).clamp(0, values.length);
+    yield values.sublist(start, end);
   }
 }
 

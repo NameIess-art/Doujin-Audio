@@ -237,6 +237,7 @@ AudioEffectsRecord _effectsToRecord(AudioEffectsState state) =>
       eqPresetId: state.eqPresetId,
       eqBandLevels: state.eqBandLevels,
       panning: state.panning,
+      frontBack: state.frontBack,
     );
 
 AudioEffectsState _effectsFromRecord(AudioEffectsRecord record) =>
@@ -248,6 +249,7 @@ AudioEffectsState _effectsFromRecord(AudioEffectsRecord record) =>
       eqPresetId: record.eqPresetId,
       eqBandLevels: record.eqBandLevels,
       panning: record.panning,
+      frontBack: record.frontBack,
     );
 
 PlaybackQueueRecord? _queueToRecord(PlaybackQueueDefinition? queue) =>

@@ -485,4 +485,38 @@ void main() {
       ]);
     },
   );
+
+  test(
+    'EventChannel listen exception does not poison subsequent startListening calls',
+    () async {
+      const eventsChannel = EventChannel(NativePlaybackChannel.eventName);
+      var attempt = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockStreamHandler(
+            eventsChannel,
+            MockStreamHandler.inline(
+              onListen: (_, events) {
+                attempt++;
+                if (attempt == 1) {
+                  throw PlatformException(code: 'listen_failed');
+                }
+              },
+            ),
+          );
+      final bridge = NativePlaybackBridge.instance;
+      await bridge.stopListening();
+
+      try {
+        bridge.startListening();
+        await Future<void>.delayed(Duration.zero);
+        await bridge.stopListening();
+
+        bridge.startListening();
+        await Future<void>.delayed(Duration.zero);
+        expect(attempt, 2);
+      } finally {
+        await bridge.stopListening();
+      }
+    },
+  );
 }

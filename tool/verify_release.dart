@@ -38,6 +38,7 @@ void main(List<String> args) {
   final documentedAssets = <String>[
     for (final variant in androidVariants)
       'DoujinAudio-android-$variant-$documentedTag.apk',
+    'DoujinAudio-windows-x64-$documentedTag-setup.exe',
   ];
   for (final asset in documentedAssets) {
     for (final document in <MapEntry<String, String>>[
@@ -56,6 +57,7 @@ void main(List<String> args) {
   final workflowAssets = <String>[
     for (final variant in androidVariants)
       'DoujinAudio-android-$variant-\${{ github.ref_name }}.apk',
+    'DoujinAudio-windows-x64-\${tag}-setup.exe',
   ];
   for (final asset in workflowAssets) {
     if (!workflow.contains(asset) || !workflow.contains('$asset.sha256')) {

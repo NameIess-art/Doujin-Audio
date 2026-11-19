@@ -45,16 +45,19 @@ std::string Utf8FromUtf16(const wchar_t* utf16_string) {
   if (utf16_string == nullptr) {
     return std::string();
   }
-  unsigned int target_length = ::WideCharToMultiByte(
+  const int required = ::WideCharToMultiByte(
       CP_UTF8, WC_ERR_INVALID_CHARS, utf16_string,
-      -1, nullptr, 0, nullptr, nullptr)
-    -1; // remove the trailing null character
+      -1, nullptr, 0, nullptr, nullptr);
+  if (required <= 1) {
+    return std::string();
+  }
+  const int target_length = required - 1; // remove the trailing null character
   int input_length = (int)wcslen(utf16_string);
   std::string utf8_string;
-  if (target_length == 0 || target_length > utf8_string.max_size()) {
+  if (static_cast<size_t>(target_length) > utf8_string.max_size()) {
     return utf8_string;
   }
-  utf8_string.resize(target_length);
+  utf8_string.resize(static_cast<size_t>(target_length));
   int converted_length = ::WideCharToMultiByte(
       CP_UTF8, WC_ERR_INVALID_CHARS, utf16_string,
       input_length, utf8_string.data(), target_length, nullptr, nullptr);

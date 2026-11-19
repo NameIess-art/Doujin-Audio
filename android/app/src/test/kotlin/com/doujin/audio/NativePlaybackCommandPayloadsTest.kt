@@ -287,7 +287,8 @@ class NativePlaybackCommandPayloadsTest {
             validEffects(
                 eqEnabled = true,
                 eqBandLevels = listOf(mapOf("frequencyHz" to 100, "gainDb" to 2.5)),
-                panning = -0.25
+                panning = -0.25,
+                frontBack = 0.75
             )
         )
 
@@ -295,6 +296,7 @@ class NativePlaybackCommandPayloadsTest {
         assertEquals(mapOf(100 to 2.5f), effects.eqBandLevels)
         assertNull(effects.eqPresetId)
         assertEquals(-0.25f, effects.panning)
+        assertEquals(0.75f, effects.frontBack)
         assertFalse(effects.skipSilenceEnabled)
     }
 
@@ -303,6 +305,11 @@ class NativePlaybackCommandPayloadsTest {
         NativePlaybackCommandPayloads.parseAudioEffects(
             validEffects(panning = Double.NaN)
         )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `audio effects parser rejects an out of range front back position`() {
+        NativePlaybackCommandPayloads.parseAudioEffects(validEffects(frontBack = -1.1))
     }
 
     @Test
@@ -464,7 +471,8 @@ private fun validPreparePayload(): Map<String, Any?> = mapOf(
 private fun validEffects(
     eqEnabled: Boolean = false,
     eqBandLevels: List<Map<String, Number>> = emptyList(),
-    panning: Number = 0.0
+    panning: Number = 0.0,
+    frontBack: Number = 0.0
 ): Map<String, Any?> = mapOf(
     "skipSilenceEnabled" to false,
     "noiseReductionEnabled" to false,
@@ -473,5 +481,6 @@ private fun validEffects(
     "eqPresetId" to null,
     "eqBandLevels" to eqBandLevels,
     "channelSwapEnabled" to false,
-    "panning" to panning
+    "panning" to panning,
+    "frontBack" to frontBack
 )

@@ -9,6 +9,7 @@ import com.doujin.audio.player.notification.*
 import com.doujin.audio.player.recovery.*
 import com.doujin.audio.player.session.*
 import com.doujin.audio.player.effects.NativePlaybackResumeFade
+import com.doujin.audio.player.effects.StereoSpatialResponses
 import com.doujin.audio.player.video.*
 import com.doujin.audio.storage.*
 
@@ -457,7 +458,7 @@ class NativePlaybackService : MediaSessionService() {
                         foregroundCoordinator.cancelGrace()
                         foregroundCoordinator.stopWatchdog()
                         foregroundCoordinator.stop(reason = "playback_recovery_timed_out")
-                        stopSelf()
+                        stopServiceForIdleExit("playback_recovery_timed_out")
                     }
                 }
                 override fun publishSession(sessionId: String) {
@@ -678,7 +679,7 @@ class NativePlaybackService : MediaSessionService() {
             return
         }
         if (foregroundCoordinator.onTaskRemoved()) {
-            stopSelf()
+            stopServiceForIdleExit("task_removed_no_sessions")
         }
     }
 
@@ -1115,7 +1116,7 @@ class NativePlaybackService : MediaSessionService() {
             focusRecovery.abandon(reason = "remove_session_empty")
             PlaybackKeepAliveAlarmScheduler.cancel(this)
             foregroundCoordinator.stop(reason = "remove_session_empty")
-            stopSelf()
+            stopServiceForIdleExit("remove_session_empty")
         } else {
             statePersistence.persistNow()
             syncForegroundState()
@@ -1168,7 +1169,7 @@ class NativePlaybackService : MediaSessionService() {
         focusRecovery.abandon(reason = "clear_all")
         PlaybackKeepAliveAlarmScheduler.cancel(this)
         foregroundCoordinator.stop(reason = "clear_all")
-        stopSelf()
+        stopServiceForIdleExit("clear_all")
         return okResult(null)
     }
 
@@ -1314,11 +1315,14 @@ class NativePlaybackService : MediaSessionService() {
         return snapshot
     }
 
+    private val spatialResponses by lazy { StereoSpatialResponses.load(assets) }
+
     private fun createNativePlaybackSession(sessionId: String): NativePlaybackSession {
         return NativePlaybackSession(
             sessionId = sessionId,
             createPlayer = playerFactory::create,
-            logWarn = { message, session, error -> logWarn(message, session, error) }
+            logWarn = { message, session, error -> logWarn(message, session, error) },
+            loadSpatialResponses = { spatialResponses }
         )
     }
 
@@ -1501,7 +1505,10 @@ class NativePlaybackService : MediaSessionService() {
         sessionIds.forEach { sessionId ->
             focusRecovery.removePending(sessionId)
             clearPlaybackIntent(sessionId)
-            sessionManager.get(sessionId)?.playerOrNull()?.pause()
+            sessionManager.get(sessionId)?.apply {
+                applyFadeMultiplier(1f)
+                playerOrNull()?.pause()
+            }
             publishSessionState(sessionId)
         }
         if (!hasPlaybackToKeepAlive()) {
@@ -1510,6 +1517,21 @@ class NativePlaybackService : MediaSessionService() {
         }
         statePersistence.persistNow()
         syncForegroundState()
+    }
+
+    private fun stopServiceForIdleExit(reason: String) {
+        val startId = restoreCoordinator.latestStartId
+        logInfo("idle_exit_stop_self reason=$reason startId=$startId")
+        stoppingForIdleExit = true
+        publishController(null)
+        if (startId > 0) {
+            if (!stopSelfResult(startId)) {
+                stoppingForIdleExit = false
+                publishController(this)
+            }
+        } else {
+            stopSelf()
+        }
     }
 
     private fun releaseIdlePlaybackResources(reason: String) {

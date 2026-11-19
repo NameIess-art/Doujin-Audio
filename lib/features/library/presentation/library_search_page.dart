@@ -42,6 +42,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     keepScrollOffset: false,
   );
   String? _submittedQuery;
+  SearchFilters _filters = emptySearchFilters;
   bool _matchAll = true;
   int _queryRevision = 0;
   bool _isSelectionMode = false;
@@ -61,8 +62,8 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   }
 
   void _onChanged(String value) {
-    final enabled = canonicalElementQuery(value).isNotEmpty;
-    final wasEnabled = canonicalElementQuery(_draftQuery.value).isNotEmpty;
+    final enabled = canSubmitSearch(value, _filters);
+    final wasEnabled = canSubmitSearch(_draftQuery.value, _filters);
     _draftQuery.value = value;
     if (_submittedQuery == null && !_isSelectionMode && enabled == wasEnabled) {
       return;
@@ -90,7 +91,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   }
 
   void _removeElement(String query) {
-    if (query.isEmpty) {
+    if (query.isEmpty && _filters == emptySearchFilters) {
       _setDraft('');
     } else {
       _onSubmitted(query, recordHistory: false);
@@ -98,8 +99,8 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   }
 
   void _onSubmitted(String value, {bool recordHistory = true}) {
+    if (!canSubmitSearch(value, _filters)) return;
     final query = canonicalElementQuery(value);
-    if (query.isEmpty) return;
     _draftQuery.value = query;
     _controller.value = TextEditingValue(
       text: query,
@@ -115,7 +116,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
       _resultsScrollController.jumpTo(0);
     }
     FocusManager.instance.primaryFocus?.unfocus();
-    if (!recordHistory) return;
+    if (!recordHistory || query.isEmpty) return;
     unawaited(
       saveSettingsWithFeedback(
         context,
@@ -127,7 +128,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   }
 
   void _closeOrClear() {
-    if (_controller.text.isEmpty) {
+    if (_submittedQuery == null && _controller.text.isEmpty) {
       Navigator.of(context).maybePop();
       return;
     }
@@ -255,14 +256,16 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
       hintText: i18n.tr('search_audio_placeholder'),
       onChanged: _onChanged,
       onSubmitted: _onSubmitted,
-      committedElements: query == null ? null : parseSearchElements(query),
+      committedElements: query == null || query.isEmpty
+          ? null
+          : parseSearchElements(query),
       onRemoveElement: _removeElement,
       translate: i18n.tr,
       onCloseOrClear: _closeOrClear,
       showConfirmButton: query == null,
-      onConfirm: canonicalElementQuery(_controller.text).isEmpty
-          ? null
-          : () => _onSubmitted(_controller.text),
+      onConfirm: canSubmitSearch(_controller.text, _filters)
+          ? () => _onSubmitted(_controller.text)
+          : null,
       confirmLabel: i18n.tr('confirm'),
       controlsOverlay: _isSelectionMode ? _buildSelectionHeader(i18n) : null,
       body: PageHeaderInset(
@@ -292,6 +295,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                 child: LibrarySearchAllResults(
                   key: const ValueKey('library_search_confirmed'),
                   query: query,
+                  filters: _filters,
                   queryRevision: _queryRevision,
                   structureRevision: structureRevision,
                   detailRevision: detailRevision,
@@ -409,6 +413,9 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                             onSelected: (value) =>
                                 setState(() => _matchAll = value),
                             translate: i18n.tr,
+                            filters: _filters,
+                            onFiltersChanged: (value) =>
+                                setState(() => _filters = value),
                           ),
                         ),
                         section(

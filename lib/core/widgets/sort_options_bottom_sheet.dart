@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../app/theme/app_design_tokens.dart';
 import 'app_bottom_sheet.dart';
 import 'app_feedback.dart';
 import 'windows_smooth_scroll_controller.dart';
@@ -191,7 +192,13 @@ class _SortOptionsSheetState<T> extends State<_SortOptionsSheet<T>> {
                             segments: [
                               ButtonSegment<_SortControl>(
                                 value: _SortControl.groupByLibrary,
-                                icon: const Icon(Icons.library_music_rounded),
+                                icon: Icon(
+                                  Icons.library_music_rounded,
+                                  size: AppDesignTokens.opticalIconSize(
+                                    Icons.library_music_rounded,
+                                    18,
+                                  ),
+                                ),
                                 label: Text(
                                   widget.groupByLibraryLabel,
                                   maxLines: 1,

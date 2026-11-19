@@ -74,22 +74,21 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
   }
 
   void _bindSessionListeners(PlaybackSession session) {
-    final stateSub = session.stateStream.listen((state) {
+    final stateSub = session.stateTransitionStream.listen((transition) {
       if (!_service.sessions.containsKey(session.id)) return;
 
-      final previousState =
-          session.previousStateBeforeLastStateEvent ?? session.state;
-      session.previousStateBeforeLastStateEvent = null;
+      final eventState = transition.state;
+      final previousState = transition.previousState;
       final previousPlaying = previousState.playing;
       final previousProcessing = previousState.processingState;
-      session.state = state;
       final isNewCompletion =
           previousProcessing != ProcessingState.completed &&
-          state.processingState == ProcessingState.completed;
+          eventState.processingState == ProcessingState.completed;
       if (isNewCompletion) _pruneResumeBatch();
       final currentGeneration = session.playbackCommandGeneration;
       final shouldAutoAdvanceAfterCompletion =
           isNewCompletion &&
+          session.state.processingState == ProcessingState.completed &&
           !session.loopMode.isOneShot &&
           !session.completedByTrackStop &&
           !session.isLoading &&
@@ -108,8 +107,8 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
       _onRuntimeStateChanged?.call();
       _onSessionStateChanged?.call();
 
-      if (previousPlaying != state.playing ||
-          previousProcessing != state.processingState) {
+      if (previousPlaying != eventState.playing ||
+          previousProcessing != eventState.processingState) {
         scheduleSessionStatePersistence(sessionId: session.id);
       }
 

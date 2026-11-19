@@ -37,4 +37,5 @@ class SubtitleWindow {
   UINT surface_dpi_ = 0;
   std::vector<DWORD> background_pixels_;
   bool background_dirty_ = true, content_dirty_ = true, fitting_text_ = false;
+  bool dpi_changing_ = false, sized_during_dpi_change_ = false;
 };

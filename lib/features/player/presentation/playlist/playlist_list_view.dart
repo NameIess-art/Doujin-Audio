@@ -9,6 +9,7 @@ import 'package:path/path.dart' as path;
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/state/subtitle_settings_provider.dart';
+import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/widgets/animated_reorder.dart';
@@ -17,6 +18,7 @@ import '../../../../core/widgets/app_entry_ink_well.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/marquee_text.dart';
 import '../../../../core/widgets/playing_sound_wave_indicator.dart';
+import '../../../../core/widgets/playlist_icon.dart';
 import '../../../../core/widgets/shimmer_loading.dart';
 import '../../../../core/widgets/swipe_reveal_card.dart';
 import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
@@ -392,8 +394,7 @@ class SessionsEmptyState extends StatelessWidget {
                             ),
                           ],
                         ),
-                        child: Icon(
-                          Icons.featured_play_list_rounded,
+                        child: PlaylistIcon(
                           size: 36,
                           color: cs.onPrimaryContainer,
                         ),
@@ -421,7 +422,13 @@ class SessionsEmptyState extends StatelessWidget {
                         AppLabelledButton(
                           FilledButton.icon,
                           onPressed: onOpenLibrary,
-                          icon: const Icon(Icons.library_music_rounded),
+                          icon: Icon(
+                            Icons.library_music_rounded,
+                            size: AppDesignTokens.opticalIconSize(
+                              Icons.library_music_rounded,
+                              18,
+                            ),
+                          ),
                           label: Text(i18n.tr('open_library')),
                         ),
                       ],

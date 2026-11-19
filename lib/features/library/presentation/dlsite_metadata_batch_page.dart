@@ -261,7 +261,7 @@ class _DlsiteMetadataBatchPageState
               right: 0,
               child: TopPageHeader(
                 key: _headerKey,
-                icon: Icons.library_add_check_rounded,
+                icon: Icons.cloud_download_rounded,
                 title: i18n.tr('batch_metadata'),
                 leading: const AppHeaderBackButton(),
                 additionalChild: _error != null

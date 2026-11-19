@@ -12,6 +12,7 @@ import 'package:doujin_audio/features/asmr/application/asmr_download_models.dart
 import 'package:doujin_audio/features/asmr/application/asmr_download_planner.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_serialization.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_task_store.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_download_transfer_executor.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_transfer_service.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_download.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
@@ -864,6 +865,172 @@ void main() {
       throwsFormatException,
     );
   });
+
+  test(
+    'validateLocalOutputs deduplicates generated cover when remote cover file exists',
+    () {
+      const planner = AsmrDownloadPlanner();
+      const cover = PlannedDownloadFile.cover(
+        url: 'https://media.test/cover.jpg',
+        relativePath: 'cover/cover.cover',
+        coverFileStem: 'cover',
+        maxBytes: 1024,
+      );
+      expect(
+        () => planner.validateLocalOutputs([
+          const PlannedDownloadFile(
+            url: 'https://media.test/cover.jpg',
+            relativePath: 'cover/cover.jpg',
+            size: 100,
+          ),
+          cover,
+        ], saveMetadata: false),
+        returnsNormally,
+      );
+      expect(
+        () => planner.validateLocalOutputs([
+          const PlannedDownloadFile(
+            url: 'https://media.test/cover.jpg',
+            relativePath: 'cover/cover.jpg',
+            size: 100,
+          ),
+          const PlannedDownloadFile(
+            url: 'https://media.test/cover2.jpg',
+            relativePath: 'cover/cover.jpg',
+            size: 100,
+          ),
+          cover,
+        ], saveMetadata: false),
+        throwsFormatException,
+      );
+      expect(
+        () => planner.validateLocalOutputs([
+          const PlannedDownloadFile(
+            url: 'https://media.test/cover',
+            relativePath: 'cover',
+            size: 100,
+          ),
+          cover,
+        ], saveMetadata: false),
+        throwsFormatException,
+      );
+    },
+  );
+
+  test(
+    'validatedDownloadRelativePath allows colons in filenames while rejecting drive paths',
+    () {
+      const planner = AsmrDownloadPlanner();
+      expect(
+        planner.validatedDownloadRelativePath('A: Whispering.mp3'),
+        'A: Whispering.mp3',
+      );
+      expect(
+        planner.validatedDownloadRelativePath('Disc 1/B: Track.mp3'),
+        'Disc 1/B: Track.mp3',
+      );
+      for (final drivePath in [r'C:\absolute.mp3', 'C:/absolute.mp3', 'C:']) {
+        expect(
+          () => planner.validatedDownloadRelativePath(drivePath),
+          throwsFormatException,
+          reason: drivePath,
+        );
+      }
+    },
+  );
+
+  test('discardTaskStaging deletes HLS staging files', () async {
+    final env = await _Environment.create();
+    try {
+      final workRoot = env.task.workRootPath;
+      final rawStaging = File(path.join(workRoot, '01.flac.doujin.part'));
+      final hlsStaging = File(path.join(workRoot, '01.m4a.doujin.part'));
+      await rawStaging.create(recursive: true);
+      await hlsStaging.create(recursive: true);
+      final ownedPaths = <String>{rawStaging.path, hlsStaging.path};
+      const item = PlannedDownloadFile(
+        url: 'https://media.test/01.flac',
+        relativePath: '01.flac',
+        size: 100,
+        mediaReference: PlaybackMediaReference(
+          streamUrl: 'https://media.test/audio.m3u8',
+        ),
+      );
+
+      await env.outputs.discardTaskStaging(env.task, [item], ownedPaths);
+
+      expect(await rawStaging.exists(), isFalse);
+      expect(await hlsStaging.exists(), isFalse);
+    } finally {
+      await env.dispose();
+    }
+  });
+
+  test('fatal transfer error stops sibling retry backoff immediately', () async {
+    final gateway = _SafGateway();
+    final env = await _Environment.create(retries: 3, gateway: gateway);
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final retryingStarted = Completer<void>();
+    server.listen((request) async {
+      if (request.uri.path == '/retry.mp3') {
+        request.response.statusCode = HttpStatus.serviceUnavailable;
+        if (!retryingStarted.isCompleted) retryingStarted.complete();
+      } else {
+        await retryingStarted.future.timeout(const Duration(seconds: 3));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        request.response.contentLength = 1;
+        request.response.add(const <int>[1]);
+      }
+      await request.response.close();
+    });
+    gateway.onCopyFileToFolder = (relativePath) {
+      if (relativePath == 'fatal.mp3') {
+        throw StateError('fatal SAF failure');
+      }
+    };
+    final executor = AsmrDownloadTransferExecutor(
+      store: env.store,
+      outputs: env.outputs,
+      automaticFileRetryDelay: const Duration(seconds: 15),
+    );
+    final workId = env.work.workKey;
+    executor.begin(workId);
+    try {
+      final future = executor.downloadFiles(
+        taskSnapshot: env.task,
+        plannedFiles: [
+          PlannedDownloadFile(
+            url: 'http://${server.address.host}:${server.port}/retry.mp3',
+            relativePath: 'retry.mp3',
+            size: 1,
+          ),
+          PlannedDownloadFile(
+            url: 'http://${server.address.host}:${server.port}/fatal.mp3',
+            relativePath: 'fatal.mp3',
+            size: 1,
+          ),
+        ],
+        progress: AsmrDownloadFileProgress(
+          completed: 0,
+          skipped: 0,
+          failed: 0,
+          downloadedBytes: 0,
+          fileDownloadedBytes: {},
+          completedFilePaths: {},
+          failedFilePaths: {},
+          manuallyRetryingFilePaths: {},
+        ),
+      );
+      await expectLater(
+        future.timeout(const Duration(seconds: 3)),
+        throwsA(isA<StateError>()),
+      );
+    } finally {
+      executor.finish(workId);
+      await server.close(force: true);
+      await env.dispose();
+    }
+  });
 }
 
 class _Environment {
@@ -1013,6 +1180,7 @@ class _SafGateway extends FileCachePlatformGateway {
   String? relativePath;
   String? folder;
   List<int>? bytes;
+  void Function(String relativePath)? onCopyFileToFolder;
   @override
   Future<String?> ensureFolderPath({
     required String folder,
@@ -1028,6 +1196,7 @@ class _SafGateway extends FileCachePlatformGateway {
     required String relativePath,
     bool overwrite = false,
   }) async {
+    onCopyFileToFolder?.call(relativePath);
     this.relativePath = relativePath;
     this.folder = folder;
     bytes = await File(sourcePath).readAsBytes();

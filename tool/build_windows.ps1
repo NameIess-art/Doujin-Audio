@@ -32,14 +32,23 @@ function Remove-StagingDirectory([string]$Directory) {
     if (Test-Path -LiteralPath $resolved) { Remove-Item -LiteralPath $resolved -Recurse -Force }
 }
 
-Push-Location -LiteralPath $projectRoot
+$pushed = $false
 try {
+    if ($InnoCompiler) {
+        if (!(Test-Path -LiteralPath $InnoCompiler)) {
+            throw "Inno Setup compiler not found: $InnoCompiler"
+        }
+        $InnoCompiler = (Resolve-Path -LiteralPath $InnoCompiler).ProviderPath
+    }
+    Push-Location -LiteralPath $projectRoot
+    $pushed = $true
     $null = Get-Command flutter -ErrorAction Stop
     $null = New-Item -ItemType Directory -Path $dependencyRoot -Force
-    $versionMatch = [regex]::Match((Get-Content pubspec.yaml -Raw), '(?m)^version:\s*(\d+\.\d+\.\d+)(?:\+(\d+))?\s*$')
-    if (!$versionMatch.Success) { throw 'pubspec.yaml must contain a stable version and build number.' }
+    $versionMatch = [regex]::Match((Get-Content pubspec.yaml -Raw), '(?m)^version:\s*(([0-9]+\.[0-9]+\.[0-9]+)(?:-[0-9A-Za-z.-]+)?)\+([0-9]+)\s*$')
+    if (!$versionMatch.Success) { throw 'pubspec.yaml must declare version as x.y.z[-prerelease]+build.' }
     $version = $versionMatch.Groups[1].Value
-    $buildNumber = $versionMatch.Groups[2].Value
+    $numericVersion = $versionMatch.Groups[2].Value
+    $buildNumber = $versionMatch.Groups[3].Value
     $tag = "v$version"
     if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne $tag) { throw 'Git tag does not match pubspec.yaml.' }
     $archive = Get-VerifiedDependency $manifest.ffmpeg "ffmpeg-$($manifest.ffmpeg.version).zip"
@@ -78,6 +87,11 @@ try {
     }
     $appRoot = Join-Path $distRoot 'app'
     Remove-StagingDirectory $appRoot
+    if (Test-Path -LiteralPath $distRoot) {
+        Get-ChildItem -LiteralPath $distRoot -File | Where-Object {
+            $_.Name -like '*-setup.exe' -or $_.Name -like '*-setup.exe.sha256'
+        } | Remove-Item -Force
+    }
     $null = New-Item -ItemType Directory -Path $appRoot -Force
     Copy-Item -Path (Join-Path $release '*') -Destination $appRoot -Recurse -Force
     $toolRoot = Join-Path $appRoot 'tools'
@@ -102,7 +116,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'windows_third_party.txt') -Destination $licenseRoot
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'windows_dependencies.json') -Destination $licenseRoot
     $assetName = "DoujinAudio-windows-x64-$tag-setup"
-    & $InnoCompiler "/DAppVersion=$version" "/DBuildNumber=$buildNumber" "/DAppSource=$appRoot" "/DOutputPath=$distRoot" "/DOutputName=$assetName" (Join-Path $PSScriptRoot 'windows_installer.iss')
+    & $InnoCompiler "/DAppVersion=$version" "/DNumericVersion=$numericVersion" "/DBuildNumber=$buildNumber" "/DAppSource=$appRoot" "/DOutputPath=$distRoot" "/DOutputName=$assetName" (Join-Path $PSScriptRoot 'windows_installer.iss')
     if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
     $output = Join-Path $distRoot "$assetName.exe"
     $hash = (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -112,4 +126,6 @@ try {
 } catch {
     Write-Error $_
     exit 1
-} finally { Pop-Location }
+} finally {
+    if ($pushed) { Pop-Location }
+}

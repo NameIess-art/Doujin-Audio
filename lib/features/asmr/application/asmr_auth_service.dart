@@ -154,6 +154,7 @@ class AsmrAuthService {
   final AsmrTokenStore _tokenStore;
   int _generation = 0;
   Future<void> _storageTail = Future<void>.value();
+  Future<void> _restoreTail = Future<void>.value();
 
   Future<bool> _commit(int generation, Future<void> Function() write) {
     final committed = _storageTail.then((_) async {
@@ -166,20 +167,54 @@ class AsmrAuthService {
     return committed;
   }
 
-  Future<AsmrAuthSession?> restoreSession() async {
+  Future<AsmrAuthSession?> restoreSession() =>
+      _runRestore(allowCachedFallbackOnNetworkError: true);
+
+  Future<AsmrAuthSession?> refreshSession() =>
+      _runRestore(allowCachedFallbackOnNetworkError: false);
+
+  Future<AsmrAuthSession?> _runRestore({
+    required bool allowCachedFallbackOnNetworkError,
+  }) {
     final generation = _generation;
+    final task = _restoreTail.then((_) async {
+      if (generation != _generation) return null;
+      return _restoreSession(
+        generation,
+        allowCachedFallbackOnNetworkError: allowCachedFallbackOnNetworkError,
+      );
+    });
+    _restoreTail = task.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return task;
+  }
+
+  Future<AsmrAuthSession?> _restoreSession(
+    int generation, {
+    required bool allowCachedFallbackOnNetworkError,
+  }) async {
     await _storageTail;
     final token = await _tokenStore.readToken();
     if (generation != _generation) return null;
     if (token == null || token.trim().isEmpty) {
-      return _restoreWithStoredCredentials(generation);
+      return _restoreWithStoredCredentials(
+        generation,
+        clearCredentialsOnAuthFailure: !allowCachedFallbackOnNetworkError,
+        rethrowTransientError: !allowCachedFallbackOnNetworkError,
+      );
     }
     try {
       final session = await _apiService.checkSession(token);
       if (generation != _generation) return null;
       if (session == null || !session.isValid) {
         if (!await _commit(generation, _tokenStore.clearToken)) return null;
-        return _restoreWithStoredCredentials(generation);
+        return _restoreWithStoredCredentials(
+          generation,
+          clearCredentialsOnAuthFailure: !allowCachedFallbackOnNetworkError,
+          rethrowTransientError: !allowCachedFallbackOnNetworkError,
+        );
       }
       if (session.token != token) {
         if (!await _commit(
@@ -198,7 +233,21 @@ class AsmrAuthService {
         return _restoreWithStoredCredentials(
           generation,
           clearCredentialsOnAuthFailure: true,
+          rethrowTransientError: !allowCachedFallbackOnNetworkError,
         );
+      }
+      if (!allowCachedFallbackOnNetworkError) {
+        final creds = await _tokenStore.readCredentials();
+        if (generation != _generation) return null;
+        if (creds != null) {
+          return _restoreWithStoredCredentials(
+            generation,
+            clearCredentialsOnAuthFailure: true,
+            rethrowTransientError: true,
+            credentials: creds,
+          );
+        }
+        Error.throwWithStackTrace(error, stackTrace);
       }
       AppLogService.warning(
         'asmr_session_restore_failed_using_cached_token',
@@ -216,8 +265,10 @@ class AsmrAuthService {
   Future<AsmrAuthSession?> _restoreWithStoredCredentials(
     int generation, {
     bool clearCredentialsOnAuthFailure = false,
+    bool rethrowTransientError = false,
+    Map<String, String>? credentials,
   }) async {
-    final creds = await _tokenStore.readCredentials();
+    final creds = credentials ?? await _tokenStore.readCredentials();
     if (creds == null || generation != _generation) {
       return null;
     }
@@ -244,9 +295,14 @@ class AsmrAuthService {
         error: error,
         stackTrace: stackTrace,
       );
-      if (clearCredentialsOnAuthFailure &&
-          AsmrApiException.isAuthenticationError(error)) {
-        await _commit(generation, _tokenStore.clearCredentials);
+      if (AsmrApiException.isAuthenticationError(error)) {
+        if (clearCredentialsOnAuthFailure) {
+          await _commit(generation, _tokenStore.clearCredentials);
+        }
+        return null;
+      }
+      if (rethrowTransientError) {
+        Error.throwWithStackTrace(error, stackTrace);
       }
       return null;
     }

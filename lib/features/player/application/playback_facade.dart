@@ -959,6 +959,24 @@ final class PlaybackFacade {
   }) => PlaybackEffectsCoordinator(
     this,
   ).setSessionVolume(sessionId, volume, persist: persist, notify: notify);
+
+  Future<bool> toggleSessionMute(String sessionId) async {
+    final session = sessionById(sessionId);
+    if (session == null || !isRegisteredSession(session)) return false;
+    if (session.volume > 0.001) {
+      session.volumeBeforeMute = session.volume;
+      return setSessionVolume(sessionId, 0);
+    }
+    final restoredVolume = session.volumeBeforeMute ?? 1.0;
+    final request = setSessionVolume(sessionId, restoredVolume);
+    final generation = session.volumeCommandGeneration;
+    final ok = await request;
+    if (ok && session.volumeCommandGeneration == generation) {
+      session.volumeBeforeMute = null;
+    }
+    return ok;
+  }
+
   Future<void> setSessionSpeed(
     String sessionId,
     double speed, {
@@ -1109,8 +1127,13 @@ final class PlaybackFacade {
       PlaybackEffectsCoordinator(
         this,
       ).setSessionVolumeNormalization(sessionId, enabled);
-  Future<void> setSessionPanning(String sessionId, double panning) =>
-      PlaybackEffectsCoordinator(this).setSessionPanning(sessionId, panning);
+  Future<void> setSessionSoundField(
+    String sessionId, {
+    required double panning,
+    required double frontBack,
+  }) => PlaybackEffectsCoordinator(
+    this,
+  ).setSessionSoundField(sessionId, panning: panning, frontBack: frontBack);
   Future<void> setSessionEqEnabled(String sessionId, bool enabled) =>
       PlaybackEffectsCoordinator(this).setSessionEqEnabled(sessionId, enabled);
   Future<void> setSessionEqBandLevel(

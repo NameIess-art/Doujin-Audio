@@ -14,6 +14,7 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowSettings
 import org.robolectric.shadows.ShadowWindowManagerImpl
 import org.robolectric.shadow.api.Shadow
 
@@ -22,6 +23,7 @@ import org.robolectric.shadow.api.Shadow
 class SubtitleOverlayServiceTest {
     @Test
     fun `empty subtitle keeps the visible overlay at the last cue size`() {
+        ShadowSettings.setCanDrawOverlays(true)
         val controller = Robolectric.buildService(SubtitleOverlayService::class.java).create()
         try {
             val service = controller.get()
@@ -55,6 +57,20 @@ class SubtitleOverlayServiceTest {
             assertEquals("Short cue", window.text.toString())
             assertTrue(window.width < cueWidth)
             assertTrue(window.height < cueHeight)
+        } finally {
+            controller.destroy()
+            ShadowSettings.setCanDrawOverlays(false)
+        }
+    }
+
+    @Test
+    fun `missing overlay permission skips window attachment without crashing destroy`() {
+        ShadowSettings.setCanDrawOverlays(false)
+        val controller = Robolectric.buildService(SubtitleOverlayService::class.java).create()
+        try {
+            val service = controller.get()
+            val manager = service.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            assertTrue(Shadow.extract<ShadowWindowManagerImpl>(manager).views.isEmpty())
         } finally {
             controller.destroy()
         }

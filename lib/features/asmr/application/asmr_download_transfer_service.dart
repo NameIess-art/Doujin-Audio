@@ -429,6 +429,7 @@ class AsmrDownloadTransferService {
     required AsmrDownloadConflictPolicy conflictPolicy,
     required HttpClient client,
   }) async {
+    throwIfCancelled(workId);
     final knownExtension = _planner.coverUrlExtension(item.url);
     final knownTargetPath = knownExtension == null
         ? task.coverOutputPath
@@ -557,6 +558,7 @@ class AsmrDownloadTransferService {
           stagingFile: stagingFile,
           allowResume: true,
         );
+        throwIfCancelled(workId);
         if (result.bytesDownloaded case final bytesDownloaded?) {
           if (item.mediaReference?.isHls == true) {
             try {

@@ -26,8 +26,10 @@ import '../presentation/onboarding_page.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
 import '../../core/cache/app_cache_service.dart';
 import '../../core/logging/app_log_service.dart';
+import '../../core/widgets/app_buttons.dart';
 import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/app_transitions.dart';
+import '../../core/widgets/unified_popup_menu.dart';
 import '../theme/theme_provider.dart';
 import '../../core/persistence/app_preferences.dart';
 import '../../features/settings/application/settings_state.dart';
@@ -163,6 +165,28 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
         fireImmediately: true,
       );
     }
+    ref.listenManual(
+      themeProviderInstanceProvider.select(
+        (theme) => (theme.appThemeColor, theme.themeMode),
+      ),
+      (_, next) {
+        final theme = ref.read(themeProviderInstanceProvider);
+        final windows = defaultTargetPlatform == TargetPlatform.windows;
+        unawaited(
+          ref.read(appLifecyclePlatformServiceProvider).syncAppTheme(
+            preset: next.$1.name,
+            themeMode: next.$2.name,
+            lightTrayMenuPalette: windows
+                ? _trayMenuPalette(theme.lightTheme.colorScheme)
+                : null,
+            darkTrayMenuPalette: windows
+                ? _trayMenuPalette(theme.darkTheme.colorScheme)
+                : null,
+          ),
+        );
+      },
+      fireImmediately: defaultTargetPlatform == TargetPlatform.windows,
+    );
     _runtime = ref.read(audioRuntimeCoordinatorProvider);
     _orientationController = ref.read(appOrientationControllerProvider);
     WidgetsBinding.instance.addObserver(this);
@@ -317,20 +341,6 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
         AppInteractionFeedback.hapticFeedbackEnabled = hapticFeedbackEnabled;
       }
     });
-    ref.listen<(ThemeAccentPreset, ThemeMode)>(
-      themeProviderInstanceProvider.select(
-        (theme) => (theme.appThemeColor, theme.themeMode),
-      ),
-      (previous, next) {
-        if (previous != next) {
-          unawaited(
-            ref
-                .read(appLifecyclePlatformServiceProvider)
-                .syncAppTheme(preset: next.$1.name, themeMode: next.$2.name),
-          );
-        }
-      },
-    );
     final themeProvider = ref.watch(themeProviderInstanceProvider);
     final coreRuntimeReady = ref.watch(coreRuntimeReadyProvider);
     final fallbackSettings = ref.read(settingsRepositoryProvider).slice.state;
@@ -578,4 +588,13 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
       );
     });
   }
+}
+
+List<int> _trayMenuPalette(ColorScheme colors) {
+  final background = unifiedPopupMenuBackground(colors);
+  return [
+    background,
+    colors.onSurface,
+    Color.alphaBlend(appHoverTint(colors), background),
+  ].map((color) => color.toARGB32() & 0xffffff).toList();
 }

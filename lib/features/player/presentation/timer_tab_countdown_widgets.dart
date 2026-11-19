@@ -127,7 +127,6 @@ class _CountdownCard extends ConsumerWidget {
                           fontSize: compact ? 32 : 46,
                           fontWeight: FontWeight.bold,
                           letterSpacing: compact ? 1.4 : 2.6,
-                          fontFeatures: const [FontFeature.tabularFigures()],
                           color: timeColor,
                         ),
                       );
@@ -229,9 +228,12 @@ class _DurationPicker extends ConsumerWidget {
                     color: cs.surfaceContainerLow,
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: _WheelPicker(
+                  child: AppFixedExtentWheel(
                     value: value,
-                    max: max,
+                    itemCount: max + 1,
+                    labelAt: (index) => index.toString().padLeft(2, '0'),
+                    looping: true,
+                    selectionColor: cs.primaryContainer.withValues(alpha: 0.5),
                     onChanged: onChange,
                   ),
                 ),
@@ -288,205 +290,6 @@ class _DurationPicker extends ConsumerWidget {
           ],
         );
       },
-    );
-  }
-}
-
-class _WheelPicker extends StatefulWidget {
-  const _WheelPicker({
-    required this.value,
-    required this.max,
-    required this.onChanged,
-  });
-
-  final int value;
-  final int max;
-  final ValueChanged<int> onChanged;
-
-  @override
-  State<_WheelPicker> createState() => _WheelPickerState();
-}
-
-class _WheelPickerState extends State<_WheelPicker> {
-  late FixedExtentScrollController _controller;
-  int _lastReportedValue = -1;
-  int? _wheelTargetItem;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = FixedExtentScrollController(initialItem: widget.value);
-    _lastReportedValue = widget.value;
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (MediaQuery.disableAnimationsOf(context) &&
-        _controller.hasClients &&
-        _controller.position.isScrollingNotifier.value) {
-      // Jump notifications can update TimerTab, which cannot rebuild during
-      // this dependency change. Finish at the latest target after the frame.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted ||
-            !_controller.hasClients ||
-            !MediaQuery.disableAnimationsOf(context)) {
-          return;
-        }
-        _scrollToItem(
-          _wheelTargetItem ?? _controller.selectedItem,
-          duration: Duration.zero,
-        );
-      });
-    }
-  }
-
-  void _scrollToItem(int item, {required Duration duration}) {
-    _wheelTargetItem = item;
-    if (MediaQuery.disableAnimationsOf(context)) {
-      _controller.jumpToItem(item);
-      _wheelTargetItem = null;
-    } else {
-      _controller.animateToItem(
-        item,
-        duration: duration,
-        curve: Curves.easeOutCubic,
-      );
-    }
-  }
-
-  @override
-  void didUpdateWidget(_WheelPicker oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.value != oldWidget.value) {
-      // The owner already supplied this value; a jump must not report it back
-      // synchronously while that owner is building.
-      _lastReportedValue = widget.value;
-      if (_wheelTargetItem != null) {
-        final targetLogicalIndex = _wheelTargetItem! % (widget.max + 1);
-        if (widget.value == targetLogicalIndex) {
-          return;
-        }
-      }
-      if (_controller.hasClients) {
-        final currentLogicalIndex = _controller.selectedItem;
-        final maxCount = widget.max + 1;
-        // In Dart, % operator on negative numbers returns a positive modulo
-        // consistent with Euclidean division, which is perfect for this.
-        final currentItemIndex = currentLogicalIndex % maxCount;
-
-        int diff = widget.value - currentItemIndex;
-        if (diff > maxCount ~/ 2) {
-          diff -= maxCount;
-        } else if (diff < -(maxCount ~/ 2)) {
-          diff += maxCount;
-        }
-
-        final targetLogicalIndex = currentLogicalIndex + diff;
-
-        if (currentLogicalIndex != targetLogicalIndex) {
-          _scrollToItem(
-            targetLogicalIndex,
-            duration: const Duration(milliseconds: 360),
-          );
-        }
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        Container(
-          height: 42,
-          margin: const EdgeInsets.symmetric(horizontal: 8),
-          decoration: BoxDecoration(
-            color: cs.primaryContainer.withValues(alpha: 0.5),
-            borderRadius: BorderRadius.circular(16),
-          ),
-        ),
-        ScrollConfiguration(
-          behavior: ScrollConfiguration.of(context).copyWith(
-            dragDevices: {
-              PointerDeviceKind.touch,
-              PointerDeviceKind.mouse,
-              PointerDeviceKind.trackpad,
-            },
-          ),
-          child: NotificationListener<ScrollEndNotification>(
-            onNotification: (_) {
-              _wheelTargetItem = null;
-              return false;
-            },
-            child: ListWheelScrollView.useDelegate(
-              controller: _controller,
-              itemExtent: 42,
-              perspective: 0.005,
-              diameterRatio: 1.5,
-              physics: const FixedExtentScrollPhysics(),
-              onSelectedItemChanged: (index) {
-                final actualIndex = index % (widget.max + 1);
-                if (actualIndex != _lastReportedValue) {
-                  _lastReportedValue = actualIndex;
-                  AppInteractionFeedback.trigger(
-                    AppInteractionFeedbackType.selection,
-                  );
-                  widget.onChanged(actualIndex);
-                }
-              },
-              childDelegate: ListWheelChildLoopingListDelegate(
-                children: List.generate(widget.max + 1, (index) {
-                  return Center(
-                    child: Text(
-                      index.toString().padLeft(2, '0'),
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                        color: cs.onSurface,
-                      ),
-                    ),
-                  );
-                }),
-              ),
-            ),
-          ),
-        ),
-        if (defaultTargetPlatform == TargetPlatform.windows)
-          Positioned.fill(
-            child: Listener(
-              behavior: HitTestBehavior.translucent,
-              onPointerSignal: (signal) {
-                if (signal is PointerScrollEvent) {
-                  GestureBinding.instance.pointerSignalResolver.register(
-                    signal,
-                    (event) {
-                      final scrollEvent = event as PointerScrollEvent;
-                      if (scrollEvent.scrollDelta.dy == 0) return;
-                      final delta = scrollEvent.scrollDelta.dy > 0 ? 1 : -1;
-                      final baseItem =
-                          _wheelTargetItem ?? _controller.selectedItem;
-                      final nextItem = baseItem + delta;
-                      _scrollToItem(
-                        nextItem,
-                        duration: const Duration(milliseconds: 200),
-                      );
-                    },
-                  );
-                }
-              },
-            ),
-          ),
-      ],
     );
   }
 }

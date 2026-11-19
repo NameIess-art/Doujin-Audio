@@ -12,7 +12,10 @@ class _WindowsPlaybackSession {
   bool stopAfterCurrentTrack = false, nativeQueueLimited = false;
   final nativeQueueIndices = <int, int>{};
   Object? lastEventKey;
-  int queueRevision = 0, externalQueueRevision = 0, emittedQueueRevision = -1;
+  int queueRevision = 0,
+      externalQueueRevision = 0,
+      emittedQueueRevision = -1,
+      seekRevision = 0;
   Duration? lastProgressPosition;
   Duration? lastProgressElapsed;
   Duration? duration;
@@ -385,9 +388,15 @@ class _WindowsPlaybackSession {
         opening = false;
       }
     }
+    final keepRetained =
+        retainCurrent ||
+        (restoreNativeQueue &&
+            retainedCurrentIndex != null &&
+            this.index == retainedCurrentIndex &&
+            index == retainedCurrentIndex);
     this.queue = items;
     this.index = index;
-    retainedCurrentIndex = retainCurrent ? index : null;
+    retainedCurrentIndex = keepRetained ? index : null;
     if (restoreNativeQueue) nativeQueueLimited = false;
     if (player != null &&
         pendingStart != null &&

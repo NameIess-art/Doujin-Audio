@@ -2351,7 +2351,7 @@ void main() {
     expect(native.audioEffectsCalls, 1);
 
     native.failAudioEffects = true;
-    await playback.setSessionPanning(session.id, 0.5);
+    await playback.setSessionSoundField(session.id, panning: 0.5, frontBack: 0);
 
     expect(session.audioEffects.panning, 0.0);
     expect(native.audioEffectsCalls, 2);

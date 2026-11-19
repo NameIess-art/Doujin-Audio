@@ -62,7 +62,8 @@ internal fun StoredNativePlaybackSession.restoredAudioEffects(): NativeAudioEffe
         eqBandLevels = eqBandLevels,
         channelSwapEnabled = channelSwapEnabled,
         volumeNormalizationEnabled = volumeNormalizationEnabled,
-        panning = panning
+        panning = panning,
+        frontBack = frontBack
     )
 }
 

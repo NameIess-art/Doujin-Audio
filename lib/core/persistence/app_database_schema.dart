@@ -99,6 +99,14 @@ Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
             AND entry_id != '__custom_queue__')
     ''');
   }
+  if (oldVersion < 17 && newVersion >= 17) {
+    await _addColumnIfMissing(
+      db,
+      'session_audio_effects',
+      'front_back',
+      'REAL NOT NULL DEFAULT 0.0',
+    );
+  }
   if (oldVersion < 15 && newVersion >= 15) await _migrateAsmrIdentity(db);
   await _createAsmrTables(db);
   await _createAudioDetailsTable(db);
@@ -256,7 +264,8 @@ Future<void> _createSessionDetailTables(Database db) async {
         volume_normalization_enabled INTEGER NOT NULL DEFAULT 0,
         eq_enabled INTEGER NOT NULL DEFAULT 0,
         eq_preset_id TEXT,
-        panning REAL NOT NULL DEFAULT 0.0
+        panning REAL NOT NULL DEFAULT 0.0,
+        front_back REAL NOT NULL DEFAULT 0.0
       )
     ''');
   await db.execute('''

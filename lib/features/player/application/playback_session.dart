@@ -51,6 +51,11 @@ class PlaybackPositionSample {
 
 const Object _durationUnchanged = Object();
 
+typedef PlaybackStateTransition = ({
+  PlayerState state,
+  PlayerState previousState,
+});
+
 class PlaybackSession {
   static const loadingIndicatorThreshold = Duration(milliseconds: 400);
 
@@ -89,8 +94,8 @@ class PlaybackSession {
   final DateTime createdAt;
   DateTime? lastPlayedAt;
   final List<StreamSubscription<dynamic>> subscriptions = [];
-  final StreamController<PlayerState> _stateController =
-      StreamController<PlayerState>.broadcast();
+  final StreamController<PlaybackStateTransition> _stateTransitionController =
+      StreamController<PlaybackStateTransition>.broadcast();
   final StreamController<Duration> _positionController =
       StreamController<Duration>.broadcast();
   final StreamController<Duration?> _durationController =
@@ -186,6 +191,7 @@ class PlaybackSession {
   SessionLoopMode loopMode;
   SessionLoopMode nonSingleLoopMode;
   double volume;
+  double? volumeBeforeMute;
   int volumeCommandGeneration = 0;
   Future<void>? volumeCommandCompletion;
   double? confirmedVolume;
@@ -225,7 +231,6 @@ class PlaybackSession {
   int lastPersistedPositionBucket = 0;
   PlayerState state;
   String? _playbackError;
-  PlayerState? previousStateBeforeLastStateEvent;
   bool isDisposed = false;
   Future<void>? _shutdownFuture;
 
@@ -240,7 +245,10 @@ class PlaybackSession {
   bool get isAdvancingAfterCompletion => _isAdvancingAfterCompletion;
   String? get playbackError => _playbackError;
 
-  Stream<PlayerState> get stateStream => _stateController.stream;
+  Stream<PlaybackStateTransition> get stateTransitionStream =>
+      _stateTransitionController.stream;
+  Stream<PlayerState> get stateStream =>
+      _stateTransitionController.stream.map((transition) => transition.state);
   Stream<Duration> get positionStream => _positionController.stream;
   Stream<Duration?> get durationStream => _durationController.stream;
   Stream<PlaybackPositionSample> get progressStream =>
@@ -448,9 +456,12 @@ class PlaybackSession {
     var effectiveProcessingState = nativeProcessingState;
     final nextState = PlayerState(effectivePlaying, effectiveProcessingState);
     if (state != nextState) {
-      previousStateBeforeLastStateEvent = state;
+      final previousState = state;
       state = nextState;
-      _stateController.add(state);
+      _stateTransitionController.add((
+        state: nextState,
+        previousState: previousState,
+      ));
     }
     _applyProgress(
       snapshot.position,
@@ -587,9 +598,12 @@ class PlaybackSession {
       processingState ?? state.processingState,
     );
     if (state == nextState) return;
-    previousStateBeforeLastStateEvent = state;
+    final previousState = state;
     state = nextState;
-    _stateController.add(state);
+    _stateTransitionController.add((
+      state: nextState,
+      previousState: previousState,
+    ));
   }
 
   void setOptimisticPosition(Duration position) {
@@ -615,7 +629,7 @@ class PlaybackSession {
       if (isDisposed) return;
       _suppressTransientLoading = false;
       if (isPlaybackLoading) {
-        _stateController.add(state);
+        _stateTransitionController.add((state: state, previousState: state));
       }
     });
   }
@@ -663,7 +677,7 @@ class PlaybackSession {
       subscriptionsToCancel.map((subscription) => attempt(subscription.cancel)),
     );
     await Future.wait(<Future<void>>[
-      attempt(_stateController.close),
+      attempt(_stateTransitionController.close),
       attempt(_positionController.close),
       attempt(_durationController.close),
       attempt(_progressController.close),
@@ -679,7 +693,7 @@ String? _pathFromUri(String? uriValue) {
   final uri = Uri.tryParse(uriValue);
   if (uri == null) return uriValue;
   if (uri.scheme == 'file') {
-    return uri.toFilePath(windows: false);
+    return uri.toFilePath();
   }
   if (uri.scheme == 'content') return uriValue;
   if (uri.scheme == 'http' || uri.scheme == 'https') return uriValue;

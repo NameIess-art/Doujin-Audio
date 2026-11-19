@@ -15,6 +15,7 @@ import 'mobile_overlay_inset.dart';
 import 'page_header_inset.dart';
 import 'top_page_header.dart';
 import 'windows_horizontal_wheel_scroll.dart';
+import 'unified_popup_menu.dart';
 
 export 'app_search_suggestions.dart';
 
@@ -445,6 +446,7 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                                               selectionHandleColor: accent,
                                             ),
                                             child: TextField(
+                                              contextMenuBuilder: buildAppEditableTextMenu,
                                               key: const ValueKey<String>(
                                                 'app_search_field',
                                               ),
@@ -566,7 +568,8 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                                       'app_search_close',
                                     ),
                                     tooltip:
-                                        widget.controller.text.isEmpty &&
+                                        widget.resultsBody == null &&
+                                            widget.controller.text.isEmpty &&
                                             (widget.committedElements == null ||
                                                 (widget
                                                         .committedElements!
@@ -693,7 +696,7 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                         mouseCursor: WidgetStateMouseCursor.clickable,
                         deleteIcon: const MouseRegion(
                           cursor: SystemMouseCursors.click,
-                          child: Icon(Icons.clear, size: 18),
+                          child: Icon(Icons.clear_rounded, size: 18),
                         ),
                         shape: const StadiumBorder(),
                         label: ConstrainedBox(

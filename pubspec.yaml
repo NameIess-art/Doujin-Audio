@@ -66,10 +66,10 @@ flutter:
   assets:
     - assets/lottie/empty_library.json
     - assets/icons/app_mark_light.png
+    - assets/audio/spatial_front.wav
+    - assets/audio/spatial_back.wav
+    - assets/audio/KEMAR.md
   fonts:
     - family: Outfit
       fonts:
         - asset: assets/fonts/Outfit-Variable.ttf
-    - family: Raleway
-      fonts:
-        - asset: assets/fonts/Raleway-Variable.ttf

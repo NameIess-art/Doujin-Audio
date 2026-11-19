@@ -3,6 +3,7 @@ import 'package:doujin_audio/core/media/path_display.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_entry_ink_well.dart';
 import 'package:doujin_audio/core/widgets/file_tree_row.dart';
+import 'package:doujin_audio/core/widgets/library_edit_icon.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_edit.dart';
 import 'package:flutter/material.dart';
@@ -187,6 +188,10 @@ void main() {
       expect(find.byType(FileTreeRow), findsNothing);
       expect(find.byType(LibraryEditPage), findsNothing);
       expect(find.byType(LibraryManagementPage), findsOneWidget);
+      expect(
+        tester.widget<TopPageHeader>(find.byType(TopPageHeader)).iconWidget,
+        isA<LibraryEditIcon>(),
+      );
 
       await tester.tap(
         find.textContaining(
@@ -221,6 +226,17 @@ void main() {
       expect(find.byType(LibraryEditPage), findsOneWidget);
       expect(
         tester
+            .widget<TopPageHeader>(
+              find.descendant(
+                of: find.byType(LibraryEditPage),
+                matching: find.byType(TopPageHeader),
+              ),
+            )
+            .iconWidget,
+        isA<LibraryEditIcon>(),
+      );
+      expect(
+        tester
             .widget<LibraryEditPage>(find.byType(LibraryEditPage))
             .libraryPath,
         libraryPath,
@@ -237,4 +253,44 @@ void main() {
     },
     variant: platforms,
   );
+
+  testWidgets('LibraryEditIcon inherits IconTheme size and color', (
+    tester,
+  ) async {
+    const customColor = Color(0xFF0EA5E9);
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: IconTheme(
+          data: IconThemeData(size: 20, color: customColor),
+          child: Center(child: LibraryEditIcon()),
+        ),
+      ),
+    );
+
+    final box = tester.widget<SizedBox>(
+      find.descendant(
+        of: find.byType(LibraryEditIcon),
+        matching: find.byType(SizedBox),
+      ),
+    );
+    expect(box.width, 20);
+    expect(box.height, 20);
+
+    final paint = tester.widget<CustomPaint>(
+      find.descendant(
+        of: find.byType(LibraryEditIcon),
+        matching: find.byType(CustomPaint),
+      ),
+    );
+    final painter = paint.painter! as LibraryEditIconPainter;
+    expect(painter.color, customColor);
+    expect(
+      painter.shouldRepaint(const LibraryEditIconPainter(color: customColor)),
+      isFalse,
+    );
+    expect(
+      painter.shouldRepaint(const LibraryEditIconPainter(color: Colors.black)),
+      isTrue,
+    );
+  });
 }

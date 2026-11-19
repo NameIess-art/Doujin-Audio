@@ -292,15 +292,19 @@ final class TimerPersistenceCoordinator {
                 map['pausedByTimerPaths'] as List<dynamic>? ??
                 const <dynamic>[])
             .whereType<String>()
-            .toList();
+            .toSet();
 
     if (_isWindows) {
+      final existingSessionIds = _sessions()
+          .map((session) => session.id)
+          .toSet();
+      pausedSessionIds.retainWhere(existingSessionIds.contains);
       _restoredCountdownSessions
         ..clear()
         ..addAll(
           (map['countdownSessionIds'] as List? ?? const [])
               .whereType<String>()
-              .where((id) => _sessions().any((session) => session.id == id)),
+              .where(existingSessionIds.contains),
         );
       if (timerEndsAtMs != null &&
           timerEndsAtMs <= now.millisecondsSinceEpoch &&

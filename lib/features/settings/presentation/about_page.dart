@@ -332,7 +332,7 @@ class _AboutVersionTile extends StatelessWidget {
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     return ListTile(
-      leading: const _AboutIconContainer(icon: Icons.info_outline_rounded),
+      leading: const _AboutIconContainer(icon: Icons.new_releases_outlined),
       title: Text(i18n.tr('about_version')),
       trailing: FutureBuilder<AppVersionInfo>(
         future: versionFuture,
@@ -361,7 +361,11 @@ class _AboutIconContainer extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return SizedBox(
       width: SettingsTileTheme.leadingWidth,
-      child: Icon(icon, color: cs.primary, size: SettingsTileTheme.iconSize),
+      child: Icon(
+        icon,
+        color: cs.primary,
+        size: AppDesignTokens.opticalIconSize(icon, SettingsTileTheme.iconSize),
+      ),
     );
   }
 }

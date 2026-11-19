@@ -105,9 +105,6 @@ class PlaybackQueueColorPanel extends StatelessWidget {
                                 ?.copyWith(
                                   color: cs.onSurfaceVariant,
                                   fontWeight: FontWeight.w600,
-                                  fontFeatures: const [
-                                    FontFeature.tabularFigures(),
-                                  ],
                                 ),
                           ),
                         ],
@@ -306,7 +303,6 @@ class _QueueColorSlider extends StatelessWidget {
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 color: cs.onSurfaceVariant,
                 fontWeight: FontWeight.w700,
-                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ),

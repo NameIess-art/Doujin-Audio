@@ -16,6 +16,7 @@ import '../domain/library_node.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/playlist_icon.dart';
 import '../../../core/widgets/swipe_reveal_card.dart';
 import '../../../core/widgets/top_page_header.dart';
 import 'dlsite_metadata_batch_page.dart';
@@ -275,7 +276,7 @@ class LibraryBatchSelectionHeader extends StatelessWidget {
           IconButton(
             key: ValueKey<String>('${keyPrefix}_batch_add_button'),
             onPressed: onAddToPlaylist,
-            icon: const Icon(Icons.playlist_add_rounded),
+            icon: const PlaylistIcon.add(),
             tooltip: i18n.tr('batch_add_to_playlist'),
             iconSize: 20,
             padding: EdgeInsets.zero,
@@ -284,7 +285,7 @@ class LibraryBatchSelectionHeader extends StatelessWidget {
           IconButton(
             key: ValueKey<String>('${keyPrefix}_batch_metadata_action_button'),
             onPressed: onCompleteMetadata,
-            icon: const Icon(Icons.library_add_check_rounded),
+            icon: const Icon(Icons.cloud_download_rounded),
             tooltip: i18n.tr('batch_metadata'),
             iconSize: 20,
             padding: EdgeInsets.zero,

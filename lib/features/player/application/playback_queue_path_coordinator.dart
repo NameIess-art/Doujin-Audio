@@ -729,7 +729,9 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     _directPlaybackSession = session;
     session.customQueueTracks = queueTracks;
     session.loopMode = loopMode;
-    session.nonSingleLoopMode = loopMode;
+    session.nonSingleLoopMode = loopMode == SessionLoopMode.single
+        ? SessionLoopMode.folderSequential
+        : loopMode;
     session.currentQueueIndex = index;
     session.nativePlaybackQueueCacheKey = null;
     session.nativePlaybackQueueCache = null;

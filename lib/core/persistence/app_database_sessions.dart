@@ -35,6 +35,7 @@ extension AppDatabaseSessions on AppDatabase {
         effects.eq_enabled,
         effects.eq_preset_id,
         effects.panning,
+        effects.front_back,
         queue.name AS queue_name,
         queue.color_value AS queue_color_value
       FROM sessions s
@@ -87,7 +88,8 @@ extension AppDatabaseSessions on AppDatabase {
         SELECT s.*, p.volume, p.speed, p.position_ms, p.duration_ms,
           p.current_queue_index, p.channel_swap, e.skip_silence_enabled,
           e.noise_reduction_enabled, e.volume_normalization_enabled, e.eq_enabled,
-          e.eq_preset_id, e.panning, q.name AS queue_name, q.color_value AS queue_color_value,
+          e.eq_preset_id, e.panning, e.front_back,
+          q.name AS queue_name, q.color_value AS queue_color_value,
           q.entry_count, q.track_count,
           t.track_path AS preview_path, t.display_name, t.group_key,
           t.group_title, t.group_subtitle, t.is_single, t.is_video,

@@ -112,7 +112,12 @@ extension _TimerTabBody on _TimerTabState {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.verified_user_rounded, color: toneColor),
+                      Icon(
+                        resolvedStatus.isStronglyReliable
+                            ? Icons.verified_user_rounded
+                            : Icons.gpp_maybe_rounded,
+                        color: toneColor,
+                      ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
@@ -226,7 +231,7 @@ extension _TimerTabBody on _TimerTabState {
         icon: Icon(
           _selectedMode == TimerMode.manual
               ? Icons.play_arrow_rounded
-              : Icons.schedule_rounded,
+              : Icons.sensors_rounded,
         ),
         label: Text(
           _selectedMode == TimerMode.manual
@@ -365,7 +370,7 @@ extension _TimerTabBody on _TimerTabState {
                             _TimerSummaryChip(
                               icon: summaryMode == TimerMode.manual
                                   ? Icons.play_arrow_rounded
-                                  : Icons.schedule_rounded,
+                                  : Icons.sensors_rounded,
                               text: draftModeTitle,
                             ),
                           ],
@@ -429,7 +434,7 @@ extension _TimerTabBody on _TimerTabState {
                                 );
                                 timer.cancelTimer();
                               },
-                              icon: const Icon(Icons.cancel_outlined),
+                              icon: const Icon(Icons.stop_circle_outlined),
                               label: Text(i18n.tr('cancel_timer')),
                               style: OutlinedButton.styleFrom(
                                 elevation: 0,

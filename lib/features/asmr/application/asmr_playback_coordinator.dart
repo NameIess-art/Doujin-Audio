@@ -15,7 +15,7 @@ abstract interface class AsmrPlaybackSource {
 }
 
 class AsmrPlaybackCoordinator {
-  const AsmrPlaybackCoordinator({
+  AsmrPlaybackCoordinator({
     required AsmrPlaybackSource source,
     required PlaybackSessionLauncher launcher,
   }) : _source = source,
@@ -23,8 +23,12 @@ class AsmrPlaybackCoordinator {
 
   final AsmrPlaybackSource _source;
   final PlaybackSessionLauncher _launcher;
+  int _directPlayEpoch = 0;
+
+  int get directPlayEpoch => _directPlayEpoch;
 
   Future<bool> playDirectWork(AsmrWork work) async {
+    _directPlayEpoch++;
     final started = await _launcher.playDirect(
       _source.loadPlayableTracks(work),
     );
@@ -33,6 +37,7 @@ class AsmrPlaybackCoordinator {
   }
 
   Future<bool> playDirectTrack(AsmrWork work, AsmrTrackFile target) async {
+    _directPlayEpoch++;
     // Pass the pending load to the launcher so a later local or remote click
     // supersedes this request before its network work completes.
     final started = await _launcher.playDirect(

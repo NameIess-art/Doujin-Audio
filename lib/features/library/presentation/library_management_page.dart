@@ -10,6 +10,7 @@ import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/file_tree_row.dart';
+import '../../../core/widgets/library_edit_icon.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/page_header_inset.dart';
@@ -17,6 +18,7 @@ import '../../../core/widgets/search_highlight.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import 'library_removal_feedback.dart';
+import '../../../core/widgets/unified_popup_menu.dart';
 
 class LibraryManagementPage extends ConsumerStatefulWidget {
   const LibraryManagementPage({super.key});
@@ -144,7 +146,7 @@ class _LibraryManagementPageState extends ConsumerState<LibraryManagementPage> {
                 left: 0,
                 right: 0,
                 child: TopPageHeader(
-                  icon: Icons.edit_note_rounded,
+                  iconWidget: const LibraryEditIcon(),
                   title: i18n.tr('edit_library'),
                   leading: const AppHeaderBackButton(),
                   additionalChild: Padding(
@@ -152,6 +154,7 @@ class _LibraryManagementPageState extends ConsumerState<LibraryManagementPage> {
                     child: HeaderFloatingSurface(
                       key: const ValueKey('library-management-search'),
                       child: TextField(
+                        contextMenuBuilder: buildAppEditableTextMenu,
                         controller: _searchController,
                         textInputAction: TextInputAction.search,
                         textAlignVertical: TextAlignVertical.center,

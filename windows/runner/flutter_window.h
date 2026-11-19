@@ -30,6 +30,8 @@ class FlutterWindow : public Win32Window {
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
   std::unique_ptr<DesktopIntegration> desktop_;
+  bool pending_activation_ = false;
+  bool pending_activation_show_ = false;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

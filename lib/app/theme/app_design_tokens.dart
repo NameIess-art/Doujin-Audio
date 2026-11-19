@@ -18,9 +18,18 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     imageFileIcon,
   ];
 
-  // The playlist glyph has more internal whitespace than the other page icons.
-  static double opticalIconSize(IconData? icon, double baseSize) =>
-      icon == Icons.playlist_play_rounded ? baseSize * 1.15 : baseSize;
+  // Normalize Material glyph bounds against the 24x24 em-box so the five
+  // main destination icons (and their matching usages) read at uniform scale.
+  static double opticalIconSize(IconData? icon, double baseSize) {
+    final scale = switch (icon) {
+      Icons.cloud_outlined || Icons.cloud_rounded => 0.92,
+      Icons.library_music_outlined || Icons.library_music_rounded => 0.96,
+      Icons.person_outline_rounded || Icons.person_rounded => 1.18,
+      Icons.settings_outlined || Icons.settings_rounded => 0.98,
+      _ => 1.0,
+    };
+    return baseSize * scale;
+  }
 
   static const folderIconColor = Color(0xFFF59E0B);
   static const textFileIconColor = Color(0xFF0EA5E9);

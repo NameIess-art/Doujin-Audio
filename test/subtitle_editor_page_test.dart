@@ -450,6 +450,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     final panel = find.byType(AppEditPanelForm);
+    expect(tester.getCenter(panel), const Offset(160, 284));
     expect(
       find.descendant(
         of: panel,
@@ -461,6 +462,7 @@ void main() {
       bottom: 260 * tester.view.devicePixelRatio,
     );
     await tester.pumpAndSettle();
+    expect(tester.getCenter(panel).dy, closeTo((568 - 260) / 2, 0.01));
     expect(tester.getBottomLeft(panel).dy, lessThanOrEqualTo(568 - 260));
     await tester.ensureVisible(bilingualField('subtitle_translated_text'));
     await tester.enterText(

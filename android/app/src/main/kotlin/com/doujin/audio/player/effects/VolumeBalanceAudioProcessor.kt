@@ -11,13 +11,22 @@ import kotlin.math.abs
 internal fun shouldProcessVolumeBalance(panning: Float): Boolean = abs(panning) >= 0.001f
 
 internal class VolumeBalanceAudioProcessor : BaseAudioProcessor() {
+    data class Controls(
+        val panning: Float = 0f,
+        val channelSwapEnabled: Boolean = false,
+        val frontBack: Float = 0f,
+        val spatialResponses: StereoSpatialResponses? = null
+    ) {
+        val isActive: Boolean
+            get() = shouldProcessVolumeBalance(panning) || channelSwapEnabled || spatialResponses != null
+    }
+
     @Volatile
-    var panning: Float = 0f
-    @Volatile
-    var channelSwapEnabled: Boolean = false
+    var controls = Controls()
+    private var spatialRenderer: StereoSpatialRenderer? = null
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
-        if (!shouldProcessStereo()) return AudioProcessor.AudioFormat.NOT_SET
+        if (!controls.isActive) return AudioProcessor.AudioFormat.NOT_SET
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT &&
             inputAudioFormat.encoding != C.ENCODING_PCM_FLOAT
         ) {
@@ -29,58 +38,62 @@ internal class VolumeBalanceAudioProcessor : BaseAudioProcessor() {
         return inputAudioFormat
     }
 
+    override fun onFlush(streamMetadata: AudioProcessor.StreamMetadata) {
+        spatialRenderer?.clear()
+    }
+
+    override fun onReset() {
+        spatialRenderer = null
+    }
+
     override fun queueInput(inputBuffer: ByteBuffer) {
-        val position = inputBuffer.position()
-        val limit = inputBuffer.limit()
-        val remaining = limit - position
-        val p = panning.coerceIn(-1f, 1f)
-        val outputBuffer = replaceOutputBuffer(remaining)
+        val state = controls
+        val outputBuffer = replaceOutputBuffer(inputBuffer.remaining())
         outputBuffer.order(inputBuffer.order())
 
-        if (abs(p) < 0.001f && !channelSwapEnabled) {
+        if (!state.isActive) {
             outputBuffer.put(inputBuffer)
-            inputBuffer.position(limit)
             outputBuffer.flip()
             return
         }
 
-        val leftMultiplier = if (p > 0f) 1f - p else 1f
-        val rightMultiplier = if (p < 0f) 1f + p else 1f
+        val pan = state.panning.coerceIn(-1f, 1f)
+        val leftMultiplier = 1f - maxOf(pan, 0f)
+        val rightMultiplier = 1f + minOf(pan, 0f)
+        val isPcm16 = inputAudioFormat.encoding == C.ENCODING_PCM_16BIT
+        val fullScale = if (isPcm16) 32768f else 1f
+        val sampleRate = inputAudioFormat.sampleRate
+        val renderer = state.spatialResponses?.let { responses ->
+            spatialRenderer?.takeIf { it.responses === responses && it.sampleRate == sampleRate }
+                ?: StereoSpatialRenderer(responses, sampleRate).also { spatialRenderer = it }
+        }
 
-        if (inputAudioFormat.encoding == C.ENCODING_PCM_16BIT) {
-            var i = position
-            while (i + 3 < limit) {
-                val left = inputBuffer.getShort(i)
-                val right = inputBuffer.getShort(i + 2)
-                val outputLeft = if (channelSwapEnabled) right else left
-                val outputRight = if (channelSwapEnabled) left else right
-                outputBuffer.putShort(scalePcm16(outputLeft, leftMultiplier))
-                outputBuffer.putShort(scalePcm16(outputRight, rightMultiplier))
-                i += 4
+        val bytesPerFrame = inputAudioFormat.bytesPerFrame
+        while (inputBuffer.remaining() >= bytesPerFrame) {
+            val first = if (isPcm16) inputBuffer.short.toFloat() else inputBuffer.float
+            val second = if (isPcm16) inputBuffer.short.toFloat() else inputBuffer.float
+            var left = if (state.channelSwapEnabled) second else first
+            var right = if (state.channelSwapEnabled) first else second
+            if (renderer != null) {
+                renderer.process(left, right, state.frontBack, fullScale)
+                left = renderer.left
+                right = renderer.right
             }
-        } else if (inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT) {
-            var i = position
-            while (i + 7 < limit) {
-                val left = inputBuffer.getFloat(i)
-                val right = inputBuffer.getFloat(i + 4)
-                val outputLeft = if (channelSwapEnabled) right else left
-                val outputRight = if (channelSwapEnabled) left else right
-                outputBuffer.putFloat(outputLeft * leftMultiplier)
-                outputBuffer.putFloat(outputRight * rightMultiplier)
-                i += 8
+            if (isPcm16) {
+                outputBuffer.putShort(toPcm16(left * leftMultiplier))
+                outputBuffer.putShort(toPcm16(right * rightMultiplier))
+            } else {
+                outputBuffer.putFloat(left * leftMultiplier)
+                outputBuffer.putFloat(right * rightMultiplier)
             }
         }
 
-        inputBuffer.position(limit)
+        inputBuffer.position(inputBuffer.limit())
         outputBuffer.flip()
     }
 
-    private fun isPanningActive(): Boolean = shouldProcessVolumeBalance(panning)
-
-    private fun shouldProcessStereo(): Boolean = isPanningActive() || channelSwapEnabled
-
-    private fun scalePcm16(value: Short, multiplier: Float): Short {
-        return (value * multiplier)
+    private fun toPcm16(value: Float): Short {
+        return value
             .toInt()
             .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
             .toShort()

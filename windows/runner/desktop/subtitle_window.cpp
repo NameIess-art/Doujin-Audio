@@ -43,10 +43,22 @@ SubtitleWindow::SubtitleWindow(HINSTANCE instance) {
   RegisterClassW(&wc);
   RECT area{};
   SystemParametersInfo(SPI_GETWORKAREA, 0, &area, 0);
+  const UINT system_dpi = GetDpiForSystem();
+  const double scale = (system_dpi > 0 ? system_dpi : 96) / 96.0;
+  const LONG margin_x = static_cast<LONG>(std::lround(80 * scale));
+  const LONG margin_bottom = static_cast<LONG>(std::lround(180 * scale));
+  const LONG margin_total = static_cast<LONG>(std::lround(100 * scale));
+  const LONG min_width = static_cast<LONG>(std::lround(160 * scale));
+  const LONG max_width = static_cast<LONG>(std::lround(800 * scale));
+  const LONG initial_width = std::max<LONG>(min_width,
+      std::min<LONG>(max_width, area.right - area.left - margin_total));
+  const LONG initial_height = static_cast<LONG>(std::lround(110 * scale));
+  const LONG initial_x = area.left + margin_x;
+  const LONG initial_y = std::max<LONG>(area.top, area.bottom - margin_bottom);
   window_ = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED,
       wc.lpszClassName, L"Doujin Audio subtitles", WS_POPUP,
-      area.left + 80, area.bottom - 180, std::min<LONG>(800, area.right-area.left-100),
-      110, nullptr, nullptr, instance, this);
+      initial_x, initial_y, initial_width, initial_height,
+      nullptr, nullptr, instance, this);
 }
 SubtitleWindow::~SubtitleWindow() {
   if (window_) DestroyWindow(window_);
@@ -114,7 +126,7 @@ void SubtitleWindow::FitText() {
   auto previous = SelectObject(dc, font_);
   RECT text{0, 0, std::max(1L, bounds.right - bounds.left - 2 * padding), 0};
   DrawTextW(dc, text_.c_str(), -1, &text,
-      DT_CENTER | DT_WORDBREAK | DT_NOPREFIX | DT_CALCRECT);
+      DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL | DT_NOPREFIX | DT_CALCRECT);
   SelectObject(dc, previous); ReleaseDC(window_, dc);
   MONITORINFO monitor{sizeof(MONITORINFO)};
   GetMonitorInfo(MonitorFromWindow(window_, MONITOR_DEFAULTTONEAREST), &monitor);
@@ -251,7 +263,7 @@ void SubtitleWindow::Paint(HDC screen) {
       SetBkMode(mask_dc_, TRANSPARENT);
       InflateRect(&rect, -static_cast<int>((20 + border_depth_ * 4) * scale),
           -static_cast<int>((10 + border_depth_ * 4) * scale));
-      const auto flags = DT_CENTER | DT_WORDBREAK | DT_NOPREFIX;
+      const auto flags = DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL | DT_NOPREFIX;
       RECT measured = rect;
       DrawTextW(mask_dc_, text_.c_str(), -1, &measured, flags | DT_CALCRECT);
       const int text_height = measured.bottom - measured.top;
@@ -329,17 +341,23 @@ LRESULT CALLBACK SubtitleWindow::WndProc(HWND hwnd, UINT message, WPARAM wp, LPA
     return 0;
   }
   if (message == WM_DPICHANGED) {
+    self->background_dirty_ = true;
+    self->content_dirty_ = true;
+    self->dpi_changing_ = true;
+    self->sized_during_dpi_change_ = false;
     const auto* suggested = reinterpret_cast<const RECT*>(lp);
     SetWindowPos(hwnd, nullptr, suggested->left, suggested->top,
         suggested->right - suggested->left, suggested->bottom - suggested->top,
         SWP_NOZORDER | SWP_NOACTIVATE);
-    self->background_dirty_ = true;
-    self->content_dirty_ = true;
-    self->FitText();
-    InvalidateRect(hwnd, nullptr, FALSE);
+    self->dpi_changing_ = false;
+    if (!self->sized_during_dpi_change_) {
+      self->FitText();
+      InvalidateRect(hwnd, nullptr, FALSE);
+    }
     return 0;
   }
   if (message == WM_SIZE) {
+    if (self->dpi_changing_) self->sized_during_dpi_change_ = true;
     self->content_dirty_ = true;
     self->FitText();
     InvalidateRect(hwnd, nullptr, FALSE);

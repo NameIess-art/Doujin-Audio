@@ -24,6 +24,7 @@ class WindowsRuntimeBinding {
   bool _endingSession = false;
   bool _stateLoaded = false;
   Set<String> _pausedByTaskbar = {};
+  final Set<Future<void>> _inFlightActions = <Future<void>>{};
 
   Future<void> attach() => _attachment ??= _desktop.attach(_onAction);
 
@@ -82,6 +83,13 @@ class WindowsRuntimeBinding {
       return;
     }
     if (!_stateLoaded || _closing) return;
+    late final Future<void> task;
+    task = _runAction(action).whenComplete(() => _inFlightActions.remove(task));
+    _inFlightActions.add(task);
+    await task;
+  }
+
+  Future<void> _runAction(String action) async {
     final runtime = _runtime!;
     final playback = _playback!;
     final notifications = _notifications!;
@@ -133,6 +141,15 @@ class WindowsRuntimeBinding {
       } catch (_) {
         // Initialization errors are reported by AppBootstrapController; cleanup
         // must still release the partially created runtime.
+      }
+    }
+    while (_inFlightActions.isNotEmpty) {
+      for (final action in _inFlightActions.toList()) {
+        try {
+          await action;
+        } catch (_) {
+          // Action errors are returned to their caller; shutdown still drains.
+        }
       }
     }
     Object? firstError;

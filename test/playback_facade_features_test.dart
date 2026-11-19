@@ -452,9 +452,10 @@ void main() {
           session.id,
           true,
         );
-        final panningFuture = runtimeGraph.playback.setSessionPanning(
+        final soundFieldFuture = runtimeGraph.playback.setSessionSoundField(
           session.id,
-          0.6,
+          panning: 0.6,
+          frontBack: -0.3,
         );
         await Future<void>.delayed(Duration.zero);
 
@@ -462,6 +463,7 @@ void main() {
         expect(native.calls, hasLength(1));
         expect(session.audioEffects.noiseReductionEnabled, isTrue);
         expect(session.audioEffects.panning, 0.6);
+        expect(session.audioEffects.frontBack, -0.3);
         expect(session.channelSwapEnabled, isTrue);
 
         session.applyNativeSnapshot(
@@ -473,6 +475,7 @@ void main() {
         );
         expect(session.audioEffects.noiseReductionEnabled, isTrue);
         expect(session.audioEffects.panning, 0.6);
+        expect(session.audioEffects.frontBack, -0.3);
         expect(session.channelSwapEnabled, isTrue);
 
         native.completeSuccess(0);
@@ -480,13 +483,14 @@ void main() {
         final latestPayload = native.calls[1].effects;
         expect(latestPayload['noiseReductionEnabled'], isTrue);
         expect(latestPayload['panning'], 0.6);
+        expect(latestPayload['frontBack'], -0.3);
         expect(latestPayload['channelSwapEnabled'], isTrue);
         native.completeSuccess(1);
 
         await Future.wait(<Future<void>>[
           noiseFuture,
           channelFuture,
-          panningFuture,
+          soundFieldFuture,
         ]);
         expect(native.maxActiveCalls, 1);
       },
@@ -540,9 +544,10 @@ void main() {
         native.completeSuccess(0);
         await confirmedFuture;
 
-        final panningFuture = runtimeGraph.playback.setSessionPanning(
+        final soundFieldFuture = runtimeGraph.playback.setSessionSoundField(
           session.id,
-          0.4,
+          panning: 0.4,
+          frontBack: 0.6,
         );
         await native.waitForCallCount(2);
         final channelFuture = runtimeGraph.playback.setSessionChannelSwap(
@@ -554,16 +559,18 @@ void main() {
         native.completeFailure(2);
         await native.waitForCallCount(4);
         native.completeFailure(3);
-        await Future.wait(<Future<void>>[panningFuture, channelFuture]);
+        await Future.wait(<Future<void>>[soundFieldFuture, channelFuture]);
 
         expect(session.audioEffects.noiseReductionEnabled, isTrue);
         expect(session.audioEffects.panning, 0.4);
+        expect(session.audioEffects.frontBack, 0.6);
         expect(session.channelSwapEnabled, isFalse);
         final persisted = (await TestPersistenceRepository(
           database: AppDatabase.test(db),
         ).loadAllSessions()).singleWhere((entry) => entry.id == session.id);
         expect(persisted.audioEffects.noiseReductionEnabled, isTrue);
         expect(persisted.audioEffects.panning, 0.4);
+        expect(persisted.audioEffects.frontBack, 0.6);
         expect(persisted.channelSwapEnabled, isFalse);
       },
     );
@@ -903,7 +910,11 @@ void main() {
           session.id,
           true,
         );
-        await runtimeGraph.playback.setSessionPanning(session.id, -0.4);
+        await runtimeGraph.playback.setSessionSoundField(
+          session.id,
+          panning: -0.4,
+          frontBack: 0.8,
+        );
         await runtimeGraph.playback.setSessionEqBandLevel(
           session.id,
           1000,
@@ -928,6 +939,7 @@ void main() {
         expect(persistedSession.audioEffects.eqEnabled, isTrue);
         expect(persistedSession.audioEffects.eqBandLevels[1000], 2.5);
         expect(persistedSession.audioEffects.panning, -0.4);
+        expect(persistedSession.audioEffects.frontBack, 0.8);
         expect(persistedSession.channelSwapEnabled, isTrue);
 
         await runtimeGraph.playback.spawnSession(secondTrack, autoPlay: false);

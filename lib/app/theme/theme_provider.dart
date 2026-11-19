@@ -12,6 +12,28 @@ import '../../core/widgets/app_transitions.dart';
 import 'app_design_tokens.dart';
 import 'app_styles.dart';
 
+const _tabularDigits = TextStyle(
+  fontFamily: 'Outfit',
+  fontFeatures: [FontFeature.tabularFigures()],
+);
+const _tabularTextTheme = TextTheme(
+  displayLarge: _tabularDigits,
+  displayMedium: _tabularDigits,
+  displaySmall: _tabularDigits,
+  headlineLarge: _tabularDigits,
+  headlineMedium: _tabularDigits,
+  headlineSmall: _tabularDigits,
+  titleLarge: _tabularDigits,
+  titleMedium: _tabularDigits,
+  titleSmall: _tabularDigits,
+  bodyLarge: _tabularDigits,
+  bodyMedium: _tabularDigits,
+  bodySmall: _tabularDigits,
+  labelLarge: _tabularDigits,
+  labelMedium: _tabularDigits,
+  labelSmall: _tabularDigits,
+);
+
 const _windowsTextTheme = TextTheme(
   headlineMedium: TextStyle(
     fontSize: 30,
@@ -573,66 +595,34 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
 
   ThemeData _buildTheme(ColorScheme scheme) {
     final isWindows = defaultTargetPlatform == TargetPlatform.windows;
-    final mobileText = const TextTheme().copyWith(
-      bodyMedium: const TextStyle(
-        fontFamily: 'Raleway',
-        fontSize: 14,
-        height: 1.5,
-      ),
-      bodyLarge: const TextStyle(
-        fontFamily: 'Raleway',
-        fontSize: 15,
-        height: 1.5,
-      ),
-      labelLarge: const TextStyle(
-        fontFamily: 'Raleway',
+    const mobileText = TextTheme(
+      bodyMedium: TextStyle(fontSize: 14, height: 1.5),
+      bodyLarge: TextStyle(fontSize: 15, height: 1.5),
+      labelLarge: TextStyle(
         fontSize: 12,
         fontWeight: FontWeight.w700,
         letterSpacing: 0.1,
       ),
-      labelMedium: const TextStyle(
-        fontFamily: 'Raleway',
-        fontSize: 11,
-        fontWeight: FontWeight.w600,
-      ),
-      labelSmall: const TextStyle(
-        fontFamily: 'Raleway',
-        fontSize: 10,
-        fontWeight: FontWeight.w600,
-      ),
-      bodySmall: const TextStyle(
-        fontFamily: 'Raleway',
-        fontSize: 12,
-        fontWeight: FontWeight.w500,
-      ),
-      titleMedium: const TextStyle(
-        fontFamily: 'Raleway',
+      labelMedium: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+      labelSmall: TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+      bodySmall: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+      titleMedium: TextStyle(
         fontWeight: FontWeight.w700,
         fontSize: 14,
         height: 1.25,
       ),
-      titleSmall: const TextStyle(
-        fontFamily: 'Raleway',
+      titleSmall: TextStyle(
         fontWeight: FontWeight.w600,
         fontSize: 13,
         height: 1.3,
       ),
-      titleLarge: const TextStyle(
-        fontFamily: 'Outfit',
-        fontWeight: FontWeight.w700,
-        fontSize: 18,
-      ),
-      headlineMedium: const TextStyle(
-        fontFamily: 'Outfit',
+      titleLarge: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+      headlineMedium: TextStyle(
         fontWeight: FontWeight.w800,
         fontSize: 31,
         height: 1.05,
       ),
-      headlineSmall: const TextStyle(
-        fontFamily: 'Outfit',
-        fontWeight: FontWeight.w800,
-        fontSize: 20,
-      ),
+      headlineSmall: TextStyle(fontWeight: FontWeight.w800, fontSize: 20),
     );
     final bodyText = isWindows ? _windowsTextTheme : mobileText;
 
@@ -647,23 +637,31 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
       scheme.onSurface.withValues(alpha: 0.88),
       scheme.surface,
     );
-    final textTheme = bodyText.copyWith(
-      headlineMedium: bodyText.headlineMedium?.copyWith(
-        color: scheme.onSurface,
-      ),
-      headlineSmall: bodyText.headlineSmall?.copyWith(color: scheme.onSurface),
-      titleLarge: bodyText.titleLarge?.copyWith(color: scheme.onSurface),
-      titleMedium: bodyText.titleMedium?.copyWith(color: scheme.onSurface),
-      titleSmall: bodyText.titleSmall?.copyWith(color: scheme.onSurface),
-      bodyLarge: bodyText.bodyLarge?.copyWith(color: bodyColor),
-      bodyMedium: bodyText.bodyMedium?.copyWith(color: bodyColor),
-      bodySmall: bodyText.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-      labelLarge: bodyText.labelLarge?.copyWith(color: bodyColor),
-      labelMedium: bodyText.labelMedium?.copyWith(
-        color: scheme.onSurfaceVariant,
-      ),
-      labelSmall: bodyText.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
-    );
+    final textTheme = bodyText
+        .copyWith(
+          headlineMedium: bodyText.headlineMedium?.copyWith(
+            color: scheme.onSurface,
+          ),
+          headlineSmall: bodyText.headlineSmall?.copyWith(
+            color: scheme.onSurface,
+          ),
+          titleLarge: bodyText.titleLarge?.copyWith(color: scheme.onSurface),
+          titleMedium: bodyText.titleMedium?.copyWith(color: scheme.onSurface),
+          titleSmall: bodyText.titleSmall?.copyWith(color: scheme.onSurface),
+          bodyLarge: bodyText.bodyLarge?.copyWith(color: bodyColor),
+          bodyMedium: bodyText.bodyMedium?.copyWith(color: bodyColor),
+          bodySmall: bodyText.bodySmall?.copyWith(
+            color: scheme.onSurfaceVariant,
+          ),
+          labelLarge: bodyText.labelLarge?.copyWith(color: bodyColor),
+          labelMedium: bodyText.labelMedium?.copyWith(
+            color: scheme.onSurfaceVariant,
+          ),
+          labelSmall: bodyText.labelSmall?.copyWith(
+            color: scheme.onSurfaceVariant,
+          ),
+        )
+        .merge(_tabularTextTheme);
 
     return ThemeData(
       useMaterial3: true,
@@ -671,8 +669,8 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
       extensions: <ThemeExtension<dynamic>>[tokens],
       visualDensity: VisualDensity.standard,
       colorScheme: scheme,
-      fontFamily: isWindows ? 'Segoe UI' : 'Raleway',
       textTheme: textTheme,
+      primaryTextTheme: _tabularTextTheme,
       tooltipTheme: const TooltipThemeData(
         triggerMode: TooltipTriggerMode.manual,
       ),
@@ -736,11 +734,11 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
           color: scheme.onSurfaceVariant,
           size: 21,
         ),
-        selectedLabelTextStyle: TextStyle(
+        selectedLabelTextStyle: _tabularDigits.copyWith(
           fontWeight: isWindows ? FontWeight.w600 : FontWeight.w700,
           color: scheme.primary,
         ),
-        unselectedLabelTextStyle: TextStyle(
+        unselectedLabelTextStyle: _tabularDigits.copyWith(
           fontWeight: isWindows ? FontWeight.w400 : FontWeight.w600,
           color: scheme.onSurfaceVariant,
         ),
@@ -751,7 +749,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
           style: FilledButton.styleFrom(
             minimumSize: const Size.fromHeight(52),
             shape: buttonShape,
-            textStyle: TextStyle(
+            textStyle: _tabularDigits.copyWith(
               fontWeight: isWindows ? FontWeight.w600 : FontWeight.w700,
             ),
           ),
@@ -766,7 +764,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
             minimumSize: const Size.fromHeight(48),
             shape: buttonShape,
             side: BorderSide(color: scheme.outlineVariant),
-            textStyle: TextStyle(
+            textStyle: _tabularDigits.copyWith(
               fontWeight: isWindows ? FontWeight.w600 : FontWeight.w700,
             ),
           ),
@@ -842,7 +840,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
         indicatorColor: scheme.primaryContainer,
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);
-          return TextStyle(
+          return _tabularDigits.copyWith(
             fontSize: 11,
             fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
             color: selected ? scheme.primary : scheme.onSurfaceVariant,
@@ -880,7 +878,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: scheme.surfaceContainerLow,
-        contentTextStyle: TextStyle(
+        contentTextStyle: _tabularDigits.copyWith(
           color: scheme.onSurface,
           fontWeight: FontWeight.w500,
         ),

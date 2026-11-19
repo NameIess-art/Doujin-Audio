@@ -329,6 +329,49 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'disposing while permission confirmation dialog is open skips settings launch',
+    (tester) async {
+      final language = AppLanguageProvider();
+      final service = _TestPermissionStatusService();
+      final showControls = ValueNotifier<bool>(true);
+      addTearDown(showControls.dispose);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: ValueListenableBuilder<bool>(
+                valueListenable: showControls,
+                builder: (context, visible, _) => visible
+                    ? PermissionSettingsControls(statusService: service)
+                    : const SizedBox.shrink(),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.widgetWithText(ListTile, language.tr('allow_background_run')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(language.tr('go_settings')), findsOneWidget);
+
+      showControls.value = false;
+      await tester.pump();
+      await tester.tap(find.text(language.tr('go_settings')));
+      await tester.pumpAndSettle();
+
+      expect(service.openCalls, 0);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 class _TestPermissionStatusService extends PermissionStatusService {
@@ -336,6 +379,7 @@ class _TestPermissionStatusService extends PermissionStatusService {
 
   final Future<PermissionStatusSnapshot>? pending;
   int reads = 0;
+  int openCalls = 0;
   static const granted = PermissionStatusSnapshot(
     backgroundRunAllowed: true,
     exactAlarmsAllowed: true,
@@ -348,6 +392,12 @@ class _TestPermissionStatusService extends PermissionStatusService {
   Future<PermissionStatusSnapshot> load() {
     reads++;
     return pending ?? Future.value(granted);
+  }
+
+  @override
+  Future<bool> openSettings(PermissionCapability capability) async {
+    openCalls++;
+    return true;
   }
 }
 

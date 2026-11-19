@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_buttons.dart';
+import 'package:doujin_audio/core/widgets/app_dialog.dart';
 import 'package:doujin_audio/core/widgets/app_entry_ink_well.dart';
 import 'package:doujin_audio/core/widgets/unified_popup_menu.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
@@ -20,6 +21,48 @@ void main() {
   final coordinator = UiInteractionCoordinator.instance;
   setUp(coordinator.resetForTest);
   tearDown(coordinator.resetForTest);
+
+  testWidgets('Windows text right-click menu keeps selection and add styling', (
+    tester,
+  ) async {
+    const text = 'Select these words';
+    final controller = TextEditingController(text: text);
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: TargetPlatform.windows),
+        home: Scaffold(
+          body: Center(
+            child: TextField(
+              controller: controller,
+              focusNode: focusNode,
+              contextMenuBuilder: buildAppEditableTextMenu,
+            ),
+          ),
+        ),
+      ),
+    );
+    final field = find.byType(TextField);
+    await tester.tapAt(tester.getTopLeft(field) + const Offset(20, 20));
+    await tester.pump();
+    await tester.tapAt(
+      tester.getTopLeft(field) + const Offset(20, 20),
+      buttons: kSecondaryMouseButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    final selectAll = find.byIcon(Icons.select_all_rounded);
+    final row = find.ancestor(of: selectAll, matching: find.byType(AppEntryInkWell));
+    expect(tester.getSize(row), const Size(236, 48));
+    expect(find.byType(AppModalBackground), findsOneWidget);
+    await tester.tap(selectAll);
+    await tester.pumpAndSettle();
+    expect(controller.selection.textInside(text), text);
+    expect(focusNode.hasFocus, isTrue);
+    await tester.pumpWidget(const SizedBox());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('button menu highlights the first row on the initial mouse move', (
     tester,
@@ -129,15 +172,17 @@ void main() {
         final corner = Offset(atLeft ? 0 : box.size.width, box.size.height);
         final pinnedPoint = box.localToGlobal(corner);
         var scale = box.getTransformTo(null).entry(0, 0);
-        expect(scale, lessThan(1));
+        expect(scale, lessThan(0.75));
         for (var frame = 0; frame < 14; frame++) {
           await tester.pump(const Duration(milliseconds: 16));
           final nextScale = box.getTransformTo(null).entry(0, 0);
-          expect(nextScale, inInclusiveRange(scale, 1));
-          expect(box.localToGlobal(corner), pinnedPoint);
+          expect(nextScale, inInclusiveRange(scale, 0.75));
+          final cornerInViewport = box.localToGlobal(corner);
+          expect(cornerInViewport.dx, closeTo(pinnedPoint.dx, 0.001));
+          expect(cornerInViewport.dy, closeTo(pinnedPoint.dy, 0.001));
           scale = nextScale;
         }
-        expect(scale, 1);
+        expect(scale, 0.75);
         await tester.sendKeyEvent(LogicalKeyboardKey.escape);
         await tester.pumpAndSettle();
         expect(await result, isNull);
@@ -209,11 +254,15 @@ void main() {
   for (final side in [Alignment.centerLeft, Alignment.centerRight]) {
     for (final mode in ['button', 'dock', 'context']) {
       testWidgets(
-        'single-column $mode menu keeps expected text alignment at $side',
+        '$mode menu fits its longest label and left aligns at $side',
         (tester) async {
           const entries = [
-            UnifiedMenuEntry.action(value: 1, label: 'Short'),
-            UnifiedMenuEntry.action(value: 2, label: 'A much longer option'),
+            UnifiedMenuEntry.action(
+              value: 1,
+              label: 'Short',
+              icon: Icons.folder,
+            ),
+            UnifiedMenuEntry.action(value: 2, label: 'Long option'),
           ];
           await tester.pumpWidget(
             MaterialApp(
@@ -285,6 +334,15 @@ void main() {
                 : find.byTooltip('Open aligned menu'),
           );
           await tester.pumpAndSettle();
+          final hasModalBackground = mode == 'button';
+          expect(
+            find.byType(AppModalBackground),
+            hasModalBackground ? findsOneWidget : findsNothing,
+          );
+          expect(
+            find.byType(BackdropFilter),
+            hasModalBackground ? findsWidgets : findsNothing,
+          );
           final firstLabel = find.text('Short');
           final card = find
               .ancestor(of: firstLabel, matching: find.byType(ClipRRect))
@@ -298,8 +356,9 @@ void main() {
           final lastRow = tester.getRect(rows.last);
           expect(firstRow.top, cardBounds.top);
           expect(lastRow.bottom, cardBounds.bottom);
-          expect(firstRow.height, mode == 'button' ? 48 : 46);
-          expect(lastRow.height, mode == 'button' ? 48 : 46);
+          final menuScale = mode == 'button' ? 1.0 : 0.75;
+          expect(firstRow.height, closeTo(48 * menuScale, 0.01));
+          expect(lastRow.height, closeTo(48 * menuScale, 0.01));
 
           Rect glyphBounds(String label) {
             final paragraph = tester.renderObject<RenderParagraph>(
@@ -314,19 +373,20 @@ void main() {
                 )
                 .map((box) => box.toRect())
                 .reduce((a, b) => a.expandToInclude(b));
-            return bounds.shift(paragraph.localToGlobal(Offset.zero));
+            return MatrixUtils.transformRect(
+              paragraph.getTransformTo(null),
+              bounds,
+            );
           }
 
           final short = glyphBounds('Short');
-          final long = glyphBounds('A much longer option');
-          if (mode == 'button' && side == Alignment.centerRight) {
-            expect(short.right, closeTo(long.right, 0.01));
-          } else {
-            expect(short.left, closeTo(long.left, 0.01));
-          }
+          final long = glyphBounds('Long option');
+          expect(cardBounds.width, closeTo(long.width + 61 * menuScale, 1));
+          expect(short.left, closeTo(long.left, 0.01));
           await tester.sendKeyEvent(LogicalKeyboardKey.escape);
           await tester.pumpAndSettle();
           expect(find.text('Short'), findsNothing);
+          expect(find.byType(AppModalBackground), findsNothing);
         },
         variant: const TargetPlatformVariant({
           TargetPlatform.android,
@@ -338,7 +398,7 @@ void main() {
 
   for (final brightness in Brightness.values) {
     testWidgets(
-      'menus retain v0.29 row and icon styles ($brightness)',
+      'Add, more and right-click menus share row and icon styles ($brightness)',
       (tester) async {
         const entries = [
           UnifiedMenuEntry.action(
@@ -406,8 +466,13 @@ void main() {
             tester.element(find.byIcon(Icons.folder)),
           );
           final textStyle = tester.widget<Text>(label).style;
-          // A single compact row owns both 6 px menu edges.
-          expect(tester.getSize(row).height, mode == 'add' ? 48 : 52);
+          final text = tester.renderObject<RenderParagraph>(label);
+          final menuScale = mode == 'add' ? 1.0 : 0.75;
+          expect(tester.getRect(row).height, closeTo(48 * menuScale, 0.01));
+          expect(
+            tester.getRect(row).width,
+            closeTo((text.getMaxIntrinsicWidth(double.infinity) + 61) * menuScale, 1),
+          );
           expect(
             textStyle,
             Theme.of(tester.element(label)).textTheme.bodyMedium!.copyWith(
@@ -415,13 +480,12 @@ void main() {
               fontWeight: FontWeight.w700,
             ),
           );
-          expect(iconTheme.size, mode == 'add' ? 21 : 18);
+          expect(iconTheme.size, 21);
           expect(
-            iconTheme.color,
-            mode == 'add'
-                ? theme.colorScheme.onSurface
-                : theme.colorScheme.primary,
+            tester.getRect(find.byIcon(Icons.folder)).width,
+            closeTo(21 * menuScale, 0.01),
           );
+          expect(iconTheme.color, theme.colorScheme.onSurface);
           await tester.sendKeyEvent(LogicalKeyboardKey.escape);
           await tester.pumpAndSettle();
           expect(label, findsNothing);
@@ -621,8 +685,8 @@ void main() {
         }
 
         expect(isHighlighted(first), isFalse);
-        expect(tester.getCenter(first).dy, 220);
-        expect(tester.getCenter(second).dy, 260);
+        expect(tester.getCenter(first).dy, closeTo(218, 0.01));
+        expect(tester.getCenter(second).dy, closeTo(254, 0.01));
 
         await mouse.moveTo(tester.getCenter(first));
         await tester.pumpAndSettle();

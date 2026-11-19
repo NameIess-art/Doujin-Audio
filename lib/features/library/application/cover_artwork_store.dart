@@ -30,9 +30,13 @@ String _canonicalLogicalKey(String value) {
     final source = value.substring(prefix.length);
     if (source.startsWith('remote-cover:')) return value;
     final fingerprintAt = source.indexOf('|');
-    final videoAt = prefix == 'video:'
-        ? source.lastIndexOf(':', source.lastIndexOf(':') - 1)
-        : -1;
+    var videoAt = -1;
+    if (prefix == 'video:') {
+      final lastColon = source.lastIndexOf(':');
+      if (lastColon > 0) {
+        videoAt = source.lastIndexOf(':', lastColon - 1);
+      }
+    }
     final suffixAt = fingerprintAt >= 0 ? fingerprintAt : videoAt;
     final sourcePath = suffixAt < 0 ? source : source.substring(0, suffixAt);
     if (sourcePath.startsWith('windows:') ||
@@ -125,7 +129,13 @@ final class CoverArtworkStore {
             : _decodeCoverIndex(await _index.readAsString(), rootPath, android);
       }
     } catch (_) {
-      loaded = _decodeCoverIndex(null, rootPath, android);
+      final fallback = _decodeCoverIndex(null, rootPath, android);
+      loaded = (
+        bindings: fallback.bindings,
+        aliases: fallback.aliases,
+        managed: fallback.managed,
+        changed: true,
+      );
     }
     // The worker transfers the maps; copying every entry here defeats offloading.
     _bindings = loaded.bindings;
@@ -871,9 +881,9 @@ typedef _CoverIndex = ({
 
 _CoverIndex _decodeCoverIndex(String? payload, String rootPath, bool android) {
   final raw = payload == null ? null : json.decode(payload);
-  final decoded = raw is Map && (raw['version'] == 1 || raw['version'] == 2)
-      ? raw
-      : const <String, Object?>{};
+  final hasValidHeader =
+      raw is Map && (raw['version'] == 1 || raw['version'] == 2);
+  final decoded = hasValidHeader ? raw : const <String, Object?>{};
   Map<String, String> stringMap(Object? value) => value is Map
       ? <String, String>{
           for (final entry in value.entries)
@@ -882,7 +892,7 @@ _CoverIndex _decodeCoverIndex(String? payload, String rootPath, bool android) {
               entry.key.toString(): entry.value.toString(),
         }
       : <String, String>{};
-  var changed = false;
+  var changed = payload != null && !hasValidHeader;
   final bindings = <String, String>{};
   for (final entry in stringMap(decoded['bindings']).entries) {
     final key = _canonicalLogicalKey(entry.key);

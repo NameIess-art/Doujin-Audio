@@ -14,6 +14,9 @@ import org.junit.Assert.assertSame
 import org.junit.Test
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.cos
 
 class NativePlaybackSessionStateTest {
     @Test
@@ -417,6 +420,17 @@ class NativePlaybackSessionStateTest {
     }
 
     @Test
+    fun `front back position stays live through neutral until player release`() {
+        val controller = NativeAudioEffectsController { testSpatialResponses() }
+        assertTrue(controller.apply(NativeAudioEffects(frontBack = 0.5f)))
+        assertEquals(false, controller.apply(NativeAudioEffects(frontBack = -0.5f)))
+        assertEquals(-0.5, controller.snapshot()["frontBack"])
+        assertEquals(false, controller.apply(NativeAudioEffects()))
+        controller.release()
+        assertTrue(controller.apply(NativeAudioEffects(frontBack = 0.5f)))
+    }
+
+    @Test
     fun `audio effects controller snapshot preserves enabled effects`() {
         val controller = NativeAudioEffectsController()
         controller.apply(
@@ -455,12 +469,12 @@ class NativePlaybackSessionStateTest {
         assertEquals(true, shouldProcessVolumeBalance(0.5f))
 
         val monoChannelSwapProcessor = VolumeBalanceAudioProcessor().apply {
-            channelSwapEnabled = true
+            controls = VolumeBalanceAudioProcessor.Controls(channelSwapEnabled = true)
         }
         assertEquals(AudioProcessor.AudioFormat.NOT_SET, monoChannelSwapProcessor.configure(mono16Bit))
 
         val stereoChannelSwapProcessor = VolumeBalanceAudioProcessor().apply {
-            channelSwapEnabled = true
+            controls = VolumeBalanceAudioProcessor.Controls(channelSwapEnabled = true)
         }
         assertEquals(stereo16Bit, stereoChannelSwapProcessor.configure(stereo16Bit))
     }
@@ -468,7 +482,7 @@ class NativePlaybackSessionStateTest {
     @Test
     fun `stereo processor swaps pcm channels without affecting mono configuration`() {
         val processor = VolumeBalanceAudioProcessor().apply {
-            channelSwapEnabled = true
+            controls = VolumeBalanceAudioProcessor.Controls(channelSwapEnabled = true)
         }
         val stereo16Bit = AudioProcessor.AudioFormat(48000, 2, C.ENCODING_PCM_16BIT)
         assertEquals(stereo16Bit, processor.configure(stereo16Bit))
@@ -488,7 +502,7 @@ class NativePlaybackSessionStateTest {
     @Test
     fun `stereo processor keeps left and right samples independent while balancing`() {
         val processor = VolumeBalanceAudioProcessor().apply {
-            panning = 0.5f
+            controls = VolumeBalanceAudioProcessor.Controls(panning = 0.5f)
         }
         val stereo16Bit = AudioProcessor.AudioFormat(48000, 2, C.ENCODING_PCM_16BIT)
         assertEquals(stereo16Bit, processor.configure(stereo16Bit))
@@ -504,6 +518,92 @@ class NativePlaybackSessionStateTest {
         assertEquals(60.toShort(), output.short)
         assertEquals((-340).toShort(), output.short)
     }
+
+    @Test
+    fun `spatial processor renders both directions between channel swap and balance`() {
+        val processor = VolumeBalanceAudioProcessor().apply {
+            controls = VolumeBalanceAudioProcessor.Controls(
+                panning = 1f,
+                channelSwapEnabled = true,
+                frontBack = 1f,
+                spatialResponses = testSpatialResponses()
+            )
+        }
+        val stereo = AudioProcessor.AudioFormat(48000, 2, C.ENCODING_PCM_16BIT)
+        assertEquals(stereo, processor.configure(stereo))
+        processor.flush(AudioProcessor.StreamMetadata.DEFAULT)
+
+        fun render(position: Float): Pair<Short, Short> {
+            processor.controls = processor.controls.copy(frontBack = position)
+            val input = ByteBuffer.allocateDirect(1_001 * 4).order(ByteOrder.nativeOrder())
+            repeat(1_001) { input.putShort(256).putShort(1024) }
+            input.flip()
+            processor.queueInput(input)
+            val output = processor.output.order(ByteOrder.nativeOrder())
+            return output.getShort(output.limit() - 4) to output.getShort(output.limit() - 2)
+        }
+
+        assertEquals(0.toShort() to 416.toShort(), render(1f))
+        assertEquals(0.toShort() to 576.toShort(), render(-1f))
+        assertEquals(0.toShort() to 256.toShort(), render(0f))
+    }
+
+    @Test
+    fun `spatial convolution limits both ears together and clears history on flush`() {
+        val direct = floatArrayOf(1f, 1f)
+        val cross = floatArrayOf(0.5f, 0.5f)
+        val response = arrayOf(direct, cross, cross, direct)
+        val renderer = StereoSpatialRenderer(StereoSpatialResponses(48000, response, response), 48000)
+        repeat(481) { renderer.process(1f, 0f, 1f, 1f) }
+        assertEquals(1f, renderer.left)
+        assertEquals(0.5f, renderer.right)
+        renderer.process(0f, 0f, 1f, 1f)
+        assertEquals(1f, renderer.left)
+        renderer.clear()
+        renderer.process(0f, 0f, 1f, 1f)
+        assertEquals(0f, renderer.left)
+        assertEquals(0f, renderer.right)
+    }
+
+    @Test
+    fun `spatial response delay stays constant when decoding high rate PCM`() {
+        val direct = floatArrayOf(0f, 1f)
+        val cross = FloatArray(2)
+        val response = arrayOf(direct, cross, cross, direct)
+        val renderer = StereoSpatialRenderer(StereoSpatialResponses(48000, response, response), 192000)
+        repeat(2_000) { renderer.process(0f, 0f, 1f, 1f) }
+
+        renderer.process(0.5f, -0.25f, 1f, 1f)
+        assertEquals(0f, renderer.left)
+        repeat(3) {
+            renderer.process(0f, 0f, 1f, 1f)
+            assertEquals(0f, renderer.left)
+        }
+        renderer.process(0f, 0f, 1f, 1f)
+        assertEquals(0.5f, renderer.left)
+        assertEquals(-0.25f, renderer.right)
+    }
+
+    @Test
+    fun `spatial response filters out frequencies above the new Nyquist limit`() {
+        val direct = FloatArray(120) { tap ->
+            val window = 0.5 - 0.5 * cos(2 * PI * tap / 119)
+            (window * cos(2 * PI * tap / 3)).toFloat()
+        }
+        val cross = FloatArray(direct.size)
+        val response = arrayOf(direct, cross, cross, direct)
+        val renderer = StereoSpatialRenderer(StereoSpatialResponses(48000, response, response), 16000)
+
+        repeat(161) { renderer.process(0.5f, 0f, 1f, 1f) }
+        assertTrue(abs(renderer.left) < 0.01f)
+        assertEquals(0f, renderer.right)
+    }
+
+    private fun testSpatialResponses() = StereoSpatialResponses(
+        48000,
+        arrayOf(floatArrayOf(0.625f), floatArrayOf(0.25f), floatArrayOf(0.25f), floatArrayOf(0.625f)),
+        arrayOf(floatArrayOf(0.25f), floatArrayOf(0.5f), floatArrayOf(0.5f), floatArrayOf(0.25f))
+    )
 
     @Test
     fun `publishing session state retries audio session sync before snapshot`() {

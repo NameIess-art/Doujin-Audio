@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/app_bootstrap_controller.dart';
 import '../state/app_runtime_providers.dart';
+import '../theme/app_design_tokens.dart';
 import '../theme/app_styles.dart';
 import '../../core/persistence/app_preferences.dart';
 import '../../core/widgets/app_transitions.dart';
@@ -228,7 +229,11 @@ class _TrustPoint extends StatelessWidget {
               color: cs.surfaceContainerHigh,
               borderRadius: BorderRadius.circular(16),
             ),
-            child: Icon(icon, size: 21, color: cs.primary),
+            child: Icon(
+              icon,
+              size: AppDesignTokens.opticalIconSize(icon, 21),
+              color: cs.primary,
+            ),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -271,7 +276,7 @@ class PrivacySummaryPage extends ConsumerWidget {
                     body: i18n.tr('privacy_summary_network_body'),
                   ),
                   _PrivacySection(
-                    icon: Icons.support_agent_rounded,
+                    icon: Icons.bug_report_outlined,
                     title: i18n.tr('privacy_summary_diagnostics_title'),
                     body: i18n.tr('privacy_summary_diagnostics_body'),
                   ),

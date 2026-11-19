@@ -5,6 +5,7 @@ import 'package:doujin_audio/app/presentation/desktop_main_navigation.dart';
 import 'package:doujin_audio/app/presentation/main_destination.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/playlist_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
@@ -86,7 +87,7 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(find.byIcon(Icons.playlist_play_rounded), findsOneWidget);
+        expect(find.byType(PlaylistIcon), findsOneWidget);
         final indicator = find.byKey(
           const ValueKey('desktop_navigation_indicator'),
         );
@@ -113,10 +114,11 @@ void main() {
                 .getCenter(find.byKey(iconKeys[destinations[index].type.index]))
                 .dy -
             tester.getTopLeft(indicator).dy;
-        expect(
-          tester.widget<Icon>(find.byIcon(Icons.playlist_play_rounded)).size,
-          closeTo(24.15, 0.001),
+        final unselectedPlaylistIcon = tester.widget<PlaylistIcon>(
+          find.byType(PlaylistIcon),
         );
+        expect(unselectedPlaylistIcon.filled, isFalse);
+        expect(unselectedPlaylistIcon.size, closeTo(21, 0.001));
         for (var state = 0; state < 2; state++) {
           final bounds = tester.getRect(find.byType(DesktopMainNavigation));
           final point = bounds.bottomLeft + const Offset(1, -1);
@@ -162,10 +164,11 @@ void main() {
             await tester.pumpAndSettle();
           }
         }
-        expect(
-          tester.widget<Icon>(find.byIcon(Icons.playlist_play_rounded)).size,
-          closeTo(25.3, 0.001),
+        final selectedPlaylistIcon = tester.widget<PlaylistIcon>(
+          find.byType(PlaylistIcon),
         );
+        expect(selectedPlaylistIcon.filled, isTrue);
+        expect(selectedPlaylistIcon.size, closeTo(22, 0.001));
         activePage.value = 0;
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 60));

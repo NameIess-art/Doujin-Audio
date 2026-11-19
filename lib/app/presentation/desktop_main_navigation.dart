@@ -6,7 +6,6 @@ import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/sliding_selection_indicator.dart';
 import '../localization/app_language_provider.dart';
 import '../theme/app_styles.dart';
-import '../theme/app_design_tokens.dart';
 import '../../features/player/application/playback_session_snapshot.dart';
 import '../../features/player/presentation/active_session_carousel.dart';
 import '../../features/player/presentation/playlist/session_detail_page.dart';
@@ -322,7 +321,6 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
                     ) {
                       final item = destinations[index];
                       final selected = index == activeIndex;
-                      final glyph = selected ? item.selectedIcon : item.icon;
                       final iconOffset = isLandscapeLayout
                           ? Offset(-(railMinWidth - 48) / 2, -8)
                           : Offset.zero;
@@ -354,20 +352,17 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
                               foregroundColor: selected
                                   ? cs.primary
                                   : cs.onSurfaceVariant,
-                              icon: Icon(
-                                glyph,
+                              icon: item.buildIcon(
                                 key: ValueKey<String>(
                                   'main_destination_${item.labelKey}',
                                 ),
+                                selected: selected,
+                                size: selected ? 22 : 21,
                                 color: landscapeWidthListenable == null
                                     ? (selected
                                           ? cs.primary
                                           : cs.onSurfaceVariant)
                                     : null,
-                                size: AppDesignTokens.opticalIconSize(
-                                  glyph,
-                                  selected ? 22 : 21,
-                                ),
                               ),
                             ),
                           ),

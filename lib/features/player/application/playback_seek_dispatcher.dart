@@ -86,8 +86,15 @@ final class PlaybackSeekDispatcher {
     } catch (error, stackTrace) {
       response = NativeFailure(error.toString(), details: stackTrace);
     }
-    // Normal native events own successful seek state.
-    if (response.isOk) return;
+    if (response.isOk) {
+      final snapshot = response.valueOrNull;
+      if (snapshot != null &&
+          _isCurrent(run, request) &&
+          snapshot.queueIndex == request.nativeQueueIndex) {
+        request.correctPosition(snapshot);
+      }
+      return;
+    }
     AppLogService.warning(
       'PlaybackSeekDispatcher.seek failed code=${response.errorCodeOrNull} '
       'sessionId=${run.session.id} error=${response.errorOrNull} '

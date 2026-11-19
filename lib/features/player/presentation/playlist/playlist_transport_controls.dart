@@ -24,7 +24,7 @@ import 'session_detail_theme.dart';
 const double _kPlaybackPrimaryControlsWidth = 366;
 // Six 46x40px capsule buttons and 3px concentric insets on each side
 // yield a 46px-tall (23px-radius) bar around the 20px-radius end caps.
-const double _kPlaybackSecondaryControlsWidth = 282;
+const double playbackSecondaryControlsWidth = 282;
 
 class TransportPlaybackControlPanel extends StatelessWidget {
   const TransportPlaybackControlPanel({
@@ -351,79 +351,26 @@ class _PlaybackSecondaryControlsState
       widget.playback.sessionById(widget.session.id)?.volume ??
       widget.session.volume;
   bool _volumeMode = false;
-  double? _dragVolume;
-  double? _preMuteVolume;
+  final _volumePreview = ValueNotifier<double?>(null);
 
-  IconData _getIconForVolume(double volume) {
-    return volume == 0
-        ? Icons.volume_off_rounded
-        : volume < 0.45
-        ? Icons.volume_down_rounded
-        : Icons.volume_up_rounded;
-  }
-
-  void _toggleMute() {
-    final currentVolume = (_dragVolume ?? _currentVolume)
-        .clamp(0.0, PlaybackFacade.maxSessionVolume)
-        .toDouble();
-    if (currentVolume > 0.001) {
-      _preMuteVolume = currentVolume;
-      setState(() => _dragVolume = null);
-      widget.playback.setSessionVolume(widget.session.id, 0.0);
-    } else {
-      final restored = (_preMuteVolume != null && _preMuteVolume! > 0.001)
-          ? _preMuteVolume!
-          : 1.0;
-      _preMuteVolume = null;
-      setState(() => _dragVolume = null);
-      widget.playback.setSessionVolume(widget.session.id, restored);
+  @override
+  void dispose() {
+    final pendingVolume = _volumePreview.value;
+    if (pendingVolume != null) {
+      UiInteractionCoordinator.instance.cancelThrottledCommit(
+        SessionVolumeControls.commitKey(widget.session.id),
+      );
+      AppInteractionFeedback.resetContinuous();
+      unawaited(
+        widget.playback.setSessionVolume(widget.session.id, pendingVolume),
+      );
     }
-  }
-
-  Future<void> _showVolumeInput(BuildContext context) async {
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-    final sessionId = widget.session.id;
-    final queueColor = widget.session.playbackQueue?.colorValue;
-    final initialVolume = sessionVolumeDisplayValueFromGain(
-      _dragVolume ?? _currentVolume,
-    );
-    final percent = await showAppTextInputPanel<int>(
-      context: context,
-      barrierLabel: i18n.tr('close'),
-      header: AppEditPanelHeader(
-        icon: Icons.volume_up_rounded,
-        title: i18n.tr('volume'),
-        accentColor: queueColor == null ? null : Color(queueColor),
-      ),
-      surfaceKey: const ValueKey('session_volume_input_surface'),
-      inputKey: const ValueKey('session_volume_input'),
-      initialValue: '${(initialVolume * 100).round()}',
-      keyboardType: TextInputType.number,
-      decoration: InputDecoration(hintText: i18n.tr('volume_range_hint')),
-      cancelLabel: i18n.tr('cancel'),
-      submitLabel: i18n.tr('confirm'),
-      parse: (text) {
-        final value = int.tryParse(text.trim());
-        if (value == null ||
-            value < 0 ||
-            value > sessionVolumeDisplayMaximumPercent) {
-          return null;
-        }
-        return value;
-      },
-    );
-    if (!mounted || widget.session.id != sessionId || percent == null) return;
-    final volumeGain = sessionVolumeGainFromDisplayValue(percent / 100);
-    setState(() => _dragVolume = null);
-    await widget.playback.setSessionVolume(sessionId, volumeGain);
+    _volumePreview.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -432,109 +379,8 @@ class _PlaybackSecondaryControlsState
     ref.watch(
       sessionDetailTransportProvider(
         widget.session.id,
-      ).select((state) => state?.volume),
+      ).select((state) => state == null ? null : sessionVolumeIcon(state.volume)),
     );
-    final volumeGain = (_dragVolume ?? _currentVolume)
-        .clamp(0.0, PlaybackFacade.maxSessionVolume)
-        .toDouble();
-    final displayVolume = sessionVolumeDisplayValueFromGain(volumeGain);
-    final isBoosted = volumeGain > 1.0;
-
-    Widget buildVolumeBar() {
-      return Padding(
-        key: const ValueKey('playback_volume_controls_row'),
-        padding: const EdgeInsets.symmetric(horizontal: 3),
-        child: Row(
-          children: [
-            _buildSecondaryControlSlot(
-              _SecondaryControlButton(
-                buttonKey: const ValueKey('session_volume_exit_button'),
-                icon: Icons.arrow_back_rounded,
-                tooltip: i18n.tr('back'),
-                onPressed: () {
-                  setState(() {
-                    _volumeMode = false;
-                    _dragVolume = null;
-                  });
-                },
-              ),
-            ),
-            _buildSecondaryControlSlot(
-              _SecondaryControlButton(
-                buttonKey: const ValueKey('session_volume_mute_button'),
-                icon: _getIconForVolume(volumeGain),
-                tooltip: volumeGain == 0 ? i18n.tr('unmute') : i18n.tr('mute'),
-                foregroundColor: isBoosted ? cs.primary : null,
-                onPressed: _toggleMute,
-              ),
-            ),
-            Expanded(
-              child: SliderTheme(
-                data: sessionDetailVolumeSliderTheme(
-                  context,
-                  isBoosted: isBoosted,
-                ),
-                child: Slider(
-                  key: const ValueKey('session_volume_slider'),
-                  value: displayVolume,
-                  max: sessionVolumeDisplayMaximum,
-                  onChanged: (displayValue) {
-                    final newGain = sessionVolumeGainFromDisplayValue(
-                      displayValue,
-                    );
-                    setState(() => _dragVolume = newGain);
-                    AppInteractionFeedback.continuous(
-                      (displayValue * 100).round(),
-                    );
-                    UiInteractionCoordinator.instance.scheduleThrottledCommit(
-                      key: 'session_volume:${widget.session.id}',
-                      commit: () => widget.playback.setSessionVolume(
-                        widget.session.id,
-                        newGain,
-                        persist: false,
-                      ),
-                    );
-                  },
-                  onChangeEnd: (displayValue) {
-                    final newGain = sessionVolumeGainFromDisplayValue(
-                      displayValue,
-                    );
-                    setState(() => _dragVolume = null);
-                    AppInteractionFeedback.resetContinuous();
-                    UiInteractionCoordinator.instance.cancelThrottledCommit(
-                      'session_volume:${widget.session.id}',
-                    );
-                    widget.playback.setSessionVolume(
-                      widget.session.id,
-                      newGain,
-                    );
-                  },
-                ),
-              ),
-            ),
-            InkWell(
-              mouseCursor: WidgetStateMouseCursor.clickable,
-              key: const ValueKey('session_volume_percent_text'),
-              onTap: () => _showVolumeInput(context),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Text(
-                  '${(displayVolume * 100).round()}%',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 11,
-                    color: isBoosted ? cs.primary : null,
-                    decoration: TextDecoration.underline,
-                    decorationColor: (isBoosted ? cs.primary : cs.onSurface)
-                        .withValues(alpha: 0.3),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
 
     Widget buildButtonsRow() {
       final buttons = <Widget>[
@@ -544,7 +390,7 @@ class _PlaybackSecondaryControlsState
         ),
         _SecondaryControlButton(
           key: const ValueKey('session_volume_button_anchor'),
-          icon: _getIconForVolume(_currentVolume),
+          icon: sessionVolumeIcon(_currentVolume),
           tooltip: i18n.tr('volume'),
           onPressed: () {
             setState(() => _volumeMode = true);
@@ -603,45 +449,310 @@ class _PlaybackSecondaryControlsState
       );
     }
 
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final background = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
-    final glassEnabled = AppDesignTokens.of(context).barGlassEnabled;
-    const double capsuleHeight = 46;
-    final borderRadius = BorderRadius.circular(capsuleHeight / 2);
-
-    final capsuleSurface = DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: borderRadius,
-        border: Border.all(
-          color: cs.outlineVariant.withValues(alpha: isDark ? 0.35 : 0.55),
-          width: 0.5,
-        ),
-      ),
-      child: AnimatedSwitcher(
-        switchOutCurve: kAppFadeCurve,
-        switchInCurve: kAppFadeCurve,
-        duration: MediaQuery.disableAnimationsOf(context)
-            ? Duration.zero
-            : kAppFadeDuration,
-        child: _volumeMode ? buildVolumeBar() : buildButtonsRow(),
-      ),
-    );
-
     return Padding(
       padding: const EdgeInsets.only(top: 8, left: 4, right: 4),
       child: SizedBox(
         key: const ValueKey('playback_secondary_controls'),
-        width: _kPlaybackSecondaryControlsWidth,
-        height: capsuleHeight,
-        child: AppGlassSurface(
-          enabled: glassEnabled,
-          backgroundColor: glassEnabled
-              ? background.withValues(alpha: background.a * 0.9)
-              : background,
-          borderRadius: borderRadius,
-          child: capsuleSurface,
+        width: playbackSecondaryControlsWidth,
+        child: PlaybackSecondaryControlSurface(
+          child: AnimatedSwitcher(
+            switchOutCurve: kAppFadeCurve,
+            switchInCurve: kAppFadeCurve,
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : kAppFadeDuration,
+            child: _volumeMode
+                ? SessionVolumeControls(
+                    session: widget.session,
+                    playback: widget.playback,
+                    volumePreview: _volumePreview,
+                    onBack: () => setState(() => _volumeMode = false),
+                  )
+                : buildButtonsRow(),
+          ),
         ),
       ),
+    );
+  }
+}
+
+class PlaybackSecondaryControlSurface extends StatelessWidget {
+  const PlaybackSecondaryControlSurface({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final background = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
+    final glassEnabled = AppDesignTokens.of(context).barGlassEnabled;
+    const capsuleHeight = 46.0;
+    const borderRadius = BorderRadius.all(Radius.circular(capsuleHeight / 2));
+    return SizedBox(
+      height: capsuleHeight,
+      child: AppGlassSurface(
+        enabled: glassEnabled,
+        backgroundColor: glassEnabled
+            ? background.withValues(alpha: background.a * 0.9)
+            : background,
+        borderRadius: borderRadius,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: borderRadius,
+            border: Border.all(
+              color: cs.outlineVariant.withValues(alpha: isDark ? 0.35 : 0.55),
+              width: 0.5,
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+class SessionVolumeControls extends ConsumerStatefulWidget {
+  const SessionVolumeControls({
+    super.key,
+    required this.session,
+    required this.playback,
+    required this.volumePreview,
+    this.onBack,
+    this.onInteractionStart,
+    this.onInteractionEnd,
+    this.onOperationFailure,
+  });
+
+  final PlaybackSessionSnapshot session;
+  final PlaybackFacade playback;
+  final ValueNotifier<double?> volumePreview;
+  final VoidCallback? onBack;
+  final VoidCallback? onInteractionStart;
+  final VoidCallback? onInteractionEnd;
+  final VoidCallback? onOperationFailure;
+
+  static String commitKey(String sessionId) => 'session_volume:$sessionId';
+
+  @override
+  ConsumerState<SessionVolumeControls> createState() =>
+      _SessionVolumeControlsState();
+}
+
+class _SessionVolumeControlsState extends ConsumerState<SessionVolumeControls> {
+  final _hoverPercent = ValueNotifier<int?>(null);
+
+  String get _sessionId => widget.session.id;
+
+  double get _currentVolume =>
+      widget.volumePreview.value ??
+      widget.playback.sessionById(_sessionId)?.volume ??
+      widget.session.volume;
+
+  @override
+  void dispose() {
+    _hoverPercent.dispose();
+    super.dispose();
+  }
+
+  void _handleVolumeChange(double displayValue) {
+    final gain = sessionVolumeGainFromDisplayValue(displayValue);
+    widget.volumePreview.value = gain;
+    AppInteractionFeedback.continuous((displayValue * 100).round());
+    final playback = widget.playback;
+    final sessionId = _sessionId;
+    UiInteractionCoordinator.instance.scheduleThrottledCommit(
+      key: SessionVolumeControls.commitKey(sessionId),
+      commit: () => playback.setSessionVolume(sessionId, gain, persist: false),
+    );
+  }
+
+  void _handleVolumeChangeEnd(double displayValue) {
+    UiInteractionCoordinator.instance.cancelThrottledCommit(
+      SessionVolumeControls.commitKey(_sessionId),
+    );
+    widget.volumePreview.value = null;
+    AppInteractionFeedback.resetContinuous();
+    widget.onInteractionEnd?.call();
+    unawaited(_commitVolume(sessionVolumeGainFromDisplayValue(displayValue)));
+  }
+
+  Future<void> _commitVolume(double gain) async {
+    final ok = await widget.playback.setSessionVolume(_sessionId, gain);
+    if (!ok && mounted) widget.onOperationFailure?.call();
+  }
+
+  Future<void> _showVolumeInput() async {
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final sessionId = _sessionId;
+    final queueColor = widget.session.playbackQueue?.colorValue;
+    final initialVolume = sessionVolumeDisplayValueFromGain(_currentVolume);
+    widget.onInteractionStart?.call();
+    try {
+      final percent = await showAppTextInputPanel<int>(
+        context: context,
+        header: AppEditPanelHeader(
+          icon: Icons.volume_up_rounded,
+          title: i18n.tr('volume'),
+          accentColor: queueColor == null ? null : Color(queueColor),
+        ),
+        surfaceKey: const ValueKey('session_volume_input_surface'),
+        inputKey: const ValueKey('session_volume_input'),
+        initialValue: '${(initialVolume * 100).round()}',
+        keyboardType: TextInputType.number,
+        decoration: InputDecoration(hintText: i18n.tr('volume_range_hint')),
+        cancelLabel: i18n.tr('cancel'),
+        submitLabel: i18n.tr('confirm'),
+        parse: (text) {
+          final value = int.tryParse(text.trim());
+          if (value == null ||
+              value < 0 ||
+              value > sessionVolumeDisplayMaximumPercent) {
+            return null;
+          }
+          return value;
+        },
+      );
+      if (!mounted || _sessionId != sessionId || percent == null) return;
+      await _commitVolume(sessionVolumeGainFromDisplayValue(percent / 100));
+    } finally {
+      if (mounted) widget.onInteractionEnd?.call();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.watch(
+      sessionDetailTransportProvider(
+        _sessionId,
+      ).select((state) => state?.volume),
+    );
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return ValueListenableBuilder<double?>(
+      valueListenable: widget.volumePreview,
+      builder: (context, _, _) {
+        final gain = _currentVolume;
+        final displayVolume = sessionVolumeDisplayValueFromGain(gain);
+        final isBoosted = gain > 1;
+        final labelStyle = theme.textTheme.labelSmall?.copyWith(
+          fontWeight: FontWeight.w900,
+          fontSize: 11,
+          color: isBoosted ? cs.primary : null,
+          decoration: TextDecoration.underline,
+          decorationColor: (isBoosted ? cs.primary : cs.onSurface).withValues(
+            alpha: 0.3,
+          ),
+        );
+        return Padding(
+          key: const ValueKey('playback_volume_controls_row'),
+          padding: const EdgeInsets.symmetric(horizontal: 3),
+          child: Row(
+            children: [
+              if (widget.onBack case final onBack?)
+                _buildSecondaryControlSlot(
+                  _SecondaryControlButton(
+                    buttonKey: const ValueKey('session_volume_exit_button'),
+                    icon: Icons.arrow_back_rounded,
+                    tooltip: i18n.tr('back'),
+                    onPressed: onBack,
+                  ),
+                ),
+              _buildSecondaryControlSlot(
+                _SecondaryControlButton(
+                  buttonKey: const ValueKey('session_volume_mute_button'),
+                  icon: sessionVolumeIcon(gain),
+                  tooltip: gain <= 0.001 ? i18n.tr('unmute') : i18n.tr('mute'),
+                  foregroundColor: isBoosted ? cs.primary : null,
+                  onPressed: () async {
+                    final ok = await widget.playback.toggleSessionMute(
+                      _sessionId,
+                    );
+                    if (!ok && mounted) widget.onOperationFailure?.call();
+                  },
+                ),
+              ),
+              Expanded(
+                child: SliderTheme(
+                  data: sessionDetailVolumeSliderTheme(
+                    context,
+                    isBoosted: isBoosted,
+                  ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final trackWidth =
+                          constraints.maxWidth -
+                          2 * sessionDetailVolumeTrackInset;
+                      final isRtl =
+                          Directionality.of(context) == TextDirection.rtl;
+
+                      void previewVolume(double x) {
+                        if (widget.volumePreview.value != null ||
+                            trackWidth <= 0) {
+                          return;
+                        }
+                        final fraction =
+                            ((x - sessionDetailVolumeTrackInset) / trackWidth)
+                                .clamp(0.0, 1.0);
+                        final ratio = isRtl ? 1 - fraction : fraction;
+                        _hoverPercent.value =
+                            (ratio * sessionVolumeDisplayMaximumPercent)
+                                .round();
+                      }
+
+                      return MouseRegion(
+                        onEnter: (event) =>
+                            previewVolume(event.localPosition.dx),
+                        onHover: (event) =>
+                            previewVolume(event.localPosition.dx),
+                        onExit: (_) => _hoverPercent.value = null,
+                        child: Slider(
+                          key: const ValueKey('session_volume_slider'),
+                          semanticFormatterCallback: (value) =>
+                              '${(value * 100).round()}%',
+                          value: displayVolume,
+                          max: sessionVolumeDisplayMaximum,
+                          onChangeStart: (_) {
+                            _hoverPercent.value = null;
+                            widget.onInteractionStart?.call();
+                          },
+                          onChanged: _handleVolumeChange,
+                          onChangeEnd: _handleVolumeChangeEnd,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              InkWell(
+                mouseCursor: WidgetStateMouseCursor.clickable,
+                key: const ValueKey('session_volume_percent_text'),
+                onTap: _showVolumeInput,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: SizedBox(
+                    // Keep the track width stable as the preview gains digits.
+                    width: MediaQuery.textScalerOf(context).scale(30),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: ValueListenableBuilder<int?>(
+                        valueListenable: _hoverPercent,
+                        builder: (context, hoverPercent, _) => Text(
+                          '${hoverPercent ?? (displayVolume * 100).round()}%',
+                          style: labelStyle,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

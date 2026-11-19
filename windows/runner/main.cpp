@@ -9,10 +9,11 @@
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
   if (std::wstring(command_line) == L"--remove-timers") {
-    CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
+    const HRESULT com_init = CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
     int result = EXIT_SUCCESS;
     try { SyncScheduledTasks(flutter::EncodableMap{}); } catch (...) { result = EXIT_FAILURE; }
-    CoUninitialize(); return result;
+    if (SUCCEEDED(com_init)) CoUninitialize();
+    return result;
   }
 #ifdef _DEBUG
   constexpr auto mutex_name = L"Local\\DoujinAudio-Desktop-Debug";
@@ -52,7 +53,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   // Initialize COM, so that it is available for use in the library and/or
   // plugins.
-  ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+  const HRESULT com_init = ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
   flutter::DartProject project(L"data");
 
@@ -65,7 +66,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 800);
   if (!window.Create(L"Doujin Audio", origin, size)) {
-    ::CoUninitialize();
+    window.Destroy();
+    if (SUCCEEDED(com_init)) ::CoUninitialize();
     ReleaseMutex(singleton); CloseHandle(singleton);
     return EXIT_FAILURE;
   }
@@ -78,7 +80,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   }
 
   window.Destroy();
-  ::CoUninitialize();
+  if (SUCCEEDED(com_init)) ::CoUninitialize();
   ReleaseMutex(singleton); CloseHandle(singleton);
   return EXIT_SUCCESS;
 }

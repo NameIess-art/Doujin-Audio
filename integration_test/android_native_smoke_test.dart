@@ -81,7 +81,10 @@ void main() {
         'doujin_audio_native_smoke_${DateTime.now().microsecondsSinceEpoch}.wav',
       );
       final secondWav = File('${wav.path}.second.wav');
-      await wav.writeAsBytes(_pcmWav(seconds: 60), flush: true);
+      await wav.writeAsBytes(
+        _pcmWav(seconds: 60, channelCount: 2),
+        flush: true,
+      );
       await secondWav.writeAsBytes(_pcmWav(seconds: 60), flush: true);
 
       try {
@@ -107,6 +110,22 @@ void main() {
           'native playback did not advance',
         );
 
+        await playback.setSessionSoundField(
+          sessionId,
+          panning: 0.25,
+          frontBack: 0.75,
+        );
+        final spatialSession = await _nativeSession(playback, sessionId);
+        expect(spatialSession.audioEffects.panning, 0.25);
+        expect(spatialSession.audioEffects.frontBack, 0.75);
+        await _waitFor(
+          tester,
+          () async =>
+              (await _nativeSession(playback, sessionId)).position >
+              spatialSession.position + const Duration(milliseconds: 300),
+          'native playback did not continue after enabling front-back rendering',
+        );
+
         await playback.toggleSessionPlayPause(sessionId);
         await _waitFor(
           tester,
@@ -120,6 +139,7 @@ void main() {
         var retainedSession = _retainedSession(playback, sessionId);
         expect(retainedSession.playbackRequested, isFalse);
         expect(retainedSession.loadedPath, isNull);
+        expect(retainedSession.audioEffects.frontBack, 0.75);
 
         const seekPosition = Duration(seconds: 2);
         await playback.seekSession(sessionId, seekPosition);
@@ -146,12 +166,35 @@ void main() {
           (await _nativeSession(playback, sessionId)).position.inMilliseconds,
           greaterThanOrEqualTo(1500),
         );
+        expect(
+          (await _nativeSession(playback, sessionId)).audioEffects.frontBack,
+          0.75,
+        );
         await _waitFor(
           tester,
           () async =>
               (await _nativeSession(playback, sessionId)).position >
               const Duration(milliseconds: 2300),
           'native playback position did not advance after seek',
+        );
+
+        await playback.setSessionSoundField(
+          sessionId,
+          panning: 0,
+          frontBack: -0.5,
+        );
+        expect(
+          (await _nativeSession(playback, sessionId)).audioEffects.frontBack,
+          -0.5,
+        );
+        await playback.setSessionSoundField(
+          sessionId,
+          panning: 0,
+          frontBack: 0,
+        );
+        expect(
+          (await _nativeSession(playback, sessionId)).audioEffects.frontBack,
+          0.0,
         );
 
         final beforeBackground = await _nativeSession(playback, sessionId);
@@ -379,9 +422,8 @@ Future<NativePlaybackSnapshot> _nativeSession(
   );
 }
 
-Uint8List _pcmWav({required int seconds}) {
+Uint8List _pcmWav({required int seconds, int channelCount = 1}) {
   const sampleRate = 44100;
-  const channelCount = 1;
   const bitsPerSample = 16;
   const bytesPerSample = bitsPerSample ~/ 8;
   final dataLength = seconds * sampleRate * channelCount * bytesPerSample;

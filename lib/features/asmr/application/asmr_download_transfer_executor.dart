@@ -36,17 +36,22 @@ class AsmrDownloadTransferExecutor {
   final Map<String, Completer<void>> _completions = {};
   final Set<String> _cancelled = {};
   final Set<String> _paused = {};
+  final Set<String> _stopped = {};
   bool _disposed = false;
 
   void begin(String workId) {
     _completions[workId] = Completer<void>();
     _cancelled.remove(workId);
+    _stopped.remove(workId);
   }
 
   bool isCancelled(String workId) => _cancelled.contains(workId);
   bool isPaused(String workId) => _paused.contains(workId);
   void throwIfCancelled(String workId) {
-    if (_disposed || isCancelled(workId) || isPaused(workId)) {
+    if (_disposed ||
+        isCancelled(workId) ||
+        isPaused(workId) ||
+        _stopped.contains(workId)) {
       throw const DownloadCancelled();
     }
   }
@@ -99,6 +104,7 @@ class AsmrDownloadTransferExecutor {
     _activeFileRetryDispatchers.remove(workId);
     _cancelled.remove(workId);
     _paused.remove(workId);
+    _stopped.remove(workId);
     final completion = _completions.remove(workId);
     if (completion != null && !completion.isCompleted) completion.complete();
   }
@@ -263,6 +269,7 @@ class AsmrDownloadTransferExecutor {
                   firstError = error;
                   firstErrorStack = stackTrace;
                   transfersStopped = true;
+                  _stopped.add(workId);
                   pendingFiles.clear();
                   client.close(force: true);
                 }
@@ -286,6 +293,7 @@ class AsmrDownloadTransferExecutor {
       pumpTransfers();
       await transfersDone.future;
     } finally {
+      _stopped.remove(workId);
       _activeFileRetryDispatchers.remove(workId);
       if (identical(_activeHttpClients[workId], client)) {
         _activeHttpClients.remove(workId);

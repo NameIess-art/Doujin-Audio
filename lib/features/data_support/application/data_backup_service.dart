@@ -299,6 +299,7 @@ class DataBackupService {
       final rollbackDatabase = File(
         path.join(rollbackDirectory.path, AppDatabase.fileName),
       );
+      var localDatabaseReadable = !resumeCommit;
       if (!resumeCommit) {
         await _deleteDirectory(rollbackDirectory);
         await rollbackDirectory.create(recursive: true);
@@ -311,15 +312,38 @@ class DataBackupService {
           path.join(rollbackDirectory.path, _accountName),
         ).writeAsString(jsonEncode(previousAccount.toJson()), flush: true);
 
-        await _database.databaseForTest;
-        await _database.close();
-        if (await currentDatabase.exists()) {
-          await currentDatabase.copy(rollbackDatabase.path);
+        try {
+          await _database.databaseForTest;
+        } catch (error, stackTrace) {
+          // A damaged local database must not abort restoring a valid backup.
+          localDatabaseReadable = false;
+          AppLogService.warning(
+            'backup_restore_local_db_unreadable',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        } finally {
+          try {
+            await _database.close();
+          } catch (error, stackTrace) {
+            AppLogService.warning(
+              'backup_restore_local_db_close_failed',
+              error: error,
+              stackTrace: stackTrace,
+            );
+          }
         }
+        if (await currentDatabase.exists()) {
+          await _copyDatabaseFiles(currentDatabase, rollbackDatabase);
+        }
+      } else if (await rollbackDatabase.exists()) {
+        localDatabaseReadable = await _isReadableDatabaseFile(
+          rollbackDatabase.path,
+        );
       }
 
       // On a retried commit the installed database may already be the backup.
-      if (await rollbackDatabase.exists()) {
+      if (localDatabaseReadable && await rollbackDatabase.exists()) {
         await _database.preserveNewerListeningData(
           localPath: rollbackDatabase.path,
           candidatePath: decoded.databaseFile.path,
@@ -416,7 +440,7 @@ class DataBackupService {
     await _database.close();
     if (await rollbackDatabase.exists()) {
       await _deleteDatabaseFiles(currentDatabase);
-      await rollbackDatabase.copy(currentDatabase.path);
+      await _copyDatabaseFiles(rollbackDatabase, currentDatabase);
     } else {
       await _deleteDatabaseFiles(currentDatabase);
     }
@@ -512,6 +536,33 @@ class DataBackupService {
 
   Future<void> _deleteDirectory(Directory directory) async {
     if (await directory.exists()) await directory.delete(recursive: true);
+  }
+
+  Future<void> _copyDatabaseFiles(File source, File destination) async {
+    for (final suffix in const <String>['', '-wal', '-shm']) {
+      final file = File('${source.path}$suffix');
+      if (await file.exists()) {
+        await file.copy('${destination.path}$suffix');
+      }
+    }
+  }
+
+  Future<bool> _isReadableDatabaseFile(String dbPath) async {
+    Database? db;
+    try {
+      db = await openDatabase(dbPath, readOnly: true, singleInstance: false);
+      final check = await db.rawQuery('PRAGMA quick_check(1)');
+      return check.singleOrNull?['quick_check'] == 'ok';
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'backup_restore_rollback_db_unreadable',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return false;
+    } finally {
+      await db?.close();
+    }
   }
 
   Future<void> _deleteDatabaseFiles(File database) async {

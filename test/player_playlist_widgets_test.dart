@@ -1,5 +1,8 @@
 import 'package:doujin_audio/core/widgets/app_edit_panel.dart';
+import 'package:doujin_audio/core/widgets/app_entry_ink_well.dart';
+import 'package:doujin_audio/core/widgets/app_dialog.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/playlist_icon.dart';
 import 'package:doujin_audio/core/widgets/unified_dropdown.dart';
 import 'package:doujin_audio/features/player/presentation/playback_providers.dart';
 import 'dart:async';
@@ -60,6 +63,7 @@ import 'package:doujin_audio/core/widgets/library_like_cards.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/app/theme/app_styles.dart';
+import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/app/presentation/windows_window_title_bar.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -276,6 +280,7 @@ _pumpSubtitleDetail({
   VoidCallback? onSubtitleLoad,
   List<NavigatorObserver> navigatorObservers = const [],
   FutureOr<void> Function(AppRuntimeWidgetTestFixture)? configureFixture,
+  NativePlaybackRepository? nativePlaybackRepository,
   List<Override> overrides = const [],
 }) async {
   tester.view.devicePixelRatio = 3;
@@ -297,6 +302,7 @@ _pumpSubtitleDetail({
   final coverCache = _RecordingPlaybackCoverCacheService();
   final fixture = AppRuntimeWidgetTestFixture(
     coverArtworkCacheService: coverCache,
+    providedNativePlaybackRepository: nativePlaybackRepository,
   );
   addTearDown(fixture.dispose);
   if (configureFixture != null) {
@@ -2011,14 +2017,14 @@ void main() {
     'SessionProgressBar updates both timecode labels when hovering over progress track and restores on exit',
     (tester) async {
       await tester.runAsync(() async {
-        final font = FontLoader('progress_width_test')
-          ..addFont(rootBundle.load('assets/fonts/Raleway-Variable.ttf'));
         final timecodeFont = FontLoader('Outfit')
           ..addFont(rootBundle.load('assets/fonts/Outfit-Variable.ttf'));
-        await Future.wait([font.load(), timecodeFont.load()]);
+        await timecodeFont.load();
       });
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
+      final theme = ThemeProvider(loadPersistedState: false);
+      addTearDown(theme.dispose);
       final session = PlaybackSession(
         id: 'hover-progress-session',
         currentTrackPath: '/library/track.mp3',
@@ -2034,7 +2040,7 @@ void main() {
       await tester.pumpWidget(
         fixture.build(
           Theme(
-            data: ThemeData(fontFamily: 'progress_width_test'),
+            data: theme.lightTheme,
             child: SizedBox(
               width: 400,
               child: SessionProgressBar(
@@ -3042,8 +3048,8 @@ void main() {
       speed: 1,
     );
 
-    expect(disabledIcons, isNot(contains(Icons.tune_rounded)));
-    expect(enabledIcons, contains(Icons.tune_rounded));
+    expect(disabledIcons, isNot(contains(Icons.equalizer_rounded)));
+    expect(enabledIcons, contains(Icons.equalizer_rounded));
   });
 
   test('fullscreen video follows adjacent video tracks', () {
@@ -3630,8 +3636,8 @@ void main() {
     const placeholderKey = ValueKey<String>('playlist_initial_placeholder');
     const contentKey = ValueKey<String>('playlist_loaded_content');
     expect(
-      tester.widget<TopPageHeader>(find.byType(TopPageHeader)).icon,
-      Icons.playlist_play_rounded,
+      tester.widget<TopPageHeader>(find.byType(TopPageHeader)).iconWidget,
+      isA<PlaylistIcon>().having((w) => w.filled, 'filled', isTrue),
     );
     expect(
       tester
@@ -4155,6 +4161,12 @@ void main() {
       );
       expect(tester.widget<SwitchListTile>(toggle).subtitle, isNull);
       expect(tester.getSize(preset).width, tester.getSize(toggle).width);
+      await tester.tap(preset);
+      await tester.pumpAndSettle();
+      expect(find.byType(AppModalBackground), findsOneWidget);
+      await tester.tapAt(const Offset(1, 1));
+      await tester.pumpAndSettle();
+      expect(find.byType(AppModalBackground), findsNothing);
       expect(find.byType(EqBandSlider), findsNWidgets(8));
       expect(
         tester.widgetList<Slider>(find.byType(Slider)).map((s) => s.onChanged),
@@ -4495,6 +4507,7 @@ void main() {
       tester.getSize(speedRestoreButton).width,
       closeTo(tester.getSize(find.byKey(expandedPanel)).width - 32, 1),
     );
+    final speedRestoreRect = tester.getRect(speedRestoreButton);
     expect(tester.widget<FilledButton>(speedRestoreButton).onPressed, isNull);
 
     await tester.tap(find.text(languageProvider.tr('equalizer')));
@@ -4662,10 +4675,25 @@ void main() {
       const ValueKey<String>('restore_volume_balance'),
     );
     _expectThemeSessionResetButtonStyle(tester, restoreButton);
+    expect(tester.getRect(restoreButton), speedRestoreRect);
+
+    final pad = find.byKey(const ValueKey('sound_field_pad'));
+    final initialPadHeight = tester.getSize(pad).height;
+    final panel = find.byKey(expandedPanel);
+    final initialPanelHeight = tester.getSize(panel).height;
+    tester.view.physicalSize = const Size(430, 1000);
+    await tester.pumpAndSettle();
+    final extraHeight = tester.getSize(panel).height - initialPanelHeight;
+    expect(extraHeight, greaterThan(0));
     expect(
-      tester.getSize(restoreButton).width,
-      closeTo(tester.getSize(find.byKey(expandedPanel)).width - 80, 1),
+      tester.getSize(pad).height,
+      closeTo(initialPadHeight + extraHeight, 1),
     );
+    expect(
+      tester.getRect(panel).bottom - tester.getRect(restoreButton).bottom,
+      16,
+    );
+
     expect(tester.widget<FilledButton>(restoreButton).onPressed, isNotNull);
     expect(find.text(languageProvider.tr('restore_default')), findsOneWidget);
     await tester.tap(restoreButton);
@@ -4677,6 +4705,98 @@ void main() {
     expect(session.audioEffects.panning, 0.0);
     expect(tester.widget<FilledButton>(restoreButton).onPressed, isNull);
   });
+
+  testWidgets(
+    'sound field commits a two-axis drag on release and can recenter',
+    (tester) async {
+      final windows = defaultTargetPlatform == TargetPlatform.windows;
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = windows
+          ? const Size(960, 600)
+          : const Size(360, 800);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final session = PlaybackSession(
+        id: 'sound-field-session',
+        currentTrackPath: '/library/stereo.mp3',
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(false, ProcessingState.ready),
+      )..audioEffects = AudioEffectsState(panning: 0.25);
+      addTearDown(session.shutdown);
+      fixture.playbackService.registerSession(session);
+      final i18n = fixture.languageProvider;
+      await tester.pumpWidget(
+        fixture.build(
+          Center(
+            child: SizedBox(
+              width: windows ? 520 : 344,
+              height: windows ? 294 : 360,
+              child: VolumeBalancePage(
+                session: PlaybackSessionSnapshot.fromRuntime(session),
+                playback: fixture.playback,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text(i18n.tr('sound_field_front')));
+      await tester.pumpAndSettle();
+      expect(session.audioEffects.panning, 0.25);
+      expect(session.audioEffects.frontBack, 0.1);
+
+      final pad = find.byKey(const ValueKey('sound_field_pad'));
+      final position = find.bySemanticsLabel(i18n.tr('volume_balance'));
+      final rect = tester.getRect(pad);
+      final gesture = await tester.startGesture(
+        rect.center,
+        kind: windows ? PointerDeviceKind.mouse : PointerDeviceKind.touch,
+      );
+      await gesture.moveBy(const Offset(-25, -25));
+      await gesture.moveTo(rect.topLeft + const Offset(5, 5));
+      await tester.pump();
+      expect(session.audioEffects.panning, 0.25);
+      expect(session.audioEffects.frontBack, 0.1);
+      expect(
+        tester.getSemantics(position).getSemanticsData().value,
+        '${i18n.tr('sound_field_left')} 100%, ${i18n.tr('sound_field_front')} 100%',
+      );
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(session.audioEffects.panning, -1);
+      expect(session.audioEffects.frontBack, 1);
+
+      await tester.tapAt(rect.center + const Offset(1, 1));
+      await tester.pumpAndSettle();
+      expect(session.audioEffects.panning, 0);
+      expect(session.audioEffects.frontBack, 0);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      expect(session.audioEffects.panning, 0);
+      expect(session.audioEffects.frontBack, -0.1);
+
+      final restore = find.byKey(const ValueKey('restore_volume_balance'));
+      expect(tester.widget<FilledButton>(restore).onPressed, isNotNull);
+      await tester.tap(restore);
+      await tester.pumpAndSettle();
+      expect(session.audioEffects, AudioEffectsState.flat);
+      expect(tester.widget<FilledButton>(restore).onPressed, isNull);
+      expect(
+        tester.getSemantics(position).getSemanticsData().value,
+        i18n.tr('sound_field_centered'),
+      );
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets(
     'time segment endpoints use live position and save localized default label',
@@ -5567,7 +5687,19 @@ void main() {
             kind: PointerDeviceKind.mouse,
           );
           await tester.pumpAndSettle();
-          await tester.tap(find.text(fixture.languageProvider.tr('edit')));
+          final editLabel = find.text(fixture.languageProvider.tr('edit'));
+          final editRow = find.ancestor(
+            of: editLabel,
+            matching: find.byType(AppEntryInkWell),
+          );
+          expect(
+            find.descendant(
+              of: editRow,
+              matching: find.byIcon(Icons.edit_rounded),
+            ),
+            findsOneWidget,
+          );
+          await tester.tap(editLabel);
         } else {
           await tester.dragFrom(tester.getCenter(row), const Offset(180, 0));
           await tester.pumpAndSettle();
@@ -5581,6 +5713,13 @@ void main() {
           await tester.dragFrom(tester.getCenter(row), const Offset(-180, 0));
           await tester.pumpAndSettle();
           expect(tester.getTopLeft(row).dx, lessThan(initialLeft));
+          expect(
+            find.descendant(
+              of: editAction,
+              matching: find.byIcon(Icons.edit_rounded),
+            ),
+            findsOneWidget,
+          );
           await tester.tap(editAction);
         }
         await tester.pumpAndSettle();
@@ -5647,7 +5786,7 @@ void main() {
   }
 
   testWidgets(
-    'volume input matches the queue name editor and validates the percentage',
+    'volume input shares the queue name style and uses a centered dialog',
     (tester) async {
       final windows = defaultTargetPlatform == TargetPlatform.windows;
       final harness = await _pumpSubtitleDetail(
@@ -5676,6 +5815,8 @@ void main() {
         const ValueKey('session_volume_input_surface'),
       );
       final keyboard = FakeViewPadding(bottom: windows ? 1080 : 1290);
+      final ratio = tester.view.devicePixelRatio;
+      final screen = tester.view.physicalSize / ratio;
 
       unawaited(
         showPlaybackQueueEditPanel(
@@ -5688,15 +5829,13 @@ void main() {
       await tester.pumpAndSettle();
       final nameRect = tester.getRect(nameInput);
       final surfaceRect = tester.getRect(nameSurface);
+      final nameRadius =
+          (tester.widget<DecoratedBox>(nameSurface).decoration as BoxDecoration)
+              .borderRadius;
       final nameDecoration = InputDecorationTheme.of(tester.element(nameInput));
       final nameIcon = tester.widget<Icon>(
         find.byKey(const ValueKey('playback_queue_name_header_icon')),
       );
-      tester.view.viewInsets = keyboard;
-      await tester.pumpAndSettle();
-      final nameRectWithKeyboard = tester.getRect(nameInput);
-      final surfaceRectWithKeyboard = tester.getRect(nameSurface);
-      tester.view.resetViewInsets();
       Navigator.of(tester.element(nameInput)).pop();
       await tester.pumpAndSettle();
 
@@ -5708,8 +5847,21 @@ void main() {
       await tester.tap(percent);
       await tester.pumpAndSettle();
 
-      expect(tester.getRect(volumeInput), nameRect);
-      expect(tester.getRect(volumeSurface), surfaceRect);
+      expect(find.byKey(const ValueKey('app_dialog_scrim')), findsOneWidget);
+      final volumeRect = tester.getRect(volumeSurface);
+      final inputRect = tester.getRect(volumeInput);
+      expect(volumeRect.center, screen.center(Offset.zero));
+      expect(volumeRect.height, surfaceRect.height);
+      expect(inputRect.height, nameRect.height);
+      expect(
+        inputRect.topLeft - volumeRect.topLeft,
+        nameRect.topLeft - surfaceRect.topLeft,
+      );
+      expect(
+        (tester.widget<DecoratedBox>(volumeSurface).decoration as BoxDecoration)
+            .borderRadius,
+        nameRadius,
+      );
       expect(
         InputDecorationTheme.of(tester.element(volumeInput)),
         nameDecoration,
@@ -5727,8 +5879,10 @@ void main() {
       expect(field.controller!.text, '100');
       tester.view.viewInsets = keyboard;
       await tester.pumpAndSettle();
-      expect(tester.getRect(volumeInput), nameRectWithKeyboard);
-      expect(tester.getRect(volumeSurface), surfaceRectWithKeyboard);
+      final availableHeight = screen.height - keyboard.bottom / ratio;
+      final rectWithKeyboard = tester.getRect(volumeSurface);
+      expect(rectWithKeyboard.center.dy, closeTo(availableHeight / 2, 0.01));
+      expect(rectWithKeyboard.bottom, lessThanOrEqualTo(availableHeight));
 
       final confirm = find.widgetWithText(TextButton, i18n.tr('confirm'));
       final cancel = find
@@ -7122,7 +7276,7 @@ void main() {
       const ValueKey('playback_queue_edit_header_icon'),
     );
     expect(headerIcon, findsOneWidget);
-    expect(tester.widget<Icon>(headerIcon).icon, Icons.edit_note_rounded);
+    expect(tester.widget<Icon>(headerIcon).icon, Icons.playlist_play_rounded);
     expect(tester.widget<Icon>(headerIcon).size, 22);
     expect(
       find.ancestor(
@@ -7133,16 +7287,11 @@ void main() {
       ),
       findsOneWidget,
     );
-    final editAudioIcon = find.byKey(
-      ValueKey(
-        'playback_queue_edit_tile_icon_${Icons.playlist_play_rounded.codePoint}',
-      ),
+    final editAudioIcon = find.descendant(
+      of: find.byType(PlaybackQueueEditPage),
+      matching: find.byIcon(Icons.edit_note_rounded),
     );
     expect(editAudioIcon, findsOneWidget);
-    expect(
-      tester.widget<Icon>(editAudioIcon).icon,
-      Icons.playlist_play_rounded,
-    );
     expect(
       find.ancestor(
         of: editAudioIcon,
@@ -7350,9 +7499,31 @@ void main() {
     expect(colorPanelFinder, findsNothing);
     await tester.tap(find.text(languageProvider.tr('edit_queue_audio')));
     await pumpFiniteTransitions(tester);
-    expect(find.byType(PlaybackQueueAudioEditPage), findsOneWidget);
+    final audioEditPage = find.byType(PlaybackQueueAudioEditPage);
+    expect(audioEditPage, findsOneWidget);
+    expect(
+      find.descendant(
+        of: audioEditPage,
+        matching: find.byIcon(Icons.edit_note_rounded),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: audioEditPage,
+        matching: find.byIcon(Icons.playlist_play_rounded),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: audioEditPage,
+        matching: find.byType(PlaylistIcon),
+      ),
+      findsOneWidget,
+    );
     expect(find.byType(ReorderableListView), findsOneWidget);
-    expect(find.byType(ReorderableDragStartListener), findsWidgets);
+    expect(find.byType(ReorderableDelayedDragStartListener), findsNothing);
 
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 50)),
@@ -8726,9 +8897,31 @@ void main() {
       TextStyle? headingStyle(String key) => tester
           .widget<Text>(find.text(fixture.languageProvider.tr(key)))
           .style;
+      expect(headingStyle('edit_queue_audio')?.fontSize, 16);
+      expect(headingStyle('queue_added_audio')?.fontSize, 13.5);
       expect(
+        headingStyle('playback_sessions'),
         headingStyle('queue_added_audio'),
-        headingStyle('edit_queue_audio'),
+      );
+      expect(
+        tester
+            .widget<Icon>(
+              find.descendant(
+                of: addedCapsule,
+                matching: find.byIcon(Icons.playlist_play_rounded),
+              ),
+            )
+            .size,
+        17,
+      );
+      expect(
+        tester.getSize(
+          find.descendant(
+            of: sectionCapsule('playback_sessions'),
+            matching: find.byType(PlaylistIcon),
+          ),
+        ),
+        const Size.square(17),
       );
       final sourceSectionLeft = isWindows
           ? tester.getRect(find.byType(VerticalDivider)).right + leftEdge
@@ -10781,7 +10974,7 @@ void main() {
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
-      'fullscreen progress drag updates controls without rebuilding video on ${platform.name}',
+      'fullscreen sliders preview pointer values without rebuilding video on ${platform.name}',
       (tester) async {
         final orientation = AppOrientationController(
           setPreferredOrientations: (_) async {},
@@ -10801,6 +10994,9 @@ void main() {
           initialPosition: const Duration(seconds: 10),
           queueTracks: [track],
           physicalSize: const Size(2400, 1080),
+          nativePlaybackRepository: NativePlaybackRepository(
+            bridge: NativePlaybackBridge.instance,
+          ),
           detailBuilder: (session) => SessionVideoFullscreenPage(
             sessionId: session.id,
             trackPath: track.path,
@@ -10836,14 +11032,16 @@ void main() {
         await tester.pumpAndSettle();
 
         final exit = find.byKey(const ValueKey('fullscreen_video_exit'));
+        final viewport = tester.getRect(find.byType(SessionVideoFullscreenPage));
         expect(
           tester.getCenter(exit),
-          Offset(
-            AppPageHeaderMetrics.padding.left +
-                AppPageHeaderMetrics.buttonSize / 2,
-            AppPageHeaderMetrics.padding.top +
-                AppPageHeaderMetrics.buttonSize / 2,
-          ),
+          viewport.topRight +
+              Offset(
+                -AppPageHeaderMetrics.padding.right -
+                    AppPageHeaderMetrics.buttonSize / 2,
+                AppPageHeaderMetrics.padding.top +
+                    AppPageHeaderMetrics.buttonSize / 2,
+              ),
         );
         expect(tester.getSize(exit), const Size.square(48));
         final exitIcon = find.descendant(
@@ -10892,12 +11090,38 @@ void main() {
           kind: ui.PointerDeviceKind.mouse,
         );
         await pointer.addPointer(location: Offset.zero);
+        final volume = find.byKey(const ValueKey('session_volume_slider'));
+        final percentButton = find.byKey(
+          const ValueKey('session_volume_percent_text'),
+        );
+        final volumeLabel = find.descendant(
+          of: percentButton,
+          matching: find.byType(Text),
+        );
+        final volumeRect = tester.getRect(volume);
+        const volumeInset = sessionDetailVolumeTrackInset;
+        expect(tester.widget<Text>(volumeLabel).data, '100%');
+        for (final (fraction, percent) in [(.2, '30%'), (.8, '120%')]) {
+          await pointer.moveTo(
+            Offset(
+              volumeRect.left +
+                  volumeInset +
+                  (volumeRect.width - 2 * volumeInset) * fraction,
+              volumeRect.center.dy,
+            ),
+          );
+          await tester.pump();
+          expect(tester.widget<Text>(volumeLabel).data, percent);
+          expect(tester.widget<Slider>(volume).value, 1);
+          expect(session.volume, 1);
+        }
         final trackLeft = sliderRect.left + 12;
         final trackWidth = sliderRect.width - 24;
         await pointer.moveTo(
           Offset(trackLeft + trackWidth * .25, sliderRect.center.dy),
         );
         await tester.pump();
+        expect(tester.widget<Text>(volumeLabel).data, '100%');
         expect(tester.widget<TimecodeLabel>(times.first).text, '00:30');
         expect(tester.widget<TimecodeLabel>(times.last).text, '-01:30');
         expect(tester.widget<Slider>(progress).value, 10000);
@@ -11028,6 +11252,48 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 1100));
         expect(tester.widget<AnimatedOpacity>(controls).opacity, 0);
+
+        await tester.tap(
+          find.byKey(const ValueKey('fullscreen_video_gesture_surface')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(SessionVolumeControls), findsOneWidget);
+        expect(find.byType(PlaybackSecondaryControlSurface), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('session_volume_exit_button')),
+          findsNothing,
+        );
+        await tester.tap(percentButton);
+        await tester.pumpAndSettle();
+        final input = find.byKey(const ValueKey('session_volume_input'));
+        await tester.pump(const Duration(seconds: 4));
+        expect(tester.widget<AnimatedOpacity>(controls).opacity, 1);
+        await tester.enterText(input, '75');
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pumpAndSettle();
+        expect(input, findsNothing);
+        expect(session.volume, 0.75);
+        expect(tester.widget<Text>(volumeLabel).data, '75%');
+
+        final muteButton = find.byKey(
+          const ValueKey('session_volume_mute_button'),
+        );
+        await tester.tap(muteButton);
+        await tester.pumpAndSettle();
+        expect(session.volume, 0);
+        await tester.tap(muteButton);
+        await tester.pumpAndSettle();
+        expect(session.volume, 0.75);
+
+        final gestureBounds = tester.getRect(
+          find.byKey(const ValueKey('fullscreen_video_gesture_surface')),
+        );
+        await tester.dragFrom(
+          Offset(gestureBounds.right - 24, gestureBounds.center.dy),
+          const Offset(0, -80),
+        );
+        await tester.pumpAndSettle();
+        expect(session.volume, inExclusiveRange(0.75, 1.0));
         await tester.pumpWidget(const SizedBox.shrink());
         expect(tester.takeException(), isNull);
       },
@@ -11123,10 +11389,19 @@ void main() {
             'next',
             'progress',
             'volume',
+            'exit',
           ];
           final rects = [
             for (final name in names)
-              tester.getRect(find.byKey(ValueKey('fullscreen_video_$name'))),
+              tester.getRect(
+                find.byKey(
+                  ValueKey(
+                    name == 'volume'
+                        ? 'session_volume_slider'
+                        : 'fullscreen_video_$name',
+                  ),
+                ),
+              ),
           ];
           for (var i = 0; i < rects.length; i++) {
             final rect = rects[i];
@@ -11165,12 +11440,10 @@ void main() {
             find.byKey(const ValueKey('fullscreen_video_control_bar')),
             findsOneWidget,
           );
-          if (size.width >= 600) {
-            expect(
-              find.byKey(const ValueKey('fullscreen_video_volume_value')),
-              findsOneWidget,
-            );
-          }
+          expect(
+            find.byKey(const ValueKey('session_volume_percent_text')),
+            findsOneWidget,
+          );
           if (const bool.fromEnvironment('FULLSCREEN_VIDEO_SCREENSHOTS') &&
               (size == const Size(320, 640) || size == const Size(1280, 800))) {
             final timeLabel = times.first;
@@ -11348,7 +11621,7 @@ void main() {
         sessionDetailProgressSliderTheme(progressContext, expectedPrimary),
       );
       final volumeContext = tester.element(
-        find.byKey(const ValueKey('fullscreen_video_volume')),
+        find.byKey(const ValueKey('session_volume_slider')),
       );
       final volumeTheme = SliderTheme.of(volumeContext);
       expect(volumeTheme.trackHeight, 6);
@@ -11388,11 +11661,15 @@ void main() {
         );
       }
       final volumeLabel = tester.widget<Text>(
-        find.byKey(const ValueKey('fullscreen_video_volume_value')),
+        find.descendant(
+          of: find.byKey(const ValueKey('session_volume_percent_text')),
+          matching: find.byType(Text),
+        ),
       );
       expect(volumeLabel.style!.fontSize, 11);
       expect(volumeLabel.style!.fontWeight, FontWeight.w900);
       expect(volumeLabel.style!.color, theme.textTheme.labelSmall!.color);
+      expect(volumeLabel.style!.decoration, TextDecoration.underline);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     });
@@ -11464,8 +11741,10 @@ void main() {
       await tester.tap(find.byIcon(Icons.fullscreen_rounded));
       await tester.pumpAndSettle();
       expect(find.byType(SessionVideoFullscreenPage), findsOneWidget);
+      final page = find.byType(SessionVideoFullscreenPage);
       final exit = find.byKey(const ValueKey('fullscreen_video_exit'));
       final portraitExitCenter = tester.getCenter(exit);
+      final portraitRight = tester.getRect(page).right;
       expect(
         portraitExitCenter.dy,
         24 +
@@ -11479,7 +11758,11 @@ void main() {
 
       tester.view.physicalSize = const Size(3840, 2880);
       await tester.pumpAndSettle();
-      expect(tester.getCenter(exit), portraitExitCenter);
+      final landscapeExitCenter = portraitExitCenter.translate(
+        tester.getRect(page).right - portraitRight,
+        0,
+      );
+      expect(tester.getCenter(exit), landscapeExitCenter);
       // This fixture has no app-level inset retention. The controls must honor
       // its supplied inset; the real shell's rotation retention is tested there.
       for (final systemBarTop in [0.0, 72.0, 0.0]) {
@@ -11489,8 +11772,8 @@ void main() {
         expect(
           tester.getCenter(exit),
           Offset(
-            portraitExitCenter.dx,
-            portraitExitCenter.dy - 24 + systemBarTop / 3,
+            landscapeExitCenter.dx,
+            landscapeExitCenter.dy - 24 + systemBarTop / 3,
           ),
         );
       }
@@ -12967,8 +13250,8 @@ void main() {
       final batchHeader = find.byKey(batchHeaderKey);
       expect(batchHeader, findsOneWidget);
       expect(
-        tester.widget<TopPageHeader>(batchHeader).icon,
-        Icons.playlist_play_rounded,
+        tester.widget<TopPageHeader>(batchHeader).iconWidget,
+        isA<PlaylistIcon>().having((w) => w.filled, 'filled', isTrue),
       );
       expect(
         find.text(fixture.languageProvider.tr('multi_select')),

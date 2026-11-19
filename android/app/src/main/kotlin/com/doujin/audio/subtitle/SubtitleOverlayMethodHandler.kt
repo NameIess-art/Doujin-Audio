@@ -50,6 +50,18 @@ internal class SubtitleOverlayMethodHandler(
                 error.message ?: "Invalid arguments.",
                 mapOf("method" to call.method)
             )
+        } catch (error: IllegalStateException) {
+            envelope.error(
+                ChannelErrorCodes.PLATFORM_ERROR,
+                error.message ?: "Subtitle overlay operation failed.",
+                mapOf("method" to call.method)
+            )
+        } catch (error: SecurityException) {
+            envelope.error(
+                ChannelErrorCodes.PLATFORM_ERROR,
+                error.message ?: "Subtitle overlay permission denied.",
+                mapOf("method" to call.method)
+            )
         }
     }
 }

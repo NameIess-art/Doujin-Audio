@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'app_buttons.dart';
 import 'app_entry_ink_well.dart';
+import 'app_search_filters.dart';
 import '../media/search_query_utils.dart';
 import '../ui/ui_interaction_coordinator.dart';
 
@@ -74,10 +75,7 @@ class AppSearchSuggestionSection extends StatelessWidget {
                         title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
+                        style: _searchSectionTitleStyle(theme),
                       ),
                     ),
                     if (onClear != null) ...[
@@ -167,6 +165,11 @@ class AppSearchSuggestionSection extends StatelessWidget {
     ),
   );
 }
+
+TextStyle? _searchSectionTitleStyle(ThemeData theme) => theme
+    .textTheme
+    .titleSmall
+    ?.copyWith(fontSize: 16, fontWeight: FontWeight.w700);
 
 /// Builds compact element rows only as they enter the viewport.
 /// Item values are stable keys; labels may differ or be duplicated.
@@ -545,30 +548,43 @@ class AppElementChip extends StatelessWidget {
   }
 }
 
-class AppSearchElementTabs extends StatelessWidget {
+class AppSearchElementTabs extends StatefulWidget {
   const AppSearchElementTabs({
     super.key,
     required this.draft,
     required this.matchAll,
     required this.onSelected,
     required this.translate,
+    required this.filters,
+    required this.onFiltersChanged,
   });
 
   final String draft;
   final bool matchAll;
   final ValueChanged<bool> onSelected;
   final String Function(String) translate;
+  final SearchFilters filters;
+  final ValueChanged<SearchFilters> onFiltersChanged;
+
+  @override
+  State<AppSearchElementTabs> createState() => _AppSearchElementTabsState();
+}
+
+class _AppSearchElementTabsState extends State<AppSearchElementTabs> {
+  bool _showFilters = false;
 
   @override
   Widget build(BuildContext context) {
-    final elements = parseSearchElements(draft);
+    final elements = parseSearchElements(widget.draft);
+    final translate = widget.translate;
+    const chipPadding = EdgeInsets.all(8);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Wrap(
-            spacing: 8,
+            spacing: 6,
             children: [
               for (final (all, key, count) in [
                 (true, 'search_elements_all', elements?.all.length ?? 0),
@@ -580,17 +596,54 @@ class AppSearchElementTabs extends StatelessWidget {
                   child: ChoiceChip(
                     mouseCursor: WidgetStateMouseCursor.clickable,
                     label: Text('${translate(key)} $count'),
+                    padding: chipPadding,
+                    labelPadding: EdgeInsets.zero,
                     showCheckmark: false,
-                    selected: matchAll == all,
-                    onSelected: (_) => onSelected(all),
+                    selected: widget.matchAll == all,
+                    onSelected: (_) => widget.onSelected(all),
                   ),
                 ),
+              appNoPointerInkTheme(
+                context: context,
+                androidPressHighlight: true,
+                child: FilterChip(
+                  key: const ValueKey('search_other_filters'),
+                  label: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(child: Text(translate('search_other_filters'))),
+                      const SizedBox(width: 4),
+                      Icon(
+                        _showFilters
+                            ? Icons.expand_less_rounded
+                            : Icons.expand_more_rounded,
+                        size: 14,
+                      ),
+                    ],
+                  ),
+                  padding: chipPadding,
+                  labelPadding: EdgeInsets.zero,
+                  selected:
+                      _showFilters || widget.filters != emptySearchFilters,
+                  showCheckmark: false,
+                  mouseCursor: WidgetStateMouseCursor.clickable,
+                  onSelected: (_) =>
+                      setState(() => _showFilters = !_showFilters),
+                ),
+              ),
             ],
           ),
           if (elements == null)
             Text(
               translate('search_elements_invalid'),
               style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          if (_showFilters)
+            AppSearchFiltersPanel(
+              filters: widget.filters,
+              onChanged: widget.onFiltersChanged,
+              translate: translate,
+              titleStyle: _searchSectionTitleStyle(Theme.of(context)),
             ),
         ],
       ),

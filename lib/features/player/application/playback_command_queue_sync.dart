@@ -72,11 +72,12 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
     return true;
   }
 
-  Future<void> _syncPlaybackQueueSession(
+  Future<bool> _syncPlaybackQueueSession(
     PlaybackSession session, {
     bool selectFirst = false,
+    bool preservePlaybackStarting = false,
   }) async {
-    if (!_isRegisteredSession(session)) return;
+    if (!_isRegisteredSession(session)) return false;
     final queueTracks =
         session.playbackQueue?.expandedTracks ?? const <MusicTrack>[];
     final previousPath = session.currentTrackPath;
@@ -86,7 +87,13 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
     }
     final previousIndex = session.currentQueueIndex;
     final wasPlaying = session.playbackRequested;
+    final wasPlaybackStarting = session.isPlaybackStarting;
     session.invalidatePreparation();
+    if (preservePlaybackStarting &&
+        wasPlaybackStarting &&
+        (queueTracks.isNotEmpty || session.hasDetachedQueueTrack)) {
+      session.beginPreparation(showLoading: false, autoPlay: true);
+    }
     final generation = session.loadGeneration;
     final previousRuntimeTracks = session.customQueueTracks;
     final queueContainsCurrent =
@@ -119,6 +126,7 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
     final queueRevision = session.queueVersion;
 
     if (tracks.isEmpty) {
+      session.cancelPlaybackStart(generation);
       final hadNativeSession = session.loadedPath != null;
       session.currentTrackPath = '';
       session.currentQueueIndex = 0;
@@ -129,18 +137,19 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
         processingState: ProcessingState.idle,
       );
       _notifyPlaybackChanged(session.id);
-      if (!hadNativeSession) return;
+      if (!hadNativeSession) return false;
       final response = await _nativePlaybackRepository.removeSession(
         session.id,
       );
       if (!_isRegisteredSession(session) ||
           session.queueVersion != queueRevision ||
           session.loadGeneration != generation) {
-        return;
+        return false;
       }
       if (response.isOk) {
         _playbackFacade.forgetNativeSessionRetainedContentUris(session.id);
       }
+      return false;
     } else {
       var nextIndex = retainedCurrentTrack != null
           ? 0
@@ -181,7 +190,7 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
         }
         _notifyPlaybackChanged(session.id);
         _playbackFacade.scheduleSessionStatePersistence(sessionId: session.id);
-        return;
+        return true;
       }
       if (!selectFirst &&
           previousPath.isNotEmpty &&
@@ -202,7 +211,7 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
         if (!_isRegisteredSession(session) ||
             session.queueVersion != queueRevision ||
             session.loadGeneration != generation) {
-          return;
+          return false;
         }
         final loopMode = session.loopMode;
         final result = await _nativePlaybackRepository.updateQueue(
@@ -223,7 +232,7 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
         if (!_isRegisteredSession(session) ||
             session.queueVersion != queueRevision ||
             session.loadGeneration != generation) {
-          return;
+          return false;
         }
         if (result.isOk && result.valueOrNull != null) {
           _handleNativePlaybackSnapshot(result.valueOrNull!);
@@ -231,6 +240,7 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
         _syncNotificationState();
         _playbackFacade.scheduleSessionStatePersistence(sessionId: session.id);
         _notifyPlaybackChanged(session.id);
+        return true;
       } else {
         await _prepareAndPlay(
           session,
@@ -238,6 +248,7 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
           autoPlay: wasPlaying,
           targetQueueIndex: nextIndex,
         );
+        return false;
       }
     }
   }

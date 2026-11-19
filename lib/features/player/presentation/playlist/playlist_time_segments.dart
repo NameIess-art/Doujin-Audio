@@ -19,6 +19,7 @@ import '../../application/playback_session_snapshot.dart';
 import '../../domain/time_segment_label.dart';
 import 'playlist_audio_features.dart';
 import 'playlist_speed_controls.dart';
+import '../../../../core/widgets/unified_popup_menu.dart';
 
 class TimeSegmentPanel extends StatefulWidget {
   const TimeSegmentPanel({
@@ -173,6 +174,7 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
                   _ => Padding(
                     padding: const EdgeInsets.only(top: pageTopInset),
                     child: VolumeBalancePage(
+                      key: ValueKey<String>('balance_${widget.session.id}'),
                       session: widget.session,
                       playback: widget.playback,
                     ),
@@ -325,6 +327,7 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
             children: [
               Expanded(
                 child: TextField(
+                  contextMenuBuilder: buildAppEditableTextMenu,
                   controller: widget.nameController,
                   textInputAction: TextInputAction.done,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -597,7 +600,6 @@ class SegmentTimeRow extends StatelessWidget {
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       color: value == null ? cs.onSurfaceVariant : cs.onSurface,
                       fontWeight: FontWeight.w800,
-                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                 ),
@@ -620,7 +622,6 @@ Future<Duration?> showSegmentTimeInputDialog(
   ).read(appLanguageProviderInstanceProvider);
   return showAppTextInputPanel<Duration>(
     context: context,
-    barrierLabel: i18n.tr('close'),
     header: AppEditPanelHeader(
       title: i18n.tr('segment_time_input_title'),
       icon: Icons.schedule_rounded,

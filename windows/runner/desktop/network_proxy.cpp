@@ -29,12 +29,20 @@ std::wstring Lower(std::wstring text) {
   return text;
 }
 
-std::vector<std::wstring> Entries(const std::wstring& text) {
+std::wstring Trim(const std::wstring& text) {
+  const auto first = text.find_first_not_of(L" \t\r\n");
+  if (first == std::wstring::npos) return {};
+  const auto last = text.find_last_not_of(L" \t\r\n");
+  return text.substr(first, last - first + 1);
+}
+
+std::vector<std::wstring> SplitEntries(const std::wstring& text,
+                                       const wchar_t* delimiters) {
   std::vector<std::wstring> entries;
   size_t start = 0;
   while (start < text.size()) {
-    const auto end = text.find_first_of(L"; \t\r\n", start);
-    const auto entry = text.substr(start, end - start);
+    const auto end = text.find_first_of(delimiters, start);
+    const auto entry = Trim(text.substr(start, end - start));
     if (!entry.empty()) entries.push_back(entry);
     if (end == std::wstring::npos) break;
     start = end + 1;
@@ -42,10 +50,18 @@ std::vector<std::wstring> Entries(const std::wstring& text) {
   return entries;
 }
 
+std::string ProtocolPrefix(const std::wstring& name) {
+  if (name == L"socks5") return "SOCKS5 ";
+  if (name == L"socks" || name == L"socks4") return "SOCKS ";
+  if (name == L"https") return "HTTPS ";
+  if (name == L"http") return "HTTP ";
+  return "PROXY ";
+}
+
 bool Bypasses(const std::wstring& bypass, const std::wstring& host,
               const std::wstring& scheme, INTERNET_PORT port) {
   const auto address = host + L":" + std::to_wstring(port);
-  for (auto pattern : Entries(Lower(bypass))) {
+  for (auto pattern : SplitEntries(Lower(bypass), L"; \t\r\n")) {
     if (pattern == L"<local>" && host.find(L'.') == std::wstring::npos &&
         host.find(L':') == std::wstring::npos) return true;
     const auto separator = pattern.find(L"://");
@@ -61,26 +77,49 @@ bool Bypasses(const std::wstring& bypass, const std::wstring& host,
 
 std::string ProxyList(const std::wstring& proxies, const std::wstring& scheme) {
   std::string common, selected, socks;
-  for (auto entry : Entries(proxies)) {
+  auto append = [](std::string& target, const std::string& item) {
+    if (!target.empty()) target += "; ";
+    target += item;
+  };
+  for (auto entry : SplitEntries(proxies, L";")) {
+    if (Lower(entry) == L"direct") {
+      append(common, "DIRECT");
+      continue;
+    }
+    const auto ws = entry.find_first_of(L" \t\r\n");
+    if (ws != std::wstring::npos) {
+      const auto keyword = Lower(entry.substr(0, ws));
+      auto rest = Trim(entry.substr(ws + 1));
+      if (!rest.empty() &&
+          (keyword == L"proxy" || keyword == L"http" || keyword == L"https" ||
+           keyword == L"socks" || keyword == L"socks5")) {
+        const auto protocol = rest.find(L"://");
+        if (protocol != std::wstring::npos) rest = rest.substr(protocol + 3);
+        if (rest.empty()) continue;
+        const std::string prefix = keyword == L"proxy" ? "PROXY " : ProtocolPrefix(keyword);
+        append(common, prefix + winrt::to_string(rest));
+        continue;
+      }
+    }
     const auto equals = entry.find(L'=');
     std::wstring type;
     if (equals != std::wstring::npos) {
-      type = Lower(entry.substr(0, equals));
-      entry = entry.substr(equals + 1);
+      type = Lower(Trim(entry.substr(0, equals)));
+      entry = Trim(entry.substr(equals + 1));
     }
     if (entry.empty()) continue;
-    std::string prefix = type == L"socks" ? "SOCKS " : "PROXY ";
+    const bool is_socks = type == L"socks" || type == L"socks5" || type == L"socks4";
+    if (!type.empty() && type != scheme && !is_socks) continue;
+    std::string prefix = type == L"socks5" ? "SOCKS5 " : is_socks ? "SOCKS " : "PROXY ";
     const auto protocol = entry.find(L"://");
     if (protocol != std::wstring::npos) {
       const auto name = Lower(entry.substr(0, protocol));
-      prefix = name == L"socks" || name == L"socks5" ? "SOCKS " :
-          name == L"https" ? "HTTPS " : "PROXY ";
+      prefix = ProtocolPrefix(name);
       entry = entry.substr(protocol + 3);
+      if (entry.empty()) continue;
     }
     auto& target = type.empty() ? common : type == scheme ? selected : socks;
-    if (!type.empty() && type != scheme && type != L"socks") continue;
-    if (!target.empty()) target += "; ";
-    target += prefix + winrt::to_string(entry);
+    append(target, prefix + winrt::to_string(entry));
   }
   return !selected.empty() ? selected : !common.empty() ? common :
       !socks.empty() ? socks : "DIRECT";
@@ -182,10 +221,22 @@ NetworkProxy::NetworkProxy(HWND window, flutter::BinaryMessenger* messenger)
         }
         catch (const winrt::hresult_error& e) { error = winrt::to_string(e.message()); }
         catch (const std::exception& e) { error = e.what(); }
-        std::lock_guard<std::mutex> lock(state->mutex);
-        request->value = std::move(value); request->error = std::move(error);
-        request->completed = true;
-        if (state->window) PostMessage(state->window, kReply, 0, 0);
+        {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          if (!state->window) return;
+          request->value = std::move(value);
+          request->error = std::move(error);
+          request->completed = true;
+        }
+        for (int attempt = 0; attempt < 200; ++attempt) {
+          {
+            std::lock_guard<std::mutex> lock(state->mutex);
+            if (!state->window) return;
+            if (PostMessage(state->window, kReply, 0, 0)) return;
+          }
+          if (GetLastError() == ERROR_INVALID_WINDOW_HANDLE) return;
+          Sleep(10);
+        }
       }).detach();
     } catch (const std::exception& e) {
       request->error = e.what(); request->completed = true; Reply();

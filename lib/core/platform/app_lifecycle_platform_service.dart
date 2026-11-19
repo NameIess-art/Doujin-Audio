@@ -37,11 +37,20 @@ class AppLifecyclePlatformService {
   Future<bool> syncAppTheme({
     required String preset,
     required String themeMode,
+    List<int>? lightTrayMenuPalette,
+    List<int>? darkTrayMenuPalette,
   }) async {
     if (!_isAndroid && !_isWindows) return true;
     final result = await _client.invoke<void>(
       AppLifecycleMethod.syncAppTheme,
-      arguments: <String, Object>{'preset': preset, 'themeMode': themeMode},
+      arguments: <String, Object>{
+        'preset': preset,
+        'themeMode': themeMode,
+        if (lightTrayMenuPalette != null)
+          'lightTrayMenuPalette': lightTrayMenuPalette,
+        if (darkTrayMenuPalette != null)
+          'darkTrayMenuPalette': darkTrayMenuPalette,
+      },
       decode: (_) {},
     );
     return result.isOk;

@@ -46,8 +46,7 @@ internal class DocumentStorageOperations(
 
     fun cacheFromUri(uriString: String, name: String, index: Int): String {
         val uri = Uri.parse(uriString)
-        val extension = name.substringAfterLast('.', "")
-        val safeExt = if (extension.isBlank()) "bin" else extension
+        val safeExt = sanitizeCacheExtension(name, "bin")
         val outDir = File(filesDir, "doujin_audio_imports")
         if (!outDir.exists()) {
             outDir.mkdirs()
@@ -201,7 +200,17 @@ internal class DocumentStorageOperations(
         target: DocumentRenameTarget,
         newName: String
     ): String? {
+        if (newName.isBlank() ||
+            newName == "." ||
+            newName == ".." ||
+            newName.contains('/') ||
+            newName.contains('\\') ||
+            newName.contains("..")
+        ) {
+            return null
+        }
         val rootUri = target.rootUri ?: return null
+        val authority = rootUri.authority ?: return null
         val documentId = paths.documentIdForUri(target.uri) ?: return null
         // Document IDs for primary external storage look like "primary:path/to/dir".
         val colonIndex = documentId.indexOf(':')
@@ -209,16 +218,22 @@ internal class DocumentStorageOperations(
         val volumeName = documentId.substring(0, colonIndex)
         val relativePath = documentId.substring(colonIndex + 1)
         val volumeRoot = paths.resolveVolumeRoot(volumeName) ?: return null
-        val oldFile = java.io.File(volumeRoot, relativePath)
+        val containedOldPath = resolveContainedFilePath(volumeRoot, relativePath) ?: return null
+        val oldFile = java.io.File(containedOldPath)
         if (!oldFile.exists() || !oldFile.isDirectory) return null
         val parentFile = oldFile.parentFile ?: return null
-        val newFile = java.io.File(parentFile, newName)
+        val containedNewPath = resolveContainedFilePath(parentFile.path, newName) ?: return null
+        val newFile = java.io.File(containedNewPath)
+        if (newFile.parentFile?.canonicalFile != parentFile.canonicalFile) return null
         if (!oldFile.renameTo(newFile)) return null
 
         // Build the new tree URI with the updated document ID.
-        val newRelativePath = newFile.absolutePath.removePrefix(volumeRoot).trimStart('/')
+        val canonicalRootPath = java.io.File(volumeRoot).canonicalPath
+        val newRelativePath = newFile.canonicalPath
+            .removePrefix(canonicalRootPath)
+            .replace(java.io.File.separatorChar, '/')
+            .trimStart('/')
         val newDocumentId = "$volumeName:$newRelativePath"
-        val authority = rootUri.authority ?: return null
         val newTreeUri = DocumentsContract.buildTreeDocumentUri(authority, newDocumentId)
         try {
             PersistedUriPermissionOperations.migrateRenamedGrant(
@@ -226,9 +241,9 @@ internal class DocumentStorageOperations(
                 rootUri,
                 newTreeUri
             )
-        } catch (error: SecurityException) {
+        } catch (_: SecurityException) {
             runCatching { newFile.renameTo(oldFile) }
-            throw error
+            return null
         }
         return newTreeUri.toString()
     }
@@ -481,6 +496,20 @@ internal class DocumentStorageOperations(
             delete = { it.delete() }
         )
     }
+}
+
+internal fun sanitizeCacheExtension(name: String, fallback: String): String {
+    val leaf = name
+        .replace('\\', '/')
+        .substringAfterLast('/')
+        .trim()
+    val dotIndex = leaf.lastIndexOf('.')
+    if (dotIndex <= 0 || dotIndex >= leaf.length - 1) return fallback
+    val sanitized = leaf.substring(dotIndex + 1)
+        .replace("..", "")
+        .filter { it.isLetterOrDigit() || it == '_' || it == '-' }
+        .take(16)
+    return sanitized.ifBlank { fallback }
 }
 
 internal fun preserveDocumentExtension(displayName: String, requestedStem: String): String {

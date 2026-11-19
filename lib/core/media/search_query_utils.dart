@@ -42,6 +42,62 @@ typedef SearchElements = ({List<String> all, List<String> any});
 
 const SearchElements emptySearchElements = (all: [], any: []);
 
+typedef SearchFilters = ({
+  bool? hasSubtitle,
+  double? minimumRating,
+  Duration? minimumDuration,
+  Duration? maximumDuration,
+  DateTime? firstReleaseDate,
+  DateTime? lastReleaseDate,
+});
+
+const SearchFilters emptySearchFilters = (
+  hasSubtitle: null,
+  minimumRating: null,
+  minimumDuration: null,
+  maximumDuration: null,
+  firstReleaseDate: null,
+  lastReleaseDate: null,
+);
+
+bool canSubmitSearch(String input, SearchFilters filters) {
+  final elements = parseSearchElements(input);
+  return elements != null &&
+      (elements.all.isNotEmpty ||
+          elements.any.isNotEmpty ||
+          filters != emptySearchFilters);
+}
+
+bool matchesSearchMetadata(
+  SearchFilters filters, {
+  double? rating,
+  Duration? duration,
+  DateTime? releaseDate,
+}) {
+  final (
+    :minimumRating,
+    :minimumDuration,
+    :maximumDuration,
+    :firstReleaseDate,
+    :lastReleaseDate,
+    hasSubtitle: _,
+  ) = filters;
+  int calendarDay(DateTime date) =>
+      date.year * 10000 + date.month * 100 + date.day;
+  return (minimumRating == null ||
+          (rating != null && rating >= minimumRating)) &&
+      (minimumDuration == null ||
+          (duration != null && duration >= minimumDuration)) &&
+      (maximumDuration == null ||
+          (duration != null && duration <= maximumDuration)) &&
+      (firstReleaseDate == null ||
+          (releaseDate != null &&
+              calendarDay(releaseDate) >= calendarDay(firstReleaseDate))) &&
+      (lastReleaseDate == null ||
+          (releaseDate != null &&
+              calendarDay(releaseDate) <= calendarDay(lastReleaseDate)));
+}
+
 bool matchesSearchTerms(
   Iterable<String> haystacks,
   String query, {

@@ -655,7 +655,9 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
         tone: backupSucceeded
             ? AppFeedbackTone.destructive
             : AppFeedbackTone.warning,
-        icon: Icons.sell_rounded,
+        icon: backupSucceeded
+            ? Icons.delete_outline_rounded
+            : Icons.warning_amber_rounded,
         isUndoAction: true,
         actionLabel: i18n.tr('undo'),
         onAction: () =>

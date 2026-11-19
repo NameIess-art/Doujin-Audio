@@ -1,5 +1,6 @@
 package com.doujin.audio
 
+import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.ContextWrapper
 import android.content.Intent
@@ -86,16 +87,51 @@ class SubtitleOverlayCoordinatorTest {
             .onMethodCall(MethodCall("startOverlay", null), result)
         assertEquals(mapOf("ok" to true, "value" to false), response)
     }
+
+    @Test
+    fun `background start restriction and missing settings activity propagate structured channel errors`() {
+        val context = OverlayContext().apply {
+            startServiceError = IllegalStateException("background restricted")
+            startActivityError = ActivityNotFoundException("no settings")
+        }
+        val handler = SubtitleOverlayMethodHandler(SubtitleOverlayCoordinator(context))
+
+        val responses = mutableListOf<Any?>()
+        val result = object : MethodChannel.Result {
+            override fun success(result: Any?) { responses += result }
+            override fun error(code: String, message: String?, details: Any?) = error("Envelope expected")
+            override fun notImplemented() = error("Known method expected")
+        }
+
+        handler.onMethodCall(MethodCall("startOverlay", null), result)
+        handler.onMethodCall(MethodCall("openOverlaySettings", null), result)
+
+        assertEquals(2, responses.size)
+        val startError = responses[0] as Map<*, *>
+        assertEquals(false, startError["ok"])
+        assertEquals("platform_error", startError["errorCode"])
+        val settingsError = responses[1] as Map<*, *>
+        assertEquals(false, settingsError["ok"])
+        assertEquals("platform_error", settingsError["errorCode"])
+    }
 }
 
 private class OverlayContext : ContextWrapper(null) {
     val bound = mutableListOf<ServiceConnection>()
     val unbound = mutableListOf<ServiceConnection>()
     var bindResult = true
+    var startServiceError: RuntimeException? = null
+    var startActivityError: RuntimeException? = null
     var stops = 0
 
     override fun getPackageName() = "com.doujin.audio"
-    override fun startService(intent: Intent): ComponentName? = null
+    override fun startActivity(intent: Intent) {
+        startActivityError?.let { throw it }
+    }
+    override fun startService(intent: Intent): ComponentName? {
+        startServiceError?.let { throw it }
+        return null
+    }
     override fun bindService(intent: Intent, connection: ServiceConnection, flags: Int): Boolean {
         bound.add(connection)
         return bindResult

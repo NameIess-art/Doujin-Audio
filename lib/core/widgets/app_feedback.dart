@@ -31,6 +31,7 @@ class _FeedbackData {
     required this.tone,
     this.title,
     required this.icon,
+    this.iconWidget,
     this.iconColor,
     required this.duration,
     this.actionLabel,
@@ -45,6 +46,7 @@ class _FeedbackData {
   final AppFeedbackTone tone;
   final String? title;
   final IconData icon;
+  final Widget? iconWidget;
   final Color? iconColor;
   final Duration? duration;
   final String? actionLabel;
@@ -59,6 +61,7 @@ class _FeedbackData {
     AppFeedbackTone? tone,
     String? title,
     IconData? icon,
+    Widget? iconWidget,
     Color? iconColor,
     Duration? duration,
     String? actionLabel,
@@ -73,6 +76,7 @@ class _FeedbackData {
       tone: tone ?? this.tone,
       title: title ?? this.title,
       icon: icon ?? this.icon,
+      iconWidget: iconWidget ?? this.iconWidget,
       iconColor: iconColor ?? this.iconColor,
       duration: duration ?? this.duration,
       actionLabel: actionLabel ?? this.actionLabel,
@@ -168,6 +172,7 @@ void showAppSnackBar(
   AppFeedbackTone tone = AppFeedbackTone.info,
   String? title,
   IconData? icon,
+  Widget? iconWidget,
   Color? iconColor,
   Duration? duration,
   String? actionLabel,
@@ -185,6 +190,7 @@ void showAppSnackBar(
     tone: tone,
     title: title,
     icon: icon,
+    iconWidget: iconWidget,
     iconColor: iconColor,
     duration: isUndoAction
         ? kUndoableRemovalFeedbackDuration
@@ -328,6 +334,7 @@ void _showTopFeedback(
   required AppFeedbackTone tone,
   String? title,
   IconData? icon,
+  Widget? iconWidget,
   Color? iconColor,
   required Duration? duration,
   String? actionLabel,
@@ -371,6 +378,7 @@ void _showTopFeedback(
       tone: tone,
       title: title,
       icon: resolvedIcon,
+      iconWidget: iconWidget,
       iconColor: iconColor,
       duration: duration,
       actionLabel: actionLabel,
@@ -400,6 +408,7 @@ void _showTopFeedback(
     tone: tone,
     title: title,
     icon: resolvedIcon,
+    iconWidget: iconWidget,
     iconColor: iconColor,
     duration: duration,
     actionLabel: actionLabel,
@@ -563,6 +572,7 @@ void _showTopFeedback(
                     child: AppFeedbackSurface(
                       tone: currentData.tone,
                       icon: currentData.icon,
+                      iconWidget: currentData.iconWidget,
                       iconColor: currentData.iconColor,
                       title: currentData.title,
                       message: currentData.message,
@@ -900,6 +910,7 @@ class AppFeedbackSurface extends StatelessWidget {
     super.key,
     required this.tone,
     required this.icon,
+    this.iconWidget,
     required this.message,
     this.remainingSeconds,
     this.title,
@@ -911,6 +922,7 @@ class AppFeedbackSurface extends StatelessWidget {
 
   final AppFeedbackTone tone;
   final IconData icon;
+  final Widget? iconWidget;
   final String message;
   final int? remainingSeconds;
   final String? title;
@@ -974,12 +986,18 @@ class AppFeedbackSurface extends StatelessWidget {
                             child: child,
                           ),
                         ),
-                  child: Icon(
-                    icon,
-                    key: ValueKey<IconData>(icon),
-                    size: 16,
-                    color: accent,
-                  ),
+                  child: iconWidget != null
+                      ? IconTheme.merge(
+                          key: const ValueKey<String>('feedback_custom_icon'),
+                          data: IconThemeData(size: 16, color: accent),
+                          child: iconWidget!,
+                        )
+                      : Icon(
+                          icon,
+                          key: ValueKey<IconData>(icon),
+                          size: AppDesignTokens.opticalIconSize(icon, 16),
+                          color: accent,
+                        ),
                 ),
               ),
             ),

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:collection';
 import 'dart:convert';
 import 'dart:isolate';
 
@@ -104,17 +103,17 @@ final class LibraryPersistenceCoordinator {
         _decodeStringMap,
       ),
     ]);
-    final folderExclusions = <String, Set<String>>{};
-    final trackExclusions = <String, Set<String>>{};
+    final folderExclusions = LibraryService.createPathIndex<Set<String>>();
+    final trackExclusions = LibraryService.createPathIndex<Set<String>>();
     final exclusions = preferences[3] as Map<String, dynamic>?;
     _decodeExclusionMap(exclusions?['folders'], folderExclusions);
     _decodeExclusionMap(exclusions?['tracks'], trackExclusions);
-    final legacyRemovedFolders = <String, Set<String>>{};
+    final legacyRemovedFolders = LibraryService.createPathIndex<Set<String>>();
     _decodeExclusionMap(preferences[4], legacyRemovedFolders);
     if (legacyRemovedFolders.isNotEmpty) {
       for (final entry in legacyRemovedFolders.entries) {
         folderExclusions
-            .putIfAbsent(entry.key, () => <String>{})
+            .putIfAbsent(entry.key, LibraryService.createPathSet)
             .addAll(entry.value);
       }
       final value = _encodeExclusionSnapshot(folderExclusions, trackExclusions);
@@ -274,10 +273,15 @@ final class LibraryPersistenceCoordinator {
     for (final entry in raw.entries) {
       final values = entry.value;
       if (values is! List) continue;
-      target[PathMatcher.normalize(entry.key.toString())] = values
-          .map((value) => PathMatcher.normalize(value.toString()))
-          .where((value) => value.isNotEmpty)
-          .toSet();
+      final normalizedKey = PathMatcher.normalize(entry.key.toString());
+      final set = target.putIfAbsent(
+        normalizedKey,
+        LibraryService.createPathSet,
+      );
+      for (final value in values) {
+        final normalizedValue = PathMatcher.normalize(value.toString());
+        if (normalizedValue.isNotEmpty) set.add(normalizedValue);
+      }
     }
   }
 
@@ -296,8 +300,8 @@ final class LibraryPersistenceCoordinator {
     if (_service.libraryBatchDepth > 0) {
       for (final entry in entries) {
         final key = <String>[
-          PathMatcher.normalize(entry.libraryPath),
-          PathMatcher.normalize(entry.path),
+          PathMatcher.equivalenceKey(entry.libraryPath),
+          PathMatcher.equivalenceKey(entry.path),
           entry.kind.dbValue,
         ].join('\x1F');
         _service.libraryBatchPersistEntriesByKey[key] = entry;
@@ -330,19 +334,13 @@ LibraryPersistedState _preparePersistedLibrary(
     return roots.putIfAbsent(normalized, () => normalized);
   }
 
-  final entriesByLibrary = <String, Map<String, LibraryEntry>>{};
-  Set<String> exclusionPaths([Iterable<String> values = const []]) =>
-      HashSet<String>(
-        equals: (first, second) =>
-            PathMatcher.equivalenceKey(first) ==
-            PathMatcher.equivalenceKey(second),
-        hashCode: (value) => PathMatcher.equivalenceKey(value).hashCode,
-      )..addAll(values);
+  final entriesByLibrary =
+      LibraryService.createPathIndex<Map<String, LibraryEntry>>();
   Map<String, Set<String>> restoreExclusions(Map<String, Set<String>> source) {
-    final restored = <String, Set<String>>{};
+    final restored = LibraryService.createPathIndex<Set<String>>();
     for (final entry in source.entries) {
       restored
-          .putIfAbsent(canonicalRoot(entry.key), exclusionPaths)
+          .putIfAbsent(canonicalRoot(entry.key), LibraryService.createPathSet)
           .addAll(entry.value);
     }
     return restored;
@@ -353,14 +351,16 @@ LibraryPersistedState _preparePersistedLibrary(
   for (final entry in entries) {
     final root = canonicalRoot(entry.libraryPath);
     final path = PathMatcher.normalize(entry.path);
-    entriesByLibrary.putIfAbsent(root, () => <String, LibraryEntry>{})[path] =
-        entry;
+    entriesByLibrary.putIfAbsent(
+      root,
+      LibraryService.createPathIndex<LibraryEntry>,
+    )[path] = entry;
     final excluded = entry.isFolder ? folderExclusions : trackExclusions;
     // Indexed entries carry current state; preference-only paths still belong
     // to older libraries without a complete entry index.
     excluded[root]?.remove(path);
     if (entry.isExcluded) {
-      excluded.putIfAbsent(root, exclusionPaths).add(path);
+      excluded.putIfAbsent(root, LibraryService.createPathSet).add(path);
     }
   }
   final trackIndex = PathMembershipIndex(

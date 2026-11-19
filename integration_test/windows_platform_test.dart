@@ -119,6 +119,15 @@ void main() {
         await WindowsDesktopService.instance.setFullscreen(true);
         await WindowsDesktopService.instance.setFullscreen(false);
         expect(
+          await AppLifecyclePlatformService().syncAppTheme(
+            preset: 'rose',
+            themeMode: 'system',
+            lightTrayMenuPalette: const [0xfaf0f1, 0x201819, 0xf1dce1],
+            darkTrayMenuPalette: const [0x352a2c, 0xffeeef, 0x50363d],
+          ),
+          isTrue,
+        );
+        expect(
           await AppLifecyclePlatformService().syncTrayMenu(
             open: '開く',
             toggle: '再生 / 一時停止',
@@ -649,6 +658,106 @@ void main() {
         } finally {
           await structureSub.cancel();
           await progressSub.cancel();
+          await bridge.dispose();
+          await directory.delete(recursive: true);
+        }
+      });
+    },
+    skip: !Platform.isWindows,
+  );
+  testWidgets(
+    'Windows front-back rendering follows the decoder layout and resets',
+    (tester) async {
+      await tester.runAsync(() async {
+        MediaKit.ensureInitialized();
+        final directory = await Directory.systemTemp.createTemp('sound-field-');
+        final bridge = WindowsPlaybackBridge(
+          createPlayer: () {
+            final player = Player();
+            final native = player.platform! as NativePlayer;
+            unawaited(native.setProperty('ao', 'null'));
+            return player;
+          },
+        );
+
+        NativeAudioEffects effects(double frontBack) => NativeAudioEffects(
+          state: AudioEffectsState(frontBack: frontBack),
+          channelSwapEnabled: false,
+        );
+
+        try {
+          final queue = <Map<String, Object?>>[];
+          for (final channels in [2, 1]) {
+            final output = File('${directory.path}/$channels.wav');
+            final process = await WindowsMediaTools.instance.start('ffmpeg', [
+              '-nostdin',
+              '-v',
+              'error',
+              '-f',
+              'lavfi',
+              '-i',
+              'sine=frequency=440:sample_rate=44100:duration=15',
+              '-ac',
+              '$channels',
+              output.path,
+            ]);
+            final drained = Future.wait([
+              process.stdout.drain<void>(),
+              process.stderr.drain<void>(),
+            ]);
+            expect(await process.exitCode, 0);
+            await drained;
+            queue.add({
+              'uri': '${output.uri}',
+              'path': output.path,
+              'title': '$channels',
+            });
+          }
+
+          const id = 'sound-field';
+          final prepared = await bridge.prepareSession(
+            sessionId: id,
+            uri: Uri.parse(queue.first['uri'] as String),
+            title: 'Stereo',
+            autoPlay: true,
+            queue: queue,
+            audioEffects: effects(0.6),
+          );
+          expect(prepared.isOk, true, reason: prepared.errorOrNull);
+          expect(prepared.valueOrNull!.audioEffects.frontBack, 0.6);
+          final player = bridge.playerForSession(id)!;
+          final native = player.platform! as NativePlayer;
+
+          Future<void> expectFilter(String channels, Matcher matcher) async {
+            final deadline = DateTime.now().add(const Duration(seconds: 5));
+            var filter = '';
+            var count = '';
+            while (DateTime.now().isBefore(deadline)) {
+              filter = await native.getProperty('af');
+              count = await native.getProperty('audio-params/channel-count');
+              if (count == channels && matcher.matches(filter, {})) return;
+              await Future<void>.delayed(const Duration(milliseconds: 25));
+            }
+            expect(count, channels);
+            expect(filter, matcher);
+          }
+
+          await expectFilter('2', contains('spatial_front.wav'));
+          final adjusted = await bridge.setAudioEffects(id, effects(-0.5));
+          expect(adjusted.isOk, true, reason: adjusted.errorOrNull);
+          expect(adjusted.valueOrNull!.audioEffects.frontBack, -0.5);
+          await expectFilter('2', contains('spatial_back.wav'));
+
+          await player.jump(1);
+          await expectFilter('1', isNot(contains('spatial_back.wav')));
+          await player.jump(0);
+          await expectFilter('2', contains('spatial_back.wav'));
+
+          final reset = await bridge.setAudioEffects(id, effects(0));
+          expect(reset.isOk, true, reason: reset.errorOrNull);
+          expect(reset.valueOrNull!.audioEffects.frontBack, 0);
+          await expectFilter('2', isNot(contains('spatial_back.wav')));
+        } finally {
           await bridge.dispose();
           await directory.delete(recursive: true);
         }

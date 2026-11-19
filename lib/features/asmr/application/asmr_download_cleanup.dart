@@ -254,20 +254,27 @@ class AsmrDownloadOutputStore {
       final relativePath = _planner.validatedDownloadRelativePath(
         item.relativePath,
       );
-      final usesCache =
-          PathMatcher.isContentUri(task.workRootPath) ||
-          (!item.isCover &&
-              path
-                      .extension(_planner.localRelativePath(relativePath))
-                      .toLowerCase() ==
-                  '.json');
-      final staging = usesCache
-          ? await persistentStagingFile(task.workRootPath, relativePath)
-          : File(
-              '${_planner.resolveLocalPathWithin(task.workRootPath, relativePath)}.doujin.part',
-            );
-      if (ownedPaths.contains(staging.path)) {
-        await deleteFileIfPresent(staging);
+      final candidatePaths = <String>{
+        relativePath,
+        if (!item.isCover && item.mediaReference?.isHls == true)
+          _planner.hlsOutputPath(relativePath),
+      };
+      for (final candidate in candidatePaths) {
+        final usesCache =
+            PathMatcher.isContentUri(task.workRootPath) ||
+            (!item.isCover &&
+                path
+                        .extension(_planner.localRelativePath(candidate))
+                        .toLowerCase() ==
+                    '.json');
+        final staging = usesCache
+            ? await persistentStagingFile(task.workRootPath, candidate)
+            : File(
+                '${_planner.resolveLocalPathWithin(task.workRootPath, candidate)}.doujin.part',
+              );
+        if (ownedPaths.contains(staging.path)) {
+          await deleteFileIfPresent(staging);
+        }
       }
     }
   }

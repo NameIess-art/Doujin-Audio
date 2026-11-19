@@ -190,7 +190,7 @@ void main() {
             }
           },
         );
-        expect(identical(store.ensure(spec), first), isTrue);
+        final second = store.ensure(spec, isCancelled: () => cancelled);
         final outcome = expectLater(
           first,
           throwsA(
@@ -199,9 +199,20 @@ void main() {
                 : isA<TimeoutException>(),
           ),
         );
+        final secondOutcome = expectLater(
+          second,
+          throwsA(
+            cancel
+                ? isA<SubtitleModelDownloadCancelled>()
+                : isA<TimeoutException>(),
+          ),
+        );
         await progressed.future.timeout(const Duration(seconds: 2));
         cancelled = cancel;
-        await outcome.timeout(const Duration(seconds: 2));
+        await Future.wait([
+          outcome.timeout(const Duration(seconds: 2)),
+          secondOutcome.timeout(const Duration(seconds: 2)),
+        ]);
         expect(store.snapshot(spec).active, isFalse);
         final partial = File('${directory.path}/idle.gguf.download');
         expect(await partial.length(), 1048576);
@@ -374,6 +385,74 @@ void main() {
       expect(store.snapshot(spec).active, isFalse);
       expect(store.snapshot(spec).fraction, 1);
       expect((await store.status(spec)).ready, isTrue);
+    },
+  );
+
+  test(
+    'concurrent callers receive onProgress and single caller cancellation keeps download alive',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'model_concurrent_',
+      );
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final release = Completer<void>();
+      addTearDown(() async {
+        if (!release.isCompleted) release.complete();
+        await server.close(force: true);
+        await directory.delete(recursive: true);
+      });
+      final bytes = List<int>.filled(2 * 1048576, 9);
+      final firstProgress = <int>[];
+      final secondProgress = <int>[];
+      final midDownload = Completer<void>();
+      server.listen((request) async {
+        request.response.contentLength = bytes.length;
+        request.response.add(bytes.sublist(0, 1048576));
+        await request.response.flush();
+        await release.future;
+        request.response.add(bytes.sublist(1048576));
+        await request.response.close();
+      });
+      final spec = SubtitleModelSpec(
+        'concurrent.gguf',
+        'http://${server.address.host}:${server.port}/concurrent.gguf',
+        bytes.length,
+        sha256.convert(bytes).toString(),
+      );
+      final store = SubtitleModelStore(
+        storage: _Storage(256 * 1024 * 1024),
+        directoryResolver: () async => directory,
+      );
+      addTearDown(store.dispose);
+
+      var cancelFirst = false;
+      var cancelSecond = false;
+      final first = store.ensure(
+        spec,
+        isCancelled: () => cancelFirst,
+        onProgress: (_, received, _) {
+          firstProgress.add(received);
+          if (received >= 1048576 && !midDownload.isCompleted) {
+            midDownload.complete();
+          }
+        },
+      );
+      final second = store.ensure(
+        spec,
+        isCancelled: () => cancelSecond,
+        onProgress: (_, received, _) => secondProgress.add(received),
+      );
+      await midDownload.future.timeout(const Duration(seconds: 2));
+      expect(secondProgress, isNotEmpty);
+
+      cancelFirst = true;
+      await expectLater(first, throwsA(isA<SubtitleModelDownloadCancelled>()));
+      expect(store.snapshot(spec).active, isTrue);
+
+      release.complete();
+      final installed = await second.timeout(const Duration(seconds: 2));
+      expect(await File(installed).readAsBytes(), bytes);
+      expect(secondProgress.last, bytes.length);
     },
   );
 }

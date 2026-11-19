@@ -477,13 +477,17 @@ SliderThemeData sessionDetailProgressSliderTheme(
   overlayColor: primaryColor.withValues(alpha: 0.15),
 );
 
+const sessionDetailVolumeTrackInset = 14.0;
+
 SliderThemeData sessionDetailVolumeSliderTheme(
   BuildContext context, {
   required bool isBoosted,
 }) => SliderTheme.of(context).copyWith(
   trackHeight: 6,
   thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-  overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+  overlayShape: const RoundSliderOverlayShape(
+    overlayRadius: sessionDetailVolumeTrackInset,
+  ),
   activeTrackColor: isBoosted ? Theme.of(context).colorScheme.primary : null,
 );
 

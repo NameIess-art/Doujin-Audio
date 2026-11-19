@@ -231,12 +231,10 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
     }
     final page = PopScope<void>(
       canPop: false,
-      onPopInvokedWithResult: defaultTargetPlatform == TargetPlatform.android
-          ? (didPop, _) {
-              // Use the same preparation as the close button before popping.
-              if (!didPop) unawaited(requestClose());
-            }
-          : null,
+      onPopInvokedWithResult: (didPop, _) {
+        // Use the same preparation as the close button before popping.
+        if (!didPop) unawaited(requestClose());
+      },
       child: super.buildPage(context, animation, secondaryAnimation),
     );
     // Keep the fade and flight on the cached page subtree. ModalRoute rebuilds

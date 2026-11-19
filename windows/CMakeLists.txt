@@ -108,7 +108,7 @@ file(ARCHIVE_EXTRACT INPUT "${MPV_ARCHIVE}" DESTINATION "${MPV_DIRECTORY}")
 install(FILES "${MPV_DIRECTORY}/libmpv-2.dll" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" COMPONENT Runtime)
 string(JSON FFMPEG_VERSION GET "${WINDOWS_DEPENDENCIES}" ffmpeg version)
 set(FFMPEG_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../.dart_tool/windows_dependencies/ffmpeg-${FFMPEG_VERSION}-essentials_build/bin")
-if(NOT EXISTS "${FFMPEG_DIRECTORY}/ffprobe.exe")
+if(NOT EXISTS "${FFMPEG_DIRECTORY}/ffmpeg.exe" OR NOT EXISTS "${FFMPEG_DIRECTORY}/ffprobe.exe")
   message(FATAL_ERROR "Run tool/build_windows.bat -PrepareOnly to prepare the bundled FFmpeg tools")
 endif()
 install(FILES "${FFMPEG_DIRECTORY}/ffmpeg.exe" "${FFMPEG_DIRECTORY}/ffprobe.exe"

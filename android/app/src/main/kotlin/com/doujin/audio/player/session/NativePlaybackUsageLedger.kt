@@ -36,19 +36,31 @@ internal class NativePlaybackUsageLedger(
 
     init {
         preferences.getString("ledger", null)?.let { encoded ->
-            val state = JSONObject(encoded)
-            epoch = state.getString("epoch")
-            sequence = state.getLong("sequence")
-            val stored = state.getJSONArray("batches")
-            for (index in 0 until stored.length()) {
-                val batch = stored.getJSONObject(index)
-                val storedDays = batch.getJSONArray("days")
-                pending += UsageBatch(
-                    batch.getString("id"),
-                    List(storedDays.length()) { jsonMap(storedDays.getJSONObject(it)) }
-                )
+            try {
+                val state = JSONObject(encoded)
+                val restoredEpoch = state.getString("epoch")
+                val restoredSequence = state.getLong("sequence")
+                val stored = state.getJSONArray("batches")
+                val restoredBatches = buildList {
+                    for (index in 0 until stored.length()) {
+                        val batch = stored.getJSONObject(index)
+                        val storedDays = batch.getJSONArray("days")
+                        add(
+                            UsageBatch(
+                                batch.getString("id"),
+                                List(storedDays.length()) { jsonMap(storedDays.getJSONObject(it)) }
+                            )
+                        )
+                    }
+                }
+                epoch = restoredEpoch
+                sequence = restoredSequence
+                pending += restoredBatches
+                currentId = newBatchId()
+            } catch (error: Exception) {
+                Log.w("NativePlaybackUsage", "Could not restore playback usage ledger; starting empty", error)
+                pending.clear()
             }
-            currentId = newBatchId()
         }
     }
 

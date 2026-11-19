@@ -255,6 +255,31 @@ void main() {
       expect(calls, ['ready', 'saveTimer', 'dispose', 'exit']);
     },
   );
+
+  test(
+    'exit waits for in-flight async action before saving and disposing',
+    () async {
+      runtime.resumeEntered = Completer<void>();
+      runtime.resumeGate = Completer<void>();
+      await attach();
+
+      final resumeAction = _sendAction(channel, 'resume');
+      await runtime.resumeEntered!.future;
+      final exitAction = _sendAction(channel, 'exit');
+      await Future<void>.delayed(Duration.zero);
+
+      expect(calls, ['ready', 'resumeForeground']);
+      runtime.resumeGate!.complete();
+      await Future.wait([resumeAction, exitAction]);
+      expect(calls, [
+        'ready',
+        'resumeForeground',
+        'saveTimer',
+        'dispose',
+        'exit',
+      ]);
+    },
+  );
 }
 
 Future<void> _sendAction(MethodChannel channel, String action) {
@@ -280,6 +305,8 @@ final class _Runtime implements AppRuntimeLifecycle {
   _Runtime(this.calls);
   final List<String> calls;
   Completer<void>? disposeGate;
+  Completer<void>? resumeEntered;
+  Completer<void>? resumeGate;
   Object? disposeError;
   Future<void> Function()? disposePlayback;
   @override
@@ -297,7 +324,12 @@ final class _Runtime implements AppRuntimeLifecycle {
   @override
   Future<void> enterBackground() async {}
   @override
-  Future<void> resumeForeground() async {}
+  Future<void> resumeForeground() async {
+    calls.add('resumeForeground');
+    resumeEntered?.complete();
+    await resumeGate?.future;
+  }
+
   @override
   Future<void> handleMemoryPressure() async {}
 }

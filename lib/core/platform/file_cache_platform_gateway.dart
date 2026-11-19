@@ -93,11 +93,18 @@ class FileCachePlatformGateway {
        ),
        _scanEvents =
            scanEvents ?? const EventChannel(FileCacheChannel.scanEvents),
-       _isAndroid = isAndroid ?? (() => Platform.isAndroid),
+       _isAndroid =
+           isAndroid ??
+           (() =>
+               isWindows == null &&
+               (Platform.isAndroid ||
+                   (!kIsWeb &&
+                       defaultTargetPlatform == TargetPlatform.android))),
        _isWindows =
            isWindows ??
            (() =>
                isAndroid == null &&
+               !kIsWeb &&
                defaultTargetPlatform == TargetPlatform.windows);
 
   static final FileCachePlatformGateway instance = FileCachePlatformGateway();
@@ -170,6 +177,7 @@ class FileCachePlatformGateway {
   }
 
   Future<String?> pickAudioFolder() async {
+    if (!_isAndroid()) return null;
     final result = await _client.invoke<Map<String, Object?>?>(
       FileCacheMethod.pickAudioFolder,
       decode: (value) =>
@@ -181,6 +189,7 @@ class FileCachePlatformGateway {
   }
 
   Future<List<PickedAudioFile>?> pickAudioFiles() async {
+    if (!_isAndroid()) return null;
     final result = await _client.invoke<Map<String, Object?>?>(
       FileCacheMethod.pickAudioFiles,
       decode: (value) =>
@@ -218,6 +227,7 @@ class FileCachePlatformGateway {
     required String name,
     required int index,
   }) async {
+    if (!_isAndroid()) return null;
     final result = await _client.invoke<String?>(
       FileCacheMethod.cacheFromUri,
       arguments: <String, Object?>{'uri': uri, 'name': name, 'index': index},
@@ -231,6 +241,7 @@ class FileCachePlatformGateway {
     required String name,
     bool preserveExtension = false,
   }) async {
+    if (!_isAndroid()) return null;
     final result = await _client.invoke<Map<String, Object?>?>(
       FileCacheMethod.renameDocument,
       arguments: <String, Object?>{
@@ -312,6 +323,7 @@ class FileCachePlatformGateway {
       images.sort((a, b) => a.displayPath.compareTo(b.displayPath));
       return preferredOnly ? images.take(1).toList(growable: false) : images;
     }
+    if (!_isAndroid()) return const <CoverImageReference>[];
     final result = await _client.invoke<List<Object?>>(
       FileCacheMethod.discoverRootImages,
       arguments: <String, Object?>{
@@ -389,6 +401,7 @@ class FileCachePlatformGateway {
       );
       return texts;
     }
+    if (!_isAndroid()) return const <Map<String, String>>[];
     final result = await _client.invoke<List<Object?>>(
       FileCacheMethod.discoverWorkTexts,
       arguments: <String, Object?>{'folder': folderPath},
@@ -430,6 +443,7 @@ class FileCachePlatformGateway {
         return null;
       }
     }
+    if (!_isAndroid()) return null;
     final result = await _client.invoke<Uint8List?>(
       FileCacheMethod.readDocumentBytes,
       arguments: <String, Object?>{'path': filePath},
@@ -453,6 +467,7 @@ class FileCachePlatformGateway {
         propagateFailure: propagateFailure,
       );
     }
+    if (!_isAndroid()) return null;
     final result = await _client.invoke<String?>(
       FileCacheMethod.resolveTrackCover,
       arguments: <String, Object?>{
@@ -482,6 +497,7 @@ class FileCachePlatformGateway {
     if (_isWindows() && !_isAndroid()) {
       return WindowsMediaTools.instance.extractImage(path, videoFrame: true);
     }
+    if (!_isAndroid()) return null;
     final result = await _client.invoke<String?>(
       FileCacheMethod.resolveVideoFrame,
       arguments: <String, Object?>{'path': path, 'modifiedAtMs': ?modifiedAtMs},
@@ -521,6 +537,7 @@ class FileCachePlatformGateway {
     required String path,
     String? groupKey,
   }) async {
+    if (!_isAndroid()) return null;
     final result = await _client.invoke<Map<String, Object?>?>(
       FileCacheMethod.resolveTrackSubtitle,
       arguments: <String, Object?>{'path': path, 'groupKey': groupKey},
@@ -537,6 +554,7 @@ class FileCachePlatformGateway {
     required String path,
     required Uint8List bytes,
   }) async {
+    if (!_isAndroid()) return false;
     final result = await _client.invoke<bool>(
       FileCacheMethod.writeTrackSubtitle,
       arguments: <String, Object?>{'path': path, 'bytes': bytes},
@@ -772,6 +790,7 @@ class FileCachePlatformGateway {
     required Uint8List bytes,
     String? mimeType,
   }) async {
+    if (!_isAndroid()) return null;
     final result = await _client.invoke<CoverImageReference?>(
       FileCacheMethod.writeFileBytesToFolder,
       arguments: <String, Object?>{
@@ -786,6 +805,7 @@ class FileCachePlatformGateway {
   }
 
   Future<bool?> documentPathExistence(String path) async {
+    if (!_isAndroid()) return null;
     final result = await _client.invoke<bool>(
       FileCacheMethod.documentPathExists,
       arguments: <String, Object?>{'path': path},
@@ -809,6 +829,7 @@ class FileCachePlatformGateway {
   }
 
   Future<String?> resolveDocumentFileSystemPath(String path) async {
+    if (!_isAndroid()) return null;
     final result = await _client.invoke<String?>(
       FileCacheMethod.resolveDocumentFileSystemPath,
       arguments: <String, Object?>{'path': path},
@@ -824,6 +845,7 @@ class FileCachePlatformGateway {
     required String relativePath,
     required bool overwrite,
   }) async {
+    if (!_isAndroid()) return null;
     final result = await _client.invoke<String?>(
       FileCacheMethod.ensureFolderPath,
       arguments: <String, Object?>{
@@ -842,6 +864,7 @@ class FileCachePlatformGateway {
     required String relativePath,
     required bool overwrite,
   }) async {
+    if (!_isAndroid()) return false;
     final result = await _client.invoke<bool>(
       FileCacheMethod.copyFileToFolder,
       arguments: <String, Object?>{
@@ -874,6 +897,7 @@ class FileCachePlatformGateway {
   }
 
   Future<bool> deleteDocumentPath(String path) async {
+    if (!_isAndroid()) return false;
     final result = await _client.invoke<bool>(
       FileCacheMethod.deleteDocumentPath,
       arguments: <String, Object?>{'path': path},
@@ -909,6 +933,7 @@ class FileCachePlatformGateway {
   Future<Map<String, Object?>?> readJsonDocument(
     Map<String, Object?> location,
   ) async {
+    if (!_isAndroid()) return null;
     final result = await _client.invoke<Map<String, Object?>?>(
       FileCacheMethod.readJsonDocument,
       arguments: location,
@@ -924,6 +949,7 @@ class FileCachePlatformGateway {
     required String mode,
     String? expectedRevision,
   }) async {
+    if (!_isAndroid()) return null;
     final result = await _client.invoke<Map<String, Object?>?>(
       FileCacheMethod.writeJsonDocument,
       arguments: <String, Object?>{
@@ -942,6 +968,7 @@ class FileCachePlatformGateway {
     required Map<String, Object?> location,
     required String expectedRevision,
   }) async {
+    if (!_isAndroid()) return null;
     final result = await _client.invoke<Map<String, Object?>?>(
       FileCacheMethod.deleteJsonDocument,
       arguments: <String, Object?>{

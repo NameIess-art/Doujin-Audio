@@ -282,7 +282,8 @@ List<SubtitleCue> _parseLrc(String raw) {
   final lineMap = <int, List<String>>{};
   var offsetMs = 0;
 
-  for (final rawLine in raw.replaceAll('\r\n', '\n').split('\n')) {
+  final normalizedRaw = raw.startsWith('\uFEFF') ? raw.substring(1) : raw;
+  for (final rawLine in normalizedRaw.replaceAll('\r\n', '\n').split('\n')) {
     final line = rawLine.trim();
     if (line.isEmpty) continue;
 
@@ -350,7 +351,10 @@ List<SubtitleCue> _parseWebVtt(String raw) {
 
   while (i < lines.length) {
     final line = lines[i].trim();
-    if (line.isEmpty || line == 'WEBVTT') {
+    if (line.isEmpty ||
+        line == 'WEBVTT' ||
+        line.startsWith('WEBVTT ') ||
+        line.startsWith('WEBVTT\t')) {
       i++;
       continue;
     }

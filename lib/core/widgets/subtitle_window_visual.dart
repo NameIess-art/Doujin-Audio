@@ -50,6 +50,7 @@ class SubtitleWindowVisual extends StatelessWidget {
             inherit: false,
             color: settings.fontColor ?? Colors.white,
             fontWeight: FontWeight.normal,
+            fontFeatures: const [FontFeature.tabularFigures()],
             fontSize: settings.fontSize,
             fontFamily: settings.fontFamily.isEmpty
                 ? null

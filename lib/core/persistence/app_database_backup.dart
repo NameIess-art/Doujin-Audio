@@ -240,6 +240,8 @@ Future<void> _validateRestoreSchema(
                 (version >= 3 || columnName != 'duration_ms') &&
                 (version >= 4 || columnName != 'card_cover_selected'),
           'sessions' => version >= 7 || columnName != 'is_temporary',
+          'session_audio_effects' =>
+            version >= 17 || columnName != 'front_back',
           'playback_queues' =>
             version >= 16 ||
                 !const {'entry_count', 'track_count'}.contains(columnName),

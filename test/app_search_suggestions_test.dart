@@ -1,11 +1,306 @@
 import 'dart:collection';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/core/widgets/app_search_page.dart';
+import 'package:doujin_audio/core/media/search_query_utils.dart';
 
 void main() {
+  testWidgets('search tabs use their full labels when the row fits', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(900, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AppSearchElementTabs(
+            draft: '',
+            matchAll: false,
+            onSelected: (_) {},
+            translate: (key) => switch (key) {
+              'search_elements_all' => 'すべて含む',
+              'search_elements_any' => 'いずれかを含む',
+              'search_other_filters' => 'その他の条件',
+              _ => key,
+            },
+            filters: emptySearchFilters,
+            onFiltersChanged: (_) {},
+          ),
+        ),
+      ),
+    );
+    final labels = [
+      find.text('すべて含む 0'),
+      find.text('いずれかを含む 0'),
+      find.text('その他の条件'),
+    ];
+    final labelWidths = labels
+        .map((label) => tester.getSize(label).width)
+        .toList();
+    final tabs = find.byWidgetPredicate(
+      (widget) => widget is ChoiceChip || widget is FilterChip,
+    );
+    const horizontalPadding = 32.0;
+    const gaps = 12.0;
+    final width =
+        horizontalPadding +
+        gaps +
+        tester.getSize(tabs.at(0)).width +
+        tester.getSize(tabs.at(1)).width +
+        tester.getSize(tabs.at(2)).width;
+    await tester.binding.setSurfaceSize(Size(width.ceilToDouble(), 700));
+    await tester.pumpAndSettle();
+    expect(labels.map((label) => tester.getSize(label).width), labelWidths);
+    expect(tester.getCenter(tabs.at(1)).dy, tester.getCenter(tabs.at(0)).dy);
+    expect(tester.getCenter(tabs.at(2)).dy, tester.getCenter(tabs.at(1)).dy);
+
+    await tester.binding.setSurfaceSize(Size(width.floorToDouble() - 8, 700));
+    await tester.pumpAndSettle();
+    expect(labels.map((label) => tester.getSize(label).width), labelWidths);
+    expect(
+      tester.getCenter(tabs.at(2)).dy,
+      greaterThan(tester.getCenter(tabs.at(1)).dy),
+    );
+  });
+
+  testWidgets(
+    'other filters expand above history and retain their values',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(320, 700));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      var filters = emptySearchFilters;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(
+            chipTheme: const ChipThemeData(labelStyle: TextStyle(fontSize: 12)),
+          ),
+          home: Scaffold(
+            body: CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: StatefulBuilder(
+                    builder: (context, setState) => AppSearchElementTabs(
+                      draft: '',
+                      matchAll: true,
+                      onSelected: (_) {},
+                      translate: (key) => switch (key) {
+                        'search_elements_all' => '必须包含',
+                        'search_elements_any' => '至少包含',
+                        'search_other_filters' => '其他筛选',
+                        'search_filter_any' => '不限',
+                        'search_subtitle_filter' => '字幕',
+                        'search_has_subtitle' => '有',
+                        'search_has_no_subtitle' => '无',
+                        'search_minimum_rating' => '最低评分',
+                        'search_duration_range' => '时长区间',
+                        'search_release_range' => '发售区间',
+                        _ => key,
+                      },
+                      filters: filters,
+                      onFiltersChanged: (value) =>
+                          setState(() => filters = value),
+                    ),
+                  ),
+                ),
+                AppSearchSuggestionSection(
+                  title: '搜索历史',
+                  items: const [],
+                  isSelected: (_) => false,
+                  onToggle: (_) {},
+                  emptyText: 'Empty',
+                  expandLabel: 'Expand',
+                  collapseLabel: 'Collapse',
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      final toggle = find.byKey(const ValueKey('search_other_filters'));
+      Finder arrow(IconData icon) =>
+          find.descendant(of: toggle, matching: find.byIcon(icon));
+      final subtitle = find.byKey(const ValueKey('search_subtitle_filter'));
+      final rating = find.byKey(const ValueKey('search_minimum_rating'));
+      final minDuration = find.byKey(const ValueKey('search_minimum_duration'));
+      final maxDuration = find.byKey(const ValueKey('search_maximum_duration'));
+      final firstDate = find.byKey(const ValueKey('search_first_release'));
+      final lastDate = find.byKey(const ValueKey('search_last_release'));
+      final history = find.text('搜索历史');
+
+      expect(subtitle, findsNothing);
+      expect(
+        tester.getTopLeft(arrow(Icons.expand_more_rounded)).dx,
+        greaterThan(tester.getTopRight(find.text('其他筛选')).dx),
+      );
+      expect(
+        tester.getCenter(toggle).dx,
+        greaterThan(tester.getCenter(find.text('至少包含 0')).dx),
+      );
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(arrow(Icons.expand_less_rounded), findsOneWidget);
+      expect(
+        tester.getCenter(rating).dy,
+        lessThan(tester.getCenter(minDuration).dy),
+      );
+      expect(
+        tester.getCenter(minDuration).dy,
+        tester.getCenter(maxDuration).dy,
+      );
+      expect(tester.getCenter(firstDate).dy, tester.getCenter(lastDate).dy);
+      expect(
+        tester.getCenter(lastDate).dy,
+        lessThan(tester.getCenter(history).dy),
+      );
+
+      final titleStyle = tester.widget<Text>(history).style;
+      for (final title in ['字幕', '最低评分', '时长区间', '发售区间']) {
+        expect(tester.widget<Text>(find.text(title)).style, titleStyle);
+      }
+      expect(
+        tester.getTopLeft(subtitle).dx,
+        greaterThan(tester.getTopRight(find.text('字幕')).dx),
+      );
+      expect(
+        tester.getTopLeft(rating).dx,
+        greaterThan(tester.getTopRight(find.text('最低评分')).dx),
+      );
+      expect(tester.getSize(subtitle).height, 120);
+      expect(tester.getSize(rating).height, 120);
+      expect(find.byType(ListWheelScrollView), findsNWidgets(2));
+      expect(
+        find.descendant(of: subtitle, matching: find.byType(DecoratedBox)),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: rating, matching: find.byType(DecoratedBox)),
+        findsNothing,
+      );
+      expect(find.byType(InputChip), findsNothing);
+      expect(find.text('–'), findsNWidgets(2));
+
+      final haptics = <Object?>[];
+      final previousHaptics = AppInteractionFeedback.hapticFeedbackEnabled;
+      AppInteractionFeedback.hapticFeedbackEnabled = true;
+      final messenger = tester.binding.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          haptics.add(call.arguments);
+        }
+        return null;
+      });
+      addTearDown(() {
+        AppInteractionFeedback.hapticFeedbackEnabled = previousHaptics;
+        messenger.setMockMethodCallHandler(SystemChannels.platform, null);
+      });
+
+      Future<void> scroll(Finder wheel, double delta) async {
+        await tester.sendEventToBinding(
+          PointerScrollEvent(
+            position: tester.getCenter(wheel),
+            scrollDelta: Offset(0, delta),
+          ),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      final isWindows = defaultTargetPlatform == TargetPlatform.windows;
+      final delta = isWindows ? 120.0 : 42.0;
+      await scroll(subtitle, delta);
+      expect(filters.hasSubtitle, isFalse);
+      await scroll(subtitle, delta);
+      expect(filters.hasSubtitle, isTrue);
+      await scroll(subtitle, delta);
+      expect(filters.hasSubtitle, isTrue);
+      await scroll(subtitle, -delta);
+      expect(filters.hasSubtitle, isFalse);
+      await scroll(subtitle, -delta);
+      expect(filters.hasSubtitle, isNull);
+      await scroll(rating, delta);
+      expect(filters.minimumRating, 0.1);
+      await scroll(rating, delta);
+      expect(filters.minimumRating, 0.2);
+      await scroll(rating, delta);
+      expect(filters.minimumRating, 0.3);
+      expect(
+        haptics,
+        defaultTargetPlatform == TargetPlatform.android
+            ? List.filled(7, 'HapticFeedbackType.selectionClick')
+            : isEmpty,
+      );
+      haptics.clear();
+      AppInteractionFeedback.hapticFeedbackEnabled = false;
+      await scroll(rating, delta);
+      expect(filters.minimumRating, 0.4);
+      await scroll(rating, -delta);
+      expect(haptics, isEmpty);
+      AppInteractionFeedback.hapticFeedbackEnabled = previousHaptics;
+      expect(find.byType(Dialog), findsNothing);
+
+      await tester.tap(minDuration);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextFormField), '30');
+      await tester.tap(find.text('confirm'));
+      await tester.pumpAndSettle();
+      expect(filters.minimumDuration, const Duration(minutes: 30));
+      expect(filters.maximumDuration, isNull);
+      await tester.tap(maxDuration);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextFormField), '20');
+      await tester.tap(find.text('confirm'));
+      await tester.pumpAndSettle();
+      expect(find.text('search_invalid_duration_range'), findsOneWidget);
+      await tester.tap(find.text('cancel'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(lastDate);
+      await tester.pumpAndSettle();
+      expect(find.byType(DatePickerDialog), findsOneWidget);
+      await tester.tap(find.byTooltip('Switch to input'));
+      await tester.pumpAndSettle();
+      final date = DateTime(2024, 5, 13);
+      final dateLocalizations = MaterialLocalizations.of(
+        tester.element(find.byType(DatePickerDialog)),
+      );
+      await tester.enterText(
+        find.byType(TextFormField),
+        dateLocalizations.formatCompactDate(date),
+      );
+      await tester.tap(find.text('confirm'));
+      await tester.pumpAndSettle();
+      expect(filters.lastReleaseDate, date);
+      expect(filters.firstReleaseDate, isNull);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(rating, findsNothing);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(filters.minimumRating, 0.3);
+      final ratingWheel = find.descendant(
+        of: rating,
+        matching: find.byType(ListWheelScrollView),
+      );
+      expect(
+        (tester.widget<ListWheelScrollView>(ratingWheel).controller!
+                as FixedExtentScrollController)
+            .selectedItem,
+        3,
+      );
+      expect(filters.minimumDuration, const Duration(minutes: 30));
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets('all three search sections have no background', (tester) async {
     for (final brightness in Brightness.values) {
       final theme = ThemeData(brightness: brightness);

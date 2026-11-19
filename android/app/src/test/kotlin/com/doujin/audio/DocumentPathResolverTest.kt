@@ -7,7 +7,9 @@ import android.database.MatrixCursor
 import android.net.Uri
 import android.provider.DocumentsContract
 import com.doujin.audio.storage.DocumentPathResolver
+import com.doujin.audio.storage.resolveContainedFilePath
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -67,6 +69,16 @@ class DocumentPathResolverTest {
     fun `child folder enumeration stays inside selected directory`() {
         assertEquals(listOf(documentUri("child-cd").toString()), paths.listChildFoldersViaDocumentsContract(selected))
         assertEquals(listOf("selected-child"), provider.queriedParents)
+    }
+
+    @Test
+    fun `contained file path resolution rejects traversal outside volume root`() {
+        val root = java.io.File(RuntimeEnvironment.getApplication().cacheDir, "root_volume")
+        val inside = resolveContainedFilePath(root.absolutePath, "Music/Track.mp3")
+        assertEquals(java.io.File(root, "Music/Track.mp3").canonicalPath, inside)
+        assertEquals(root.canonicalPath, resolveContainedFilePath(root.absolutePath, ""))
+        assertNull(resolveContainedFilePath(root.absolutePath, "../root_volume_sibling/Track.mp3"))
+        assertNull(resolveContainedFilePath(root.absolutePath, "../../etc/passwd"))
     }
 
     private fun documentUri(id: String) = DocumentsContract.buildDocumentUriUsingTree(grant, id)

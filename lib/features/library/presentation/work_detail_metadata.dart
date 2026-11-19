@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../app/presentation/element_action_menu.dart';
+import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/horizontal_edge_fade_scroll.dart';
 import '../../../core/widgets/page_translation_scope.dart';
 
@@ -92,7 +93,14 @@ class WorkDetailMetadata extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.person_rounded, size: 13, color: cs.primary),
+                  Icon(
+                    Icons.person_rounded,
+                    size: AppDesignTokens.opticalIconSize(
+                      Icons.person_rounded,
+                      13,
+                    ),
+                    color: cs.primary,
+                  ),
                   const SizedBox(width: 4),
                   Text(
                     voiceActor,

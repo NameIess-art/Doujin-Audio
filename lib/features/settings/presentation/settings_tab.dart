@@ -52,6 +52,7 @@ import 'app_update_flow.dart';
 import 'about_page.dart';
 import 'settings_tile_theme.dart';
 import '../../../app/presentation/main_tab_state_mixin.dart';
+import '../../../core/widgets/unified_popup_menu.dart';
 
 part 'settings_tab_actions.dart';
 part 'settings_tab_network_section.dart';

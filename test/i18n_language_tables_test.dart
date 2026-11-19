@@ -173,5 +173,13 @@ void main() {
     expect(appLanguageZh['subtitle_global_display'], '字幕悬浮窗');
     expect(appLanguageJa['subtitle_global_display'], '字幕ウィンドウ');
     expect(appLanguageEn['subtitle_global_display'], 'Subtitle window');
+
+    expect(appLanguageZh['no_results_found'], isNotEmpty);
+    expect(appLanguageJa['no_results_found'], isNotEmpty);
+    expect(appLanguageEn['no_results_found'], isNotEmpty);
+
+    expect(appLanguageZh['search_no_match'], isNotEmpty);
+    expect(appLanguageJa['search_no_match'], isNotEmpty);
+    expect(appLanguageEn['search_no_match'], isNotEmpty);
   });
 }

@@ -670,7 +670,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                                 ),
                                 onPressed: openTimer,
                                 style: headerActionStyle,
-                                icon: const Icon(Icons.alarm_rounded),
+                                icon: const Icon(Icons.timer_rounded),
                                 tooltip: i18n.tr('timer'),
                                 iconSize: 20,
                                 padding: EdgeInsets.zero,

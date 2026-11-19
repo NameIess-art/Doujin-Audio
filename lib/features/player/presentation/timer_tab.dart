@@ -3,9 +3,8 @@ import 'playback_providers.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'dart:math' as math;
-import 'dart:ui';
 
-import 'package:flutter/gestures.dart';
+import 'package:flutter/gestures.dart' show DeviceGestureSettings;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -23,6 +22,7 @@ import '../application/timer_runtime_calculator.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/app_fixed_extent_wheel.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/target_countdown_builder.dart';

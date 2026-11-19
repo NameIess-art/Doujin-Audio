@@ -1,5 +1,3 @@
-import 'dart:collection';
-
 import 'package:flutter/foundation.dart';
 
 import '../domain/library_node.dart';
@@ -191,6 +189,58 @@ class FilteredLibraryTreeResult {
   final int matchCount;
   final Set<String> expandedFolderPaths;
   final List<LibrarySearchRow> initialRows;
+
+  Future<FilteredLibraryTreeResult?> filterSubtitles({
+    required AudioLibraryCategorySnapshot snapshot,
+    required bool hasSubtitle,
+    required Future<bool> Function(String) checkTrack,
+    required bool Function() isActive,
+  }) async {
+    if (tree.isEmpty) return this;
+    Future<bool> checkWork(LibraryNode node) async {
+      if (node is TrackNode) return checkTrack(node.path);
+      if (node is! FolderNode) return false;
+      // Text search can trim a folder. Test subtitle availability on the work.
+      final tracks =
+          snapshot
+              .entryFor(AudioDetailTarget.libraryRootFolder(node.path))
+              ?.tracks ??
+          node.allTracks;
+      for (final track in tracks) {
+        if (!isActive()) return false;
+        if (await checkTrack(track.path)) return true;
+      }
+      return false;
+    }
+
+    final selected = <LibraryNode>[];
+    const batchSize = 8;
+    for (var start = 0; start < tree.length; start += batchSize) {
+      if (!isActive()) return null;
+      final batch = tree.skip(start).take(batchSize).toList(growable: false);
+      final matches = await Future.wait(batch.map(checkWork));
+      for (var index = 0; index < batch.length; index++) {
+        if (matches[index] == hasSubtitle) selected.add(batch[index]);
+      }
+    }
+    if (!isActive()) return null;
+    if (selected.length == tree.length) return this;
+    final kept = selected.toSet();
+    final expanded = <String>{};
+    var keepRow = false;
+    for (final row in initialRows) {
+      if (row.depth == 0) keepRow = kept.contains(row.node);
+      if (keepRow && row.node is FolderNode) {
+        final path = PathMatcher.normalize(row.node.path);
+        if (expandedFolderPaths.contains(path)) expanded.add(path);
+      }
+    }
+    return FilteredLibraryTreeResult(
+      tree: List.unmodifiable(selected),
+      matchCount: libraryTreeTrackCount(selected),
+      expandedFolderPaths: expanded,
+    );
+  }
 }
 
 typedef LibrarySearchRow = ({LibraryNode node, int depth});
@@ -227,8 +277,7 @@ AudioLibraryCategorySnapshot? currentLibraryCategorySnapshot({
 class LibrarySearchIndex {
   int? _cachedRevision;
   int? _cachedDetailRevision;
-  final LinkedHashMap<String, FilteredLibraryTreeResult> _cache =
-      LinkedHashMap<String, FilteredLibraryTreeResult>();
+  final _cache = <(String, SearchFilters), FilteredLibraryTreeResult>{};
 
   static const int _maxEntries = 12;
 
@@ -241,6 +290,7 @@ class LibrarySearchIndex {
     required int structureRevision,
     required int detailRevision,
     required AudioLibraryCategorySnapshot categorySnapshot,
+    SearchFilters filters = emptySearchFilters,
   }) async {
     final key = (tree, structureRevision, detailRevision);
     if (_corpusKey != key) {
@@ -251,6 +301,7 @@ class LibrarySearchIndex {
     final (corpus, result) = await compute(buildFilteredLibraryTreeSnapshot, (
       previous ?? LibrarySearchCorpus(tree, categorySnapshot),
       query,
+      filters,
     ));
     if (_corpusKey == key && identical(_corpus, previous)) {
       _corpus = corpus;
@@ -263,12 +314,14 @@ class LibrarySearchIndex {
     required String query,
     required int structureRevision,
     AudioLibraryCategorySnapshot? categorySnapshot,
+    SearchFilters filters = emptySearchFilters,
   }) {
     final detailRevision = categorySnapshot?.detailRevision ?? 0;
     final cached = cachedResult(
       query: query,
       structureRevision: structureRevision,
       detailRevision: detailRevision,
+      filters: filters,
     );
     if (cached != null) return cached;
     final key = (tree, structureRevision, detailRevision);
@@ -276,11 +329,12 @@ class LibrarySearchIndex {
       _corpusKey = key;
       _corpus = LibrarySearchCorpus(tree, categorySnapshot);
     }
-    final result = _corpus!.search(query);
+    final result = _corpus!.search(query, filters: filters);
     storeResult(
       query: query,
       structureRevision: structureRevision,
       detailRevision: detailRevision,
+      filters: filters,
       result: result,
     );
     return result;
@@ -290,8 +344,9 @@ class LibrarySearchIndex {
     required String query,
     required int structureRevision,
     required int detailRevision,
+    SearchFilters filters = emptySearchFilters,
   }) {
-    final key = _cacheKey(query, structureRevision, detailRevision);
+    final key = _cacheKey(query, structureRevision, detailRevision, filters);
     final cached = _cache.remove(key);
     if (cached != null) _cache[key] = cached;
     return cached;
@@ -302,8 +357,9 @@ class LibrarySearchIndex {
     required int structureRevision,
     required int detailRevision,
     required FilteredLibraryTreeResult result,
+    SearchFilters filters = emptySearchFilters,
   }) {
-    final key = _cacheKey(query, structureRevision, detailRevision);
+    final key = _cacheKey(query, structureRevision, detailRevision, filters);
     _cache.remove(key);
     _cache[key] = result;
     if (_cache.length > _maxEntries) {
@@ -311,14 +367,20 @@ class LibrarySearchIndex {
     }
   }
 
-  String _cacheKey(String query, int structureRevision, int detailRevision) {
+  (String, SearchFilters) _cacheKey(
+    String query,
+    int structureRevision,
+    int detailRevision,
+    SearchFilters filters,
+  ) {
     if (_cachedRevision != structureRevision ||
         _cachedDetailRevision != detailRevision) {
       _cache.clear();
       _cachedRevision = structureRevision;
       _cachedDetailRevision = detailRevision;
     }
-    return canonicalElementQuery(query).toLowerCase();
+    // Subtitle availability is read from files after the indexed search.
+    return (canonicalElementQuery(query).toLowerCase(), filters);
   }
 }
 
@@ -361,13 +423,51 @@ class LibrarySearchCorpus {
     });
   }
 
-  FilteredLibraryTreeResult search(String query) {
+  bool _matchesRootMetadata(LibraryNode node, SearchFilters filters) {
+    final target = node is FolderNode
+        ? AudioDetailTarget.libraryRootFolder(node.path)
+        : AudioDetailTarget.singleAudioFile(node.path);
+    final detail = _categorySnapshot?.detailFor(target);
+    Duration? duration;
+    if (filters.minimumDuration != null || filters.maximumDuration != null) {
+      duration = detail?.duration;
+      if (duration == null &&
+          node is FolderNode &&
+          node.totalTrackCount > 0 &&
+          node.allTracks.every((track) => track.duration > Duration.zero)) {
+        duration = node.totalDuration;
+      }
+      if (duration == null &&
+          node is TrackNode &&
+          node.track.duration > Duration.zero) {
+        duration = node.track.duration;
+      }
+    }
+    return matchesSearchMetadata(
+      filters,
+      rating: detail?.rating,
+      duration: duration,
+      releaseDate: detail?.releaseDate,
+    );
+  }
+
+  FilteredLibraryTreeResult search(
+    String query, {
+    SearchFilters filters = emptySearchFilters,
+  }) {
     final elements = parseSearchElements(query) ?? emptySearchElements;
     final terms = (
       all: elements.all.map((term) => term.toLowerCase()).toList(),
       any: elements.any.map((term) => term.toLowerCase()).toList(),
     );
-    if (terms.all.isEmpty && terms.any.isEmpty) {
+    final hasText = terms.all.isNotEmpty || terms.any.isNotEmpty;
+    final hasMetadataFilters =
+        filters.minimumRating != null ||
+        filters.minimumDuration != null ||
+        filters.maximumDuration != null ||
+        filters.firstReleaseDate != null ||
+        filters.lastReleaseDate != null;
+    if (!hasText && !hasMetadataFilters) {
       return FilteredLibraryTreeResult(
         tree: tree,
         matchCount: libraryTreeTrackCount(tree),
@@ -377,7 +477,7 @@ class LibrarySearchCorpus {
     final expandedPaths = <String>{};
     var matchCount = 0;
     LibraryNode? filter(LibraryNode node) {
-      if (matchesNormalizedSearchText(_textFor(node), terms)) {
+      if (!hasText || matchesNormalizedSearchText(_textFor(node), terms)) {
         matchCount += node is FolderNode ? node.totalTrackCount : 1;
         return node;
       }
@@ -394,6 +494,9 @@ class LibrarySearchCorpus {
 
     final nodes = <LibraryNode>[];
     for (final node in tree) {
+      if (hasMetadataFilters && !_matchesRootMetadata(node, filters)) {
+        continue;
+      }
       final result = filter(node);
       if (result != null) nodes.add(result);
     }
@@ -406,8 +509,9 @@ class LibrarySearchCorpus {
 }
 
 (LibrarySearchCorpus, FilteredLibraryTreeResult)
-buildFilteredLibraryTreeSnapshot((LibrarySearchCorpus, String) input) =>
-    (input.$1, input.$1.search(input.$2));
+buildFilteredLibraryTreeSnapshot(
+  (LibrarySearchCorpus, String, SearchFilters) input,
+) => (input.$1, input.$1.search(input.$2, filters: input.$3));
 
 int libraryTreeTrackCount(List<LibraryNode> tree) {
   var count = 0;

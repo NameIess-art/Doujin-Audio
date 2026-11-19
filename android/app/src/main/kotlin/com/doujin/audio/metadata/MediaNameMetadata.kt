@@ -1,5 +1,6 @@
 package com.doujin.audio.metadata
 
+import android.provider.DocumentsContract
 import android.webkit.MimeTypeMap
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
@@ -15,6 +16,11 @@ internal object MediaNameMetadata {
         "vtt", "srt", "ass", "ssa", "lrc", "txt", "md", "json", "xml",
         "jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif",
         "pdf", "zip", "rar", "7z", "tar", "gz", "doc", "docx"
+    )
+
+    private val supportedAudioExtensions = setOf(
+        "flac", "wav", "mp3", "m4a", "aac", "ogg", "opus", "3gp",
+        "wma", "ape", "wv", "mka", "m4b", "oga", "aiff", "aif"
     )
 
     private val supportedVideoExtensions = setOf(
@@ -33,12 +39,19 @@ internal object MediaNameMetadata {
     }
 
     fun mediaNameInfoOrNull(name: String, mime: String? = null): MediaNameInfo? {
-        val displayName = name.ifBlank { "audio_file" }
-        val extension = displayName.substringAfterLast('.', "").lowercase(Locale.US)
-        val normalizedMime = mime?.lowercase(Locale.US)
+        val displayName = name.trim()
+        if (displayName.isEmpty()) return null
+        val dotIndex = displayName.lastIndexOf('.')
+        val extension = if (dotIndex > 0 && dotIndex < displayName.length - 1) {
+            displayName.substring(dotIndex + 1).lowercase(Locale.US)
+        } else {
+            ""
+        }
+        val normalizedMime = mime?.trim()?.lowercase(Locale.US)
         if (!isSupportedMediaName(extension, normalizedMime)) return null
+        val title = if (dotIndex > 0) displayName.substring(0, dotIndex) else displayName
         return MediaNameInfo(
-            title = displayName.substringBeforeLast('.', displayName),
+            title = title,
             isVideo = isVideoMediaName(extension, normalizedMime)
         )
     }
@@ -67,12 +80,17 @@ internal object MediaNameMetadata {
     }
 
     private fun isSupportedMediaName(extension: String, mime: String?): Boolean {
-        if (mime != null && isSupportedMediaMime(mime)) return true
-        if (extension.isBlank()) return true
+        if (mime != null) {
+            if (mime == DocumentsContract.Document.MIME_TYPE_DIR) return false
+            if (isSupportedMediaMime(mime)) return true
+        }
+        if (extension.isBlank()) return false
         if (blockedExtensions.contains(extension)) return false
-        val extensionMime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
-            ?.lowercase(Locale.US)
-        return extensionMime == null || isSupportedMediaMime(extensionMime)
+        if (extension in supportedAudioExtensions || extension in supportedVideoExtensions) {
+            return true
+        }
+        val extensionMime = mimeTypeFromExtension(extension)
+        return extensionMime != null && isSupportedMediaMime(extensionMime)
     }
 
     private fun isSupportedMediaMime(mime: String): Boolean {
@@ -85,9 +103,14 @@ internal object MediaNameMetadata {
         if (mime?.startsWith("video/") == true) return true
         if (extension.isBlank()) return false
         if (extension in supportedVideoExtensions) return true
-        return MimeTypeMap.getSingleton()
-            .getMimeTypeFromExtension(extension)
-            ?.lowercase(Locale.US)
-            ?.startsWith("video/") == true
+        return mimeTypeFromExtension(extension)?.startsWith("video/") == true
+    }
+
+    private fun mimeTypeFromExtension(extension: String): String? {
+        return try {
+            MimeTypeMap.getSingleton()?.getMimeTypeFromExtension(extension)?.lowercase(Locale.US)
+        } catch (_: RuntimeException) {
+            null
+        }
     }
 }

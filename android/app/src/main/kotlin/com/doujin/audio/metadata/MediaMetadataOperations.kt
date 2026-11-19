@@ -259,112 +259,138 @@ internal class MediaMetadataOperations(
 
         return parseId3TagPicture(tagData, majorVersion, extHeader)
     }
+}
 
-    private fun parseId3TagPicture(
-        tagData: ByteArray,
-        majorVersion: Int,
-        extHeader: Boolean
-    ): ByteArray? {
-        var offset = 0
-        if (extHeader) {
-            if (majorVersion == 3) {
-                if (offset + 4 > tagData.size) return null
-                val extSize = ((tagData[offset].toInt() and 0xFF) shl 24) or
-                        ((tagData[offset + 1].toInt() and 0xFF) shl 16) or
-                        ((tagData[offset + 2].toInt() and 0xFF) shl 8) or
-                        (tagData[offset + 3].toInt() and 0xFF)
-                offset += extSize
-            } else if (majorVersion == 4) {
-                if (offset + 4 > tagData.size) return null
-                val extSize = ((tagData[offset].toInt() and 0x7F) shl 21) or
-                        ((tagData[offset + 1].toInt() and 0x7F) shl 14) or
-                        ((tagData[offset + 2].toInt() and 0x7F) shl 7) or
-                        (tagData[offset + 3].toInt() and 0x7F)
-                offset += extSize
+internal fun parseId3TagPicture(
+    tagData: ByteArray,
+    majorVersion: Int,
+    extHeader: Boolean
+): ByteArray? {
+    var offset = 0
+    if (extHeader) {
+        if (majorVersion == 3) {
+            if (offset + 4 > tagData.size) return null
+            val extSize = ((tagData[offset].toInt() and 0xFF) shl 24) or
+                ((tagData[offset + 1].toInt() and 0xFF) shl 16) or
+                ((tagData[offset + 2].toInt() and 0xFF) shl 8) or
+                (tagData[offset + 3].toInt() and 0xFF)
+            if (extSize < 0 || extSize > tagData.size - (offset + 4)) return null
+            offset += 4 + extSize
+        } else if (majorVersion == 4) {
+            if (offset + 4 > tagData.size) return null
+            val extSize = ((tagData[offset].toInt() and 0x7F) shl 21) or
+                ((tagData[offset + 1].toInt() and 0x7F) shl 14) or
+                ((tagData[offset + 2].toInt() and 0x7F) shl 7) or
+                (tagData[offset + 3].toInt() and 0x7F)
+            if (extSize < 4 || extSize > tagData.size - offset) return null
+            offset += extSize
+        }
+    }
+
+    while (offset < tagData.size) {
+        val idLength = if (majorVersion == 2) 3 else 4
+        if (offset + idLength > tagData.size) break
+        val frameId = String(tagData, offset, idLength, Charsets.US_ASCII)
+        offset += idLength
+        if (frameId.any { it == '\u0000' }) break
+
+        val frameSize = when (majorVersion) {
+            2 -> {
+                if (offset + 3 > tagData.size) break
+                val s = ((tagData[offset].toInt() and 0xFF) shl 16) or
+                    ((tagData[offset + 1].toInt() and 0xFF) shl 8) or
+                    (tagData[offset + 2].toInt() and 0xFF)
+                offset += 3
+                s
+            }
+            3 -> {
+                if (offset + 4 > tagData.size) break
+                val s = ((tagData[offset].toInt() and 0xFF) shl 24) or
+                    ((tagData[offset + 1].toInt() and 0xFF) shl 16) or
+                    ((tagData[offset + 2].toInt() and 0xFF) shl 8) or
+                    (tagData[offset + 3].toInt() and 0xFF)
+                offset += 4
+                s
+            }
+            else -> {
+                if (offset + 4 > tagData.size) break
+                val s = ((tagData[offset].toInt() and 0x7F) shl 21) or
+                    ((tagData[offset + 1].toInt() and 0x7F) shl 14) or
+                    ((tagData[offset + 2].toInt() and 0x7F) shl 7) or
+                    (tagData[offset + 3].toInt() and 0x7F)
+                offset += 4
+                s
             }
         }
 
-        while (offset < tagData.size) {
-            val idLength = if (majorVersion == 2) 3 else 4
-            if (offset + idLength > tagData.size) break
-            val frameId = String(tagData, offset, idLength, Charsets.US_ASCII)
-            offset += idLength
-            if (frameId.any { it == '\u0000' }) break
+        val flagsLength = if (majorVersion == 2) 0 else 2
+        if (offset + flagsLength > tagData.size) break
+        offset += flagsLength
+        if (frameSize <= 0 || frameSize > tagData.size - offset) break
 
-            val frameSize = when (majorVersion) {
-                2 -> {
-                    if (offset + 3 > tagData.size) break
-                    val s = ((tagData[offset].toInt() and 0xFF) shl 16) or
-                            ((tagData[offset + 1].toInt() and 0xFF) shl 8) or
-                            (tagData[offset + 2].toInt() and 0xFF)
-                    offset += 3
-                    s
-                }
-                3 -> {
-                    if (offset + 4 > tagData.size) break
-                    val s = ((tagData[offset].toInt() and 0xFF) shl 24) or
-                            ((tagData[offset + 1].toInt() and 0xFF) shl 16) or
-                            ((tagData[offset + 2].toInt() and 0xFF) shl 8) or
-                            (tagData[offset + 3].toInt() and 0xFF)
-                    offset += 4
-                    s
-                }
-                else -> {
-                    if (offset + 4 > tagData.size) break
-                    val s = ((tagData[offset].toInt() and 0x7F) shl 21) or
-                            ((tagData[offset + 1].toInt() and 0x7F) shl 14) or
-                            ((tagData[offset + 2].toInt() and 0x7F) shl 7) or
-                            (tagData[offset + 3].toInt() and 0x7F)
-                    offset += 4
-                    s
-                }
-            }
-
-            val flagsLength = if (majorVersion == 2) 0 else 2
-            offset += flagsLength
-            if (frameSize <= 0 || offset + frameSize > tagData.size) {
-                offset += frameSize
+        val frameEnd = offset + frameSize
+        if (frameId == "APIC" || frameId == "PIC") {
+            var frameOffset = offset
+            if (frameOffset >= frameEnd) {
+                offset = frameEnd
                 continue
             }
+            val encoding = tagData[frameOffset].toInt() and 0xFF
+            frameOffset++
 
-            if (frameId == "APIC" || frameId == "PIC") {
-                var frameOffset = offset
-                val encoding = tagData[frameOffset].toInt() and 0xFF
+            if (majorVersion == 2) {
+                if (frameOffset + 3 > frameEnd) {
+                    offset = frameEnd
+                    continue
+                }
+                frameOffset += 3
+            } else {
+                while (frameOffset < frameEnd && tagData[frameOffset] != 0.toByte()) {
+                    frameOffset++
+                }
+                if (frameOffset >= frameEnd) {
+                    offset = frameEnd
+                    continue
+                }
                 frameOffset++
-
-                if (majorVersion == 2) {
-                    frameOffset += 3
-                } else {
-                    while (frameOffset < offset + frameSize && tagData[frameOffset] != 0.toByte()) {
-                        frameOffset++
-                    }
-                    frameOffset++
-                }
-
-                frameOffset++ // picture type
-
-                if (encoding == 1 || encoding == 2) {
-                    while (frameOffset < offset + frameSize - 1) {
-                        if (tagData[frameOffset] == 0.toByte() && tagData[frameOffset + 1] == 0.toByte()) {
-                            frameOffset += 2
-                            break
-                        }
-                        frameOffset++
-                    }
-                } else {
-                    while (frameOffset < offset + frameSize && tagData[frameOffset] != 0.toByte()) {
-                        frameOffset++
-                    }
-                    frameOffset++
-                }
-
-                val pictureLength = (offset + frameSize) - frameOffset
-                if (pictureLength > 0 && frameOffset + pictureLength <= tagData.size) {
-                    return tagData.copyOfRange(frameOffset, frameOffset + pictureLength)
-                }
             }
-            offset += frameSize
+
+            if (frameOffset >= frameEnd) {
+                offset = frameEnd
+                continue
+            }
+            frameOffset++ // picture type
+
+            if (encoding == 1 || encoding == 2) {
+                var foundTerminator = false
+                while (frameOffset < frameEnd - 1) {
+                    if (tagData[frameOffset] == 0.toByte() && tagData[frameOffset + 1] == 0.toByte()) {
+                        frameOffset += 2
+                        foundTerminator = true
+                        break
+                    }
+                    frameOffset += 2
+                }
+                if (!foundTerminator) {
+                    offset = frameEnd
+                    continue
+                }
+            } else {
+                while (frameOffset < frameEnd && tagData[frameOffset] != 0.toByte()) {
+                    frameOffset++
+                }
+                if (frameOffset >= frameEnd) {
+                    offset = frameEnd
+                    continue
+                }
+                frameOffset++
+            }
+
+            if (frameOffset < frameEnd) {
+                return tagData.copyOfRange(frameOffset, frameEnd)
+            }
         }
-        return null
+        offset = frameEnd
     }
+    return null
 }

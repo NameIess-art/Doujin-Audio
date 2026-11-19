@@ -679,8 +679,8 @@ class AsmrLibraryController extends ChangeNotifier
   String get browseCacheScope =>
       '${_authSession?.userName.trim() ?? ''}:${_contentLanguage.name}';
 
-  void beginSearchSession() => _catalog.clearSearchQueries();
-  void endSearchSession() => _catalog.clearSearchQueries();
+  void beginSearchSession() => _catalog.beginSearchSession();
+  void endSearchSession() => _catalog.endSearchSession();
   void setSearchQuery(String query, AsmrCategoryType category) =>
       _catalog.setSearchQuery(query, category);
 

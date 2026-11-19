@@ -408,6 +408,8 @@ class AsmrDownloadManager {
       await flushPersistence();
     } else if (_queue.contains(workId)) {
       _queue.remove(workId);
+      _manualRetryOnlyPaths.remove(workId);
+      _plannedFilesMap.remove(workId);
       _store[workId] = task.copyWith(
         status: AsmrDownloadTaskStatus.paused,
         fileRetryAttempts: const <String, int>{},
@@ -427,6 +429,8 @@ class AsmrDownloadManager {
     final queuedWorkIds = List<String>.of(_queue);
     _queue.clear();
     for (final workId in queuedWorkIds) {
+      _manualRetryOnlyPaths.remove(workId);
+      _plannedFilesMap.remove(workId);
       final task = _store[workId];
       if (task == null) continue;
       _store[workId] = task.copyWith(
@@ -494,7 +498,10 @@ class AsmrDownloadManager {
       }
       final plannedFiles = _planner.collectPlannedFiles(selectedRoots);
       final coverFile = saveCover ? _planner.plannedCoverFile(work) : null;
-      if (coverFile != null) plannedFiles.add(coverFile);
+      if (coverFile != null &&
+          !_planner.hasRemoteCoverFile(plannedFiles, coverFile)) {
+        plannedFiles.add(coverFile);
+      }
       _planner.validateLocalOutputs(plannedFiles, saveMetadata: saveMetadata);
       final workRootPath = _planner.joinFolderPath(
         normalizedDestination,

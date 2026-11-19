@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +13,7 @@ import 'package:doujin_audio/features/player/application/playback_facade.dart';
 import 'package:doujin_audio/features/player/domain/playback_persistence_repository.dart';
 import 'package:doujin_audio/features/player/domain/time_segment_label.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
+import 'package:doujin_audio/core/persistence/persistence_records.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/infrastructure/sqlite/sqlite_asmr_repository.dart';
 import 'package:doujin_audio/infrastructure/sqlite/sqlite_playback_repository.dart';
@@ -39,8 +41,8 @@ void main() {
 
   tearDown(() => db.close());
 
-  test('schema starts from version 16', () {
-    expect(AppDatabase.schemaVersion, 16);
+  test('schema starts from version 17', () {
+    expect(AppDatabase.schemaVersion, 17);
   });
 
   test(
@@ -997,12 +999,26 @@ void main() {
         ],
       );
       expect(await restored.query('sessions'), hasLength(1));
+      expect(
+        (await restored.query('session_audio_effects')).single,
+        containsPair('front_back', -0.6),
+      );
       expect(await restored.query('asmr_works'), hasLength(1));
       await restored.close();
     },
   );
 
-  for (final version in [1, 3, 5, 7, 8, 11, 12, AppDatabase.schemaVersion]) {
+  for (final version in [
+    1,
+    3,
+    5,
+    7,
+    8,
+    11,
+    12,
+    16,
+    AppDatabase.schemaVersion,
+  ]) {
     test(
       'schema $version restore preserves durable data while migrating',
       () async {
@@ -1027,6 +1043,11 @@ void main() {
         try {
           expect(await migrated.getVersion(), AppDatabase.schemaVersion);
           expect(await migrated.query('sessions'), hasLength(1));
+          final session = (await SqlitePlaybackRepository(
+            database: AppDatabase.test(migrated),
+          ).loadSessionSummaries()).single.session;
+          expect(session.audioEffects.panning, 0.3);
+          expect(session.audioEffects.frontBack, version < 17 ? 0.0 : -0.6);
           expect(await migrated.query('session_eq_bands'), [
             {'session_id': 'kept', 'frequency_hz': 1000, 'gain_db': 2.5},
           ]);
@@ -3453,9 +3474,206 @@ void main() {
     );
     expect(await repository.loadLibraryEntries(otherRoot), hasLength(1));
   });
+
+  test(
+    'ASMR work loading and unreferenced cleanup handle >= 1000 works across chunks',
+    () async {
+      final works = List<AsmrWorkRecord>.generate(
+        1050,
+        (index) => AsmrWorkRecord(
+          id: index + 1,
+          workKey: 'asmr:${index + 1}',
+          title: 'Work $index',
+          circleName: 'Circle',
+          sourceId: 'RJ${(index + 1).toString().padLeft(6, '0')}',
+          sourceType: 'asmr',
+          sourceUrl: '',
+          coverUrl: '',
+          thumbnailUrl: '',
+          mainCoverUrl: '',
+          releaseDate: null,
+          createDate: null,
+          duration: Duration.zero,
+          dlCount: 0,
+          reviewCount: 0,
+          rating: 0,
+          voiceActors: ['VA $index'],
+          tags: ['Tag $index'],
+          hasSubtitle: false,
+          isFavorite: false,
+        ),
+      );
+      await appDatabase.saveAsmrWorkList('history', works);
+
+      final loaded = await appDatabase.loadAsmrWorkList('history');
+      expect(loaded, hasLength(1050));
+      expect(loaded.first.voiceActors, ['VA 0']);
+      expect(loaded.last.tags, ['Tag 1049']);
+
+      await appDatabase.saveAsmrHistoryState(works.first, [
+        works.first.workKey,
+      ], null);
+
+      expect(await db.query('asmr_works'), hasLength(1));
+      expect(await db.query('asmr_work_voice_actors'), hasLength(1));
+      expect(await db.query('asmr_work_tags'), hasLength(1));
+    },
+  );
+
+  test(
+    'paged playback queue entries and tracks load across > 512 rows',
+    () async {
+      final entries = <PlaybackQueueEntry>[
+        PlaybackQueueEntry(
+          id: 'entry_000',
+          kind: PlaybackQueueEntryKind.work,
+          title: 'Many tracks',
+          tracks: List<MusicTrack>.generate(
+            520,
+            (index) =>
+                _playbackTrack('track_${index.toString().padLeft(3, '0')}'),
+          ),
+        ),
+        for (var i = 1; i < 520; i++)
+          PlaybackQueueEntry(
+            id: 'entry_${i.toString().padLeft(3, '0')}',
+            kind: PlaybackQueueEntryKind.track,
+            title: 'Entry $i',
+            tracks: [_playbackTrack('single_$i')],
+          ),
+      ];
+      final sqlite = SqlitePlaybackRepository(database: appDatabase);
+      await sqlite.upsertSession(
+        _playbackSession(
+          'paged',
+          queue: PlaybackQueueDefinition(name: 'Paged', entries: entries),
+        ),
+      );
+
+      final loaded = (await sqlite.loadSessionQueue('paged'))!;
+      expect(loaded.playbackQueue!.entries, hasLength(520));
+      expect(loaded.playbackQueue!.entries.first.tracks, hasLength(520));
+      expect(
+        loaded.playbackQueue!.entries.first.tracks.last.displayName,
+        'track_519',
+      );
+      expect(loaded.playbackQueue!.entries.last.id, 'entry_519');
+    },
+  );
+
+  test(
+    'listening batch import accumulates days and keeps newest track metadata',
+    () async {
+      ListeningWorkRecord work(String title, int ms, int playedAt) =>
+          ListeningWorkRecord(
+            workKey: 'work-1',
+            track: MusicTrack(
+              path: '/listening/work-1.mp3',
+              displayName: title,
+              groupKey: 'work-1',
+              groupTitle: title,
+              groupSubtitle: '',
+              isSingle: true,
+            ),
+            milliseconds: ms,
+            lastPlayedAtMs: playedAt,
+          );
+
+      await appDatabase.seedListeningHistory([work('Legacy', 0, 100)]);
+      expect(
+        await appDatabase.importListeningBatch('b1', [
+          ListeningDayRecord(
+            date: '2026-11-17',
+            totalMs: 1000,
+            works: [work('Newer', 1000, 300)],
+          ),
+        ]),
+        isTrue,
+      );
+      expect(
+        await appDatabase.importListeningBatch('b1', [
+          ListeningDayRecord(
+            date: '2026-11-17',
+            totalMs: 1000,
+            works: [work('Duplicate', 1000, 999)],
+          ),
+        ]),
+        isFalse,
+      );
+      expect(
+        await appDatabase.importListeningBatch('b2', [
+          ListeningDayRecord(
+            date: '2026-11-17',
+            totalMs: 500,
+            works: [work('Stale', 500, 200)],
+          ),
+        ]),
+        isTrue,
+      );
+
+      expect(await appDatabase.loadListeningDays(), [
+        {'date': '2026-11-17', 'milliseconds': 1500},
+      ]);
+      expect(await db.query('listening_work_days'), [
+        {'date': '2026-11-17', 'work_key': 'work-1', 'milliseconds': 1500},
+      ]);
+      final history = (await appDatabase.loadListeningHistory()).single;
+      expect(history['last_played_at_ms'], 300);
+      expect(history['legacy_order'], 0);
+      expect(history['track_json'], contains('Newer'));
+    },
+  );
+
+  test(
+    'close while open is pending closes aborted handle and never hands closed db',
+    () async {
+      final firstOpenStarted = Completer<void>();
+      final firstOpenGate = Completer<Database>();
+      late final Database secondDb;
+      var opens = 0;
+      final racingDb = AppDatabase.forTest(
+        opener: () async {
+          opens++;
+          if (opens == 1) {
+            firstOpenStarted.complete();
+            return firstOpenGate.future;
+          }
+          secondDb = await databaseFactoryFfi.openDatabase(
+            inMemoryDatabasePath,
+          );
+          await AppDatabase.createSchemaForTest(secondDb);
+          return secondDb;
+        },
+      );
+      addTearDown(racingDb.close);
+
+      final firstCaller = racingDb.databaseForTest;
+      final secondCaller = racingDb.databaseForTest;
+      await firstOpenStarted.future;
+      final closing = racingDb.close();
+
+      final abortedDb = await databaseFactoryFfi.openDatabase(
+        inMemoryDatabasePath,
+      );
+      await AppDatabase.createSchemaForTest(abortedDb);
+      firstOpenGate.complete(abortedDb);
+
+      await closing;
+      final results = await Future.wait([firstCaller, secondCaller]);
+      expect(abortedDb.isOpen, isFalse);
+      expect(results[0], same(secondDb));
+      expect(results[1], same(secondDb));
+      expect(results[0].isOpen, isTrue);
+    },
+  );
 }
 
 Future<void> _setRestoreSchemaVersion(Database db, int version) async {
+  if (version < 17) {
+    await db.execute(
+      'ALTER TABLE session_audio_effects DROP COLUMN front_back',
+    );
+  }
   if (version < 15) {
     for (final table in [
       'asmr_works',
@@ -3614,6 +3832,7 @@ PersistedPlaybackSession _playbackSession(
         eqEnabled: true,
         eqBandLevels: const {1000: 2.5},
         panning: 0.3,
+        frontBack: -0.6,
       ),
   sortOrder: id == 'b' ? 1 : 0,
   createdAtMs: 1000,

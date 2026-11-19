@@ -10,6 +10,7 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -46,6 +47,11 @@ class SubtitleOverlayService : Service() {
 
     @SuppressLint("ClickableViewAccessibility")
     private fun createOverlay() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            stopSelf()
+            return
+        }
+
         val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
@@ -67,6 +73,7 @@ class SubtitleOverlayService : Service() {
 
         val textView = TextView(this).apply {
             minLines = 1
+            fontFeatureSettings = "'tnum'"
             setTextColor(Color.WHITE)
             textSize = 16f
             setPadding(dpInt(20f), dpInt(10f), dpInt(20f), dpInt(10f))
@@ -80,8 +87,6 @@ class SubtitleOverlayService : Service() {
             }
             background = shape
         }
-        
-        subtitleTextView = textView
 
         textView.setOnTouchListener(object : View.OnTouchListener {
             private var initialX = 0
@@ -101,7 +106,9 @@ class SubtitleOverlayService : Service() {
                     MotionEvent.ACTION_MOVE -> {
                         params.x = initialX + (event.rawX - initialTouchX).toInt()
                         params.y = initialY - (event.rawY - initialTouchY).toInt()
-                        windowManager.updateViewLayout(textView, params)
+                        if (subtitleTextView === textView) {
+                            windowManager.updateViewLayout(textView, params)
+                        }
                         return true
                     }
                 }
@@ -109,7 +116,16 @@ class SubtitleOverlayService : Service() {
             }
         })
 
-        windowManager.addView(textView, params)
+        try {
+            windowManager.addView(textView, params)
+            subtitleTextView = textView
+        } catch (_: WindowManager.BadTokenException) {
+            stopSelf()
+        } catch (_: SecurityException) {
+            stopSelf()
+        } catch (_: IllegalStateException) {
+            stopSelf()
+        }
     }
 
     fun updateSubtitle(text: String) {
@@ -174,6 +190,11 @@ class SubtitleOverlayService : Service() {
         super.onDestroy()
         val view = subtitleTextView
         subtitleTextView = null
-        if (view != null) windowManager.removeView(view)
+        if (view != null) {
+            try {
+                windowManager.removeView(view)
+            } catch (_: IllegalArgumentException) {
+            }
+        }
     }
 }

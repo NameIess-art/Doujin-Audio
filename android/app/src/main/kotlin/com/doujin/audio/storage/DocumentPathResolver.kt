@@ -124,7 +124,7 @@ internal class DocumentPathResolver(private val context: Context) {
             val base = trimmed.substring(0, syntheticIndex)
             val relative = trimmed.substring(syntheticIndex + 2).trim('/')
             val basePath = contentUriToFilePath(base) ?: return null
-            return if (relative.isEmpty()) basePath else java.io.File(basePath, relative).absolutePath
+            return if (relative.isEmpty()) basePath else resolveContainedFilePath(basePath, relative)
         }
 
         val uri = Uri.parse(trimmed)
@@ -142,7 +142,7 @@ internal class DocumentPathResolver(private val context: Context) {
         val volumeName = documentId.substring(0, colonIndex)
         val relativePath = documentId.substring(colonIndex + 1)
         val volumeRoot = resolveVolumeRoot(volumeName) ?: return null
-        return java.io.File(volumeRoot, relativePath).absolutePath
+        return resolveContainedFilePath(volumeRoot, relativePath)
     }
 
     /**
@@ -449,4 +449,25 @@ internal class DocumentPathResolver(private val context: Context) {
             .equals(expected, ignoreCase = true)
     }
 
+}
+
+internal fun resolveContainedFilePath(rootPath: String, relativePath: String): String? {
+    return try {
+        val rootCanonical = java.io.File(rootPath).canonicalFile
+        val resolvedCanonical = if (relativePath.isEmpty()) {
+            rootCanonical
+        } else {
+            java.io.File(rootCanonical, relativePath).canonicalFile
+        }
+        val root = rootCanonical.path
+        val resolved = resolvedCanonical.path
+        val prefix = if (root.endsWith(java.io.File.separator)) {
+            root
+        } else {
+            "$root${java.io.File.separator}"
+        }
+        if (resolved == root || resolved.startsWith(prefix)) resolved else null
+    } catch (_: Exception) {
+        null
+    }
 }

@@ -19,6 +19,7 @@ internal fun StoredNativePlaybackSession.encodeDefinition(): JSONObject = JSONOb
     .put("eqPresetId", eqPresetId)
     .put("volumeNormalizationEnabled", volumeNormalizationEnabled)
     .put("panning", panning.toDouble())
+    .put("frontBack", frontBack.toDouble())
     .put(
         "eqBandLevels",
         JSONArray().apply {
@@ -92,7 +93,8 @@ internal fun JSONObject.decodeDefinition(): StoredNativePlaybackSession? {
         channelSwapEnabled = optBoolean("channelSwapEnabled", false),
         playing = optBoolean("playing", false),
         playWhenReady = optBoolean("playWhenReady", false),
-        completed = optBoolean("completed", false)
+        completed = optBoolean("completed", false),
+        frontBack = optDouble("frontBack", 0.0).takeIf { it in -1.0..1.0 }?.toFloat() ?: 0f
     )
 }
 

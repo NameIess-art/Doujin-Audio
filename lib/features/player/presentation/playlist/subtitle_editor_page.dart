@@ -16,6 +16,7 @@ import '../../../../core/widgets/swipe_reveal_card.dart';
 import '../../../../core/widgets/top_page_header.dart';
 import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../playback_providers.dart';
+import '../../../../core/widgets/unified_popup_menu.dart';
 
 class SubtitleEditorPage extends ConsumerStatefulWidget {
   const SubtitleEditorPage({super.key, required this.trackPath});
@@ -93,7 +94,6 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     );
     final next = await showAppInputPanel<({String text, String? originalText})>(
       context: context,
-      barrierLabel: i18n.tr('close'),
       header: header,
       preferredHeight: bilingual ? 320 : 240,
       builder: (context, height) => AppEditPanelForm(
@@ -104,6 +104,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
           children: [
             if (bilingual) ...[
               TextFormField(
+                contextMenuBuilder: buildAppEditableTextMenu,
                 key: const ValueKey('subtitle_original_text'),
                 initialValue: originalText,
                 onChanged: (value) => originalText = value,
@@ -116,6 +117,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
               ),
               const SizedBox(height: 16),
               TextFormField(
+                contextMenuBuilder: buildAppEditableTextMenu,
                 key: const ValueKey('subtitle_translated_text'),
                 initialValue: translatedText,
                 onChanged: (value) => translatedText = value,
@@ -127,6 +129,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
               ),
             ] else
               TextFormField(
+                contextMenuBuilder: buildAppEditableTextMenu,
                 initialValue: cue.text,
                 onChanged: (value) => text = value,
                 autofocus: true,
@@ -193,7 +196,6 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     );
     final next = await showAppInputPanel<(Duration, Duration)>(
       context: context,
-      barrierLabel: i18n.tr('close'),
       header: header,
       preferredHeight: 288,
       builder: (context, height) => StatefulBuilder(
@@ -204,6 +206,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               TextFormField(
+                contextMenuBuilder: buildAppEditableTextMenu,
                 initialValue: startText,
                 onChanged: (value) => startText = value,
                 keyboardType: TextInputType.datetime,
@@ -213,6 +216,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
               ),
               const SizedBox(height: 16),
               TextFormField(
+                contextMenuBuilder: buildAppEditableTextMenu,
                 initialValue: endText,
                 onChanged: (value) => endText = value,
                 keyboardType: TextInputType.datetime,

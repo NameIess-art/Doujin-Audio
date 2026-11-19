@@ -27,6 +27,7 @@ typedef _SwitcherRequest = ({
   List<MusicTrack>? customQueueTracks,
   String currentPath,
   int currentQueueIndex,
+  int selectedIndex,
   String? workRoot,
   Map<String, MusicTrack?> resolvedTracks,
   Map<String, String?> workRoots,
@@ -64,12 +65,44 @@ Future<SessionSwitcherTree> prepareSessionSwitcherTree({
       }
     }
   }
+  final orderedTracks = orderTracksForSessionSwitcher(
+    tracks,
+    preserveQueueOrder: queue != null,
+  );
+  final selectedTrack = resolveSessionSwitcherSelectedTrack(
+    displayedTracks: orderedTracks,
+    queueTracks: queue != null ? orderedTracks : customQueueTracks,
+    currentPath: currentPath,
+    currentQueueIndex: currentQueueIndex,
+  );
+  final int selectedIndex;
+  if (queue != null) {
+    final playbackTracks = queue.expandedTracks;
+    final preferredIndex = currentQueueIndex;
+    selectedIndex =
+        preferredIndex >= 0 &&
+            preferredIndex < playbackTracks.length &&
+            selectedTrack != null &&
+            sameSessionSwitcherTrack(
+              playbackTracks[preferredIndex],
+              selectedTrack,
+            )
+        ? preferredIndex
+        : selectedTrack == null
+        ? -1
+        : playbackTracks.indexWhere((track) => identical(track, selectedTrack));
+  } else {
+    selectedIndex = selectedTrack == null
+        ? -1
+        : orderedTracks.indexWhere((track) => identical(track, selectedTrack));
+  }
   final request = (
     tracks: tracks,
     queue: queue,
     customQueueTracks: customQueueTracks,
     currentPath: currentPath,
     currentQueueIndex: currentQueueIndex,
+    selectedIndex: selectedIndex,
     workRoot: workRoot,
     resolvedTracks: resolvedTracks,
     workRoots: workRoots,
@@ -138,34 +171,13 @@ List<SessionSwitcherNode> _buildQueueTree(_SwitcherRequest request) {
     preserveQueueOrder: request.queue != null,
   );
   final workRoot = request.workRoot;
-  final currentPath = request.currentPath;
   final sourceIndices = Map<MusicTrack, int>.identity();
   for (var i = 0; i < request.tracks.length; i++) {
     sourceIndices[request.tracks[i]] = i;
   }
   final root = SessionSwitcherNode.folder('');
-  final queueTracks = (request.queue != null)
-      ? tracks
-      : request.customQueueTracks;
-  final selectedTrack = resolveSessionSwitcherSelectedTrack(
-    displayedTracks: tracks,
-    queueTracks: queueTracks,
-    currentPath: currentPath,
-    currentQueueIndex: request.currentQueueIndex,
-  );
   if (request.queue != null) {
-    final playbackTracks = request.queue!.expandedTracks;
-    final preferredIndex = request.currentQueueIndex;
-    final selectedQueueIndex =
-        preferredIndex >= 0 &&
-            preferredIndex < playbackTracks.length &&
-            selectedTrack != null &&
-            sameSessionSwitcherTrack(
-              playbackTracks[preferredIndex],
-              selectedTrack,
-            )
-        ? preferredIndex
-        : playbackTracks.indexWhere((track) => identical(track, selectedTrack));
+    final selectedQueueIndex = request.selectedIndex;
     var queueIndex = 0;
 
     for (final entry in request.queue!.entries) {
@@ -232,7 +244,7 @@ List<SessionSwitcherNode> _buildQueueTree(_SwitcherRequest request) {
     parent.children.add(
       SessionSwitcherNode.track(
         track,
-        selected: identical(track, selectedTrack),
+        selected: index == request.selectedIndex,
         queueIndex: index,
         sourceIndex: sourceIndices[track]!,
       ),

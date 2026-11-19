@@ -9,6 +9,7 @@ import '../../../app/presentation/screen_view_models.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/media/search_query_utils.dart';
+import '../../player/presentation/playback_providers.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/widgets/app_search_page.dart';
 import '../../../core/widgets/app_transitions.dart';
@@ -29,6 +30,7 @@ class LibrarySearchAllResults extends ConsumerStatefulWidget {
   const LibrarySearchAllResults({
     super.key,
     required this.query,
+    this.filters = emptySearchFilters,
     this.queryRevision = 0,
     required this.structureRevision,
     required this.detailRevision,
@@ -42,6 +44,7 @@ class LibrarySearchAllResults extends ConsumerStatefulWidget {
   });
 
   final String query;
+  final SearchFilters filters;
   // Resubmitting the same query also resets its previous error.
   final int queryRevision;
   final int structureRevision;
@@ -59,18 +62,25 @@ class LibrarySearchAllResults extends ConsumerStatefulWidget {
       _LibrarySearchAllResultsState();
 }
 
+typedef _SearchKey = (int, int, String, SearchFilters);
+
 class _LibrarySearchAllResultsState
     extends ConsumerState<LibrarySearchAllResults> {
   late final _searchCommitKey = 'library_search_page_${identityHashCode(this)}';
 
   final _searchIndex = LibrarySearchIndex();
   FilteredLibraryTreeResult? _visibleSearchResult;
-  String _visibleSearchQuery = '';
-  int? _visibleSearchRevision;
-  int? _visibleSearchDetailRevision;
-  ({String key, Object token})? _pendingSearch;
+  _SearchKey? _visibleSearchKey;
+  ({_SearchKey key, Object token})? _pendingSearch;
   Object? _visibleSearchError;
-  String? _visibleSearchErrorKey;
+  _SearchKey? _visibleSearchErrorKey;
+
+  _SearchKey get _searchKey => (
+    widget.structureRevision,
+    widget.detailRevision,
+    widget.query,
+    widget.filters,
+  );
   final Set<String> _expandedSearchFolderPaths = <String>{};
   List<LibrarySearchRow> _visibleSearchItems = const [];
   List<LibrarySearchRow>? _offsetRows;
@@ -111,6 +121,7 @@ class _LibrarySearchAllResultsState
   void didUpdateWidget(covariant LibrarySearchAllResults oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.query != widget.query ||
+        oldWidget.filters != widget.filters ||
         oldWidget.queryRevision != widget.queryRevision) {
       _pendingSearch = null;
       _clearSearchError();
@@ -144,14 +155,9 @@ class _LibrarySearchAllResultsState
         resolvedCategorySnapshot?.structureRevision == structureRevision
         ? resolvedCategorySnapshot
         : null;
-    final categoryRevision = detailRevision;
-    if (_visibleSearchQuery == query &&
-        _visibleSearchRevision == structureRevision &&
-        _visibleSearchDetailRevision == categoryRevision) {
-      return;
-    }
-
-    final requestKey = '$structureRevision|$categoryRevision|$query';
+    final filters = widget.filters;
+    final requestKey = _searchKey;
+    if (_visibleSearchKey == requestKey) return;
     final queryRevision = widget.queryRevision;
     if (_pendingSearch?.key == requestKey) return;
     if (_visibleSearchErrorKey == requestKey) return;
@@ -161,6 +167,7 @@ class _LibrarySearchAllResultsState
     bool isCurrentRequest() =>
         mounted &&
         widget.queryRevision == queryRevision &&
+        widget.filters == filters &&
         widget.structureRevision == structureRevision &&
         widget.detailRevision == detailRevision &&
         libraryFacade.structureRevision == structureRevision &&
@@ -170,9 +177,14 @@ class _LibrarySearchAllResultsState
       final cached = _searchIndex.cachedResult(
         query: query,
         structureRevision: structureRevision,
-        detailRevision: categoryRevision,
+        detailRevision: detailRevision,
+        filters: filters,
       );
-      if (cached != null) return cached;
+      final hasSubtitle = filters.hasSubtitle;
+      if (cached != null && hasSubtitle == null) return cached;
+      final subtitles = hasSubtitle == null
+          ? null
+          : ref.read(playbackSubtitleServiceProvider);
       late final AudioLibraryCategorySnapshot effectiveCategorySnapshot;
       if (categorySnapshot != null) {
         effectiveCategorySnapshot = categorySnapshot;
@@ -185,32 +197,47 @@ class _LibrarySearchAllResultsState
               .then((snapshot) {
                 effectiveCategorySnapshot = snapshot;
               }),
-        libraryFacade.loadLibraryTree().then((nodes) {
-          tree = nodes;
-        }),
+        if (cached == null)
+          libraryFacade.loadLibraryTree().then((nodes) {
+            tree = nodes;
+          }),
       ], eagerError: true);
       if (!isCurrentRequest()) return null;
-      final background = libraryTreeTrackCount(tree) > 200;
-      final result = background
-          ? await _searchIndex.searchInBackground(
-              tree: tree,
-              query: query,
-              structureRevision: structureRevision,
-              detailRevision: detailRevision,
-              categorySnapshot: effectiveCategorySnapshot,
-            )
-          : _searchIndex.resolve(
-              tree: tree,
-              query: query,
-              structureRevision: structureRevision,
-              categorySnapshot: effectiveCategorySnapshot,
-            );
-      if (isCurrentRequest()) {
+      final result =
+          cached ??
+          (libraryTreeTrackCount(tree) > 200
+              ? await _searchIndex.searchInBackground(
+                  tree: tree,
+                  query: query,
+                  filters: filters,
+                  structureRevision: structureRevision,
+                  detailRevision: detailRevision,
+                  categorySnapshot: effectiveCategorySnapshot,
+                )
+              : _searchIndex.resolve(
+                  tree: tree,
+                  query: query,
+                  filters: filters,
+                  structureRevision: structureRevision,
+                  categorySnapshot: effectiveCategorySnapshot,
+                ));
+      if (!isCurrentRequest()) return null;
+      if (cached == null) {
         _searchIndex.storeResult(
           query: query,
           structureRevision: structureRevision,
-          detailRevision: categoryRevision,
+          detailRevision: detailRevision,
+          filters: filters,
           result: result,
+        );
+      }
+      if (subtitles != null && hasSubtitle != null) {
+        return result.filterSubtitles(
+          snapshot: effectiveCategorySnapshot,
+          hasSubtitle: hasSubtitle,
+          isActive: isCurrentRequest,
+          checkTrack: (path) =>
+              subtitles.hasLocalSubtitleFile(path, includeImported: true),
         );
       }
       return result;
@@ -228,9 +255,7 @@ class _LibrarySearchAllResultsState
               if (!isCurrentRequest()) return;
               setState(() {
                 _visibleSearchResult = result;
-                _visibleSearchQuery = query;
-                _visibleSearchRevision = structureRevision;
-                _visibleSearchDetailRevision = categoryRevision;
+                _visibleSearchKey = requestKey;
                 _pendingSearch = null;
                 _clearSearchError();
                 _expandedSearchFolderPaths
@@ -300,7 +325,9 @@ class _LibrarySearchAllResultsState
 
   @override
   Widget build(BuildContext context) {
-    if (widget.query.trim().isEmpty) return const SizedBox.shrink();
+    if (widget.query.trim().isEmpty && widget.filters == emptySearchFilters) {
+      return const SizedBox.shrink();
+    }
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final libraryFacade = ref.read(libraryFacadeProvider);
@@ -313,12 +340,13 @@ class _LibrarySearchAllResultsState
       structureRevision: structureRevision,
       detailRevision: detailRevision,
     );
-    final hasCurrentError =
-        _visibleSearchErrorKey ==
-        '$structureRevision|$detailRevision|${widget.query}';
+    final hasCurrentError = _visibleSearchErrorKey == _searchKey;
     // Keep mounted rows while the next query is filtered; the first load still
     // uses a skeleton, and a failed new query keeps the existing error behavior.
-    final result = hasCurrentError && _visibleSearchQuery != widget.query
+    final result =
+        hasCurrentError &&
+            (_visibleSearchKey?.$3 != widget.query ||
+                _visibleSearchKey?.$4 != widget.filters)
         ? null
         : _visibleSearchResult;
     final tree = result?.tree;
@@ -350,7 +378,9 @@ class _LibrarySearchAllResultsState
           visibleItems.every((item) => item.depth == 0);
       final fixedExtents =
           !hasCurrentError && libraryTileExtentsAreFixed(context);
-      final highlightQuery = searchElementHighlight(_visibleSearchQuery);
+      final highlightQuery = searchElementHighlight(
+        _visibleSearchKey?.$3 ?? '',
+      );
       Widget buildSearchItem(int itemIndex) {
         final item = visibleItems[itemIndex];
         final node = item.node;

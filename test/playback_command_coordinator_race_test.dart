@@ -1769,8 +1769,10 @@ void main() {
         expect(session.duration, first.duration);
         expect(session.currentQueueIndex, 0);
         expect(session.state.playing, isTrue);
-        expect(session.playbackError, isNotNull);
+        expect(session.playbackError, isNull);
         expect(restoreCalls, 1);
+        await runtimeGraph.playback.toggleSessionPlayPause(session.id);
+        expect(session.playbackRequested, isFalse);
         await Future<void>.delayed(const Duration(milliseconds: 900));
         final persisted = (await TestPersistenceRepository(
           database: AppDatabase.test(db),
@@ -2177,4 +2179,96 @@ void main() {
       expect(session.state.processingState, ProcessingState.completed);
     });
   });
+
+  test(
+    'detached PlaybackQueue switch with autoPlay starts native playback',
+    () async {
+      final first = queueTrack('detached-a');
+      final second = queueTrack('detached-b');
+      final third = queueTrack('detached-c');
+      runtimeGraph.library.addTracks([first, second, third], persist: false);
+      final queue = runtimeGraph.playback.createPlaybackQueue('Queue');
+      await runtimeGraph.playback.addTrackToPlaybackQueue(queue.id, first);
+      await runtimeGraph.playback.addTrackToPlaybackQueue(queue.id, second);
+
+      var playCalls = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            if (call.method == NativePlaybackMethod.play) {
+              playCalls++;
+              return <String, Object?>{
+                'ok': true,
+                'value': <String, Object?>{
+                  'sessionId': queue.id,
+                  'path': (call.arguments as Map)['path'] ?? second.path,
+                  'playing': true,
+                  'playWhenReady': true,
+                  'processingState': 'ready',
+                  'positionMs': 0,
+                  'bufferedPositionMs': 0,
+                  'durationMs': 10000,
+                  'volume': 1.0,
+                  'speed': 1.0,
+                  'channelSwap': false,
+                  'transportCommandId': (call.arguments as Map)['transportCommandId'],
+                },
+              };
+            }
+            if (call.method == NativePlaybackMethod.prepareSession) {
+              return <String, Object?>{
+                'ok': true,
+                'value': <String, Object?>{
+                  'sessionId': queue.id,
+                  'path': (call.arguments as Map)['path'],
+                  'playing': false,
+                  'playWhenReady': false,
+                  'processingState': 'ready',
+                  'positionMs': 0,
+                  'bufferedPositionMs': 0,
+                  'durationMs': 10000,
+                  'volume': 1.0,
+                  'speed': 1.0,
+                  'channelSwap': false,
+                  'eqCapabilities': <String, Object?>{
+                    'supported': true,
+                    'minGainDb': -12,
+                    'maxGainDb': 12,
+                    'bands': <Object?>[
+                      <String, Object?>{'frequencyHz': 1000},
+                    ],
+                  },
+                },
+              };
+            }
+            return <String, Object?>{'ok': true, 'value': null};
+          });
+
+      await runtimeGraph.playback.toggleSessionPlayPause(queue.id);
+      expect(queue.eqCapabilities.supported, isTrue);
+      expect(playCalls, 1);
+
+      // Remove current occurrence so it becomes a detached queue track, then pause.
+      final firstEntryId = queue.playbackQueue!.entries.first.id;
+      await runtimeGraph.playback.removePlaybackQueueEntry(queue.id, firstEntryId);
+      expect(queue.hasDetachedQueueTrack, isTrue);
+      await runtimeGraph.playback.toggleSessionPlayPause(queue.id);
+      expect(queue.playbackRequested, isFalse);
+
+      // Switch away from the detached track with autoPlay: true (via next/prepare).
+      await runtimeGraph.playback.seekSessionToNext(queue.id);
+      expect(queue.hasDetachedQueueTrack, isFalse);
+      // Verify playDirect with single loop preserves folderSequential fallback.
+      await runtimeGraph.playback.playDirect(
+        [third],
+        loopMode: SessionLoopMode.single,
+      );
+      final temp = runtimeGraph.playback.activeSessions.firstWhere(
+        (s) => s.isTemporary,
+      );
+      expect(temp.loopMode, SessionLoopMode.single);
+      expect(temp.nonSingleLoopMode, SessionLoopMode.folderSequential);
+      expect(temp.playbackRequested, isTrue);
+      expect(playCalls, greaterThanOrEqualTo(2));
+    },
+  );
 }

@@ -990,6 +990,66 @@ void main() {
     );
 
     testWidgets(
+      'ASMR filter-only search can page past zero matches on $platform',
+      (tester) async {
+        SharedPreferences.setMockInitialValues(const {'app_language': 'zh'});
+        final first = AsmrWork.fromJson(const {
+          'id': 41,
+          'title': 'No subtitles',
+        });
+        final next = AsmrWork.fromJson(const {
+          'id': 42,
+          'title': 'Subtitled result',
+          'hasSubtitle': true,
+        });
+        final controller = _PresentationController(createTestAsmrServices())
+          ..publishedWorks = [first]
+          ..hasMore = true;
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrSearchPage(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('search_other_filters')));
+        await tester.pumpAndSettle();
+        final subtitles = find.byKey(const ValueKey('search_subtitle_filter'));
+        if (platform == TargetPlatform.android) {
+          await tester.drag(subtitles, const Offset(0, -100));
+        } else {
+          for (var step = 0; step < 2; step++) {
+            await tester.sendEventToBinding(
+              PointerScrollEvent(
+                position: tester.getCenter(subtitles),
+                scrollDelta: const Offset(0, 120),
+              ),
+            );
+          }
+        }
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('app_search_confirm')));
+        final loadMore = find.byKey(const ValueKey('asmr_filtered_load_more'));
+        await pumpUntilFound(tester, loadMore);
+        await tester.pumpAndSettle();
+        expect(find.text('No subtitles'), findsNothing);
+        expect(controller.loadMoreCount, 0);
+        controller.publishedWorks = [first, next];
+        await tester.tap(loadMore);
+        await pumpUntilFound(tester, find.text('Subtitled result'));
+        expect(find.text('No subtitles'), findsNothing);
+        expect(controller.loadMoreCount, 1);
+        expect(fixture.settings.slice.state.asmrSearchHistory, isEmpty);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
       'ASMR search starts with suggestions and only confirms nonempty drafts on $platform',
       (tester) async {
         SharedPreferences.setMockInitialValues(const {'app_language': 'zh'});

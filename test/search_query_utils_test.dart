@@ -3,6 +3,42 @@ import 'package:doujin_audio/core/media/search_query_utils.dart';
 
 void main() {
   test(
+    'metadata filters include their boundaries and exclude unknown values',
+    () {
+      final SearchFilters filters = (
+        hasSubtitle: null,
+        minimumRating: 4.5,
+        minimumDuration: const Duration(minutes: 30),
+        maximumDuration: null,
+        firstReleaseDate: null,
+        lastReleaseDate: DateTime(2024, 5, 13),
+      );
+      expect(canSubmitSearch('', filters), isTrue);
+      expect(canSubmitSearch('unclosed(', filters), isFalse);
+      bool matches({
+        double? rating = 4.5,
+        Duration? duration = const Duration(minutes: 30),
+        DateTime? date,
+      }) => matchesSearchMetadata(
+        filters,
+        rating: rating,
+        duration: duration,
+        releaseDate: date,
+      );
+      expect(matches(date: DateTime.utc(2024, 5, 13, 23, 59)), isTrue);
+      expect(
+        matches(date: DateTime(1999), duration: const Duration(hours: 4)),
+        isTrue,
+      );
+      expect(matches(date: DateTime(2024, 5, 14)), isFalse);
+      expect(matches(date: DateTime(2024, 5, 13), rating: 4.49), isFalse);
+      expect(matches(date: DateTime(2024, 5, 13), duration: null), isFalse);
+      expect(matches(), isFalse);
+      expect(matchesSearchMetadata(emptySearchFilters), isTrue);
+    },
+  );
+
+  test(
     'element search round-trips phrases, groups and literal punctuation',
     () {
       final query = parseSearchElements(

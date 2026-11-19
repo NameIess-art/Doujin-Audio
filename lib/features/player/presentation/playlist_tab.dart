@@ -24,6 +24,7 @@ import '../../../core/widgets/animated_reorder.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/page_header_inset.dart';
+import '../../../core/widgets/playlist_icon.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/scroll_to_top_list.dart';
 import '../../../core/widgets/sort_options_bottom_sheet.dart';
@@ -476,7 +477,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                   key: const ValueKey(
                                     'playlist_batch_selection_header',
                                   ),
-                                  icon: Icons.playlist_play_rounded,
+                                  iconWidget: const PlaylistIcon(),
                                   topCapsuleTitle: i18n.tr('multi_select'),
                                   topCapsuleData: i18n.tr('selected_count'),
                                   topCapsuleDataCount: count,
@@ -598,7 +599,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                 );
                                 return TopPageHeader(
                                   key: headerKey,
-                                  icon: Icons.playlist_play_rounded,
+                                  iconWidget: const PlaylistIcon(),
                                   collapseController: _scrollController,
                                   topCapsuleTitle: i18n.tr('playback_sessions'),
                                   topCapsuleData: i18n.tr(
@@ -654,7 +655,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                                     onPressed:
                                                         widget.onTimerTap,
                                                     icon: const Icon(
-                                                      Icons.alarm_rounded,
+                                                      Icons.timer_rounded,
                                                     ),
                                                     tooltip: i18n.tr('timer'),
                                                     iconSize: 20,
@@ -850,7 +851,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                           cardContext,
                           i18n.tr('queue_add_audio_first'),
                           tone: AppFeedbackTone.warning,
-                          icon: Icons.featured_play_list_rounded,
+                          icon: Icons.playlist_play_rounded,
                         )
                       : _openSessionDetail(coverOrigin, session.id),
                   onEdit: () => _openQueueEditor(cardContext, session.id),
@@ -993,7 +994,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     AppBottomSheetHeader(
-                      icon: Icons.timer_outlined,
+                      icon: Icons.timer_rounded,
                       title: i18n.tr('timer_title'),
                     ),
                     if (timerState.duration != null &&
@@ -1041,7 +1042,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                           child: ActionChip(
                             mouseCursor: WidgetStateMouseCursor.clickable,
                             avatar: const Icon(
-                              Icons.timer_10_rounded,
+                              Icons.timer_rounded,
                               size: 16,
                             ),
                             label: Text(
@@ -1100,7 +1101,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                           androidPressHighlight: true,
                           child: ActionChip(
                             mouseCursor: WidgetStateMouseCursor.clickable,
-                            avatar: const Icon(Icons.tune_rounded, size: 16),
+                            avatar: const Icon(Icons.more_time_rounded, size: 16),
                             label: Text(i18n.tr('set_countdown')),
                             onPressed: () {
                               Navigator.of(sheetContext).pop(true);

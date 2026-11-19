@@ -193,8 +193,10 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
     if ((notification is ScrollStartNotification &&
             notification.dragDetails != null) ||
         notification is ScrollEndNotification) {
+      final page = controller.page;
+      if (page == null) return false;
       _targetVirtualPage = null;
-      _handlePageChanged(controller.page!.round());
+      _handlePageChanged(page.round());
     }
     return false;
   }

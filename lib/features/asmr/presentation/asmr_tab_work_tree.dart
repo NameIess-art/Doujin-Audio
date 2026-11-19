@@ -70,10 +70,14 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
     final playback = ref.read(asmrPlaybackCoordinatorProvider);
     if (playback == null) return;
     setState(() => _runningAction = true);
+    int? requestEpoch;
     try {
       if (play) {
+        requestEpoch = playback.directPlayEpoch + 1;
         final started = await playback.playDirectWork(widget.work);
-        if (!started) throw StateError('The work could not be played.');
+        if (!started && playback.directPlayEpoch <= requestEpoch) {
+          throw StateError('The work could not be played.');
+        }
       } else {
         await _addAsmrWorksToPlaylist(
           context: context,
@@ -82,6 +86,11 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
         );
       }
     } catch (_) {
+      if (play &&
+          requestEpoch != null &&
+          playback.directPlayEpoch > requestEpoch) {
+        return;
+      }
       if (!mounted) return;
       showAppSnackBar(
         context,

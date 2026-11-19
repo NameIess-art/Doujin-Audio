@@ -136,7 +136,8 @@ class WorkDirectoryInput implements WorkDirectorySource {
   final List<CoverImageReference> images;
   final String folderPath;
 
-  Object get _owner => root ?? (texts.isNotEmpty ? texts : images);
+  Object get _owner =>
+      root ?? (texts.isNotEmpty ? texts : (images.isNotEmpty ? images : this));
   Object get _sources => (root, texts, images, folderPath);
 
   @override

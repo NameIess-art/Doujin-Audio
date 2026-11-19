@@ -250,21 +250,23 @@ class WorkTextFile {
 }
 
 String _decodeWithEncoding(Uint8List bytes, WorkTextEncoding encoding) {
+  String stripBom(String value) =>
+      value.startsWith('\uFEFF') ? value.substring(1) : value;
   try {
     switch (encoding) {
       case WorkTextEncoding.utf8:
-        return utf8.decode(bytes, allowMalformed: true);
+        return stripBom(utf8.decode(bytes, allowMalformed: true));
       case WorkTextEncoding.utf16Le:
-        return _decodeUtf16(bytes, littleEndian: true, start: 0);
+        return stripBom(_decodeUtf16(bytes, littleEndian: true, start: 0));
       case WorkTextEncoding.utf16Be:
-        return _decodeUtf16(bytes, littleEndian: false, start: 0);
+        return stripBom(_decodeUtf16(bytes, littleEndian: false, start: 0));
       case WorkTextEncoding.shiftJis:
         return shiftJis.decode(bytes);
       case WorkTextEncoding.gbk:
         return gbk.decode(bytes);
     }
   } catch (_) {
-    return utf8.decode(bytes, allowMalformed: true);
+    return stripBom(utf8.decode(bytes, allowMalformed: true));
   }
 }
 

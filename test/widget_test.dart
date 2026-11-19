@@ -9,6 +9,8 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'dart:ui' show PointerDeviceKind;
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
+import 'package:doujin_audio/core/widgets/playlist_icon.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_cover_transition.dart';
 
 import 'package:flutter/foundation.dart';
@@ -1437,9 +1439,17 @@ void main() {
     )) {
       expect(
         icon.size,
-        closeTo(icon.icon == Icons.playlist_play_rounded ? 32.2 : 28, 0.001),
+        closeTo(AppDesignTokens.opticalIconSize(icon.icon, 28), 0.001),
       );
     }
+    expect(
+      tester
+          .widget<PlaylistIcon>(
+            find.descendant(of: navigation, matching: find.byType(PlaylistIcon)),
+          )
+          .size,
+      closeTo(28, 0.001),
+    );
     final focusedDestination = find.byKey(
       const ValueKey<String>('main_destination_music_library'),
     );
@@ -1615,10 +1625,10 @@ void main() {
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
     await _pumpAppShell(tester);
 
-    const destinations = <String, IconData>{
+    const destinations = <String, IconData?>{
       'show_asmr_one': Icons.cloud_rounded,
       'music_library': Icons.library_music_rounded,
-      'nav_sessions': Icons.playlist_play_rounded,
+      'nav_sessions': null,
       'nav_my': Icons.person_rounded,
       'nav_settings': Icons.settings_rounded,
     };
@@ -1679,13 +1689,36 @@ void main() {
       final focused = find.byKey(ValueKey('main_destination_${entry.key}'));
       expect(tester.widget<Semantics>(focused).properties.selected, isTrue);
       expect(
-        find.descendant(of: navigation, matching: find.byType(Icon)),
+        find.descendant(
+          of: navigation,
+          matching: entry.value != null
+              ? find.byType(Icon)
+              : find.byType(PlaylistIcon),
+        ),
         findsOneWidget,
       );
       expect(
-        find.descendant(of: focused, matching: find.byIcon(entry.value)),
+        find.descendant(
+          of: focused,
+          matching: entry.value != null
+              ? find.byIcon(entry.value!)
+              : find.byType(PlaylistIcon),
+        ),
         findsOneWidget,
       );
+      if (entry.value == null) {
+        expect(
+          tester
+              .widget<PlaylistIcon>(
+                find.descendant(
+                  of: focused,
+                  matching: find.byType(PlaylistIcon),
+                ),
+              )
+              .filled,
+          isTrue,
+        );
+      }
       expect(
         tester.getCenter(focused).dx,
         tester.getRect(navigation).left + 28,
@@ -5708,7 +5741,13 @@ void main() {
       const ValueKey<String>('main_destination_nav_settings'),
     );
     expect(settingsNavigationIcon, findsOneWidget);
-    expect(tester.widget<Icon>(settingsNavigationIcon).size, 21);
+    expect(
+      tester.widget<Icon>(settingsNavigationIcon).size,
+      closeTo(
+        AppDesignTokens.opticalIconSize(Icons.settings_outlined, 21),
+        0.001,
+      ),
+    );
     expect(
       find.descendant(
         of: navigationRail,
@@ -7365,7 +7404,7 @@ void main() {
         .style!
         .color!;
     expect(
-      find.descendant(of: detail, matching: find.byIcon(Icons.alarm_rounded)),
+      find.descendant(of: detail, matching: find.byIcon(Icons.timer_rounded)),
       findsOneWidget,
     );
     final secondaryButton = tester.widget<IconButton>(
@@ -7843,19 +7882,15 @@ void main() {
     await tester.tap(find.text('100%'));
     await tester.pumpAndSettle();
 
-    final input = find.byType(TextFormField);
-    final confirm = find.widgetWithText(
-      FilledButton,
-      harness.language.tr('confirm'),
-    );
+    final input = find.byKey(const ValueKey('session_volume_input'));
     await tester.enterText(input, '151');
-    tester.widget<FilledButton>(confirm).onPressed!();
+    await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pump();
     expect(input, findsOneWidget);
     expect(harness.playbackService.sessions['orientation_session']?.volume, 1);
 
     await tester.enterText(input, '150');
-    tester.widget<FilledButton>(confirm).onPressed!();
+    await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pumpAndSettle();
     expect(input, findsNothing);
     expect(harness.playbackService.sessions['orientation_session']?.volume, 3);
@@ -8074,7 +8109,12 @@ void main() {
               TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
           messenger.setMockMethodCallHandler(channel, (call) async {
             if (call.method == AppLifecycleMethod.syncAppTheme) {
-              calls.add(call.arguments);
+              final arguments = Map<Object?, Object?>.of(call.arguments as Map);
+              if (platform == TargetPlatform.windows) {
+                expect(arguments.remove('lightTrayMenuPalette'), hasLength(3));
+                expect(arguments.remove('darkTrayMenuPalette'), hasLength(3));
+              }
+              calls.add(arguments);
             }
             return <String, Object?>{'ok': true, 'value': null};
           });
@@ -8105,7 +8145,13 @@ void main() {
               ),
             ],
           );
-          expect(calls, isEmpty);
+          expect(
+            calls,
+            platform == TargetPlatform.windows
+                ? [{'preset': 'rose', 'themeMode': 'system'}]
+                : isEmpty,
+          );
+          calls.clear();
           if (scenario == 'superseded failure') {
             final older = theme.setThemeMode(ThemeMode.dark);
             final newer = theme.setThemeMode(ThemeMode.light);

@@ -9,6 +9,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
+import 'package:doujin_audio/core/widgets/bold_add_icon.dart';
+import 'package:doujin_audio/core/widgets/library_edit_icon.dart';
 import 'package:doujin_audio/core/widgets/scroll_activity_gate.dart';
 import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/features/library/presentation/library_search_page.dart';
@@ -4104,8 +4106,28 @@ void main() {
     );
     expect(find.byTooltip(languageProvider.tr('edit_library')), findsOneWidget);
     expect(
+      tester
+          .widget<IconButton>(
+            find.byKey(const ValueKey<String>('library_edit_button')),
+          )
+          .icon,
+      isA<LibraryEditIcon>(),
+    );
+    expect(
       find.byTooltip(languageProvider.tr('batch_metadata')),
       findsOneWidget,
+    );
+    expect(
+      (tester
+                  .widget<IconButton>(
+                    find.byKey(
+                      const ValueKey<String>('library_batch_metadata_button'),
+                    ),
+                  )
+                  .icon
+              as Icon)
+          .icon,
+      Icons.cloud_download_rounded,
     );
     await tester.tap(find.byTooltip(languageProvider.tr('batch_metadata')));
     await tester.pump();
@@ -4143,7 +4165,18 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(batchHeader, findsNothing);
     expect(find.byIcon(Icons.video_library_rounded), findsNothing);
-    await tester.tap(find.byTooltip(languageProvider.tr('add')));
+    final addButton = find.byTooltip(languageProvider.tr('add'));
+    expect(
+      find.descendant(of: addButton, matching: find.byType(BoldAddIcon)),
+      findsOneWidget,
+    );
+    expect(
+      tester.getSize(
+        find.descendant(of: addButton, matching: find.byType(BoldAddIcon)),
+      ),
+      const Size.square(20),
+    );
+    await tester.tap(addButton);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 

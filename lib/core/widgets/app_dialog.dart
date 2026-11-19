@@ -2,51 +2,163 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../../app/theme/app_design_tokens.dart';
 import '../../app/theme/app_styles.dart';
 import 'app_glass_surface.dart';
 import 'app_transitions.dart';
 import 'windows_smooth_scroll_controller.dart';
 
-class _AppModalBackground extends StatelessWidget {
-  const _AppModalBackground({required this.animation, required this.scrimKey});
-
-  static const double _blurSigma = 8;
-  static final ui.ImageFilter _blurFilter = ui.ImageFilter.blur(
-    sigmaX: _blurSigma,
-    sigmaY: _blurSigma,
-  );
+class AppModalBackground extends StatefulWidget {
+  const AppModalBackground({
+    super.key,
+    required this.animation,
+    this.scrimKey,
+    this.curve = kAppSpringCurve,
+    this.reverseCurve = kAppSpringCurve,
+    this.blurReverseCurve = Curves.easeInQuad,
+  });
 
   final Animation<double> animation;
-  final Key scrimKey;
+  final Key? scrimKey;
+  final Curve curve;
+  final Curve reverseCurve;
+  final Curve blurReverseCurve;
+
+  @override
+  State<AppModalBackground> createState() => _AppModalBackgroundState();
+}
+
+class _AppModalBackgroundState extends State<AppModalBackground> {
+  static const double _blurSigma = 8;
+  static const double _minBlurSigma = 0.05;
+  static final ui.ImageFilter _fullBlurFilter = ui.ImageFilter.blur(
+    sigmaX: _blurSigma,
+    sigmaY: _blurSigma,
+    tileMode: ui.TileMode.clamp,
+  );
+  static final ui.ImageFilter _zeroBlurFilter = ui.ImageFilter.blur(
+    tileMode: ui.TileMode.clamp,
+  );
+
+  CurvedAnimation? _scrimCurved;
+  CurvedAnimation? _blurCurved;
+  late Animation<double> _scrimAnimation;
+  late Animation<double> _blurAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _initAnimations();
+  }
+
+  void _initAnimations() {
+    _disposeCurvedAnimations();
+    _scrimCurved = widget.curve == widget.reverseCurve
+        ? null
+        : CurvedAnimation(
+            parent: widget.animation,
+            curve: widget.curve,
+            reverseCurve: widget.reverseCurve,
+          );
+    _scrimAnimation =
+        _scrimCurved ??
+        widget.animation.drive(CurveTween(curve: widget.curve));
+
+    if (widget.blurReverseCurve == widget.reverseCurve) {
+      _blurCurved = null;
+      _blurAnimation = _scrimAnimation;
+    } else if (widget.curve == widget.blurReverseCurve) {
+      _blurCurved = null;
+      _blurAnimation = widget.animation.drive(CurveTween(curve: widget.curve));
+    } else {
+      _blurCurved = CurvedAnimation(
+        parent: widget.animation,
+        curve: widget.curve,
+        reverseCurve: widget.blurReverseCurve,
+      );
+      _blurAnimation = _blurCurved!;
+    }
+  }
+
+  void _disposeCurvedAnimations() {
+    _scrimCurved?.dispose();
+    _scrimCurved = null;
+    _blurCurved?.dispose();
+    _blurCurved = null;
+  }
+
+  @override
+  void didUpdateWidget(covariant AppModalBackground oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animation != widget.animation) {
+      _initAnimations();
+      return;
+    }
+    final curvesChanged =
+        oldWidget.curve != widget.curve ||
+        oldWidget.reverseCurve != widget.reverseCurve ||
+        oldWidget.blurReverseCurve != widget.blurReverseCurve;
+    if (!curvesChanged) return;
+
+    // Retain CurvedAnimation's direction if a menu closes before fully opening.
+    final canUpdateScrim =
+        _scrimCurved != null && widget.curve != widget.reverseCurve;
+    final canUpdateBlur =
+        widget.blurReverseCurve == widget.reverseCurve
+            ? canUpdateScrim
+            : (_blurCurved != null && widget.curve != widget.blurReverseCurve);
+    if (canUpdateScrim &&
+        (widget.blurReverseCurve == widget.reverseCurve || canUpdateBlur)) {
+      _scrimCurved!.curve = widget.curve;
+      _scrimCurved!.reverseCurve = widget.reverseCurve;
+      if (_blurCurved != null) {
+        _blurCurved!.curve = widget.curve;
+        _blurCurved!.reverseCurve = widget.blurReverseCurve;
+      }
+      return;
+    }
+    _initAnimations();
+  }
+
+  @override
+  void dispose() {
+    _disposeCurvedAnimations();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return ClipRect(
-      child: AnimatedBuilder(
-        animation: animation,
-        builder: (context, _) {
-          final curve = animation.status == AnimationStatus.reverse
-              ? kSecondaryOverlayConfig.reverseCurve
-              : kSecondaryOverlayConfig.curve;
-          final progress = curve.transform(animation.value).clamp(0.0, 1.0);
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              if (progress > 0)
-                Opacity(
-                  opacity: progress,
-                  child: BackdropFilter(
-                    filter: _blurFilter,
-                    child: const SizedBox.expand(),
-                  ),
+    return RepaintBoundary(
+      child: ClipRect(
+        child: AnimatedBuilder(
+          animation: widget.animation,
+          builder: (context, _) {
+            final blurProgress = _blurAnimation.value.clamp(0.0, 1.0);
+            final scrimProgress = _scrimAnimation.value.clamp(0.0, 1.0);
+            final sigma = _blurSigma * blurProgress;
+            final enabled = sigma > _minBlurSigma;
+            final filter = !enabled
+                ? _zeroBlurFilter
+                : (blurProgress >= 1.0
+                      ? _fullBlurFilter
+                      : ui.ImageFilter.blur(
+                          sigmaX: sigma,
+                          sigmaY: sigma,
+                          tileMode: ui.TileMode.clamp,
+                        ));
+            return BackdropFilter(
+              enabled: enabled,
+              filter: filter,
+              child: ColoredBox(
+                key: widget.scrimKey,
+                color: kSecondaryOverlayConfig.scrimColor(
+                  context,
+                  scrimProgress,
                 ),
-              ColoredBox(
-                key: scrimKey,
-                color: kSecondaryOverlayConfig.scrimColor(context, progress),
               ),
-            ],
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
@@ -133,7 +245,7 @@ class _AppOverlayPanelShell extends StatelessWidget {
               onTap: barrierDismissible
                   ? () => Navigator.of(context).maybePop()
                   : null,
-              child: _AppModalBackground(
+              child: AppModalBackground(
                 animation: animation,
                 scrimKey: const ValueKey('app_overlay_panel_scrim'),
               ),
@@ -175,10 +287,12 @@ Future<T?> showAppDialog<T>({
   bool barrierDismissible = true,
   double maxWidth = 420,
   EdgeInsets outerPadding = const EdgeInsets.all(AppSpacing.xl),
+  bool captureLocalThemes = true,
 }) {
+  final navigatorContext = Navigator.of(context, rootNavigator: true).context;
   final capturedThemes = InheritedTheme.capture(
-    from: context,
-    to: Navigator.of(context, rootNavigator: true).context,
+    from: captureLocalThemes ? context : navigatorContext,
+    to: navigatorContext,
   );
   return showGeneralDialog<T>(
     context: context,
@@ -200,7 +314,7 @@ Future<T?> showAppDialog<T>({
                   onTap: barrierDismissible
                       ? () => Navigator.of(dialogContext).maybePop()
                       : null,
-                  child: _AppModalBackground(
+                  child: AppModalBackground(
                     animation: animation,
                     scrimKey: const ValueKey('app_dialog_scrim'),
                   ),
@@ -325,7 +439,11 @@ class AppDialog extends StatelessWidget {
                           color: resolvedAccentColor.withValues(alpha: 0.12),
                           borderRadius: AppRadius.borderMedium,
                         ),
-                        child: Icon(icon, color: resolvedAccentColor),
+                        child: Icon(
+                          icon,
+                          size: AppDesignTokens.opticalIconSize(icon, 24),
+                          color: resolvedAccentColor,
+                        ),
                       ),
                       const SizedBox(width: AppSpacing.md),
                     ],

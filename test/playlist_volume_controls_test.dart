@@ -111,7 +111,10 @@ void main() {
                 find.byKey(const ValueKey('session_volume_percent_text')),
               );
               await tester.pumpAndSettle();
-              await tester.enterText(find.byType(TextFormField), '50');
+              await tester.enterText(
+                find.byKey(const ValueKey('session_volume_input')),
+                '50',
+              );
               await tester.tap(
                 find.text(fixture.languageProvider.tr('confirm')),
               );
@@ -125,6 +128,14 @@ void main() {
               );
               await tester.pumpAndSettle();
               expect(session.volume, 0);
+              await tester.tap(
+                find.byKey(const ValueKey('session_volume_exit_button')),
+              );
+              await tester.pumpAndSettle();
+              await tester.tap(
+                find.byKey(const ValueKey('session_volume_button_anchor')),
+              );
+              await tester.pumpAndSettle();
               repository.failVolume = failVolume;
               await tester.tap(
                 find.byKey(const ValueKey('session_volume_mute_button')),

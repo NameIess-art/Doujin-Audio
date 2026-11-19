@@ -48,6 +48,7 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
   bool _hasLoadedState = false;
   bool _presentationInitialized = false;
   Future<void>? _presentationInitialization;
+  Future<void>? _reloadFuture;
 
   bool get hasLoadedState => _hasLoadedState;
 
@@ -164,8 +165,31 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
   }
 
   @override
-  Future<void> reloadPersistedState() async {
-    if (_disposed) return;
+  Future<void> reloadPersistedState() {
+    if (_disposed) return Future<void>.value();
+    final previous = _reloadFuture;
+    late final Future<void> attempt;
+    Future<void> run() async {
+      if (previous != null) {
+        try {
+          await previous;
+        } catch (_) {
+          // Each reload caller receives its own failure; chained reloads still run.
+        }
+      }
+      if (_disposed) return;
+      await _reloadPersistedState();
+    }
+
+    attempt = run().whenComplete(() {
+      if (identical(_reloadFuture, attempt)) {
+        _reloadFuture = null;
+      }
+    });
+    return _reloadFuture = attempt;
+  }
+
+  Future<void> _reloadPersistedState() async {
     _hasLoadedState = false;
     _syncSlices(isInitialized: false, syncSettings: false);
     _loadEpoch++;
@@ -205,6 +229,15 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
   Future<void> dispose() async {
     _disposed = true;
     _loadEpoch++;
+    final reload = _reloadFuture;
+    if (reload != null) {
+      try {
+        await reload;
+      } catch (_) {
+        // Reload callers own failure reporting; in-flight reload work must
+        // settle before persistence owners are disposed.
+      }
+    }
     final presentation = _presentationInitialization;
     if (presentation != null) {
       try {

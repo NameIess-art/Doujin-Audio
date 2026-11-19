@@ -53,7 +53,8 @@ data class StoredNativePlaybackSession(
     val playWhenReady: Boolean,
     val definitionRevision: Long = 0L,
     val isTemporary: Boolean = false,
-    val completed: Boolean = false
+    val completed: Boolean = false,
+    val frontBack: Float = 0f
 )
 
 data class StoredNativePlaybackQueueItem(

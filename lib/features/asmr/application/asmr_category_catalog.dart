@@ -99,6 +99,7 @@ final class AsmrCategoryCatalog {
   final bool Function() _hasExclusions;
   Expando<List<AsmrWork>> _visibleCache = Expando();
   final Map<_CategoryKey, _CategoryState> _categories = {};
+  int _activeSearchSessionCount = 0;
   int _searchEpoch = 1;
   int get searchEpoch => _searchEpoch;
   String _searchQuery = '';
@@ -460,6 +461,22 @@ final class AsmrCategoryCatalog {
     _pendingAuthRefreshes.clear();
     _localSearchText.clear();
     refreshLocalSearch();
+  }
+
+  void beginSearchSession() {
+    if (_activeSearchSessionCount++ == 0) {
+      clearSearchQueries();
+    }
+  }
+
+  void endSearchSession() {
+    if (_activeSearchSessionCount <= 0) {
+      _activeSearchSessionCount = 0;
+      return;
+    }
+    if (--_activeSearchSessionCount == 0) {
+      clearSearchQueries();
+    }
   }
 
   void clearSearchQueries() {

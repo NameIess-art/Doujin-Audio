@@ -22,6 +22,7 @@ import '../application/library_scan_coordinator.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_search_page.dart';
+import '../../../core/widgets/bold_add_icon.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
@@ -33,6 +34,7 @@ import '../../../core/widgets/page_translation_scope.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../../core/widgets/glass_refresh_indicator.dart';
+import '../../../core/widgets/library_edit_icon.dart';
 import 'dlsite_metadata_batch_page.dart';
 import 'library_scan_feedback.dart';
 import '../../../app/theme/app_styles.dart';
@@ -1020,7 +1022,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       children: [
         UnifiedPopupMenuButton<_LibraryAddAction>(
           enabled: !libraryRefreshBusy,
-          icon: Icons.add_rounded,
+          iconWidget: const BoldAddIcon(),
           tooltip: i18n.tr('add'),
           iconSize: 20,
           padding: EdgeInsets.zero,
@@ -1059,7 +1061,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         IconButton(
           key: const ValueKey<String>('library_edit_button'),
           onPressed: libraryRefreshBusy ? null : _openLibraryManagementPage,
-          icon: const Icon(Icons.edit_note_rounded),
+          icon: const LibraryEditIcon(),
           tooltip: i18n.tr('edit_library'),
           iconSize: 20,
           padding: EdgeInsets.zero,
@@ -1068,7 +1070,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         IconButton(
           key: const ValueKey<String>('library_batch_metadata_button'),
           onPressed: libraryRefreshBusy ? null : _openBatchMetadataPage,
-          icon: const Icon(Icons.library_add_check_rounded),
+          icon: const Icon(Icons.cloud_download_rounded),
           tooltip: i18n.tr('batch_metadata'),
           iconSize: 20,
           padding: EdgeInsets.zero,

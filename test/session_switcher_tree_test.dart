@@ -121,4 +121,28 @@ void main() {
     expect(tree.expanded, {'/disc', '/disc/a'});
     expect(tree.rows.where((row) => !row.node.isFolder), hasLength(2));
   });
+
+  test('large PlaybackQueue in isolate preserves selected queue index', () async {
+    final entries = [
+      for (var i = 0; i < 66; i++)
+        PlaybackQueueEntry(
+          id: 'entry_$i',
+          kind: PlaybackQueueEntryKind.track,
+          title: 'Track $i',
+          tracks: [_track('track_$i.mp3')],
+        ),
+    ];
+    final queue = PlaybackQueueDefinition(name: 'Big Queue', entries: entries);
+    final tracks = queue.expandedTracks;
+    final tree = await _prepare(
+      tracks,
+      queue: queue,
+      path: tracks[42].path,
+      index: 42,
+    );
+    final leaves = tree.rows.where((row) => !row.node.isFolder).toList();
+    expect(leaves, hasLength(66));
+    expect(leaves[42].node.selected, isTrue);
+    expect(leaves.where((row) => row.node.selected), hasLength(1));
+  });
 }

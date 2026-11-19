@@ -21,6 +21,14 @@ internal sealed interface FileCacheTaskResult<out T> {
     data class Failure(val exception: Exception) : FileCacheTaskResult<Nothing>
 }
 
+internal fun fileCacheTaskFailure(throwable: Throwable): FileCacheTaskResult.Failure =
+    FileCacheTaskResult.Failure(
+        throwable as? Exception ?: RuntimeException(
+            throwable.message ?: throwable.javaClass.simpleName,
+            throwable
+        )
+    )
+
 internal fun trackSubtitleWriteAction(
     arguments: ChannelArgumentReader,
     writePath: (String, ByteArray) -> Boolean,
@@ -83,8 +91,8 @@ internal class FileCacheTaskExecutor {
             target.execute {
                 val taskResult = try {
                     FileCacheTaskResult.Success(block())
-                } catch (exception: Exception) {
-                    FileCacheTaskResult.Failure(exception)
+                } catch (throwable: Throwable) {
+                    fileCacheTaskFailure(throwable)
                 }
                 completion(taskResult)
             }

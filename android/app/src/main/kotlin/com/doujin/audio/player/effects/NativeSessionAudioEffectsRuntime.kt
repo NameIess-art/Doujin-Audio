@@ -15,9 +15,10 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 internal class NativeSessionAudioEffectsRuntime(
+    loadSpatialResponses: (() -> StereoSpatialResponses)?,
     private val logWarn: (String, RuntimeException) -> Unit
 ) {
-    private val controller = NativeAudioEffectsController()
+    private val controller = NativeAudioEffectsController(loadSpatialResponses)
     private var loudnessEnhancer: LoudnessEnhancer? = null
     private var loudnessEnhancerSessionId: Int = C.AUDIO_SESSION_ID_UNSET
     private var equalizer: Equalizer? = null
@@ -52,6 +53,7 @@ internal class NativeSessionAudioEffectsRuntime(
     var panning: Float
         get() = controller.panning
         set(value) { controller.panning = value }
+    val frontBack: Float get() = controller.frontBack
 
     fun audioProcessors(): Array<AudioProcessor> = controller.audioProcessors()
 
@@ -88,6 +90,7 @@ internal class NativeSessionAudioEffectsRuntime(
     }
 
     fun release() {
+        controller.release()
         releaseLoudnessEnhancer()
         releaseEqualizer()
         releaseDynamicsProcessing()

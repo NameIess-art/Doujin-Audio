@@ -28,9 +28,18 @@ bool FlutterWindow::OnCreate() {
   desktop_ = std::make_unique<DesktopIntegration>(GetHandle(), flutter_controller_->engine()->messenger());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
   desktop_->AttachContent(flutter_controller_->view()->GetNativeWindow());
+  if (pending_activation_) {
+    desktop_->Activate(pending_activation_show_);
+    pending_activation_ = false;
+    pending_activation_show_ = false;
+  }
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
-    if (std::wstring(GetCommandLineW()).find(L"--background") == std::wstring::npos) desktop_->ShowInitial();
+    if (std::wstring(GetCommandLineW()).find(L"--background") == std::wstring::npos) {
+      if (desktop_) desktop_->OnFirstFrame(true);
+    } else if (desktop_) {
+      desktop_->OnFirstFrame(false);
+    }
   });
 
   // Flutter can complete the first frame before the "show window" callback is
@@ -56,6 +65,10 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               LPARAM const lparam) noexcept {
   if (desktop_) {
     if (auto handled = desktop_->HandleMessage(message,wparam,lparam)) return *handled;
+  } else if (message == DesktopIntegration::kActivate) {
+    pending_activation_ = true;
+    if (wparam == 0) pending_activation_show_ = true;
+    return 0;
   }
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
@@ -69,7 +82,9 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
 
   switch (message) {
     case WM_FONTCHANGE:
-      flutter_controller_->engine()->ReloadSystemFonts();
+      if (flutter_controller_ && flutter_controller_->engine()) {
+        flutter_controller_->engine()->ReloadSystemFonts();
+      }
       break;
   }
 

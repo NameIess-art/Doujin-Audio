@@ -161,7 +161,7 @@ class _AsmrDownloadTaskPageState extends ConsumerState<AsmrDownloadTaskPage> {
               left: 0,
               right: 0,
               child: TopPageHeader(
-                icon: Icons.download_done_rounded,
+                icon: Icons.downloading_rounded,
                 iconColor: Theme.of(context).colorScheme.primary,
                 leading: const AppHeaderBackButton(),
                 title: i18n.tr('asmr_download_task_title'),

@@ -31,6 +31,7 @@ import '../../../../core/widgets/file_tree_row.dart';
 import '../../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../../core/widgets/operation_feedback.dart';
 import '../../../../core/widgets/page_header_inset.dart';
+import '../../../../core/widgets/playlist_icon.dart';
 import '../../../../core/widgets/scroll_activity_gate.dart';
 import '../../../../core/widgets/top_page_header.dart';
 import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
@@ -1195,7 +1196,7 @@ class _PlaybackQueueAudioEditPageState
               left: 0,
               right: 0,
               child: TopPageHeader(
-                icon: Icons.playlist_play_rounded,
+                icon: Icons.edit_note_rounded,
                 leading: IconButton(
                   tooltip: i18n.tr('close'),
                   onPressed: () => Navigator.of(context).maybePop(),
@@ -1778,28 +1779,52 @@ class _QueueSectionHeading extends StatelessWidget {
   }
 }
 
+TextStyle? _queueSectionTitleStyle(BuildContext context) {
+  final isWindows = Theme.of(context).platform == TargetPlatform.windows;
+  return appPageHeaderTitleStyle(context)?.copyWith(
+    fontSize: 13.5,
+    fontWeight: isWindows ? null : FontWeight.w700,
+  );
+}
+
 class _QueueSectionCapsule extends StatelessWidget {
-  const _QueueSectionCapsule({required this.label, required this.icon});
+  const _QueueSectionCapsule({
+    required this.label,
+    this.icon,
+    this.iconWidget,
+  }) : assert(icon != null || iconWidget != null);
 
   final String label;
-  final IconData icon;
+  final IconData? icon;
+  final Widget? iconWidget;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    const iconSize = 17.0;
     return HeaderFloatingSurface(
       height: 32,
       radius: 16,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 18, color: cs.primary),
-          const SizedBox(width: 8),
+          if (iconWidget != null)
+            IconTheme.merge(
+              data: IconThemeData(size: iconSize, color: cs.primary),
+              child: iconWidget!,
+            )
+          else
+            Icon(
+              icon,
+              size: AppDesignTokens.opticalIconSize(icon, iconSize),
+              color: cs.primary,
+            ),
+          const SizedBox(width: 6),
           Flexible(
             child: Text(
               label,
-              style: appPageHeaderTitleStyle(context),
+              style: _queueSectionTitleStyle(context),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -1940,12 +1965,21 @@ class _QueueAudioSourceSectionState
       localWorks = const <LibraryNode>[];
     }
 
-    Widget sourceTab(String label, IconData icon, {required bool local}) {
+    Widget sourceTab(
+      String label, {
+      IconData? icon,
+      Widget? iconWidget,
+      required bool local,
+    }) {
       final selected = showLocalLibrary == local;
       return Semantics(
         selected: selected,
         child: selected
-            ? _QueueSectionCapsule(label: label, icon: icon)
+            ? _QueueSectionCapsule(
+                label: label,
+                icon: icon,
+                iconWidget: iconWidget,
+              )
             : TextButton(
                 onPressed: () => setState(() => _showLocalLibrary = local),
                 style: TextButton.styleFrom(
@@ -1953,7 +1987,7 @@ class _QueueAudioSourceSectionState
                   minimumSize: const Size(0, 32),
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  textStyle: appPageHeaderTitleStyle(context),
+                  textStyle: _queueSectionTitleStyle(context),
                 ),
                 child: Text(label, overflow: TextOverflow.ellipsis),
               ),
@@ -2002,7 +2036,7 @@ class _QueueAudioSourceSectionState
                     Flexible(
                       child: sourceTab(
                         i18n.tr('playback_sessions'),
-                        Icons.playlist_play_rounded,
+                        iconWidget: const PlaylistIcon(),
                         local: false,
                       ),
                     ),
@@ -2010,7 +2044,7 @@ class _QueueAudioSourceSectionState
                     Flexible(
                       child: sourceTab(
                         i18n.tr('show_local_library'),
-                        Icons.library_music_rounded,
+                        icon: Icons.library_music_rounded,
                         local: true,
                       ),
                     ),

@@ -142,6 +142,7 @@ class _NetworkSettingsControlsState
       bool invalid = false,
       String? hint,
     }) => TextField(
+      contextMenuBuilder: buildAppEditableTextMenu,
       controller: controller,
       enabled: !_saving,
       obscureText: secret,

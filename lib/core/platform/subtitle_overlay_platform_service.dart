@@ -1,23 +1,32 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../errors/native_result.dart';
 import '../logging/app_log_service.dart';
+import 'app_platform.dart';
 import 'platform_channels.dart';
 import 'platform_method_client.dart';
 
 class SubtitleOverlayPlatformService {
-  SubtitleOverlayPlatformService({MethodChannel? channel})
-    : _client = PlatformMethodClient(
-        channel ?? const MethodChannel(SubtitleOverlayChannel.name),
-      );
+  SubtitleOverlayPlatformService({
+    MethodChannel? channel,
+    @visibleForTesting bool? isAndroidOverride,
+  }) : _client = PlatformMethodClient(
+         channel ?? const MethodChannel(SubtitleOverlayChannel.name),
+       ),
+       _isAndroidOverride = isAndroidOverride;
 
   final PlatformMethodClient _client;
+  final bool? _isAndroidOverride;
+
+  bool get _isAndroid => _isAndroidOverride ?? AppPlatform.isAndroid;
 
   Future<bool> canDrawOverlays() {
     return _invokeBool(SubtitleOverlayMethod.canDrawOverlays);
   }
 
-  Future<bool> openOverlaySettings() {
+  Future<bool> openOverlaySettings() async {
+    if (!_isAndroid) return false;
     return _invokeBool(SubtitleOverlayMethod.openOverlaySettings);
   }
 

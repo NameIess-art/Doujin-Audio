@@ -7,8 +7,11 @@ import com.doujin.audio.player.session.*
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.exoplayer.ExoPlayer
 
-internal class NativeAudioEffectsController {
+internal class NativeAudioEffectsController(
+    private val loadSpatialResponses: (() -> StereoSpatialResponses)? = null
+) {
     private val volumeBalanceAudioProcessor = VolumeBalanceAudioProcessor()
+    private var spatialResponses: StereoSpatialResponses? = null
 
     var channelSwapEnabled: Boolean = false
     var skipSilenceEnabled: Boolean = false
@@ -18,6 +21,8 @@ internal class NativeAudioEffectsController {
     var eqBandLevels: Map<Int, Float> = emptyMap()
     var volumeNormalizationEnabled: Boolean = false
     var panning: Float = 0f
+    var frontBack: Float = 0f
+        private set
 
     fun audioProcessors(): Array<AudioProcessor> {
         syncProcessors()
@@ -25,11 +30,14 @@ internal class NativeAudioEffectsController {
     }
 
     fun applyChannelMap() {
-        volumeBalanceAudioProcessor.channelSwapEnabled = channelSwapEnabled
+        syncProcessors()
     }
 
     fun apply(effects: NativeAudioEffects): Boolean {
-        val previouslyProcessingStereo = shouldProcessVolumeBalance(panning) || channelSwapEnabled
+        val previouslyProcessingStereo = volumeBalanceAudioProcessor.controls.isActive
+        if (effects.frontBack != 0f && spatialResponses == null) {
+            spatialResponses = loadSpatialResponses?.invoke()
+        }
         channelSwapEnabled = effects.channelSwapEnabled
         skipSilenceEnabled = effects.skipSilenceEnabled
         noiseReductionEnabled = effects.noiseReductionEnabled
@@ -38,10 +46,18 @@ internal class NativeAudioEffectsController {
         eqBandLevels = effects.eqBandLevels
         volumeNormalizationEnabled = effects.volumeNormalizationEnabled
         panning = effects.panning
+        frontBack = effects.frontBack
         syncProcessors()
         // Live parameters are read per buffer; only changing pipeline membership
         // requires the player to configure its audio processors again.
-        return previouslyProcessingStereo != (shouldProcessVolumeBalance(panning) || channelSwapEnabled)
+        return previouslyProcessingStereo != volumeBalanceAudioProcessor.controls.isActive
+    }
+
+    fun release() {
+        if (frontBack == 0f) {
+            spatialResponses = null
+            syncProcessors()
+        }
     }
 
     fun applyToPlayer(
@@ -65,12 +81,19 @@ internal class NativeAudioEffectsController {
                 mapOf("frequencyHz" to frequencyHz, "gainDb" to gainDb.toDouble())
             },
             "volumeNormalizationEnabled" to volumeNormalizationEnabled,
-            "panning" to panning.toDouble()
+            "panning" to panning.toDouble(),
+            "frontBack" to frontBack.toDouble()
         )
     }
 
     private fun syncProcessors() {
-        volumeBalanceAudioProcessor.panning = panning
-        applyChannelMap()
+        // Once enabled, keep the processor installed until player release so
+        // returning through neutral doesn't restart playback.
+        volumeBalanceAudioProcessor.controls = VolumeBalanceAudioProcessor.Controls(
+            panning = panning,
+            channelSwapEnabled = channelSwapEnabled,
+            frontBack = frontBack,
+            spatialResponses = spatialResponses
+        )
     }
 }

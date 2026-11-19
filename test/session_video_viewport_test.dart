@@ -215,7 +215,7 @@ void main() {
     expect(pointer().ignoring, isFalse);
     final viewport = tester.getRect(find.byType(SessionVideoViewport));
     final fullscreen = tester.getRect(find.byTooltip('Fullscreen'));
-    expect(fullscreen.topLeft, viewport.topLeft + const Offset(12, 12));
+    expect(fullscreen.topRight, viewport.topRight + const Offset(-12, 12));
     expect(fullscreen.size, const Size.square(48));
     final icon = find.byIcon(Icons.fullscreen_rounded);
     expect(IconTheme.of(tester.element(icon)).size, 32);

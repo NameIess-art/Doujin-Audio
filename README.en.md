@@ -56,7 +56,7 @@ Official releases are distributed only through GitHub Releases. App-store AAB pa
 - **Multiple sessions and custom queues:** Keep several independent sessions, each tracking its audio, position, volume, repeat mode, subtitles, and effects. Name, sort, drag to reorder, and color queues; pause, resume, or remove sessions in batches.
 - **Six playback modes:** Repeat one track, play the current folder in order or shuffle it, play across folders in order or shuffle them, or stop after one track. Removing the current track from its queue lets it play until it ends or you switch tracks manually.
 - **Playback controls:** Play/pause, previous/next track, fast-forward/rewind, precise seeking, and retry after failure, with feedback while loading or buffering.
-- **Audio adjustments:** EQ presets and band gains, silence skipping, light noise reduction, dynamic volume balancing, channel swap and balance, and pitch-preserving speed control from 0.25x–3.0x. Android uses native EQ; Windows uses software EQ.
+- **Audio adjustments** include EQ presets and band gains, silence skipping, light noise reduction, dynamic volume balancing, channel swap and balance, and pitch-preserving speed control from 0.25x–3.0x. Android uses native EQ and Windows uses software EQ. For stereo tracks, the channel balance page also adjusts virtual front/rear position over headphones. [MIT KEMAR measurement data](assets/audio/KEMAR.md)
 - **Timeline markers:** Name and color points or segments, and loop a selected range. Markers can be saved with local metadata and backups.
 - **Video playback:** Watch video on the playback details page, with fullscreen, screen-off audio playback, and an Audio only mode.
 

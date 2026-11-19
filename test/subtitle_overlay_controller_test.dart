@@ -212,6 +212,51 @@ void main() {
       expect(stopCalls, 2);
     },
   );
+
+  test(
+    'requestRuntimeSync stops a running overlay when runtime becomes disabled',
+    () async {
+      const channel = MethodChannel('test.subtitle.overlay.disable-sync');
+      final calls = <String>[];
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call.method);
+        return <String, Object?>{'ok': true, 'value': true};
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+      final session = _OverlaySession(id: 'a', path: '/music/a.mp3');
+      addTearDown(session.positions.close);
+      final subtitles = _CountingSubtitles();
+      addTearDown(subtitles.dispose);
+      final controller = SubtitleOverlayController(
+        platform: SubtitleOverlayPlatformService(channel: channel),
+      );
+      addTearDown(controller.dispose);
+      var enabled = true;
+      controller.attachRuntime(
+        enabled: () => enabled,
+        session: () => session,
+        subtitles: () => subtitles,
+        style: () => (
+          fontSize: null,
+          backgroundColor: null,
+          textColor: null,
+          backgroundOpacity: null,
+          fontFamily: null,
+          borderDepth: null,
+        ),
+      );
+      controller.requestRuntimeSync();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(calls, contains('startOverlay'));
+
+      enabled = false;
+      controller.requestRuntimeSync();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(calls, contains('stopOverlay'));
+    },
+  );
 }
 
 final class _TestTimer implements Timer {

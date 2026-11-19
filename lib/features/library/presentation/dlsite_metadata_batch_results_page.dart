@@ -384,7 +384,7 @@ class _DlsiteMetadataBatchResultsPageState
               right: 0,
               child: TopPageHeader(
                 key: const ValueKey<String>('batch_metadata_results_header'),
-                icon: Icons.library_add_check_rounded,
+                icon: Icons.cloud_download_rounded,
                 title: i18n.tr('batch_metadata'),
                 leading: const AppHeaderBackButton(),
               ),
@@ -514,7 +514,7 @@ class _BatchMetadataStatusIcon extends StatelessWidget {
     }
     final (IconData icon, Color color, String label) = switch (status) {
       DlsiteMetadataBatchLookupStatus.found => (
-        Icons.check_circle_rounded,
+        Icons.pending_rounded,
         tokens.warning,
         i18n.tr('batch_metadata_status_found'),
       ),

@@ -21,6 +21,7 @@ import 'library_providers.dart';
 import '../../../core/widgets/page_translation_scope.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import 'translated_markdown_body.dart';
+import '../../../core/widgets/unified_popup_menu.dart';
 
 class WorkTextViewerPage extends ConsumerStatefulWidget {
   const WorkTextViewerPage({
@@ -434,6 +435,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
       ),
     );
     return SelectionArea(
+      contextMenuBuilder: buildAppSelectableTextMenu,
       child: _buildFadeInContent(
         context: context,
         child: Center(

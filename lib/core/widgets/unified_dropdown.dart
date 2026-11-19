@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'app_buttons.dart';
+import 'app_dialog.dart';
 import 'app_tap_highlight.dart';
 import 'app_transitions.dart';
 
@@ -43,6 +44,7 @@ class UnifiedDropdownButton<T> extends StatefulWidget {
     this.insetTrigger = true,
     this.menuMaxHeight,
     this.multilineItems = false,
+    this.blurBackground = true,
   });
 
   final T? value;
@@ -53,6 +55,7 @@ class UnifiedDropdownButton<T> extends StatefulWidget {
   final bool insetTrigger;
   final double? menuMaxHeight;
   final bool multilineItems;
+  final bool blurBackground;
 
   @override
   State<UnifiedDropdownButton<T>> createState() =>
@@ -74,6 +77,7 @@ class _UnifiedDropdownButtonState<T> extends State<UnifiedDropdownButton<T>> {
     final button = _UnifiedDropdownPointerShell(
       enabled: onChanged != null,
       paintSurface: true,
+      blurBackground: widget.blurBackground,
       builder: (context, feedback) {
         return ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 44),
@@ -244,10 +248,12 @@ class _UnifiedDropdownPointerShell extends StatelessWidget {
     required this.enabled,
     required this.paintSurface,
     required this.builder,
+    this.blurBackground = true,
   });
 
   final bool enabled;
   final bool paintSurface;
+  final bool blurBackground;
   final Widget Function(
     BuildContext context,
     ({bool hovered, bool pressed}) feedback,
@@ -257,7 +263,7 @@ class _UnifiedDropdownPointerShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Theme(
+    final trigger = Theme(
       data: _unifiedDropdownTheme(context),
       child: AppButtonPointerRegion(
         enabled: enabled,
@@ -308,5 +314,76 @@ class _UnifiedDropdownPointerShell extends StatelessWidget {
         ),
       ),
     );
+    return blurBackground ? _DropdownBackdropHost(child: trigger) : trigger;
   }
+}
+
+class _DropdownBackdropHost extends StatefulWidget {
+  const _DropdownBackdropHost({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_DropdownBackdropHost> createState() => _DropdownBackdropHostState();
+}
+
+class _DropdownBackdropHostState extends State<_DropdownBackdropHost> {
+  final _portal = OverlayPortalController();
+  PopupRoute<dynamic>? _route;
+
+  void _showFor(PopupRoute<dynamic> route) {
+    if (!mounted || !route.isActive || identical(_route, route)) return;
+    _route = route;
+    _portal.show();
+    route.completed.then((_) {
+      if (!mounted || !identical(_route, route)) return;
+      _portal.hide();
+      _route = null;
+    });
+  }
+
+  static const Curve _dropdownReverseCurve = Interval(
+    0.20,
+    1.0,
+    curve: Curves.easeInQuad,
+  );
+
+  @override
+  Widget build(BuildContext context) => OverlayPortal(
+    controller: _portal,
+    // The portal paints with the trigger's route, below the dropdown route.
+    overlayChildBuilder: (context) => IgnorePointer(
+      child: AppModalBackground(
+        animation: MediaQuery.disableAnimationsOf(context)
+            ? kAlwaysCompleteAnimation
+            : (_route?.animation ?? kAlwaysDismissedAnimation),
+        reverseCurve: _dropdownReverseCurve,
+        blurReverseCurve: _dropdownReverseCurve,
+      ),
+    ),
+    child: _DropdownBackdropTheme(onOpen: _showFor, child: widget.child),
+  );
+}
+
+// Material dropdowns capture the trigger's inherited themes into their route.
+// Use that capture to follow the menu animation and every dismissal path.
+class _DropdownBackdropTheme extends InheritedTheme {
+  const _DropdownBackdropTheme({required this.onOpen, required super.child});
+
+  final ValueChanged<PopupRoute<dynamic>> onOpen;
+
+  @override
+  Widget wrap(BuildContext context, Widget child) => Builder(
+    builder: (context) {
+      final route = ModalRoute.of(context);
+      if (route is PopupRoute<dynamic>) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => onOpen(route));
+      }
+      return child;
+    },
+  );
+
+  @override
+  bool updateShouldNotify(_DropdownBackdropTheme oldWidget) =>
+      oldWidget.onOpen != onOpen;
 }

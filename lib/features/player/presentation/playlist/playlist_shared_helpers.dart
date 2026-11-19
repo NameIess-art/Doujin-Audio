@@ -130,6 +130,12 @@ Future<bool> stagePlaybackSessionRemovals(
   return stagedAny;
 }
 
+IconData sessionVolumeIcon(double gain) {
+  if (gain <= 0.001) return Icons.volume_off_rounded;
+  if (gain < 0.45) return Icons.volume_down_rounded;
+  return Icons.volume_up_rounded;
+}
+
 double sessionVolumeDisplayValueFromGain(double gain) {
   final clampedGain = gain
       .clamp(0.0, PlaybackFacade.maxSessionVolume)
@@ -203,12 +209,13 @@ Map<IconData, bool> sessionFeatureBadgeVisibility({
   return {
     Icons.subtitles_rounded: showSubtitles,
     Icons.speed_rounded: (speed - 1.0).abs() >= 0.001,
-    Icons.tune_rounded: audioEffects.eqEnabled,
+    Icons.equalizer_rounded: audioEffects.eqEnabled,
     Icons.keyboard_double_arrow_right_rounded: audioEffects.skipSilenceEnabled,
-    Icons.graphic_eq_rounded: audioEffects.noiseReductionEnabled,
-    Icons.vertical_align_center_rounded:
-        audioEffects.volumeNormalizationEnabled,
-    Icons.compare_arrows_rounded: audioEffects.panning.abs() >= 0.001,
+    Icons.noise_control_off_rounded: audioEffects.noiseReductionEnabled,
+    Icons.compress_rounded: audioEffects.volumeNormalizationEnabled,
+    Icons.surround_sound_rounded:
+        audioEffects.panning.abs() >= 0.001 ||
+        audioEffects.frontBack.abs() >= 0.001,
     Icons.swap_horiz_rounded: channelSwapEnabled,
   };
 }

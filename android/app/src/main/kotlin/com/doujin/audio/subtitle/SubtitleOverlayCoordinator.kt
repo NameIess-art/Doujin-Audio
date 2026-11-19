@@ -1,5 +1,6 @@
 package com.doujin.audio.subtitle
 
+import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -49,8 +50,14 @@ internal class SubtitleOverlayCoordinator(
         ).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
-        context.startActivity(intent)
-        return true
+        return try {
+            context.startActivity(intent)
+            true
+        } catch (error: ActivityNotFoundException) {
+            throw IllegalStateException("Unable to open overlay permission settings.", error)
+        } catch (error: SecurityException) {
+            throw IllegalStateException("Unable to open overlay permission settings.", error)
+        }
     }
 
     fun start(): Boolean {
@@ -59,18 +66,28 @@ internal class SubtitleOverlayCoordinator(
             return true
         }
         val intent = Intent(context, SubtitleOverlayService::class.java)
-        context.startService(intent)
+        try {
+            context.startService(intent)
+        } catch (error: IllegalStateException) {
+            throw IllegalStateException("Unable to start subtitle overlay service.", error)
+        } catch (error: SecurityException) {
+            throw IllegalStateException("Unable to start subtitle overlay service.", error)
+        }
         val nextConnection = newConnection()
         connection = nextConnection
         try {
             if (context.bindService(intent, nextConnection, Context.BIND_AUTO_CREATE)) return true
-        } catch (error: Exception) {
+        } catch (error: IllegalStateException) {
             connection = null
-            context.stopService(intent)
-            throw error
+            runCatching { context.stopService(intent) }
+            throw IllegalStateException("Unable to bind subtitle overlay service.", error)
+        } catch (error: SecurityException) {
+            connection = null
+            runCatching { context.stopService(intent) }
+            throw IllegalStateException("Unable to bind subtitle overlay service.", error)
         }
         connection = null
-        context.stopService(intent)
+        runCatching { context.stopService(intent) }
         return false
     }
 
@@ -100,7 +117,12 @@ internal class SubtitleOverlayCoordinator(
         val previous = connection
         connection = null
         service = null
-        if (previous != null) context.unbindService(previous)
+        if (previous != null) {
+            try {
+                context.unbindService(previous)
+            } catch (_: IllegalArgumentException) {
+            }
+        }
     }
 
     private fun applyPendingState() {

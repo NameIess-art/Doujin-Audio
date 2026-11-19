@@ -292,7 +292,7 @@ class _DataSupportSettingsControlsState
               AppSettingsActionTile(
                 key: const ValueKey('data-support-export-diagnostics'),
                 title: i18n.tr('export_diagnostics'),
-                icon: Icons.support_agent_rounded,
+                icon: Icons.bug_report_outlined,
                 busy: diagnosticsBusy,
                 onTap: dataOperationBusy ? null : _exportDiagnostics,
               ),

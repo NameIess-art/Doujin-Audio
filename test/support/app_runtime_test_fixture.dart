@@ -593,6 +593,10 @@ final class AppRuntimeTestFixture {
         notificationsChannel,
         (_) async => <String, Object?>{'ok': true, 'value': null},
       );
+      binding.defaultBinaryMessenger.setMockStreamHandler(
+        const EventChannel(FileCacheChannel.scanEvents),
+        MockStreamHandler.inline(onListen: (_, _) {}),
+      );
     });
     binding.platformDispatcher.localesTestValue = const <Locale>[Locale('zh')];
     SharedPreferences.setMockInitialValues(const <String, Object>{});

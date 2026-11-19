@@ -27,6 +27,9 @@ final _browseLoads = <ImageProvider<Object>, _BrowseThumbnailLoad>{};
 int _browseLoadId = 0;
 Duration? _lastBrowseDecodeFrame;
 
+@visibleForTesting
+Future<void> get browseThumbnailDecodesIdle => _browseDecodes.idle;
+
 /// Visible thumbnails and idle prefetch share one first-frame decode budget.
 Future<void> warmBrowseThumbnail(
   ImageProvider<Object> provider,

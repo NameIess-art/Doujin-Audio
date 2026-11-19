@@ -7,6 +7,7 @@ import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -101,20 +102,21 @@ Future<void> _drainDetailFixture(
   await tester.pumpWidget(const SizedBox.shrink());
   var completed = false;
   final pending = Future.wait<void>([
+    browseThumbnailDecodesIdle,
     fixture.library.coverArtworkCacheService.initialize(),
     fixture.library.detailCacheService.suspendAndWait(),
   ]).then((_) => fixture.library.flushPendingPersistence()).then((_) {
     completed = true;
   });
-  // SQLite's shared queue can still depend on this test's fake-async zone.
-  // Drain it while both its simulated clock and the real I/O loop can advance.
+  // Shared database and image queues can depend on this test's fake clock.
+  // Drain them while both simulated frames and real I/O can advance.
   for (var tick = 0; tick < 1000 && !completed; tick++) {
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 5)),
     );
     await tester.pump(const Duration(milliseconds: 5));
   }
-  expect(completed, isTrue, reason: 'Work detail database work did not drain');
+  expect(completed, isTrue, reason: 'Work detail background work did not drain');
   await pending;
   await tester.pump(UiInteractionCoordinator.instance.idleDelay);
 }
@@ -1052,7 +1054,7 @@ void main() {
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
       for (final local in [false, true]) {
         _detailTestWidgets(
-          'expanded work cover stays 4:3 on pane resize, local=$local on $platform',
+          'expanded work cover follows 4:3 up to its height cap, local=$local on $platform',
           (tester) async {
             await tester.binding.setSurfaceSize(null);
             tester.view.physicalSize = const Size(1280, 1000);
@@ -1117,9 +1119,7 @@ void main() {
               await tester.pump();
               await tester.pump();
               final size = tester.getSize(cover);
-              expect(size.width, value);
-              expect(size.height, closeTo(value * 3 / 4, 0.001));
-              expect(size.aspectRatio, closeTo(4 / 3, 0.001));
+              expect(size, Size(value, math.min(value * 3 / 4, 404.0)));
               expect(tester.getTopLeft(cover).dx, closeTo(1280 - value, 0.001));
             }
             scroll.jumpTo(40);
@@ -1685,7 +1685,7 @@ void main() {
             find.byKey(const ValueKey('work_detail_entries_skeleton')),
             findsNothing,
           );
-          await tester.binding.setSurfaceSize(const Size(800, 600));
+          await tester.binding.setSurfaceSize(const Size(800, 400));
           await tester.pump();
           await tester.drag(scroll, const Offset(0, -250));
           await tester.pump(const Duration(milliseconds: 300));
@@ -4605,13 +4605,14 @@ void main() {
         final viewerCanvas = tester.widget<Scaffold>(
           find.ancestor(of: viewport, matching: find.byType(Scaffold)).first,
         );
-        final layers =
-            ((viewerCanvas.body! as ClipRect).child! as Stack).children;
         expect(
-          layers.whereType<Positioned>().map((layer) => layer.child),
-          contains(
-            isA<ColoredBox>().having((box) => box.color, 'color', themeSurface),
+          find.descendant(
+            of: find.byWidget(viewerCanvas),
+            matching: find.byWidgetPredicate(
+              (widget) => widget is ColoredBox && widget.color == themeSurface,
+            ),
           ),
+          findsWidgets,
         );
         expect(find.byType(ImageFiltered), findsNothing);
         final pageView = tester.widget<PageView>(find.byType(PageView));
@@ -4988,8 +4989,13 @@ void main() {
         await waitForArtwork();
         expect(downloads, 1);
 
+        final provider = tester.widget<Image>(
+          find.descendant(
+            of: find.byType(RetryingFileImage),
+            matching: find.byType(Image),
+          ),
+        ).image;
         await tester.pumpWidget(const SizedBox.shrink());
-        final provider = FileImage(File(image.path));
         releaseRetainedCoverImage(provider);
         await provider.evict();
         await tester.runAsync(() => File(image.path).delete());

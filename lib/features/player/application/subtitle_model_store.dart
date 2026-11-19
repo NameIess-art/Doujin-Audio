@@ -117,6 +117,12 @@ class SubtitleModelStore extends ChangeNotifier {
     }
     final existing = _activeDownloads[spec.name];
     if (existing != null) {
+      if (existing.cancelling) {
+        return existing.task.catchError(
+          (_) => ensure(spec, onProgress: onProgress, isCancelled: isCancelled),
+          test: (error) => error is SubtitleModelDownloadCancelled,
+        );
+      }
       if (onProgress == null && isCancelled == null) {
         existing.hasUncancellableCaller = true;
         return existing.task;
@@ -205,18 +211,22 @@ class SubtitleModelStore extends ChangeNotifier {
     }
 
     bool allCallersCancelled() {
-      for (final entry in List<_ActiveDownloadEntry>.of(active.entries)) {
-        if (!entry.cancelled && entry.isCancelled?.call() == true) {
-          entry.cancelled = true;
-          if (!entry.completer.isCompleted) {
-            entry.completer.completeError(
-              const SubtitleModelDownloadCancelled(),
-            );
-          }
+      final entries = List<_ActiveDownloadEntry>.of(active.entries);
+      for (final entry in entries) {
+        entry.cancelled = entry.cancelled || entry.isCancelled?.call() == true;
+      }
+      if (!active.hasUncancellableCaller &&
+          active.entries.every((entry) => entry.cancelled)) {
+        // Resolve the last callers after cleanup so they can immediately retry.
+        active.cancelling = true;
+        return true;
+      }
+      for (final entry in entries) {
+        if (entry.cancelled && !entry.completer.isCompleted) {
+          entry.completer.completeError(const SubtitleModelDownloadCancelled());
         }
       }
-      if (active.hasUncancellableCaller) return false;
-      return active.entries.every((entry) => entry.cancelled);
+      return false;
     }
 
     final directory = await _directoryResolver();
@@ -412,5 +422,6 @@ class _ActiveDownloadEntry {
 class _ActiveModelDownload {
   final List<_ActiveDownloadEntry> entries = <_ActiveDownloadEntry>[];
   bool hasUncancellableCaller = false;
+  bool cancelling = false;
   late final Future<String> task;
 }

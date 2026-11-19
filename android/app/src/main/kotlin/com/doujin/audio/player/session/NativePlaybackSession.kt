@@ -522,6 +522,13 @@ internal class NativePlaybackSession(
             .build()
     }
 
+    fun markTrackStopBoundary() {
+        stoppedAtTrackBoundary = stoppedAtTrackBoundary ||
+            stopAfterCurrentTrack || timerStopAfterCurrentTrack
+        stopAfterCurrentTrack = false
+        syncPauseAtTrackEnd()
+    }
+
     fun hasPreviousMediaItem(): Boolean {
         val player = _player
         if (player != null) return player.hasPreviousMediaItem()

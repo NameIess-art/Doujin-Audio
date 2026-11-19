@@ -54,6 +54,19 @@ internal class NativePlaybackSessionManager(
 
     fun hasActivePlayback(): Boolean = sessions.values.any { it.isPlaybackActive() }
 
+    fun syncAudioOffloadPolicies(
+        offloadAllowedForProcess: Boolean,
+        intendedSessionCount: Int,
+        isVideo: (NativePlaybackSession) -> Boolean
+    ) {
+        val activeCount = maxOf(sessions.values.count { it.isPlaybackActive() }, intendedSessionCount)
+        for (session in sessions.values) {
+            if (session.hasPlayer()) {
+                session.applyAudioOffloadPolicy(offloadAllowedForProcess, activeCount, isVideo(session))
+            }
+        }
+    }
+
     fun usageItems(): List<Map<String, Any?>> = sessions.values.mapNotNull(NativePlaybackSession::usageItem)
 
     fun hasNetworkPlayback(isIntended: (String) -> Boolean): Boolean = sessions.values.any { session ->

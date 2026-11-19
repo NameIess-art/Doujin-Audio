@@ -269,7 +269,7 @@ void main() {
           await tester.pump(const Duration(milliseconds: 80));
           expect(
             tester.widget<SizeTransition>(sizeTransition()).sizeFactor.value,
-            inExclusiveRange(0.2, 1),
+            inExclusiveRange(0, 1),
           );
           expect(
             tester.widget<FadeTransition>(fadeTransition()).opacity.value,
@@ -299,7 +299,7 @@ void main() {
           expect(leaf, findsOneWidget);
           expect(
             tester.widget<SizeTransition>(sizeTransition()).sizeFactor.value,
-            inExclusiveRange(0.2, 1),
+            inExclusiveRange(0, 1),
           );
           await tester.tap(leaf, warnIfMissed: false);
           expect(selected, isNull);

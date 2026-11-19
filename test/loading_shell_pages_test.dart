@@ -140,9 +140,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.scrollUntilVisible(find.byType(SwitchListTile), 300);
-    expect(find.byType(SwitchListTile), findsOneWidget);
-    final tileContext = tester.element(find.byType(SwitchListTile));
+    final saveCoverTile = find.byType(SwitchListTile);
+    await tester.scrollUntilVisible(
+      saveCoverTile,
+      300,
+      scrollable: find.descendant(
+        of: find.byType(ListView),
+        matching: find.byType(Scrollable),
+      ).first,
+    );
+    expect(saveCoverTile, findsOneWidget);
+    final tileContext = tester.element(saveCoverTile);
     expect(
       tester.getSize(find.byType(SwitchListTile)).height,
       Theme.of(tileContext).platform == TargetPlatform.windows ? 48 : 56,

@@ -308,7 +308,7 @@ void main() {
       await source.delete();
       await expectLater(
         service.saveEditedSubtitle(audioPath, editedCues),
-        throwsStateError,
+        throwsA(isA<SubtitleSourceChanged>()),
       );
       expect(service.trackSync(audioPath), same(before));
       expect(await directory.list().length, 1);

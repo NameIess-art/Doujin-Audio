@@ -26,6 +26,7 @@ class DocumentRenameNameTest {
         assertEquals("img", sanitizeCacheExtension("cover.jpg/../../evil", "img"))
         assertEquals("img", sanitizeCacheExtension("cover.jpg/..", "img"))
         assertEquals("bin", sanitizeCacheExtension(".hidden", "bin"))
-        assertEquals("png", sanitizeCacheExtension("a\\b\\cover.p..ng", "img"))
+        assertEquals("png", sanitizeCacheExtension("a\\b\\cover.p%n*g", "img"))
+        assertEquals("mp3", sanitizeCacheExtension("Track.original..mp3", "bin"))
     }
 }

@@ -730,16 +730,16 @@ class NativePlaybackService : MediaSessionService() {
                 "playback_service_start_rejected reason=${startDecision.rejectionReason}",
                 null
             )
-            return rejectedStartResult(startId)
-        }
-        if (startDecision.source == NativePlaybackStartSource.TRANSPORT) {
-            handleNotificationTransportCommand(startDecision.transportCommand.orEmpty())
-            return rejectedStartResult(startId)
+            return finishStartWithoutRestore(startId)
         }
         restoreCoordinator.acceptStart(startId)
         if (stoppingForIdleExit) {
             stoppingForIdleExit = false
             publishController(this)
+        }
+        if (startDecision.source == NativePlaybackStartSource.TRANSPORT) {
+            handleNotificationTransportCommand(startDecision.transportCommand.orEmpty())
+            return finishStartWithoutRestore(startId)
         }
         super.onStartCommand(intent, flags, startId)
         if (startDecision.requireForegroundBootstrap) {
@@ -797,7 +797,7 @@ class NativePlaybackService : MediaSessionService() {
         )
     }
 
-    private fun rejectedStartResult(startId: Int): Int {
+    private fun finishStartWithoutRestore(startId: Int): Int {
         if (sessionManager.isNotEmpty || hasPlaybackToKeepAlive() || foregroundCoordinator.isStarted) {
             return START_STICKY
         }
@@ -1076,7 +1076,6 @@ class NativePlaybackService : MediaSessionService() {
         markPlaybackIntended(sessionId)
         timerResumeFade.cancel()
         session.applyFadeMultiplier(1f)
-        session.applyFocusDuckMultiplier(1f)
         focusSession(sessionId)
         if (!establishForegroundPlaybackOrRollback(listOf(sessionId))) {
             return errorResult(FOREGROUND_PLAYBACK_UNAVAILABLE_ERROR)
@@ -1359,26 +1358,29 @@ class NativePlaybackService : MediaSessionService() {
         return okResult(null)
     }
 
-    fun pausePlayingSessionsForTimer(generation: Int, stopAfterCurrentTrack: Boolean): List<String> {
-        val sessionIds = sessionManager.activePlaybackSessionIds()
-        if (sessionIds.isEmpty()) {
-            syncForegroundState()
-            return emptyList()
+    internal fun pausePlayingSessionsForTimer(generation: Int, stopAfterCurrentTrack: Boolean): NativeTimerPauseResult {
+        val activeSessionIds = sessionManager.activePlaybackSessionIds()
+        val interruptedSessionIds = focusRecovery.takePendingResumeSessions()
+        val sessionIds = (activeSessionIds + interruptedSessionIds).distinct()
+        val trackEndTargets = if (stopAfterCurrentTrack) {
+            activeSessionIds - interruptedSessionIds.toSet()
+        } else {
+            emptyList()
         }
-        focusRecovery.clearTransientLoss()
-        sessionIds.forEach { sessionId ->
-            focusRecovery.removePending(sessionId)
-            clearPlaybackIntent(sessionId)
-        }
+        sessionIds.forEach(::clearPlaybackIntent)
         if (stopAfterCurrentTrack) {
-            timerExecution.arm(sessionIds, generation)
+            // A session already paused by focus loss must stay paused after the timer.
+            interruptedSessionIds.forEach { pause(it) }
+            if (trackEndTargets.isNotEmpty()) timerExecution.arm(trackEndTargets, generation)
         } else {
             sessionIds.forEach { pause(it) }
         }
-        publishAllSessionStates()
-        statePersistence.persistNow()
+        if (sessionIds.isNotEmpty()) {
+            publishAllSessionStates()
+            statePersistence.persistNow()
+        }
         syncForegroundState()
-        return sessionIds
+        return NativeTimerPauseResult(sessionIds, waitingForTrackEnd = trackEndTargets.isNotEmpty())
     }
 
     fun cancelTimerStopAfterCurrentTrack() = timerExecution.cancel()
@@ -1476,7 +1478,7 @@ class NativePlaybackService : MediaSessionService() {
             createPlayer = playerFactory::create,
             logWarn = { message, session, error -> logWarn(message, session, error) },
             loadSpatialResponses = { spatialResponses }
-        )
+        ).apply { applyFocusDuckMultiplier(focusRecovery.duckMultiplier) }
     }
 
     private fun handlePlaybackStateChanged(sessionId: String, playbackState: Int) {

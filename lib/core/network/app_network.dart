@@ -500,6 +500,8 @@ class AppNetwork extends HttpOverrides {
     return 'Basic ${base64.encode(utf8.encode('${settings.proxyUsername}:$password'))}';
   }
 
+  static final _explicitProxyPort = RegExp(r':([0-9]+)$');
+
   static List<_ProxyRoute> _parsePolicy(String policy) {
     final routes = <_ProxyRoute>[];
     for (final rawEntry in policy.split(';')) {
@@ -532,8 +534,11 @@ class AppNetwork extends HttpOverrides {
             address.hasFragment) {
           throw const FormatException('Invalid system proxy address');
         }
-        final port = address.hasPort
-            ? address.port
+        // Uri may elide a port that matches the input scheme's default,
+        // which can differ from the system policy's actual proxy type.
+        final explicitPort = _explicitProxyPort.firstMatch(target)?.group(1);
+        final port = explicitPort != null
+            ? int.tryParse(explicitPort) ?? 0
             : switch (type) {
                 'HTTPS' => 443,
                 'SOCKS' || 'SOCKS5' => 1080,

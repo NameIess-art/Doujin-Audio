@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:doujin_audio/app/application/app_runtime_lifecycle.dart';
 import 'package:doujin_audio/app/application/windows_runtime_binding.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
+import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/application/notification_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_facade.dart';
@@ -103,9 +104,29 @@ void main() {
     native.failPauseAll = true;
     await _sendDesktopAction(channel, 'taskbarToggle');
     expect(playback.sessionById('first')!.state.playing, isTrue);
-    native.failPauseAll = false;
+
+    native.pausedSnapshots = [
+      NativePlaybackSnapshot(
+        sessionId: 'first',
+        path: '/first.mp3',
+        playing: false,
+        playWhenReady: false,
+        processingState: 'ready',
+        position: Duration.zero,
+        bufferedPosition: Duration.zero,
+        volume: 1,
+        boostGain: 1,
+        channelSwapEnabled: false,
+      ),
+    ];
     await _sendDesktopAction(channel, 'taskbarToggle');
-    expect(native.pauseAllCount, 2);
+    expect(playback.sessionById('first')!.state.playing, isFalse);
+    expect(playback.sessionById('third')!.state.playing, isTrue);
+
+    native.failPauseAll = false;
+    native.pausedSnapshots = const [];
+    await _sendDesktopAction(channel, 'taskbarToggle');
+    expect(native.pauseAllCount, 3);
     expect(playback.sessions.values.every((s) => !s.state.playing), isTrue);
 
     await _sendDesktopAction(channel, 'taskbarToggle');
@@ -113,10 +134,18 @@ void main() {
     expect(playback.sessionById('second')!.state.playing, isFalse);
 
     await _sendDesktopAction(channel, 'taskbarToggle');
-    expect(native.pauseAllCount, 3);
+    expect(native.pauseAllCount, 4);
     await playback.removeSession('third');
     await _sendDesktopAction(channel, 'taskbarToggle');
     expect(resumed, ['first', 'third', 'first']);
+
+    await _sendDesktopAction(channel, 'taskbarToggle');
+    await playback.toggleSessionPlayPause('second');
+    resumed.clear();
+    await _sendDesktopAction(channel, 'taskbarToggle');
+    await _sendDesktopAction(channel, 'taskbarToggle');
+    expect(resumed, ['second']);
+    expect(playback.sessionById('first')!.state.playing, isFalse);
   });
 }
 
@@ -137,6 +166,7 @@ final class _RecordingNativeRepository extends NativePlaybackRepository {
   int pauseAllCount = 0;
   int deviceDisconnectCount = 0;
   bool failPauseAll = false;
+  List<NativePlaybackSnapshot> pausedSnapshots = const [];
 
   @override
   Future<bool> handleDeviceDisconnected() async {
@@ -150,6 +180,10 @@ final class _RecordingNativeRepository extends NativePlaybackRepository {
     if (failPauseAll) return const NativeFailure<void>('pause failed');
     return const NativeSuccess<void>();
   }
+
+  @override
+  Future<NativeResult<NativePlaybackBundleSnapshot>> snapshot() async =>
+      NativeSuccess(NativePlaybackBundleSnapshot(sessions: pausedSnapshots));
 
   @override
   Future<NativeResult<void>> removeSession(String sessionId) async =>

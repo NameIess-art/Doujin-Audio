@@ -87,15 +87,10 @@ final class LibraryMutationCoordinator {
     _syncStateSlice();
     await Future.wait<void>([
       _addRestoredTracks(normalizedLibraryPath, result.restoredTracks),
-      if (_persistenceCoordinator.enabled &&
-          result.restoredEntryPaths.isNotEmpty)
-        databaseRepository.setLibraryEntriesState(
-          normalizedLibraryPath,
-          result.restoredEntryPaths,
-          LibraryEntryState.active,
-        ),
-      if (_persistenceCoordinator.enabled)
-        _persistenceCoordinator.saveExclusions(),
+      _persistExclusionChanges(
+        normalizedLibraryPath,
+        active: result.restoredEntryPaths,
+      ),
     ]);
   }
 
@@ -114,27 +109,47 @@ final class LibraryMutationCoordinator {
       )) {
         return false;
       }
-      return matcher.isExcluded(track.path);
-    });
+      return matcher.isEntryExcluded(
+        _service.libraryEntryForPath(normalizedLibraryPath, track.path),
+        track.path,
+      );
+    }, persist: false);
     snapshotCacheService.markStructureChanged();
     _syncStateSlice();
+    await _persistExclusionChanges(
+      normalizedLibraryPath,
+      active: restored.activeEntryPaths,
+      excluded: restored.excludedEntryPaths,
+    );
+  }
+
+  Future<void> _persistExclusionChanges(
+    String libraryPath, {
+    required List<String> active,
+    List<String> excluded = const [],
+  }) async {
+    if (!_persistenceCoordinator.enabled) return;
+    if (_service.libraryBatchDepth > 0) {
+      _catalogWrites.queueBatchExclusions([
+        for (final path in [...active, ...excluded])
+          ?_service.libraryEntryForPath(libraryPath, path),
+      ]);
+      return;
+    }
     await Future.wait<void>([
-      if (_persistenceCoordinator.enabled &&
-          restored.excludedEntryPaths.isNotEmpty)
+      if (excluded.isNotEmpty)
         databaseRepository.setLibraryEntriesState(
-          normalizedLibraryPath,
-          restored.excludedEntryPaths,
+          libraryPath,
+          excluded,
           LibraryEntryState.excluded,
         ),
-      if (_persistenceCoordinator.enabled &&
-          restored.activeEntryPaths.isNotEmpty)
+      if (active.isNotEmpty)
         databaseRepository.setLibraryEntriesState(
-          normalizedLibraryPath,
-          restored.activeEntryPaths,
+          libraryPath,
+          active,
           LibraryEntryState.active,
         ),
-      if (_persistenceCoordinator.enabled)
-        _persistenceCoordinator.saveExclusions(),
+      _persistenceCoordinator.saveExclusions(),
     ]);
   }
 

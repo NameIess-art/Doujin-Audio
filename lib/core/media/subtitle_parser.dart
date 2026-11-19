@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:isolate';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
 
 import '../immutable_collections.dart';
@@ -30,6 +32,7 @@ class SubtitleTrack {
     required this.sourcePath,
     required List<SubtitleCue> cues,
     this.offset = Duration.zero,
+    this.sourceRevision,
   }) : cues = immutableList(cues) {
     _timeIndex = _SubtitleTimeIndex(this.cues);
   }
@@ -37,16 +40,29 @@ class SubtitleTrack {
   SubtitleTrack._withOffset(SubtitleTrack source, this.offset)
     : sourcePath = source.sourcePath,
       cues = source.cues,
+      sourceRevision = source.sourceRevision,
       _timeIndex = source._timeIndex;
 
   final String sourcePath;
   final List<SubtitleCue> cues;
   final Duration offset;
+  final String? sourceRevision;
   late final _SubtitleTimeIndex _timeIndex;
 
   SubtitleTrack withOffset(Duration newOffset) {
     if (newOffset == offset) return this;
     return SubtitleTrack._withOffset(this, newOffset);
+  }
+
+  bool hasSameCueTimings(List<SubtitleCue> edited) {
+    if (cues.length != edited.length) return false;
+    for (var index = 0; index < cues.length; index++) {
+      if (cues[index].start != edited[index].start ||
+          cues[index].end != edited[index].end) {
+        return false;
+      }
+    }
+    return true;
   }
 
   SubtitleCue? cueAt(Duration position, {bool persistent = false}) {
@@ -123,6 +139,10 @@ const Set<String> supportedSubtitleExtensions = {
 
 const subtitleTranslationBoundary = '<!--doujin-audio:translation-->';
 
+String subtitleSourceRevision(String raw) => sha256
+    .convert(utf8.encode(raw.startsWith('\uFEFF') ? raw.substring(1) : raw))
+    .toString();
+
 const Set<String> _subtitleMatchMediaExtensions = {
   '.mp3',
   '.aac',
@@ -175,8 +195,11 @@ SubtitleTrack? _parseSubtitleTrack({
       ? cues
       : _parseSubtitleTrackByContent(raw);
   if (resolvedCues == null) return null;
-  return SubtitleTrack(sourcePath: sourcePath, cues: resolvedCues)
-    .._timeIndex.prepare();
+  return SubtitleTrack(
+    sourcePath: sourcePath,
+    cues: resolvedCues,
+    sourceRevision: subtitleSourceRevision(raw),
+  ).._timeIndex.prepare();
 }
 
 List<SubtitleCue>? _parseSubtitleTrackByContent(String raw) {

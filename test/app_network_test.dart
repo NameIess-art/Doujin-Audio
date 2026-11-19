@@ -372,7 +372,7 @@ void main() {
     firstGate.complete();
     await Future.wait([first, second]);
 
-    expect(applied, ['http:1', 'system:8080']);
+    expect(applied, ['http:1', 'system:0']);
     final response = await (await proxiedClient().getUrl(
       Uri.parse('http://127.0.0.1:${origin.port}/'),
     )).close();
@@ -461,6 +461,42 @@ void main() {
       );
     },
   );
+
+  test('system SOCKS policy preserves an explicit HTTP-default port', () async {
+    await network.close();
+    const proxyHost = 'system-proxy.invalid';
+    final ports = <int>[];
+    network = AppNetwork(
+      resolveSystemProxy: (_) async => 'SOCKS $proxyHost:80',
+    );
+    final originalZone = Zone.current;
+    await IOOverrides.runZoned(
+      () async {
+        await network.ensureStarted();
+        final response = await (await proxiedClient().getUrl(
+          Uri.parse('http://unresolvable.invalid/'),
+        )).close();
+        expect(response.statusCode, HttpStatus.badGateway);
+        await response.drain<void>();
+      },
+      socketConnect: (host, port, {sourceAddress, sourcePort = 0, timeout}) {
+        if (host == proxyHost) {
+          ports.add(port);
+          return Future<Socket>.error(const SocketException('test proxy'));
+        }
+        return originalZone.run(
+          () => Socket.connect(
+            host,
+            port,
+            sourceAddress: sourceAddress,
+            sourcePort: sourcePort,
+            timeout: timeout,
+          ),
+        );
+      },
+    );
+    expect(ports, [80]);
+  });
 
   test(
     'system proxy policy handles trailing semicolons and scheme-prefixed hosts',

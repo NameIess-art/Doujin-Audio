@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
+import '../logging/app_log_service.dart';
 import '../media/music_track.dart';
 import '../media/path_matcher.dart';
 import 'persistence_records.dart';

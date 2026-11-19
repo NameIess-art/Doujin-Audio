@@ -2620,6 +2620,7 @@ void main() {
           ],
           destinationRoot: tempDir.path,
           conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveMetadata: false,
         );
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
@@ -3964,6 +3965,58 @@ void main() {
       manager.dispose();
       if (await tempDir.exists()) await tempDir.delete(recursive: true);
     }
+  });
+
+  test('SAF skip preserves existing files and reports failed writes', () async {
+    final tempDir = await Directory.systemTemp.createTemp('asmr_saf_skip_');
+    addTearDown(() => tempDir.delete(recursive: true));
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    final requests = <String>[];
+    server.listen((request) async {
+      requests.add(request.uri.path);
+      request.response
+        ..contentLength = 1
+        ..add(const [1]);
+      await request.response.close();
+    });
+    const root = 'content://downloads/tree/root';
+    final gateway = _StatefulSafGateway()
+      ..existingPaths.add('$root::Work/Existing.mp3')
+      ..rejectCopy = true;
+    final manager = AsmrDownloadManager(
+      fileCacheGateway: gateway,
+      stagingDirectoryProvider: () async => tempDir,
+      persistTasks: false,
+    );
+    addTearDown(manager.shutdown);
+
+    await manager.startDownload(
+      work: _work(),
+      selectedRoots: [
+        for (final name in ['Existing.mp3', 'Missing.mp3'])
+          _file(
+            title: name,
+            downloadUrl: 'http://${server.address.host}:${server.port}/$name',
+          ),
+      ],
+      destinationRoot: root,
+      customWorkFolderName: 'Work',
+      conflictPolicy: AsmrDownloadConflictPolicy.skip,
+      saveMetadata: false,
+    );
+    await _waitForTaskStatus(
+      manager,
+      1,
+      AsmrDownloadTaskStatus.failed,
+      allowFailure: true,
+    );
+
+    final task = manager.getTask(_key(1))!;
+    expect(task.skippedFiles, 1);
+    expect(task.failedFilePaths, {'Missing.mp3'});
+    expect(gateway.existingPaths, {'$root::Work/Existing.mp3'});
+    expect(requests, ['/Missing.mp3']);
   });
 
   test('deleting a task preserves pre-existing skipped media and metadata', () async {
@@ -5791,6 +5844,7 @@ void main() {
           selectedRoots: selectedRoots,
           destinationRoot: tempDir.path,
           conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveMetadata: false,
         );
 
         final workDir = Directory(
@@ -5824,6 +5878,7 @@ void main() {
           selectedRoots: selectedRoots,
           destinationRoot: tempDir.path,
           conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveMetadata: false,
         );
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
         final completed = manager.getTask(_key(1));
@@ -6657,6 +6712,7 @@ final class _StatefulSafGateway extends FileCachePlatformGateway {
   final Future<void> Function(String)? beforeCopy;
   final Future<void> Function(String)? beforeDelete;
   final String Function(String)? resolveFolderName;
+  bool rejectCopy = false;
   bool rejectDelete = false;
 
   final Set<String> existingPaths = <String>{};
@@ -6686,6 +6742,7 @@ final class _StatefulSafGateway extends FileCachePlatformGateway {
     required bool overwrite,
   }) async {
     await beforeCopy?.call(relativePath);
+    if (rejectCopy) return false;
     copiedFolders.add(folder);
     copiedRelativePaths.add(relativePath);
     final targetPath = folder.contains('::')

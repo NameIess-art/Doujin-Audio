@@ -23,7 +23,8 @@ class WindowsRuntimeBinding {
   bool _closing = false;
   bool _endingSession = false;
   bool _stateLoaded = false;
-  Set<String> _pausedByTaskbar = {};
+  final _pausedByTaskbar = <String>{};
+  bool _taskbarPauseIncomplete = false;
   final Set<Future<void>> _inFlightActions = <Future<void>>{};
 
   Future<void> attach() => _attachment ??= _desktop.attach(_onAction);
@@ -101,15 +102,14 @@ class WindowsRuntimeBinding {
       case 'toggle':
         await notifications.togglePrimarySessionPlayPause();
       case 'taskbarToggle':
-        final playing = playback.sessions.values
-            .where((session) => session.playbackRequested)
-            .map((session) => session.id)
-            .toSet();
-        if (playing.isNotEmpty) {
-          if (await playback.pauseAllSessions()) _pausedByTaskbar = playing;
+        if (playback.hasActivePlayback) {
+          if (!_taskbarPauseIncomplete) _pausedByTaskbar.clear();
+          await playback.pauseAllSessions(onPaused: _pausedByTaskbar.addAll);
+          _taskbarPauseIncomplete = playback.hasActivePlayback;
         } else if (_pausedByTaskbar.isNotEmpty) {
-          final resumeIds = _pausedByTaskbar;
-          _pausedByTaskbar = {};
+          _taskbarPauseIncomplete = false;
+          final resumeIds = _pausedByTaskbar.toList();
+          _pausedByTaskbar.clear();
           for (final id in resumeIds) {
             final session = playback.sessionById(id);
             if (session != null && !session.playbackRequested) {

@@ -5904,5 +5904,281 @@ void main() {
         variant: TargetPlatformVariant({platform}),
       );
     }
+
+    _detailTestWidgets(
+      'WorkDetailEntryTile shows local image thumbnail once loaded and icon before load or on failure',
+      (tester) async {
+        final root = await tester.runAsync(
+          () => Directory.systemTemp.createTemp('entry_thumb_local_'),
+        );
+        addTearDown(() async {
+          if (root != null && await root.exists()) {
+            await root.delete(recursive: true);
+          }
+        });
+        final validImage = File('${root!.path}/cover.png');
+        await tester.runAsync(
+          () => validImage.writeAsBytes(
+            base64Decode(
+              'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+            ),
+          ),
+        );
+        final missingPath = '${root.path}/missing.png';
+        final interaction = UiInteractionCoordinator.instance;
+        final fixture = AppRuntimeWidgetTestFixture();
+        _detailFixtures.add(fixture);
+        addTearDown(fixture.dispose);
+        final source = Object();
+        interaction.beginNavigation(source);
+        addTearDown(() => interaction.endNavigation(source));
+
+        await tester.pumpWidget(
+          fixture.build(
+            Scaffold(
+              body: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  WorkDetailEntryTile(
+                    item: const WorkEntryItem(
+                      name: 'notes.txt',
+                      relativePath: 'notes.txt',
+                      type: WorkEntryType.text,
+                      fileSizeBytes: 512,
+                    ),
+                    accentColor: Colors.deepPurple,
+                    menuEntries: const [],
+                    moreLabel: 'More',
+                    unknownSizeLabel: '大小未知',
+                    onAction: (_) {},
+                  ),
+                  WorkDetailEntryTile(
+                    item: WorkEntryItem(
+                      name: 'cover.png',
+                      relativePath: 'cover.png',
+                      type: WorkEntryType.image,
+                      fullPathOrUrl: validImage.path,
+                      fileSizeBytes: 1024,
+                      imageItem: WorkImageItem(
+                        name: 'cover.png',
+                        path: validImage.path,
+                        relativePath: 'cover.png',
+                      ),
+                    ),
+                    accentColor: Colors.deepPurple,
+                    menuEntries: const [],
+                    moreLabel: 'More',
+                    unknownSizeLabel: '大小未知',
+                    onAction: (_) {},
+                  ),
+                  WorkDetailEntryTile(
+                    item: WorkEntryItem(
+                      name: 'missing.png',
+                      relativePath: 'missing.png',
+                      type: WorkEntryType.image,
+                      fullPathOrUrl: missingPath,
+                      fileSizeBytes: 1024,
+                      imageItem: WorkImageItem(
+                        name: 'missing.png',
+                        path: missingPath,
+                        relativePath: 'missing.png',
+                      ),
+                    ),
+                    accentColor: Colors.deepPurple,
+                    menuEntries: const [],
+                    moreLabel: 'More',
+                    unknownSizeLabel: '大小未知',
+                    onAction: (_) {},
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        final textRow = find.byType(WorkDetailEntryTile).at(0);
+        final validRow = find.byType(WorkDetailEntryTile).at(1);
+        final missingRow = find.byType(WorkDetailEntryTile).at(2);
+
+        // Before image decoding starts, image entries display the image icon
+        // aligned with other entry icons and keep the same title start offset.
+        final validIconFinder = find.descendant(
+          of: validRow,
+          matching: find.byIcon(AppDesignTokens.imageFileIcon),
+        );
+        expect(validIconFinder, findsOneWidget);
+        expect(
+          tester.widget<Icon>(validIconFinder).color,
+          AppDesignTokens.imageFileIconColor,
+        );
+        expect(
+          find.descendant(of: validRow, matching: find.byType(Image)),
+          findsNothing,
+        );
+        expect(
+          tester.getTopLeft(validIconFinder).dx,
+          closeTo(
+            tester
+                .getTopLeft(
+                  find.descendant(
+                    of: textRow,
+                    matching: find.byIcon(AppDesignTokens.textFileIcon),
+                  ),
+                )
+                .dx,
+            0.01,
+          ),
+        );
+        expect(
+          tester.getTopLeft(find.text('cover')).dx,
+          closeTo(tester.getTopLeft(find.text('notes')).dx, 0.01),
+        );
+
+        interaction.endNavigation(source);
+        for (var attempt = 0; attempt < 100; attempt++) {
+          await tester.pump(const Duration(milliseconds: 50));
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          if (find
+              .descendant(of: validRow, matching: find.byType(Image))
+              .evaluate()
+              .isNotEmpty) {
+            break;
+          }
+        }
+        await tester.pumpAndSettle();
+
+        final validThumbnail = find.descendant(
+          of: validRow,
+          matching: find.byType(Image),
+        );
+        expect(validThumbnail, findsOneWidget);
+        expect(tester.widget<Image>(validThumbnail).fit, BoxFit.cover);
+        expect(tester.getSize(validThumbnail), const Size(32, 32));
+        expect(
+          find.descendant(
+            of: validRow,
+            matching: find.byIcon(AppDesignTokens.imageFileIcon),
+          ),
+          findsNothing,
+        );
+        expect(
+          find.descendant(of: missingRow, matching: find.byType(Image)),
+          findsNothing,
+        );
+        expect(
+          find.descendant(
+            of: missingRow,
+            matching: find.byIcon(AppDesignTokens.imageFileIcon),
+          ),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        releaseRetainedCoverImages();
+        PaintingBinding.instance.imageCache.clear();
+        PaintingBinding.instance.imageCache.clearLiveImages();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+
+    _detailTestWidgets(
+      'WorkDetailEntryTile shows icon while remote image loads then displays thumbnail',
+      (tester) async {
+        SharedPreferences.setMockInitialValues(const <String, Object>{});
+        final root = await tester.runAsync(
+          () => Directory.systemTemp.createTemp('entry_thumb_remote_'),
+        );
+        addTearDown(() async {
+          if (root != null && await root.exists()) {
+            await root.delete(recursive: true);
+          }
+        });
+        final remoteImageFile = File('${root!.path}/remote.png');
+        await tester.runAsync(
+          () => remoteImageFile.writeAsBytes(
+            base64Decode(
+              'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+            ),
+          ),
+        );
+        final covers = _ControlledWorkDetailCoverService();
+        final fixture = AppRuntimeWidgetTestFixture(
+          coverArtworkCacheService: covers,
+        );
+        _detailFixtures.add(fixture);
+        addTearDown(fixture.dispose);
+
+        await tester.pumpWidget(
+          fixture.build(
+            Scaffold(
+              body: WorkDetailEntryTile(
+                item: const WorkEntryItem(
+                  name: 'art.png',
+                  relativePath: 'images/art.png',
+                  type: WorkEntryType.image,
+                  fullPathOrUrl: 'https://example.test/art.png',
+                  fileSizeBytes: 2048,
+                  imageItem: WorkImageItem(
+                    name: 'art.png',
+                    path: 'https://example.test/art.png',
+                    relativePath: 'images/art.png',
+                  ),
+                ),
+                accentColor: Colors.deepPurple,
+                menuEntries: const [],
+                moreLabel: 'More',
+                unknownSizeLabel: '大小未知',
+                onAction: (_) {},
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+
+        expect(find.byIcon(AppDesignTokens.imageFileIcon), findsOneWidget);
+        expect(find.byType(Image), findsNothing);
+
+        covers.cover.complete(remoteImageFile.path);
+        for (var attempt = 0; attempt < 100; attempt++) {
+          await tester.pump(const Duration(milliseconds: 50));
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          if (find.byType(Image).evaluate().isNotEmpty) break;
+        }
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+
+        final thumbnail = find.byType(Image);
+        expect(thumbnail, findsOneWidget);
+        expect(tester.widget<Image>(thumbnail).fit, BoxFit.cover);
+        expect(tester.getSize(thumbnail), const Size(32, 32));
+        expect(find.byIcon(AppDesignTokens.imageFileIcon), findsNothing);
+        expect(tester.takeException(), isNull);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        releaseRetainedCoverImages();
+        PaintingBinding.instance.imageCache.clear();
+        PaintingBinding.instance.imageCache.clearLiveImages();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
   });
 }

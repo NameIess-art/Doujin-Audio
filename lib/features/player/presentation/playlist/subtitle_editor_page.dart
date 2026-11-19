@@ -15,6 +15,7 @@ import '../../../../core/widgets/page_header_inset.dart';
 import '../../../../core/widgets/swipe_reveal_card.dart';
 import '../../../../core/widgets/top_page_header.dart';
 import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
+import '../../application/playback_subtitle_service.dart';
 import '../playback_providers.dart';
 import '../../../../core/widgets/unified_popup_menu.dart';
 
@@ -28,6 +29,7 @@ class SubtitleEditorPage extends ConsumerStatefulWidget {
 }
 
 class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
+  SubtitleTrack? _sourceTrack;
   List<SubtitleCue>? _cues;
   bool _saving = false;
   bool _dirty = false;
@@ -39,11 +41,13 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
   bool get _canSave {
     final cues = _cues;
     if (!_dirty || _saving || cues == null) return false;
+    final hasSameTiming = _sourceTrack?.hasSameCueTimings(cues) ?? false;
     for (var index = 0; index < cues.length; index++) {
       final cue = cues[index];
       if (cue.text.trim().isEmpty ||
+          cue.start < Duration.zero ||
           cue.end <= cue.start ||
-          (index > 0 && cue.start < cues[index - 1].end)) {
+          (!hasSameTiming && index > 0 && cue.start < cues[index - 1].end)) {
         return false;
       }
     }
@@ -60,9 +64,12 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     try {
       final track = await ref
           .read(playbackSubtitleServiceProvider)
-          .load(widget.trackPath);
+          .loadForEditing(widget.trackPath);
       if (!mounted) return;
-      setState(() => _cues = track?.cues.toList() ?? <SubtitleCue>[]);
+      setState(() {
+        _sourceTrack = track;
+        _cues = track?.cues.toList() ?? <SubtitleCue>[];
+      });
     } catch (_) {
       if (mounted) setState(() => _errorKey = 'subtitle_load_failed');
     }
@@ -319,9 +326,14 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     try {
       final saved = await ref
           .read(playbackSubtitleServiceProvider)
-          .saveEditedSubtitle(widget.trackPath, List.of(_cues!));
+          .saveEditedSubtitle(
+            widget.trackPath,
+            List.of(_cues!),
+            source: _sourceTrack,
+          );
       if (!mounted) return false;
       setState(() {
+        _sourceTrack = saved;
         _cues = saved.cues.toList();
         _dirty = false;
       });
@@ -332,13 +344,17 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
         icon: Icons.check_circle_rounded,
       );
       return true;
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
         showAppSnackBar(
           context,
           ref
               .read(appLanguageProviderInstanceProvider)
-              .tr('subtitle_save_failed'),
+              .tr(
+                error is SubtitleSourceChanged
+                    ? 'subtitle_source_changed'
+                    : 'subtitle_save_failed',
+              ),
           tone: AppFeedbackTone.warning,
           icon: Icons.error_outline_rounded,
         );

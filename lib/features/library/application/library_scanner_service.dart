@@ -527,6 +527,8 @@ class LibraryScannerService {
     var wasCancelled = false;
 
     try {
+      provider.beginLibraryBatch();
+      batchStarted = true;
       if (shouldClearExclusions) {
         exclusionSnapshot = provider.snapshotLibraryExclusions(
           normalizedFolderPath,
@@ -534,8 +536,6 @@ class LibraryScannerService {
         await provider.clearLibraryExclusions(normalizedFolderPath);
       }
       if (provider.isScanGenerationActive(generation)) {
-        provider.beginLibraryBatch();
-        batchStarted = true;
         provider.setScanProgress(
           currentFolder: _displaySourceName(folderPath),
           generation: generation,
@@ -607,6 +607,10 @@ class LibraryScannerService {
               normalizedFolderPath: existingEntryPaths,
             },
           );
+          if (exclusionSnapshot != null) {
+            await provider.restoreLibraryExclusions(exclusionSnapshot);
+            exclusionSnapshot = null;
+          }
         } else if (completed) {
           provider.setScanProgress(
             generation: generation,
@@ -623,6 +627,9 @@ class LibraryScannerService {
           if (batchStarted) {
             await provider.endLibraryBatch();
           }
+        } catch (_) {
+          completed = false;
+          rethrow;
         } finally {
           try {
             if (!completed && exclusionSnapshot != null) {

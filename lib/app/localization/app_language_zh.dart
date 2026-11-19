@@ -917,6 +917,7 @@ const Map<String, String> appLanguageZh = {
   'subtitle_import_overwrite': '覆盖',
   'subtitle_load_failed': '无法加载字幕，请重试。',
   'subtitle_save_failed': '无法保存字幕，请重试。',
+  'subtitle_source_changed': '字幕文件已变更，请重新打开编辑器。',
   'subtitle_edit': '编辑字幕',
   'subtitle_unsaved_title': '保存字幕修改？',
   'subtitle_unsaved_message': '当前字幕有未保存的修改。保存后退出，或放弃这些修改。',

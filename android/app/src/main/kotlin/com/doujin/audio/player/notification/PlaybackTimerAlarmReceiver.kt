@@ -304,12 +304,12 @@ object PlaybackTimerAlarmScheduler {
             complete(resultStale)
             return
         }
-        val activeSessionIds = service.pausePlayingSessionsForTimer(
+        val pauseResult = service.pausePlayingSessionsForTimer(
             runtimeState.generation,
             runtimeState.stopAfterCurrentTrack
         )
-        if (runtimeState.stopAfterCurrentTrack || activeSessionIds.isNotEmpty()) {
-            finishTimerExpired(context, runtimeState, activeSessionIds)
+        if (runtimeState.stopAfterCurrentTrack || pauseResult.sessionIds.isNotEmpty()) {
+            finishTimerExpired(context, runtimeState, pauseResult.sessionIds, pauseResult.waitingForTrackEnd)
             complete(resultExecuted)
             return
         }
@@ -334,6 +334,7 @@ object PlaybackTimerAlarmScheduler {
                     // Sticky recovery may have started playback while the candidate read was queued.
                     val paused = NativePlaybackService.controller()
                         ?.pausePlayingSessionsForTimer(runtimeState.generation, false)
+                        ?.sessionIds
                         .orEmpty()
                     val ids = paused.ifEmpty {
                         recovered.filter { (id, revision) ->
@@ -355,7 +356,8 @@ object PlaybackTimerAlarmScheduler {
     private fun finishTimerExpired(
         context: Context,
         runtimeState: StoredPlaybackTimerRuntimeState,
-        pausedSessionIds: List<String>
+        pausedSessionIds: List<String>,
+        waitingForTrackEnd: Boolean = false
     ) {
         NativePlaybackStateStore.storePausedSessionIds(context, pausedSessionIds)
         logInfo(
@@ -377,7 +379,7 @@ object PlaybackTimerAlarmScheduler {
             NativePlaybackStateStore.clearTimerRuntimeState(context)
         }
         rescheduleFromStoredState(context)
-        if (!runtimeState.stopAfterCurrentTrack || pausedSessionIds.isEmpty()) {
+        if (!waitingForTrackEnd) {
             completeTimerStopAfterCurrentTracks(context, runtimeState.generation)
         }
     }

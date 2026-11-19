@@ -42,6 +42,7 @@ final class LibraryCatalogWriteCoordinator {
   bool _stagedRefresh = false;
   final _removedTrackPaths = LibraryService.createPathSet();
   final _removedEntryPaths = LibraryService.createPathIndex<Set<String>>();
+  bool _batchExclusionsChanged = false;
   void attachTrackRemovalHandler(void Function(List<String>) handler) {
     _trackRemovalHandler ??= handler;
   }
@@ -287,6 +288,11 @@ final class LibraryCatalogWriteCoordinator {
       _service.libraryDerivedGeneration++;
     }
     _service.libraryBatchDepth++;
+  }
+
+  void queueBatchExclusions(List<LibraryEntry> entries) {
+    _persistenceCoordinator.queueOrPersistEntries(entries, persist: true);
+    _batchExclusionsChanged = true;
   }
 
   void beginStagedLibraryRefresh() {
@@ -591,7 +597,9 @@ final class LibraryCatalogWriteCoordinator {
       _coverArtwork()?.invalidateCatalogTracks(affected);
       rethrow;
     }
+    final saveExclusions = _batchExclusionsChanged;
     _clearBatch();
+    if (saveExclusions) await _persistenceCoordinator.saveExclusions();
     if (didChangeLibrary) {
       final affected = _affectedTracks(before);
       final removedPaths = before.tracks
@@ -631,6 +639,7 @@ final class LibraryCatalogWriteCoordinator {
     _refreshRemovedEntries.clear();
     _refreshFolderWrites.clear();
     _stagedRefresh = false;
+    _batchExclusionsChanged = false;
   }
 
   Future<bool> rebuildDerivedSnapshot() async {

@@ -2168,7 +2168,7 @@ void main() {
               .id,
           502,
         );
-        await tester.tap(find.byType(BackButton).last);
+        await tester.tap(find.bySubtype<BackButton>().last);
         await tester.pumpAndSettle();
         expect(find.byType(AsmrDownloadPage), findsNothing);
         expect(tester.takeException(), isNull);

@@ -328,8 +328,10 @@ class AsmrDownloadPlanner {
     }) {
       final output = _outputCollisionKey(original);
       final owner = generated ? 'generated:${origin ?? original}' : original;
-      if ((owners.containsKey(output) && owners[output] != owner) ||
-          (kinds.containsKey(output) && kinds[output] != directory)) {
+      if (owners.containsKey(output) &&
+          (!directory ||
+              kinds[output] != directory ||
+              owners[output] != owner)) {
         throw FormatException('Download output paths collide: $original');
       }
       owners[output] = owner;

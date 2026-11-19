@@ -1,6 +1,7 @@
 package com.doujin.audio
 
 import android.content.Context
+import android.content.Intent
 import android.media.AudioManager
 import android.media.audiofx.LoudnessEnhancer
 import androidx.media3.common.Player
@@ -12,8 +13,12 @@ import com.doujin.audio.player.effects.NativeSessionAudioEffectsRuntime
 import com.doujin.audio.player.effects.NativePlaybackResumeFade
 import com.doujin.audio.player.effects.PlaybackVolumeMapper
 import com.doujin.audio.player.notification.PlaybackKeepAliveAlarmScheduler
+import com.doujin.audio.player.recovery.NativeAudioFocusController
+import com.doujin.audio.player.recovery.NativePlaybackFocusRecoveryCoordinator
 import com.doujin.audio.player.service.NativePlaybackForegroundCoordinator
+import com.doujin.audio.player.service.NativePlaybackRestoreCoordinator
 import com.doujin.audio.player.service.NativePlaybackService
+import com.doujin.audio.player.service.nativePlaybackTransportAction
 import com.doujin.audio.player.session.NativeAudioEffects
 import com.doujin.audio.player.session.NativeMediaSessionHost
 import com.doujin.audio.player.session.NativePlaybackStateStore
@@ -53,6 +58,98 @@ class NativePlaybackCommandSnapshotTest {
         )
         persistence.shutdown()
         assertTrue(persistence.awaitTermination())
+    }
+
+    @Test
+    fun `timer expiry prevents focus gain from restarting interrupted audio`() {
+        val service = Robolectric.buildService(NativePlaybackService::class.java).get()
+        val sessions = ReflectionHelpers.callInstanceMethod<NativePlaybackSessionManager>(service, "getSessionManager")
+        val focus = ReflectionHelpers.callInstanceMethod<NativePlaybackFocusRecoveryCoordinator>(service, "getFocusRecovery")
+        val audioFocus = ReflectionHelpers.callInstanceMethod<NativeAudioFocusController>(service, "getAudioFocusController")
+        val audioManager = service.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val shadowAudioManager = shadowOf(audioManager)
+        shadowAudioManager.setNextFocusRequestResponse(AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+        val session = sessions.getOrCreate("timer")
+        val track = NativeMediaItemDescriptor("/timer.mp3", "file:///timer.mp3", "Timer", null, null)
+        try {
+            assertTrue(audioFocus.requestIfNeeded())
+            val focusListener = checkNotNull(shadowAudioManager.lastAudioFocusRequest).listener
+            session.configure(
+                descriptor = track, queue = listOf(track), queueStartIndex = 0,
+                startPositionMs = 0L, volume = 1f, speed = 1f,
+                repeatOne = false, repeatAll = false, shuffleModeEnabled = false, autoPlay = true
+            )
+            val player = checkNotNull(session.playerOrNull())
+            assertTrue(player.playWhenReady)
+            focusListener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
+            assertTrue(focus.isPending("timer"))
+            assertFalse(player.playWhenReady)
+
+            val paused = service.pausePlayingSessionsForTimer(generation = 1, stopAfterCurrentTrack = true)
+
+            assertEquals(listOf("timer"), paused.sessionIds)
+            assertFalse(paused.waitingForTrackEnd)
+            assertFalse(focus.isPending("timer"))
+            focusListener.onAudioFocusChange(AudioManager.AUDIOFOCUS_GAIN)
+            assertFalse(session.playerOrNull()?.playWhenReady == true)
+        } finally {
+            ReflectionHelpers.callInstanceMethod<NativeMediaSessionHost>(service, "getMediaSessionHost").release("test")
+            session.release()
+            shutdownPersistence(service)
+        }
+    }
+
+    @Test
+    fun `play during soft focus loss ducks existing and newly created sessions`() {
+        val service = Robolectric.buildService(NativePlaybackService::class.java).get()
+        val sessions = ReflectionHelpers.callInstanceMethod<NativePlaybackSessionManager>(service, "getSessionManager")
+        val focus = ReflectionHelpers.callInstanceMethod<NativePlaybackFocusRecoveryCoordinator>(service, "getFocusRecovery")
+        val foreground = ReflectionHelpers.callInstanceMethod<NativePlaybackForegroundCoordinator>(service, "getForegroundCoordinator")
+        ReflectionHelpers.setField(foreground, "isStarted", true)
+        val existing = sessions.getOrCreate("existing")
+        fun configure(session: NativePlaybackSession, autoPlay: Boolean) {
+            val track = NativeMediaItemDescriptor("/duck.mp3", "file:///duck.mp3", "Ducked", null, null)
+            session.configure(
+                descriptor = track, queue = listOf(track), queueStartIndex = 0,
+                startPositionMs = 0L, volume = 1f, speed = 1f,
+                repeatOne = false, repeatAll = false, shuffleModeEnabled = false, autoPlay = autoPlay
+            )
+        }
+        try {
+            configure(existing, autoPlay = true)
+            focus.onFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK)
+            assertTrue(focus.isDucking)
+            assertEquals(true, service.play("existing")["ok"])
+            assertEquals(0.2f, checkNotNull(existing.playerOrNull()).volume, 0f)
+
+            val created = sessions.getOrCreate("created")
+            configure(created, autoPlay = false)
+            assertEquals(true, service.play("created")["ok"])
+            assertEquals(0.2f, checkNotNull(created.playerOrNull()).volume, 0f)
+
+            focus.onFocusChange(AudioManager.AUDIOFOCUS_GAIN)
+            assertEquals(1f, checkNotNull(created.playerOrNull()).volume, 0f)
+        } finally {
+            ReflectionHelpers.callInstanceMethod<NativeMediaSessionHost>(service, "getMediaSessionHost").release("test")
+            sessions.allSessions.forEach(NativePlaybackSession::release)
+            shutdownPersistence(service)
+        }
+    }
+
+    @Test
+    fun `notification transport registers its start ID without restoring playback`() {
+        val service = Robolectric.buildService(NativePlaybackService::class.java).get()
+        val restore = ReflectionHelpers.callInstanceMethod<NativePlaybackRestoreCoordinator>(service, "getRestoreCoordinator")
+        restore.acceptStart(1)
+        val token = ReflectionHelpers.getStaticField<String>(NativePlaybackService::class.java, "internalStartToken")
+        val transport = Intent(nativePlaybackTransportAction)
+            .putExtra("internal_start_token", token)
+            .putExtra("transport_command", "next")
+
+        service.onStartCommand(transport, 0, 2)
+
+        assertEquals(2, restore.latestStartId)
+        assertFalse(restore.isRestoring)
     }
 
     @Test

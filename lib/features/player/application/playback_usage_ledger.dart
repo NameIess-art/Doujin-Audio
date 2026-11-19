@@ -104,14 +104,14 @@ class PlaybackUsageLedger {
   };
 
   void restoreState(Map<String, dynamic> state) {
-    _epoch = state['epoch'] as String;
-    _sequence = (state['sequence'] as num).toInt();
-    _pending.insertAll(
-      0,
-      (state['batches'] as List)
-          .map((e) => PlaybackUsageBatch.fromMap(e as Map))
-          .toList(),
-    );
+    final epoch = state['epoch'] as String;
+    final sequence = (state['sequence'] as num).toInt();
+    final batches = (state['batches'] as List)
+        .map((e) => PlaybackUsageBatch.fromMap(e as Map))
+        .toList();
+    _epoch = epoch;
+    _sequence = sequence;
+    _pending.insertAll(0, batches);
     _revision++;
   }
 

@@ -830,6 +830,7 @@ void registerAsmrAccountSyncTests({
 
       api.beforeLogin = null;
       api.loginTokenOverride = 'token-alice-recovered';
+      api.fetchReviewAuthFailuresRemaining = 1;
       await controller.syncAsmrAccount(force: true);
 
       expect(controller.isAsmrAccountLoggedIn, isTrue);

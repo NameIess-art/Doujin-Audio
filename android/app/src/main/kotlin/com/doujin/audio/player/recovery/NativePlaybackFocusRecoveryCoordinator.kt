@@ -53,6 +53,13 @@ internal class NativePlaybackFocusRecoveryCoordinator(
     val isDucking: Boolean
         get() = duckActive
 
+    val duckMultiplier: Float
+        get() = if (duckActive) {
+            nativeFocusDuckMultiplierAfterAction(1f, NativeAudioFocusAction.DUCK)
+        } else {
+            1f
+        }
+
     fun requestIfNeeded(): Boolean {
         if (!host.behavior.requestAudioFocus) return true
         if (transientLossActive) return false
@@ -105,8 +112,7 @@ internal class NativePlaybackFocusRecoveryCoordinator(
                 host.playbackSuspended
             )
         ) return false
-        val sessionIds = pendingResumeSessionIds.filter(host::sessionExists)
-        pendingResumeSessionIds.clear()
+        val sessionIds = takePendingResumeSessions()
         if (sessionIds.isEmpty()) return false
         host.logInfo("audio_focus_pending_resume trigger=$trigger sessionCount=${sessionIds.size}")
         sessionIds.forEach { id -> host.focus(id); host.play(id) }
@@ -123,9 +129,8 @@ internal class NativePlaybackFocusRecoveryCoordinator(
         pendingResumeSessionIds -= sessionId
     }
 
-    fun clearTransientLoss() {
-        transientLossActive = false
-    }
+    fun takePendingResumeSessions(): List<String> =
+        pendingResumeSessionIds.filter(host::sessionExists).also { pendingResumeSessionIds.clear() }
 
     fun clearInterruptionState() {
         transientLossActive = false

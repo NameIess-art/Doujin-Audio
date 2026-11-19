@@ -2,17 +2,23 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/media/media_file_support.dart' show formatMediaFileSize;
+import '../../../core/media/path_matcher.dart';
 import '../../../core/media/time_text_formatters.dart';
+import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
-import '../../../core/widgets/unified_popup_menu.dart';
-import 'work_detail_entries.dart';
 import '../../../core/widgets/page_translation_scope.dart';
+import '../../../core/widgets/unified_popup_menu.dart';
+import 'library_providers.dart';
+import 'work_detail_entries.dart';
 
 class WorkDetailEntryTile extends StatefulWidget {
   const WorkDetailEntryTile({
@@ -146,6 +152,21 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
       );
     }
 
+    final fallbackIcon = Icon(
+      icon,
+      color: color,
+      size: AppDesignTokens.fileEntryIconSize,
+    );
+    final imagePath = item.type == WorkEntryType.image
+        ? (item.imageItem?.path ?? item.fullPathOrUrl).trim()
+        : '';
+    final leading = imagePath.isNotEmpty && !PathMatcher.isContentUri(imagePath)
+        ? _WorkImageEntryLeading(
+            path: imagePath,
+            fallbackIcon: fallbackIcon,
+          )
+        : fallbackIcon;
+
     final tile = ListTile(
       dense: true,
       enableFeedback: false,
@@ -160,11 +181,7 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
       selected: isHighlighted,
       selectedTileColor: widget.accentColor.withValues(alpha: 0.16),
       selectedColor: widget.accentColor,
-      leading: Icon(
-        icon,
-        color: color,
-        size: AppDesignTokens.fileEntryIconSize,
-      ),
+      leading: leading,
       title: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -247,6 +264,139 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
               )
             : tile,
       ),
+    );
+  }
+}
+
+class _WorkImageEntryLeading extends StatelessWidget {
+  const _WorkImageEntryLeading({
+    required this.path,
+    required this.fallbackIcon,
+  });
+
+  static const double thumbnailSize = 32;
+  static const double thumbnailRadius = 6;
+
+  final String path;
+  final Widget fallbackIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    final placeholder = Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: fallbackIcon,
+    );
+    Widget buildPlaceholder(BuildContext _) => placeholder;
+    final isRemote = PathMatcher.isRemoteUri(path);
+    return SizedBox.square(
+      dimension: thumbnailSize,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(thumbnailRadius),
+        child: isRemote
+            ? _RemoteImageEntryThumbnail(
+                url: path,
+                placeholderBuilder: buildPlaceholder,
+              )
+            : _LocalImageEntryThumbnail(
+                path: path,
+                placeholderBuilder: buildPlaceholder,
+              ),
+      ),
+    );
+  }
+}
+
+class _LocalImageEntryThumbnail extends ConsumerWidget {
+  const _LocalImageEntryThumbnail({
+    required this.path,
+    required this.placeholderBuilder,
+  });
+
+  final String path;
+  final WidgetBuilder placeholderBuilder;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cacheWidth = coverThumbnailCacheWidth(
+      logicalWidth: _WorkImageEntryLeading.thumbnailSize,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      resolution: ref.watch(coverImageResolutionProvider),
+    );
+    return RetryingFileImage(
+      path: path,
+      browseThumbnail: true,
+      deferLoadDuringInteraction: true,
+      fit: BoxFit.cover,
+      cacheWidth: cacheWidth,
+      useDefaultCacheWidth: false,
+      retryDelay: const Duration(seconds: 5),
+      maxRetryAttempts: 2,
+      loadingBuilder: placeholderBuilder,
+      fallbackBuilder: placeholderBuilder,
+    );
+  }
+}
+
+class _RemoteImageEntryThumbnail extends ConsumerStatefulWidget {
+  const _RemoteImageEntryThumbnail({
+    required this.url,
+    required this.placeholderBuilder,
+  });
+
+  final String url;
+  final WidgetBuilder placeholderBuilder;
+
+  @override
+  ConsumerState<_RemoteImageEntryThumbnail> createState() =>
+      _RemoteImageEntryThumbnailState();
+}
+
+class _RemoteImageEntryThumbnailState
+    extends ConsumerState<_RemoteImageEntryThumbnail> {
+  Object? _requestKey;
+  Future<String?>? _future;
+
+  @override
+  Widget build(BuildContext context) {
+    final library = ref.read(libraryFacadeProvider);
+    final (revision, resolved) = ref.watch(
+      coverGenerationProvider.select(
+        (_) => (
+          library.coverArtworkCacheService.revisionForScope(widget.url),
+          library.resolvedCoverPathForRemoteCover(widget.url),
+        ),
+      ),
+    );
+    final coverUi = ref.read(libraryCoverUiControllerProvider);
+    final cacheWidth = coverThumbnailCacheWidth(
+      logicalWidth: _WorkImageEntryLeading.thumbnailSize,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      resolution: ref.watch(coverImageResolutionProvider),
+    );
+    Future<String?> loadImage() =>
+        coverUi.deferredRemoteCover(widget.url, context: context);
+    final requestKey = (widget.url, resolved, revision);
+    if (_requestKey != requestKey) {
+      _requestKey = requestKey;
+      _future = resolved != null
+          ? SynchronousFuture<String?>(resolved)
+          : loadImage();
+    }
+    return AsyncRemoteCoverImage(
+      browseThumbnail: true,
+      deferLoadDuringInteraction: true,
+      onImageError: library.coverArtworkCacheService.reportArtworkReadFailure,
+      url: widget.url,
+      future: _future!,
+      initialPath: resolved,
+      retryFutureBuilder: loadImage,
+      retryDelay: const Duration(seconds: 5),
+      maxRetryAttempts: 2,
+      fit: BoxFit.cover,
+      cacheWidth: cacheWidth,
+      useDefaultCacheWidth: false,
+      loadingBuilder: widget.placeholderBuilder,
+      fallbackBuilder: widget.placeholderBuilder,
     );
   }
 }

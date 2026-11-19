@@ -30,8 +30,8 @@ class SubtitleOverlayPlatformService {
     return _invokeBool(SubtitleOverlayMethod.openOverlaySettings);
   }
 
-  Future<void> startOverlay() {
-    return _invokeBestEffort(SubtitleOverlayMethod.startOverlay);
+  Future<bool> startOverlay() {
+    return _invokeBool(SubtitleOverlayMethod.startOverlay);
   }
 
   Future<void> stopOverlay() {

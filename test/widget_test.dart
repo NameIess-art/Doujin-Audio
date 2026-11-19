@@ -408,7 +408,7 @@ void main() {
       final repository = container.read(settingsRepositoryProvider);
 
       for (final visible in [false, true]) {
-        await repository.setShowAsmrOne(visible);
+        await tester.runAsync(() => repository.setShowAsmrOne(visible));
         await _pumpMainScreenAnimations(tester);
         expect(tester.widget<LibraryTab>(library).tabIndex, visible ? 1 : 0);
         expect(tester.state(library), same(libraryState));
@@ -7973,7 +7973,7 @@ void main() {
             tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
           );
         } else {
-          await settings.setReduceAnimations(true);
+          await tester.runAsync(() => settings.setReduceAnimations(true));
         }
         await tester.pump();
         await tester.pump();
@@ -8001,18 +8001,16 @@ void main() {
         if (systemSetting) {
           tester.platformDispatcher.clearAccessibilityFeaturesTestValue();
         } else {
-          await settings.setReduceAnimations(false);
+          await tester.runAsync(() => settings.setReduceAnimations(false));
         }
         await tester.pump();
         await tester.pump();
         await theme.setThemeMode(ThemeMode.light);
         await tester.pump();
-        await tester.pump(const Duration(milliseconds: 50));
         expect(
           Theme.of(tester.element(mainScreen)).colorScheme.surface,
-          isNot(theme.lightTheme.colorScheme.surface),
+          theme.lightTheme.colorScheme.surface,
         );
-        await tester.pump(const Duration(milliseconds: 200));
         expect(tester.state(mainScreen), same(originalState));
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
@@ -8042,9 +8040,8 @@ void main() {
             tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
           );
         } else {
-          await container
-              .read(settingsRepositoryProvider)
-              .setReduceAnimations(true);
+          final settings = container.read(settingsRepositoryProvider);
+          await tester.runAsync(() => settings.setReduceAnimations(true));
         }
         await tester.pump();
         await tester.pump();

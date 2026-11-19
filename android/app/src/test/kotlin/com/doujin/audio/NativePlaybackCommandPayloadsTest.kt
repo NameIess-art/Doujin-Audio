@@ -7,6 +7,7 @@ import io.flutter.plugin.common.MethodCall
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -25,6 +26,33 @@ class NativePlaybackCommandPayloadsTest {
             .copy(queue = queue)
         val stored = parsed.storedDefinition()
         assertEquals(queue, stored.restoredQueue())
+    }
+
+    @Test
+    fun `large queues keep their order and selected duplicate occurrence`() {
+        val first = mapOf("uri" to "file:///first.mp3", "path" to "/first.mp3", "title" to "First")
+        val queue = List(10_001) { index ->
+            if (index == 0 || index == 10_000) first else mapOf(
+                "uri" to "file:///track-$index.mp3",
+                "path" to "/track-$index.mp3",
+                "title" to "Track $index"
+            )
+        }
+        val parsed = NativePlaybackCommandPayloads.parsePrepareSession(
+            validPreparePayload() + mapOf("queue" to queue, "queueStartIndex" to 10_000)
+        )
+
+        assertEquals(10_000, parsed.queueStartIndex)
+        assertEquals(queue.map { it["path"] }, parsed.queue.map { it.path })
+    }
+
+    @Test
+    fun `invalid queue entry is rejected even beyond the previous size limit`() {
+        val item = mapOf("uri" to "file:///first.mp3", "title" to "First")
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            NativePlaybackCommandPayloads.parseQueue(List(10_000) { item } + listOf("invalid"))
+        }
+        assertEquals("Invalid queue item at index 10000.", error.message)
     }
 
     @Test(expected = IllegalArgumentException::class)

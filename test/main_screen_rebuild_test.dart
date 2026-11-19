@@ -236,7 +236,7 @@ void main() {
 
       await tester.tap(
         category == 'about'
-            ? find.byType(BackButton).hitTestable()
+            ? find.bySubtype<BackButton>().hitTestable()
             : find.byIcon(Icons.arrow_back_rounded).hitTestable(),
       );
       await tester.pump();

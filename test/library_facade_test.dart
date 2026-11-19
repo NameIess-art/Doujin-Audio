@@ -1542,6 +1542,91 @@ void main() {
   );
 
   test(
+    'failed standalone folder reimport retains exclusions without adding tracks',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('reimport_');
+      addTearDown(() => directory.delete(recursive: true));
+      final root = directory.path;
+      final excluded = _localDurationTrack(root, filename: 'excluded.mp3');
+      final added = _localDurationTrack(root, filename: 'new.mp3');
+      final library = runtimeGraph.library;
+      library.configurePersistence(enabled: true);
+      library.addWatchedFolder(root, notify: false);
+      library.addTracks([excluded]);
+      library.recordLibraryEntriesForTracks(root, [excluded]);
+      await library.flushPendingPersistence();
+      expect(
+        await library.removeTrack(excluded.path),
+        LibraryRemovalKind.folderAudioPermanent,
+      );
+      expect(library.trackByPath(excluded.path), isNull);
+      final scanned = [
+        _scannedTrackForPath(excluded.path),
+        _scannedTrackForPath(added.path),
+      ];
+      const labels = LibraryScanLabels(
+        chooseMusicFolder: 'folder',
+        chooseLibraryFolder: 'library',
+        chooseAudioFiles: 'files',
+        importedFiles: 'imported',
+        manuallySelectedFiles: 'selected',
+      );
+      final source = _JsonPreservationScanDataSource()
+        ..configure(
+          selectedPath: root,
+          tracks: scanned,
+          beforeChunk: () async {
+            final entries = await library.databaseRepository.loadLibraryEntries(
+              root,
+            );
+            expect(
+              entries.singleWhere((entry) => entry.path == excluded.path)
+                  .isExcluded,
+              isTrue,
+            );
+          },
+          afterChunk: () => db.execute('''
+            CREATE TRIGGER reject_reimport BEFORE INSERT ON app_kv_settings
+            WHEN NEW.key = 'group_order_v1'
+            BEGIN SELECT RAISE(ABORT, 'reimport commit failed'); END;
+          '''),
+        );
+      final scanner = LibraryScannerService(dataSource: source);
+      await expectLater(
+        scanner.addFolder(provider: library, labels: labels),
+        throwsA(isA<DatabaseException>()),
+      );
+
+      expect(library.hasLibraryExclusions(root), isTrue);
+      expect(library.trackByPath(excluded.path), isNull);
+      expect(library.trackByPath(added.path), isNull);
+      final stored = await library.databaseRepository.loadLibraryEntries(root);
+      expect(
+        stored.singleWhere((entry) => entry.path == excluded.path).isExcluded,
+        isTrue,
+      );
+      expect(
+        await library.databaseRepository.loadTrackDetail(excluded.path),
+        isNull,
+      );
+      expect(
+        await library.databaseRepository.loadTrackDetail(added.path),
+        isNull,
+      );
+      await db.execute('DROP TRIGGER reject_reimport');
+      source.configure(selectedPath: root, tracks: scanned);
+      final retry = await scanner.addFolder(provider: library, labels: labels);
+      expect(retry?.code, LibraryScanOutcomeCode.importAdded);
+      expect(library.hasLibraryExclusions(root), isFalse);
+      expect(library.trackByPath(excluded.path), isNotNull);
+      expect(
+        await library.databaseRepository.loadTrackDetail(added.path),
+        isNotNull,
+      );
+    },
+  );
+
+  test(
     'failed refresh restores scan removals while retaining a duration write',
     () async {
       const root = 'C:/library/failure';

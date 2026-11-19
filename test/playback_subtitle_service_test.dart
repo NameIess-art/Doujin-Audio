@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -367,6 +368,30 @@ void main() {
     expect(await directory.list().isEmpty, isTrue);
   });
 
+  test('SAF subtitle save reopens an externally changed document', () async {
+    final gateway = _ContentSubtitleGateway();
+    final service = PlaybackSubtitleService(
+      trackResolver: (_) => null,
+      fileCacheGateway: gateway,
+    );
+    addTearDown(service.dispose);
+    const audioPath = 'content://media/audio/1';
+    final loaded = (await service.loadForEditing(audioPath))!;
+    gateway.text = '[00:02.00]External update';
+    await expectLater(
+      service.saveEditedSubtitle(audioPath, loaded.cues, source: loaded),
+      throwsA(isA<SubtitleSourceChanged>()),
+    );
+    expect(gateway.text, '[00:02.00]External update');
+
+    final reopened = (await service.loadForEditing(audioPath))!;
+    final cue = reopened.cues.single;
+    await service.saveEditedSubtitle(audioPath, [
+      SubtitleCue(start: cue.start, end: cue.end, text: 'Saved after reopen'),
+    ], source: reopened);
+    expect(gateway.text, contains('[00:02.000]Saved after reopen'));
+  });
+
   test('offset copies share the time index even before first lookup', () {
     var comparisons = 0;
     final track = SubtitleTrack(
@@ -702,6 +727,80 @@ void main() {
     });
   }
 
+  for (final (extension, original) in [
+    (
+      'ass',
+      '[Events]\nFormat: Layer,Start,End,Style,Text\n'
+          'Dialogue: 0,0:00:10.00,0:00:12.00,Later,First row\n'
+          'Dialogue: 0,0:00:01.00,0:00:03.00,Earlier,Second row\n',
+    ),
+    (
+      'srt',
+      '1\n00:00:01,000 --> 00:00:04,000\nFirst row\n\n'
+          '2\n00:00:03,000 --> 00:00:06,000\nSecond row\n',
+    ),
+  ]) {
+    test('$extension text edits preserve the existing timeline', () async {
+      final directory = await Directory.systemTemp.createTemp('subtitle_edit_');
+      addTearDown(() => directory.delete(recursive: true));
+      final audioPath = path.join(directory.path, 'original.mp3');
+      await File(audioPath).create();
+      final file = File(path.join(directory.path, 'original.$extension'));
+      await file.writeAsString(original);
+      final service = PlaybackSubtitleService(trackResolver: (_) => null);
+      addTearDown(service.dispose);
+      final loaded = (await service.loadForEditing(audioPath))!;
+      final first = loaded.cues.first;
+      final edited = await service.saveEditedSubtitle(audioPath, [
+        SubtitleCue(
+          start: first.start,
+          end: first.end,
+          text: 'Edited first row',
+          assSourceLine: first.assSourceLine,
+        ),
+        loaded.cues.last,
+      ], source: loaded);
+
+      expect(loaded.hasSameCueTimings(edited.cues), isTrue);
+      expect(edited.cues.map((cue) => cue.text), [
+        'Edited first row',
+        'Second row',
+      ]);
+      expect(await file.readAsString(), contains('Edited first row'));
+    });
+
+    test('$extension save rejects a draft after an external change', () async {
+      final directory = await Directory.systemTemp.createTemp('subtitle_edit_');
+      addTearDown(() => directory.delete(recursive: true));
+      final audioPath = path.join(directory.path, 'original.mp3');
+      await File(audioPath).create();
+      final file = File(path.join(directory.path, 'original.$extension'));
+      await file.writeAsString(original);
+      final service = PlaybackSubtitleService(trackResolver: (_) => null);
+      addTearDown(service.dispose);
+      final loaded = (await service.loadForEditing(audioPath))!;
+      final externallyEdited = original.replaceFirst('Second row', 'New text');
+      await file.writeAsString(externallyEdited);
+      await expectLater(
+        service.saveEditedSubtitle(audioPath, loaded.cues, source: loaded),
+        throwsA(isA<SubtitleSourceChanged>()),
+      );
+      expect(await file.readAsString(), externallyEdited);
+
+      final reopened = (await service.loadForEditing(audioPath))!;
+      expect(reopened.cues.last.text, 'New text');
+      expect(reopened.sourceRevision, isNot(loaded.sourceRevision));
+      expect(
+        await service.saveEditedSubtitle(
+          audioPath,
+          reopened.cues,
+          source: reopened,
+        ),
+        isNotNull,
+      );
+    });
+  }
+
   test('ASMR.ONE subtitles cannot be edited or saved', () async {
     final directory = await Directory.systemTemp.createTemp('asmr_edit_');
     addTearDown(() => directory.delete(recursive: true));
@@ -750,6 +849,8 @@ class _CountingDuration extends Duration {
 }
 
 class _ContentSubtitleGateway extends FileCachePlatformGateway {
+  String text = '[00:01.00]ローカル字幕';
+
   @override
   Future<Map<String, Object?>?> resolveTrackSubtitle({
     required String path,
@@ -757,6 +858,19 @@ class _ContentSubtitleGateway extends FileCachePlatformGateway {
   }) async => {
     'sourcePath': 'content://media/subtitle/1',
     'extension': '.lrc',
-    'text': '[00:01.00]ローカル字幕',
+    'text': text,
   };
+
+  @override
+  Future<Uint8List?> readDocumentBytes(String filePath) async =>
+      utf8.encode(text);
+
+  @override
+  Future<bool> writeTrackSubtitle({
+    required String path,
+    required Uint8List bytes,
+  }) async {
+    text = utf8.decode(bytes);
+    return true;
+  }
 }

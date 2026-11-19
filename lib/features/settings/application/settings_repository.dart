@@ -27,18 +27,8 @@ class SettingsRepository {
        _writeProxyPassword = writeProxyPassword ?? _writeSecureProxyPassword;
 
   static const proxyPasswordKey = 'network_proxy_password_v1';
-  static Future<String?> _readSecureProxyPassword() async {
-    try {
-      return await const FlutterSecureStorage().read(key: proxyPasswordKey);
-    } catch (error, stackTrace) {
-      AppLogService.warning(
-        'settings_read_proxy_password_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      return null;
-    }
-  }
+  static Future<String?> _readSecureProxyPassword() =>
+      const FlutterSecureStorage().read(key: proxyPasswordKey);
   static Future<void> _writeSecureProxyPassword(String? value) => value == null
       ? const FlutterSecureStorage().delete(key: proxyPasswordKey)
       : const FlutterSecureStorage().write(key: proxyPasswordKey, value: value);
@@ -324,12 +314,22 @@ class SettingsRepository {
   }
 
   Future<void> _applyNetworkRoute() async {
-    final secret = networkRouteSettings.proxyPasswordConfigured
-        ? await _readProxyPassword()
-        : null;
-    networkRouteSettings = networkRouteSettings.copyWith(
-      proxyPasswordConfigured: secret?.isNotEmpty == true,
-    );
+    String? secret;
+    if (networkRouteSettings.proxyPasswordConfigured) {
+      try {
+        secret = await _readProxyPassword();
+        networkRouteSettings = networkRouteSettings.copyWith(
+          proxyPasswordConfigured: secret?.isNotEmpty == true,
+        );
+      } catch (error, stackTrace) {
+        // A failed lookup leaves the saved credential state unknown.
+        AppLogService.warning(
+          'settings_read_proxy_password_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+    }
     await onNetworkRouteChanged?.call(networkRouteSettings, secret);
   }
 

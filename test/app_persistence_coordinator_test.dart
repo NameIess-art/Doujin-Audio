@@ -853,67 +853,15 @@ void main() {
       final repository = TestPersistenceRepository(
         database: AppDatabase.test(database),
       );
-      final library = LibraryFacade.create(databaseRepository: repository);
-      final native = _FakeNativePlaybackRepository();
-      final playback = PlaybackFacade.create(
-        databaseRepository: repository,
-        nativeRepository: native,
-      )..configurePersistence(enabled: false);
-      final timer = TimerFacade.create();
-      final notifications = NotificationFacade.create(
-        service: PlaybackNotificationService(),
-      );
       final settings = _FailOnceSettingsRepository();
-      final paths = AudioPathCoordinator(library: library, playback: playback);
-      late final PlaybackSubtitleService subtitles;
-      subtitles = PlaybackSubtitleService(
-        trackResolver: library.trackByPath,
-        onTrackLoaded: notifications.handleSubtitleTrackLoaded,
+      final graph = createTestRuntimeGraph(
+        persistenceRepository: repository,
+        nativePlaybackRepository: _FakeNativePlaybackRepository(),
+        settingsRepository: settings,
       );
-      final warmup = AudioUiWarmupCoordinator(
-        library: library,
-        playback: playback,
-        notifications: notifications,
-        subtitles: subtitles,
-      );
-      final keepAlive = PlaybackKeepAliveCoordinator(
-        playback: playback,
-        settings: settings,
-        enterBackgroundWarmup: warmup.enterBackground,
-        resumeForegroundWarmup: warmup.resumeForeground,
-      );
-      final commands = PlaybackCommandCoordinator(
-        library: library,
-        playback: playback,
-        timer: timer,
-        notifications: notifications,
-        asmrPlaybackCacheEnabled: () => settings.asmrPlaybackCacheEnabled,
-        audioPaths: paths,
-        subtitles: subtitles,
-        activateAudioSession: keepAlive.activateAudioSession,
-        asmrPlaybackCacheService: AsmrPlaybackCacheService(),
-        notifyPlaybackChanged: () {},
-        syncNotificationState: notifications.syncPlaybackState,
-      );
-      final coordinator = AppPersistenceCoordinator(
-        library: library,
-        playback: playback,
-        settings: settings,
-        timer: timer,
-        notifications: notifications,
-        keepAlive: keepAlive,
-        uiWarmup: warmup,
-        subtitles: subtitles,
-      );
+      final coordinator = graph.persistence;
       addTearDown(() async {
-        await coordinator.dispose();
-        await warmup.shutdown();
-        await playback.dispose();
-        await commands.dispose();
-        await library.dispose();
-        await timer.dispose();
-        await notifications.dispose();
-        await settings.dispose();
+        await graph.runtime.dispose();
         await database.close();
       });
 

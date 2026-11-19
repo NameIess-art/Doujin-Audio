@@ -360,6 +360,10 @@ class AsmrDownloadTransferService {
         final targetExisted = await _outputs.gateway.documentPathExists(
           targetPath,
         );
+        if (targetExisted &&
+            conflictPolicy == AsmrDownloadConflictPolicy.skip) {
+          return DownloadWriteResult.skipped(bytesDownloaded: item.size);
+        }
         final saved = await _outputs.gateway.copyFileToFolder(
           sourcePath: tempResult.file.path,
           folder: workRootPath,
@@ -367,13 +371,9 @@ class AsmrDownloadTransferService {
           overwrite: conflictPolicy == AsmrDownloadConflictPolicy.overwrite,
         );
         if (!saved) {
-          return conflictPolicy == AsmrDownloadConflictPolicy.skip
-              ? DownloadWriteResult.skipped(
-                  bytesDownloaded: tempResult.bytesDownloaded,
-                )
-              : DownloadWriteResult.failure(
-                  bytesDownloaded: tempResult.bytesDownloaded,
-                );
+          return DownloadWriteResult.failure(
+            bytesDownloaded: tempResult.bytesDownloaded,
+          );
         }
         if (!targetExisted) {
           _outputs.createdOutputPaths[workId]?.add(targetPath);

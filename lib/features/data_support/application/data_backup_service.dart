@@ -299,7 +299,6 @@ class DataBackupService {
       final rollbackDatabase = File(
         path.join(rollbackDirectory.path, AppDatabase.fileName),
       );
-      var localDatabaseReadable = !resumeCommit;
       if (!resumeCommit) {
         await _deleteDirectory(rollbackDirectory);
         await rollbackDirectory.create(recursive: true);
@@ -316,7 +315,6 @@ class DataBackupService {
           await _database.databaseForTest;
         } catch (error, stackTrace) {
           // A damaged local database must not abort restoring a valid backup.
-          localDatabaseReadable = false;
           AppLogService.warning(
             'backup_restore_local_db_unreadable',
             error: error,
@@ -336,14 +334,10 @@ class DataBackupService {
         if (await currentDatabase.exists()) {
           await _copyDatabaseFiles(currentDatabase, rollbackDatabase);
         }
-      } else if (await rollbackDatabase.exists()) {
-        localDatabaseReadable = await _isReadableDatabaseFile(
-          rollbackDatabase.path,
-        );
       }
 
       // On a retried commit the installed database may already be the backup.
-      if (localDatabaseReadable && await rollbackDatabase.exists()) {
+      if (await rollbackDatabase.exists()) {
         await _database.preserveNewerListeningData(
           localPath: rollbackDatabase.path,
           candidatePath: decoded.databaseFile.path,
@@ -544,24 +538,6 @@ class DataBackupService {
       if (await file.exists()) {
         await file.copy('${destination.path}$suffix');
       }
-    }
-  }
-
-  Future<bool> _isReadableDatabaseFile(String dbPath) async {
-    Database? db;
-    try {
-      db = await openDatabase(dbPath, readOnly: true, singleInstance: false);
-      final check = await db.rawQuery('PRAGMA quick_check(1)');
-      return check.singleOrNull?['quick_check'] == 'ok';
-    } catch (error, stackTrace) {
-      AppLogService.warning(
-        'backup_restore_rollback_db_unreadable',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      return false;
-    } finally {
-      await db?.close();
     }
   }
 

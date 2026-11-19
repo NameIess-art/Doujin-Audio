@@ -998,6 +998,8 @@ const Map<String, String> appLanguageEn = {
   'subtitle_import_overwrite': 'Overwrite',
   'subtitle_load_failed': 'Could not load subtitles. Try again.',
   'subtitle_save_failed': 'Could not save subtitles. Try again.',
+  'subtitle_source_changed':
+      'The subtitle file changed. Reopen the editor before saving.',
   'subtitle_edit': 'Edit subtitles',
   'subtitle_unsaved_title': 'Save subtitle changes?',
   'subtitle_unsaved_message':

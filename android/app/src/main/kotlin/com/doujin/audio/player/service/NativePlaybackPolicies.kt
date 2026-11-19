@@ -26,6 +26,11 @@ internal val playbackRecoveryOffsetsMs = longArrayOf(
 )
 internal const val PLAYBACK_RECOVERY_LOW_FREQUENCY_INTERVAL_MS = 5 * 60 * 1000L
 
+internal data class NativeTimerPauseResult(
+    val sessionIds: List<String>,
+    val waitingForTrackEnd: Boolean
+)
+
 internal data class NativeTimerResumeResult(
     val resumedSessionIds: List<String>,
     val audioFocusDenied: Boolean

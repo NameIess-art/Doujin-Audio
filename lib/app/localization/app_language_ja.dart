@@ -928,6 +928,7 @@ const Map<String, String> appLanguageJa = {
   'subtitle_import_overwrite': '上書き',
   'subtitle_load_failed': '字幕を読み込めません。再試行してください。',
   'subtitle_save_failed': '字幕を保存できません。再試行してください。',
+  'subtitle_source_changed': '字幕ファイルが変更されました。編集画面を開き直してください。',
   'subtitle_edit': '字幕を編集',
   'subtitle_unsaved_title': '字幕の変更を保存しますか？',
   'subtitle_unsaved_message': '字幕に未保存の変更があります。保存して終了するか、変更を破棄してください。',

@@ -284,7 +284,7 @@ final class SubtitleOverlayController {
     final generation = ++_commandGeneration;
     _stopTimer?.cancel();
     _stopTimer = null;
-    await _platform.startOverlay();
+    if (!await _platform.startOverlay()) return false;
     if (_disposed || generation != _commandGeneration) {
       await _platform.stopOverlay();
       return false;

@@ -10,7 +10,6 @@ import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../core/media/subtitle_parser.dart';
 import '../../../../core/logging/app_log_service.dart';
 import '../../../../core/widgets/app_transitions.dart';
-import '../../../../core/widgets/shimmer_loading.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../application/playback_subtitle_service.dart';
@@ -358,8 +357,9 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
         },
       );
     } else if (isSubtitlePending) {
-      content = const SessionSubtitlePlaceholder(
-        key: ValueKey('subtitle_loading'),
+      content = SessionSubtitlePlaceholder(
+        key: const ValueKey('subtitle_loading'),
+        isLandscape: widget.isLandscape,
       );
     } else {
       content = emptySubtitle();
@@ -404,53 +404,80 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
 }
 
 class SessionSubtitlePlaceholder extends StatelessWidget {
-  const SessionSubtitlePlaceholder({super.key});
+  const SessionSubtitlePlaceholder({super.key, this.isLandscape = false});
+
+  final bool isLandscape;
 
   @override
   Widget build(BuildContext context) {
-    final barColor = Theme.of(context).brightness == Brightness.dark
-        ? Colors.white
-        : null;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final centerColor = Color.lerp(
+      cs.onSurface,
+      cs.primary,
+      0.35,
+    )!.withValues(alpha: isDark ? 0.18 : 0.15);
+    final nearColor = cs.onSurface.withValues(alpha: isDark ? 0.09 : 0.08);
+    final farColor = cs.onSurface.withValues(alpha: isDark ? 0.045 : 0.04);
+    final colors = [farColor, nearColor, centerColor, nearColor, farColor];
+
     return LayoutBuilder(
       builder: (context, constraints) {
+        final horizontalInset = isLandscape
+            ? landscapeDetailTextInset + 20.0
+            : 40.0;
         final availableWidth = constraints.maxWidth.isFinite
-            ? max(0.0, constraints.maxWidth - 40.0)
-            : 240.0;
-        final centerWidth = min(240.0, max(80.0, availableWidth * 0.70));
+            ? max(0.0, constraints.maxWidth - horizontalInset)
+            : 220.0;
+        final centerWidth = min(220.0, max(80.0, availableWidth * 0.62));
         final topWidth = min(
-          centerWidth * 0.75,
-          max(60.0, availableWidth * 0.50),
+          centerWidth * 0.74,
+          max(60.0, availableWidth * 0.46),
         );
         final bottomWidth = min(
-          centerWidth * 0.85,
-          max(70.0, availableWidth * 0.58),
+          centerWidth * 0.82,
+          max(70.0, availableWidth * 0.52),
         );
         final widths = [
-          topWidth * 0.8,
+          topWidth * 0.72,
           topWidth,
           centerWidth,
           bottomWidth,
-          bottomWidth * 0.8,
+          bottomWidth * 0.68,
         ];
+        final alignment = isLandscape ? Alignment.centerLeft : Alignment.center;
 
-        return Center(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              spacing: 16,
-              children: [
-                for (final (index, width) in widths.indexed)
-                  Opacity(
-                    opacity: index == 2 ? 0.60 : 0.21,
-                    child: ShimmerContainer(
+        return Align(
+          alignment: alignment,
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: isLandscape ? landscapeDetailTextInset : 20,
+              right: 20,
+            ),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: alignment,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: isLandscape
+                    ? CrossAxisAlignment.start
+                    : CrossAxisAlignment.center,
+                spacing: 18,
+                children: [
+                  for (final (index, width) in widths.indexed)
+                    Container(
                       width: width,
-                      height: index == 2 ? 16 : 14,
-                      borderRadius: 4,
-                      color: barColor,
+                      height: index == 2 ? 12 : 10,
+                      decoration: BoxDecoration(
+                        color: colors[index],
+                        borderRadius: BorderRadius.circular(
+                          index == 2 ? 6 : 5,
+                        ),
+                      ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         );

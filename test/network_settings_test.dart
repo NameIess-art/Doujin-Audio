@@ -161,6 +161,40 @@ void main() {
     },
   );
 
+  test(
+    'secure read failure keeps a configured password for the next load',
+    () async {
+      const route = NetworkRouteSettings(
+        proxyMode: AppProxyMode.socks5,
+        proxyHost: '127.0.0.1',
+        proxyPort: 1080,
+        proxyAuthenticationEnabled: true,
+        proxyUsername: 'user',
+        proxyPasswordConfigured: true,
+      );
+      await AppPreferences.writeJson('playback_settings_v1', {
+        'networkRouteSettings': route.toJson(),
+      });
+      final unavailable = SettingsRepository(
+        readProxyPassword: () async =>
+            throw const FileSystemException('offline'),
+      );
+      addTearDown(unavailable.dispose);
+      await unavailable.loadPersistedState(enforceCacheLimit: false);
+      await unavailable.setAsmrApiDomain(asmrApiDomains[1]);
+
+      final applied = <(NetworkRouteSettings, String?)>[];
+      final recovered = SettingsRepository(
+        readProxyPassword: () async => 'recovered',
+        onNetworkRouteChanged: (route, password) async =>
+            applied.add((route, password)),
+      );
+      addTearDown(recovered.dispose);
+      await recovered.loadPersistedState(enforceCacheLimit: false);
+      expect(applied, [(route, 'recovered')]);
+    },
+  );
+
   test('failed preference commit restores route and secure password', () async {
     final store = _Store();
     SharedPreferencesStorePlatform.instance = store;

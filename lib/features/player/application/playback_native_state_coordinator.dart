@@ -473,7 +473,8 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
     _sessionActivations.add(sessionId);
   }
 
-  Future<bool> _pauseAllSessions() async {
+  Future<({bool succeeded, Iterable<String> confirmedSessionIds})>
+  _pauseAllSessions() async {
     final candidates = _captureActivePlayback();
     final sequence = ++_pauseSequence;
     final confirmed = <String, String>{};
@@ -536,6 +537,6 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
     _notifySessionStateChanged();
     _onRuntimeStateChanged?.call();
     scheduleSessionStatePersistence();
-    return response.isOk;
+    return (succeeded: response.isOk, confirmedSessionIds: confirmed.keys);
   }
 }

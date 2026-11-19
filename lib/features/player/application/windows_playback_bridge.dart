@@ -64,7 +64,7 @@ class WindowsPlaybackBridge
 
   final bool _persistUsage;
   File? _usageFile;
-  Future<void>? _usageLoaded;
+  bool _usageLoaded = false;
   Future<void> _usageSerial = Future.value();
   Timer? _usageTimer;
   bool _usageStarted = false;
@@ -76,12 +76,23 @@ class WindowsPlaybackBridge
     await directory.create(recursive: true);
     final file = File('${directory.path}/playback_usage.json');
     _usageFile = file;
-    if (await file.exists()) {
-      final encoded = await file.readAsString();
+    try {
+      final encoded = utf8.decode(await file.readAsBytes());
       final stored = jsonDecode(encoded) as Map<String, dynamic>;
       _usage.restoreState(stored);
+      _persistedUsageRevision = _usage.revision;
+    } on PathNotFoundException {
+      _persistedUsageRevision = _usage.revision;
+    } catch (error) {
+      if (error is! FormatException &&
+          error is! TypeError &&
+          error is! UnsupportedError) {
+        rethrow;
+      }
+      // Rewrite invalid data even when a reset leaves the ledger empty.
+      _persistedUsageRevision = null;
+      AppLogService.warning('windows_playback_usage_invalid');
     }
-    _persistedUsageRevision = _usage.revision;
     if (_disposed) return;
     _usageTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       unawaited(
@@ -104,7 +115,10 @@ class WindowsPlaybackBridge
 
   Future<T> _usageOperation<T>(T Function() operation) {
     final result = _usageSerial.then((_) async {
-      await (_usageLoaded ??= _loadUsage());
+      if (!_usageLoaded) {
+        await _loadUsage();
+        _usageLoaded = true;
+      }
       final value = operation();
       final file = _usageFile;
       final revision = _usage.revision;
@@ -702,7 +716,9 @@ class WindowsPlaybackBridge
               current.duration = current.relativeDuration(
                 player.state.duration,
               );
+              current.cancelRetry();
               current.retryAttempt = 0;
+              current.retryStartedAt = null;
               current.error = null;
               final retainedIndex = current.retainedCurrentIndex;
               if (retainedIndex != null && index != retainedIndex) {
@@ -749,6 +765,7 @@ class WindowsPlaybackBridge
               current.position = Duration.zero;
               current.duration = null;
               current.retryAttempt = 0;
+              current.retryStartedAt = null;
               current.error = null;
               current.retainedCurrentIndex = null;
               current.queue.removeAt(retainedIndex);
@@ -1339,12 +1356,15 @@ class WindowsPlaybackBridge
     _disposed = true;
     _listening = false;
     _usageTimer?.cancel();
-    await clearAll();
-    if (_usageLoaded != null || _usageStarted) await readUsage();
-    _usageTimer?.cancel();
-    await Future.wait(_retiring.toList());
-    await _snapshots.close();
-    await _progress.close();
+    try {
+      await clearAll();
+      await Future.wait(_retiring.toList());
+      await _usageSerial;
+      if (_usageLoaded || _usageStarted) await readUsage();
+    } finally {
+      await _snapshots.close();
+      await _progress.close();
+    }
   }
 }
 

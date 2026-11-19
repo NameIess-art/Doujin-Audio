@@ -3638,8 +3638,9 @@ void main() {
             firstOpenStarted.complete();
             return firstOpenGate.future;
           }
-          secondDb = await databaseFactoryFfi.openDatabase(
+          secondDb = await openDatabase(
             inMemoryDatabasePath,
+            singleInstance: false,
           );
           await AppDatabase.createSchemaForTest(secondDb);
           return secondDb;
@@ -3652,8 +3653,9 @@ void main() {
       await firstOpenStarted.future;
       final closing = racingDb.close();
 
-      final abortedDb = await databaseFactoryFfi.openDatabase(
+      final abortedDb = await openDatabase(
         inMemoryDatabasePath,
+        singleInstance: false,
       );
       await AppDatabase.createSchemaForTest(abortedDb);
       firstOpenGate.complete(abortedDb);

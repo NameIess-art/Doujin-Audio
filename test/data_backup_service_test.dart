@@ -977,69 +977,81 @@ void main() {
     });
   }
 
-  test(
-    'startup restore replaces a corrupted local database without deleting staged restore',
-    () async {
-      await sourceDatabase.insert('tracks', <String, Object?>{
-        'path': '/audio/recovered.mp3',
-        'display_name': 'Recovered',
-        'group_key': '/audio',
-        'group_title': 'Audio',
-        'group_subtitle': '',
-        'is_single': 0,
-        'is_video': 0,
-        'duration_ms': 3000,
-      });
-      final exporter = DataBackupService(
-        database: appDatabase,
-        accountStore: accountStore,
-        appUpdateService: _FakeAppUpdateService(),
-        supportDirectoryProvider: () async => temporaryDirectory,
-        databasesPathProvider: () async => databaseDirectory.path,
-        platformName: 'test-platform',
-      );
-      final backup = await exporter.exportBackup(
-        '${temporaryDirectory.path}/valid.dabackup',
-      );
+  for (final missingTable in [false, true]) {
+    test(
+      'startup restores a valid backup over unusable local data (missing table: $missingTable)',
+      () async {
+        await sourceDatabase.insert('tracks', <String, Object?>{
+          'path': '/audio/recovered.mp3',
+          'display_name': 'Recovered',
+          'group_key': '/audio',
+          'group_title': 'Audio',
+          'group_subtitle': '',
+          'is_single': 0,
+          'is_video': 0,
+          'duration_ms': 3000,
+        });
+        final exporter = DataBackupService(
+          database: appDatabase,
+          accountStore: accountStore,
+          appUpdateService: _FakeAppUpdateService(),
+          supportDirectoryProvider: () async => temporaryDirectory,
+          databasesPathProvider: () async => databaseDirectory.path,
+          platformName: 'test-platform',
+        );
+        final backup = await exporter.exportBackup(
+          '${temporaryDirectory.path}/valid.dabackup',
+        );
 
-      await databaseDirectory.create(recursive: true);
-      final localPath = '${databaseDirectory.path}/${AppDatabase.fileName}';
-      await File(localPath).writeAsString('not-a-sqlite-database');
-      await File('$localPath-wal').writeAsString('corrupted-wal');
+        await databaseDirectory.create(recursive: true);
+        final localPath = '${databaseDirectory.path}/${AppDatabase.fileName}';
+        if (missingTable) {
+          final local = await openDatabase(localPath, singleInstance: false);
+          try {
+            await AppDatabase.createSchemaForTest(local);
+            await local.execute('DROP TABLE listening_history');
+          } finally {
+            await local.close();
+          }
+        } else {
+          await File(localPath).writeAsString('not-a-sqlite-database');
+          await File('$localPath-wal').writeAsString('corrupted-wal');
+        }
 
-      final damagedAppDatabase = AppDatabase.forTest(
-        opener: () => databaseFactoryFfi.openDatabase(localPath),
-      );
-      addTearDown(damagedAppDatabase.close);
-      final restorer = DataBackupService(
-        database: damagedAppDatabase,
-        accountStore: accountStore,
-        supportDirectoryProvider: () async => temporaryDirectory,
-        databasesPathProvider: () async => databaseDirectory.path,
-        platformName: 'test-platform',
-      );
-      await restorer.inspectAndStageRestore(backup.path);
+        final damagedAppDatabase = AppDatabase.forTest(
+          opener: () => databaseFactoryFfi.openDatabase(localPath),
+        );
+        addTearDown(damagedAppDatabase.close);
+        final restorer = DataBackupService(
+          database: damagedAppDatabase,
+          accountStore: accountStore,
+          supportDirectoryProvider: () async => temporaryDirectory,
+          databasesPathProvider: () async => databaseDirectory.path,
+          platformName: 'test-platform',
+        );
+        await restorer.inspectAndStageRestore(backup.path);
 
-      final outcome = await restorer.applyAtStartup();
+        final outcome = await restorer.applyAtStartup();
 
-      expect(outcome?.succeeded, isTrue);
-      expect(
-        Directory('${temporaryDirectory.path}/backup_restore').existsSync(),
-        isFalse,
-      );
-      expect(File('$localPath-wal').existsSync(), isFalse);
-      final restored = await databaseFactoryFfi.openDatabase(localPath);
-      addTearDown(restored.close);
-      expect(
-        await restored.query(
-          'tracks',
-          where: 'path = ?',
-          whereArgs: ['/audio/recovered.mp3'],
-        ),
-        hasLength(1),
-      );
-    },
-  );
+        expect(outcome?.succeeded, isTrue, reason: outcome?.errorCode);
+        expect(
+          Directory('${temporaryDirectory.path}/backup_restore').existsSync(),
+          isFalse,
+        );
+        expect(File('$localPath-wal').existsSync(), isFalse);
+        final restored = await databaseFactoryFfi.openDatabase(localPath);
+        addTearDown(restored.close);
+        expect(
+          await restored.query(
+            'tracks',
+            where: 'path = ?',
+            whereArgs: ['/audio/recovered.mp3'],
+          ),
+          hasLength(1),
+        );
+      },
+    );
+  }
 }
 
 class _FakeAppUpdateService extends AppUpdateService {

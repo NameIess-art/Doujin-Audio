@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
@@ -13,6 +14,7 @@ import 'package:doujin_audio/features/player/domain/audio_effects.dart';
 import 'package:doujin_audio/features/player/domain/playback_persistence_repository.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart'
     as playback;
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart';
@@ -51,6 +53,68 @@ void main() {
     )..startListening();
   });
   tearDown(() => bridge.dispose());
+
+  group('persisted Windows playback usage', () {
+    const channel = MethodChannel('plugins.flutter.io/path_provider');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    late Directory workspace;
+    late Directory storage;
+    late File usageFile;
+    late WindowsPlaybackBridge persistentBridge;
+
+    setUp(() async {
+      workspace = await Directory.systemTemp.createTemp('windows_usage_');
+      storage = Directory('${workspace.path}/support');
+      usageFile = File('${storage.path}/playback_usage.json');
+      persistentBridge = WindowsPlaybackBridge(persistUsage: true);
+      messenger.setMockMethodCallHandler(channel, (_) async => storage.path);
+    });
+    tearDown(() async {
+      try {
+        await persistentBridge.dispose();
+      } finally {
+        messenger.setMockMethodCallHandler(channel, null);
+        await workspace.delete(recursive: true);
+      }
+    });
+
+    test('retries a temporary load failure on the same bridge', () async {
+      final obstruction = await File(storage.path).create();
+      await expectLater(
+        persistentBridge.readUsage(),
+        throwsA(isA<FileSystemException>()),
+      );
+      await obstruction.delete();
+      await storage.create();
+      await usageFile.writeAsString(
+        '{"epoch":"saved","sequence":1,"batches":[{"id":"saved-1","days":[]}]}',
+      );
+      expect((await persistentBridge.readUsage()).single.id, 'saved-1');
+    });
+
+    test('replaces a malformed usage ledger when reading', () async {
+      await storage.create();
+      await usageFile.writeAsString(
+        '{"epoch":"saved","sequence":1,"batches":[{}]}',
+      );
+      expect(await persistentBridge.readUsage(), isEmpty);
+      expect(
+        (jsonDecode(await usageFile.readAsString()) as Map)['batches'],
+        isEmpty,
+      );
+    });
+
+    test('can reset unreadable JSON before the first usage read', () async {
+      await storage.create();
+      await usageFile.writeAsString('{');
+      await persistentBridge.resetUsage();
+      expect(
+        (jsonDecode(await usageFile.readAsString()) as Map)['batches'],
+        isEmpty,
+      );
+    });
+  });
 
   Future<void> prepare(
     String id, {
@@ -2471,6 +2535,45 @@ void main() {
     await bridge.pause('one');
     await Future<void>.delayed(const Duration(milliseconds: 550));
     expect(players.single.opens, 1);
+  });
+
+  test('native queue advance cancels the previous track retry', () async {
+    const first = 'https://example.com/first.wav';
+    const next = 'https://example.com/next.wav';
+    expect(
+      (await bridge.prepareSession(
+        sessionId: 'one',
+        title: 'one',
+        uri: Uri.parse(first),
+        autoPlay: true,
+        queue: [
+          {
+            'uri': first,
+            'candidateUris': [first, 'https://mirror.example.com/first.wav'],
+          },
+          {'uri': next},
+        ],
+      )).isOk,
+      isTrue,
+    );
+    final player = players.single;
+    player.emitError('connection reset');
+    await Future<void>.delayed(Duration.zero);
+    expect(
+      (await bridge.snapshot()).valueOrNull!.sessions.single.error,
+      'connection reset',
+    );
+
+    player.advance(1);
+    await Future<void>.delayed(Duration.zero);
+    player.emitPosition(const Duration(seconds: 3));
+    await Future<void>.delayed(const Duration(milliseconds: 550));
+
+    final snapshot = (await bridge.snapshot()).valueOrNull!.sessions.single;
+    expect(player.opens, 1);
+    expect(snapshot.uri, next);
+    expect(snapshot.position, const Duration(seconds: 3));
+    expect(snapshot.retainedUris, [first, next]);
   });
 
   test('network recovery timeout releases only the failed session', () async {

@@ -126,7 +126,8 @@ final class PlaybackFacade {
   Map<String, String> _resumeBatch = {};
   Map<String, String> _resumeRetryTargets = {};
   Future<bool>? _resumeInFlight;
-  Future<bool>? _pauseAllInFlight;
+  Future<({bool succeeded, Iterable<String> confirmedSessionIds})>?
+  _pauseAllInFlight;
   int _resumeBatchRevision = 0;
   int _pauseSequence = 0;
   int _recordedPauseSequence = 0;
@@ -554,17 +555,24 @@ final class PlaybackFacade {
     _onSessionsReordered?.call();
   }
 
-  Future<bool> pauseAllSessions() {
-    final pending = _pauseAllInFlight;
-    if (pending != null) return pending;
-    final pause = PlaybackNativeStateCoordinator(this)._pauseAllSessions()
-        .whenComplete(() {
-          _pauseAllInFlight = null;
-          _notifyResumeBatchChanged();
-        });
-    _pauseAllInFlight = pause;
-    _notifyResumeBatchChanged();
-    return pause;
+  /// Reports confirmed pauses even if another session fails to pause.
+  Future<bool> pauseAllSessions({
+    void Function(Iterable<String>)? onPaused,
+  }) async {
+    var pause = _pauseAllInFlight;
+    if (pause == null) {
+      pause = PlaybackNativeStateCoordinator(this)
+          ._pauseAllSessions()
+          .whenComplete(() {
+            _pauseAllInFlight = null;
+            _notifyResumeBatchChanged();
+          });
+      _pauseAllInFlight = pause;
+      _notifyResumeBatchChanged();
+    }
+    final result = await pause;
+    onPaused?.call(result.confirmedSessionIds);
+    return result.succeeded;
   }
 
   Future<bool> removeSession(String sessionId) {

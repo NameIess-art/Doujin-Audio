@@ -130,7 +130,7 @@ void main() {
         final service = SubtitleOverlayPlatformService(channel: channel);
 
         expect(await service.openOverlaySettings(), isFalse);
-        await service.startOverlay();
+        expect(await service.startOverlay(), isFalse);
         await service.stopOverlay();
       },
     );

@@ -174,7 +174,6 @@ internal object NativePlaybackCommandPayloads {
     fun parseQueue(rawQueue: Any?): List<NativeMediaItemDescriptor> {
         if (rawQueue == null) return emptyList()
         require(rawQueue is List<*>) { "Invalid queue." }
-        require(rawQueue.size <= 10_000) { "Queue is too large." }
         return rawQueue.mapIndexed { index, rawItem ->
             require(rawItem is Map<*, *>) { "Invalid queue item at index $index." }
             val uri = rawItem.requiredString("uri").also(::requireSupportedUri)

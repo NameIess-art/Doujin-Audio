@@ -257,6 +257,54 @@ void main() {
       expect(calls, contains('stopOverlay'));
     },
   );
+
+  testWidgets('runtime retries when the Android overlay declines to start', (
+    tester,
+  ) async {
+    const channel = MethodChannel('test.subtitle.overlay.start-failure');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    var startAttempts = 0;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      return <String, Object?>{
+        'ok': true,
+        'value': call.method != 'startOverlay' || ++startAttempts > 1,
+      };
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    final session = _OverlaySession(id: 'retry', path: '/music/retry.mp3');
+    addTearDown(session.positions.close);
+    final subtitles = _CountingSubtitles();
+    addTearDown(subtitles.dispose);
+    final controller = SubtitleOverlayController(
+      platform: SubtitleOverlayPlatformService(channel: channel),
+    );
+    addTearDown(controller.dispose);
+    controller.attachRuntime(
+      enabled: () => true,
+      session: () => session,
+      subtitles: () => subtitles,
+      style: () => (
+        fontSize: null,
+        backgroundColor: null,
+        textColor: null,
+        backgroundOpacity: null,
+        fontFamily: null,
+        borderDepth: null,
+      ),
+    );
+
+    controller.requestRuntimeSync();
+    await tester.pump();
+    expect(startAttempts, 1);
+    expect(session.positions.hasListener, isFalse);
+
+    controller.requestRuntimeSync();
+    await tester.pump();
+    expect(startAttempts, 2);
+    expect(session.positions.hasListener, isTrue);
+    await tester.runAsync(controller.detachRuntime);
+  });
 }
 
 final class _TestTimer implements Timer {

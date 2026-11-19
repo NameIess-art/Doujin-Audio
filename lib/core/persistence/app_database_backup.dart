@@ -1,5 +1,12 @@
 part of 'app_database.dart';
 
+const _listeningRestoreColumns = {
+  'listening_days': 'date, milliseconds',
+  'listening_work_days': 'date, work_key, milliseconds',
+  'listening_history': 'work_key, track_json, last_played_at_ms, legacy_order',
+  'listening_imports': 'batch_id',
+};
+
 extension AppDatabaseBackup on AppDatabase {
   Future<File> createPortableSnapshot(String outputPath) async {
     final output = File(outputPath);
@@ -130,9 +137,7 @@ extension AppDatabaseBackup on AppDatabase {
   }) async {
     final candidate = await openDatabase(candidatePath, singleInstance: false);
     try {
-      await candidate.execute('ATTACH DATABASE ? AS local_restore', [
-        localPath,
-      ]);
+      if (!await _attachReadableRestoreSource(candidate, localPath)) return;
       await candidate.transaction((txn) async {
         final localActivity = await _listeningRecency(txn, 'local_restore');
         final backupActivity = await _listeningRecency(txn, 'main');
@@ -140,14 +145,7 @@ extension AppDatabaseBackup on AppDatabase {
             (localActivity.lastPlayed == backupActivity.lastPlayed &&
                 localActivity.totalMs > backupActivity.totalMs)) {
           // The totals, history and import IDs describe the same batch snapshot.
-          const tables = {
-            'listening_days': 'date, milliseconds',
-            'listening_work_days': 'date, work_key, milliseconds',
-            'listening_history':
-                'work_key, track_json, last_played_at_ms, legacy_order',
-            'listening_imports': 'batch_id',
-          };
-          for (final entry in tables.entries) {
+          for (final entry in _listeningRestoreColumns.entries) {
             final table = entry.key;
             final columns = entry.value;
             await txn.rawDelete('DELETE FROM main.$table');
@@ -172,6 +170,39 @@ extension AppDatabaseBackup on AppDatabase {
     } finally {
       await candidate.close();
     }
+  }
+}
+
+Future<bool> _attachReadableRestoreSource(
+  Database candidate,
+  String localPath,
+) async {
+  try {
+    await candidate.execute('ATTACH DATABASE ? AS local_restore', [localPath]);
+    final check = await candidate.rawQuery(
+      'PRAGMA local_restore.quick_check(1)',
+    );
+    if (check.singleOrNull?['quick_check'] != 'ok') {
+      throw const FormatException('invalid_local_database');
+    }
+    // An open handle and SQLite integrity check do not guarantee that the
+    // local copy still has the tables needed for the optional data merge.
+    for (final entry in _listeningRestoreColumns.entries) {
+      await candidate.rawQuery(
+        'SELECT ${entry.value} FROM local_restore.${entry.key} LIMIT 0',
+      );
+    }
+    await candidate.rawQuery(
+      'SELECT key, value FROM local_restore.app_kv_settings LIMIT 0',
+    );
+    return true;
+  } on Exception catch (error, stackTrace) {
+    AppLogService.warning(
+      'backup_restore_local_data_unavailable',
+      error: error,
+      stackTrace: stackTrace,
+    );
+    return false;
   }
 }
 

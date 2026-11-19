@@ -10,11 +10,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/core/widgets/app_brand_icon.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/settings/application/app_update_service.dart';
 import 'package:doujin_audio/features/settings/presentation/about_page.dart';
+import 'package:doujin_audio/features/settings/presentation/settings_tile_theme.dart';
 
 import 'support/app_runtime_test_fixture.dart';
 
@@ -55,7 +57,7 @@ void main() {
         expect(find.byType(AppBrandIcon, skipOffstage: false), findsOneWidget);
         await tester.pump();
         expect(find.byType(TopPageHeader), findsOneWidget);
-        expect(find.byType(BackButton), findsOneWidget);
+        expect(find.bySubtype<BackButton>(), findsOneWidget);
         expect(find.byType(AppBrandIcon), findsOneWidget);
         expect(find.byType(OperationSkeletonList), findsNothing);
         if (cached) expect(find.text('1.2.3'), findsOneWidget);
@@ -180,7 +182,7 @@ void main() {
       );
       expect(rewardButton.onPressed, isNotNull);
       expect(find.text('NameIess-art'), findsOneWidget);
-      expect(find.byType(BackButton), findsOneWidget);
+      expect(find.bySubtype<BackButton>(), findsOneWidget);
 
       for (final text in [
         i18n.tr('about_version'),
@@ -206,7 +208,11 @@ void main() {
           of: find.byWidget(tile.leading!),
           matching: find.byType(Icon),
         );
-        expect(tester.widget<Icon>(icon).size, 30);
+        final glyph = tester.widget<Icon>(icon);
+        expect(
+          glyph.size,
+          AppDesignTokens.opticalIconSize(glyph.icon, SettingsTileTheme.iconSize),
+        );
         expect(
           tester.getSize(find.byWidget(tile)).height,
           greaterThanOrEqualTo(64),
@@ -217,7 +223,7 @@ void main() {
       expect(
         tester.getSize(
           find.ancestor(
-            of: find.byType(BackButton),
+            of: find.bySubtype<BackButton>(),
             matching: find.byType(HeaderFloatingButton),
           ),
         ),

@@ -31,8 +31,9 @@ class _RecordingSubtitleService extends PlaybackSubtitleService {
   @override
   Future<SubtitleTrack> saveEditedSubtitle(
     String trackPath,
-    List<SubtitleCue> cues,
-  ) async {
+    List<SubtitleCue> cues, {
+    SubtitleTrack? source,
+  }) async {
     await saveGate?.future;
     if (failSave) throw StateError('Save failed');
     saved = List.of(cues);
@@ -115,6 +116,33 @@ Future<void> _tapInputSave(WidgetTester tester) async {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('text-only subtitle edits can save an overlapping timeline', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final service = _RecordingSubtitleService(const [
+      SubtitleCue(
+        start: Duration(seconds: 1),
+        end: Duration(seconds: 4),
+        text: 'First row',
+      ),
+      SubtitleCue(
+        start: Duration(seconds: 3),
+        end: Duration(seconds: 6),
+        text: 'Second row',
+      ),
+    ]);
+    await _showEditor(tester, service);
+    await _editFirstText(tester, 'Edited first row');
+
+    await tester.tap(find.widgetWithIcon(IconButton, Icons.save_rounded));
+    await tester.pumpAndSettle();
+
+    expect(service.saved!.first.text, 'Edited first row');
+    expect(service.saved!.first.end, const Duration(seconds: 4));
+    expect(service.saved!.last.start, const Duration(seconds: 3));
+  });
 
   const initialCue = SubtitleCue(
     start: Duration(seconds: 1),

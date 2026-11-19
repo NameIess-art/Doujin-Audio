@@ -12294,10 +12294,12 @@ void main() {
   );
 
   testWidgets(
-    'subtitle placeholder shows five bars and uses white in the dark theme',
+    'subtitle placeholder shows five low-glare themed pill bars and aligns by orientation',
     (tester) async {
       for (final brightness in Brightness.values) {
         final theme = ThemeData(brightness: brightness);
+        final cs = theme.colorScheme;
+        final isDark = brightness == Brightness.dark;
         await tester.pumpWidget(
           MaterialApp(
             theme: theme,
@@ -12310,21 +12312,63 @@ void main() {
           matching: find.byType(Container),
         );
         expect(bars, findsNWidgets(5));
-        final barOpacities = find.descendant(
-          of: find.byType(SessionSubtitlePlaceholder),
-          matching: find.byType(Opacity),
+        final decorations = tester
+            .widgetList<Container>(bars)
+            .map((bar) => bar.decoration as BoxDecoration)
+            .toList(growable: false);
+        final expectedCenter = Color.lerp(
+          cs.onSurface,
+          cs.primary,
+          0.35,
+        )!.withValues(alpha: isDark ? 0.18 : 0.15);
+        final expectedNear = cs.onSurface.withValues(
+          alpha: isDark ? 0.09 : 0.08,
         );
+        final expectedFar = cs.onSurface.withValues(
+          alpha: isDark ? 0.045 : 0.04,
+        );
+        expect(decorations.map((d) => d.color).toList(), [
+          expectedFar,
+          expectedNear,
+          expectedCenter,
+          expectedNear,
+          expectedFar,
+        ]);
         expect(
-          tester.widgetList<Opacity>(barOpacities).map((bar) => bar.opacity),
-          [0.21, 0.21, 0.60, 0.21, 0.21],
+          decorations.map((d) => d.borderRadius).toList(),
+          [
+            BorderRadius.circular(5),
+            BorderRadius.circular(5),
+            BorderRadius.circular(6),
+            BorderRadius.circular(5),
+            BorderRadius.circular(5),
+          ],
         );
-        final expectedColor = brightness == Brightness.dark
-            ? Colors.white
-            : theme.colorScheme.surfaceContainerHighest;
-        for (final bar in tester.widgetList<Container>(bars)) {
-          expect((bar.decoration as BoxDecoration).color, expectedColor);
-        }
       }
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.dark(),
+          themeAnimationDuration: Duration.zero,
+          home: const SizedBox(
+            width: 400,
+            height: 240,
+            child: SessionSubtitlePlaceholder(isLandscape: true),
+          ),
+        ),
+      );
+      final landscapeBars = find.descendant(
+        of: find.byType(SessionSubtitlePlaceholder),
+        matching: find.byType(Container),
+      );
+      expect(
+        tester.getTopLeft(landscapeBars.first).dx,
+        closeTo(landscapeDetailTextInset, 0.01),
+      );
+      expect(
+        tester.getTopLeft(landscapeBars.at(2)).dx,
+        closeTo(landscapeDetailTextInset, 0.01),
+      );
     },
   );
 

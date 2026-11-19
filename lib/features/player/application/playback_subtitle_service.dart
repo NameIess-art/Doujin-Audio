@@ -20,6 +20,10 @@ import 'subtitle_ai_engine.dart';
 import 'subtitle_generation.dart';
 import 'subtitle_model_store.dart';
 
+class SubtitleSourceChanged implements Exception {
+  const SubtitleSourceChanged();
+}
+
 typedef PlaybackTrackResolver = MusicTrack? Function(String trackPath);
 typedef PlaybackSubtitleLoader =
     Future<SubtitleTrack?> Function(String trackPath, MusicTrack? track);
@@ -667,34 +671,44 @@ class PlaybackSubtitleService extends ChangeNotifier {
 
   Future<SubtitleTrack> saveEditedSubtitle(
     String trackPath,
-    List<SubtitleCue> cues,
-  ) async {
+    List<SubtitleCue> cues, {
+    SubtitleTrack? source,
+  }) async {
     if (!canEditSubtitle(trackPath)) {
       throw StateError('ASMR.ONE subtitles cannot be edited');
     }
     await _settingsReady;
-    _validateCues(trackPath, cues, allowEmpty: true);
 
     final current = await load(trackPath);
+    if (source != null && source.sourcePath != current?.sourcePath) {
+      throw const SubtitleSourceChanged();
+    }
     if (current == null) throw StateError('No subtitle file to edit');
+    final originalTrack = source ?? current;
+    _validateCues(
+      trackPath,
+      cues,
+      allowEmpty: true,
+      allowExistingTiming: originalTrack.hasSameCueTimings(cues),
+    );
     // Callers can replace every cue in place without supplying source IDs.
     final replaceInPlace =
-        cues.length == current.cues.length &&
+        cues.length == originalTrack.cues.length &&
         cues.every((cue) => cue.assSourceLine == null);
     final editedCues = cues.indexed
         .map((entry) {
           final (index, cue) = entry;
           final original =
               cue.originalText ??
-              (cues.length == current.cues.length
-                  ? current.cues[index].originalText
+              (cues.length == originalTrack.cues.length
+                  ? originalTrack.cues[index].originalText
                   : null);
           return SubtitleCue(
             start: cue.start,
             end: cue.end,
             text: cue.text,
             assSourceLine: replaceInPlace
-                ? current.cues[index].assSourceLine
+                ? originalTrack.cues[index].assSourceLine
                 : cue.assSourceLine,
             originalText:
                 original != null &&
@@ -704,13 +718,26 @@ class PlaybackSubtitleService extends ChangeNotifier {
           );
         })
         .toList(growable: false);
-    final sourcePath = current.sourcePath;
+    final sourcePath = originalTrack.sourcePath;
     final bytes = await _fileCacheGateway.readDocumentBytes(sourcePath);
-    if (bytes == null) throw StateError('Subtitle file is unavailable');
+    if (bytes == null) throw const SubtitleSourceChanged();
+    final raw = decodeWorkText(bytes).text;
+    final sourceRevision = originalTrack.sourceRevision;
+    final isContent = sourcePath.startsWith('content://');
+    if (sourceRevision != null &&
+        sourceRevision != subtitleSourceRevision(raw) &&
+        // Android resolves SAF subtitles with UTF-8 before returning the text.
+        (!isContent ||
+            sourceRevision !=
+                subtitleSourceRevision(
+                  utf8.decode(bytes, allowMalformed: true),
+                ))) {
+      throw const SubtitleSourceChanged();
+    }
     final content = _editedSubtitleContent(
       sourcePath,
-      decodeWorkText(bytes).text,
-      current.cues,
+      raw,
+      originalTrack.cues,
       editedCues,
     );
     if (cues.isNotEmpty) {
@@ -723,7 +750,9 @@ class PlaybackSubtitleService extends ChangeNotifier {
         throw StateError('Edited cues cannot be stored in the subtitle format');
       }
     }
-    if (sourcePath.startsWith('content://')) {
+    final latestBytes = await _fileCacheGateway.readDocumentBytes(sourcePath);
+    if (!listEquals(bytes, latestBytes)) throw const SubtitleSourceChanged();
+    if (isContent) {
       final saved = await _fileCacheGateway.writeTrackSubtitle(
         path: sourcePath,
         bytes: Uint8List.fromList(utf8.encode(content)),
@@ -758,6 +787,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
     String trackPath,
     List<SubtitleCue> cues, {
     bool allowEmpty = false,
+    bool allowExistingTiming = false,
   }) {
     if (trackPath.isEmpty || (cues.isEmpty && !allowEmpty)) {
       throw ArgumentError('A track and subtitle cues are required.');
@@ -767,7 +797,9 @@ class PlaybackSubtitleService extends ChangeNotifier {
       if (cue.start < Duration.zero ||
           cue.end <= cue.start ||
           cue.text.trim().isEmpty ||
-          (index > 0 && cue.start < cues[index - 1].end)) {
+          (!allowExistingTiming &&
+              index > 0 &&
+              cue.start < cues[index - 1].end)) {
         throw ArgumentError(
           'Subtitle cues must be ordered and non-overlapping.',
         );
@@ -1078,13 +1110,17 @@ class PlaybackSubtitleService extends ChangeNotifier {
   Future<SubtitleTrack?> load(String trackPath) =>
       _load(trackPath, automatic: false);
 
+  Future<SubtitleTrack?> loadForEditing(String trackPath) =>
+      _load(trackPath, automatic: false, reload: true);
+
   Future<SubtitleTrack?> _load(
     String trackPath, {
     required bool automatic,
     _SubtitleSource? validatedSource,
+    bool reload = false,
   }) {
     var source = validatedSource ?? _refreshSubtitleSource(trackPath);
-    if (_tracks.containsKey(trackPath)) {
+    if (!reload && _tracks.containsKey(trackPath)) {
       return _results.putIfAbsent(
         trackPath,
         () => SynchronousFuture<SubtitleTrack?>(_tracks[trackPath]),
@@ -1317,7 +1353,11 @@ class PlaybackSubtitleService extends ChangeNotifier {
       if (bytes == null) return null;
       final raw = decodeWorkText(bytes).text;
       if (raw.trim().isEmpty || raw.trim() == 'WEBVTT') {
-        return SubtitleTrack(sourcePath: filePath, cues: const []);
+        return SubtitleTrack(
+          sourcePath: filePath,
+          cues: const [],
+          sourceRevision: subtitleSourceRevision(raw),
+        );
       }
       final extension = path.extension(filePath).toLowerCase();
       return await parseSubtitleTrackFromRaw(
@@ -1373,7 +1413,11 @@ class PlaybackSubtitleService extends ChangeNotifier {
         return null;
       }
       if (text.trim().isEmpty) {
-        return SubtitleTrack(sourcePath: sourcePath, cues: const []);
+        return SubtitleTrack(
+          sourcePath: sourcePath,
+          cues: const [],
+          sourceRevision: subtitleSourceRevision(text),
+        );
       }
       return parseSubtitleTrackFromRaw(
         sourcePath: sourcePath,

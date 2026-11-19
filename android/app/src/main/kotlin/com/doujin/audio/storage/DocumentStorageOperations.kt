@@ -506,7 +506,6 @@ internal fun sanitizeCacheExtension(name: String, fallback: String): String {
     val dotIndex = leaf.lastIndexOf('.')
     if (dotIndex <= 0 || dotIndex >= leaf.length - 1) return fallback
     val sanitized = leaf.substring(dotIndex + 1)
-        .replace("..", "")
         .filter { it.isLetterOrDigit() || it == '_' || it == '-' }
         .take(16)
     return sanitized.ifBlank { fallback }

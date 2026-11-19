@@ -46,10 +46,8 @@ class AppLifecyclePlatformService {
       arguments: <String, Object>{
         'preset': preset,
         'themeMode': themeMode,
-        if (lightTrayMenuPalette != null)
-          'lightTrayMenuPalette': lightTrayMenuPalette,
-        if (darkTrayMenuPalette != null)
-          'darkTrayMenuPalette': darkTrayMenuPalette,
+        'lightTrayMenuPalette': ?lightTrayMenuPalette,
+        'darkTrayMenuPalette': ?darkTrayMenuPalette,
       },
       decode: (_) {},
     );

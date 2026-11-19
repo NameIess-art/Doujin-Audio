@@ -431,8 +431,9 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
     _bindAnimation();
     widget.animation.addStatusListener(_handleAnimationStatus);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || widget.animation.status == AnimationStatus.reverse)
+      if (!mounted || widget.animation.status == AnimationStatus.reverse) {
         return;
+      }
       _focusScope.requestFocus();
     });
   }

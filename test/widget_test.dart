@@ -11,7 +11,6 @@ import 'dart:ui' as ui;
 import 'dart:ui' show PointerDeviceKind;
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/widgets/playlist_icon.dart';
-import 'package:doujin_audio/features/player/presentation/playlist/playlist_volume_timer_widgets.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_cover_transition.dart';
 
 import 'package:flutter/foundation.dart';

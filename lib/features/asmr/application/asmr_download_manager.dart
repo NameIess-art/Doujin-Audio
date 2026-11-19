@@ -931,9 +931,7 @@ class AsmrDownloadManager {
     }
   }
 
-  void dispose() {
-    unawaited(shutdown());
-  }
+  void dispose() => unawaited(shutdown());
 
   Future<DlsiteMetadata?> _lookupTaskMetadata(
     String workId,
@@ -1024,9 +1022,7 @@ class AsmrDownloadManager {
       status: AsmrDownloadTaskStatus.idle,
       message: 'queued',
     );
-    if (!_queue.contains(workId)) {
-      _queue.add(workId);
-    }
+    if (!_queue.contains(workId)) _queue.add(workId);
     _store.notifyTaskChanged();
     _processQueue();
   }

@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/dlsite_metadata.dart';
 import 'package:doujin_audio/core/widgets/file_tree_row.dart';
@@ -104,23 +105,14 @@ void main() {
       find.byKey(const ValueKey<String>('batch_metadata_status_0')),
       findsOneWidget,
     );
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey<String>('batch_metadata_status_0')),
-        matching: find.byIcon(Icons.pending_rounded),
-      ),
-      findsOneWidget,
+    final pendingStatus = find.descendant(
+      of: find.byKey(const ValueKey<String>('batch_metadata_status_0')),
+      matching: find.byIcon(Icons.pending_rounded),
     );
+    expect(pendingStatus, findsOneWidget);
     expect(
-      tester
-          .widget<Icon>(
-            find.descendant(
-              of: find.byKey(const ValueKey<String>('batch_metadata_status_0')),
-              matching: find.byType(Icon),
-            ),
-          )
-          .color,
-      Colors.orange,
+      tester.widget<Icon>(pendingStatus).color,
+      AppDesignTokens.of(tester.element(pendingStatus)).warning,
     );
     expect(
       find.descendant(
@@ -156,23 +148,14 @@ void main() {
     );
     session.confirm(3, metadata: resultMetadata('004'), saveCover: false);
     await tester.pump();
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey<String>('batch_metadata_status_3')),
-        matching: find.byIcon(Icons.check_circle_rounded),
-      ),
-      findsOneWidget,
+    final confirmedStatus = find.descendant(
+      of: find.byKey(const ValueKey<String>('batch_metadata_status_3')),
+      matching: find.byIcon(Icons.check_circle_rounded),
     );
+    expect(confirmedStatus, findsOneWidget);
     expect(
-      tester
-          .widget<Icon>(
-            find.descendant(
-              of: find.byKey(const ValueKey<String>('batch_metadata_status_3')),
-              matching: find.byType(Icon),
-            ),
-          )
-          .color,
-      Colors.green,
+      tester.widget<Icon>(confirmedStatus).color,
+      AppDesignTokens.of(tester.element(confirmedStatus)).success,
     );
   });
 
@@ -540,6 +523,8 @@ void main() {
         ),
       ),
     );
+
+    await tester.pump();
 
     final hint = find.text(languageProvider.tr('batch_metadata_hint'));
     final hintSurface = find.ancestor(

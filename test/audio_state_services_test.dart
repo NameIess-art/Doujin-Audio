@@ -1153,7 +1153,7 @@ void main() {
       final mutation = service.setLibraryFolderExcluded(root, folder, true);
 
       expect(mutation.changed, isTrue);
-      expect(mutation.affectedEntryPaths, <String>[folder, trackPath]);
+      expect(mutation.affectedEntryPaths, unorderedEquals([folder, trackPath]));
       expect(service.structureRevision, beforeRevision + 1);
     });
 

@@ -1617,8 +1617,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     }
 
     Widget buildBody(BuildContext context, WidgetRef ref, double width) {
-      // The image includes the top safe area; size it from this pane's actual
-      // width so the fully expanded cover, including that area, stays 4:3.
+      // Include the safe area in the 4:3 cover and cap its height to keep the
+      // metadata and directory accessible in wide panes.
       final coverMaxHeight = (width * 3 / 4 - topSafeArea).clamp(
         0.0,
         380.0,

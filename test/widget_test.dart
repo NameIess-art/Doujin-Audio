@@ -11,6 +11,7 @@ import 'dart:ui' as ui;
 import 'dart:ui' show PointerDeviceKind;
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/widgets/playlist_icon.dart';
+import 'package:doujin_audio/features/player/presentation/playlist/playlist_volume_timer_widgets.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_cover_transition.dart';
 
 import 'package:flutter/foundation.dart';
@@ -343,11 +344,18 @@ void main() {
         const ValueKey('main_page_stack'),
         skipOffstage: false,
       );
+      final settings = ProviderScope.containerOf(
+        tester.element(mySwitch),
+        listen: false,
+      ).read(settingsRepositoryProvider);
       DropdownButton<StartupPage> startupChoice() =>
           tester.widget(find.byType(DropdownButton<StartupPage>));
       Future<void> toggleMyPage() async {
         await tester.ensureVisible(mySwitch);
-        await tester.tap(mySwitch);
+        await tester.runAsync(() async {
+          await tester.tap(mySwitch);
+          await settings.flushPendingWrites();
+        });
         await _pumpMainScreenAnimations(tester);
         await _waitForAppShellInteractionIdle(tester);
       }
@@ -7396,13 +7404,15 @@ void main() {
     }
     final closeColor = iconColor(Icons.keyboard_arrow_down_rounded);
     final forwardColor = iconColor(Icons.forward_5_rounded);
-    final timeColor = tester
-        .widgetList<Text>(
-          find.descendant(of: detail, matching: find.byType(Text)),
-        )
-        .firstWhere((widget) => widget.style?.fontFeatures?.isNotEmpty ?? false)
-        .style!
-        .color!;
+    final timecodes = find.descendant(
+      of: detail,
+      matching: find.byType(TimecodeLabel),
+    );
+    final timecodeText = find.descendant(
+      of: timecodes.first,
+      matching: find.byType(Text),
+    );
+    final timeColor = tester.widget<Text>(timecodeText.first).style!.color!;
     expect(
       find.descendant(of: detail, matching: find.byIcon(Icons.timer_rounded)),
       findsOneWidget,
@@ -7901,7 +7911,7 @@ void main() {
   });
 
   testWidgets(
-    'playback detail ignores swipe and handles back on Android only',
+    'playback detail ignores swipe and closes with the platform back action',
     (tester) async {
       _setLogicalTestViewSize(tester, const Size(1080, 2400));
       await _pumpAppShell(tester);
@@ -7920,18 +7930,16 @@ void main() {
         tester.getTopLeft(detail) + const Offset(48, 72),
         const Offset(420, 0),
       );
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
       expect(detail, findsOneWidget);
 
-      await tester.binding.handlePopRoute();
-      if (defaultTargetPlatform == TargetPlatform.windows) {
-        await tester.pumpAndSettle();
-        expect(detail, findsOneWidget);
-        final close = find.byKey(const ValueKey('session_detail_close_button'));
-        await tester.tap(close);
-      }
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        expect(detail, findsOneWidget);
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+      }
       expect(detail, findsNothing);
       expect(navigator.canPop(), isFalse);
       expect(tester.takeException(), isNull);

@@ -235,24 +235,10 @@ void main() {
   );
 
   test('setAudioEffects forwards the complete effects payload', () async {
+    MethodCall? effectsCall;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
-          expect(call.method, NativePlaybackMethod.setAudioEffects);
-          expect(call.arguments, <String, Object?>{
-            'sessionId': 'session-1',
-            'effects': <String, Object?>{
-              'skipSilenceEnabled': true,
-              'noiseReductionEnabled': true,
-              'volumeNormalizationEnabled': false,
-              'eqEnabled': true,
-              'eqPresetId': 'voice_clear',
-              'eqBandLevels': <Object?>[
-                <String, Object?>{'frequencyHz': 1000, 'gainDb': 2.5},
-              ],
-              'panning': 0.0,
-              'channelSwapEnabled': true,
-            },
-          });
+          effectsCall = call;
           return <String, Object?>{
             'ok': true,
             'value': <String, Object?>{
@@ -296,11 +282,30 @@ void main() {
           eqEnabled: true,
           eqPresetId: 'voice_clear',
           eqBandLevels: <int, double>{1000: 2.5},
+          panning: 0.25,
+          frontBack: -0.5,
         ),
         channelSwapEnabled: true,
       ),
     );
 
+    expect(effectsCall?.method, NativePlaybackMethod.setAudioEffects);
+    expect(effectsCall?.arguments, <String, Object?>{
+      'sessionId': 'session-1',
+      'effects': <String, Object?>{
+        'skipSilenceEnabled': true,
+        'noiseReductionEnabled': true,
+        'volumeNormalizationEnabled': false,
+        'eqEnabled': true,
+        'eqPresetId': 'voice_clear',
+        'eqBandLevels': <Object?>[
+          <String, Object?>{'frequencyHz': 1000, 'gainDb': 2.5},
+        ],
+        'panning': 0.25,
+        'frontBack': -0.5,
+        'channelSwapEnabled': true,
+      },
+    });
     expect(result.isOk, isTrue);
     expect(result.valueOrNull?.channelSwapEnabled, isTrue);
     expect(result.valueOrNull?.audioEffects.skipSilenceEnabled, isTrue);

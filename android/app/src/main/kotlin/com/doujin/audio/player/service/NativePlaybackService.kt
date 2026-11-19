@@ -14,17 +14,13 @@ import com.doujin.audio.player.effects.StereoSpatialResponses
 import com.doujin.audio.player.video.*
 import com.doujin.audio.storage.*
 
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ServiceInfo
 import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import androidx.core.app.ServiceCompat
 import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -43,17 +39,10 @@ class NativePlaybackService : MediaSessionService() {
             "require_foreground_bootstrap"
         private const val EXTRA_INTERNAL_START_TOKEN = "internal_start_token"
         private const val EXTRA_TRANSPORT_COMMAND = "transport_command"
-        private const val TRANSPORT_REQUEST_CODE_PREVIOUS = 11071
-        private const val TRANSPORT_REQUEST_CODE_PLAY_PAUSE = 11072
-        private const val TRANSPORT_REQUEST_CODE_NEXT = 11073
-        private const val PLAYBACK_CHANNEL_ID = "com.doujin.audio.channel.playback"
-        private const val FOREGROUND_NOTIFICATION_ID = 1107
         private const val FOREGROUND_WATCHDOG_INTERVAL_MS = 4 * 60 * 1000L
         private const val STATE_PERSISTENCE_INTERVAL_MS = 15 * 1000L
         private const val STATE_PERSISTENCE_SCREEN_OFF_INTERVAL_MS = 60 * 1000L
         private const val STATE_PERSISTENCE_DEBOUNCE_MS = 800L
-        private const val USAGE_HEARTBEAT_INTERVAL_MS = 15 * 1000L
-        private const val USAGE_HEARTBEAT_SCREEN_OFF_INTERVAL_MS = 60 * 1000L
         private const val PLAYBACK_STOP_GRACE_MS = 0L
         private const val PROGRESS_HEARTBEAT_INTERVAL_MS = 500L
         private const val FOREGROUND_PLAYBACK_UNAVAILABLE_ERROR =
@@ -132,50 +121,25 @@ class NativePlaybackService : MediaSessionService() {
         }
     }
 
-    private val usageLedger by lazy { NativePlaybackUsageLedger.get(this) }
-    private var usageHeartbeatScheduled = false
+    private val usage by lazy {
+        NativePlaybackUsageCheckpoint(
+            ledger = NativePlaybackUsageLedger.get(this),
+            handler = mainHandler,
+            items = { sessionManager.usageItems() },
+            isScreenInteractive = { progressHeartbeat.isScreenInteractive() },
+            hasPlayback = ::hasPlaybackToKeepAlive
+        )
+    }
     private var audioOffloadDisabledForProcess = false
-    private fun updateUsage() = usageLedger.update(sessionManager.usageItems())
-    private fun currentUsageHeartbeatIntervalMs(): Long =
-        if (progressHeartbeat.isScreenInteractive()) {
-            USAGE_HEARTBEAT_INTERVAL_MS
-        } else {
-            USAGE_HEARTBEAT_SCREEN_OFF_INTERVAL_MS
-        }
-
-    private val usageHeartbeat = object : Runnable {
-        override fun run() {
-            usageHeartbeatScheduled = false
-            updateUsage()
-            usageLedger.checkpoint()
-            if (hasPlaybackToKeepAlive()) {
-                usageHeartbeatScheduled = true
-                mainHandler.postDelayed(this, currentUsageHeartbeatIntervalMs())
-            }
-        }
+    fun readUsage(): Map<String, Any?> = okResult(usage.read())
+    fun acknowledgeUsage(ids: Set<String>): Map<String, Any?> {
+        usage.acknowledge(ids)
+        return okResult(null)
     }
-
-    private fun ensureUsageHeartbeat() {
-        if (usageHeartbeatScheduled || !hasPlaybackToKeepAlive()) return
-        usageHeartbeatScheduled = true
-        mainHandler.postDelayed(usageHeartbeat, currentUsageHeartbeatIntervalMs())
+    fun resetUsage(): Map<String, Any?> {
+        usage.reset()
+        return okResult(null)
     }
-
-    private fun rescheduleUsageHeartbeat() {
-        if (!usageHeartbeatScheduled) return
-        mainHandler.removeCallbacks(usageHeartbeat)
-        usageHeartbeatScheduled = false
-        ensureUsageHeartbeat()
-    }
-
-    private fun stopUsageHeartbeat() {
-        if (!usageHeartbeatScheduled) return
-        mainHandler.removeCallbacks(usageHeartbeat)
-        usageHeartbeatScheduled = false
-    }
-    fun readUsage(): Map<String, Any?> { updateUsage(); return okResult(usageLedger.read()) }
-    fun acknowledgeUsage(ids: Set<String>): Map<String, Any?> { usageLedger.acknowledge(ids); return okResult(null) }
-    fun resetUsage(): Map<String, Any?> { updateUsage(); usageLedger.reset(); return okResult(null) }
 
     private val sessionManager by lazy { NativePlaybackSessionManager(::createNativePlaybackSession) }
     private val timerExecution by lazy {
@@ -248,8 +212,14 @@ class NativePlaybackService : MediaSessionService() {
             logWarn = { message, error -> logWarn(message, error = error) }
         )
     }
-    private val foregroundNotificationFactory by lazy {
-        NativeForegroundNotificationFactory(this, PLAYBACK_CHANNEL_ID)
+    private val foregroundNotification by lazy {
+        NativeForegroundPlaybackNotification(this) { command ->
+            Intent(applicationContext, NativePlaybackService::class.java).apply {
+                action = nativePlaybackTransportAction
+                putExtra(EXTRA_INTERNAL_START_TOKEN, internalStartToken)
+                putExtra(EXTRA_TRANSPORT_COMMAND, command)
+            }
+        }
     }
     private val playerFactory by lazy {
         NativePlayerFactory(
@@ -258,12 +228,12 @@ class NativePlaybackService : MediaSessionService() {
             isCurrentPlayer = { id, player -> sessionManager.get(id)?.playerOrNull() === player },
             callbacks = object : NativePlayerEventCallbacks {
                 override fun onPlaybackStateChanged(sessionId: String, playbackState: Int) {
-                    updateUsage()
+                    usage.update()
                     handlePlaybackStateChanged(sessionId, playbackState)
                 }
 
                 override fun onMediaItemTransition(sessionId: String, reason: Int) {
-                    updateUsage()
+                    usage.update()
                     handleMediaItemTransition(sessionId, reason)
                 }
 
@@ -282,7 +252,7 @@ class NativePlaybackService : MediaSessionService() {
                 }
 
                 override fun onIsPlayingChanged(sessionId: String, isPlaying: Boolean) {
-                    updateUsage()
+                    usage.update()
                     handleIsPlayingChanged(sessionId, isPlaying)
                 }
 
@@ -371,7 +341,7 @@ class NativePlaybackService : MediaSessionService() {
                 }
                 override fun onScreenInteractiveChanged(interactive: Boolean) {
                     statePersistence.onScreenInteractiveChanged()
-                    rescheduleUsageHeartbeat()
+                    usage.reschedule()
                     if (!interactive) {
                         if (hasPlaybackToKeepAlive()) {
                             acquireWakeLock()
@@ -567,17 +537,12 @@ class NativePlaybackService : MediaSessionService() {
                     get() = this@NativePlaybackService.playbackSuspended
                 override fun playbackSignature(): String? {
                     val session = foregroundSession() ?: return null
-                    val attachedToRealPlayer = mediaSessionHost.isAttachedTo(session.playerOrNull())
-                    val isPlaying = session.playerOrNull()?.let { it.isPlaying || it.playWhenReady } == true
-                    val hasPrevious = session.hasPreviousMediaItem()
-                    val hasNext = session.hasNextMediaItem()
-                    return "playback:${session.sessionId}:$attachedToRealPlayer:$isPlaying:" +
-                        "$hasPrevious:$hasNext:${session.title}:${session.subtitle.orEmpty()}"
+                    return foregroundNotification.signature(session, mediaSessionHost.isAttachedTo(session.playerOrNull()))
                 }
 
                 override fun onActiveSync() {
                     acquireWakeLock()
-                    ensureUsageHeartbeat()
+                    usage.ensureScheduled()
                     PlaybackKeepAliveAlarmScheduler.ensureScheduled(
                         this@NativePlaybackService,
                         activePlayback = true
@@ -592,7 +557,7 @@ class NativePlaybackService : MediaSessionService() {
                 }
 
                 override fun onIdleGraceBegan() {
-                    stopUsageHeartbeat()
+                    usage.stop()
                     releaseWakeLock()
                     PlaybackKeepAliveAlarmScheduler.ensureScheduled(
                         this@NativePlaybackService,
@@ -601,8 +566,7 @@ class NativePlaybackService : MediaSessionService() {
                     statePersistence.persistNow()
                 }
 
-                override fun isForegroundNotificationPosted(): Boolean? =
-                    isPlaybackNotificationPosted()
+                override fun isForegroundNotificationPosted(): Boolean? = foregroundNotification.isPosted()
 
                 override fun onGraceExpired() {
                     stopIdleServiceAfterRestore(restoreCoordinator.latestStartId, "idle_no_playback")
@@ -619,60 +583,16 @@ class NativePlaybackService : MediaSessionService() {
                     }
                 }
 
-                override fun startPlaybackForeground() {
-                    val session = foregroundSession()
-                    val mediaSession = ensureMediaSession()
-                    val isPlaying = session?.playerOrNull()?.let { it.isPlaying || it.playWhenReady } == true
-                    val hasPrevious = session?.hasPreviousMediaItem() == true
-                    val hasNext = session?.hasNextMediaItem() == true
-                    ServiceCompat.startForeground(
-                        this@NativePlaybackService,
-                        FOREGROUND_NOTIFICATION_ID,
-                        foregroundNotificationFactory.buildNotification(
-                            mediaSession = mediaSession,
-                            title = session?.title,
-                            subtitle = session?.subtitle,
-                            isPlaying = isPlaying,
-                            hasPrevious = hasPrevious,
-                            hasNext = hasNext,
-                            previousIntent = transportPendingIntent(
-                                NATIVE_PLAYBACK_TRANSPORT_PREVIOUS,
-                                TRANSPORT_REQUEST_CODE_PREVIOUS
-                            ),
-                            playPauseIntent = transportPendingIntent(
-                                NATIVE_PLAYBACK_TRANSPORT_PLAY_PAUSE,
-                                TRANSPORT_REQUEST_CODE_PLAY_PAUSE
-                            ),
-                            nextIntent = transportPendingIntent(
-                                NATIVE_PLAYBACK_TRANSPORT_NEXT,
-                                TRANSPORT_REQUEST_CODE_NEXT
-                            )
-                        ),
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-                    )
-                }
+                override fun startPlaybackForeground() =
+                    foregroundNotification.startPlayback(foregroundSession(), ensureMediaSession())
 
                 override fun startBootstrapForeground() {
                     mediaSessionHost.ensureBootstrap()
-                    ServiceCompat.startForeground(
-                        this@NativePlaybackService,
-                        FOREGROUND_NOTIFICATION_ID,
-                        foregroundNotificationFactory.buildNotification(
-                            mediaSession = mediaSessionHost.current()
-                        ),
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-                    )
+                    foregroundNotification.startBootstrap(mediaSessionHost.current())
                     acquireWakeLock()
                 }
 
-                override fun stopForeground(wasStarted: Boolean) {
-                    if (wasStarted) {
-                        this@NativePlaybackService.stopForeground(STOP_FOREGROUND_REMOVE)
-                    }
-                    val manager =
-                        getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-                    manager?.cancel(FOREGROUND_NOTIFICATION_ID)
-                }
+                override fun stopForeground(wasStarted: Boolean) = foregroundNotification.stop(wasStarted)
 
                 override fun logInfo(message: String) {
                     this@NativePlaybackService.logInfo(message, foregroundSession())
@@ -708,7 +628,7 @@ class NativePlaybackService : MediaSessionService() {
         playbackBehavior = NativePlaybackStateStore.loadPlaybackBehavior(this)
         audioDeviceDisconnectMonitor.start()
         progressHeartbeat.start()
-        foregroundNotificationFactory.ensureChannel()
+        foregroundNotification.ensureChannel()
         instance = this
         publishController(this)
         logInfo("on_create")
@@ -783,20 +703,6 @@ class NativePlaybackService : MediaSessionService() {
         }
     }
 
-    private fun transportPendingIntent(command: String, requestCode: Int): PendingIntent {
-        val intent = Intent(applicationContext, NativePlaybackService::class.java).apply {
-            action = nativePlaybackTransportAction
-            putExtra(EXTRA_INTERNAL_START_TOKEN, internalStartToken)
-            putExtra(EXTRA_TRANSPORT_COMMAND, command)
-        }
-        return PendingIntent.getService(
-            applicationContext,
-            requestCode,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-    }
-
     private fun finishStartWithoutRestore(startId: Int): Int {
         if (sessionManager.isNotEmpty || hasPlaybackToKeepAlive() || foregroundCoordinator.isStarted) {
             return START_STICKY
@@ -826,10 +732,7 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
-        updateUsage()
-        usageLedger.update(emptyList())
-        usageLedger.checkpoint()
-        stopUsageHeartbeat()
+        usage.finish()
         logInfo(
             "on_destroy_begin sessions=${sessionManager.size} " +
                 "foregroundStarted=${foregroundCoordinator.isStarted} " +
@@ -952,7 +855,7 @@ class NativePlaybackService : MediaSessionService() {
             val wasFocused = focusedSessionId == sessionId
             sessionManager.remove(sessionId)
             nativeSession.release()
-            updateUsage()
+            usage.update()
             clearPlaybackIntent(sessionId)
             if (wasFocused) {
                 updateMediaSessionPlayer()
@@ -1248,15 +1151,15 @@ class NativePlaybackService : MediaSessionService() {
         clearPlaybackIntent(sessionId)
         val wasFocused = focusedSessionId == sessionId
         videoOutputs.detachPlayer(sessionId)
-        updateUsage()
+        usage.update()
         sessionManager.remove(sessionId)?.release()
-        updateUsage()
+        usage.update()
         statePersistence.removeSession(sessionId)
         if (wasFocused) {
             updateMediaSessionPlayer()
         }
         if (sessionManager.isEmpty) {
-            stopUsageHeartbeat()
+            usage.stop()
             foregroundCoordinator.cancelGrace()
             foregroundCoordinator.stopWatchdog()
             statePersistence.stopTicker()
@@ -1288,7 +1191,7 @@ class NativePlaybackService : MediaSessionService() {
         evictPlayersIfNeeded()
         publishAllSessionStates()
         statePersistence.persistNow()
-        stopUsageHeartbeat()
+        usage.stop()
         foregroundCoordinator.cancelGrace()
         foregroundCoordinator.stopWatchdog()
         playbackSuspended = true
@@ -1307,8 +1210,8 @@ class NativePlaybackService : MediaSessionService() {
         videoOutputs.clear()
         sessionManager.forEach { it.release() }
         sessionManager.clear()
-        updateUsage()
-        stopUsageHeartbeat()
+        usage.update()
+        usage.stop()
         mediaSessionHost.release("clear_all")
         foregroundCoordinator.cancelGrace()
         foregroundCoordinator.stopWatchdog()
@@ -1465,25 +1368,24 @@ class NativePlaybackService : MediaSessionService() {
         val snapshot = sessionManager.releaseIdleSession(session, statePersistence, processingState) {
             publishNativePlaybackSessionState(it, stateListeners.values)
         }
-        updateUsage()
+        usage.update()
         progressHeartbeat.stopIfUnobserved()
         return snapshot
     }
 
     private val spatialResponses by lazy { StereoSpatialResponses.load(assets) }
 
-    private fun createNativePlaybackSession(sessionId: String): NativePlaybackSession {
-        return NativePlaybackSession(
+    private fun createNativePlaybackSession(sessionId: String): NativePlaybackSession =
+        NativePlaybackSession(
             sessionId = sessionId,
             createPlayer = playerFactory::create,
             logWarn = { message, session, error -> logWarn(message, session, error) },
             loadSpatialResponses = { spatialResponses }
         ).apply { applyFocusDuckMultiplier(focusRecovery.duckMultiplier) }
-    }
 
     private fun handlePlaybackStateChanged(sessionId: String, playbackState: Int) {
         if (playbackState == Player.STATE_ENDED) {
-            markTrackStopBoundary(sessionId)
+            sessionManager.get(sessionId)?.markTrackStopBoundary()
             val stoppedAtBoundary = sessionManager.get(sessionId)?.stoppedAtTrackBoundary == true
             timerExecution.onTrackEnded(sessionId, timerExecution.generationFor(sessionId))
             clearPlaybackIntent(sessionId)
@@ -1529,7 +1431,7 @@ class NativePlaybackService : MediaSessionService() {
             clearPlaybackIntent(sessionId)
         }
         if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM) {
-            markTrackStopBoundary(sessionId)
+            sessionManager.get(sessionId)?.markTrackStopBoundary()
             timerExecution.onTrackEnded(sessionId, timerExecution.generationFor(sessionId))
         }
         focusRecovery.onPlayWhenReadyChanged(sessionId, playWhenReady, reason)
@@ -1549,15 +1451,6 @@ class NativePlaybackService : MediaSessionService() {
         }
         statePersistence.schedulePersist()
         syncForegroundState()
-    }
-
-    private fun markTrackStopBoundary(sessionId: String) {
-        sessionManager.get(sessionId)?.let {
-            it.stoppedAtTrackBoundary = it.stoppedAtTrackBoundary ||
-                it.stopAfterCurrentTrack || it.timerStopAfterCurrentTrack
-            it.stopAfterCurrentTrack = false
-            it.syncPauseAtTrackEnd()
-        }
     }
 
     private fun handlePlayerError(sessionId: String, error: PlaybackException) {
@@ -1598,21 +1491,12 @@ class NativePlaybackService : MediaSessionService() {
         return player
     }
 
-    private fun syncAudioOffloadPolicies() {
-        val activeCount = maxOf(
-            sessionManager.activePlaybackSessionIds().size,
-            playbackRecovery.intendedSessionIds.size
+    private fun syncAudioOffloadPolicies() =
+        sessionManager.syncAudioOffloadPolicies(
+            offloadAllowedForProcess = !audioOffloadDisabledForProcess,
+            intendedSessionCount = playbackRecovery.intendedSessionIds.size,
+            isVideo = ::shouldRetainVideoPlayer
         )
-        sessionManager.forEach { session ->
-            if (session.hasPlayer()) {
-                session.applyAudioOffloadPolicy(
-                    offloadAllowedForProcess = !audioOffloadDisabledForProcess,
-                    activePlaybackSessionCount = activeCount,
-                    isVideo = shouldRetainVideoPlayer(session)
-                )
-            }
-        }
-    }
 
     private fun mediaSessionCandidate(): NativePlaybackSession? = sessionManager.mediaSessionCandidate()
 
@@ -1766,18 +1650,6 @@ class NativePlaybackService : MediaSessionService() {
         progressHeartbeat.onKeepAliveHeartbeat()
     }
 
-    private fun isPlaybackNotificationPosted(): Boolean? {
-        return try {
-            val manager =
-                getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-                    ?: return null
-            if (!manager.areNotificationsEnabled()) return null
-            manager.activeNotifications.any { it.id == FOREGROUND_NOTIFICATION_ID }
-        } catch (_: Exception) {
-            null
-        }
-    }
-
     private fun updateWakeLockNetworkState() {
         playbackWakeLock.setNetworkPlaybackActive(sessionManager.hasNetworkPlayback(playbackRecovery::isIntended))
     }
@@ -1802,14 +1674,7 @@ class NativePlaybackService : MediaSessionService() {
         message: String,
         session: NativePlaybackSession? = null,
         error: Throwable? = null
-    ) {
-        val fullMessage = "$message ${playbackLogState(session)}"
-        if (error == null) {
-            AppFileLogger.warn(applicationContext, LOG_TAG, fullMessage)
-        } else {
-            AppFileLogger.warn(applicationContext, LOG_TAG, fullMessage, error)
-        }
-    }
+    ) = AppFileLogger.warn(applicationContext, LOG_TAG, "$message ${playbackLogState(session)}", error)
 
     private fun playbackLogState(session: NativePlaybackSession? = null): String {
         return sessionManager.playbackLogState(session) +
@@ -1822,13 +1687,8 @@ class NativePlaybackService : MediaSessionService() {
             "keepAlivePlayback=${hasPlaybackToKeepAlive()}"
     }
 
-    private fun logSecurityEvent(message: String, error: Throwable?) {
-        if (error == null) {
-            AppFileLogger.warn(applicationContext, LOG_TAG, message)
-        } else {
-            AppFileLogger.warn(applicationContext, LOG_TAG, message, error)
-        }
-    }
+    private fun logSecurityEvent(message: String, error: Throwable?) =
+        AppFileLogger.warn(applicationContext, LOG_TAG, message, error)
 
     private fun publishSessionState(sessionId: String): Map<String, Any?>? {
         pendingStateSessions.remove(sessionId)

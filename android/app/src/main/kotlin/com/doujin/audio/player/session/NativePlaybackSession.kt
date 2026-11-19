@@ -6,6 +6,8 @@ import com.doujin.audio.player.common.NATIVE_PLAYBACK_SPEED_MAX
 import com.doujin.audio.player.common.NATIVE_PLAYBACK_SPEED_MIN
 import com.doujin.audio.player.common.NativePrepareSessionArguments
 import com.doujin.audio.player.common.NativeRepeatOneArguments
+import com.doujin.audio.player.common.nativePlaybackAudioOffloadPreferences
+import com.doujin.audio.player.common.shouldEnableAudioOffload
 import com.doujin.audio.player.effects.*
 
 import android.os.SystemClock
@@ -145,6 +147,7 @@ internal class NativePlaybackSession(
         logWarn(message, this, error)
     }
     private var lastSyncedAudioSessionId: Int = C.AUDIO_SESSION_ID_UNSET
+    private var appliedAudioOffloadEnabled: Boolean? = null
     private var _player: ExoPlayer? = null
     var path: String? = null
     var uri: String? = null
@@ -315,6 +318,7 @@ internal class NativePlaybackSession(
         }
         audioEffects.release()
         lastSyncedAudioSessionId = C.AUDIO_SESSION_ID_UNSET
+        appliedAudioOffloadEnabled = null
         _player = null
         temporarySpeed = null
     }
@@ -485,6 +489,51 @@ internal class NativePlaybackSession(
         player.setWakeMode(queueStructure.wakeMode)
     }
 
+    fun applyAudioOffloadPolicy(
+        offloadAllowedForProcess: Boolean,
+        activePlaybackSessionCount: Int,
+        isVideo: Boolean
+    ) {
+        val player = _player ?: return
+        val descriptor = currentQueueDescriptor()
+        val hasClipping = descriptor != null &&
+            (descriptor.clipStartMs > 0L || descriptor.clipEndMs != null)
+        val hasEffects = skipSilenceEnabled ||
+            channelSwapEnabled ||
+            eqEnabled ||
+            noiseReductionEnabled ||
+            volumeNormalizationEnabled ||
+            kotlin.math.abs(panning) >= 0.001f ||
+            kotlin.math.abs(audioEffects.frontBack) >= 0.001f
+        val enable = shouldEnableAudioOffload(
+            offloadAllowedForProcess = offloadAllowedForProcess,
+            activePlaybackSessionCount = activePlaybackSessionCount,
+            isVideo = isVideo,
+            hasClipping = hasClipping,
+            effectiveSpeed = effectiveSpeed(),
+            volume = volume,
+            hasActiveAudioEffects = hasEffects
+        )
+        if (appliedAudioOffloadEnabled == enable) return
+        appliedAudioOffloadEnabled = enable
+        player.trackSelectionParameters = player.trackSelectionParameters
+            .buildUpon()
+            .setAudioOffloadPreferences(nativePlaybackAudioOffloadPreferences(enable))
+            .build()
+    }
+
+    fun hasPreviousMediaItem(): Boolean {
+        val player = _player
+        if (player != null) return player.hasPreviousMediaItem()
+        return queue.size > 1 && (repeatAll || currentQueueIndex > 0)
+    }
+
+    fun hasNextMediaItem(): Boolean {
+        val player = _player
+        if (player != null) return player.hasNextMediaItem()
+        return queue.size > 1 && (repeatAll || currentQueueIndex < queue.lastIndex)
+    }
+
     private fun applyAudioEffectsToPlayer(player: ExoPlayer) {
         audioEffects.applyToPlayer(player)
     }
@@ -618,6 +667,7 @@ internal class NativePlaybackSession(
             player.replaceMediaItems(0, activeIndex, beforeItems)
         }
 
+        applyWakeModeToPlayer(player)
         player.repeatMode = repeatModeFor(this.queue.size)
         player.shuffleModeEnabled = shuffleModeEnabled && this.queue.size > 1
     }
@@ -645,7 +695,10 @@ internal class NativePlaybackSession(
         return true
     }
 
-    fun reprepareCurrentMediaItem(preparedQueue: NativePlaybackQueue? = null) {
+    fun reprepareCurrentMediaItem(
+        preparedQueue: NativePlaybackQueue? = null,
+        rebuildPlayer: Boolean = false
+    ) {
         val currentUri = uri ?: return
         val p = _player
         val currentPositionMs = p?.currentPosition?.coerceAtLeast(0L) ?: lastPositionMs
@@ -661,6 +714,9 @@ internal class NativePlaybackSession(
             )
         )
         val currentIndex = p?.currentMediaItemIndex ?: currentQueueIndexFor(descriptors)
+        if (rebuildPlayer && p != null) {
+            releasePlayer()
+        }
 
         configure(
             descriptor = descriptors[currentIndex.coerceIn(0, descriptors.lastIndex)],
@@ -673,6 +729,7 @@ internal class NativePlaybackSession(
             repeatAll = repeatAll,
             shuffleModeEnabled = shuffleModeEnabled,
             autoPlay = shouldResume,
+            deferPlayerCreation = false,
             preparedQueue = preparedQueue,
         )
     }

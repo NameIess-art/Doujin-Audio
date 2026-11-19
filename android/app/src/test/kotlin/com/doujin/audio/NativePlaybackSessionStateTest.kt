@@ -314,31 +314,6 @@ class NativePlaybackSessionStateTest {
     }
 
     @Test
-    fun `progress heartbeat uses screen on and five second screen off cadence`() {
-        assertEquals(
-            true,
-            shouldPublishProgressHeartbeat(false, 6000L, 1000L, 5000L)
-        )
-        assertEquals(
-            false,
-            shouldPublishProgressHeartbeat(false, 5999L, 1000L, 5000L)
-        )
-        assertEquals(
-            true,
-            shouldPublishProgressHeartbeat(true, 1500L, 1000L, 5000L)
-        )
-    }
-
-    @Test
-    fun `progress heartbeat backs off its own reschedule while the screen is off`() {
-        // The publish gate alone is not enough: a 500ms reschedule wakes the main
-        // thread ~86k times over a 12h screen-off session under a held wake lock,
-        // only to decide there is nothing to publish.
-        assertEquals(500L, progressHeartbeatDelayMs(true, 500L, 5000L))
-        assertEquals(5000L, progressHeartbeatDelayMs(false, 500L, 5000L))
-    }
-
-    @Test
     fun `exclusive playback pauses only other sessions with playback intent`() {
         assertEquals(
             listOf("playing", "buffering"),

@@ -36,12 +36,19 @@ internal class NativeForegroundNotificationFactory(
     }
 
     // Android requires a MediaStyle foreground notification bound to the active MediaSession
-    // so the system treats playback as an active media session during screen-off.
+    // with transport actions so SystemUI, lockscreen controls, and OEM power managers
+    // consistently recognize the service as active media playback during screen-off.
     @OptIn(UnstableApi::class)
     fun buildNotification(
         mediaSession: MediaSession? = null,
         title: String? = null,
-        subtitle: String? = null
+        subtitle: String? = null,
+        isPlaying: Boolean = false,
+        hasPrevious: Boolean = false,
+        hasNext: Boolean = false,
+        previousIntent: PendingIntent? = null,
+        playPauseIntent: PendingIntent? = null,
+        nextIntent: PendingIntent? = null
     ): Notification {
         val resolvedTitle = title?.trim()?.takeIf { it.isNotEmpty() }
             ?: context.getString(R.string.app_name)
@@ -57,11 +64,44 @@ internal class NativeForegroundNotificationFactory(
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setSilent(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+
+        val compactActionIndices = mutableListOf<Int>()
+        var actionIndex = 0
+        if (hasPrevious && previousIntent != null) {
+            builder.addAction(
+                android.R.drawable.ic_media_previous,
+                context.getString(R.string.playback_action_previous),
+                previousIntent
+            )
+            compactActionIndices += actionIndex++
+        }
+        if (playPauseIntent != null) {
+            builder.addAction(
+                if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
+                context.getString(
+                    if (isPlaying) R.string.playback_action_pause else R.string.playback_action_play
+                ),
+                playPauseIntent
+            )
+            compactActionIndices += actionIndex++
+        }
+        if (hasNext && nextIntent != null) {
+            builder.addAction(
+                android.R.drawable.ic_media_next,
+                context.getString(R.string.playback_action_next),
+                nextIntent
+            )
+            compactActionIndices += actionIndex++
+        }
         if (mediaSession != null) {
-            builder.setStyle(MediaStyleNotificationHelper.MediaStyle(mediaSession))
+            val style = MediaStyleNotificationHelper.MediaStyle(mediaSession)
+            if (compactActionIndices.isNotEmpty()) {
+                style.setShowActionsInCompactView(*compactActionIndices.take(3).toIntArray())
+            }
+            builder.setStyle(style)
         }
         return builder.build()
     }

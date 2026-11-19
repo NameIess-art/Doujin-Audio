@@ -10,6 +10,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -69,9 +70,49 @@ internal fun nativePlaybackAudioAttributes(): androidx.media3.common.AudioAttrib
         .build()
 
 /**
+ * Hardware audio DSP offload lets Android decode compressed audio while the AP
+ * CPU sleeps, dramatically reducing screen-off CPU wakeups and OEM throttling.
+ *
+ * Offload bypasses PCM audio processors and can interfere with Android
+ * AudioEffect sessions, multi-session mixing, clipping, or video sync, so it is
+ * strictly opted into for single-session, unprocessed audio playback.
+ */
+internal fun shouldEnableAudioOffload(
+    offloadAllowedForProcess: Boolean,
+    activePlaybackSessionCount: Int,
+    isVideo: Boolean,
+    hasClipping: Boolean,
+    effectiveSpeed: Float,
+    volume: Float,
+    hasActiveAudioEffects: Boolean
+): Boolean {
+    if (!offloadAllowedForProcess) return false
+    if (activePlaybackSessionCount > 1) return false
+    if (isVideo || hasClipping || hasActiveAudioEffects) return false
+    if (kotlin.math.abs(effectiveSpeed - 1f) >= 0.001f) return false
+    if (volume > 1f) return false
+    return true
+}
+
+internal fun nativePlaybackAudioOffloadPreferences(
+    enabled: Boolean
+): TrackSelectionParameters.AudioOffloadPreferences =
+    if (enabled) {
+        TrackSelectionParameters.AudioOffloadPreferences.Builder()
+            .setAudioOffloadMode(
+                TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED
+            )
+            .setIsGaplessSupportRequired(false)
+            .setIsSpeedChangeSupportRequired(false)
+            .build()
+    } else {
+        TrackSelectionParameters.AudioOffloadPreferences.DEFAULT
+    }
+
+/**
  * Network audio keeps its forward buffer through Doze/network throttling.
- * Local playback uses the smaller byte-bounded policy, including video; retaining
- * a back buffer for every player would multiply high-bitrate video memory.
+ * Local audio keeps 15s of forward buffer to absorb screen-off I/O and CPU
+ * jitter while local video stays capped by the byte target.
  */
 internal fun nativePlaybackLoadControl(): DefaultLoadControl =
     DefaultLoadControl.Builder()
@@ -82,7 +123,7 @@ internal fun nativePlaybackLoadControl(): DefaultLoadControl =
             /* bufferForPlaybackAfterRebufferMs = */ 5_000
         )
         .setBufferDurationsMsForLocalPlayback(
-            DefaultLoadControl.DEFAULT_MIN_BUFFER_FOR_LOCAL_PLAYBACK_MS,
+            /* minBufferMs = */ 15_000,
             DefaultLoadControl.DEFAULT_MAX_BUFFER_FOR_LOCAL_PLAYBACK_MS,
             DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_FOR_LOCAL_PLAYBACK_MS,
             DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_FOR_LOCAL_PLAYBACK_MS
@@ -165,6 +206,8 @@ internal class NativePlayerFactory(
                 .setEnableFloatOutput(enableFloatOutput)
                 .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                 .build()
+        }.apply {
+            setEnableDecoderFallback(true)
         }
         val httpDataSourceFactory = OkHttpDataSource.Factory(NetworkRouteRuntime.get(context))
         val defaultDataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)

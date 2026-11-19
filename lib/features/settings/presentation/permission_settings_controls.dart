@@ -149,11 +149,13 @@ class _PermissionSettingsControlsState
           enabledLabel: i18n.tr('permission_enabled'),
           disabledLabel: i18n.tr('permission_not_enabled'),
           onTap: () {
-            final capability =
-                (_status != null &&
-                    _status!.backgroundRunAllowed &&
-                    !_status!.exactAlarmsAllowed)
-                ? PermissionCapability.exactAlarms
+            final status = _status;
+            final capability = (status != null && status.backgroundRunAllowed)
+                ? !status.notificationsAllowed
+                      ? PermissionCapability.notifications
+                      : !status.exactAlarmsAllowed
+                      ? PermissionCapability.exactAlarms
+                      : PermissionCapability.backgroundRun
                 : PermissionCapability.backgroundRun;
             unawaited(
               _open(
@@ -221,7 +223,10 @@ class _PermissionSettingsControlsState
     if (status == null) return null;
     return switch (capability) {
       PermissionCapability.backgroundRun =>
-        status.backgroundRunAllowed && status.exactAlarmsAllowed,
+        status.backgroundRunAllowed &&
+            status.notificationsAllowed &&
+            status.exactAlarmsAllowed,
+      PermissionCapability.notifications => status.notificationsAllowed,
       PermissionCapability.exactAlarms => status.exactAlarmsAllowed,
       PermissionCapability.manageFiles => status.manageFilesAllowed,
       PermissionCapability.overlay => status.overlayAllowed,

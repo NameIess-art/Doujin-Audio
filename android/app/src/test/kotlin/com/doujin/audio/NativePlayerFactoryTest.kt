@@ -190,6 +190,98 @@ class NativePlayerFactoryTest {
         control.onReleased(parameters.playerId)
     }
 
+    @Test
+    fun `hardware audio offload enables only for single unprocessed audio sessions`() {
+        assertTrue(
+            shouldEnableAudioOffload(
+                offloadAllowedForProcess = true,
+                activePlaybackSessionCount = 1,
+                isVideo = false,
+                hasClipping = false,
+                effectiveSpeed = 1f,
+                volume = 1f,
+                hasActiveAudioEffects = false
+            )
+        )
+        assertFalse(
+            shouldEnableAudioOffload(
+                offloadAllowedForProcess = false,
+                activePlaybackSessionCount = 1,
+                isVideo = false,
+                hasClipping = false,
+                effectiveSpeed = 1f,
+                volume = 1f,
+                hasActiveAudioEffects = false
+            )
+        )
+        assertFalse(
+            shouldEnableAudioOffload(
+                offloadAllowedForProcess = true,
+                activePlaybackSessionCount = 2,
+                isVideo = false,
+                hasClipping = false,
+                effectiveSpeed = 1f,
+                volume = 1f,
+                hasActiveAudioEffects = false
+            )
+        )
+        assertFalse(
+            shouldEnableAudioOffload(
+                offloadAllowedForProcess = true,
+                activePlaybackSessionCount = 1,
+                isVideo = true,
+                hasClipping = false,
+                effectiveSpeed = 1f,
+                volume = 1f,
+                hasActiveAudioEffects = false
+            )
+        )
+        assertFalse(
+            shouldEnableAudioOffload(
+                offloadAllowedForProcess = true,
+                activePlaybackSessionCount = 1,
+                isVideo = false,
+                hasClipping = true,
+                effectiveSpeed = 1f,
+                volume = 1f,
+                hasActiveAudioEffects = false
+            )
+        )
+        assertFalse(
+            shouldEnableAudioOffload(
+                offloadAllowedForProcess = true,
+                activePlaybackSessionCount = 1,
+                isVideo = false,
+                hasClipping = false,
+                effectiveSpeed = 1.25f,
+                volume = 1f,
+                hasActiveAudioEffects = false
+            )
+        )
+        assertFalse(
+            shouldEnableAudioOffload(
+                offloadAllowedForProcess = true,
+                activePlaybackSessionCount = 1,
+                isVideo = false,
+                hasClipping = false,
+                effectiveSpeed = 1f,
+                volume = 1.5f,
+                hasActiveAudioEffects = false
+            )
+        )
+        assertFalse(
+            shouldEnableAudioOffload(
+                offloadAllowedForProcess = true,
+                activePlaybackSessionCount = 1,
+                isVideo = false,
+                hasClipping = false,
+                effectiveSpeed = 1f,
+                volume = 1f,
+                hasActiveAudioEffects = true
+            )
+        )
+    }
+
     private fun loadingParameters(uri: String, bufferedUs: Long, rebuffering: Boolean = false): LoadControl.Parameters {
         val timeline = SinglePeriodTimeline(300_000_000L, true, false, false, null,
             MediaItem.fromUri(uri))

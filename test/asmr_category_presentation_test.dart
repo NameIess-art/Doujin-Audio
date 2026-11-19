@@ -990,7 +990,7 @@ void main() {
     );
 
     testWidgets(
-      'ASMR filter-only search can page past zero matches on $platform',
+      'ASMR filter-only search automatically pages past zero matches on $platform',
       (tester) async {
         SharedPreferences.setMockInitialValues(const {'app_language': 'zh'});
         final first = AsmrWork.fromJson(const {
@@ -1004,7 +1004,13 @@ void main() {
         });
         final controller = _PresentationController(createTestAsmrServices())
           ..publishedWorks = [first]
-          ..hasMore = true;
+          ..hasMore = true
+          ..remainingPages = [
+            [
+              AsmrWork.fromJson(const {'id': 43, 'title': 'Also no subtitles'}),
+            ],
+            [next],
+          ];
         final fixture = AppRuntimeWidgetTestFixture();
         addTearDown(controller.dispose);
         addTearDown(fixture.dispose);
@@ -1034,16 +1040,10 @@ void main() {
         }
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const ValueKey('app_search_confirm')));
-        final loadMore = find.byKey(const ValueKey('asmr_filtered_load_more'));
-        await pumpUntilFound(tester, loadMore);
-        await tester.pumpAndSettle();
-        expect(find.text('No subtitles'), findsNothing);
-        expect(controller.loadMoreCount, 0);
-        controller.publishedWorks = [first, next];
-        await tester.tap(loadMore);
         await pumpUntilFound(tester, find.text('Subtitled result'));
         expect(find.text('No subtitles'), findsNothing);
-        expect(controller.loadMoreCount, 1);
+        expect(find.text('Also no subtitles'), findsNothing);
+        expect(controller.loadMoreCount, 2);
         expect(fixture.settings.slice.state.asmrSearchHistory, isEmpty);
       },
       variant: TargetPlatformVariant({platform}),
@@ -2668,6 +2668,7 @@ class _PresentationController extends AsmrLibraryController {
   int workCount = 1;
   int? combinedTotalCount;
   List<AsmrWork>? publishedWorks;
+  List<List<AsmrWork>>? remainingPages;
   int loadMoreCount = 0;
   int refreshCount = 0;
   Object? catalogError;
@@ -2816,7 +2817,11 @@ class _PresentationController extends AsmrLibraryController {
     Object? expectedPaginationToken,
   }) async {
     loadMoreCount++;
-    hasMore = false;
+    final pages = remainingPages;
+    if (pages != null && pages.isNotEmpty) {
+      publishedWorks = [...?publishedWorks, ...pages.removeAt(0)];
+    }
+    hasMore = pages?.isNotEmpty ?? false;
     revision++;
     notifyListeners();
   }

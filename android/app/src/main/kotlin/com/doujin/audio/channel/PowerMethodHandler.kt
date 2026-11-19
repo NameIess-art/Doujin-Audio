@@ -3,11 +3,14 @@ package com.doujin.audio.channel
 import com.doujin.audio.player.notification.*
 import com.doujin.audio.player.session.*
 
+import android.Manifest
 import android.app.Activity
 import android.app.ActivityManager
 import android.app.AlarmManager
 import android.app.ApplicationExitInfo
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -17,6 +20,9 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.view.WindowManager
 import androidx.annotation.RequiresApi
+import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
@@ -149,6 +155,8 @@ internal class PowerMethodHandler(
                 envelope.success(isIgnoringBatteryOptimizations())
             PowerMethods.OPEN_BATTERY_OPTIMIZATION_SETTINGS -> envelope.success(openBatteryOptimizationSettings())
             PowerMethods.OPEN_BACKGROUND_RUN_SETTINGS -> envelope.success(openBackgroundRunSettings())
+            PowerMethods.CAN_POST_NOTIFICATIONS -> envelope.success(canPostNotifications())
+            PowerMethods.OPEN_NOTIFICATION_SETTINGS -> envelope.success(openNotificationSettings())
             PowerMethods.CAN_SCHEDULE_EXACT_ALARMS -> envelope.success(canScheduleExactAlarms())
             PowerMethods.OPEN_EXACT_ALARM_SETTINGS -> envelope.success(openExactAlarmSettings())
             PowerMethods.GET_NATIVE_TIMER_RUNTIME_STATE -> envelope.success(getNativeTimerRuntimeState())
@@ -234,6 +242,59 @@ internal class PowerMethodHandler(
             openApplicationDetailsSettings()
     }
 
+    private fun canPostNotifications(): Boolean {
+        val enabled = try {
+            NotificationManagerCompat.from(activity).areNotificationsEnabled()
+        } catch (_: Exception) {
+            true
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return enabled
+        val granted = try {
+            ContextCompat.checkSelfPermission(
+                activity,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+        } catch (_: Exception) {
+            false
+        }
+        return enabled && granted
+    }
+
+    private fun openNotificationSettings(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !canPostNotifications()) {
+            val prefs = activity.getSharedPreferences(POWER_PREFS_NAME, Context.MODE_PRIVATE)
+            val alreadyRequested = prefs.getBoolean(KEY_NOTIFICATION_PERMISSION_REQUESTED, false)
+            val shouldShowRationale = ActivityCompat.shouldShowRequestPermissionRationale(
+                activity,
+                Manifest.permission.POST_NOTIFICATIONS
+            )
+            if (!alreadyRequested || shouldShowRationale) {
+                prefs.edit().putBoolean(KEY_NOTIFICATION_PERMISSION_REQUESTED, true).apply()
+                return try {
+                    ActivityCompat.requestPermissions(
+                        activity,
+                        arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                        NOTIFICATION_PERMISSION_REQUEST_CODE
+                    )
+                    true
+                } catch (_: Exception) {
+                    openSystemNotificationSettings()
+                }
+            }
+        }
+        return openSystemNotificationSettings()
+    }
+
+    private fun openSystemNotificationSettings(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName)
+            }
+            if (openSettings(intent)) return true
+        }
+        return openApplicationDetailsSettings()
+    }
+
     private fun canScheduleExactAlarms(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
         return try {
@@ -280,6 +341,7 @@ internal class PowerMethodHandler(
         return mapOf(
             "manufacturer" to Build.MANUFACTURER,
             "batteryOptimizationExempt" to isIgnoringBatteryOptimizations(),
+            "notificationsEnabled" to canPostNotifications(),
             "vendorBackgroundSettingsAvailable" to
                 vivoBackgroundSettingsIntents().any(::canOpenSettings),
             "lastExitReason" to lastExit?.reason,
@@ -360,6 +422,12 @@ internal class PowerMethodHandler(
             }
         } catch (_: Exception) {
         }
+    }
+
+    private companion object {
+        const val POWER_PREFS_NAME = "doujin_audio_power_prefs"
+        const val KEY_NOTIFICATION_PERMISSION_REQUESTED = "notification_permission_requested"
+        const val NOTIFICATION_PERMISSION_REQUEST_CODE = 32011
     }
 }
 

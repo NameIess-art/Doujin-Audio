@@ -3,4 +3,8 @@
     <string name="keep_alive_playback_active">后台播放服务正在运行</string>
     <string name="playback_notification_channel_name">后台播放</string>
     <string name="playback_notification_channel_description">后台播放所需的服务通知</string>
+    <string name="playback_action_previous">上一首</string>
+    <string name="playback_action_play">播放</string>
+    <string name="playback_action_pause">暂停</string>
+    <string name="playback_action_next">下一首</string>
 </resources>

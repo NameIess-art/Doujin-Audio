@@ -703,16 +703,18 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                           ? Padding(
                               key: const ValueKey('asmr_filtered_load_more'),
                               padding: const EdgeInsets.only(top: 24),
-                              child: state.isLoadingMore
-                                  ? const Center(
-                                      child: CircularProgressIndicator(),
-                                    )
-                                  : TextButton(
+                              child:
+                                  state.needsLoadMoreRetry &&
+                                      !state.isLoadingMore
+                                  ? TextButton(
                                       onPressed: () => _loadMore(
                                         expectedPaginationToken:
                                             state.paginationToken,
                                       ),
                                       child: Text(i18n.tr('my_load_more')),
+                                    )
+                                  : const Center(
+                                      child: CircularProgressIndicator(),
                                     ),
                             )
                           : visibleWorks.isEmpty
@@ -946,16 +948,17 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     unawaited(_loadMore(expectedPaginationToken: state.paginationToken));
   }
 
+  bool _canAutomaticallyLoadMore(AsmrCategoryViewState state) =>
+      (state.works.isNotEmpty || widget.filters != emptySearchFilters) &&
+      !state.isLoading &&
+      !state.isLoadingMore &&
+      state.hasMore &&
+      !state.needsLoadMoreRetry;
+
   void _scheduleAutomaticLoadMore(AsmrCategoryViewState state) {
-    final canSearchNextPage =
-        widget.filters != emptySearchFilters && widget.searchQuery.isNotEmpty;
     if (_automaticLoadMoreScheduled ||
         !_isActive ||
-        (state.works.isEmpty && !canSearchNextPage) ||
-        state.isLoading ||
-        state.isLoadingMore ||
-        !state.hasMore ||
-        state.needsLoadMoreRetry) {
+        !_canAutomaticallyLoadMore(state)) {
       return;
     }
     _automaticLoadMoreScheduled = true;
@@ -969,13 +972,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         final rawState = _lastPresentedState;
         if (rawState == null) return;
         final currentState = _applyFilters(rawState);
-        if ((currentState.works.isEmpty && !canSearchNextPage) ||
-            currentState.isLoading ||
-            currentState.isLoadingMore ||
-            !currentState.hasMore ||
-            currentState.needsLoadMoreRetry) {
-          return;
-        }
+        if (!_canAutomaticallyLoadMore(currentState)) return;
         if (!widget.scrollController.hasClients) return;
         final position = widget.scrollController.position;
         if (position.extentAfter > position.viewportDimension) return;

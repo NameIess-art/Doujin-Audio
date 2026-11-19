@@ -4,4 +4,8 @@
     <string name="keep_alive_playback_active">Background playback active</string>
     <string name="playback_notification_channel_name">Background playback</string>
     <string name="playback_notification_channel_description">Required for background playback</string>
+    <string name="playback_action_previous">Previous</string>
+    <string name="playback_action_play">Play</string>
+    <string name="playback_action_pause">Pause</string>
+    <string name="playback_action_next">Next</string>
 </resources>

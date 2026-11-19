@@ -4,10 +4,15 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.net.wifi.WifiManager
 import android.os.PowerManager
+import android.os.SystemClock
 
 /**
  * Holds the CPU wake lock that keeps handler-driven playback timers,
  * audio decoding, and recovery work running while the screen is off.
+ *
+ * Uses a 60-minute safety timeout and deduplicates redundant acquire/refresh
+ * IPC calls within [minRefreshIntervalMs] so frequent playback callbacks do
+ * not spam PowerManagerService during screen-off playback.
  *
  * Holds a high-performance Wi-Fi lock during network playback and recovery.
  * Before Android 14 this remains effective with the screen off. Android 14+
@@ -18,22 +23,26 @@ internal class NativePlaybackWakeLock(
     private val context: Context,
     private val logInfo: (String) -> Unit,
     private val logWarn: (String, Exception) -> Unit,
-    private val wakeLockTimeoutMs: Long = DEFAULT_WAKELOCK_TIMEOUT_MS
+    private val wakeLockTimeoutMs: Long = DEFAULT_WAKELOCK_TIMEOUT_MS,
+    private val minRefreshIntervalMs: Long = DEFAULT_MIN_REFRESH_INTERVAL_MS,
+    private val elapsedRealtimeMs: () -> Long = SystemClock::elapsedRealtime
 ) {
     companion object {
-        const val DEFAULT_WAKELOCK_TIMEOUT_MS = 20 * 60 * 1000L
+        const val DEFAULT_WAKELOCK_TIMEOUT_MS = 60 * 60 * 1000L
+        const val DEFAULT_MIN_REFRESH_INTERVAL_MS = 5 * 60 * 1000L
     }
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var isNetworkActive = false
+    private var lastAcquiredElapsedRealtimeMs = Long.MIN_VALUE
 
     fun isHeld(): Boolean = wakeLock?.isHeld == true
 
     fun isWifiLockHeld(): Boolean = wifiLock?.isHeld == true
 
     @SuppressLint("WakelockTimeout")
-    fun acquire() {
+    fun acquire(force: Boolean = false) {
         if (wakeLock == null) {
             try {
                 val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
@@ -50,10 +59,20 @@ internal class NativePlaybackWakeLock(
 
         val lock = wakeLock ?: return
         val wasHeld = lock.isHeld
+        val now = elapsedRealtimeMs()
+        if (!force &&
+            wasHeld &&
+            lastAcquiredElapsedRealtimeMs != Long.MIN_VALUE &&
+            (now - lastAcquiredElapsedRealtimeMs) in 0 until minRefreshIntervalMs
+        ) {
+            syncWifiLock()
+            return
+        }
         try {
             // Re-acquiring a non-reference-counted wake lock extends its timeout
-            // when a new playback request arrives before the previous window ends.
+            // without briefly releasing the CPU.
             lock.acquire(wakeLockTimeoutMs)
+            lastAcquiredElapsedRealtimeMs = now
         } catch (e: Exception) {
             logWarn("wakelock_acquire_failed", e)
             return
@@ -68,16 +87,25 @@ internal class NativePlaybackWakeLock(
      * may still suppress the lock; reacquiring does not grant a Doze exemption.
      */
     @SuppressLint("WakelockTimeout")
-    fun refresh(logRefresh: Boolean = true) {
-        if (wakeLock == null) {
-            acquire()
+    fun refresh(logRefresh: Boolean = true, force: Boolean = false) {
+        val lock = wakeLock
+        if (lock == null || !lock.isHeld) {
+            acquire(force = true)
             return
         }
-        val lock = wakeLock ?: return
+        val now = elapsedRealtimeMs()
+        if (!force &&
+            lastAcquiredElapsedRealtimeMs != Long.MIN_VALUE &&
+            (now - lastAcquiredElapsedRealtimeMs) in 0 until minRefreshIntervalMs
+        ) {
+            syncWifiLock()
+            return
+        }
         try {
             // Non-reference-counted acquire replaces the pending timeout even
             // when the lock is already held, without briefly releasing the CPU.
             lock.acquire(wakeLockTimeoutMs)
+            lastAcquiredElapsedRealtimeMs = now
             if (logRefresh) logInfo("wakelock_refreshed")
         } catch (e: Exception) {
             logWarn("wakelock_refresh_failed", e)
@@ -131,6 +159,7 @@ internal class NativePlaybackWakeLock(
     fun release() {
         val currentWakeLock = wakeLock
         wakeLock = null
+        lastAcquiredElapsedRealtimeMs = Long.MIN_VALUE
         isNetworkActive = false
         syncWifiLock()
 

@@ -74,13 +74,14 @@ class NativePlaybackFocusRecoveryCoordinatorTest {
     }
 
     @Test
-    fun `request succeeds during soft ducking interruption`() {
+    fun `request succeeds during soft ducking without blocking recovery`() {
         val host = FakeFocusRecoveryHost(activeIds = linkedSetOf("a"))
         val focus = FakeAudioFocusAccess(isHeld = true)
         val coordinator = NativePlaybackFocusRecoveryCoordinator(host, focus)
         coordinator.onFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK)
 
-        assertTrue(coordinator.interruptionActive)
+        assertTrue(coordinator.isDucking)
+        assertFalse(coordinator.interruptionActive)
         assertTrue(coordinator.requestIfNeeded())
         assertEquals(0, focus.requestCount)
     }

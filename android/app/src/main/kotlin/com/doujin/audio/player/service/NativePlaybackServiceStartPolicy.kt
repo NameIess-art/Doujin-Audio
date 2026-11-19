@@ -1,9 +1,21 @@
 package com.doujin.audio.player.service
 
 internal const val nativePlaybackStartAction = "com.doujin.audio.native.START"
+internal const val nativePlaybackTransportAction = "com.doujin.audio.native.TRANSPORT"
+
+internal const val NATIVE_PLAYBACK_TRANSPORT_PREVIOUS = "previous"
+internal const val NATIVE_PLAYBACK_TRANSPORT_PLAY_PAUSE = "play_pause"
+internal const val NATIVE_PLAYBACK_TRANSPORT_NEXT = "next"
+
+private val allowedTransportCommands = setOf(
+    NATIVE_PLAYBACK_TRANSPORT_PREVIOUS,
+    NATIVE_PLAYBACK_TRANSPORT_PLAY_PAUSE,
+    NATIVE_PLAYBACK_TRANSPORT_NEXT
+)
 
 internal enum class NativePlaybackStartSource {
     INTERNAL,
+    TRANSPORT,
     STICKY_RESTART,
     REJECTED
 }
@@ -11,12 +23,14 @@ internal enum class NativePlaybackStartSource {
 internal data class NativePlaybackStartDecision(
     val source: NativePlaybackStartSource,
     val requireForegroundBootstrap: Boolean = false,
+    val transportCommand: String? = null,
     val rejectionReason: String? = null
 ) {
     val accepted: Boolean
         get() = source != NativePlaybackStartSource.REJECTED
     val shouldAttemptRestore: Boolean
-        get() = accepted
+        get() = source == NativePlaybackStartSource.INTERNAL ||
+            source == NativePlaybackStartSource.STICKY_RESTART
 }
 
 internal fun evaluateNativePlaybackStart(
@@ -25,10 +39,24 @@ internal fun evaluateNativePlaybackStart(
     presentedToken: String?,
     expectedToken: String,
     bootstrapExtraPresent: Boolean,
-    bootstrapExtra: Any?
+    bootstrapExtra: Any?,
+    transportCommand: Any? = null
 ): NativePlaybackStartDecision {
     if (!intentPresent) {
         return NativePlaybackStartDecision(NativePlaybackStartSource.STICKY_RESTART)
+    }
+    if (action == nativePlaybackTransportAction) {
+        if (presentedToken.isNullOrEmpty() || presentedToken != expectedToken) {
+            return rejectedPlaybackStart("invalid_internal_token")
+        }
+        val command = transportCommand as? String
+        if (command == null || command !in allowedTransportCommands) {
+            return rejectedPlaybackStart("invalid_transport_command")
+        }
+        return NativePlaybackStartDecision(
+            source = NativePlaybackStartSource.TRANSPORT,
+            transportCommand = command
+        )
     }
     if (action != nativePlaybackStartAction) {
         return rejectedPlaybackStart("unknown_action")

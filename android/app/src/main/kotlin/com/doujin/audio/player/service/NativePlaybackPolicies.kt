@@ -7,29 +7,6 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import com.doujin.audio.channel.*
 
-internal fun shouldPublishProgressHeartbeat(
-    isScreenOn: Boolean,
-    nowElapsedRealtimeMs: Long,
-    lastPublishedElapsedRealtimeMs: Long,
-    screenOffIntervalMs: Long
-): Boolean =
-    isScreenOn ||
-        nowElapsedRealtimeMs - lastPublishedElapsedRealtimeMs >= screenOffIntervalMs
-
-/**
- * Delay before the next progress tick.
- *
- * While the screen is off nothing can observe sub-second progress, so the
- * Runnable itself must back off too - otherwise the main thread is woken twice
- * a second for 12 hours straight under a held wake lock, only to decide that
- * there is nothing to publish.
- */
-internal fun progressHeartbeatDelayMs(
-    isScreenOn: Boolean,
-    screenOnIntervalMs: Long,
-    screenOffIntervalMs: Long
-): Long = if (isScreenOn) screenOnIntervalMs else screenOffIntervalMs
-
 internal fun exclusivePlaybackSessionIdsToPause(
     targetSessionId: String,
     sessionPlaybackIntent: Map<String, Boolean>
@@ -62,6 +39,7 @@ internal fun nativePlaybackStartDecision(
     expectedToken: String,
     tokenExtra: String,
     bootstrapExtra: String,
+    transportCommandExtra: String? = null,
     onUnreadableExtras: () -> Unit
 ): NativePlaybackStartDecision {
     if (intent == null) {
@@ -82,7 +60,8 @@ internal fun nativePlaybackStartDecision(
             presentedToken = extras?.rawExtra(tokenExtra) as? String,
             expectedToken = expectedToken,
             bootstrapExtraPresent = extras?.containsKey(bootstrapExtra) == true,
-            bootstrapExtra = extras?.rawExtra(bootstrapExtra)
+            bootstrapExtra = extras?.rawExtra(bootstrapExtra),
+            transportCommand = transportCommandExtra?.let { extras?.rawExtra(it) }
         )
     } catch (_: RuntimeException) {
         onUnreadableExtras()
@@ -226,18 +205,40 @@ internal fun playbackRecoveryDelayMs(
 internal fun isRecoverablePlaybackErrorCode(errorCode: Int): Boolean {
     return when (errorCode) {
         PlaybackException.ERROR_CODE_TIMEOUT,
+        PlaybackException.ERROR_CODE_REMOTE_ERROR,
+        PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW,
         PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
         PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
         PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
         PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
+        PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE,
         PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
         PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
+        PlaybackException.ERROR_CODE_DECODING_FAILED,
         PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED,
         PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED,
         PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_INIT_FAILED,
         PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_WRITE_FAILED -> true
         else -> false
     }
+}
+
+internal fun isPlayerRebuildRequiredForErrorCode(errorCode: Int): Boolean {
+    return when (errorCode) {
+        PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+        PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
+        PlaybackException.ERROR_CODE_DECODING_FAILED,
+        PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED,
+        PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED,
+        PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_INIT_FAILED,
+        PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_WRITE_FAILED -> true
+        else -> false
+    }
+}
+
+internal fun isAudioOffloadErrorCode(errorCode: Int): Boolean {
+    return errorCode == PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_INIT_FAILED ||
+        errorCode == PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_WRITE_FAILED
 }
 
 internal fun isCandidateFallbackPlaybackErrorCode(errorCode: Int): Boolean {

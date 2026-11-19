@@ -105,7 +105,9 @@ internal class NativePlaybackStatePersistenceCoordinator(
     private val hasSessions: () -> Boolean,
     private val hasActivePlayback: () -> Boolean,
     private val storedSessions: () -> List<StoredNativePlaybackSession>,
-    private val sessionRevisions: () -> Map<String, Long> = { emptyMap() }
+    private val sessionRevisions: () -> Map<String, Long> = { emptyMap() },
+    private val screenOffIntervalMs: Long = intervalMs,
+    private val isScreenInteractive: () -> Boolean = { true }
 ) {
     constructor(
         context: Context,
@@ -115,7 +117,9 @@ internal class NativePlaybackStatePersistenceCoordinator(
         hasSessions: () -> Boolean,
         hasActivePlayback: () -> Boolean,
         storedSessions: () -> List<StoredNativePlaybackSession>,
-        sessionRevisions: () -> Map<String, Long>
+        sessionRevisions: () -> Map<String, Long>,
+        screenOffIntervalMs: Long = intervalMs,
+        isScreenInteractive: () -> Boolean = { true }
     ) : this(
         environment = AndroidNativePlaybackStatePersistenceEnvironment(context, mainHandler),
         intervalMs = intervalMs,
@@ -123,7 +127,9 @@ internal class NativePlaybackStatePersistenceCoordinator(
         hasSessions = hasSessions,
         hasActivePlayback = hasActivePlayback,
         storedSessions = storedSessions,
-        sessionRevisions = sessionRevisions
+        sessionRevisions = sessionRevisions,
+        screenOffIntervalMs = screenOffIntervalMs,
+        isScreenInteractive = isScreenInteractive
     )
 
     private val generation = AtomicLong(0L)
@@ -135,6 +141,9 @@ internal class NativePlaybackStatePersistenceCoordinator(
     // serialization must not run on the player's application Looper.
     private val persistedStructure = mutableMapOf<String, StoredNativePlaybackSession>()
 
+    private fun currentTickerIntervalMs(): Long =
+        if (isScreenInteractive()) intervalMs else screenOffIntervalMs
+
     private val ticker = object : Runnable {
         override fun run() {
             persistNow()
@@ -142,7 +151,7 @@ internal class NativePlaybackStatePersistenceCoordinator(
                 tickerScheduled = false
                 return
             }
-            environment.postDelayed(this, intervalMs)
+            environment.postDelayed(this, currentTickerIntervalMs())
         }
     }
 
@@ -154,7 +163,13 @@ internal class NativePlaybackStatePersistenceCoordinator(
     fun ensureTicker() {
         if (tickerScheduled || !hasActivePlayback()) return
         tickerScheduled = true
-        environment.postDelayed(ticker, intervalMs)
+        environment.postDelayed(ticker, currentTickerIntervalMs())
+    }
+
+    fun onScreenInteractiveChanged() {
+        if (!tickerScheduled || !hasActivePlayback()) return
+        environment.removeCallbacks(ticker)
+        environment.postDelayed(ticker, currentTickerIntervalMs())
     }
 
     fun onPlaybackActivityChanged() {

@@ -25,10 +25,27 @@ void main() {
     final snapshot = await service.load();
 
     expect(snapshot.backgroundRunAllowed, isTrue);
+    expect(snapshot.notificationsAllowed, isTrue);
     expect(snapshot.exactAlarmsAllowed, isTrue);
     expect(snapshot.manageFilesAllowed, isTrue);
     expect(snapshot.overlayAllowed, isFalse);
     expect(snapshot.updateInstallsAllowed, isFalse);
+  });
+
+  test('Android notifications capability delegates to power platform service', () async {
+    final power = _FakePowerService(notificationsAllowed: false);
+    final service = PermissionStatusService(
+      isAndroidOverride: true,
+      powerService: power,
+      overlayCheck: () async => true,
+      updateInstallCheck: () async => true,
+    );
+
+    final snapshot = await service.load();
+
+    expect(snapshot.notificationsAllowed, isFalse);
+    expect(await service.openSettings(PermissionCapability.notifications), isTrue);
+    expect(power.openNotificationsCount, 1);
   });
 
   test('failed Android capability check is reported as unavailable', () async {
@@ -69,10 +86,24 @@ void main() {
 }
 
 class _FakePowerService extends PowerPlatformService {
+  _FakePowerService({this.notificationsAllowed = true});
+
+  final bool notificationsAllowed;
+  int openNotificationsCount = 0;
+
   @override
   Future<bool> isIgnoringBatteryOptimizations({
     bool errorDefault = false,
   }) async => true;
+
+  @override
+  Future<bool> canPostNotifications() async => notificationsAllowed;
+
+  @override
+  Future<bool> openNotificationSettings() async {
+    openNotificationsCount++;
+    return true;
+  }
 
   @override
   Future<bool> canScheduleExactAlarms() async => true;

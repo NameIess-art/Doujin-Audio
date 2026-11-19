@@ -225,6 +225,50 @@ class NativePlaybackServiceStartPolicyTest {
         )
     }
 
+    @Test
+    fun `authenticated notification transport commands are accepted and forged ones rejected`() {
+        for (command in listOf(
+            NATIVE_PLAYBACK_TRANSPORT_PREVIOUS,
+            NATIVE_PLAYBACK_TRANSPORT_PLAY_PAUSE,
+            NATIVE_PLAYBACK_TRANSPORT_NEXT
+        )) {
+            val accepted = evaluateNativePlaybackStart(
+                intentPresent = true,
+                action = nativePlaybackTransportAction,
+                presentedToken = expectedToken,
+                expectedToken = expectedToken,
+                bootstrapExtraPresent = false,
+                bootstrapExtra = null,
+                transportCommand = command
+            )
+            assertEquals(NativePlaybackStartSource.TRANSPORT, accepted.source)
+            assertTrue(accepted.accepted)
+            assertFalse(accepted.shouldAttemptRestore)
+            assertEquals(command, accepted.transportCommand)
+        }
+
+        val forgedToken = evaluateNativePlaybackStart(
+            intentPresent = true,
+            action = nativePlaybackTransportAction,
+            presentedToken = "forged",
+            expectedToken = expectedToken,
+            bootstrapExtraPresent = false,
+            bootstrapExtra = null,
+            transportCommand = NATIVE_PLAYBACK_TRANSPORT_PLAY_PAUSE
+        )
+        val invalidCommand = evaluateNativePlaybackStart(
+            intentPresent = true,
+            action = nativePlaybackTransportAction,
+            presentedToken = expectedToken,
+            expectedToken = expectedToken,
+            bootstrapExtraPresent = false,
+            bootstrapExtra = null,
+            transportCommand = "shutdown"
+        )
+        assertRejected(forgedToken)
+        assertRejected(invalidCommand)
+    }
+
     private fun assertRejected(decision: NativePlaybackStartDecision) {
         assertEquals(NativePlaybackStartSource.REJECTED, decision.source)
         assertFalse(decision.accepted)

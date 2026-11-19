@@ -42,8 +42,16 @@ internal class NativePlaybackFocusRecoveryCoordinator(
     private var duckActive = false
     private val pendingResumeSessionIds = linkedSetOf<String>()
 
+    /**
+     * True only while playback is intentionally paused for a transient audio
+     * focus loss (e.g. a phone call). Soft volume ducking keeps playback active
+     * and must not block playback health checks or stall recovery.
+     */
     val interruptionActive: Boolean
-        get() = transientLossActive || duckActive
+        get() = transientLossActive
+
+    val isDucking: Boolean
+        get() = duckActive
 
     fun requestIfNeeded(): Boolean {
         if (!host.behavior.requestAudioFocus) return true

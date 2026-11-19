@@ -14,6 +14,7 @@ class BackgroundRunDiagnostics {
     required this.batteryOptimizationExempt,
     required this.vendorBackgroundSettingsAvailable,
     required this.cleanerForceStopDetected,
+    this.notificationsEnabled,
     this.lastExitReason,
     this.lastExitSubReason,
     this.lastExitDescription,
@@ -24,6 +25,7 @@ class BackgroundRunDiagnostics {
   final bool batteryOptimizationExempt;
   final bool vendorBackgroundSettingsAvailable;
   final bool cleanerForceStopDetected;
+  final bool? notificationsEnabled;
   final int? lastExitReason;
   final int? lastExitSubReason;
   final String? lastExitDescription;
@@ -34,6 +36,8 @@ class BackgroundRunDiagnostics {
   Map<String, Object?> toJson() => <String, Object?>{
     'manufacturer': manufacturer,
     'batteryOptimizationExempt': batteryOptimizationExempt,
+    if (notificationsEnabled != null)
+      'notificationsEnabled': notificationsEnabled,
     'vendorBackgroundSettingsAvailable': vendorBackgroundSettingsAvailable,
     'cleanerForceStopDetected': cleanerForceStopDetected,
     'lastExitReason': lastExitReason,
@@ -47,6 +51,7 @@ class BackgroundRunDiagnostics {
       manufacturer: map['manufacturer'] as String? ?? '',
       batteryOptimizationExempt:
           map['batteryOptimizationExempt'] as bool? ?? false,
+      notificationsEnabled: map['notificationsEnabled'] as bool?,
       vendorBackgroundSettingsAvailable:
           map['vendorBackgroundSettingsAvailable'] as bool? ?? false,
       cleanerForceStopDetected:
@@ -146,6 +151,24 @@ class PowerPlatformService implements PowerPlatformGateway {
     if (!_isAndroid) return false;
     return _invokeBool(
       PowerMethod.openBackgroundRunSettings,
+      missingPluginDefault: false,
+      errorDefault: false,
+    );
+  }
+
+  Future<bool> canPostNotifications() async {
+    if (!_isAndroid) return true;
+    return _invokeBool(
+      PowerMethod.canPostNotifications,
+      missingPluginDefault: true,
+      errorDefault: true,
+    );
+  }
+
+  Future<bool> openNotificationSettings() async {
+    if (!_isAndroid) return false;
+    return _invokeBool(
+      PowerMethod.openNotificationSettings,
       missingPluginDefault: false,
       errorDefault: false,
     );

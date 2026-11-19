@@ -30,42 +30,50 @@ object PlaybackKeepAliveAlarmScheduler {
     private var pendingDeadlineMs: Long? = null
 
     fun ensureScheduled(context: Context, activePlayback: Boolean = true) {
-        val interval = if (activePlayback) activeIntervalMs else intervalMs
-        val triggerAtMs = SystemClock.elapsedRealtime() + interval
+        val alarmManager = alarmManager(context) ?: return
+        val canExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            alarmManager.canScheduleExactAlarms()
+        // Without exact alarm permission on Android 12+, setAndAllowWhileIdle is
+        // throttled by Doze to ~9 minutes anyway; match that cadence to avoid churn.
+        val interval = if (activePlayback && canExact) activeIntervalMs else intervalMs
+        val now = SystemClock.elapsedRealtime()
+        val triggerAtMs = now + interval
         val pendingDeadline = pendingDeadlineMs
         // Replacing the same PendingIntent also cancels its existing alarm.
-        // Keep an earlier deadline even if Android has delayed its delivery.
-        if (pendingDeadline != null && pendingDeadline <= triggerAtMs) return
-        val alarmManager = alarmManager(context) ?: return
+        // Keep a still-future earlier deadline, but never let a missed/overdue
+        // deadline block re-arming.
+        if (pendingDeadline != null && pendingDeadline > now && pendingDeadline <= triggerAtMs) {
+            return
+        }
         val operation = pendingIntent(context) ?: return
         try {
-            scheduleAlarmCompat(alarmManager, triggerAtMs, operation)
+            scheduleAlarmCompat(alarmManager, triggerAtMs, operation, canExact)
             pendingDeadlineMs = triggerAtMs
         } catch (_: Exception) {
         }
     }
 
     internal fun onAlarmDelivered() {
-        val pendingDeadline = pendingDeadlineMs ?: return
-        // A broadcast already queued before cancellation can arrive after rearming.
-        if (pendingDeadline <= SystemClock.elapsedRealtime()) pendingDeadlineMs = null
+        pendingDeadlineMs = null
     }
 
     private fun scheduleAlarmCompat(
         alarmManager: AlarmManager,
         triggerAtMs: Long,
-        operation: PendingIntent
+        operation: PendingIntent,
+        canExact: Boolean
     ) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (alarmManager.canScheduleExactAlarms()) {
+            if (canExact) {
                 alarmManager.setExactAndAllowWhileIdle(
                     AlarmManager.ELAPSED_REALTIME_WAKEUP,
                     triggerAtMs,
                     operation
                 )
             } else {
-                // Leave the inexact Doze alarm allowance to the playback timer.
-                alarmManager.set(
+                // set() is completely suppressed during Doze; setAndAllowWhileIdle()
+                // does not require SCHEDULE_EXACT_ALARM and still wakes from Doze.
+                alarmManager.setAndAllowWhileIdle(
                     AlarmManager.ELAPSED_REALTIME_WAKEUP,
                     triggerAtMs,
                     operation

@@ -11,7 +11,9 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.os.Build
 import android.os.Handler
+import android.os.PowerManager
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import androidx.media3.common.C
@@ -44,6 +46,7 @@ internal interface NativePlaybackRecoveryHost {
     fun persistNow()
     fun schedulePersist()
     fun syncForeground()
+    fun onNetworkRecoveryTriggered() {}
     fun logInfo(message: String, session: NativePlaybackSession? = null)
     fun logWarn(message: String, session: NativePlaybackSession?, error: PlaybackException?)
 }
@@ -168,8 +171,16 @@ internal class AndroidNativePlaybackRecoveryEnvironment(
     private var screenReceiverRegistered = false
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == Intent.ACTION_SCREEN_ON) {
-                handler.post { trigger?.invoke("screen_on") }
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_ON -> handler.post { trigger?.invoke("screen_on") }
+                PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED -> {
+                    val powerManager = context?.getSystemService(Context.POWER_SERVICE) as? PowerManager
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+                        powerManager?.isDeviceIdleMode == false
+                    ) {
+                        handler.post { trigger?.invoke("device_idle_exited") }
+                    }
+                }
             }
         }
     }
@@ -214,10 +225,15 @@ internal class AndroidNativePlaybackRecoveryEnvironment(
     private fun registerScreenReceiver() {
         if (screenReceiverRegistered) return
         try {
+            val filter = IntentFilter(Intent.ACTION_SCREEN_ON).apply {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    addAction(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED)
+                }
+            }
             ContextCompat.registerReceiver(
                 context,
                 screenReceiver,
-                IntentFilter(Intent.ACTION_SCREEN_ON),
+                filter,
                 ContextCompat.RECEIVER_NOT_EXPORTED
             )
             screenReceiverRegistered = true
@@ -305,6 +321,7 @@ internal class NativePlaybackRecoveryController(
     private val recoveryBaselines = mutableMapOf<String, NativePlaybackHealthSample>()
     private val recovering = mutableMapOf<String, Any>()
     private val candidateFallbackPending = linkedSetOf<String>()
+    private val rebuildPlayerPending = linkedSetOf<String>()
     private var triggerInProgress = false
     private val startedAt = mutableMapOf<String, Long>()
     private var listening = false
@@ -328,6 +345,7 @@ internal class NativePlaybackRecoveryController(
     fun markIntended(sessionId: String) {
         intended += sessionId
         resetHealth(sessionId, "playback_intended", cancelRecovery = true)
+        startListening()
         ensureHealthCheck()
     }
 
@@ -337,7 +355,10 @@ internal class NativePlaybackRecoveryController(
         recoveryBaselines -= sessionId
         recovering -= sessionId
         clearRecovery(sessionId)
-        if (intended.isEmpty()) stopHealthCheck()
+        if (intended.isEmpty()) {
+            stopHealthCheck()
+            if (pending.isEmpty()) stopListening()
+        }
     }
 
     fun clearAll() {
@@ -347,6 +368,7 @@ internal class NativePlaybackRecoveryController(
         recoveryBaselines.clear()
         recovering.clear()
         candidateFallbackPending.clear()
+        rebuildPlayerPending.clear()
         stopHealthCheck()
         stopListening()
     }
@@ -376,6 +398,8 @@ internal class NativePlaybackRecoveryController(
         sessionId: String,
         recoverable: Boolean,
         candidateFallbackEligible: Boolean = false,
+        rebuildPlayer: Boolean = false,
+        immediateRetry: Boolean = false,
         errorCodeName: String,
         errorMessage: String?,
         causeDescription: String?,
@@ -401,12 +425,15 @@ internal class NativePlaybackRecoveryController(
         if (candidateFallbackEligible && session?.hasAlternatePlaybackUri() == true) {
             candidateFallbackPending += sessionId
         }
+        if (rebuildPlayer) {
+            rebuildPlayerPending += sessionId
+        }
         captureHealth(sessionId)?.let { recoveryBaselines[sessionId] = it }
         startListening()
         scheduleRetry(
             sessionId,
             attempt,
-            immediate = sessionId in candidateFallbackPending
+            immediate = immediateRetry || sessionId in candidateFallbackPending
         )
         ensureHealthCheck()
         host.syncForeground()
@@ -420,10 +447,14 @@ internal class NativePlaybackRecoveryController(
         }
         triggerInProgress = true
         try {
+            if (reason == "network_available") {
+                host.onNetworkRecoveryTriggered()
+            }
             val resumeUnexpectedPauses =
                 reason == "keep_alive_heartbeat" ||
                     reason == "foreground_watchdog" ||
-                    reason == "screen_on"
+                    reason == "screen_on" ||
+                    reason == "device_idle_exited"
             checkPlaybackHealth(reason, resumeUnexpectedPauses = resumeUnexpectedPauses)
             if (pending.isNotEmpty()) {
                 host.logInfo("playback_recovery_trigger trigger=$reason pending=${pending.size}")
@@ -598,9 +629,17 @@ internal class NativePlaybackRecoveryController(
             }
             try {
                 val preparedQueue = prepared?.getOrThrow()
+                val shouldRebuildPlayer = sessionId in rebuildPlayerPending || attempt >= 1
+                host.onNetworkRecoveryTriggered()
                 host.focusSession(sessionId)
                 session.applyFadeMultiplier(1f)
-                session.reprepareCurrentMediaItem(preparedQueue)
+                session.reprepareCurrentMediaItem(
+                    preparedQueue = preparedQueue,
+                    rebuildPlayer = shouldRebuildPlayer
+                )
+                if (shouldRebuildPlayer) {
+                    rebuildPlayerPending.remove(sessionId)
+                }
                 if (preparedQueue != null) {
                     candidateFallbackPending.remove(sessionId)
                     host.logInfo(
@@ -645,8 +684,9 @@ internal class NativePlaybackRecoveryController(
         recoveryBaselines -= sessionId
         recovering -= sessionId
         candidateFallbackPending -= sessionId
+        rebuildPlayerPending -= sessionId
         retryTasks.remove(sessionId)?.let(environment::remove)
-        if (pending.isEmpty()) stopListening()
+        if (pending.isEmpty() && intended.isEmpty()) stopListening()
     }
 
     private fun recoveryDurationExceeded(sessionId: String): Boolean {
@@ -719,7 +759,7 @@ internal class NativePlaybackRecoveryController(
                 )
                 healthStates[sessionId] = evaluation.state
                 if (evaluation.stallReason == null) return@forEach
-                beginStallRecovery(sessionId, evaluation)
+                beginStallRecovery(sessionId, evaluation, reason)
                 return@forEach
             }
             if (player.playerError == null && player.isPlaying) return@forEach
@@ -734,7 +774,7 @@ internal class NativePlaybackRecoveryController(
             host.focusSession(sessionId)
             session.applyFadeMultiplier(1f)
             if (player.playbackState == Player.STATE_IDLE || player.playerError != null) {
-                session.reprepareCurrentMediaItem()
+                session.reprepareCurrentMediaItem(rebuildPlayer = player.playerError != null)
             }
             host.ensurePlayer(session).play()
             recovered = true
@@ -822,9 +862,20 @@ internal class NativePlaybackRecoveryController(
                 "suppression=${sample.playbackSuppressionReason}"
         )
         pending += sessionId
+        if (evaluation.stallReason != NativePlaybackStallReason.BUFFERING) {
+            rebuildPlayerPending += sessionId
+        }
         recoveryBaselines[sessionId] = sample
         startListening()
-        scheduleRetry(sessionId, attempts.getOrDefault(sessionId, 0))
+        val immediate = trigger == "screen_on" ||
+            trigger == "keep_alive_heartbeat" ||
+            trigger == "foreground_watchdog" ||
+            trigger == "device_idle_exited"
+        scheduleRetry(
+            sessionId,
+            attempts.getOrDefault(sessionId, 0),
+            immediate = immediate
+        )
         host.publishSession(sessionId)
         host.persistNow()
         host.syncForeground()

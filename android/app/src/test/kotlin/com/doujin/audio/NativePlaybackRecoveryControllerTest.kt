@@ -2,6 +2,8 @@ package com.doujin.audio
 
 import com.doujin.audio.player.recovery.*
 import com.doujin.audio.player.session.*
+import com.doujin.audio.player.service.isAudioOffloadErrorCode
+import com.doujin.audio.player.service.isPlayerRebuildRequiredForErrorCode
 import com.doujin.audio.player.service.isRecoverablePlaybackErrorCode
 import com.doujin.audio.player.service.shouldClearPlaybackIntentForPlayWhenReadyChange
 
@@ -719,9 +721,44 @@ class NativePlaybackRecoveryControllerTest {
     @Test
     fun `recoverable error policy includes timeout decoder query and audio offload failures`() {
         assertTrue(isRecoverablePlaybackErrorCode(PlaybackException.ERROR_CODE_TIMEOUT))
+        assertTrue(isRecoverablePlaybackErrorCode(PlaybackException.ERROR_CODE_REMOTE_ERROR))
+        assertTrue(isRecoverablePlaybackErrorCode(PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW))
+        assertTrue(isRecoverablePlaybackErrorCode(PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE))
         assertTrue(isRecoverablePlaybackErrorCode(PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED))
+        assertTrue(isRecoverablePlaybackErrorCode(PlaybackException.ERROR_CODE_DECODING_FAILED))
         assertTrue(isRecoverablePlaybackErrorCode(PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_INIT_FAILED))
         assertTrue(isRecoverablePlaybackErrorCode(PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_WRITE_FAILED))
+        assertTrue(isPlayerRebuildRequiredForErrorCode(PlaybackException.ERROR_CODE_DECODING_FAILED))
+        assertTrue(isPlayerRebuildRequiredForErrorCode(PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED))
+        assertTrue(isAudioOffloadErrorCode(PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_INIT_FAILED))
+        assertTrue(isAudioOffloadErrorCode(PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_WRITE_FAILED))
+        assertFalse(isAudioOffloadErrorCode(PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED))
+    }
+
+    @Test
+    fun `intended playback keeps power and network listeners active and reacts to Doze exit`() {
+        val environment = FakeRecoveryEnvironment()
+        val paused = HealthCheckPlayer("paused", environment)
+        val host = healthCheckHost(paused).apply {
+            onEnsurePlayer = { paused.player }
+        }
+        val controller = NativePlaybackRecoveryController(host, environment)
+
+        controller.markIntended("paused")
+        assertTrue(environment.listening)
+
+        controller.trigger("network_available")
+        assertEquals(1, host.networkRecoveryTriggers)
+        assertEquals(1, paused.playCalls)
+        assertTrue(paused.playWhenReady)
+
+        paused.playWhenReady = false
+        controller.trigger("device_idle_exited")
+        assertEquals(2, paused.playCalls)
+        assertTrue(paused.playWhenReady)
+
+        controller.clear("paused")
+        assertFalse(environment.listening)
     }
 
     @Test
@@ -875,6 +912,7 @@ private class FakeRecoveryHost(
     override var interruptionActive = false
     var syncForegroundCalls = 0
     var persistNowCalls = 0
+    var networkRecoveryTriggers = 0
     var onSyncForeground: () -> Unit = {}
     var requestAudioFocusCalls = 0
     var audioFocusAllowed = true
@@ -930,6 +968,9 @@ private class FakeRecoveryHost(
     override fun syncForeground() {
         syncForegroundCalls += 1
         onSyncForeground()
+    }
+    override fun onNetworkRecoveryTriggered() {
+        networkRecoveryTriggers += 1
     }
     override fun logInfo(message: String, session: NativePlaybackSession?) = Unit
     override fun logWarn(

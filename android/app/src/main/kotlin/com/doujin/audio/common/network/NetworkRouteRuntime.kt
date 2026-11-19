@@ -74,6 +74,11 @@ internal class NetworkRouteRuntime private constructor(context: Context) : Call.
     }
 
     @Synchronized
+    fun evictIdleConnections() {
+        client?.connectionPool?.evictAll()
+    }
+
+    @Synchronized
     override fun newCall(request: Request): Call {
         val current = route ?: load().also { route = it }
         current.requireCredentialsForRequest()

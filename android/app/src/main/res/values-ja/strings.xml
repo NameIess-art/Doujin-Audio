@@ -3,4 +3,8 @@
     <string name="keep_alive_playback_active">バックグラウンド再生サービス実行中</string>
     <string name="playback_notification_channel_name">バックグラウンド再生</string>
     <string name="playback_notification_channel_description">バックグラウンド再生に必要なサービス通知</string>
+    <string name="playback_action_previous">前へ</string>
+    <string name="playback_action_play">再生</string>
+    <string name="playback_action_pause">一時停止</string>
+    <string name="playback_action_next">次へ</string>
 </resources>

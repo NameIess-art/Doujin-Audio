@@ -6,6 +6,7 @@ import 'app_update_service.dart';
 
 enum PermissionCapability {
   backgroundRun,
+  notifications,
   exactAlarms,
   manageFiles,
   overlay,
@@ -15,6 +16,7 @@ enum PermissionCapability {
 class PermissionStatusSnapshot {
   const PermissionStatusSnapshot({
     required this.backgroundRunAllowed,
+    this.notificationsAllowed = true,
     required this.exactAlarmsAllowed,
     required this.manageFilesAllowed,
     required this.overlayAllowed,
@@ -22,6 +24,7 @@ class PermissionStatusSnapshot {
   });
 
   final bool backgroundRunAllowed;
+  final bool notificationsAllowed;
   final bool exactAlarmsAllowed;
   final bool manageFilesAllowed;
   final bool overlayAllowed;
@@ -29,6 +32,7 @@ class PermissionStatusSnapshot {
 
   Map<String, bool> toJson() => <String, bool>{
     'backgroundRunAllowed': backgroundRunAllowed,
+    'notificationsAllowed': notificationsAllowed,
     'exactAlarmsAllowed': exactAlarmsAllowed,
     'manageFilesAllowed': manageFilesAllowed,
     'overlayAllowed': overlayAllowed,
@@ -85,6 +89,10 @@ class PermissionStatusService {
           errorDefault: errorDefault,
         ),
       ),
+      PermissionCapability.notifications => _check(
+        'notifications',
+        _powerService.canPostNotifications,
+      ),
       PermissionCapability.exactAlarms => _check(
         'exact_alarms',
         _powerService.canScheduleExactAlarms,
@@ -107,6 +115,10 @@ class PermissionStatusService {
       PermissionCapability.backgroundRun => _open(
         'background_run',
         _powerService.openBackgroundRunSettings,
+      ),
+      PermissionCapability.notifications => _open(
+        'notifications',
+        _powerService.openNotificationSettings,
       ),
       PermissionCapability.exactAlarms => _open(
         'exact_alarms',
@@ -145,6 +157,7 @@ class PermissionStatusService {
 
     final results = await Future.wait<bool>([
       isGranted(PermissionCapability.backgroundRun),
+      isGranted(PermissionCapability.notifications),
       isGranted(PermissionCapability.exactAlarms),
       isGranted(PermissionCapability.manageFiles),
       isGranted(PermissionCapability.overlay),
@@ -152,10 +165,11 @@ class PermissionStatusService {
     ]);
     return PermissionStatusSnapshot(
       backgroundRunAllowed: results[0],
-      exactAlarmsAllowed: results[1],
-      manageFilesAllowed: results[2],
-      overlayAllowed: results[3],
-      updateInstallsAllowed: results[4],
+      notificationsAllowed: results[1],
+      exactAlarmsAllowed: results[2],
+      manageFilesAllowed: results[3],
+      overlayAllowed: results[4],
+      updateInstallsAllowed: results[5],
     );
   }
 

@@ -47,6 +47,7 @@ internal object VideoDisplayMethods {
 
 internal object PowerMethods {
     const val CAN_MANAGE_ALL_FILES_ACCESS = "canManageAllFilesAccess"
+    const val CAN_POST_NOTIFICATIONS = "canPostNotifications"
     const val CAN_SCHEDULE_EXACT_ALARMS = "canScheduleExactAlarms"
     const val EXECUTE_AUTO_RESUME_NOW = "executeAutoResumeNow"
     const val EXECUTE_TIMER_EXPIRED_NOW = "executeTimerExpiredNow"
@@ -57,6 +58,7 @@ internal object PowerMethods {
     const val OPEN_BATTERY_OPTIMIZATION_SETTINGS = "openBatteryOptimizationSettings"
     const val OPEN_EXACT_ALARM_SETTINGS = "openExactAlarmSettings"
     const val OPEN_MANAGE_ALL_FILES_ACCESS_SETTINGS = "openManageAllFilesAccessSettings"
+    const val OPEN_NOTIFICATION_SETTINGS = "openNotificationSettings"
     const val SYNC_PLAYBACK_TIMER_ALARMS = "syncPlaybackTimerAlarms"
     const val SET_KEEP_SCREEN_ON = "setKeepScreenOn"
 }

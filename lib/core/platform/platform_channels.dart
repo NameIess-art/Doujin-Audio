@@ -101,6 +101,8 @@ abstract final class PowerMethod {
   static const String openBatteryOptimizationSettings =
       'openBatteryOptimizationSettings';
   static const String openBackgroundRunSettings = 'openBackgroundRunSettings';
+  static const String canPostNotifications = 'canPostNotifications';
+  static const String openNotificationSettings = 'openNotificationSettings';
   static const String canScheduleExactAlarms = 'canScheduleExactAlarms';
   static const String openExactAlarmSettings = 'openExactAlarmSettings';
   static const String getNativeTimerRuntimeState = 'getNativeTimerRuntimeState';

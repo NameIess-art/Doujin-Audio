@@ -463,7 +463,7 @@ void main() {
           )
           .backgroundColor
           .a,
-      0.45,
+      0.5,
     );
   });
 

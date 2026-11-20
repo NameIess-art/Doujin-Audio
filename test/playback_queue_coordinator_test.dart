@@ -103,20 +103,28 @@ void main() {
         expect(session.hasDetachedQueueTrack, isTrue);
         expect(session.customQueueTracks, hasLength(3));
         expect(session.currentQueueIndex, 0);
-        expect(updates.last['repeatAll'], isFalse);
+        expect(updates.last['repeatAll'], isTrue);
+        final nativeQueue = updates.last['queue'] as List<Object?>;
+        expect(
+          nativeQueue.map(
+            (item) => (item as Map<Object?, Object?>)['playOnceBeforeQueue'],
+          ),
+          [true, null, null],
+        );
 
-        // The decoder advances to a distinct occurrence with the same URI.
+        // Android drops the detached prefix when it advances to a different
+        // occurrence, so it reports the index in the remaining queue.
         runtimeGraph.playbackCommands.handleNativeSnapshot(
           NativePlaybackSnapshot.fromMap({
             'sessionId': session.id,
             'path': repeated.path,
-            'queueIndex': 2,
+            'queueIndex': 1,
+            'discardedQueuePrefix': true,
             'playing': true,
             'playWhenReady': true,
             'processingState': 'ready',
           }),
         );
-        await Future<void>.delayed(const Duration(milliseconds: 50));
         expect(session.hasDetachedQueueTrack, isFalse);
         expect(session.currentQueueIndex, 1);
         expect(session.customQueueTracks, hasLength(2));

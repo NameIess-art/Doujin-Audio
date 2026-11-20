@@ -128,6 +128,7 @@ final class ListeningActivityService {
     // The chart's date window must also advance when an idle page crosses midnight.
     if (forceReload || _loadedDay != _today()) _needsReload = true;
     final batches = await _readUsage();
+    final liveTracks = <String, FutureOr<MusicTrack?>>{};
     final localDetails = <String, AudioDetail>{};
     for (final batch in batches) {
       final days = <ListeningDayContribution>[];
@@ -137,7 +138,7 @@ final class ListeningActivityService {
       for (final day in batch.days) {
         final works = <ListeningWorkContribution>[];
         for (final work in day.works) {
-          final track = await _resolveUsageTrack(work);
+          final track = await _resolveUsageTrack(work, liveTracks);
           works.add(
             ListeningWorkContribution(
               workKey: work.key,
@@ -244,9 +245,15 @@ final class ListeningActivityService {
     return DateTime(now.year, now.month, now.day);
   }
 
-  Future<MusicTrack> _resolveUsageTrack(PlaybackUsageWork work) async {
+  Future<MusicTrack> _resolveUsageTrack(
+    PlaybackUsageWork work,
+    Map<String, FutureOr<MusicTrack?>> liveTracks,
+  ) async {
     final path = work.path ?? work.uri ?? work.key;
-    final live = await _resolveTrack(path);
+    final live = await liveTracks.putIfAbsent(
+      path,
+      () => _resolveTrack(path),
+    );
     final descriptor = work.descriptor;
     if (descriptor != null) {
       final recorded = MusicTrack.fromJson(

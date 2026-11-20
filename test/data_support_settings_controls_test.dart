@@ -580,11 +580,15 @@ void main() {
       const ValueKey('data-support-storage-segment-app-cache'),
     );
     final storageCard = tester.widget<Card>(find.byType(Card));
-    expect((storageCard.shape! as RoundedRectangleBorder).side, BorderSide.none);
+    expect(
+      (storageCard.shape! as RoundedRectangleBorder).side,
+      BorderSide.none,
+    );
     expect(
       storageCard.color,
-      Theme.of(tester.element(find.byType(Card))).colorScheme.surfaceContainerHigh
-          .withValues(alpha: 0.6),
+      Theme.of(
+        tester.element(find.byType(Card)),
+      ).colorScheme.surfaceContainerLow,
     );
     expect(appCacheSegment, findsOneWidget);
     final segment = tester.widget<ColoredBox>(

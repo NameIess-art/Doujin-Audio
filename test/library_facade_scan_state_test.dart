@@ -31,8 +31,9 @@ void main() {
       repository: repository,
       service: service,
     );
-    await persistence.saveWatchedFolders();
-    await persistence.saveWatchedLibraries();
+    await persistence.saveCatalogLists();
+    await persistence.saveCatalogLists();
+    expect(repository.commits, 1);
     final restored = LibraryFacade.create(databaseRepository: repository);
     addTearDown(restored.dispose);
     await restored.loadPersistedState();
@@ -76,11 +77,11 @@ void main() {
       expect(repository.settings, isEmpty);
       repository.rejectCommit = false;
       facade.beginLibraryBatch();
-      facade.addWatchedLibrary('/retry', notify: false);
+      facade.addWatchedLibrary('/library', notify: false);
       await facade.endLibraryBatch();
-      expect(facade.watchedLibraries, ['/retry']);
+      expect(facade.watchedLibraries, ['/library']);
       expect(jsonDecode(repository.settings['watched_libraries_v1']!), [
-        '/retry',
+        '/library',
       ]);
     },
   );
@@ -91,11 +92,17 @@ void main() {
       SharedPreferences.setMockInitialValues({
         'watched_folders_v1': '["/old"]',
       });
-      final repository = _RestoredLibraryRepository();
+      final repository = _RestoredLibraryRepository()
+        ..settings['watched_libraries_v1'] = '["/registered"]';
       final first = LibraryFacade.create(databaseRepository: repository);
       addTearDown(first.dispose);
       await first.loadPersistedState();
       expect(first.watchedFolders, ['/old']);
+      expect(first.watchedLibraries, ['/registered']);
+      expect(
+        repository.lastCatalogSettings?.keys,
+        unorderedEquals(['group_order_v1', 'watched_folders_v1']),
+      );
       first.beginLibraryBatch();
       first.removeWatchedFolder('/old');
       first.addWatchedFolder('/new');
@@ -500,6 +507,7 @@ final class _RestoredLibraryRepository extends TestPersistenceRepository {
   final settings = <String, String>{};
   int commits = 0;
   bool rejectCommit = false;
+  Map<String, String>? lastCatalogSettings;
   @override
   Future<String?> loadAppSetting(String key) async => settings[key];
   @override
@@ -512,6 +520,7 @@ final class _RestoredLibraryRepository extends TestPersistenceRepository {
   }) async {
     commits++;
     if (rejectCommit) throw StateError('catalog commit rejected');
+    lastCatalogSettings = catalogSettings;
     settings.addAll(catalogSettings);
   }
 

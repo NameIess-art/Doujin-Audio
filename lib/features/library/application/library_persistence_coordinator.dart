@@ -57,6 +57,7 @@ final class LibraryPersistenceCoordinator {
 
   final LibraryPersistenceRepository _repository;
   final LibraryService _service;
+  final _committedCatalogLists = <String, List<String>>{};
   Future<void>? _writeTail;
   bool _enabled = true;
   int _loadGeneration = 0;
@@ -132,16 +133,29 @@ final class LibraryPersistenceCoordinator {
         .map((value) => value as List<String>?)
         .toList();
     final catalogLists = await _decodeCatalogLists(catalogValues, legacyLists);
-    if (enabled && catalogValues.any((value) => value == null)) {
-      final settings = await _encodeCatalogLists(catalogLists);
-      await _queueWrite(
-        () => _repository.commitLibraryBatch(
+    if (enabled) {
+      await _queueWrite(() async {
+        final missing = <String, List<String>>{};
+        for (final (index, key) in _catalogKeys.indexed) {
+          // A write queued during startup takes precedence over the earlier read.
+          if (_committedCatalogLists.containsKey(key)) continue;
+          final list = catalogLists[index];
+          if (catalogValues[index] == null) {
+            missing[key] = list;
+          } else {
+            _committedCatalogLists[key] = list;
+          }
+        }
+        if (missing.isEmpty) return;
+        final settings = await _encodeCatalogLists(missing);
+        if (generation != _loadGeneration) return;
+        await _repository.commitLibraryBatch(
           tracks: const [],
           entries: const [],
           catalogSettings: settings,
-        ),
-        loadGeneration: generation,
-      );
+        );
+        _committedCatalogLists.addAll(missing);
+      }, loadGeneration: generation);
     }
     final tracks = await tracksFuture;
     final entries = await entriesFuture;
@@ -158,18 +172,15 @@ final class LibraryPersistenceCoordinator {
     );
   }
 
-  Future<void> prepareForReset() {
+  Future<void> prepareForReset() async {
     _loadGeneration++;
-    return flush();
+    await flush();
+    _committedCatalogLists.clear();
   }
 
   Future<void> flush() => _writeTail ?? Future<void>.value();
 
-  Future<void> saveWatchedFolders() => _saveCatalogLists();
-  Future<void> saveWatchedLibraries() => _saveCatalogLists();
-  Future<void> saveGroupOrder() => _saveCatalogLists();
-
-  Future<void> _saveCatalogLists() => _service.libraryBatchDepth > 0
+  Future<void> saveCatalogLists() => _service.libraryBatchDepth > 0
       ? Future<void>.value()
       : commitLibraryBatch(tracks: const [], entries: const []);
 
@@ -179,20 +190,35 @@ final class LibraryPersistenceCoordinator {
     List<String> removedTrackPaths = const [],
     Map<String, List<String>> removedEntryPaths = const {},
   }) {
-    final lists = <List<String>>[
-      List<String>.of(_service.groupOrder),
-      List<String>.of(_service.watchedFolders),
-      List<String>.of(_service.watchedLibraries),
-    ];
-    return _queueWrite(
-      () async => _repository.commitLibraryBatch(
+    final lists = {
+      _groupOrderKey: List<String>.of(_service.groupOrder),
+      _watchedFoldersKey: List<String>.of(_service.watchedFolders),
+      _watchedLibrariesKey: List<String>.of(_service.watchedLibraries),
+    };
+    return _queueWrite(() async {
+      final changed = {
+        for (final entry in lists.entries)
+          if (!listEquals(_committedCatalogLists[entry.key], entry.value))
+            entry.key: entry.value,
+      };
+      if (changed.isEmpty &&
+          tracks.isEmpty &&
+          entries.isEmpty &&
+          removedTrackPaths.isEmpty &&
+          removedEntryPaths.isEmpty) {
+        return;
+      }
+      await _repository.commitLibraryBatch(
         tracks: tracks,
         entries: entries,
         removedTrackPaths: removedTrackPaths,
         removedEntryPaths: removedEntryPaths,
-        catalogSettings: await _encodeCatalogLists(lists),
-      ),
-    );
+        catalogSettings: changed.isEmpty
+            ? const {}
+            : await _encodeCatalogLists(changed),
+      );
+      _committedCatalogLists.addAll(changed);
+    });
   }
 
   static Future<List<List<String>>> _decodeCatalogLists(
@@ -208,12 +234,10 @@ final class LibraryPersistenceCoordinator {
   );
 
   static Future<Map<String, String>> _encodeCatalogLists(
-    List<List<String>> lists,
+    Map<String, List<String>> lists,
   ) => Isolate.run(
     () => {
-      _groupOrderKey: json.encode(lists[0]),
-      _watchedFoldersKey: json.encode(lists[1]),
-      _watchedLibrariesKey: json.encode(lists[2]),
+      for (final entry in lists.entries) entry.key: json.encode(entry.value),
     },
   );
 

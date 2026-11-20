@@ -15,6 +15,7 @@ import 'package:doujin_audio/features/player/application/native_playback_bridge.
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/application/playback_queue_resolver.dart';
+import 'package:doujin_audio/features/player/application/windows_playback_bridge.dart';
 import 'package:doujin_audio/features/player/domain/audio_effects.dart';
 import 'package:doujin_audio/features/player/domain/playback_queue.dart';
 
@@ -2141,6 +2142,9 @@ void main() {
       final playback = PlaybackFacade.create(
         databaseRepository:
             library.databaseRepository as PlaybackPersistenceRepository,
+        nativeRepository: NativePlaybackRepository(
+          bridge: WindowsPlaybackBridge(),
+        ),
       )..configurePersistence(enabled: false);
       final session = _session('sequential_once')
         ..loopMode = SessionLoopMode.folderOnce;
@@ -2199,10 +2203,14 @@ void main() {
       final playback = PlaybackFacade.create(
         databaseRepository:
             library.databaseRepository as PlaybackPersistenceRepository,
+        nativeRepository: NativePlaybackRepository(
+          bridge: WindowsPlaybackBridge(),
+        ),
       )..configurePersistence(enabled: false);
-      final session = _session('completion_failure');
-      final started = Completer<void>();
+      final session = _session('completion_failure')
+        ..loopMode = SessionLoopMode.folderSequential;
       final release = Completer<void>();
+      var started = false;
       var currentSession = session;
       addTearDown(() async {
         await session.shutdown();
@@ -2215,7 +2223,7 @@ void main() {
           onSessionsReordered: () {},
           onSessionStateChanged: () {},
           onSessionCompleted: (_) async {
-            started.complete();
+            started = true;
             await release.future;
             throw StateError('next track failed');
           },
@@ -2243,7 +2251,8 @@ void main() {
         playing: false,
         processingState: ProcessingState.completed,
       );
-      await started.future;
+      await Future<void>.delayed(Duration.zero);
+      expect(started, isTrue);
       switch (superseding) {
         case 'preparation':
           session.beginPreparation(showLoading: false, autoPlay: true);

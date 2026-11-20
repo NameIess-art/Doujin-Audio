@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
@@ -31,7 +32,7 @@ class AppCacheService {
   static Future<void> _operations = Future<void>.value();
   static Future<void>? _enforceFuture;
   static Future<int>? _clearFuture;
-  static Future<int>? _estimateFuture;
+  static final _estimateFutures = <String?, Future<int>>{};
   static bool _enforceRequested = false;
   static bool _enforceAfterLeaseRelease = false;
   static Timer? _scheduledEnforceTimer;
@@ -100,17 +101,20 @@ class AppCacheService {
   }
 
   static Future<int> estimateCacheBytes({List<String>? storageRoots}) {
-    if (storageRoots != null) {
-      final roots = List<String>.of(storageRoots);
-      return _operations.then((_) => _estimateCacheBytes(storageRoots: roots));
-    }
-    final pending = _estimateFuture;
+    final roots = storageRoots?.map(PathMatcher.normalize).toSet().toList()
+      ?..sort();
+    final key = roots == null ? null : jsonEncode(roots);
+    final pending = _estimateFutures[key];
     if (pending != null) return pending;
     late final Future<int> result;
-    result = _operations.then((_) => _estimateCacheBytes()).whenComplete(() {
-      if (identical(_estimateFuture, result)) _estimateFuture = null;
-    });
-    return _estimateFuture = result;
+    result = _operations
+        .then((_) => _estimateCacheBytes(storageRoots: roots))
+        .whenComplete(() {
+          if (identical(_estimateFutures[key], result)) {
+            _estimateFutures.remove(key);
+          }
+        });
+    return _estimateFutures[key] = result;
   }
 
   static Future<int> _estimateCacheBytes({List<String>? storageRoots}) async {
@@ -213,7 +217,7 @@ class AppCacheService {
     _maxCacheBytes = defaultMaxCacheBytes;
     _enforceAfterLeaseRelease = false;
     _enforceRequested = false;
-    _estimateFuture = null;
+    _estimateFutures.clear();
     _protectedPaths.clear();
     _temporaryDirectories =
         temporaryDirectories ?? _platformTemporaryDirectories;
@@ -223,7 +227,7 @@ class AppCacheService {
   static Future<T> _enqueue<T>(Future<T> Function() operation) {
     // Estimates requested after maintenance must wait for it instead of joining
     // an older scan. Completed results are never retained between requests.
-    _estimateFuture = null;
+    _estimateFutures.clear();
     final result = _operations.then((_) => operation());
     _operations = result.then<void>(
       (_) {},

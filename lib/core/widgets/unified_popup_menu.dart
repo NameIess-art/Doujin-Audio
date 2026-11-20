@@ -1257,6 +1257,7 @@ class UnifiedContextMenuRegion extends StatefulWidget {
     this.enabled = true,
     this.skipTraversal = false,
     this.openOnAndroidLongPress = false,
+    this.openOnWindowsLongPress = false,
   });
 
   final List<UnifiedMenuEntry<VoidCallback>> Function() buildEntries;
@@ -1265,6 +1266,7 @@ class UnifiedContextMenuRegion extends StatefulWidget {
   final bool enabled;
   final bool skipTraversal;
   final bool openOnAndroidLongPress;
+  final bool openOnWindowsLongPress;
 
   @override
   State<UnifiedContextMenuRegion> createState() =>
@@ -1318,10 +1320,17 @@ class _UnifiedContextMenuRegionState extends State<UnifiedContextMenuRegion> {
   @override
   Widget build(BuildContext context) {
     final shape = widget.shape;
+    final platform = Theme.of(context).platform;
     final opensOnLongPress =
         widget.enabled &&
-        widget.openOnAndroidLongPress &&
-        Theme.of(context).platform == TargetPlatform.android;
+        (switch (platform) {
+          TargetPlatform.android => widget.openOnAndroidLongPress,
+          TargetPlatform.windows => widget.openOnWindowsLongPress,
+          _ => false,
+        });
+    final opensOnSecondaryTap =
+        widget.enabled &&
+        (platform != TargetPlatform.android || !widget.openOnAndroidLongPress);
     return CallbackShortcuts(
       bindings: widget.enabled
           ? {
@@ -1335,7 +1344,7 @@ class _UnifiedContextMenuRegionState extends State<UnifiedContextMenuRegion> {
         skipTraversal: widget.skipTraversal,
         child: GestureDetector(
           behavior: HitTestBehavior.translucent,
-          onSecondaryTapDown: widget.enabled && !opensOnLongPress
+          onSecondaryTapDown: opensOnSecondaryTap
               ? (details) => _openMenu(details.globalPosition)
               : null,
           onLongPressStart: opensOnLongPress

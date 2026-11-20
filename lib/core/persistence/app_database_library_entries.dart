@@ -54,6 +54,7 @@ extension AppDatabaseLibraryEntries on AppDatabase {
       }
       await _upsertCatalogTrackChunks(txn, tracks);
       await _upsertEntryChunks(txn, entries);
+      if (catalogSettings.isEmpty) return;
       final batch = txn.batch();
       for (final setting in catalogSettings.entries) {
         batch.insert('app_kv_settings', {

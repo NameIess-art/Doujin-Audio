@@ -48,6 +48,51 @@ void main() {
   }
 
   test(
+    'volume estimates share scans for reordered and duplicate roots',
+    () async {
+      final cached = await file(temporary, 'exports/local.bin', 7);
+      await file(external, 'exports/sd-card.bin', 11);
+      await file(support, '$coverArtworkStoreDirectoryName/cover.image', 13);
+      final gate = Completer<void>();
+      var scans = 0;
+      AppCacheService.resetForTest(
+        temporaryDirectories: () async {
+          scans++;
+          await gate.future;
+          return [temporary, external];
+        },
+      );
+      final first = AppCacheService.estimateCacheBytes(
+        storageRoots: [temporary.path, external.path],
+      );
+      final sameVolumes = AppCacheService.estimateCacheBytes(
+        storageRoots: [external.path, '${temporary.path}/.', temporary.path],
+      );
+      final otherVolume = AppCacheService.estimateCacheBytes(
+        storageRoots: [external.path],
+      );
+      final all = AppCacheService.estimateCacheBytes();
+      gate.complete();
+
+      expect(await Future.wait([first, sameVolumes, otherVolume, all]), [
+        18,
+        18,
+        11,
+        31,
+      ]);
+      expect(scans, 3);
+      await cached.writeAsBytes(List.filled(9, 1));
+      expect(
+        await AppCacheService.estimateCacheBytes(
+          storageRoots: [temporary.path, external.path],
+        ),
+        20,
+      );
+      expect(scans, 4);
+    },
+  );
+
+  test(
     'concurrent usage estimates share one scan without retaining results',
     () async {
       final cached = await file(temporary, 'exports/cache.bin', 7);
@@ -80,7 +125,7 @@ void main() {
     },
   );
 
-  test('usage requested after clear cannot join the pre-clear scan', () async {
+  test('volume usage requested after clear waits for the new scan', () async {
     await file(temporary, 'exports/cache.bin', 12);
     final scanEntered = Completer<void>();
     final resumeScan = Completer<void>();
@@ -100,11 +145,12 @@ void main() {
         await resumeDelete.future;
       },
     );
-    final beforeClear = AppCacheService.estimateCacheBytes();
+    final roots = [temporary.path];
+    final beforeClear = AppCacheService.estimateCacheBytes(storageRoots: roots);
     await scanEntered.future;
     final clear = AppCacheService.clearTemporaryCaches();
     await deleteEntered.future;
-    final afterClear = AppCacheService.estimateCacheBytes();
+    final afterClear = AppCacheService.estimateCacheBytes(storageRoots: roots);
     resumeScan.complete();
     expect(await beforeClear, 12);
     resumeDelete.complete();

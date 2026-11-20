@@ -75,6 +75,9 @@ void main() {
   );
 
   for (final brightness in Brightness.values) {
+    final glassOpacity = brightness == Brightness.dark
+        ? AppGlassSurface.darkGlassOpacity
+        : AppGlassSurface.lightGlassOpacity;
     testWidgets(
       'active refresh follows bar glass preference in $brightness',
       (tester) async {
@@ -125,13 +128,7 @@ void main() {
           final tint = tester.widget<ColoredBox>(
             find.descendant(of: glass, matching: find.byType(ColoredBox)).first,
           );
-          expect(
-            tint.color.a,
-            closeTo(
-              value ? (brightness == Brightness.dark ? .84 : .8) : 1,
-              .005,
-            ),
-          );
+          expect(tint.color.a, closeTo(value ? glassOpacity : 1, .005));
         }
         refresh.complete();
         await tester.pump();
@@ -348,7 +345,10 @@ void main() {
       expect(
         background.color.a,
         closeTo(
-          backgroundColor.a * (brightness == Brightness.dark ? .84 : .8),
+          backgroundColor.a *
+              (brightness == Brightness.dark
+                  ? AppGlassSurface.darkGlassOpacity
+                  : AppGlassSurface.lightGlassOpacity),
           .005,
         ),
       );

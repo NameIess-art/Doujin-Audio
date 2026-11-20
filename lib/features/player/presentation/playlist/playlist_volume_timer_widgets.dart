@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/media/time_text_formatters.dart';
-import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/target_countdown_builder.dart';
 import '../../../../core/widgets/top_page_header.dart';
 import 'playlist_shared_helpers.dart';
@@ -13,7 +12,6 @@ class TimerCountdownCapsule extends StatelessWidget {
     required this.active,
     required this.autoResumeAt,
     required this.onTap,
-    this.onLongPress,
     this.showBackground = true,
   });
 
@@ -21,7 +19,6 @@ class TimerCountdownCapsule extends StatelessWidget {
   final bool active;
   final DateTime? autoResumeAt;
   final VoidCallback? onTap;
-  final VoidCallback? onLongPress;
   final bool showBackground;
 
   @override
@@ -49,12 +46,6 @@ class TimerCountdownCapsule extends StatelessWidget {
             enableFeedback: false,
             borderRadius: BorderRadius.circular(19),
             onTap: onTap,
-            onLongPress: () {
-              AppInteractionFeedback.trigger(
-                AppInteractionFeedbackType.selection,
-              );
-              onLongPress?.call();
-            },
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               child: Row(

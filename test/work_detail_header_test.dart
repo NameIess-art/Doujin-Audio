@@ -314,22 +314,7 @@ void main() {
               kind: PointerDeviceKind.mouse,
             );
             await tester.pumpAndSettle();
-            final copyAction = find.widgetWithIcon(
-              ListTile,
-              Icons.content_copy_rounded,
-            );
-            await tester.scrollUntilVisible(
-              copyAction,
-              200,
-              scrollable: find
-                  .descendant(
-                    of: find.byType(BottomSheet),
-                    matching: find.byType(Scrollable),
-                  )
-                  .last,
-            );
-            await tester.pumpAndSettle();
-            await tester.tap(copyAction);
+            await tester.tap(find.text('Copy').hitTestable());
             await tester.pumpAndSettle();
           } else {
             await tester.tap(target);

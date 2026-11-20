@@ -8,7 +8,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/widgets/app_buttons.dart';
 import '../../../app/application/audio_path_coordinator.dart';
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
@@ -17,7 +16,6 @@ import '../../../app/presentation/screen_view_models.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/ui/visual_settings_providers.dart';
-import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/animated_reorder.dart';
@@ -30,6 +28,7 @@ import '../../../core/widgets/scroll_to_top_list.dart';
 import '../../../core/widgets/sort_options_bottom_sheet.dart';
 import '../../../core/widgets/swipe_reveal_card.dart';
 import '../../../core/widgets/top_page_header.dart';
+import '../../../core/widgets/unified_popup_menu.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../settings/application/settings_state.dart';
 import '../application/audio_state_services.dart';
@@ -634,51 +633,11 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                       mainAxisSize: MainAxisSize.min,
                                       mainAxisAlignment: MainAxisAlignment.end,
                                       children: [
-                                        headerState.hasTimer
-                                            ? TimerCountdownCapsule(
-                                                remaining:
-                                                    headerState
-                                                        .timerRemaining ??
-                                                    headerState.timerDuration ??
-                                                    Duration.zero,
-                                                active: headerState.timerActive,
-                                                autoResumeAt:
-                                                    headerState.autoResumeAt,
-                                                onTap: widget.onTimerTap,
-                                                onLongPress: () => unawaited(
-                                                  _openTimerQuickMenu(context),
-                                                ),
-                                              )
-                                            : HeaderFloatingButton(
-                                                child: GestureDetector(
-                                                  onLongPress: () {
-                                                    AppInteractionFeedback.trigger(
-                                                      AppInteractionFeedbackType
-                                                          .selection,
-                                                    );
-                                                    unawaited(
-                                                      _openTimerQuickMenu(
-                                                        context,
-                                                      ),
-                                                    );
-                                                  },
-                                                  child: IconButton(
-                                                    onPressed:
-                                                        widget.onTimerTap,
-                                                    icon: const Icon(
-                                                      Icons.timer_rounded,
-                                                    ),
-                                                    tooltip: i18n.tr('timer'),
-                                                    iconSize: 20,
-                                                    padding: EdgeInsets.zero,
-                                                    constraints:
-                                                        const BoxConstraints.tightFor(
-                                                          width: 38,
-                                                          height: 38,
-                                                        ),
-                                                  ),
-                                                ),
-                                              ),
+                                        _buildTimerButton(
+                                          context,
+                                          i18n,
+                                          headerState,
+                                        ),
                                         if (defaultTargetPlatform !=
                                             TargetPlatform.windows) ...[
                                           const SizedBox(width: 8),
@@ -979,175 +938,92 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     );
   }
 
-  Future<void> _openTimerQuickMenu(BuildContext context) async {
-    final timer = ref.read(timerFacadeProvider);
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final cs = Theme.of(context).colorScheme;
-    final reverseAnimationDuration = AppBottomSheet.reverseAnimationDurationOf(
-      context,
-    );
-
-    final openTimerSettings = await AppBottomSheet.show<bool>(
-      context: context,
-      builder: (sheetContext) => Consumer(
-        builder: (context, ref, _) {
-          final timerState = ref.watch(timerStateProvider).value ?? timer.state;
-          return SafeArea(
-            child: SingleChildScrollView(
-              child: Padding(
-                padding: AppBottomSheet.contentPadding,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    AppBottomSheetHeader(
-                      icon: Icons.timer_rounded,
-                      title: i18n.tr('timer_title'),
-                    ),
-                    if (timerState.duration != null &&
-                        (timerState.active ||
-                            timerState.remaining != Duration.zero)) ...[
-                      SwitchListTile(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        tileColor: cs.surfaceContainerLow,
-                        secondary: Icon(
-                          Icons.music_note_rounded,
-                          color: timerState.stopAfterCurrentTrack
-                              ? cs.primary
-                              : null,
-                        ),
-                        title: Text(
-                          i18n.tr('stop_after_current_track'),
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        subtitle: Text(
-                          i18n.tr('stop_after_current_track_subtitle'),
-                          style: const TextStyle(fontSize: 11),
-                        ),
-                        value: timerState.stopAfterCurrentTrack,
-                        onChanged: (enabled) {
-                          AppInteractionFeedback.trigger(
-                            AppInteractionFeedbackType.selection,
-                          );
-                          timer.setStopAfterCurrentTrack(enabled);
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        appNoPointerInkTheme(
-                          context: context,
-                          androidPressHighlight: true,
-                          child: ActionChip(
-                            mouseCursor: WidgetStateMouseCursor.clickable,
-                            avatar: const Icon(
-                              Icons.timer_rounded,
-                              size: 16,
-                            ),
-                            label: Text(
-                              i18n.tr('minutes_duration', {'count': 15}),
-                            ),
-                            onPressed: () {
-                              timer.configureTimer(
-                                TimerMode.manual,
-                                const Duration(minutes: 15),
-                              );
-                              timer.startCountdown();
-                              Navigator.of(sheetContext).pop();
-                            },
-                          ),
-                        ),
-                        appNoPointerInkTheme(
-                          context: context,
-                          androidPressHighlight: true,
-                          child: ActionChip(
-                            mouseCursor: WidgetStateMouseCursor.clickable,
-                            avatar: const Icon(Icons.timer_rounded, size: 16),
-                            label: Text(
-                              i18n.tr('minutes_duration', {'count': 30}),
-                            ),
-                            onPressed: () {
-                              timer.configureTimer(
-                                TimerMode.manual,
-                                const Duration(minutes: 30),
-                              );
-                              timer.startCountdown();
-                              Navigator.of(sheetContext).pop();
-                            },
-                          ),
-                        ),
-                        appNoPointerInkTheme(
-                          context: context,
-                          androidPressHighlight: true,
-                          child: ActionChip(
-                            mouseCursor: WidgetStateMouseCursor.clickable,
-                            avatar: const Icon(Icons.timer_rounded, size: 16),
-                            label: Text(
-                              i18n.tr('minutes_duration', {'count': 60}),
-                            ),
-                            onPressed: () {
-                              timer.configureTimer(
-                                TimerMode.manual,
-                                const Duration(minutes: 60),
-                              );
-                              timer.startCountdown();
-                              Navigator.of(sheetContext).pop();
-                            },
-                          ),
-                        ),
-                        appNoPointerInkTheme(
-                          context: context,
-                          androidPressHighlight: true,
-                          child: ActionChip(
-                            mouseCursor: WidgetStateMouseCursor.clickable,
-                            avatar: const Icon(Icons.more_time_rounded, size: 16),
-                            label: Text(i18n.tr('set_countdown')),
-                            onPressed: () {
-                              Navigator.of(sheetContext).pop(true);
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (timerState.active || timerState.duration != null) ...[
-                      const SizedBox(height: 14),
-                      AppLabelledButton(
-                        OutlinedButton.icon,
-                        onPressed: () {
-                          AppInteractionFeedback.trigger(
-                            AppInteractionFeedbackType.destructive,
-                          );
-                          timer.cancelTimer();
-                          Navigator.of(sheetContext).pop();
-                        },
-                        icon: const Icon(Icons.stop_circle_outlined),
-                        label: Text(i18n.tr('cancel_timer')),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: cs.error,
-                          side: BorderSide(color: cs.error),
-                        ),
-                      ),
-                    ],
-                  ],
+  Widget _buildTimerButton(
+    BuildContext context,
+    AppLanguageProvider i18n,
+    PlaylistHeaderState state,
+  ) {
+    return UnifiedContextMenuRegion(
+      key: ValueKey(state.hasTimer),
+      shape: state.hasTimer ? const StadiumBorder() : const CircleBorder(),
+      skipTraversal: true,
+      openOnAndroidLongPress: true,
+      openOnWindowsLongPress: true,
+      buildEntries: () => _buildTimerQuickMenuEntries(i18n),
+      child: state.hasTimer
+          ? TimerCountdownCapsule(
+              remaining:
+                  state.timerRemaining ?? state.timerDuration ?? Duration.zero,
+              active: state.timerActive,
+              autoResumeAt: state.autoResumeAt,
+              onTap: widget.onTimerTap,
+            )
+          : HeaderFloatingButton(
+              child: TooltipTheme(
+                data: TooltipTheme.of(
+                  context,
+                ).copyWith(triggerMode: TooltipTriggerMode.manual),
+                child: IconButton(
+                  onPressed: widget.onTimerTap,
+                  icon: const Icon(Icons.timer_rounded),
+                  tooltip: i18n.tr('timer'),
+                  iconSize: 20,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 38,
+                    height: 38,
+                  ),
                 ),
               ),
-            ).withWindowsSmoothScroll(),
-          );
-        },
-      ),
+            ),
     );
-    if (!mounted || openTimerSettings != true) return;
-    await Future<void>.delayed(reverseAnimationDuration);
-    if (!mounted) return;
-    widget.onTimerTap?.call();
+  }
+
+  List<UnifiedMenuEntry<VoidCallback>> _buildTimerQuickMenuEntries(
+    AppLanguageProvider i18n,
+  ) {
+    final timer = ref.read(timerFacadeProvider);
+    final state = timer.state;
+    return [
+      if (state.duration != null &&
+          (state.active || state.remaining != Duration.zero))
+        UnifiedMenuEntry.action(
+          value: () {
+            final current = timer.state;
+            if (current.duration != null &&
+                (current.active || current.remaining != Duration.zero)) {
+              timer.setStopAfterCurrentTrack(!current.stopAfterCurrentTrack);
+            }
+          },
+          icon: Icons.music_note_rounded,
+          label: i18n.tr('stop_after_current_track'),
+          trailing: state.stopAfterCurrentTrack
+              ? const Icon(Icons.check_rounded, size: 16)
+              : null,
+        ),
+      for (final minutes in const [15, 30, 60])
+        UnifiedMenuEntry.action(
+          value: () {
+            timer.configureTimer(TimerMode.manual, Duration(minutes: minutes));
+            timer.startCountdown();
+          },
+          icon: Icons.timer_rounded,
+          label: i18n.tr('minutes_duration', {'count': minutes}),
+        ),
+      UnifiedMenuEntry.action(
+        value: () => widget.onTimerTap?.call(),
+        enabled: widget.onTimerTap != null,
+        icon: Icons.more_time_rounded,
+        label: i18n.tr('set_countdown'),
+      ),
+      if (state.active || state.duration != null)
+        UnifiedMenuEntry.action(
+          value: timer.cancelTimer,
+          icon: Icons.stop_circle_outlined,
+          label: i18n.tr('cancel_timer'),
+          destructive: true,
+        ),
+    ];
   }
 
   Widget _buildHeaderLeftActions(

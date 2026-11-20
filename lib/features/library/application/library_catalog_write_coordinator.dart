@@ -54,7 +54,7 @@ final class LibraryCatalogWriteCoordinator {
   void addWatchedFolder(String folderPath, {bool notify = true}) {
     final changed = _service.addWatchedFolder(
       folderPath,
-      onPersist: () => unawaited(_persistenceCoordinator.saveWatchedFolders()),
+      onPersist: () => unawaited(_persistenceCoordinator.saveCatalogLists()),
     );
     if (changed && notify) _syncStateSlice();
   }
@@ -62,8 +62,7 @@ final class LibraryCatalogWriteCoordinator {
   void addWatchedLibrary(String folderPath, {bool notify = true}) {
     final changed = _service.addWatchedLibrary(
       folderPath,
-      onPersist: () =>
-          unawaited(_persistenceCoordinator.saveWatchedLibraries()),
+      onPersist: () => unawaited(_persistenceCoordinator.saveCatalogLists()),
     );
     if (changed && notify) _syncStateSlice();
   }
@@ -71,7 +70,7 @@ final class LibraryCatalogWriteCoordinator {
   void removeWatchedFolder(String folderPath, {bool notify = true}) {
     final changed = _service.removeWatchedFolder(
       folderPath,
-      onPersist: () => unawaited(_persistenceCoordinator.saveWatchedFolders()),
+      onPersist: () => unawaited(_persistenceCoordinator.saveCatalogLists()),
     );
     if (changed && notify) _syncStateSlice();
   }
@@ -79,8 +78,7 @@ final class LibraryCatalogWriteCoordinator {
   void removeWatchedLibrary(String folderPath, {bool notify = true}) {
     final changed = _service.removeWatchedLibrary(
       folderPath,
-      onPersist: () =>
-          unawaited(_persistenceCoordinator.saveWatchedLibraries()),
+      onPersist: () => unawaited(_persistenceCoordinator.saveCatalogLists()),
     );
     if (changed && notify) _syncStateSlice();
   }
@@ -149,7 +147,7 @@ final class LibraryCatalogWriteCoordinator {
     if (persist && _persistenceCoordinator.enabled) {
       unawaited(databaseRepository.upsertCatalogTracks(mutation.tracks));
       if (mutation.didChangeGroupOrder) {
-        unawaited(_persistenceCoordinator.saveGroupOrder());
+        unawaited(_persistenceCoordinator.saveCatalogLists());
       }
     }
   }
@@ -176,7 +174,7 @@ final class LibraryCatalogWriteCoordinator {
     if (persist && _persistenceCoordinator.enabled) {
       unawaited(databaseRepository.upsertCatalogTracks(mutation.tracks));
       if (mutation.didChangeGroupOrder || mutation.didReplaceGroup) {
-        unawaited(_persistenceCoordinator.saveGroupOrder());
+        unawaited(_persistenceCoordinator.saveCatalogLists());
       }
     }
   }

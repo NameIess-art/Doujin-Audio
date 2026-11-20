@@ -272,12 +272,7 @@ void main() {
             kind: PointerDeviceKind.mouse,
           );
           await _settle(tester);
-          final copyAction = find.widgetWithIcon(
-            ListTile,
-            Icons.content_copy_rounded,
-          );
-          await tester.ensureVisible(copyAction);
-          await tester.tap(copyAction);
+          await tester.tap(find.text('Copy').hitTestable());
           await _settle(tester);
         } else {
           await tester.tap(tag);

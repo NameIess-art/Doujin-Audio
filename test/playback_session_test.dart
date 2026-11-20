@@ -262,9 +262,12 @@ void main() {
   test(
     'native snapshots update only their matching playback session',
     () async {
+      final firstTrackPath = Platform.isWindows
+          ? r'C:\audio\one.mp3'
+          : '/audio/one.mp3';
       final first = PlaybackSession(
         id: 'session_1',
-        currentTrackPath: '/audio/one.mp3',
+        currentTrackPath: firstTrackPath,
         loopMode: SessionLoopMode.folderSequential,
         nonSingleLoopMode: SessionLoopMode.folderSequential,
         volume: 0.7,
@@ -291,7 +294,7 @@ void main() {
       first.applyNativeSnapshot(
         NativePlaybackSnapshot(
           sessionId: 'session_1',
-          uri: 'file:///audio/one.mp3',
+          uri: Uri.file(firstTrackPath).toString(),
           playing: true,
           playWhenReady: true,
           processingState: 'ready',
@@ -332,7 +335,7 @@ void main() {
       expect(first.audioEffects.eqBandLevels[1000], 2.0);
       expect(first.eqCapabilities.supported, isTrue);
       expect(first.eqCapabilities.bands.single.frequencyHz, 1000);
-      expect(first.loadedPath, '/audio/one.mp3');
+      expect(first.loadedPath, firstTrackPath);
       expect(first.currentQueueIndex, 3);
       expect(firstStates, hasLength(1));
 

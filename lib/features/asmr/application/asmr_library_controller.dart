@@ -686,8 +686,10 @@ class AsmrLibraryController extends ChangeNotifier
 
   void clearRuntimeCaches() {
     _invalidateSearchSuggestions();
+    _remoteCatalogService.invalidateLocalTracksRead();
     _creatorCatalogTasks.clear();
     _creatorCatalogErrors.clear();
+    _tagInterestsTask = null;
     _runtimeCacheEpoch++;
     _contentEpoch++;
     _catalog.clearWorks();
@@ -1014,6 +1016,7 @@ class AsmrLibraryController extends ChangeNotifier
   @override
   Future<void> reloadPersistedState() async {
     _invalidateSearchSuggestions();
+    _remoteCatalogService.invalidateLocalTracksRead();
     _creatorCatalogTasks.clear();
     _creatorCatalogErrors.clear();
     _initialized = false;
@@ -1604,6 +1607,7 @@ class AsmrLibraryController extends ChangeNotifier
     if (_disposed) return;
     _searchSuggestionsCancellation?.cancel();
     _disposed = true;
+    _remoteCatalogService.invalidateLocalTracksRead();
     _activeSyncCancellationToken?.cancel();
     _activeSyncCancellationToken = null;
     _authEpoch++;

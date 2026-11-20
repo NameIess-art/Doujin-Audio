@@ -206,13 +206,7 @@ void main() {
               kind: PointerDeviceKind.mouse,
             );
             await tester.pumpAndSettle();
-            final copyAction = find.widgetWithIcon(
-              ListTile,
-              Icons.content_copy_rounded,
-            );
-            await tester.ensureVisible(copyAction);
-            await tester.pumpAndSettle();
-            await tester.tap(copyAction);
+            await tester.tap(find.text('Copy').hitTestable());
           } else {
             await tester.tapAt(position);
           }
@@ -229,7 +223,7 @@ void main() {
   }
 
   testWidgets(
-    'Metadata copies on tap and keeps the platform action drawer',
+    'Metadata copies on tap and opens the platform action menu',
     (tester) async {
       final copied = <String>[];
       await tester.pumpWidget(
@@ -260,7 +254,6 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(copied, ['Voice', 'Tag']);
-      expect(find.text('Tag'), findsOneWidget);
       expect(find.text('Search online'), findsOneWidget);
       expect(find.text('Search locally'), findsOneWidget);
       await tester.tap(find.text('Copy'));

@@ -502,7 +502,8 @@ void main() {
     }
   });
 
-  test('local voice and circle interests share one detail read', () async {
+  test('local interests share track and detail reads across batches', () async {
+    var trackReads = 0;
     var detailReads = 0;
     final voicePreferences = AsmrTagPreferences();
     final circlePreferences = AsmrTagPreferences();
@@ -511,7 +512,10 @@ void main() {
       repository: repository,
       readUsage: () async => batches,
       acknowledgeUsage: (_) async {},
-      resolveTrack: (_) => _track(),
+      resolveTrack: (_) {
+        trackReads++;
+        return _track();
+      },
       resolveLocalAudioDetail: (_) async {
         detailReads++;
         return AudioDetail.empty(
@@ -530,12 +534,60 @@ void main() {
     );
     addTearDown(service.dispose);
     await service.refresh();
+    expect(trackReads, 1);
     expect(detailReads, 1);
     expect(voicePreferences.listenedInterests.single.tag.name, 'Local Voice');
     expect(circlePreferences.listenedInterests.single.tag.name, 'Local Circle');
     expect(voicePreferences.learned.values, [1.0]);
     expect(circlePreferences.learned.values, [1.0]);
   });
+
+  test(
+    'missing track lookup is shared while native metadata stays per record',
+    () async {
+      final batches = [
+        for (final (index, tag) in ['first', 'second'].indexed)
+          PlaybackUsageBatch(
+            id: 'descriptors:$index',
+            days: [
+              PlaybackUsageDay(
+                date: '2026-10-${23 + index}',
+                totalMs: 1000,
+                works: [
+                  PlaybackUsageWork(
+                    key: 'work',
+                    path: _track().path,
+                    milliseconds: 1000,
+                    lastPlayedAtMs: 1000 + index,
+                    descriptor: _track().copyWith(tags: [tag]).toJson(),
+                  ),
+                ],
+              ),
+            ],
+          ),
+      ];
+      var reads = 0;
+      final tags = <List<String>>[];
+      final service = ListeningActivityService(
+        repository: repository,
+        readUsage: () async => batches,
+        acknowledgeUsage: (_) async {},
+        resolveTrack: (_) => ++reads == 1 ? null : _track(),
+        recordInterests: ({required batchId, required contributions}) async {
+          tags.add(contributions.single.tags);
+        },
+      );
+      addTearDown(service.dispose);
+      await service.refresh();
+      expect(reads, 1);
+      expect(tags, [
+        ['first'],
+        ['second'],
+      ]);
+      await service.refresh();
+      expect(reads, 2);
+    },
+  );
 
   test(
     'circle write failure retries without early ack or duplicate learning',

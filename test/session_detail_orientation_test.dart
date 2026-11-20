@@ -133,11 +133,10 @@ void main() {
               await tester.longPress(find.text('Circle'));
               await tester.pumpAndSettle();
               await tester.tap(
-                find.widgetWithIcon(
-                  ListTile,
+                find.text(
                   action == 'online search'
-                      ? Icons.travel_explore_rounded
-                      : Icons.search_rounded,
+                      ? 'Search online'
+                      : 'Search locally',
                 ),
               );
             case 'local work':

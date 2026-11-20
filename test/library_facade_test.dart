@@ -1077,6 +1077,50 @@ void main() {
     },
   );
 
+  test('folder rename writes only the changed catalog lists once', () async {
+    await runtimeGraph.runtime.dispose();
+    final root = await Directory.systemTemp.createTemp('catalog_rename_');
+    addTearDown(() => root.delete(recursive: true));
+    final source = await Directory(path.join(root.path, 'Old')).create();
+    final repository = _CountingTestPersistenceRepository(AppDatabase.test(db));
+    await repository.commitLibraryBatch(
+      tracks: const [],
+      entries: const [],
+      catalogSettings: {
+        'group_order_v1': '[]',
+        'watched_folders_v1': jsonEncode([source.path]),
+        'watched_libraries_v1': jsonEncode([root.path]),
+      },
+    );
+    runtimeGraph = createTestRuntimeGraph(
+      notificationService: notificationService,
+      persistenceRepository: repository,
+      jsonDocumentStore: TestJsonDocumentStore(),
+      skipPersistence: false,
+    );
+    final library = runtimeGraph.library;
+    await library.loadPersistedState();
+    repository.catalogCommitCount = 0;
+
+    final renamed = await library.renameWorkEntryToName(
+      libraryRootPath: root.path,
+      entryPath: source.path,
+      targetName: 'New',
+      isMedia: false,
+      isDirectory: true,
+    );
+
+    expect(repository.catalogCommitCount, 1);
+    expect(repository.lastCatalogSettings, {
+      'watched_folders_v1': jsonEncode([renamed]),
+    });
+    await library.resetPersistedState();
+    await library.loadPersistedState();
+    expect(library.watchedFolders, [renamed]);
+    expect(library.watchedLibraries, [root.path]);
+    expect(repository.catalogCommitCount, 1);
+  });
+
   test(
     'cold startup duration writes preserve tags and raw remote JSON',
     () async {
@@ -1652,8 +1696,8 @@ void main() {
       );
       await repository.loadAppSetting('watched_folders_v1');
       await db.execute('''
-      CREATE TRIGGER reject_refresh BEFORE INSERT ON app_kv_settings
-      WHEN NEW.key = 'group_order_v1'
+      CREATE TRIGGER reject_refresh AFTER DELETE ON tracks
+      WHEN OLD.path LIKE '%missing.mp3'
       BEGIN SELECT RAISE(ABORT, 'refresh commit failed'); END;
     ''');
       final source = _JsonPreservationScanDataSource()
@@ -4698,6 +4742,7 @@ class _CountingTestPersistenceRepository extends TestPersistenceRepository {
 
   int upsertLibraryEntriesCallCount = 0;
   int catalogCommitCount = 0;
+  Map<String, String>? lastCatalogSettings;
   int updateDurationsCallCount = 0;
   final updatedDurationTrackPaths = <String>[];
   String? failingDetailPath;
@@ -4759,6 +4804,7 @@ class _CountingTestPersistenceRepository extends TestPersistenceRepository {
     Map<String, List<String>> removedEntryPaths = const {},
   }) {
     catalogCommitCount++;
+    lastCatalogSettings = catalogSettings;
     if (entries.isNotEmpty) upsertLibraryEntriesCallCount++;
     return super.commitLibraryBatch(
       tracks: tracks,

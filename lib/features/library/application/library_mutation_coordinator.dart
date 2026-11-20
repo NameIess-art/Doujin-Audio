@@ -221,7 +221,7 @@ final class LibraryMutationCoordinator {
     if (_persistenceCoordinator.enabled) {
       await Future.wait(<Future<void>>[
         databaseRepository.deleteTracks(removedPaths),
-        _persistenceCoordinator.saveGroupOrder(),
+        _persistenceCoordinator.saveCatalogLists(),
       ]);
     }
     return true;
@@ -288,9 +288,7 @@ final class LibraryMutationCoordinator {
     }.toList();
     if (removedPaths.isEmpty && !wasWatched) return false;
 
-    final removedWatchedFolder = _service.removeWatchedFolder(
-      normalizedFolderPath,
-    );
+    _service.removeWatchedFolder(normalizedFolderPath);
     _service.libraryEntriesByLibrary.remove(normalizedFolderPath);
     _service.syncGroupOrderFromLibrary();
     _markStructureChanged();
@@ -306,10 +304,7 @@ final class LibraryMutationCoordinator {
       persistenceTasks.add(
         databaseRepository.deleteLibraryEntriesForLibrary(normalizedFolderPath),
       );
-      if (removedWatchedFolder) {
-        persistenceTasks.add(_persistenceCoordinator.saveWatchedFolders());
-      }
-      persistenceTasks.add(_persistenceCoordinator.saveGroupOrder());
+      persistenceTasks.add(_persistenceCoordinator.saveCatalogLists());
     }
     await Future.wait(persistenceTasks);
     return true;
@@ -353,8 +348,7 @@ final class LibraryMutationCoordinator {
       }
       if (removal.changed) {
         persistenceTasks
-          ..add(_persistenceCoordinator.saveWatchedFolders())
-          ..add(_persistenceCoordinator.saveWatchedLibraries())
+          ..add(_persistenceCoordinator.saveCatalogLists())
           ..add(_persistenceCoordinator.saveExclusions());
       }
     }
@@ -884,10 +878,8 @@ final class LibraryMutationCoordinator {
         retargetResult.retargetedEntries,
       );
     }
-    await _persistenceCoordinator.saveWatchedFolders();
-    await _persistenceCoordinator.saveWatchedLibraries();
+    await _persistenceCoordinator.saveCatalogLists();
     await _persistenceCoordinator.saveExclusions();
-    await _persistenceCoordinator.saveGroupOrder();
   }
 
   Future<void> _retargetSingleTrack(

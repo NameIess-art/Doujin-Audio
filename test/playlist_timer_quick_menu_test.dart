@@ -1,11 +1,13 @@
 import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
-import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/app_dialog.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -120,41 +122,49 @@ void main() {
       expect(clear.center.dx - pause.center.dx, pillButton.width);
       expect(add.center.dx - clear.center.dx, pillButton.width);
 
-      final quickMenuTrigger = find.ancestor(
-        of: find.byTooltip(fixture.languageProvider.tr('timer')),
-        matching: find.byWidgetPredicate(
-          (widget) => widget is GestureDetector && widget.onLongPress != null,
-        ),
+      final i18n = fixture.languageProvider;
+      await tester.longPress(
+        find.byTooltip(i18n.tr('timer')),
+        kind: defaultTargetPlatform == TargetPlatform.windows
+            ? PointerDeviceKind.mouse
+            : PointerDeviceKind.touch,
       );
-      expect(quickMenuTrigger, findsOneWidget);
-      tester.widget<GestureDetector>(quickMenuTrigger).onLongPress!();
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(
-        find.text(fixture.languageProvider.tr('stop_after_current_track')),
-        findsNothing,
-      );
-      final setCountdown = tester.widget<ActionChip>(
-        find.widgetWithText(
-          ActionChip,
-          fixture.languageProvider.tr('set_countdown'),
-        ),
-      );
-      setCountdown.onPressed!();
+      await tester.pumpAndSettle();
+      expect(find.byType(AppModalBackground), findsOneWidget);
+      expect(find.text(i18n.tr('stop_after_current_track')), findsNothing);
+      expect(find.text(i18n.tr('cancel_timer')), findsNothing);
+      var previousY = 0.0;
+      for (final count in [15, 30, 60]) {
+        final y = tester
+            .getCenter(find.text(i18n.tr('minutes_duration', {'count': count})))
+            .dy;
+        expect(y, greaterThan(previousY));
+        previousY = y;
+      }
+      final setCountdown = find.text(i18n.tr('set_countdown'));
+      expect(tester.getCenter(setCountdown).dy, greaterThan(previousY));
+      await tester.tap(setCountdown);
       await tester.pump();
 
       expect(openedTimerSettings, 0);
-      await tester.pump(kAppMotionFast - const Duration(milliseconds: 1));
+      await tester.pump(const Duration(milliseconds: 199));
       expect(openedTimerSettings, 0);
 
-      await tester.pump(const Duration(milliseconds: 1));
-      await tester.pump();
+      await tester.pumpAndSettle();
+      expect(find.byType(AppModalBackground), findsNothing);
       expect(openedTimerSettings, 1);
+      await tester.tap(find.byTooltip(i18n.tr('timer')));
+      expect(openedTimerSettings, 2);
       expect(tester.takeException(), isNull);
     },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets(
-    'quick menu shows stop_after_current_track when timer is active',
+    'active timer menu toggles track-end stop, starts a preset and cancels',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(400, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -173,16 +183,44 @@ void main() {
 
       final quickMenuTrigger = find.byType(TimerCountdownCapsule);
       expect(quickMenuTrigger, findsOneWidget);
-      tester.widget<TimerCountdownCapsule>(quickMenuTrigger).onLongPress!();
-      await tester.pump(const Duration(milliseconds: 400));
+      Future<void> openMenu() async {
+        if (defaultTargetPlatform == TargetPlatform.windows) {
+          await tester.tap(
+            quickMenuTrigger,
+            kind: PointerDeviceKind.mouse,
+            buttons: kSecondaryMouseButton,
+          );
+        } else {
+          await tester.longPress(quickMenuTrigger);
+        }
+        await tester.pumpAndSettle();
+      }
 
-      expect(
-        find.text(fixture.languageProvider.tr('stop_after_current_track')),
-        findsOneWidget,
-      );
-      fixture.timer.cancelTimer();
-      await tester.pump();
+      final i18n = fixture.languageProvider;
+      final stopAfterTrack = find.text(i18n.tr('stop_after_current_track'));
+      await openMenu();
+      expect(stopAfterTrack, findsOneWidget);
+      await tester.tap(stopAfterTrack);
+      await tester.pumpAndSettle();
+      expect(fixture.timer.stopAfterCurrentTrack, isTrue);
+
+      await openMenu();
+      expect(find.byIcon(Icons.check_rounded), findsOneWidget);
+      await tester.tap(find.text(i18n.tr('minutes_duration', {'count': 30})));
+      await tester.pumpAndSettle();
+      expect(fixture.timer.state.active, isTrue);
+      expect(fixture.timer.state.duration, const Duration(minutes: 30));
+
+      await openMenu();
+      await tester.tap(find.text(i18n.tr('cancel_timer')));
+      await tester.pumpAndSettle();
+      expect(fixture.timer.state.active, isFalse);
+      expect(fixture.timer.state.duration, isNull);
     },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 }
 

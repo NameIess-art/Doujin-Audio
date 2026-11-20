@@ -627,6 +627,42 @@ void registerAsmrControllerStateTests({
   );
 
   test(
+    'recommendations and interests share a read when one caller cancels',
+    () async {
+      await resetPrefs();
+      final local = Completer<List<MusicTrack>>();
+      final started = Completer<void>();
+      final repository = _InterestTracksRepository(() {
+        if (!started.isCompleted) started.complete();
+        return local.future;
+      });
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: repository,
+        apiService: _FakeAsmrApiService(),
+      );
+      controller.beginSearchSession();
+      final recommendation = controller.ensureCategoryLoaded(
+        AsmrCategoryType.recommendation,
+        searchQuery: 'old',
+        searchSession: true,
+      );
+      await started.future;
+      final interests = controller.ensureTagInterests();
+      await pumpEventQueue();
+      controller.endSearchSession();
+      await recommendation.timeout(const Duration(seconds: 1));
+
+      local.complete([
+        _track(groupTitle: 'Local', tags: ['sleep']),
+      ]);
+      await interests;
+      expect(repository.reads, 1);
+      expect(controller.allTags.map((tag) => tag.key), contains('local:sleep'));
+    },
+  );
+
+  test(
     'visible initialization and release page do not read local interests',
     () async {
       await resetPrefs();

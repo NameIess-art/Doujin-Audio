@@ -52,6 +52,7 @@ class AsmrRemoteCatalogService {
   final JapaneseAsmrApiService? _japaneseApiService;
   final AsmrPersistenceRepository _persistenceRepository;
   final AsmrRecommendationEngine _recommendationEngine;
+  Future<List<MusicTrack>>? _localTracksRead;
 
   bool Function(AsmrWork) isWorkAllowed = (_) => true;
   Map<String, double>? Function() tagWeights = () => null;
@@ -74,8 +75,20 @@ class AsmrRemoteCatalogService {
     );
   }
 
-  Future<List<MusicTrack>> loadLocalTracksForInterests() =>
-      _persistenceRepository.loadTracksForRecommendations();
+  Future<List<MusicTrack>> loadLocalTracksForInterests() {
+    final pending = _localTracksRead;
+    if (pending != null) return pending;
+    late final Future<List<MusicTrack>> read;
+    read =
+        Future<List<MusicTrack>>.sync(
+          _persistenceRepository.loadTracksForRecommendations,
+        ).whenComplete(() {
+          if (identical(_localTracksRead, read)) _localTracksRead = null;
+        });
+    return _localTracksRead = read;
+  }
+
+  void invalidateLocalTracksRead() => _localTracksRead = null;
 
   Future<AsmrWorkPage> loadPage(
     AsmrCategoryType category, {

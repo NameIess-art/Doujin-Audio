@@ -28,6 +28,9 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   for (final brightness in Brightness.values) {
+    final glassOpacity = brightness == Brightness.dark
+        ? AppGlassSurface.darkGlassOpacity
+        : AppGlassSurface.lightGlassOpacity;
     testWidgets(
       'visible notification follows bar glass preference in $brightness',
       (tester) async {
@@ -80,13 +83,7 @@ void main() {
           final tint = tester.widget<ColoredBox>(
             find.descendant(of: glass, matching: find.byType(ColoredBox)).first,
           );
-          expect(
-            tint.color.a,
-            closeTo(
-              value ? (brightness == Brightness.dark ? .84 : .8) : 1,
-              .005,
-            ),
-          );
+          expect(tint.color.a, closeTo(value ? glassOpacity : 1, .005));
         }
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump();
@@ -965,7 +962,7 @@ void main() {
       final tint = tester.widget<ColoredBox>(
         find.descendant(of: glass, matching: find.byType(ColoredBox)).first,
       );
-      expect(tint.color.a, closeTo(0.84, 0.001));
+      expect(tint.color.a, closeTo(AppGlassSurface.darkGlassOpacity, 0.001));
     },
   );
 

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/rendering.dart' show RenderParagraph;
+import 'package:flutter/rendering.dart'
+    show BackdropFilterLayer, OpacityLayer, RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
@@ -23,6 +24,16 @@ Widget _feedbackApp({required Widget home, bool barGlassEnabled = false}) {
     home: home,
   );
 }
+
+Finder _feedbackFade() => find.ancestor(
+  of: find
+      .descendant(
+        of: find.byType(AppFeedbackSurface),
+        matching: find.byType(Row),
+      )
+      .first,
+  matching: find.byType(FadeTransition),
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -341,12 +352,7 @@ void main() {
 
     expect(actionCount, 1);
     expect(find.text('Import failed'), findsOneWidget);
-    final fade = tester.widget<FadeTransition>(
-      find.ancestor(
-        of: find.byType(AppFeedbackSurface),
-        matching: find.byType(FadeTransition),
-      ),
-    );
+    final fade = tester.widget<FadeTransition>(_feedbackFade());
     await tester.pump(const Duration(milliseconds: 150));
     expect(fade.opacity.value, inExclusiveRange(0, 1));
     await tester.tap(find.text('Retry'), warnIfMissed: false);
@@ -415,10 +421,7 @@ void main() {
     expect(find.text('Undo (5s)'), findsOneWidget);
     expect(find.text('Removed one'), findsOneWidget);
     await tester.pump(const Duration(seconds: 2));
-    final fade = find.ancestor(
-      of: find.byType(AppFeedbackSurface),
-      matching: find.byType(FadeTransition),
-    );
+    final fade = _feedbackFade();
     final firstFadeAnimation = tester.widget<FadeTransition>(fade).opacity;
     await tester.tap(find.text('Remove two'));
     await tester.pump();
@@ -540,12 +543,7 @@ void main() {
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
-      final fade = tester.widget<FadeTransition>(
-        find.ancestor(
-          of: find.byType(AppFeedbackSurface),
-          matching: find.byType(FadeTransition),
-        ),
-      );
+      final fade = tester.widget<FadeTransition>(_feedbackFade());
       await tester.pump(const Duration(milliseconds: 699));
       expect(fade.opacity.value, 1);
       expect(dismissals, isEmpty);
@@ -620,13 +618,7 @@ void main() {
         onAction: () => actions++,
       );
       await tester.pump();
-      expect(
-        find.ancestor(
-          of: find.byType(AppFeedbackSurface),
-          matching: find.byType(FadeTransition),
-        ),
-        findsNothing,
-      );
+      expect(_feedbackFade(), findsNothing);
       await tester.tap(find.text('Dismiss notice'));
       await tester.pump();
       expect(actions, 1);
@@ -966,54 +958,74 @@ void main() {
     },
   );
 
-  testWidgets('top feedback slides and fades into its settled surface bounds', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _feedbackApp(
-        barGlassEnabled: true,
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => TextButton(
-              onPressed: () => showAppSnackBar(
-                context,
-                'Added to playlist',
-                tone: AppFeedbackTone.success,
-                duration: const Duration(seconds: 10),
+  testWidgets(
+    'top feedback slides and fades into its settled surface bounds',
+    (tester) async {
+      await tester.pumpWidget(
+        _feedbackApp(
+          barGlassEnabled: true,
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => showAppSnackBar(
+                  context,
+                  'Added to playlist',
+                  tone: AppFeedbackTone.success,
+                  duration: const Duration(seconds: 10),
+                ),
+                child: const Text('Add'),
               ),
-              child: const Text('Add'),
             ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Add'));
-    await tester.pump();
+      await tester.tap(find.text('Add'));
+      await tester.pump();
 
-    final surface = find.byType(AppFeedbackSurface);
-    expect(
-      find.ancestor(of: surface, matching: find.byType(FadeTransition)),
-      findsOneWidget,
-    );
-    expect(
-      find.ancestor(of: surface, matching: find.byType(SlideTransition)),
-      findsAtLeastNWidgets(1),
-    );
-    expect(
-      find.descendant(of: surface, matching: find.byType(BackdropFilter)),
-      findsOneWidget,
-    );
+      final surface = find.byType(AppFeedbackSurface);
+      expect(_feedbackFade(), findsOneWidget);
+      expect(
+        find.ancestor(of: surface, matching: find.byType(SlideTransition)),
+        findsAtLeastNWidgets(1),
+      );
+      expect(
+        find.descendant(of: surface, matching: find.byType(BackdropFilter)),
+        findsOneWidget,
+      );
 
-    final entranceTopLeft = tester.getTopLeft(surface);
-    final entranceCenter = tester.getCenter(surface);
-    await tester.pumpAndSettle();
-    final settledTopLeft = tester.getTopLeft(surface);
-    final settledCenter = tester.getCenter(surface);
-    expect(entranceTopLeft.dy, lessThan(settledTopLeft.dy));
-    expect(settledCenter.dx, closeTo(entranceCenter.dx, 1.0));
-  });
+      final entranceTopLeft = tester.getTopLeft(surface);
+      final entranceCenter = tester.getCenter(surface);
+      expect(tester.layers.whereType<BackdropFilterLayer>(), isEmpty);
+      await tester.pump(const Duration(milliseconds: 60));
+      double blurProgress() => tester
+          .widget<AppGlassSurface>(find.byType(AppGlassSurface))
+          .blurProgress;
+      final earlyBlur = blurProgress();
+      expect(earlyBlur, inExclusiveRange(0, 1));
+      final backdrop = tester.layers.whereType<BackdropFilterLayer>().single;
+      for (var layer = backdrop.parent; layer != null; layer = layer.parent) {
+        expect(
+          layer is OpacityLayer && layer.alpha != 255,
+          isFalse,
+          reason: 'The entering blur needs to sample the page directly.',
+        );
+      }
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(blurProgress(), inExclusiveRange(earlyBlur, 1));
+      await tester.pumpAndSettle();
+      expect(blurProgress(), 1);
+      final settledTopLeft = tester.getTopLeft(surface);
+      final settledCenter = tester.getCenter(surface);
+      expect(entranceTopLeft.dy, lessThan(settledTopLeft.dy));
+      expect(settledCenter.dx, closeTo(entranceCenter.dx, 1.0));
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   for (final (size, navigationWidth) in [
     (const Size(1280, 800), 260.0),
@@ -1449,10 +1461,7 @@ void main() {
       ); // Finish initial fade-in
 
       expect(find.text('First message'), findsOneWidget);
-      final fade = find.ancestor(
-        of: find.byType(AppFeedbackSurface),
-        matching: find.byType(FadeTransition),
-      );
+      final fade = _feedbackFade();
       final firstFadeAnimation = tester.widget<FadeTransition>(fade).opacity;
       expect(firstFadeAnimation.value, 1.0);
 
@@ -1464,10 +1473,7 @@ void main() {
       expect(find.text('Second message'), findsOneWidget);
       expect(find.text('Updated title'), findsOneWidget);
       expect(find.text('First message'), findsOneWidget);
-      final updatedFade = find.ancestor(
-        of: find.byType(AppFeedbackSurface),
-        matching: find.byType(FadeTransition),
-      );
+      final updatedFade = _feedbackFade();
       final updatedFadeAnimation = tester
           .widget<FadeTransition>(updatedFade)
           .opacity;

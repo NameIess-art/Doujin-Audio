@@ -267,23 +267,30 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
 
   void _showOverlay() {
     final box = _anchorKey.currentContext?.findRenderObject() as RenderBox?;
-    final overlay =
+    final menuOverlay =
         MobileOverlayInset.menuOverlayOf(context) ??
         Overlay.of(context, rootOverlay: true);
-    final overlayBox = overlay.context.findRenderObject() as RenderBox?;
-    if (box == null || overlayBox == null) return;
+    final menuBox = menuOverlay.context.findRenderObject() as RenderBox?;
+    if (box == null || menuBox == null) return;
 
-    final anchorOffset = box.localToGlobal(Offset.zero, ancestor: overlayBox);
+    final anchorOffset = box.localToGlobal(Offset.zero, ancestor: menuBox);
     final anchorRect = anchorOffset & box.size;
-    if (overlayBox.size.width <= 20) return;
+    if (menuBox.size.width <= 20) return;
     final isWindows = Theme.of(context).platform == TargetPlatform.windows;
+    final (overlay, menuInsets) = isWindows
+        ? _fullWindowMenuOverlay(context, menuOverlay)
+        : (menuOverlay, EdgeInsets.zero);
+    final themes = overlay == menuOverlay
+        ? null
+        : InheritedTheme.capture(from: context, to: null);
 
     var hoverEnabled = false;
     final entry = OverlayEntry(
-      builder: (overlayContext) {
-        return _UnifiedPopupOverlay<T>(
+      builder: (_) {
+        final menu = _UnifiedPopupOverlay<T>(
           animation: _controller,
           anchorRect: anchorRect,
+          menuInsets: menuInsets,
           entries: widget.entries,
           isWindows: isWindows,
           hoverEnabled: hoverEnabled,
@@ -304,6 +311,7 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
             if (mounted) widget.onTrailingSelected?.call(value);
           },
         );
+        return themes?.wrap(menu) ?? menu;
       },
     );
     _entry = entry;
@@ -891,6 +899,42 @@ VoidCallback _enableMenuHoverOnMovement(VoidCallback onMovement) {
   };
 }
 
+(OverlayState, EdgeInsets) _fullWindowMenuOverlay(
+  BuildContext context,
+  OverlayState menuOverlay,
+) {
+  final rootOverlay = Overlay.maybeOf(context, rootOverlay: true);
+  final menuBox = menuOverlay.context.findRenderObject();
+  final rootBox = rootOverlay?.context.findRenderObject();
+  if (rootOverlay == null ||
+      rootBox is! RenderBox ||
+      !rootBox.hasSize ||
+      menuBox is! RenderBox ||
+      !menuBox.hasSize ||
+      identical(rootBox, menuBox)) {
+    return (menuOverlay, EdgeInsets.zero);
+  }
+
+  final pane = MatrixUtils.transformRect(
+    menuBox.getTransformTo(rootBox),
+    Offset.zero & menuBox.size,
+  ).intersect(Offset.zero & rootBox.size);
+  if (pane.isEmpty || pane.size == rootBox.size) {
+    return (menuOverlay, EdgeInsets.zero);
+  }
+
+  // Paint above the whole window while keeping the menu in its pane.
+  return (
+    rootOverlay,
+    EdgeInsets.fromLTRB(
+      pane.left,
+      pane.top,
+      rootBox.size.width - pane.right,
+      rootBox.size.height - pane.bottom,
+    ),
+  );
+}
+
 typedef MenuHighlightedItem = ({
   BuildContext context,
   ShapeBorder shape,
@@ -925,32 +969,7 @@ Future<T?> _showDockAwareMenu<T>({
   final tickerMode = TickerMode.getValuesNotifier(context);
   if (!tickerMode.value.enabled) return null;
 
-  var overlayState = menuOverlay;
-  var menuInsets = EdgeInsets.zero;
-  final rootOverlay = Overlay.maybeOf(context, rootOverlay: true);
-  final menuBox = menuOverlay.context.findRenderObject();
-  final rootBox = rootOverlay?.context.findRenderObject();
-  if (rootOverlay != null &&
-      rootBox is RenderBox &&
-      rootBox.hasSize &&
-      menuBox is RenderBox &&
-      menuBox.hasSize &&
-      !identical(rootBox, menuBox)) {
-    final pane = MatrixUtils.transformRect(
-      menuBox.getTransformTo(rootBox),
-      Offset.zero & menuBox.size,
-    ).intersect(Offset.zero & rootBox.size);
-    if (!pane.isEmpty && pane.size != rootBox.size) {
-      // Paint the blur above the whole window while keeping the menu in its pane.
-      overlayState = rootOverlay;
-      menuInsets = EdgeInsets.fromLTRB(
-        pane.left,
-        pane.top,
-        rootBox.size.width - pane.right,
-        rootBox.size.height - pane.bottom,
-      );
-    }
-  }
+  final (overlayState, menuInsets) = _fullWindowMenuOverlay(context, menuOverlay);
 
   final highlightedBox = highlightedItem?.context.findRenderObject();
   final overlayBox = overlayState.context.findRenderObject();

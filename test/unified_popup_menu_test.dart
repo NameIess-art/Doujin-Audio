@@ -25,7 +25,7 @@ void main() {
   tearDown(coordinator.resetForTest);
 
   testWidgets(
-    'menu blurs the backdrop around a clear highlighted item',
+    'menus blur the backdrop beyond the originating pane',
     (tester) async {
       final captureKey = GlobalKey();
       final menuOverlay = GlobalKey<OverlayState>();
@@ -74,6 +74,21 @@ void main() {
                                 ),
                               ],
                               child: const SizedBox.expand(),
+                            ),
+                          ),
+                          Positioned(
+                            right: 12,
+                            top: 12,
+                            child: UnifiedPopupMenuButton<int>(
+                              icon: Icons.add_rounded,
+                              tooltip: 'Add',
+                              entries: const [
+                                UnifiedMenuEntry.action(
+                                  value: 1,
+                                  label: 'Add folder',
+                                ),
+                              ],
+                              onSelected: (_) {},
                             ),
                           ),
                           Overlay(key: menuOverlay),
@@ -142,6 +157,18 @@ void main() {
       expect(highlight, findsNothing);
       expect(find.byType(AppModalBackground), findsNothing);
       expect(await stripeContrast(), (255, 255));
+
+      if (defaultTargetPlatform == TargetPlatform.windows) {
+        await tester.tap(find.byTooltip('Add'));
+        await tester.pumpAndSettle();
+        expect(find.text('Add folder'), findsOneWidget);
+        final (insidePane, outsidePane) = await stripeContrast();
+        expect(insidePane, lessThan(40));
+        expect(outsidePane, lessThan(40));
+        await tester.tapAt(const Offset(40, 240));
+        await tester.pumpAndSettle();
+        expect(await stripeContrast(), (255, 255));
+      }
     },
     variant: const TargetPlatformVariant({
       TargetPlatform.android,

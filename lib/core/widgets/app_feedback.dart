@@ -558,7 +558,7 @@ void _showTopFeedback(
                   : kAppMotionStandard,
               showCountdown: currentData.showCountdown,
               onRemove: () => dismissEntry(AppFeedbackDismissReason.timeout),
-              builder: (wrapperContext, remainingSeconds) {
+              builder: (remainingSeconds, appearance) {
                 final isRemovalAction =
                     hasAction &&
                     currentData.showActionCountdown &&
@@ -584,6 +584,7 @@ void _showTopFeedback(
                         iconColor: currentData.iconColor,
                         title: currentData.title,
                         message: currentData.message,
+                        appearance: appearance,
                         remainingSeconds: hasAction ? null : remainingSeconds,
                         trailing: hasAction
                             ? TextButton(
@@ -665,7 +666,8 @@ class _FeedbackAnimationWrapper extends StatefulWidget {
     this.showCountdown = false,
   });
 
-  final Widget Function(BuildContext context, int? remainingSeconds) builder;
+  final Widget Function(int? remainingSeconds, Animation<double>? appearance)
+  builder;
   final Duration? duration;
   final Duration transitionDuration;
   final VoidCallback onRemove;
@@ -805,9 +807,12 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
 
   @override
   Widget build(BuildContext context) {
+    final appearance = MediaQuery.disableAnimationsOf(context)
+        ? null
+        : _opacity;
     final content = widget.builder(
-      context,
       _currentShowCountdown ? _remainingSeconds : null,
+      appearance,
     );
     return IgnorePointer(
       ignoring: _dismissing,
@@ -815,14 +820,11 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
         excluding: _dismissing,
         child: ExcludeSemantics(
           excluding: _dismissing,
-          child: MediaQuery.disableAnimationsOf(context)
+          child: appearance == null
               ? content
-              : FadeTransition(
-                  opacity: _opacity,
-                  child: SlideTransition(
-                    position: _slide,
-                    child: ScaleTransition(scale: _scale, child: content),
-                  ),
+              : SlideTransition(
+                  position: _slide,
+                  child: ScaleTransition(scale: _scale, child: content),
                 ),
         ),
       ),
@@ -927,6 +929,7 @@ class AppFeedbackSurface extends StatelessWidget {
     this.iconWidget,
     required this.message,
     this.remainingSeconds,
+    this.appearance,
     this.title,
     this.trailing,
     this.padding = const EdgeInsets.fromLTRB(
@@ -948,6 +951,7 @@ class AppFeedbackSurface extends StatelessWidget {
   final Widget? iconWidget;
   final String message;
   final int? remainingSeconds;
+  final Animation<double>? appearance;
   final String? title;
   final Widget? trailing;
   final EdgeInsets padding;
@@ -1097,12 +1101,12 @@ class AppFeedbackSurface extends StatelessWidget {
       ),
     );
 
-    return DecoratedBox(
+    Widget buildSurface(double opacity, Widget foreground) => DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(resolvedBorderRadius),
         boxShadow: [
           BoxShadow(
-            color: cs.shadow.withValues(alpha: 0.14),
+            color: cs.shadow.withValues(alpha: 0.14 * opacity),
             blurRadius: 18,
             spreadRadius: -5,
             offset: const Offset(0, 8),
@@ -1111,10 +1115,23 @@ class AppFeedbackSurface extends StatelessWidget {
       ),
       child: AppGlassSurface(
         enabled: tokens.barGlassEnabled,
-        backgroundColor: surfaceColor,
+        backgroundColor: surfaceColor.withValues(
+          alpha: surfaceColor.a * opacity,
+        ),
         borderRadius: BorderRadius.circular(resolvedBorderRadius),
-        child: surface,
+        blurProgress: opacity,
+        child: foreground,
       ),
+    );
+
+    final animation = appearance;
+    if (animation == null) return buildSurface(1, surface);
+
+    // A fade around the backdrop can isolate it from the page behind it.
+    return AnimatedBuilder(
+      animation: animation,
+      child: FadeTransition(opacity: animation, child: surface),
+      builder: (_, child) => buildSurface(animation.value, child!),
     );
   }
 }

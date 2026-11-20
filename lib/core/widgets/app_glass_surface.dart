@@ -10,9 +10,11 @@ class AppGlassSurface extends StatelessWidget {
     required this.backgroundColor,
     this.borderRadius = BorderRadius.zero,
     this.blurSigma = 16,
+    this.blurProgress = 1,
     this.blendMode = BlendMode.srcOver,
     this.enabled = true,
-  }) : assert(blurSigma >= 0 && blurSigma < double.infinity);
+  }) : assert(blurSigma >= 0 && blurSigma < double.infinity),
+       assert(blurProgress >= 0 && blurProgress <= 1);
 
   static const double darkGlassOpacity = 0.68;
   static const double lightGlassOpacity = 0.66;
@@ -27,6 +29,7 @@ class AppGlassSurface extends StatelessWidget {
   final Color backgroundColor;
   final BorderRadius borderRadius;
   final double blurSigma;
+  final double blurProgress;
   final BlendMode blendMode;
   final bool enabled;
 
@@ -35,6 +38,7 @@ class AppGlassSurface extends StatelessWidget {
     final opacity = Theme.of(context).brightness == Brightness.dark
         ? darkGlassOpacity
         : lightGlassOpacity;
+    final sigma = blurSigma * blurProgress;
     final content = ColoredBox(
       color: backgroundColor.withValues(
         alpha: backgroundColor.a * (enabled ? opacity : 1),
@@ -45,9 +49,12 @@ class AppGlassSurface extends StatelessWidget {
       borderRadius: borderRadius,
       child: enabled
           ? BackdropFilter.grouped(
-              enabled: backgroundColor.a > 0 && blurSigma > 0,
+              enabled: backgroundColor.a > 0 && sigma > 0,
               blendMode: blendMode,
-              filter: _blurFilterFor(blurSigma),
+              // Keep transient animation frames out of the filter cache.
+              filter: blurProgress == 1
+                  ? _blurFilterFor(blurSigma)
+                  : ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
               child: content,
             )
           : content,

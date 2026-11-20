@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
-import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/file_tree_expansion_motion.dart';
 import '../../../core/widgets/file_tree_row.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
@@ -190,7 +189,6 @@ class AsmrDownloadNodeTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
-    final primaryColor = Theme.of(context).colorScheme.primary;
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final value = selection.stateForPath(node.track.relativePath);
@@ -205,20 +203,7 @@ class AsmrDownloadNodeTile extends ConsumerWidget {
         value: value,
         onChanged: _toggleSelection,
       ),
-      leading: Icon(
-        isFolder
-            ? expanded
-                  ? AppDesignTokens.openFolderIcon
-                  : AppDesignTokens.folderIcon
-            : asmrDownloadFileIcon(node.track),
-        size: AppDesignTokens.fileEntryIconSize,
-        color: asmrDownloadFileColor(
-          node.track,
-          audioColor: primaryColor,
-          fallbackColor: cs.onSurfaceVariant,
-          tokens: AppDesignTokens.of(context),
-        ),
-      ),
+      leading: asmrDownloadFileLeading(context, node.track, expanded: expanded),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

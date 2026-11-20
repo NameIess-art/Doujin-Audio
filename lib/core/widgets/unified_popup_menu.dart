@@ -286,7 +286,6 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
           anchorRect: anchorRect,
           entries: widget.entries,
           isWindows: isWindows,
-          blurBackground: true,
           hoverEnabled: hoverEnabled,
           onDismiss: _removeOverlay,
           onSelected: (value) async {
@@ -396,7 +395,8 @@ class _UnifiedPopupOverlay<T> extends StatefulWidget {
     required this.isWindows,
     required this.onDismiss,
     required this.onSelected,
-    this.blurBackground = false,
+    this.backdropClipper,
+    this.menuInsets = EdgeInsets.zero,
     this.layoutScale = 1,
     this.pointerAnchored = false,
     this.onTrailingSelected,
@@ -405,7 +405,8 @@ class _UnifiedPopupOverlay<T> extends StatefulWidget {
   final Animation<double> animation;
   final Rect anchorRect;
   final List<UnifiedMenuEntry<T>> entries;
-  final bool blurBackground;
+  final CustomClipper<Path>? backdropClipper;
+  final EdgeInsets menuInsets;
   final double layoutScale;
   final bool hoverEnabled;
   final bool isWindows;
@@ -445,13 +446,12 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
 
   void _bindAnimation() {
     final isWindows = widget.isWindows;
-    final reverseCurve = widget.blurBackground
-        ? _blurredMenuCardReverseCurve
-        : Curves.easeInCubic;
     _curved = CurvedAnimation(
       parent: widget.animation,
       curve: isWindows ? _windowsMenuCurve : kAppSpringCurve,
-      reverseCurve: isWindows ? _windowsMenuCurve : reverseCurve,
+      reverseCurve: isWindows
+          ? _windowsMenuCurve
+          : _blurredMenuCardReverseCurve,
     );
     _scaleCurved = isWindows
         ? null
@@ -460,7 +460,7 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
             curve: widget.pointerAnchored
                 ? kAppSpringCurve
                 : const Cubic(0.2, 0.92, 0.25, 1.032),
-            reverseCurve: reverseCurve,
+            reverseCurve: _blurredMenuCardReverseCurve,
           );
     _scale = (_scaleCurved ?? _curved).drive(Tween(begin: 0.88, end: 1.0));
     // A slide would move the pivot away from the desktop launch point.
@@ -498,6 +498,15 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
     final backgroundReverseCurve = widget.isWindows
         ? _windowsMenuCurve
         : Curves.easeInQuad;
+    Widget background = AppModalBackground(
+      animation: widget.animation,
+      curve: widget.isWindows ? _windowsMenuCurve : kAppSpringCurve,
+      reverseCurve: backgroundReverseCurve,
+      blurReverseCurve: backgroundReverseCurve,
+    );
+    if (widget.backdropClipper case final clipper?) {
+      background = ClipPath(clipper: clipper, child: background);
+    }
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.escape): widget.onDismiss,
@@ -510,75 +519,72 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
         child: FocusScope(
           node: _focusScope,
           child: Material(
-            color: Colors.transparent,
+            type: MaterialType.transparency,
             child: Stack(
               fit: StackFit.expand,
               children: [
+                IgnorePointer(child: background),
                 Positioned.fill(
+                  left: widget.menuInsets.left,
+                  top: widget.menuInsets.top,
+                  right: widget.menuInsets.right,
+                  bottom: widget.menuInsets.bottom,
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: widget.onDismiss,
-                    child: widget.blurBackground
-                        ? AppModalBackground(
-                            animation: widget.animation,
-                            curve: widget.isWindows
-                                ? _windowsMenuCurve
-                                : kAppSpringCurve,
-                            reverseCurve: backgroundReverseCurve,
-                            blurReverseCurve: backgroundReverseCurve,
-                          )
-                        : null,
                   ),
                 ),
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final size = constraints.biggest;
-                    final layout = _PopupMenuPositionDelegate(
-                      preferredRight: widget.anchorRect.right,
-                      preferredTop: widget.anchorRect.top,
-                    );
-                    return CustomSingleChildLayout(
-                      delegate: layout,
-                      // Keep the fade's hit bounds inside the animated transforms.
-                      child: SlideTransition(
-                        position: _slide,
-                        child: _AnchoredMenuScale(
-                          anchorInMenu: (menuSize) =>
-                              widget.anchorRect.center -
-                              layout.getPositionForChild(size, menuSize),
-                          scale: _scale,
-                          layoutScale: widget.layoutScale,
-                          child: FadeTransition(
-                            opacity: _curved,
-                            child: ExcludeFocus(
-                              excluding:
-                                  widget.animation.status ==
-                                  AnimationStatus.reverse,
-                              child: ExcludeSemantics(
+                Padding(
+                  padding: widget.menuInsets,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final size = constraints.biggest;
+                      final layout = _PopupMenuPositionDelegate(
+                        preferredRight: widget.anchorRect.right,
+                        preferredTop: widget.anchorRect.top,
+                      );
+                      return CustomSingleChildLayout(
+                        delegate: layout,
+                        // Keep the fade's hit bounds inside the animated transforms.
+                        child: SlideTransition(
+                          position: _slide,
+                          child: _AnchoredMenuScale(
+                            anchorInMenu: (menuSize) =>
+                                widget.anchorRect.center -
+                                layout.getPositionForChild(size, menuSize),
+                            scale: _scale,
+                            layoutScale: widget.layoutScale,
+                            child: FadeTransition(
+                              opacity: _curved,
+                              child: ExcludeFocus(
                                 excluding:
                                     widget.animation.status ==
                                     AnimationStatus.reverse,
-                                child: IgnorePointer(
-                                  ignoring:
+                                child: ExcludeSemantics(
+                                  excluding:
                                       widget.animation.status ==
                                       AnimationStatus.reverse,
-                                  child: _UnifiedPopupMenuCard<T>(
-                                    entries: widget.entries,
-                                    fitContent: true,
-                                    blurBackground: widget.blurBackground,
-                                    suppressHover: !widget.hoverEnabled,
-                                    onSelected: widget.onSelected,
-                                    onTrailingSelected:
-                                        widget.onTrailingSelected,
+                                  child: IgnorePointer(
+                                    ignoring:
+                                        widget.animation.status ==
+                                        AnimationStatus.reverse,
+                                    child: _UnifiedPopupMenuCard<T>(
+                                      entries: widget.entries,
+                                      fitContent: true,
+                                      suppressHover: !widget.hoverEnabled,
+                                      onSelected: widget.onSelected,
+                                      onTrailingSelected:
+                                          widget.onTrailingSelected,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
               ],
             ),
@@ -639,14 +645,12 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
   const _UnifiedPopupMenuCard({
     required this.entries,
     required this.fitContent,
-    required this.blurBackground,
     required this.onSelected,
     this.onTrailingSelected,
     this.suppressHover = false,
   });
 
   final bool fitContent;
-  final bool blurBackground;
   final bool suppressHover;
   final List<UnifiedMenuEntry<T>> entries;
   final ValueChanged<T> onSelected;
@@ -680,7 +684,7 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
         ],
       ),
       child: AppGlassSurface(
-        enabled: blurBackground && tokens.barGlassEnabled,
+        enabled: tokens.barGlassEnabled,
         blurSigma: 10,
         backgroundColor: background,
         borderRadius: BorderRadius.circular(tokens.radiusSection),
@@ -887,16 +891,24 @@ VoidCallback _enableMenuHoverOnMovement(VoidCallback onMovement) {
   };
 }
 
+typedef MenuHighlightedItem = ({
+  BuildContext context,
+  ShapeBorder shape,
+  ValueChanged<double> onFade,
+});
+
 Future<T?> showDockAwareMenu<T>({
   required BuildContext context,
   required RelativeRect position,
   required List<UnifiedMenuEntry<T>> entries,
   Listenable? dismissOn,
+  MenuHighlightedItem? highlightedItem,
 }) => _showDockAwareMenu(
   context: context,
   position: position,
   entries: entries,
   dismissOn: dismissOn,
+  highlightedItem: highlightedItem,
 );
 
 Future<T?> _showDockAwareMenu<T>({
@@ -905,12 +917,54 @@ Future<T?> _showDockAwareMenu<T>({
   required List<UnifiedMenuEntry<T>> entries,
   Listenable? dismissOn,
   bool pointerAnchored = false,
+  MenuHighlightedItem? highlightedItem,
 }) async {
-  final overlayState =
+  final menuOverlay =
       MobileOverlayInset.menuOverlayOf(context) ?? Overlay.maybeOf(context);
-  if (overlayState == null) return null;
+  if (menuOverlay == null) return null;
   final tickerMode = TickerMode.getValuesNotifier(context);
   if (!tickerMode.value.enabled) return null;
+
+  var overlayState = menuOverlay;
+  var menuInsets = EdgeInsets.zero;
+  final rootOverlay = Overlay.maybeOf(context, rootOverlay: true);
+  final menuBox = menuOverlay.context.findRenderObject();
+  final rootBox = rootOverlay?.context.findRenderObject();
+  if (rootOverlay != null &&
+      rootBox is RenderBox &&
+      rootBox.hasSize &&
+      menuBox is RenderBox &&
+      menuBox.hasSize &&
+      !identical(rootBox, menuBox)) {
+    final pane = MatrixUtils.transformRect(
+      menuBox.getTransformTo(rootBox),
+      Offset.zero & menuBox.size,
+    ).intersect(Offset.zero & rootBox.size);
+    if (!pane.isEmpty && pane.size != rootBox.size) {
+      // Paint the blur above the whole window while keeping the menu in its pane.
+      overlayState = rootOverlay;
+      menuInsets = EdgeInsets.fromLTRB(
+        pane.left,
+        pane.top,
+        rootBox.size.width - pane.right,
+        rootBox.size.height - pane.bottom,
+      );
+    }
+  }
+
+  final highlightedBox = highlightedItem?.context.findRenderObject();
+  final overlayBox = overlayState.context.findRenderObject();
+  final backdropClipper =
+      highlightedItem != null &&
+          highlightedBox is RenderBox &&
+          overlayBox is RenderBox
+      ? _MenuBackdropClipper(
+          highlightedBox,
+          overlayBox,
+          highlightedItem.shape,
+          Directionality.of(highlightedItem.context),
+        )
+      : null;
 
   final completer = Completer<T?>();
   final interactionSource = Object();
@@ -957,6 +1011,9 @@ Future<T?> _showDockAwareMenu<T>({
         if (!completer.isCompleted) completer.complete(value);
       },
       externallyManagedDismiss: menuDismiss != null,
+      backdropClipper: backdropClipper,
+      menuInsets: menuInsets,
+      onHighlightFade: highlightedItem?.onFade,
     ),
   );
 
@@ -988,6 +1045,60 @@ Future<T?> _showDockAwareMenu<T>({
   }
 }
 
+class _MenuBackdropClipper extends CustomClipper<Path> {
+  const _MenuBackdropClipper(
+    this.highlightedBox,
+    this.overlayBox,
+    this.shape,
+    this.textDirection,
+  );
+
+  final RenderBox highlightedBox;
+  final RenderBox overlayBox;
+  final ShapeBorder shape;
+  final TextDirection textDirection;
+
+  @override
+  Path getClip(Size size) {
+    final backdrop = Path()..addRect(Offset.zero & size);
+    if (!highlightedBox.attached ||
+        !highlightedBox.hasSize ||
+        !overlayBox.attached) {
+      return backdrop;
+    }
+    var exclusion = shape
+        .getOuterPath(
+          Offset.zero & highlightedBox.size,
+          textDirection: textDirection,
+        )
+        .transform(highlightedBox.getTransformTo(overlayBox).storage);
+
+    // A partially scrolled item only stays clear within its visible bounds.
+    RenderObject child = highlightedBox;
+    for (var parent = child.parent; parent != null; parent = parent.parent) {
+      final clip = parent.describeApproximatePaintClip(child);
+      if (clip != null && clip.isFinite) {
+        exclusion = Path.combine(
+          PathOperation.intersect,
+          exclusion,
+          (Path()..addRect(clip)).transform(
+            parent.getTransformTo(overlayBox).storage,
+          ),
+        );
+      }
+      child = parent;
+    }
+    return Path.combine(PathOperation.difference, backdrop, exclusion);
+  }
+
+  @override
+  bool shouldReclip(_MenuBackdropClipper oldClipper) =>
+      highlightedBox != oldClipper.highlightedBox ||
+      overlayBox != oldClipper.overlayBox ||
+      shape != oldClipper.shape ||
+      textDirection != oldClipper.textDirection;
+}
+
 class _DockMenuOverlay<T> extends StatefulWidget {
   const _DockMenuOverlay({
     super.key,
@@ -1000,6 +1111,9 @@ class _DockMenuOverlay<T> extends StatefulWidget {
     required this.hoverEnabled,
     required this.onResult,
     required this.externallyManagedDismiss,
+    required this.menuInsets,
+    this.backdropClipper,
+    this.onHighlightFade,
   });
 
   final RelativeRect position;
@@ -1011,6 +1125,9 @@ class _DockMenuOverlay<T> extends StatefulWidget {
   final bool hoverEnabled;
   final ValueChanged<T?> onResult;
   final bool externallyManagedDismiss;
+  final CustomClipper<Path>? backdropClipper;
+  final EdgeInsets menuInsets;
+  final ValueChanged<double>? onHighlightFade;
 
   @override
   State<_DockMenuOverlay<T>> createState() => _DockMenuOverlayState<T>();
@@ -1023,6 +1140,7 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
   bool _started = false;
   bool _resultCompleted = false;
   T? _dismissValue;
+  double _highlightFadeStart = 0;
   bool get _reducedMotion =>
       widget.reducedMotion || MediaQuery.disableAnimationsOf(context);
   Object get _interactionSource => widget.interactionSource;
@@ -1035,6 +1153,17 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
       duration: _menuEnterDuration,
       reverseDuration: _menuExitDuration,
     )..addStatusListener(_handleAnimationStatus);
+    if (widget.onHighlightFade != null) {
+      _controller.addListener(_fadeHighlightOnDismiss);
+    }
+  }
+
+  void _fadeHighlightOnDismiss() {
+    if (_highlightFadeStart > 0 && !_reducedMotion) {
+      widget.onHighlightFade?.call(
+        (_controller.value / _highlightFadeStart).clamp(0.0, 1.0),
+      );
+    }
   }
 
   void _handleAnimationStatus(AnimationStatus status) {
@@ -1074,6 +1203,7 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
     _dismissValue = value;
     try {
       if (!_reducedMotion) {
+        _highlightFadeStart = _controller.value;
         await _controller.reverse().orCancel;
       }
     } on TickerCanceled {
@@ -1100,13 +1230,15 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
           builder: (context, constraints) => _UnifiedPopupOverlay<T>(
             animation: _controller,
             anchorRect: widget.position.toRect(
-              Offset.zero & constraints.biggest,
+              Offset.zero & widget.menuInsets.deflateSize(constraints.biggest),
             ),
             entries: widget.entries,
             isWindows: Theme.of(context).platform == TargetPlatform.windows,
             layoutScale: _entryMenuScale,
             hoverEnabled: widget.hoverEnabled,
             pointerAnchored: widget.pointerAnchored,
+            backdropClipper: widget.backdropClipper,
+            menuInsets: widget.menuInsets,
             onDismiss: () => _dismiss(null),
             onSelected: _dismiss,
           ),
@@ -1140,11 +1272,13 @@ class UnifiedContextMenuRegion extends StatefulWidget {
 }
 
 class _UnifiedContextMenuRegionState extends State<UnifiedContextMenuRegion> {
+  final _highlightOpacity = ValueNotifier(0.0);
   ValueNotifier<bool>? _menuDismissal;
 
   @override
   void dispose() {
     _menuDismissal?.value = true;
+    _highlightOpacity.dispose();
     super.dispose();
   }
 
@@ -1155,7 +1289,8 @@ class _UnifiedContextMenuRegionState extends State<UnifiedContextMenuRegion> {
     final entries = widget.buildEntries();
     if (entries.isEmpty || !mounted) return;
     final dismissal = ValueNotifier(false);
-    setState(() => _menuDismissal = dismissal);
+    _menuDismissal = dismissal;
+    _highlightOpacity.value = 1;
     final VoidCallback? action;
     try {
       action = await showUnifiedContextMenu<VoidCallback>(
@@ -1164,10 +1299,18 @@ class _UnifiedContextMenuRegionState extends State<UnifiedContextMenuRegion> {
             globalPosition ?? box.localToGlobal(box.size.center(Offset.zero)),
         entries: entries,
         dismissOn: dismissal,
+        highlightedItem: (
+          context: context,
+          shape: widget.shape,
+          onFade: (opacity) {
+            if (mounted) _highlightOpacity.value = opacity;
+          },
+        ),
       );
     } finally {
       dismissal.dispose();
-      if (mounted) setState(() => _menuDismissal = null);
+      _menuDismissal = null;
+      if (mounted) _highlightOpacity.value = 0;
     }
     if (mounted && widget.enabled) action?.call();
   }
@@ -1205,16 +1348,23 @@ class _UnifiedContextMenuRegionState extends State<UnifiedContextMenuRegion> {
                   unawaited(_openMenu(details.globalPosition));
                 }
               : null,
-          child: DecoratedBox(
-            position: DecorationPosition.foreground,
-            decoration: _menuDismissal == null
-                ? const BoxDecoration()
-                : ShapeDecoration(
-                    color: appPressedTint(Theme.of(context).colorScheme),
-                    shape: shape is OutlinedBorder
-                        ? shape.copyWith(side: BorderSide.none)
-                        : shape,
-                  ),
+          child: ValueListenableBuilder<double>(
+            valueListenable: _highlightOpacity,
+            builder: (context, opacity, child) {
+              final color = appPressedTint(Theme.of(context).colorScheme);
+              return DecoratedBox(
+                position: DecorationPosition.foreground,
+                decoration: opacity == 0
+                    ? const BoxDecoration()
+                    : ShapeDecoration(
+                        color: color.withValues(alpha: color.a * opacity),
+                        shape: shape is OutlinedBorder
+                            ? shape.copyWith(side: BorderSide.none)
+                            : shape,
+                      ),
+                child: child,
+              );
+            },
             child: widget.child,
           ),
         ),
@@ -1228,6 +1378,7 @@ Future<T?> showUnifiedContextMenu<T>({
   required Offset globalPosition,
   required List<UnifiedMenuEntry<T>> entries,
   Listenable? dismissOn,
+  MenuHighlightedItem? highlightedItem,
 }) {
   final localOverlay = MobileOverlayInset.menuOverlayOf(context);
   final overlay = localOverlay ?? Overlay.of(context);
@@ -1243,6 +1394,7 @@ Future<T?> showUnifiedContextMenu<T>({
     entries: entries,
     pointerAnchored: true,
     dismissOn: dismissOn,
+    highlightedItem: highlightedItem,
   );
 }
 
@@ -1314,7 +1466,6 @@ Widget _buildTextSelectionMenu(
         child: _UnifiedPopupMenuCard<VoidCallback>(
           entries: entries,
           fitContent: false,
-          blurBackground: true,
           onSelected: (action) => action(),
         ),
       ),

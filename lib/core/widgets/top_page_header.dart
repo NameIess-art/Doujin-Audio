@@ -297,15 +297,11 @@ class _TopPageHeaderState extends State<TopPageHeader> {
     final secondaryCapsuleRow = buildSecondaryCapsuleRow();
 
     Widget buildHeaderContent(double collapseT) {
-      if (hasTopCapsule && !hasSecondaryContent) {
-        final titleCollapseT = Curves.easeOutCubic.transform(collapseT);
-        final resolvedPadding = EdgeInsetsGeometry.lerp(
-          widget.padding,
-          widget.collapsedPadding,
-          titleCollapseT,
-        )!;
+      if (hasTopCapsule &&
+          !hasSecondaryContent &&
+          widget.collapseController == null) {
         return Padding(
-          padding: resolvedPadding,
+          padding: widget.padding,
           child: topCapsuleWidget ?? const SizedBox.shrink(),
         );
       }
@@ -324,10 +320,11 @@ class _TopPageHeaderState extends State<TopPageHeader> {
           .clamp(0.0, 1.0);
 
       const topCapsuleHeight = AppPageHeaderMetrics.contentHeight;
-      const rowGap = AppPageHeaderMetrics.rowSpacing;
       const secondRowHeight = AppPageHeaderMetrics.contentHeight;
-      const expandedHeight = topCapsuleHeight + rowGap + secondRowHeight;
-      const collapsedHeight = secondRowHeight;
+      final expandedHeight = hasSecondaryContent
+          ? AppPageHeaderMetrics.expandedContentHeight
+          : topCapsuleHeight;
+      final collapsedHeight = hasSecondaryContent ? secondRowHeight : 0.0;
 
       final currentHeight = dart_ui.lerpDouble(
         expandedHeight,
@@ -335,7 +332,7 @@ class _TopPageHeaderState extends State<TopPageHeader> {
         collapseT,
       )!;
       final secondRowTop = dart_ui.lerpDouble(
-        topCapsuleHeight + rowGap,
+        AppPageHeaderMetrics.secondRowOffset,
         0.0,
         collapseT,
       )!;
@@ -367,13 +364,14 @@ class _TopPageHeaderState extends State<TopPageHeader> {
                     ),
                   ),
                 ),
-              Positioned(
-                top: secondRowTop,
-                left: 0,
-                right: 0,
-                height: secondRowHeight,
-                child: secondaryCapsuleRow,
-              ),
+              if (hasSecondaryContent)
+                Positioned(
+                  top: secondRowTop,
+                  left: 0,
+                  right: 0,
+                  height: secondRowHeight,
+                  child: secondaryCapsuleRow,
+                ),
             ],
           ),
         ),
@@ -1114,7 +1112,7 @@ class HeaderTopCapsule extends StatelessWidget {
     this.dataCount,
     this.leading,
     this.trailing,
-    this.height = 38,
+    this.height = AppPageHeaderMetrics.contentHeight,
   });
 
   final String title;

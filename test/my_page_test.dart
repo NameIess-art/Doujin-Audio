@@ -679,6 +679,17 @@ void main() {
               widget is ListView && widget.scrollDirection == Axis.vertical,
         );
         final scroll = tester.widget<ListView>(vertical).controller!;
+        final capsule = find.byType(HeaderTopCapsule);
+        final capsuleTop = tester.getTopLeft(capsule).dy;
+        scroll.jumpTo(24);
+        await tester.pump();
+        expect(
+          tester.getTopLeft(capsule).dy,
+          inExclusiveRange(capsuleTop - 24, capsuleTop),
+        );
+        scroll.jumpTo(0);
+        await tester.pump();
+        expect(tester.getTopLeft(capsule).dy, capsuleTop);
         final week = find.widgetWithText(
           ChoiceChip,
           fixture.languageProvider.tr('my_interval_week'),
@@ -689,6 +700,7 @@ void main() {
         // Visit the horizontal row once before moving it beyond the cache window.
         scroll.jumpTo(240);
         await pumpAndSettleWithAsync(tester);
+        expect(capsule.hitTestable(), findsNothing);
         final history = find.byKey(const ValueKey('my-history-viewport'));
         final historyScroll = tester
             .widget<ListView>(

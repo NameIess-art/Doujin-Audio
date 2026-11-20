@@ -10,6 +10,7 @@ import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/app/presentation/work_detail_navigation.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_entries.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_entry_tile.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/gestures.dart';
@@ -22,6 +23,131 @@ void main() {
   final coordinator = UiInteractionCoordinator.instance;
   setUp(coordinator.resetForTest);
   tearDown(coordinator.resetForTest);
+
+  testWidgets(
+    'menu blurs the backdrop around a clear highlighted item',
+    (tester) async {
+      final captureKey = GlobalKey();
+      final menuOverlay = GlobalKey<OverlayState>();
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: captureKey,
+          child: MaterialApp(
+            home: Scaffold(
+              body: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (var index = 0; index < 100; index++)
+                        Expanded(
+                          child: ColoredBox(
+                            color: index.isEven ? Colors.black : Colors.white,
+                          ),
+                        ),
+                    ],
+                  ),
+                  Positioned(
+                    left: 30,
+                    top: 36,
+                    width: 520,
+                    height: 230,
+                    child: MobileOverlayInset(
+                      bottomInset: 0,
+                      menuOverlayKey: menuOverlay,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Positioned(
+                            left: 150,
+                            top: 64,
+                            width: 240,
+                            height: 80,
+                            child: UnifiedContextMenuRegion(
+                              shape: const StadiumBorder(),
+                              openOnAndroidLongPress: true,
+                              buildEntries: () => [
+                                UnifiedMenuEntry.action(
+                                  value: () {},
+                                  label: 'Action',
+                                ),
+                              ],
+                              child: const SizedBox.expand(),
+                            ),
+                          ),
+                          Overlay(key: menuOverlay),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      Future<(int, int)> stripeContrast() async {
+        final boundary =
+            captureKey.currentContext!.findRenderObject()!
+                as RenderRepaintBoundary;
+        final image = boundary.toImageSync();
+        try {
+          final bytes = (await tester.runAsync(image.toByteData))!;
+          int red(int x, int y) => bytes.getUint8((y * image.width + x) * 4);
+          int contrast(int y) => (red(220, y) - red(228, y)).abs();
+          return (contrast(120), contrast(350));
+        } finally {
+          image.dispose();
+        }
+      }
+
+      expect(await stripeContrast(), (255, 255));
+      const trigger = Offset(406, 144);
+      if (defaultTargetPlatform == TargetPlatform.windows) {
+        await tester.tapAt(
+          trigger,
+          kind: PointerDeviceKind.mouse,
+          buttons: kSecondaryMouseButton,
+        );
+      } else {
+        await tester.longPressAt(trigger);
+      }
+      await tester.pumpAndSettle();
+      expect(find.text('Action'), findsOneWidget);
+      final (highlighted, background) = await stripeContrast();
+      expect(highlighted, greaterThan(180));
+      expect(background, lessThan(40));
+
+      final highlight = find.descendant(
+        of: find.byType(UnifiedContextMenuRegion),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is DecoratedBox &&
+              widget.position == DecorationPosition.foreground &&
+              widget.decoration is ShapeDecoration,
+        ),
+      );
+      double highlightAlpha() =>
+          (tester.widget<DecoratedBox>(highlight).decoration as ShapeDecoration)
+              .color!
+              .a;
+      final openAlpha = highlightAlpha();
+      await tester.tapAt(const Offset(40, 240));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(highlightAlpha(), closeTo(openAlpha / 2, 0.001));
+      await tester.pumpAndSettle();
+      expect(highlight, findsNothing);
+      expect(find.byType(AppModalBackground), findsNothing);
+      expect(await stripeContrast(), (255, 255));
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets('Windows text right-click menu keeps selection and add styling', (
     tester,
@@ -410,15 +536,8 @@ void main() {
                 : find.byTooltip('Open aligned menu'),
           );
           await tester.pumpAndSettle();
-          final hasModalBackground = mode == 'button';
-          expect(
-            find.byType(AppModalBackground),
-            hasModalBackground ? findsOneWidget : findsNothing,
-          );
-          expect(
-            find.byType(BackdropFilter),
-            hasModalBackground ? findsWidgets : findsNothing,
-          );
+          expect(find.byType(AppModalBackground), findsOneWidget);
+          expect(find.byType(BackdropFilter), findsWidgets);
           final firstLabel = find.text('Short');
           final card = find
               .ancestor(of: firstLabel, matching: find.byType(ClipRRect))

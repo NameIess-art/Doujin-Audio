@@ -5,6 +5,7 @@ import '../../../core/app_language.dart';
 import '../../../core/immutable_collections.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/natural_sort.dart';
+import '../../../core/media/path_matcher.dart';
 
 enum AsmrCatalogSource { asmrOne, japaneseAsmr }
 
@@ -651,6 +652,16 @@ class AsmrTrackFile {
   bool get isImage =>
       !isFolder &&
       (_asmrImageExtensions.contains(resolvedExtension) || type == 'image');
+  String? get remoteImageUrl {
+    if (!isImage) return null;
+    final stream = streamUrl?.trim();
+    if (stream != null && PathMatcher.isRemoteUri(stream)) return stream;
+    final download = downloadUrl?.trim();
+    return download != null && PathMatcher.isRemoteUri(download)
+        ? download
+        : null;
+  }
+
   late final bool hasBrowsableContent =
       isAudio || children.any((child) => child.hasBrowsableContent);
   String get stemKey => _asmrMatchingStem(relativePath);

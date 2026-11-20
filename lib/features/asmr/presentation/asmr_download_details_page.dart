@@ -282,14 +282,10 @@ class _AsmrDownloadDetailsPageState
                                     isFolder: true,
                                     onTap: () =>
                                         _toggleFolder(node.relativePath),
-                                    leading: Icon(
-                                      expanded
-                                          ? AppDesignTokens.openFolderIcon
-                                          : AppDesignTokens.folderIcon,
-                                      color: AppDesignTokens.of(
-                                        context,
-                                      ).folderColor,
-                                      size: AppDesignTokens.fileEntryIconSize,
+                                    leading: asmrDownloadFileLeading(
+                                      context,
+                                      node,
+                                      expanded: expanded,
                                     ),
                                     trailing: FileTreeExpansionArrow(
                                       expanded: expanded,
@@ -491,16 +487,7 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
       title: state.outputName,
       minHeight: 52,
       depth: depth,
-      leading: Icon(
-        asmrDownloadFileIcon(node),
-        size: AppDesignTokens.fileEntryIconSize,
-        color: asmrDownloadFileColor(
-          node,
-          audioColor: primaryColor,
-          fallbackColor: cs.onSurfaceVariant,
-          tokens: AppDesignTokens.of(context),
-        ),
-      ),
+      leading: asmrDownloadFileLeading(context, node),
       subtitleWidget: Row(
         children: [
           Expanded(

@@ -270,6 +270,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
               child: TopPageHeader(
                 icon: Icons.settings_rounded,
                 topCapsuleTitle: i18n.tr('settings'),
+                collapseController: _scrollController,
               ),
             ),
           ],

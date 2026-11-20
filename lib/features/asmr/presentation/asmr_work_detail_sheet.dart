@@ -210,7 +210,7 @@ WorkDirectorySnapshot buildAsmrWorkDirectorySnapshot(List<AsmrTrackFile> tree) {
       } else if (node.isImage) {
         final image = WorkImageItem(
           name: node.title,
-          path: node.streamUrl ?? node.downloadUrl ?? '',
+          path: node.remoteImageUrl ?? '',
           relativePath: node.relativePath,
         );
         images.add(image);

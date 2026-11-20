@@ -45,7 +45,8 @@ abstract final class AppPageHeaderMetrics {
   static const double titleIconSize = 22;
   static const double contentHeight = buttonSize;
   static const double rowSpacing = 6;
-  static const double expandedContentHeight = contentHeight * 2 + rowSpacing;
+  static const double secondRowOffset = contentHeight + rowSpacing;
+  static const double expandedContentHeight = secondRowOffset + contentHeight;
   static const EdgeInsets padding = EdgeInsets.fromLTRB(
     AppSpacing.md,
     6,

@@ -5846,6 +5846,13 @@ void main() {
 
         // Tap the menu action to close menu
         await tester.tap(play);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(
+          tester.widget<ListTile>(listTileFinder).selectedTileColor!.a,
+          closeTo(0.08, 0.001),
+        );
+        expect(performedAction, isNull);
         await tester.pumpAndSettle();
 
         // After menu closes, tile is unhighlighted and action is performed

@@ -637,6 +637,7 @@ class _MyPageState extends ConsumerState<MyPage>
               child: TopPageHeader(
                 icon: Icons.person_rounded,
                 topCapsuleTitle: i18n.tr('nav_my'),
+                collapseController: _scroll,
               ),
             ),
           ],

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
@@ -7,6 +9,7 @@ import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/core/widgets/app_glass_surface.dart';
 import 'package:doujin_audio/core/widgets/confirm_action_dialog.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
+import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 
@@ -634,47 +637,146 @@ void main() {
     },
   );
 
-  testWidgets('undo action restores pending removals without committing', (
+  testWidgets('feedback height follows the title capsule and wrapped text', (
     tester,
   ) async {
-    final service = UndoableRemovalService();
-    addTearDown(service.dispose);
-    var commits = 0;
-    var undos = 0;
+    late BuildContext feedbackContext;
     await tester.pumpWidget(
       _feedbackApp(
         home: Scaffold(
           body: Builder(
-            builder: (context) => TextButton(
-              onPressed: () => showUndoableRemovalFeedback(
-                context,
-                service: service,
-                action: UndoableRemovalAction(
-                  key: const UndoableRemovalKey('test', 'one'),
-                  commit: () => commits++,
-                  undo: () => undos++,
-                ),
-                message: 'Removed',
-                batchMessage: (count) => 'Removed $count',
-                undoLabel: 'Undo',
-                failureMessage: 'Failed',
-              ),
-              child: const Text('Remove'),
-            ),
+            builder: (context) {
+              feedbackContext = context;
+              return const Align(
+                alignment: Alignment.topCenter,
+                child: HeaderTopCapsule(title: 'Title'),
+              );
+            },
           ),
         ),
       ),
     );
 
-    await tester.tap(find.text('Remove'));
-    await tester.pump();
-    await tester.tap(find.text('Undo (5s)'));
-    await tester.pump();
+    final capsuleHeight = tester.getSize(find.byType(HeaderTopCapsule)).height;
+    final feedback = find.byType(AppFeedbackSurface);
+    double? settledTop;
+    Future<double> show(
+      String message, {
+      String? title,
+      bool undo = false,
+    }) async {
+      showAppSnackBar(
+        feedbackContext,
+        message,
+        title: title,
+        isUndoAction: undo,
+        actionLabel: undo ? 'Undo' : null,
+        onAction: undo ? () {} : null,
+      );
+      if (settledTop != null) {
+        await tester.pump();
+        expect(tester.getTopLeft(feedback).dy, settledTop);
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(tester.getTopLeft(feedback).dy, settledTop);
+      }
+      await tester.pumpAndSettle();
+      settledTop ??= tester.getTopLeft(feedback).dy;
+      expect(tester.getTopLeft(feedback).dy, settledTop);
+      return tester.getSize(feedback).height;
+    }
 
-    expect(undos, 1);
-    expect(commits, 0);
-    expect(service.state.hiddenKeys, isEmpty);
+    expect(await show('One line'), capsuleHeight);
+    expect(await show('Removed', undo: true), capsuleHeight);
+    final twoLines = await show('First line\nSecond line');
+    expect(twoLines, greaterThan(capsuleHeight));
+    expect(
+      await show('First line\nSecond line', title: 'Title'),
+      greaterThan(twoLines),
+    );
+    expect(await show('One line'), capsuleHeight);
   });
+
+  testWidgets(
+    'undo stays visually stable and restores pending removals',
+    (tester) async {
+      final service = UndoableRemovalService();
+      addTearDown(service.dispose);
+      var commits = 0;
+      var undos = 0;
+      await tester.pumpWidget(
+        _feedbackApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => showUndoableRemovalFeedback(
+                  context,
+                  service: service,
+                  action: UndoableRemovalAction(
+                    key: const UndoableRemovalKey('test', 'one'),
+                    commit: () => commits++,
+                    undo: () => undos++,
+                  ),
+                  message: 'Removed',
+                  batchMessage: (count) => 'Removed $count',
+                  undoLabel: 'Undo',
+                  failureMessage: 'Failed',
+                ),
+                child: const Text('Remove'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Remove'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      final undo = find.text('Undo (5s)');
+      final restingRect = tester.getRect(undo);
+      final restingStyle = tester
+          .renderObject<RenderParagraph>(undo)
+          .text
+          .style;
+      final isWindows = defaultTargetPlatform == TargetPlatform.windows;
+      final pointer = await tester.createGesture(
+        kind: isWindows ? PointerDeviceKind.mouse : PointerDeviceKind.touch,
+      );
+      if (isWindows) {
+        await pointer.addPointer(
+          location: tester.getCenter(find.text('Removed')),
+        );
+        await pointer.moveTo(restingRect.center);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 180));
+        expect(tester.getRect(undo), restingRect);
+        expect(
+          tester.renderObject<RenderParagraph>(undo).text.style,
+          restingStyle,
+        );
+      }
+
+      await pointer.down(restingRect.center);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(tester.getRect(undo), restingRect);
+      expect(
+        tester.renderObject<RenderParagraph>(undo).text.style,
+        restingStyle,
+      );
+      expect(undos, 0);
+      await pointer.up();
+      if (isWindows) await pointer.removePointer();
+      await tester.pump();
+
+      expect(undos, 1);
+      expect(commits, 0);
+      expect(service.state.hiddenKeys, isEmpty);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets('swiping undoable feedback commits the pending removal', (
     tester,
@@ -916,37 +1018,46 @@ void main() {
     expect(settledCenter.dx, closeTo(entranceCenter.dx, 1.0));
   });
 
-  testWidgets(
-    'top feedback positions close to header and avoids landscape menu bar',
-    (tester) async {
-      tester.view.physicalSize = const Size(1280, 800);
+  for (final (size, navigationWidth) in [
+    (const Size(1280, 800), 260.0),
+    (const Size(390, 820), 0.0),
+  ]) {
+    testWidgets('top feedback aligns with the header second row at $size', (
+      tester,
+    ) async {
+      tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1.0;
+      tester.view.padding = const FakeViewPadding(top: 24);
       addTearDown(tester.view.reset);
 
       await tester.pumpWidget(
         _feedbackApp(
           home: Scaffold(
-            body: Row(
-              children: [
-                const SizedBox(width: 260, child: Text('NavigationMenu')),
-                Expanded(
-                  child: KeyedSubtree(
-                    key: const ValueKey<String>('main_page_canvas'),
+            body: Padding(
+              padding: EdgeInsets.only(left: navigationWidth, top: 8),
+              child: Stack(
+                key: const ValueKey<String>('main_page_canvas'),
+                fit: StackFit.expand,
+                children: [
+                  const Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: TopPageHeader(
+                      topCapsuleTitle: 'Library',
+                      title: 'Actions',
+                    ),
+                  ),
+                  Center(
                     child: Builder(
                       builder: (context) => TextButton(
-                        onPressed: () {
-                          showAppSnackBar(
-                            context,
-                            'Landscape feedback message',
-                            duration: const Duration(seconds: 10),
-                          );
-                        },
+                        onPressed: () => showAppSnackBar(context, 'Feedback'),
                         child: const Text('Trigger'),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -955,20 +1066,16 @@ void main() {
       await tester.tap(find.text('Trigger'));
       await tester.pumpAndSettle();
 
-      final surfaceFinder = find.byType(AppFeedbackSurface);
-      expect(surfaceFinder, findsOneWidget);
-
-      final topLeft = tester.getTopLeft(surfaceFinder);
-      final topRight = tester.getTopRight(surfaceFinder);
-
-      // Should be positioned at the second row capsule area (~48px)
-      expect(topLeft.dy, closeTo(48.0, 5.0));
-      // In landscape with a 260px menu, left edge should start at 260 + 16 = 276
-      expect(topLeft.dx, closeTo(276.0, 5.0));
-      // Right edge should align with standard 16px right margin (screen width - 16 = 1264)
-      expect(topRight.dx, closeTo(1264.0, 5.0));
-    },
-  );
+      final secondRow = find.ancestor(
+        of: find.text('Actions'),
+        matching: find.byType(HeaderFloatingSurface),
+      );
+      expect(
+        tester.getRect(find.byType(AppFeedbackSurface)),
+        tester.getRect(secondRow),
+      );
+    });
+  }
 
   for (final size in [const Size(1280, 800), const Size(580, 320)]) {
     testWidgets('feedback from menu stays inside content at $size', (

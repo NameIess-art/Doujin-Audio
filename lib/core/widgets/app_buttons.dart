@@ -316,25 +316,31 @@ ButtonStyle appSurfaceButtonStyle({
 Set<WidgetState> _restingStates(Set<WidgetState> states) =>
     states.difference(const {WidgetState.hovered, WidgetState.pressed});
 
-ButtonStyle appTextButtonStyle({ButtonStyle? style}) =>
-    appButtonStyle(style).copyWith(
-      backgroundBuilder: _touchButtonLayer(style),
-      backgroundColor: WidgetStateProperty.resolveWith(
-        (states) => style?.backgroundColor?.resolve(_restingStates(states)),
-      ),
-      side: WidgetStateProperty.resolveWith(
-        (states) => style?.side?.resolve(_restingStates(states)),
-      ),
-      foregroundBuilder: (context, states, child) => _TextButtonFeedback(
-        pressed: states.contains(WidgetState.pressed),
-        hovered: states.contains(WidgetState.hovered),
-        enabled: !states.contains(WidgetState.disabled),
-        backgroundColor: style?.backgroundColor?.resolve(
-          _restingStates(states),
+ButtonStyle appTextButtonStyle({
+  ButtonStyle? style,
+  bool showPointerFeedback = true,
+}) => appButtonStyle(style).copyWith(
+  backgroundBuilder: showPointerFeedback
+      ? _touchButtonLayer(style)
+      : _identityForegroundBuilder,
+  backgroundColor: WidgetStateProperty.resolveWith(
+    (states) => style?.backgroundColor?.resolve(_restingStates(states)),
+  ),
+  side: WidgetStateProperty.resolveWith(
+    (states) => style?.side?.resolve(_restingStates(states)),
+  ),
+  foregroundBuilder: !showPointerFeedback
+      ? _identityForegroundBuilder
+      : (context, states, child) => _TextButtonFeedback(
+          pressed: states.contains(WidgetState.pressed),
+          hovered: states.contains(WidgetState.hovered),
+          enabled: !states.contains(WidgetState.disabled),
+          backgroundColor: style?.backgroundColor?.resolve(
+            _restingStates(states),
+          ),
+          child: child ?? const SizedBox.shrink(),
         ),
-        child: child ?? const SizedBox.shrink(),
-      ),
-    );
+);
 
 ButtonLayerBuilder _touchButtonLayer(ButtonStyle? style) =>
     (context, states, child) => AppTouchFeedback(

@@ -225,6 +225,42 @@ void main() {
   );
 
   testWidgets(
+    'settings main title scrolls away with the categories',
+    (tester) async {
+      tester.view.physicalSize = const Size(450, 360);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      await tester.pumpWidget(fixture.build(const SettingsTab()));
+      await tester.pumpAndSettle();
+
+      final list = find.byType(ListView);
+      final controller = tester.widget<ListView>(list).controller!;
+      final capsule = find.byType(HeaderTopCapsule);
+      final capsuleTop = tester.getTopLeft(capsule).dy;
+      controller.jumpTo(24);
+      await tester.pump();
+      expect(
+        tester.getTopLeft(capsule).dy,
+        inExclusiveRange(capsuleTop - 24, capsuleTop),
+      );
+
+      controller.jumpTo(controller.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      expect(capsule.hitTestable(), findsNothing);
+      controller.jumpTo(0);
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(capsule).dy, capsuleTop);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
     'Windows scrollbar starts below the page header',
     (tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
@@ -322,13 +358,13 @@ void main() {
     }
 
     expect(find.text(i18n.tr('section_language')), findsNothing);
+    final rootList = tester.widget<ListView>(find.byType(ListView).first);
     expect(
       tester
           .widget<TopPageHeader>(find.byType(TopPageHeader))
           .collapseController,
-      isNull,
+      same(rootList.controller),
     );
-    final rootList = tester.widget<ListView>(find.byType(ListView).first);
     expect(
       (rootList.padding! as EdgeInsets).bottom,
       greaterThanOrEqualTo(AppSpacing.sm),

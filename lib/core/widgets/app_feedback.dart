@@ -479,25 +479,26 @@ void _showTopFeedback(
         valueListenable: dataNotifier,
         builder: (context, currentData, _) {
           final mediaQuery = MediaQuery.of(overlayContext);
-          final isLandscape =
-              mediaQuery.orientation == Orientation.landscape ||
-              mediaQuery.size.width >= 980;
-          final topInset =
-              mediaQuery.padding.top +
-              AppPageHeaderMetrics.mainTabPadding.top +
-              36.0 +
-              6.0;
-
-          var leftInset = 16.0;
-          var rightInset = 16.0;
-          if (isLandscape && currentData.context.mounted) {
+          const headerPadding = AppPageHeaderMetrics.mainTabPadding;
+          var headerTop = mediaQuery.padding.top;
+          var leftInset = headerPadding.left;
+          var rightInset = headerPadding.right;
+          if (currentData.context.mounted) {
             RenderBox? targetBox;
+            var canvasTopPadding = mediaQuery.padding.top;
             bool findCanvas(Element element) {
               final key = element.widget.key;
               if (key is ValueKey<String> && key.value == 'main_page_canvas') {
                 final box = element.findRenderObject();
                 if (box is RenderBox && box.hasSize) {
                   targetBox = box;
+                  canvasTopPadding =
+                      element
+                          .getInheritedWidgetOfExactType<MediaQuery>()
+                          ?.data
+                          .padding
+                          .top ??
+                      canvasTopPadding;
                   return false;
                 }
               }
@@ -527,9 +528,13 @@ void _showTopFeedback(
                 Offset.zero,
                 ancestor: overlayBox,
               );
-              leftInset = origin.dx + 16.0;
+              headerTop = origin.dy + canvasTopPadding;
+              leftInset = origin.dx + headerPadding.left;
               rightInset =
-                  overlayBox.size.width - origin.dx - box.size.width + 16.0;
+                  overlayBox.size.width -
+                  origin.dx -
+                  box.size.width +
+                  headerPadding.right;
             }
           }
 
@@ -539,7 +544,10 @@ void _showTopFeedback(
               currentData.onAction != null;
 
           return Positioned(
-            top: topInset,
+            top:
+                headerTop +
+                headerPadding.top +
+                AppPageHeaderMetrics.secondRowOffset,
             left: leftInset,
             right: rightInset,
             child: _FeedbackAnimationWrapper(
@@ -568,54 +576,60 @@ void _showTopFeedback(
                     onDismissed: () =>
                         dismissEntry(AppFeedbackDismissReason.swipe),
                     child: Material(
-                    color: Colors.transparent,
-                    child: AppFeedbackSurface(
-                      tone: currentData.tone,
-                      icon: currentData.icon,
-                      iconWidget: currentData.iconWidget,
-                      iconColor: currentData.iconColor,
-                      title: currentData.title,
-                      message: currentData.message,
-                      remainingSeconds: hasAction ? null : remainingSeconds,
-                      trailing: hasAction
-                          ? TextButton(
-                              key: ValueKey((
-                                currentData.message,
-                                currentData.actionLabel,
-                              )),
-                              style: appTextButtonStyle(
-                                style: TextButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 4,
+                      color: Colors.transparent,
+                      child: AppFeedbackSurface(
+                        tone: currentData.tone,
+                        icon: currentData.icon,
+                        iconWidget: currentData.iconWidget,
+                        iconColor: currentData.iconColor,
+                        title: currentData.title,
+                        message: currentData.message,
+                        remainingSeconds: hasAction ? null : remainingSeconds,
+                        trailing: hasAction
+                            ? TextButton(
+                                key: ValueKey((
+                                  currentData.message,
+                                  currentData.actionLabel,
+                                )),
+                                style: appTextButtonStyle(
+                                  showPointerFeedback:
+                                      !currentData.showActionCountdown,
+                                  style: TextButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                    minimumSize: const Size(
+                                      0,
+                                      AppFeedbackSurface._iconChipSize,
+                                    ),
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                    shape: const StadiumBorder(),
                                   ),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                  shape: const StadiumBorder(),
                                 ),
-                              ),
-                              onPressed: () {
-                                if (dismissed ||
-                                    !identical(
-                                      dataNotifier.value,
-                                      currentData,
-                                    )) {
-                                  return;
-                                }
-                                dismissEntry(AppFeedbackDismissReason.action);
-                                currentData.onAction!();
-                              },
-                              child: Text(resolvedActionLabel!),
-                            )
-                          : currentData.duration == null
-                          ? const SizedBox.square(
-                              dimension: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : null,
+                                onPressed: () {
+                                  if (dismissed ||
+                                      !identical(
+                                        dataNotifier.value,
+                                        currentData,
+                                      )) {
+                                    return;
+                                  }
+                                  dismissEntry(AppFeedbackDismissReason.action);
+                                  currentData.onAction!();
+                                },
+                                child: Text(resolvedActionLabel!),
+                              )
+                            : currentData.duration == null
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : null,
+                      ),
                     ),
-                  ),
                   ),
                 );
               },
@@ -915,10 +929,19 @@ class AppFeedbackSurface extends StatelessWidget {
     this.remainingSeconds,
     this.title,
     this.trailing,
-    this.padding = const EdgeInsets.fromLTRB(10, 8, 14, 8),
+    this.padding = const EdgeInsets.fromLTRB(
+      10,
+      _verticalPadding,
+      14,
+      _verticalPadding,
+    ),
     this.borderRadius,
     this.iconColor,
   });
+
+  static const double _iconChipSize = 24;
+  static const double _verticalPadding =
+      (AppPageHeaderMetrics.contentHeight - _iconChipSize) / 2;
 
   final AppFeedbackTone tone;
   final IconData icon;
@@ -961,8 +984,8 @@ class AppFeedbackSurface extends StatelessWidget {
             AnimatedContainer(
               duration: tokens.motionFast,
               curve: Curves.easeOutCubic,
-              width: 28,
-              height: 28,
+              width: _iconChipSize,
+              height: _iconChipSize,
               decoration: BoxDecoration(
                 color: chipBackground,
                 shape: BoxShape.circle,

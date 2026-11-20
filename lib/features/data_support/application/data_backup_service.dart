@@ -312,7 +312,7 @@ class DataBackupService {
         ).writeAsString(jsonEncode(previousAccount.toJson()), flush: true);
 
         try {
-          await _database.databaseForTest;
+          await _database.openBeforeRestore();
         } catch (error, stackTrace) {
           // A damaged local database must not abort restoring a valid backup.
           AppLogService.warning(

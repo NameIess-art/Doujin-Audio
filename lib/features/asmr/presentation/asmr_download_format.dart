@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/media/media_file_support.dart' show formatMediaFileSize;
+import '../../library/presentation/work_image_entry_thumbnail.dart';
 import '../domain/asmr_models.dart';
 
 export '../../../core/media/media_file_support.dart' show formatMediaFileSize;
@@ -15,8 +16,39 @@ String formatAsmrDownloadTotalSize({
   return estimate == null ? unknownLabel : '≈ ${formatMediaFileSize(estimate)}';
 }
 
-IconData asmrDownloadFileIcon(AsmrTrackFile track) {
-  if (track.isFolder) return AppDesignTokens.folderIcon;
+Widget asmrDownloadFileLeading(
+  BuildContext context,
+  AsmrTrackFile track, {
+  bool expanded = false,
+}) {
+  final icon = _fileIcon(track, expanded: expanded);
+  final tokens = AppDesignTokens.of(context);
+  final colors = Theme.of(context).colorScheme;
+  final fallback = Icon(
+    icon,
+    size: AppDesignTokens.fileEntryIconSize,
+    color: switch (icon) {
+      AppDesignTokens.folderIcon ||
+      AppDesignTokens.openFolderIcon => tokens.folderColor,
+      AppDesignTokens.audioFileIcon ||
+      Icons.videocam_outlined => colors.primary,
+      AppDesignTokens.textFileIcon => tokens.textFileColor,
+      AppDesignTokens.imageFileIcon => tokens.imageFileColor,
+      _ => colors.onSurfaceVariant,
+    },
+  );
+  final url = track.remoteImageUrl;
+  return url == null
+      ? fallback
+      : WorkImageEntryThumbnail(path: url, fallbackIcon: fallback);
+}
+
+IconData _fileIcon(AsmrTrackFile track, {required bool expanded}) {
+  if (track.isFolder) {
+    return expanded
+        ? AppDesignTokens.openFolderIcon
+        : AppDesignTokens.folderIcon;
+  }
   if (track.isVideo) return Icons.videocam_outlined;
   if (track.isAudio) return AppDesignTokens.audioFileIcon;
   if (track.isText || track.isSubtitle) return AppDesignTokens.textFileIcon;
@@ -33,16 +65,3 @@ IconData asmrDownloadFileIcon(AsmrTrackFile track) {
       return Icons.insert_drive_file_rounded;
   }
 }
-
-Color asmrDownloadFileColor(
-  AsmrTrackFile track, {
-  required Color audioColor,
-  required Color fallbackColor,
-  AppDesignTokens tokens = AppDesignTokens.light,
-}) => switch (asmrDownloadFileIcon(track)) {
-  AppDesignTokens.folderIcon => tokens.folderColor,
-  AppDesignTokens.audioFileIcon || Icons.videocam_outlined => audioColor,
-  AppDesignTokens.textFileIcon => tokens.textFileColor,
-  AppDesignTokens.imageFileIcon => tokens.imageFileColor,
-  _ => fallbackColor,
-};

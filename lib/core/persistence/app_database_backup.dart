@@ -8,6 +8,10 @@ const _listeningRestoreColumns = {
 };
 
 extension AppDatabaseBackup on AppDatabase {
+  Future<void> openBeforeRestore() async {
+    await _database;
+  }
+
   Future<File> createPortableSnapshot(String outputPath) async {
     final output = File(outputPath);
     await output.parent.create(recursive: true);

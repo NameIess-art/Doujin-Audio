@@ -1,24 +1,19 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/media/media_file_support.dart' show formatMediaFileSize;
 import '../../../core/media/path_matcher.dart';
 import '../../../core/media/time_text_formatters.dart';
-import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/app_feedback.dart';
-import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/page_translation_scope.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
-import 'library_providers.dart';
 import 'work_detail_entries.dart';
+import 'work_image_entry_thumbnail.dart';
 
 class WorkDetailEntryTile extends StatefulWidget {
   const WorkDetailEntryTile({
@@ -43,20 +38,34 @@ class WorkDetailEntryTile extends StatefulWidget {
 }
 
 class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
+  static const _shape = RoundedRectangleBorder(
+    borderRadius: BorderRadius.all(Radius.circular(8)),
+  );
   bool _isMenuOpen = false;
   Offset? _lastPointerPosition;
   ValueNotifier<bool>? _menuDismissal;
+  final _highlightOpacity = ValueNotifier(0.0);
+
+  MenuHighlightedItem get _highlightedItem => (
+    context: context,
+    shape: _shape,
+    onFade: (opacity) {
+      if (mounted) _highlightOpacity.value = opacity;
+    },
+  );
 
   @override
   void dispose() {
     _menuDismissal?.value = true;
     _menuDismissal?.dispose();
+    _highlightOpacity.dispose();
     super.dispose();
   }
 
   Future<void> _showMenu(BuildContext context, {Offset? globalPosition}) async {
     if (!mounted || _isMenuOpen) return;
     setState(() => _isMenuOpen = true);
+    _highlightOpacity.value = 1;
     try {
       final dismissal = _menuDismissal ??= ValueNotifier(false);
       final menu = globalPosition == null
@@ -66,6 +75,7 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
               globalPosition: globalPosition,
               entries: widget.menuEntries,
               dismissOn: dismissal,
+              highlightedItem: _highlightedItem,
             );
       final result = await menu;
       if (context.mounted && result != null) {
@@ -73,6 +83,7 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
       }
     } finally {
       if (mounted) {
+        _highlightOpacity.value = 0;
         setState(() => _isMenuOpen = false);
       }
     }
@@ -95,6 +106,7 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
       position: RelativeRect.fromRect(rect, Offset.zero & box.size),
       entries: widget.menuEntries,
       dismissOn: dismissal,
+      highlightedItem: _highlightedItem,
     );
   }
 
@@ -139,8 +151,8 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
       WorkEntryType.text => tokens.textFileColor,
       WorkEntryType.image => tokens.imageFileColor,
     };
-    final isWindows = defaultTargetPlatform == TargetPlatform.windows;
-    final isHighlighted = isWindows && _isMenuOpen;
+    final isWindows = Theme.of(context).platform == TargetPlatform.windows;
+    final isHighlighted = _isMenuOpen;
 
     final opensPage =
         item.type == WorkEntryType.text || item.type == WorkEntryType.image;
@@ -172,34 +184,57 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
         ? (item.imageItem?.path ?? item.fullPathOrUrl).trim()
         : '';
     const thumbnailOutset =
-        (_WorkImageEntryLeading.thumbnailSize -
-            AppDesignTokens.fileEntryIconSize) /
-        2;
+        (WorkImageEntryThumbnail.size - AppDesignTokens.fileEntryIconSize) / 2;
     final leading = imagePath.isNotEmpty && !PathMatcher.isContentUri(imagePath)
-        ? _WorkImageEntryLeading(path: imagePath, fallbackIcon: fallbackIcon)
+        ? WorkImageEntryThumbnail(path: imagePath, fallbackIcon: fallbackIcon)
         : Padding(
             padding: const EdgeInsetsDirectional.only(start: thumbnailOutset),
             child: fallbackIcon,
           );
 
-    final tile = ListTile(
-      dense: true,
-      enableFeedback: false,
-      minTileHeight: 44,
-      minVerticalPadding: 4,
-      titleAlignment: ListTileTitleAlignment.center,
-      horizontalTitleGap: 0,
-      // Make room for the wider thumbnail around the icon's center.
-      minLeadingWidth: 40 + thumbnailOutset,
-      contentPadding: const EdgeInsetsDirectional.only(
-        start: 16 - thumbnailOutset,
+    final tile = ValueListenableBuilder<double>(
+      valueListenable: _highlightOpacity,
+      builder: (context, opacity, title) => ListTile(
+        dense: true,
+        enableFeedback: false,
+        minTileHeight: 44,
+        minVerticalPadding: 4,
+        titleAlignment: ListTileTitleAlignment.center,
+        horizontalTitleGap: 0,
+        // Make room for the wider thumbnail around the icon's center.
+        minLeadingWidth: 40 + thumbnailOutset,
+        contentPadding: const EdgeInsetsDirectional.only(
+          start: 16 - thumbnailOutset,
+        ),
+        shape: _shape,
+        selected: isHighlighted,
+        selectedTileColor: widget.accentColor.withValues(alpha: 0.16 * opacity),
+        selectedColor: widget.accentColor,
+        leading: leading,
+        title: title,
+        trailing: SizedBox.square(
+          dimension: 44,
+          child: Builder(
+            builder: (buttonContext) => IconButton(
+              key: ValueKey<String>('work_entry_more_${item.relativePath}'),
+              // Match the skeleton action center without shrinking its target.
+              padding: const EdgeInsets.only(left: 4),
+              iconSize: 20,
+              style: appIconButtonStyle(
+                IconButton.styleFrom(
+                  foregroundColor: cs.onSurfaceVariant.withValues(alpha: 0.7),
+                ),
+              ),
+              icon: const Icon(Icons.more_vert_rounded),
+              tooltip: widget.moreLabel,
+              onPressed: () => _showMenu(buttonContext),
+            ),
+          ),
+        ),
+        onLongPress: opensPage ? null : onLongPress,
+        onTap: opensPage ? null : onTap,
       ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      selected: isHighlighted,
-      selectedTileColor: widget.accentColor.withValues(alpha: 0.16),
-      selectedColor: widget.accentColor,
-      leading: leading,
-      title: Column(
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -221,27 +256,6 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
           ],
         ],
       ),
-      trailing: SizedBox.square(
-        dimension: 44,
-        child: Builder(
-          builder: (buttonContext) => IconButton(
-            key: ValueKey<String>('work_entry_more_${item.relativePath}'),
-            // Match the skeleton action center without shrinking its target.
-            padding: const EdgeInsets.only(left: 4),
-            iconSize: 20,
-            style: appIconButtonStyle(
-              IconButton.styleFrom(
-                foregroundColor: cs.onSurfaceVariant.withValues(alpha: 0.7),
-              ),
-            ),
-            icon: const Icon(Icons.more_vert_rounded),
-            tooltip: widget.moreLabel,
-            onPressed: () => _showMenu(buttonContext),
-          ),
-        ),
-      ),
-      onLongPress: opensPage ? null : onLongPress,
-      onTap: opensPage ? null : onTap,
     );
 
     return Listener(
@@ -258,7 +272,7 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
             : null,
         child: Material(
           color: Colors.transparent,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          shape: _shape,
           clipBehavior: Clip.antiAlias,
           child: opensPage
               ? AppEntryInkWell(
@@ -270,136 +284,6 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
               : tile,
         ),
       ),
-    );
-  }
-}
-
-class _WorkImageEntryLeading extends StatelessWidget {
-  const _WorkImageEntryLeading({
-    required this.path,
-    required this.fallbackIcon,
-  });
-
-  static const double thumbnailSize = 32;
-  static const double thumbnailRadius = 6;
-
-  final String path;
-  final Widget fallbackIcon;
-
-  @override
-  Widget build(BuildContext context) {
-    final placeholder = Center(child: fallbackIcon);
-    Widget buildPlaceholder(BuildContext _) => placeholder;
-    final isRemote = PathMatcher.isRemoteUri(path);
-    return SizedBox.square(
-      dimension: thumbnailSize,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(thumbnailRadius),
-        child: isRemote
-            ? _RemoteImageEntryThumbnail(
-                url: path,
-                placeholderBuilder: buildPlaceholder,
-              )
-            : _LocalImageEntryThumbnail(
-                path: path,
-                placeholderBuilder: buildPlaceholder,
-              ),
-      ),
-    );
-  }
-}
-
-class _LocalImageEntryThumbnail extends ConsumerWidget {
-  const _LocalImageEntryThumbnail({
-    required this.path,
-    required this.placeholderBuilder,
-  });
-
-  final String path;
-  final WidgetBuilder placeholderBuilder;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final cacheWidth = coverThumbnailCacheWidth(
-      logicalWidth: _WorkImageEntryLeading.thumbnailSize,
-      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-      resolution: ref.watch(coverImageResolutionProvider),
-    );
-    return RetryingFileImage(
-      path: path,
-      browseThumbnail: true,
-      deferLoadDuringInteraction: true,
-      fit: BoxFit.cover,
-      cacheWidth: cacheWidth,
-      useDefaultCacheWidth: false,
-      retryDelay: const Duration(seconds: 5),
-      maxRetryAttempts: 2,
-      loadingBuilder: placeholderBuilder,
-      fallbackBuilder: placeholderBuilder,
-    );
-  }
-}
-
-class _RemoteImageEntryThumbnail extends ConsumerStatefulWidget {
-  const _RemoteImageEntryThumbnail({
-    required this.url,
-    required this.placeholderBuilder,
-  });
-
-  final String url;
-  final WidgetBuilder placeholderBuilder;
-
-  @override
-  ConsumerState<_RemoteImageEntryThumbnail> createState() =>
-      _RemoteImageEntryThumbnailState();
-}
-
-class _RemoteImageEntryThumbnailState
-    extends ConsumerState<_RemoteImageEntryThumbnail> {
-  Object? _requestKey;
-  Future<String?>? _future;
-
-  @override
-  Widget build(BuildContext context) {
-    final library = ref.read(libraryFacadeProvider);
-    final (revision, resolved) = ref.watch(
-      coverGenerationProvider.select(
-        (_) => (
-          library.coverArtworkCacheService.revisionForScope(widget.url),
-          library.resolvedCoverPathForRemoteCover(widget.url),
-        ),
-      ),
-    );
-    final coverUi = ref.read(libraryCoverUiControllerProvider);
-    final cacheWidth = coverThumbnailCacheWidth(
-      logicalWidth: _WorkImageEntryLeading.thumbnailSize,
-      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-      resolution: ref.watch(coverImageResolutionProvider),
-    );
-    Future<String?> loadImage() =>
-        coverUi.deferredRemoteCover(widget.url, context: context);
-    final requestKey = (widget.url, resolved, revision);
-    if (_requestKey != requestKey) {
-      _requestKey = requestKey;
-      _future = resolved != null
-          ? SynchronousFuture<String?>(resolved)
-          : loadImage();
-    }
-    return AsyncRemoteCoverImage(
-      browseThumbnail: true,
-      deferLoadDuringInteraction: true,
-      onImageError: library.coverArtworkCacheService.reportArtworkReadFailure,
-      url: widget.url,
-      future: _future!,
-      initialPath: resolved,
-      retryFutureBuilder: loadImage,
-      retryDelay: const Duration(seconds: 5),
-      maxRetryAttempts: 2,
-      fit: BoxFit.cover,
-      cacheWidth: cacheWidth,
-      useDefaultCacheWidth: false,
-      loadingBuilder: widget.placeholderBuilder,
-      fallbackBuilder: widget.placeholderBuilder,
     );
   }
 }

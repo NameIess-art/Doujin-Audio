@@ -1,31 +1,43 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
+import 'package:doujin_audio/core/ui/cover_image_retention.dart';
 import 'package:doujin_audio/core/widgets/file_tree_row.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_selection.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_selection_tree.dart';
+import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
+import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-AsmrTrackFile _node(String path, {List<AsmrTrackFile>? children}) =>
-    AsmrTrackFile(
-      hash: path,
-      title: path,
-      type: children == null ? 'audio' : 'folder',
-      streamUrl: null,
-      downloadUrl: null,
-      lowQualityUrl: null,
-      duration: Duration.zero,
-      size: children == null ? 1024 : 0,
-      children: children ?? const [],
-      workId: 1,
-      workTitle: 'Work',
-      sourceId: 'RJ000001',
-      relativePath: path,
-    );
+import 'support/app_runtime_test_fixture.dart';
+
+AsmrTrackFile _node(
+  String path, {
+  List<AsmrTrackFile>? children,
+  String? streamUrl,
+  String? downloadUrl,
+}) => AsmrTrackFile(
+  hash: path,
+  title: path,
+  type: children == null ? 'audio' : 'folder',
+  streamUrl: streamUrl,
+  downloadUrl: downloadUrl,
+  lowQualityUrl: null,
+  duration: Duration.zero,
+  size: children == null ? 1024 : 0,
+  children: children ?? const [],
+  workId: 1,
+  workTitle: 'Work',
+  sourceId: 'RJ000001',
+  relativePath: path,
+);
 
 Future<void> _pumpList(
   WidgetTester tester,
@@ -160,6 +172,82 @@ void main() {
     expect(find.byIcon(AppDesignTokens.textFileIcon), findsNWidgets(5));
     expect(find.byIcon(AppDesignTokens.imageFileIcon), findsNWidgets(2));
   });
+
+  testWidgets(
+    'download image thumbnail loads from the source and remains selectable',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final root = Directory.systemTemp.createTempSync('download_image_');
+      addTearDown(() => root.deleteSync(recursive: true));
+      final file = File('${root.path}/cover.png')
+        ..writeAsBytesSync(
+          base64Decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+          ),
+        );
+      const url = 'https://example.test/cover.png';
+      final requests = <String>[];
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: CoverArtworkCacheService(
+          libraryService: LibraryService(),
+          remoteCoverDownloader: (source) async {
+            requests.add(source);
+            return file.path;
+          },
+        ),
+      );
+      addTearDown(fixture.dispose);
+      final selection = AsmrDownloadSelectionModel([
+        _node('cover.png', streamUrl: ' ', downloadUrl: url),
+        _node('track.mp3', streamUrl: 'https://example.test/track.mp3'),
+      ]);
+      await tester.pumpWidget(
+        fixture.build(
+          Scaffold(
+            body: AsmrDownloadSelectionList(
+              selection: selection,
+              onSelectionChanged: () {},
+            ),
+          ),
+        ),
+      );
+
+      final row = find.widgetWithText(FileTreeRow, 'cover.png');
+      final placeholder = find.descendant(
+        of: row,
+        matching: find.byIcon(AppDesignTokens.imageFileIcon),
+      );
+      expect(placeholder, findsOneWidget);
+      final thumb = find.descendant(of: row, matching: find.byType(Image));
+      for (
+        var attempt = 0;
+        attempt < 100 && thumb.evaluate().isEmpty;
+        attempt++
+      ) {
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+      }
+      expect(requests, [url]);
+      expect(thumb, findsOneWidget);
+      expect(tester.getSize(thumb), const Size.square(32));
+      expect(
+        tester.getRect(thumb).right,
+        lessThan(tester.getTopLeft(find.text('cover.png')).dx),
+      );
+      expect(selection.stateForPath('cover.png'), isFalse);
+      await tester.tap(thumb);
+      expect(selection.stateForPath('cover.png'), isTrue);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      releaseRetainedCoverImages();
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets('download rows show invariant subtree sizes and shared shape', (
     tester,

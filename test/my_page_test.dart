@@ -1360,63 +1360,74 @@ void main() {
           find.text(fixture.languageProvider.tr('my_excluded_tags')),
           findsNothing,
         );
-        final addVoice = find.text(
-          fixture.languageProvider.tr('my_add_voice_interest'),
-        );
-        await tester.ensureVisible(addVoice);
-        final entry = find.ancestor(
-          of: addVoice,
-          matching: find.byType(OutlinedButton),
-        );
-        final ink = find.descendant(
-          of: entry,
-          matching: find.bySubtype<InkWell>(),
-        );
-        final dynamic inkController = Material.of(tester.element(ink));
-        Iterable<InkSplash> pressedInk() =>
-            (inkController.debugInkFeatures as List<InkFeature>? ?? [])
-                .whereType<InkSplash>();
-        double buttonScale() => tester
-            .widgetList<Transform>(
-              find.ancestor(of: entry, matching: find.byType(Transform)),
-            )
-            .where((t) => !t.transformHitTests)
-            .fold<double>(1.0, (scale, t) => scale * t.transform.entry(0, 0));
-        final gesture = await tester.startGesture(tester.getCenter(addVoice));
-        await tester.pumpAndSettle();
-        expect(pressedInk(), isEmpty);
-        expect(
-          buttonScale(),
-          platform == TargetPlatform.windows ? 1.0 : 0.98,
-        );
-        await gesture.up();
-        expect(pressedInk(), isEmpty);
-        await pumpAndSettleWithAsync(tester);
-        expect(
-          tester
-              .widget<MyTagManagementPage>(find.byType(MyTagManagementPage))
-              .type,
-          MyInterestType.voiceActors,
-        );
-        await tester.pageBack();
-        await tester.pumpAndSettle();
-        expect(pressedInk(), isEmpty);
-        expect(buttonScale(), 1.0);
-        await pumpAndSettleWithAsync(tester);
-        final excluded = find.text(
-          fixture.languageProvider.tr('my_excluded_voice_actors'),
-        );
-        await tester.ensureVisible(excluded);
-        await tester.tap(excluded);
-        await pumpAndSettleWithAsync(tester);
-        expect(
-          tester
-              .widget<MyTagManagementPage>(find.byType(MyTagManagementPage))
-              .excluded,
-          isTrue,
-        );
-        await tester.pageBack();
-        await pumpAndSettleWithAsync(tester);
+        for (final excluded in [false, true]) {
+          final actionLabel = fixture.languageProvider.tr(
+            excluded ? 'my_excluded_voice_actors' : 'my_add_voice_interest',
+          );
+          final entry = find.widgetWithText(
+            OutlinedButton,
+            actionLabel,
+            skipOffstage: false,
+          );
+          await tester.ensureVisible(entry);
+          final ink = find.descendant(
+            of: entry,
+            matching: find.bySubtype<InkWell>(skipOffstage: false),
+            skipOffstage: false,
+          );
+          final dynamic inkController = Material.of(tester.element(ink));
+          Iterable<InteractiveInkFeature> visibleInk() =>
+              (inkController.debugInkFeatures as List<InkFeature>? ?? [])
+                  .whereType<InteractiveInkFeature>()
+                  .where((ink) => ink.color.a > 0);
+          Iterable<InteractiveInkFeature> pressedRipple() =>
+              visibleInk().where((ink) => ink is! InkHighlight);
+          double buttonScale() => tester
+              .widgetList<Transform>(
+                find.ancestor(
+                  of: entry,
+                  matching: find.byType(Transform, skipOffstage: false),
+                ),
+              )
+              .where((t) => !t.transformHitTests)
+              .fold<double>(1.0, (scale, t) => scale * t.transform.entry(0, 0));
+          final material = find.ancestor(
+            of: ink,
+            matching: find.byType(Material, skipOffstage: false),
+          ).first;
+          Color? background() => tester.widget<Material>(material).color;
+          final restingBackground = background();
+          final gesture = await tester.startGesture(tester.getCenter(entry));
+          await tester.pumpAndSettle();
+          expect(
+            pressedRipple(),
+            platform == TargetPlatform.android ? hasLength(1) : isEmpty,
+          );
+          expect(buttonScale(), platform == TargetPlatform.android ? 0.98 : 1);
+          if (platform == TargetPlatform.windows) {
+            expect(background(), isNot(restingBackground));
+          }
+          await gesture.up();
+          expect(pressedRipple(), isEmpty);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 32));
+          final editor = tester.widget<MyTagManagementPage>(
+            find.byType(MyTagManagementPage),
+          );
+          expect(editor.type, MyInterestType.voiceActors);
+          expect(editor.excluded, excluded);
+          expect(visibleInk(), isEmpty);
+          expect(buttonScale(), 1.0);
+          expect(background(), restingBackground);
+          await pumpAndSettleWithAsync(tester);
+          await tester.pageBack();
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 32));
+          expect(visibleInk(), isEmpty);
+          expect(buttonScale(), 1.0);
+          expect(background(), restingBackground);
+          await pumpAndSettleWithAsync(tester);
+        }
         expect(chips, findsNWidgets(20));
         final chip = tester.widget<InputChip>(first);
         expect(chip.backgroundColor, isNull);

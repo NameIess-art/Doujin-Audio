@@ -401,12 +401,14 @@ class _MyPageState extends ConsumerState<MyPage>
                             children: [
                               AppLabelledButton(
                                 OutlinedButton.icon,
+                                opensPage: true,
                                 onPressed: () => _openTags(false),
                                 icon: const Icon(Icons.add_rounded),
                                 label: Text(i18n.tr(interestType.addKey)),
                               ),
                               AppLabelledButton(
                                 OutlinedButton.icon,
+                                opensPage: true,
                                 onPressed: () => _openTags(true),
                                 icon: const Icon(Icons.block_rounded),
                                 label: Text(i18n.tr(interestType.excludedKey)),

@@ -969,6 +969,7 @@ class AppLabelledButton extends StatelessWidget {
     super.key,
     this.style,
     this.autofocus = false,
+    this.opensPage = false,
     required this.onPressed,
     required this.icon,
     required this.label,
@@ -977,17 +978,22 @@ class AppLabelledButton extends StatelessWidget {
   final AppLabelledButtonConstructor button;
   final ButtonStyle? style;
   final bool autofocus;
+  final bool opensPage;
   final VoidCallback? onPressed;
   final Widget icon;
   final Widget label;
 
   @override
   Widget build(BuildContext context) {
+    final showFeedback = !opensPage || ModalRoute.isCurrentOf(context) != false;
     if (button == TextButton.icon) {
       return button(
         onPressed: onPressed,
         autofocus: autofocus,
-        style: appTextButtonStyle(style: style),
+        style: appTextButtonStyle(
+          style: style,
+          showPointerFeedback: showFeedback,
+        ),
         icon: icon,
         label: label,
       );
@@ -1006,7 +1012,7 @@ class AppLabelledButton extends StatelessWidget {
         cs.primary,
       _ => cs.onPrimary,
     };
-    final surfaceStyle = appSurfaceButtonStyle(
+    var surfaceStyle = appSurfaceButtonStyle(
       style: style,
       colorScheme: cs,
       platform: theme.platform,
@@ -1015,8 +1021,27 @@ class AppLabelledButton extends StatelessWidget {
           ? Duration.zero
           : const Duration(milliseconds: 130),
     );
+    if (!showFeedback) {
+      surfaceStyle = appButtonStyle(style).copyWith(
+        animationDuration: Duration.zero,
+        foregroundBuilder: _identityForegroundBuilder,
+      );
+    } else if (opensPage && theme.platform == TargetPlatform.android) {
+      // Material's separate pressed fill can resume when the route reappears.
+      // Keep the tint in the splash so confirmation clears the entire effect.
+      surfaceStyle = surfaceStyle.copyWith(
+        overlayColor: appButtonStyle(style).overlayColor,
+        splashFactory: AppTapHighlightFactory(
+          showQuickTap: true,
+          dismissOnConfirm: true,
+          fixedColor: surfaceStyle.overlayColor?.resolve(
+            const {WidgetState.pressed},
+          ),
+        ),
+      );
+    }
     return AppSurfaceButtonShell(
-      enabled: onPressed != null,
+      enabled: showFeedback && onPressed != null,
       builder: (context, feedback) {
         var resolvedStyle = surfaceStyle;
         if (feedback.pressed || feedback.hovered) {

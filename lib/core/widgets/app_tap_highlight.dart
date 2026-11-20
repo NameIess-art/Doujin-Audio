@@ -12,6 +12,8 @@ class AppTapHighlightFactory extends InteractiveInkFeatureFactory {
     this.showQuickTap = false,
     this.animate = true,
     this.animateRipple = true,
+    this.dismissOnConfirm = false,
+    this.fixedColor,
   });
 
   static const _standard = AppTapHighlightFactory();
@@ -43,6 +45,8 @@ class AppTapHighlightFactory extends InteractiveInkFeatureFactory {
   final bool showQuickTap;
   final bool animate;
   final bool animateRipple;
+  final bool dismissOnConfirm;
+  final Color? fixedColor;
 
   @override
   InteractiveInkFeature create({
@@ -78,6 +82,8 @@ class AppTapHighlightFactory extends InteractiveInkFeatureFactory {
       onRemoved: onRemoved,
       showQuickTap: showQuickTap,
       animateRipple: animateRipple && !reduceMotion,
+      dismissOnConfirm: dismissOnConfirm,
+      fixedColor: fixedColor,
     );
   }
 }
@@ -87,16 +93,18 @@ class _EntrySplash extends InteractiveInkFeature {
     required super.controller,
     required super.referenceBox,
     required this.position,
-    required super.color,
+    required Color color,
     required this.textDirection,
     required this.bounds,
     required this.borderRadius,
     required this.radius,
     required this.showQuickTap,
     required this.animateRipple,
+    required this.dismissOnConfirm,
+    required this.fixedColor,
     super.customBorder,
     super.onRemoved,
-  }) {
+  }) : super(color: fixedColor ?? color) {
     if (animateRipple) {
       _expandController =
           AnimationController(vsync: controller.vsync, duration: _expandDuration)
@@ -113,6 +121,11 @@ class _EntrySplash extends InteractiveInkFeature {
   final double? radius;
   final bool showQuickTap;
   final bool animateRipple;
+  final bool dismissOnConfirm;
+  final Color? fixedColor;
+
+  @override
+  set color(Color value) => super.color = fixedColor ?? value;
 
   bool _painted = false;
   bool _confirming = false;
@@ -254,6 +267,10 @@ class _EntrySplash extends InteractiveInkFeature {
   @override
   void confirm() {
     if (_disposed || _confirming) return;
+    if (dismissOnConfirm) {
+      dispose();
+      return;
+    }
     if (!animateRipple) {
       // A quick tap can create and confirm the ink before Flutter paints a frame.
       if (showQuickTap && !_painted) {

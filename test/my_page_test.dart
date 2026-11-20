@@ -25,8 +25,8 @@ import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/widgets/app_search_suggestions.dart';
-import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
+import 'package:doujin_audio/core/widgets/file_tree_row.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:flutter/material.dart';
@@ -137,6 +137,76 @@ void main() {
       TargetPlatform.android,
       TargetPlatform.windows,
     }),
+  );
+
+  testWidgets(
+    'history paginates past the initial batch and stops at the last page',
+    (tester) async {
+      final repository = _ListeningRepository()
+        ..history = [
+          for (var i = 0; i < 43; i++)
+            ListeningHistoryEntry(
+              workKey: 'history-$i',
+              track: MusicTrack(
+                path: 'https://example.com/history-$i.mp3',
+                displayName: 'Track $i',
+                groupKey: 'work-$i',
+                groupTitle: 'Work $i',
+                groupSubtitle: '',
+                isSingle: false,
+                remoteMetadataKind: MusicTrack.remoteMetadataKindAsmrOne,
+                remoteMetadata: {'title': 'Work $i'},
+              ),
+            ),
+        ];
+      final activity = ListeningActivityService(
+        repository: repository,
+        readUsage: () async => [],
+        acknowledgeUsage: (_) async {},
+        resolveTrack: (_) => null,
+        recordInterests: ({required batchId, required contributions}) async {},
+      );
+      final fixture = AppRuntimeWidgetTestFixture(listeningActivity: activity);
+      addTearDown(fixture.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          const MyPage(tabIndex: 3),
+          overrides: [
+            listeningActivityServiceProvider.overrideWithValue(activity),
+          ],
+        ),
+      );
+      await pumpAndSettleWithAsync(tester);
+      final rows = find.byType(FileTreeRow);
+      final next = find.widgetWithIcon(IconButton, Icons.chevron_right_rounded);
+      final previous = find.widgetWithIcon(
+        IconButton,
+        Icons.chevron_left_rounded,
+      );
+
+      expect(rows, findsNWidgets(10));
+      expect(tester.widget<IconButton>(previous).onPressed, isNull);
+      for (var i = 1; i <= 4; i++) {
+        expect(tester.widget<IconButton>(next).onPressed, isNotNull);
+        await tester.ensureVisible(next);
+        await tester.pump();
+        await tester.tap(next);
+        await pumpAndSettleWithAsync(tester);
+        expect(find.text('Work ${i * 10}'), findsOneWidget);
+        expect(find.text('Work ${i * 10 - 1}'), findsNothing);
+      }
+      expect(rows, findsNWidgets(3));
+      expect(find.text('Work 42'), findsOneWidget);
+      expect(tester.widget<IconButton>(next).onPressed, isNull);
+
+      await tester.ensureVisible(previous);
+      await tester.pump();
+      await tester.tap(previous);
+      await pumpAndSettleWithAsync(tester);
+      expect(rows, findsNWidgets(10));
+      expect(find.text('Work 30'), findsOneWidget);
+      expect(find.text('Work 40'), findsNothing);
+    },
   );
 
   testWidgets('first taste projections wait for scrolling to finish', (
@@ -697,18 +767,9 @@ void main() {
         await tester.tap(week);
         await tester.pumpAndSettle();
         days.reads = 0;
-        // Visit the horizontal row once before moving it beyond the cache window.
         scroll.jumpTo(240);
         await pumpAndSettleWithAsync(tester);
         expect(capsule.hitTestable(), findsNothing);
-        final history = find.byKey(const ValueKey('my-history-viewport'));
-        final historyScroll = tester
-            .widget<ListView>(
-              find.descendant(of: history, matching: find.byType(ListView)),
-            )
-            .controller!;
-        historyScroll.jumpTo(150);
-        await tester.pumpAndSettle();
         // Hold the scroll interaction while the taste sections first enter.
         final interaction = UiInteractionCoordinator.instance;
         final drag = Object();
@@ -726,6 +787,19 @@ void main() {
         interaction.cancelInteraction(drag);
         await pumpUntilUiIdle(tester);
         await pumpAndSettleWithAsync(tester);
+        final nextPage = find.byTooltip('Next page');
+        await tester.ensureVisible(nextPage);
+        await tester.tap(nextPage);
+        await pumpAndSettleWithAsync(tester);
+        final secondPage = find.byKey(
+          const ValueKey('my-history-card-history-10'),
+        );
+        expect(secondPage.hitTestable(), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('my-history-card-history-0')),
+          findsNothing,
+        );
+
         final settledTagReads = controller.interestReads;
         final settledVoiceReads = controller.voiceInterestReads;
         for (var i = 0; i < 3; i++) {
@@ -736,15 +810,11 @@ void main() {
         }
         expect(tester.state(find.byType(ListeningTimeChart)), same(chart));
         expect(tester.widget<ChoiceChip>(week).selected, isTrue);
-        scroll.jumpTo(240);
-        await pumpAndSettleWithAsync(tester);
-        final restored = tester
-            .widget<ListView>(
-              find.descendant(of: history, matching: find.byType(ListView)),
-            )
-            .controller!;
-        expect(restored, same(historyScroll));
-        expect(restored.offset, 150);
+        expect(secondPage, findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('my-history-card-history-0')),
+          findsNothing,
+        );
         expect(controller.interestReads, settledTagReads);
         expect(controller.voiceInterestReads, settledVoiceReads);
         expect(days.reads, 0);
@@ -907,12 +977,12 @@ void main() {
               findsNothing,
             );
             final history = find.byKey(const ValueKey('my-skeleton-history'));
-            expect(tester.getSize(history).height, 113);
-            final covers = find.descendant(
-              of: history,
-              matching: find.byType(ShimmerContainer),
+            final rows = tester.widget<FileTreeSkeleton>(history);
+            expect(rows.rowHeight, greaterThanOrEqualTo(52));
+            expect(
+              tester.getSize(history).height,
+              closeTo(rows.rowHeight * 3, .1),
             );
-            expect(tester.getSize(covers.first), const Size(132, 99));
             final timeHeader = find.byKey(
               ValueKey(
                 'my-section-header-${fixture.languageProvider.tr('my_listening_time')}',
@@ -1782,7 +1852,7 @@ void main() {
     );
 
     testWidgets(
-      'history uses metadata titles over the cover and rounds the scrolling viewport on $platform',
+      'history uses two-line editor rows with artwork on the left on $platform',
       (tester) async {
         final fixture = AppRuntimeWidgetTestFixture();
         addTearDown(fixture.dispose);
@@ -1804,7 +1874,7 @@ void main() {
           isSingle: false,
         );
         const workTitle =
-            'Actual metadata work title that wraps to two lines inside the cover';
+            'Actual metadata work title that wraps to two lines beside the cover on small screens';
         final target = fixture.library.audioDetailTargetForTrack(track);
         fixture.library.detailCacheService.markChanged(
           AudioDetail.empty(target).copyWith(workTitle: workTitle),
@@ -1844,59 +1914,51 @@ void main() {
           ),
         );
         await pumpAndSettleWithAsync(tester);
-        final title = find.byKey(const ValueKey('my-history-title-work'));
-        await tester.ensureVisible(title);
-        final text = tester.widget<Text>(title);
-        expect(text.data, workTitle);
-        expect(find.text(track.groupTitle), findsNothing);
-        expect(text.maxLines, 2);
-        expect(text.style?.fontSize, 12);
-        expect(text.overflow, TextOverflow.ellipsis);
-        expect(text.style?.color, Colors.white);
-        expect(text.style?.backgroundColor, isNull);
-        expect(text.style?.shadows?.single.blurRadius, 4);
         final card = find.byKey(const ValueKey('my-history-card-work'));
-        expect(tester.getSize(card), const Size(132, 99));
-        expect(tester.widget<CoverArtworkFrame>(card).showShadow, isTrue);
-        final nextCard = find.byKey(const ValueKey('my-history-card-remote-0'));
-        expect(
-          tester.getTopLeft(nextCard).dx - tester.getTopRight(card).dx,
-          12,
-        );
-        final cardClip = find.ancestor(
+        final title = find.descendant(of: card, matching: find.byType(Text));
+        await tester.ensureVisible(card);
+        await tester.pumpAndSettle();
+        final row = tester.widget<FileTreeRow>(card);
+        final text = tester.widget<Text>(title);
+        expect(row.titleMaxLines, 2);
+        expect(text.data, workTitle);
+        expect(text.maxLines, 2);
+        expect(text.overflow, TextOverflow.ellipsis);
+        final cover = find.descendant(
           of: card,
-          matching: find.byWidgetPredicate(
-            (widget) => widget is ClipRect && widget.child is Padding,
+          matching: find.byType(CoverArtworkFrame),
+        );
+        expect(tester.getSize(cover), const Size(48, 36));
+        expect(
+          tester.getRect(cover).right,
+          lessThan(tester.getRect(title).left),
+        );
+        expect(
+          tester.getSize(card).height,
+          FileTreeRow.layoutHeight(
+            tester.element(card),
+            minHeight: row.minHeight,
+            titleMaxLines: 2,
           ),
         );
-        expect(tester.getSize(cardClip), const Size(144, 113));
-        expect(
-          tester.getSize(
-            find.byKey(const ValueKey('my-history-card-remote-0')),
+        final nextCard = find.byKey(const ValueKey('my-history-card-remote-0'));
+        expect(tester.getSize(nextCard), tester.getSize(card));
+        expect(tester.getTopLeft(nextCard), tester.getBottomLeft(card));
+        final interests = find.byKey(
+          ValueKey(
+            'my-section-header-${fixture.languageProvider.tr('my_interests')}',
           ),
-          const Size(132, 99),
+        );
+        final history = find.byKey(
+          ValueKey(
+            'my-section-header-${fixture.languageProvider.tr('my_history')}',
+          ),
         );
         expect(
-          tester.getBottomLeft(card).dy - tester.getBottomLeft(title).dy,
-          closeTo(8, .1),
-        );
-        expect(
-          tester.getBottomLeft(title).dy,
-          lessThan(tester.getBottomLeft(card).dy),
+          tester.getTopLeft(history).dy,
+          greaterThan(tester.getBottomLeft(interests).dy),
         );
         expect(find.text('Remote metadata work title'), findsWidgets);
-        final viewport = find.byKey(const ValueKey('my-history-viewport'));
-        expect(
-          tester.widget<ClipRRect>(viewport).borderRadius,
-          BorderRadius.circular(12),
-        );
-        expect(tester.getSize(viewport).height, 113);
-        expect(tester.getTopLeft(card).dy - tester.getTopLeft(viewport).dy, 6);
-        expect(
-          tester.getBottomLeft(viewport).dy - tester.getBottomLeft(card).dy,
-          8,
-        );
-        expect(tester.getTopLeft(card).dx - tester.getTopLeft(viewport).dx, 8);
         if (platform == TargetPlatform.windows) {
           List<InteractiveInkFeature> visibleInk(Finder cover) {
             final material = find.descendant(
@@ -1962,15 +2024,6 @@ void main() {
           tester.widget<Text>(title).data,
           PathDisplay.folderName(target.targetPath),
         );
-        await tester.drag(viewport, const Offset(-100, 0));
-        await tester.pumpAndSettle();
-        final scrolling = find
-            .descendant(of: viewport, matching: find.byType(Scrollable))
-            .first;
-        expect(
-          tester.state<ScrollableState>(scrolling).position.pixels,
-          greaterThan(0),
-        );
         expect(tester.takeException(), isNull);
       },
     );
@@ -2022,7 +2075,9 @@ void main() {
       }
       expect(headerHeights.toSet().length, 1);
       expect(find.textContaining('（前'), findsNothing);
-      await tester.tap(find.byKey(const ValueKey('my-interest-tab-voices')));
+      final voices = find.byKey(const ValueKey('my-interest-tab-voices'));
+      await tester.ensureVisible(voices);
+      await tester.tap(voices);
       await pumpUntilUiIdle(tester);
       await pumpAndSettleWithAsync(tester);
       expect(find.text(i18n.tr('my_no_voice_interests')), findsOneWidget);

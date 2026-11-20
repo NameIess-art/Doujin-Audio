@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
@@ -129,6 +130,20 @@ class _QueuedEntryEditorService extends LibraryEntryEditorService {
   @override
   Future<LibraryEntryDiskSnapshot> loadDiskSnapshot(String libraryPath) {
     return responses.removeAt(0);
+  }
+}
+
+class _PendingLibrarySort extends LibrarySortedSnapshotNotifier {
+  int builds = 0;
+
+  @override
+  LibrarySortedSnapshotState build() {
+    builds++;
+    return (nodes: const [], error: null);
+  }
+
+  void finish(List<LibraryNode> nodes) {
+    state = (nodes: nodes, error: null);
   }
 }
 
@@ -559,7 +574,7 @@ void main() {
     );
 
     testWidgets(
-      'library first navigation keeps sorting and rows out of the shell on $platform',
+      'library keeps one skeleton through sorting and row preparation on $platform',
       (tester) async {
         SharedPreferences.setMockInitialValues({});
         final fixture = AppRuntimeWidgetTestFixture();
@@ -579,7 +594,8 @@ void main() {
           persist: false,
         );
         fixture.library.syncPresentationState(isInitialized: true);
-        var sorts = 0;
+        final sorting = _PendingLibrarySort();
+        const captureKey = ValueKey('library-opening-frame');
         await tester.pumpWidget(
           fixture.build(
             AppFadeThroughIndexedStack.lazy(
@@ -587,13 +603,23 @@ void main() {
               itemCount: 2,
               itemBuilder: (_, index) => index == 0
                   ? const SizedBox()
-                  : LibraryTab(activeTabIndexListenable: active),
+                  : RepaintBoundary(
+                      key: captureKey,
+                      child: Builder(
+                        builder: (context) => Theme(
+                          data: Theme.of(context).copyWith(
+                            colorScheme: const ColorScheme.light(
+                              surfaceContainer: Color(0xFFB0B0B0),
+                              surfaceContainerHighest: Color(0xFFB0B0B0),
+                            ),
+                          ),
+                          child: LibraryTab(activeTabIndexListenable: active),
+                        ),
+                      ),
+                    ),
             ),
             overrides: [
-              librarySortedTreeUiProvider.overrideWith((ref) {
-                sorts++;
-                return fixture.library.libraryCards;
-              }),
+              librarySortedSnapshotUiProvider.overrideWith(() => sorting),
             ],
           ),
         );
@@ -601,19 +627,66 @@ void main() {
         await tester.pump();
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
-        expect(sorts, 0);
+        expect(sorting.builds, 0);
         expect(find.byType(LibraryTreeList), findsNothing);
         expect(find.byType(LibraryLikeSkeletonCard), findsWidgets);
         expect(
           find.byKey(const ValueKey('library_search_button')),
           findsOneWidget,
         );
-        await tester.pump(const Duration(milliseconds: 500));
-        await tester.pump(const Duration(milliseconds: 180));
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 180));
+        final captureFinder = find.byKey(captureKey);
+        final cover = find
+            .descendant(
+              of: find.byType(LibraryLikeSkeletonCard).first,
+              matching: find.byType(ShimmerContainer),
+            )
+            .first;
+        final point =
+            tester.getCenter(cover) - tester.getTopLeft(captureFinder);
+        final capture = tester.renderObject<RenderRepaintBoundary>(
+          captureFinder,
+        );
+        Future<int> coverPixel() async => (await tester.runAsync(() async {
+          final image = await capture.toImage();
+          try {
+            final bytes = (await image.toByteData())!;
+            final pixel = point.dy.round() * image.width + point.dx.round();
+            return bytes.getUint32(pixel * 4);
+          } finally {
+            image.dispose();
+          }
+        }))!;
+        final initialCoverPixel = await coverPixel();
+        for (var frame = 0; frame < 36; frame++) {
+          await tester.pump(const Duration(milliseconds: 20));
+          expect(
+            await coverPixel(),
+            initialCoverPixel,
+            reason: 'loading frame $frame',
+          );
+          expect(find.byType(LibraryTreeList), findsNothing);
+        }
+        final skeleton = find.byType(LibraryLoadingSkeleton);
+        expect(skeleton, findsOneWidget);
+        final openingSkeleton = tester.element(skeleton);
+        expect(sorting.builds, 1);
+        sorting.finish(fixture.library.libraryCards);
         await pumpUntilFound(tester, find.byType(LibraryTreeList));
-        expect(sorts, 1);
+        final coordinator = UiInteractionCoordinator.instance;
+        final projectionPause = Object();
+        coordinator.beginInteraction(projectionPause, deferVisualUpdates: true);
+        try {
+          for (var frame = 0; frame < 4; frame++) {
+            await tester.pump(const Duration(milliseconds: 50));
+            expect(find.byType(LibrarySkeletonListView), findsOneWidget);
+            expect(tester.element(skeleton), same(openingSkeleton));
+            expect(await coverPixel(), initialCoverPixel);
+          }
+        } finally {
+          coordinator.cancelInteraction(projectionPause);
+        }
+        await pumpUntilFound(tester, find.text('Deferred library track'));
+        await pumpUntilNotFound(tester, skeleton);
         expect(find.byType(LibraryTreeList), findsOneWidget);
         final retained = tester.element(find.byType(LibraryTreeList));
         active.value = 0;
@@ -623,7 +696,7 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 600));
         expect(tester.element(find.byType(LibraryTreeList)), same(retained));
-        expect(sorts, 1);
+        expect(sorting.builds, 1);
         await finishLibraryTest(tester, fixture);
       },
       variant: TargetPlatformVariant({platform}),
@@ -4185,7 +4258,7 @@ void main() {
     expect(find.text(languageProvider.tr('choose_library')), findsOneWidget);
 
     await tester.tapAt(const Offset(10, 10));
-    await tester.pumpAndSettle();
+    await pumpAndSettleWithAsync(tester);
 
     await tester.tap(find.byTooltip(languageProvider.tr('edit_library')));
     await tester.pump();
@@ -6273,6 +6346,19 @@ void main() {
       testWidgets(
         'single audio selection keeps content and indicators visible (kind: $kind, pinned: $pinned)',
         (WidgetTester tester) async {
+          final messenger =
+              TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+          messenger.setMockMethodCallHandler(fileCacheChannel, (call) async {
+            return <String, Object?>{
+              'ok': true,
+              'value': call.method == FileCacheMethod.startFolderScan
+                  ? false
+                  : null,
+            };
+          });
+          addTearDown(
+            () => messenger.setMockMethodCallHandler(fileCacheChannel, null),
+          );
           final fixture = AppRuntimeWidgetTestFixture(
             coverArtworkCacheService: _NoCoverArtworkCacheService(),
           );

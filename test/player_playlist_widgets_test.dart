@@ -11246,6 +11246,70 @@ void main() {
     }),
   );
 
+  testWidgets(
+    'keyboard reveals fullscreen video controls and holds them while focused',
+    (tester) async {
+      final orientation = AppOrientationController(
+        setPreferredOrientations: (_) async {},
+        setSystemUiMode: (_) async {},
+      );
+      final lease = await orientation.enterVideoFullscreen();
+      addTearDown(lease.release);
+      final track = testMusicTrack(
+        name: 'Video',
+        path: '/videos/keyboard.mp4',
+        groupKey: '/videos',
+        groupTitle: 'Videos',
+      ).copyWith(isVideo: true);
+      final setup = await _pumpSubtitleDetail(
+        tester: tester,
+        subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+        initialPosition: Duration.zero,
+        queueTracks: [track],
+        physicalSize: const Size(2400, 1080),
+        detailBuilder: (session) => TooltipVisibility(
+          visible: defaultTargetPlatform != TargetPlatform.windows,
+          child: SessionVideoFullscreenPage(
+            sessionId: session.id,
+            trackPath: track.path,
+            fullscreenLease: lease,
+          ),
+        ),
+      );
+      final controls = find.byKey(
+        const ValueKey<String>('fullscreen_video_controls'),
+      );
+      final exitLabel = setup.fixture.languageProvider.tr('exit_fullscreen');
+      final exitSemantics = find.semantics.byPredicate(
+        (node) =>
+            node.label == exitLabel ||
+            node.getSemanticsData().tooltip == exitLabel,
+      );
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+      expect(tester.widget<AnimatedOpacity>(controls).opacity, 0);
+      expect(exitSemantics, findsNothing);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(tester.widget<AnimatedOpacity>(controls).opacity, 1);
+      expect(exitSemantics, findsOne);
+
+      await tester.pump(const Duration(seconds: 4));
+      expect(tester.widget<AnimatedOpacity>(controls).opacity, 1);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(tester.widget<AnimatedOpacity>(controls).opacity, 0);
+      expect(exitSemantics, findsNothing);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
       'fullscreen sliders preview pointer values without rebuilding video on ${platform.name}',

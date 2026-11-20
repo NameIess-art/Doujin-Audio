@@ -579,8 +579,13 @@ void main() {
           expect(firstRow.top, cardBounds.top);
           expect(lastRow.bottom, cardBounds.bottom);
           final menuScale = mode == 'button' ? 1.0 : 0.75;
-          expect(firstRow.height, closeTo(48 * menuScale, 0.01));
-          expect(lastRow.height, closeTo(48 * menuScale, 0.01));
+          final rowHeight = 48 * menuScale;
+          expect(firstRow.height, closeTo(rowHeight, 0.01));
+          expect(lastRow.height, closeTo(rowHeight, 0.01));
+          expect(
+            rows.first.hitTestable(at: const Alignment(0, -0.95)),
+            findsOneWidget,
+          );
 
           Rect glyphBounds(String label) {
             final paragraph = tester.renderObject<RenderParagraph>(

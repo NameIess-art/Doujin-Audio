@@ -79,24 +79,27 @@ class AsmrCategoryViewState {
   final Object? paginationToken;
   final ({Object token, int length})? appendedTo;
 
-  AsmrCategoryViewState withFilteredWorks(List<AsmrWork> matches) =>
-      AsmrCategoryViewState(
-        category: category,
-        works: matches,
-        isLoading: isLoading,
-        isLoadingMore: isLoadingMore,
-        isRefreshing: isRefreshing,
-        isStale: isStale,
-        hasAttemptedLoad: hasAttemptedLoad,
-        hasMore: hasMore,
-        needsLoadMoreRetry: needsLoadMoreRetry,
-        totalCount: matches.length,
-        activeQuery: activeQuery,
-        lastError: lastError,
-        operationError: operationError,
-        revision: revision,
-        paginationToken: paginationToken,
-      );
+  AsmrCategoryViewState withFilteredWorks(
+    List<AsmrWork> matches, {
+    required ({Object token, int length})? appendedTo,
+  }) => AsmrCategoryViewState(
+    category: category,
+    works: matches,
+    isLoading: isLoading,
+    isLoadingMore: isLoadingMore,
+    isRefreshing: isRefreshing,
+    isStale: isStale,
+    hasAttemptedLoad: hasAttemptedLoad,
+    hasMore: hasMore,
+    needsLoadMoreRetry: needsLoadMoreRetry,
+    totalCount: matches.length,
+    activeQuery: activeQuery,
+    lastError: lastError,
+    operationError: operationError,
+    revision: revision,
+    paginationToken: paginationToken,
+    appendedTo: appendedTo,
+  );
 
   @override
   bool operator ==(Object other) {

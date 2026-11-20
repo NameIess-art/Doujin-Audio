@@ -48,6 +48,20 @@ void main() {
         hasLength(blurActive ? 1 : 0),
       );
     }
+
+    animation.value = 0.25;
+    await tester.pump();
+    final blur = find.byType(BackdropFilter);
+    final filter = tester.widget<BackdropFilter>(blur).filter;
+    final layer = tester.layers.whereType<BackdropFilterLayer>().single;
+    animation.value = 0.26;
+    await tester.pump();
+    expect(tester.widget<BackdropFilter>(blur).filter, same(filter));
+    expect(tester.layers.whereType<BackdropFilterLayer>().single, same(layer));
+    expect(
+      tester.widget<ColoredBox>(find.byKey(scrimKey)).color.a,
+      closeTo(kSecondaryOverlayConfig.backgroundOpacity * 0.26, 1e-6),
+    );
   });
 
   for (final overlay in ['Dialog', 'Overlay panel', 'Dropdown']) {

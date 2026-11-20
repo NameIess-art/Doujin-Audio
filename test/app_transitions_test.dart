@@ -2316,6 +2316,43 @@ void main() {
     }
   });
 
+  testWidgets(
+    'cancelling a committed-distance edge swipe keeps the route',
+    (tester) async {
+      final navigatorKey = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navigatorKey,
+          home: const Scaffold(body: Text('Home')),
+        ),
+      );
+      final navigator = navigatorKey.currentState!;
+      final route = buildAppPageRoute<void>(
+        context: navigator.context,
+        child: const Scaffold(body: Text('Detail')),
+      );
+      unawaited(navigator.push(route));
+      await tester.pumpAndSettle();
+      for (final cancelled in [true, false]) {
+        final gesture = await tester.startGesture(const Offset(10, 300));
+        await gesture.moveBy(const Offset(45, 0));
+        await gesture.moveBy(const Offset(365, 0));
+        await tester.pump();
+        expect(route.animation!.value, lessThan(0.68));
+        if (cancelled) {
+          await gesture.cancel();
+        } else {
+          await gesture.up();
+        }
+        await tester.pumpAndSettle();
+        expect(navigator.userGestureInProgress, isFalse);
+        expect(find.text('Detail'), cancelled ? findsOneWidget : findsNothing);
+        if (cancelled) expect(route.animation!.value, 1);
+      }
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.android}),
+  );
+
   testWidgets('routes release tickers after interrupted entry and removal', (
     tester,
   ) async {

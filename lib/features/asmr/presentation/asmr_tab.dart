@@ -306,7 +306,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   Future<void>? _activationTask;
   Object? _activationError;
   bool _activationCompleted = false;
-  bool _categoryContentMounted = false;
   bool _activationScheduled = false;
   bool _accountHydrationScheduled = false;
   bool _accountHydrationRunning = false;
@@ -402,6 +401,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_isActive) return;
       _scheduleHeaderMeasurement(force: true);
+      if (_activationCompleted) _scheduleCategoryLoad();
     });
   }
 
@@ -509,6 +509,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
             _activeCategoryIndex.value = _restoredCategoryIndex(controller);
             _activationCompleted = true;
           });
+          _scheduleCategoryLoad();
           _scheduleAccountHydration(controller, coordinator.generation);
         },
       );
@@ -665,7 +666,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   }
 
   void _scheduleCategoryLoad() {
-    if (!_categoryContentMounted) return;
+    if (!_activationCompleted) return;
     final category = _selectedCategory;
     UiInteractionCoordinator.instance.scheduleCommit(
       key: _categoryLoadCommitKey,
@@ -923,89 +924,109 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         clipBehavior: Clip.none,
         children: [
           buildScrollToTopTransition(
-            AppPageContentTransition.deferred(
-              prepared:
-                  _activationCompleted &&
-                  (ref
-                          .read(asmrLibraryControllerProvider)
-                          ?.hasLoadedCategory(_selectedCategory) ??
-                      false),
-              isReady:
-                  _activationError != null ||
-                  (globalInitialized && _activationCompleted),
-              backgroundColor: Theme.of(context).colorScheme.surface,
-              placeholder: LibrarySkeletonListView(
-                topInset: headerContentHeight,
-                bottomInset: bottomInset + 16,
-              ),
-              builder: (context) {
-                if (_activationCompleted && !_categoryContentMounted) {
-                  _categoryContentMounted = true;
-                  // The deferred page protects its opening frame and fade before
-                  // the restored category starts constructing a remote result.
-                  _scheduleCategoryLoad();
-                }
-                return RepaintBoundary(
-                  child: PlaceholderContentTransition(
-                    showPlaceholder:
-                        !globalInitialized ||
-                        !_activationCompleted ||
-                        _activationError != null,
-                    placeholder: _activationError == null
-                        ? LibrarySkeletonListView(
-                            key: const ValueKey('asmr_initial_placeholder'),
-                            topInset: headerContentHeight,
-                            bottomInset: bottomInset + 16,
-                          )
-                        : ListView(
-                            padding: EdgeInsets.fromLTRB(
-                              16,
-                              headerContentHeight,
-                              16,
-                              bottomInset + 16,
-                            ),
-                            children: [
-                              OperationStatusBanner(
-                                label: i18n.tr('operation_failed_retry'),
-                                error: _activationError,
-                                onRetry: _retryActivation,
-                                retryTooltip: i18n.tr('retry'),
-                              ),
-                            ],
-                          ).withWindowsSmoothScroll(),
-                    content: AppFadeThroughIndexedStack.lazy(
-                      key: const ValueKey<String>('asmr_category_stack'),
-                      indexListenable: _activeCategoryIndex,
-                      itemCount: _headerCategories.length,
-                      // Retained categories need new widgets only when their
-                      // constructor inputs change, not for unrelated tab rebuilds.
-                      contentRevision: (
-                        !_activationCompleted,
-                        headerContentHeight,
-                        bottomInset,
-                      ),
-                      itemBuilder: (context, index) {
-                        final category = _headerCategories[index];
-                        return _AsmrCategoryList(
-                          key: ValueKey(category),
-                          isActive: () => category == _selectedCategory,
-                          isPageActive: () => _isActive,
+            ListenableBuilder(
+              listenable: _activeCategoryIndex,
+              builder: (context, child) => Consumer(
+                builder: (context, ref, _) {
+                  final category = _selectedCategory;
+                  final activationReady =
+                      globalInitialized && _activationCompleted;
+                  final prepared =
+                      activationReady &&
+                      (ref
+                              .read(asmrLibraryControllerProvider)
+                              ?.hasLoadedCategory(category) ??
+                          false);
+                  final categoryReady =
+                      activationReady &&
+                      ref.watch(
+                        asmrCategoryStateProvider((
                           category: category,
-                          isLoadPending: !_activationCompleted,
-                          scrollController: _scrollControllers[category]!,
                           searchQuery: '',
-                          topInset: headerContentHeight,
-                          bottomInset: bottomInset,
-                          onRefresh: _refreshCategoryWithFeedback,
-                          selectionListenable: _selectionListenable,
-                          onEnterSelectionMode: _enterSelectionMode,
-                          onToggleSelection: _toggleWorkSelection,
-                        );
-                      },
+                          searchSession: false,
+                        )).select((result) {
+                          final state = result.value;
+                          return state != null &&
+                              state.hasAttemptedLoad &&
+                              !state.isLoading;
+                        }),
+                      );
+                  // Keep the opening skeleton while the category would draw
+                  // another one. Crossfading the two reveals the background.
+                  return AppPageContentTransition.deferred(
+                    prepared: prepared,
+                    isReady:
+                        _activationError != null || prepared || categoryReady,
+                    animatePlaceholder: true,
+                    backgroundColor: Theme.of(context).colorScheme.surface,
+                    placeholder: LibrarySkeletonListView(
+                      topInset: headerContentHeight,
+                      bottomInset: bottomInset + 16,
                     ),
+                    builder: (_) => child!,
+                  );
+                },
+              ),
+              child: RepaintBoundary(
+                child: PlaceholderContentTransition(
+                  showPlaceholder:
+                      !globalInitialized ||
+                      !_activationCompleted ||
+                      _activationError != null,
+                  placeholder: _activationError == null
+                      ? LibrarySkeletonListView(
+                          key: const ValueKey('asmr_initial_placeholder'),
+                          topInset: headerContentHeight,
+                          bottomInset: bottomInset + 16,
+                        )
+                      : ListView(
+                          padding: EdgeInsets.fromLTRB(
+                            16,
+                            headerContentHeight,
+                            16,
+                            bottomInset + 16,
+                          ),
+                          children: [
+                            OperationStatusBanner(
+                              label: i18n.tr('operation_failed_retry'),
+                              error: _activationError,
+                              onRetry: _retryActivation,
+                              retryTooltip: i18n.tr('retry'),
+                            ),
+                          ],
+                        ).withWindowsSmoothScroll(),
+                  content: AppFadeThroughIndexedStack.lazy(
+                    key: const ValueKey<String>('asmr_category_stack'),
+                    indexListenable: _activeCategoryIndex,
+                    itemCount: _headerCategories.length,
+                    // Retained categories need new widgets only when their
+                    // constructor inputs change, not for unrelated tab rebuilds.
+                    contentRevision: (
+                      !_activationCompleted,
+                      headerContentHeight,
+                      bottomInset,
+                    ),
+                    itemBuilder: (context, index) {
+                      final category = _headerCategories[index];
+                      return _AsmrCategoryList(
+                        key: ValueKey(category),
+                        isActive: () => category == _selectedCategory,
+                        isPageActive: () => _isActive,
+                        category: category,
+                        isLoadPending: !_activationCompleted,
+                        scrollController: _scrollControllers[category]!,
+                        searchQuery: '',
+                        topInset: headerContentHeight,
+                        bottomInset: bottomInset,
+                        onRefresh: _refreshCategoryWithFeedback,
+                        selectionListenable: _selectionListenable,
+                        onEnterSelectionMode: _enterSelectionMode,
+                        onToggleSelection: _toggleWorkSelection,
+                      );
+                    },
                   ),
-                );
-              },
+                ),
+              ),
             ),
           ),
           Positioned(

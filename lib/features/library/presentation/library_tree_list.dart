@@ -158,6 +158,7 @@ class LibraryTreeList extends ConsumerStatefulWidget {
     required this.currentStructureRevision,
     required this.onLongPress,
     required this.onToggleSelect,
+    this.onProjectionAvailabilityChanged,
   });
   final List<LibraryNode> tree;
   final int structureRevision;
@@ -173,6 +174,7 @@ class LibraryTreeList extends ConsumerStatefulWidget {
   final int Function() currentStructureRevision;
   final ValueChanged<LibraryNode> onLongPress;
   final ValueChanged<LibraryNode> onToggleSelect;
+  final ValueChanged<bool>? onProjectionAvailabilityChanged;
   @override
   ConsumerState<LibraryTreeList> createState() => _LibraryTreeListState();
 }
@@ -522,6 +524,11 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
   void _prepareVisibleItems() {
     if (!_tickerModeEnabled) return;
     _pruneFolderTreeCaches(widget.tree, widget.structureRevision);
+    if (widget.tree.isEmpty &&
+        _visibleItemsCache.isEmpty &&
+        _projectionError == null) {
+      return;
+    }
     final request = (
       widget.tree,
       widget.structureRevision,
@@ -625,6 +632,7 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
             );
           _uniformRoots = projection.uniformRoots;
         });
+        widget.onProjectionAvailabilityChanged?.call(items.isNotEmpty);
         for (final node in widget.tree.whereType<FolderNode>()) {
           final path = PathMatcher.normalize(node.path);
           if (_expandedCardPaths.contains(path) &&
@@ -646,6 +654,7 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
           if ((widget.tree, widget.structureRevision, _visibleItemsVersion) ==
               request) {
             setState(() => _projectionError = error);
+            widget.onProjectionAvailabilityChanged?.call(true);
           }
         };
         _scheduleProjectionCommit();
@@ -756,7 +765,10 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
     ref.listen(undoableRemovalStateProvider, _handleRemovalChanged);
     _prepareVisibleItems();
     final visibleItems = _visibleItemsCache;
-    if (visibleItems.isEmpty) _coverUi!.cancelBrowsePrefetch(this);
+    if (widget.tree.isEmpty || visibleItems.isEmpty) {
+      _coverUi!.cancelBrowsePrefetch(this);
+    }
+    if (widget.tree.isEmpty) return const SizedBox.expand();
     final errorBanner = _projectionError == null
         ? null
         : OperationStatusBanner(
@@ -767,14 +779,13 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
                 _projectionError = null;
                 _projectionRequest = null;
               });
+              if (visibleItems.isEmpty) {
+                widget.onProjectionAvailabilityChanged?.call(false);
+              }
             },
           );
-    if (visibleItems.isEmpty && widget.tree.isNotEmpty) {
-      if (errorBanner != null) return errorBanner;
-      return LibrarySkeletonListView(
-        topInset: widget.topPadding,
-        bottomInset: widget.bottomPadding,
-      );
+    if (visibleItems.isEmpty) {
+      return errorBanner ?? const SizedBox.expand();
     }
     final itemIds = _reorderItemIds;
     final currentIds = _visibleNodeIds;

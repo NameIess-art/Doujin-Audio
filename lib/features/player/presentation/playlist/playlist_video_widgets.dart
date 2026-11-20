@@ -122,6 +122,7 @@ class _SessionVideoFullscreenPageState
   bool _exitRunning = false;
   bool _allowPop = false;
   bool _sliderInteracting = false;
+  final _pageFocus = FocusNode();
   final _sliderPositionMs = ValueNotifier<double?>(null);
   double _brightness = 0.5;
   final _volumePreview = ValueNotifier<double?>(null);
@@ -141,6 +142,10 @@ class _SessionVideoFullscreenPageState
 
   String get _volumeCommitKey =>
       SessionVolumeControls.commitKey(widget.sessionId);
+
+  bool get _controlsInteracting =>
+      _sliderInteracting ||
+      (_pageFocus.hasFocus && !_pageFocus.hasPrimaryFocus);
 
   bool _temporarySpeedRequested = false;
   int _temporarySpeedGeneration = 0;
@@ -177,6 +182,7 @@ class _SessionVideoFullscreenPageState
     WidgetsBinding.instance.removeObserver(this);
     _controlsTimer?.cancel();
     _feedbackTimer?.cancel();
+    _pageFocus.dispose();
     UiInteractionCoordinator.instance
       ..cancelThrottledCommit('video_brightness:${widget.sessionId}')
       ..cancelThrottledCommit(_volumeCommitKey);
@@ -230,7 +236,7 @@ class _SessionVideoFullscreenPageState
     _controlsTimer?.cancel();
     if (!sessionVideoShouldAutoHideControls(
       controlsVisible: _controlsVisible,
-      controlsInteracting: _sliderInteracting,
+      controlsInteracting: _controlsInteracting,
     )) {
       return;
     }
@@ -238,7 +244,7 @@ class _SessionVideoFullscreenPageState
       if (!mounted ||
           !sessionVideoShouldAutoHideControls(
             controlsVisible: _controlsVisible,
-            controlsInteracting: _sliderInteracting,
+            controlsInteracting: _controlsInteracting,
           )) {
         return;
       }
@@ -255,7 +261,6 @@ class _SessionVideoFullscreenPageState
   }
 
   void _showControls() {
-    _controlsTimer?.cancel();
     _setControlsVisible(true);
     _scheduleControlsHide();
   }
@@ -680,6 +685,9 @@ class _SessionVideoFullscreenPageState
       ),
     );
     final baseControlTheme = ref.read(themeProviderInstanceProvider).darkTheme;
+    final controlsLabel = ref
+        .read(appLanguageProviderInstanceProvider)
+        .tr('video_controls');
 
     return Theme(
       data: baseControlTheme,
@@ -705,7 +713,9 @@ class _SessionVideoFullscreenPageState
               },
             },
             child: Focus(
+              focusNode: _pageFocus,
               autofocus: true,
+              onFocusChange: (_) => _scheduleControlsHide(),
               child: Scaffold(
                 backgroundColor: Colors.black,
                 body: AppPageContentTransition(
@@ -768,6 +778,7 @@ class _SessionVideoFullscreenPageState
                                   key: const ValueKey<String>(
                                     'fullscreen_video_gesture_surface',
                                   ),
+                                  excludeFromSemantics: true,
                                   behavior: HitTestBehavior.opaque,
                                   onTap: _toggleControls,
                                   onDoubleTapDown: (details) =>
@@ -791,6 +802,11 @@ class _SessionVideoFullscreenPageState
                                       _handlePanEnd(cancelled: false),
                                   onPanCancel: () =>
                                       _handlePanEnd(cancelled: true),
+                                  child: SessionVideoControlsTarget(
+                                    label: controlsLabel,
+                                    controlsVisible: _controlsVisible,
+                                    onToggle: _toggleControls,
+                                  ),
                                 ),
                               ),
                             ),
@@ -895,7 +911,8 @@ class _SessionVideoFullscreenPageState
     const exitButtonSize = 48.0;
     const exitButtonOffset =
         (AppPageHeaderMetrics.buttonSize - exitButtonSize) / 2;
-    return AnimatedOpacity(
+    final exitTooltip = i18n.tr('exit_fullscreen');
+    final controls = AnimatedOpacity(
       curve: kAppFadeCurve,
       key: const ValueKey<String>('fullscreen_video_controls'),
       opacity: _controlsVisible ? 1 : 0,
@@ -938,12 +955,18 @@ class _SessionVideoFullscreenPageState
                     ),
                     child: Align(
                       alignment: Alignment.topRight,
-                      child: AppOverlayIconButton(
-                        key: const ValueKey<String>('fullscreen_video_exit'),
-                        tooltip: i18n.tr('exit_fullscreen'),
-                        onPressed: _requestExit,
-                        buttonSize: exitButtonSize,
-                        icon: const Icon(Icons.fullscreen_exit_rounded),
+                      child: Semantics(
+                        container: true,
+                        label: TooltipVisibility.of(context)
+                            ? null
+                            : exitTooltip,
+                        child: AppOverlayIconButton(
+                          key: const ValueKey<String>('fullscreen_video_exit'),
+                          tooltip: exitTooltip,
+                          onPressed: _requestExit,
+                          buttonSize: exitButtonSize,
+                          icon: const Icon(Icons.fullscreen_exit_rounded),
+                        ),
                       ),
                     ),
                   ),
@@ -1269,6 +1292,10 @@ class _SessionVideoFullscreenPageState
           ],
         ),
       ),
+    );
+    return ExcludeFocus(
+      excluding: !_controlsVisible,
+      child: ExcludeSemantics(excluding: !_controlsVisible, child: controls),
     );
   }
 }

@@ -573,6 +573,8 @@ class AppPageContentTransition extends StatelessWidget {
     this.backgroundColor,
   }) : _builder = null,
        _placeholder = null,
+       animatePlaceholder = false,
+       holdPlaceholder = false,
        prepared = false,
        isReady = true;
 
@@ -583,6 +585,8 @@ class AppPageContentTransition extends StatelessWidget {
     this.backgroundColor,
     this.isReady = true,
     this.prepared = false,
+    this.animatePlaceholder = false,
+    this.holdPlaceholder = false,
   }) : child = const SizedBox.shrink(),
        _builder = builder,
        _placeholder = placeholder;
@@ -595,6 +599,10 @@ class AppPageContentTransition extends StatelessWidget {
 
   /// A valid cached snapshot may mount in the existing route preparation frame.
   final bool prepared;
+  final bool animatePlaceholder;
+
+  /// Keep the placeholder visible while the mounted content finishes loading.
+  final bool holdPlaceholder;
   final WidgetBuilder? _builder;
   final Widget? _placeholder;
 
@@ -609,6 +617,8 @@ class AppPageContentTransition extends StatelessWidget {
             placeholder: _placeholder!,
             isReady: isReady,
             prepared: prepared,
+            animatePlaceholder: animatePlaceholder,
+            holdPlaceholder: holdPlaceholder,
           );
     final content = backgroundColor == null
         ? body
@@ -626,12 +636,16 @@ class AppDeferredContent extends StatefulWidget {
     required this.placeholder,
     this.isReady = true,
     this.prepared = false,
+    this.animatePlaceholder = false,
+    this.holdPlaceholder = false,
   });
 
   final WidgetBuilder builder;
   final Widget placeholder;
   final bool isReady;
   final bool prepared;
+  final bool animatePlaceholder;
+  final bool holdPlaceholder;
 
   @override
   State<AppDeferredContent> createState() => _AppDeferredContentState();
@@ -759,10 +773,11 @@ class _AppDeferredContentState extends State<AppDeferredContent> {
   @override
   Widget build(BuildContext context) {
     return PlaceholderContentTransition(
-      showPlaceholder: !_ready,
+      showPlaceholder: !_ready || widget.holdPlaceholder,
+      maintainContent: _ready && widget.holdPlaceholder,
       placeholder: TickerMode(
         key: const ValueKey('deferred_placeholder'),
-        enabled: false,
+        enabled: widget.animatePlaceholder,
         child: widget.placeholder,
       ),
       content: _ready
@@ -1359,6 +1374,7 @@ class PlaceholderContentTransition extends StatefulWidget {
     this.fit = StackFit.expand,
     this.alignment = AlignmentDirectional.topStart,
     this.protectInteraction = true,
+    this.maintainContent = false,
   });
 
   final bool showPlaceholder;
@@ -1371,6 +1387,7 @@ class PlaceholderContentTransition extends StatefulWidget {
 
   /// Keep page changes protected; decorative fades can leave idle work running.
   final bool protectInteraction;
+  final bool maintainContent;
 
   @override
   State<PlaceholderContentTransition> createState() =>
@@ -1514,7 +1531,7 @@ class _PlaceholderContentTransitionState
               ),
             ),
           ),
-        if (!widget.showPlaceholder || _fading)
+        if (!widget.showPlaceholder || _fading || widget.maintainContent)
           IgnorePointer(
             key: const ValueKey('placeholder_transition_content'),
             ignoring: widget.showPlaceholder,
@@ -3384,15 +3401,16 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
     super.dispose();
   }
 
+  bool get _canStartInteractivePop =>
+      !_disposed &&
+      isCurrent &&
+      !fullscreenDialog &&
+      !isFirst &&
+      popDisposition == RoutePopDisposition.pop &&
+      navigator != null;
+
   bool _startInteractivePop() {
-    if (_disposed ||
-        !isCurrent ||
-        fullscreenDialog ||
-        isFirst ||
-        popDisposition != RoutePopDisposition.pop ||
-        navigator == null) {
-      return false;
-    }
+    if (!_canStartInteractivePop) return false;
     navigator!.didStartUserGesture();
     return true;
   }
@@ -3404,10 +3422,11 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
     return next;
   }
 
-  void _endInteractivePop(double velocityFraction) {
+  void _endInteractivePop(double velocityFraction, {bool cancelled = false}) {
     final nav = navigator;
     if (!_disposed && controller != null && nav != null) {
-      if (velocityFraction >= 0.65 || controller!.value <= 0.68) {
+      if (!cancelled &&
+          (velocityFraction >= 0.65 || controller!.value <= 0.68)) {
         if (isCurrent) {
           nav.pop();
         }
@@ -3452,16 +3471,16 @@ class _EdgeSwipeBackLayerState extends State<_EdgeSwipeBackLayer> {
   bool _dragging = false;
   bool _thresholdHapticTriggered = false;
 
-  void _handleDragStart(DragStartDetails details) {
+  void _handleDragStart() {
     _dragging = widget.route._startInteractivePop();
     _thresholdHapticTriggered = false;
   }
 
-  void _handleDragUpdate(DragUpdateDetails details) {
+  void _handleDragUpdate(double delta) {
     if (!_dragging) return;
     final width = context.size?.width ?? 0;
     if (width <= 0) return;
-    final value = widget.route._updateInteractivePop(details.delta.dx / width);
+    final value = widget.route._updateInteractivePop(delta / width);
     if (value == null) return;
     if (!_thresholdHapticTriggered && value <= 0.68) {
       _thresholdHapticTriggered = true;
@@ -3473,12 +3492,12 @@ class _EdgeSwipeBackLayerState extends State<_EdgeSwipeBackLayer> {
     }
   }
 
-  void _handleDragEnd(DragEndDetails details) {
+  void _handleDragEnd(double pixelsPerSecond) {
     if (!_dragging) return;
     _dragging = false;
     _thresholdHapticTriggered = false;
     final width = context.size?.width ?? 0;
-    final velocity = width > 0 ? details.velocity.pixelsPerSecond.dx / width : 0.0;
+    final velocity = width > 0 ? pixelsPerSecond / width : 0.0;
     widget.route._endInteractivePop(velocity);
   }
 
@@ -3486,7 +3505,7 @@ class _EdgeSwipeBackLayerState extends State<_EdgeSwipeBackLayer> {
     if (!_dragging) return;
     _dragging = false;
     _thresholdHapticTriggered = false;
-    widget.route._endInteractivePop(0.0);
+    widget.route._endInteractivePop(0.0, cancelled: true);
   }
 
   @override
@@ -3501,12 +3520,23 @@ class _EdgeSwipeBackLayerState extends State<_EdgeSwipeBackLayer> {
             top: 0,
             bottom: 0,
             width: _edgeWidth,
-            child: GestureDetector(
+            child: RawGestureDetector(
               behavior: HitTestBehavior.translucent,
-              onHorizontalDragStart: _handleDragStart,
-              onHorizontalDragUpdate: _handleDragUpdate,
-              onHorizontalDragEnd: _handleDragEnd,
-              onHorizontalDragCancel: _handleDragCancel,
+              gestures: {
+                _AppHorizontalPageSwipeRecognizer:
+                    GestureRecognizerFactoryWithHandlers<
+                      _AppHorizontalPageSwipeRecognizer
+                    >(
+                      () => _AppHorizontalPageSwipeRecognizer(
+                        canStart: () => widget.route._canStartInteractivePop,
+                        onStart: _handleDragStart,
+                        onUpdate: _handleDragUpdate,
+                        onEnd: _handleDragEnd,
+                        onCancel: _handleDragCancel,
+                      ),
+                      (_) {},
+                    ),
+              },
             ),
           ),
       ],

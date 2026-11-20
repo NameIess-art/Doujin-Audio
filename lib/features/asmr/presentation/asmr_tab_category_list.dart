@@ -107,8 +107,12 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   AsmrCategoryStateRequest? _lastPresentedRequest;
   AsmrLibraryController? _lastPresentedController;
   AsmrCategoryViewState? _lastPresentedState;
-  (List<AsmrWork>, SearchFilters)? _filteredWorksKey;
-  List<AsmrWork> _filteredWorks = const [];
+  ({
+    SearchFilters filters,
+    AsmrCategoryViewState source,
+    AsmrCategoryViewState result,
+  })?
+  _filteredProjection;
   late final String _automaticLoadMoreCommitKey =
       'asmr_load_more_${identityHashCode(this)}';
   final Map<String, _CollapsingAsmrWork> _collapsingWorks =
@@ -217,7 +221,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       return;
     }
     final state = _lastPresentedState;
-    if (state != null) _scheduleAutomaticLoadMore(_applyFilters(state));
+    if (state != null) _scheduleAutomaticLoadMore(state);
   }
 
   @override
@@ -228,6 +232,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         oldWidget.filters != widget.filters ||
         canonicalElementQuery(oldWidget.searchQuery) !=
             canonicalElementQuery(widget.searchQuery)) {
+      _filteredProjection = null;
       for (final entry in _collapsingWorks.values) {
         entry.dispose();
       }
@@ -244,14 +249,45 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   AsmrCategoryViewState _applyFilters(AsmrCategoryViewState state) {
     final filters = widget.filters;
     if (filters == emptySearchFilters) return state;
-    final key = (state.works, filters);
-    if (_filteredWorksKey != key) {
-      _filteredWorksKey = key;
-      _filteredWorks = immutableList(
+    final cached = _filteredProjection;
+    final previous = cached?.filters == filters ? cached : null;
+    if (previous != null && identical(previous.source, state)) {
+      return previous.result;
+    }
+
+    final append = state.appendedTo;
+    final List<AsmrWork> matches;
+    ({Object token, int length})? filteredAppend;
+    if (previous != null && identical(previous.source.works, state.works)) {
+      matches = previous.result.works;
+      if (identical(previous.source.paginationToken, state.paginationToken)) {
+        filteredAppend = previous.result.appendedTo;
+      }
+    } else if (previous != null &&
+        append != null &&
+        identical(append.token, previous.source.paginationToken) &&
+        append.length == previous.source.works.length &&
+        state.works.length >= append.length &&
+        // The prefix may have changed in a deferred update, such as a favorite
+        // change that increments the revision without advancing pagination.
+        state.revision == previous.source.revision + 1) {
+      final additions = state.works
+          .skip(append.length)
+          .where((work) => work.matchesFilters(filters))
+          .toList(growable: false);
+      final previousMatches = previous.result.works;
+      matches = additions.isEmpty
+          ? previousMatches
+          : immutableList(previousMatches.followedBy(additions));
+      filteredAppend = (token: append.token, length: previousMatches.length);
+    } else {
+      matches = immutableList(
         state.works.where((work) => work.matchesFilters(filters)),
       );
     }
-    return state.withFilteredWorks(_filteredWorks);
+    final result = state.withFilteredWorks(matches, appendedTo: filteredAppend);
+    _filteredProjection = (filters: filters, source: state, result: result);
+    return result;
   }
 
   @override
@@ -347,6 +383,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       _lastPresentedRequest = request;
       _lastPresentedController = controller;
       _lastPresentedState = null;
+      _filteredProjection = null;
     }
     // A deferred projection must not replace the last published cards with a
     // placeholder while the page's subscriptions resume.
@@ -969,10 +1006,10 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         if (!mounted || !_isActive) {
           return;
         }
-        final rawState = _lastPresentedState;
-        if (rawState == null) return;
-        final currentState = _applyFilters(rawState);
-        if (!_canAutomaticallyLoadMore(currentState)) return;
+        final currentState = _lastPresentedState;
+        if (currentState == null || !_canAutomaticallyLoadMore(currentState)) {
+          return;
+        }
         if (!widget.scrollController.hasClients) return;
         final position = widget.scrollController.position;
         if (position.extentAfter > position.viewportDimension) return;

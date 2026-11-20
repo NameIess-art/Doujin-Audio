@@ -783,9 +783,12 @@ final class AsmrCategoryCatalog {
         if (index == null) continue;
         final existing = previous[index];
         final merged = existing.mergedWith(work);
-        replacements[index] = merged.isFavorite == existing.isFavorite
+        final replacement = merged.isFavorite == existing.isFavorite
             ? merged
             : merged.copyWith(isFavorite: existing.isFavorite);
+        if (!identical(replacement, existing)) {
+          replacements[index] = replacement;
+        }
       }
       if (additions.isNotEmpty || replacements.isNotEmpty) {
         final prefix = replacements.isEmpty
@@ -802,7 +805,11 @@ final class AsmrCategoryCatalog {
       state.cursor = cursor;
       state.revision++;
       _applyPageResult(state, query, result);
-      state.publishPagination(previousLength: previous.length);
+      // Filtered views can reuse the prefix only when all its records survive
+      // unchanged. Duplicate works may replace their earlier catalog entries.
+      state.publishPagination(
+        previousLength: replacements.isEmpty ? previous.length : null,
+      );
       state.needsLoadMoreRetry = additions.isEmpty && state.hasMore;
     } on AsmrRequestCancelled {
       // Retain completed pages so returning to this category can resume.

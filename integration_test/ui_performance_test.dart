@@ -2781,14 +2781,37 @@ Future<void> _flingPageList<T extends Widget>(
 }
 
 Future<void> _openAndCloseSessionDetail(WidgetTester tester) async {
-  final card = find.byKey(const ValueKey<String>('profile_session_11'));
-  if (card.evaluate().isEmpty) return;
-  await tester.tap(card);
-  await tester.pump(const Duration(milliseconds: 350));
-  if (tester.state<NavigatorState>(find.byType(Navigator)).canPop()) {
-    await tester.pageBack();
-    await tester.pump(const Duration(milliseconds: 350));
+  final card = find
+      .descendant(
+        of: find.byType(PlaylistTab),
+        matching: find.byType(SessionListCard),
+      )
+      .hitTestable()
+      .first;
+  expect(card, findsOneWidget, reason: 'A visible session must be exercised.');
+  final sessionId = tester.widget<SessionListCard>(card).sessionId;
+  final cover = find.descendant(
+    of: card,
+    matching: find.byKey(ValueKey('playlist_cover_$sessionId')),
+  );
+  final entry = find
+      .ancestor(of: cover, matching: find.byType(AppEntryInkWell))
+      .first;
+  // Use the row action, since a click at the card's center can land on one
+  // of the independent playback controls when the card layout changes.
+  tester.widget<AppEntryInkWell>(entry).onTap!();
+  final close = find.byKey(const ValueKey('session_detail_close_button'));
+  for (var frame = 0;
+      frame < 120 && close.hitTestable().evaluate().isEmpty;
+      frame++) {
+    await tester.pump(const Duration(milliseconds: 16));
   }
+  expect(close.hitTestable(), findsOneWidget, reason: 'Session detail opened.');
+  await tester.tap(close.hitTestable());
+  for (var frame = 0; frame < 120 && close.evaluate().isNotEmpty; frame++) {
+    await tester.pump(const Duration(milliseconds: 16));
+  }
+  expect(close, findsNothing);
 }
 
 Map<String, Object> _assessPlaybackPerformance(

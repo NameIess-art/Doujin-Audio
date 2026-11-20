@@ -29,13 +29,17 @@ class AppModalBackground extends StatefulWidget {
 }
 
 class _AppModalBackgroundState extends State<AppModalBackground> {
-  static const double _blurSigma = 8;
-  static const double _minBlurSigma = 0.05;
-  static final ui.ImageFilter _fullBlurFilter = ui.ImageFilter.blur(
-    sigmaX: _blurSigma,
-    sigmaY: _blurSigma,
-    tileMode: ui.TileMode.clamp,
-  );
+  static const int _blurSteps = 16;
+  static final _blurFilters = List<ui.ImageFilter>.generate(_blurSteps, (
+    index,
+  ) {
+    final sigma = (index + 1) / 2;
+    return ui.ImageFilter.blur(
+      sigmaX: sigma,
+      sigmaY: sigma,
+      tileMode: ui.TileMode.clamp,
+    );
+  }, growable: false);
 
   CurvedAnimation? _scrimCurved;
   CurvedAnimation? _blurCurved;
@@ -131,29 +135,29 @@ class _AppModalBackgroundState extends State<AppModalBackground> {
         builder: (context, _) {
           final blurProgress = _blurAnimation.value.clamp(0.0, 1.0);
           final scrimProgress = _scrimAnimation.value.clamp(0.0, 1.0);
-          final sigma = _blurSigma * blurProgress;
-          final blurActive = sigma > _minBlurSigma;
+          // Reuse blur kernels in half-pixel steps. Paint the scrim separately
+          // so its continuous fade does not dirty the retained blur layer.
+          final blurStep = (_blurSteps * blurProgress).round();
           final scrim = ColoredBox(
             key: widget.scrimKey,
             color: kSecondaryOverlayConfig.scrimColor(context, scrimProgress),
           );
-          if (!blurActive && scrimProgress == 0) {
-            // The box stays hit-testable at the ends of the transition.
-            return Opacity(opacity: 0, child: scrim);
-          }
-          return ClipRect(
-            child: blurActive
-                ? BackdropFilter(
-                    filter: blurProgress >= 1.0
-                        ? _fullBlurFilter
-                        : ui.ImageFilter.blur(
-                            sigmaX: sigma,
-                            sigmaY: sigma,
-                            tileMode: ui.TileMode.clamp,
-                          ),
-                    child: scrim,
-                  )
-                : scrim,
+          return Stack(
+            fit: StackFit.passthrough,
+            children: [
+              if (blurStep > 0)
+                Positioned.fill(
+                  child: RepaintBoundary(
+                    child: ClipRect(
+                      child: BackdropFilter(
+                        filter: _blurFilters[blurStep - 1],
+                        child: const SizedBox.expand(),
+                      ),
+                    ),
+                  ),
+                ),
+              scrim,
+            ],
           );
         },
       ),

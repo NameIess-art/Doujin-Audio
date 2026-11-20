@@ -63,6 +63,7 @@ import 'package:doujin_audio/core/widgets/glass_refresh_indicator.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
 import 'package:doujin_audio/core/widgets/marquee_text.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
+import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
@@ -3614,7 +3615,7 @@ void main() {
   });
 
   testWidgets(
-    'first ASMR activation keeps an immobile skeleton until load completes',
+    'first ASMR activation keeps a steady skeleton until load completes',
     (tester) async {
       final activePageIndex = ValueNotifier<int>(0);
       final controller = _QueuedEmptyAsmrLibraryController(
@@ -3627,9 +3628,26 @@ void main() {
       addTearDown(controller.dispose);
       addTearDown(harness.dispose);
 
+      const captureKey = ValueKey('asmr-opening-frame');
       await tester.pumpWidget(
         harness.build(
-          AsmrTab(activeTabIndexListenable: activePageIndex),
+          Builder(
+            builder: (context) {
+              final theme = Theme.of(context);
+              return Theme(
+                data: theme.copyWith(
+                  colorScheme: const ColorScheme.light(
+                    surfaceContainer: Color(0xFFB0B0B0),
+                    surfaceContainerHighest: Color(0xFFB0B0B0),
+                  ),
+                ),
+                child: RepaintBoundary(
+                  key: captureKey,
+                  child: AsmrTab(activeTabIndexListenable: activePageIndex),
+                ),
+              );
+            },
+          ),
           overrides: [
             asmrLibraryControllerProvider.overrideWithValue(controller),
           ],
@@ -3651,28 +3669,52 @@ void main() {
       );
       expect(loadingList.physics, isA<NeverScrollableScrollPhysics>());
 
-      await tester.pump(const Duration(milliseconds: 100));
+      final captureFinder = find.byKey(captureKey);
+      final cover = find
+          .descendant(
+            of: find.byType(LibraryLikeSkeletonCard).first,
+            matching: find.byType(ShimmerContainer),
+          )
+          .first;
+      final point = tester.getCenter(cover) - tester.getTopLeft(captureFinder);
+      final capture = tester.renderObject<RenderRepaintBoundary>(captureFinder);
+      Future<int> coverPixel() async => (await tester.runAsync(() async {
+        final image = await capture.toImage();
+        try {
+          final bytes = (await image.toByteData())!;
+          final pixel = point.dy.round() * image.width + point.dx.round();
+          return bytes.getUint32(pixel * 4);
+        } finally {
+          image.dispose();
+        }
+      }))!;
+      final initialCoverPixel = await coverPixel();
+
       expect(controller.collectedRefreshCount, 0);
-      expect(find.byType(LibraryLikeSkeletonCard), findsWidgets);
       final openingPlaceholder = find.byKey(
         const ValueKey<String>('deferred_placeholder'),
       );
       for (
         var frame = 0;
-        frame < 24 && openingPlaceholder.evaluate().isNotEmpty;
+        frame < 24 && controller.collectedRefreshCount == 0;
         frame++
       ) {
         await tester.pump(const Duration(milliseconds: 20));
+        expect(
+          await coverPixel(),
+          initialCoverPixel,
+          reason: 'loading frame $frame',
+        );
       }
-      expect(openingPlaceholder, findsNothing);
-      await tester.pump(UiInteractionCoordinator.instance.idleDelay);
-      await tester.pump();
       expect(controller.collectedRefreshCount, 1);
-      expect(find.byType(LibraryLikeSkeletonCard), findsWidgets);
+      await tester.pump(kPlaceholderContentTransitionDuration);
+      expect(openingPlaceholder, findsOneWidget);
+      expect(find.byType(LibrarySkeletonListView), findsOneWidget);
+      expect(await coverPixel(), initialCoverPixel);
 
       controller.completeInitialCollectedRefresh();
-      await tester.pump();
-      await tester.pump();
+      await _waitForAsmrContent(tester);
+      expect(find.byType(LibrarySkeletonListView), findsNothing);
     },
   );
 

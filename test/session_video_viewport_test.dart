@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/player/presentation/session_video_viewport.dart';
 
@@ -134,8 +136,11 @@ void main() {
     required Future<void> Function() onFullscreen,
     Duration controlsTimeout = const Duration(seconds: 3),
     bool isFullscreen = false,
+    bool showTooltips = true,
   }) {
     return MaterialApp(
+      builder: (_, child) =>
+          TooltipVisibility(visible: showTooltips, child: child!),
       home: SizedBox.square(
         dimension: 320,
         child: SessionVideoViewport(
@@ -150,6 +155,7 @@ void main() {
           ),
           onFullscreen: onFullscreen,
           fullscreenTooltip: isFullscreen ? 'Exit fullscreen' : 'Fullscreen',
+          controlsLabel: 'Video controls',
           controlsTimeout: controlsTimeout,
           isFullscreen: isFullscreen,
         ),
@@ -255,6 +261,55 @@ void main() {
     );
   });
 
+  testWidgets(
+    'keyboard reveals inline video controls before activating fullscreen',
+    (tester) async {
+      var fullscreenRequests = 0;
+      await tester.pumpWidget(
+        buildViewport(
+          videoReady: true,
+          showTooltips: defaultTargetPlatform != TargetPlatform.windows,
+          onFullscreen: () async {
+            fullscreenRequests++;
+          },
+        ),
+      );
+
+      final controls = find.byKey(
+        const ValueKey<String>('session_video_fullscreen_control'),
+      );
+      final fullscreenSemantics = find.semantics.byPredicate(
+        (node) =>
+            node.label == 'Fullscreen' ||
+            node.getSemanticsData().tooltip == 'Fullscreen',
+      );
+      expect(find.semantics.byLabel('Video controls'), findsOne);
+      expect(fullscreenSemantics, findsNothing);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      expect(tester.widget<AnimatedOpacity>(controls).opacity, 0);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(tester.widget<AnimatedOpacity>(controls).opacity, 1);
+      expect(fullscreenSemantics, findsOne);
+      expect(fullscreenRequests, 0);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 4));
+      expect(tester.widget<AnimatedOpacity>(controls).opacity, 1);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(fullscreenRequests, 1);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.windows,
+      TargetPlatform.android,
+    }),
+  );
+
   testWidgets('track loading during fullscreen keeps inline surface suspended', (
     tester,
   ) async {
@@ -337,6 +392,21 @@ void main() {
 
     await gesture.moveTo(posterRect.bottomRight + const Offset(50, 50));
     await tester.pumpAndSettle();
+    expect(pointer().ignoring, isTrue);
+
+    await gesture.moveTo(posterRect.center);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    await gesture.moveTo(posterRect.bottomRight + const Offset(50, 50));
+    await tester.pump(const Duration(seconds: 4));
+    expect(pointer().ignoring, isFalse);
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
     expect(pointer().ignoring, isTrue);
   });
 }

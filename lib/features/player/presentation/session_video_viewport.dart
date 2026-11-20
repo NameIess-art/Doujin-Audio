@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_buttons.dart';
@@ -150,6 +151,62 @@ class SessionVideoBlurredBackdrop extends StatelessWidget {
   }
 }
 
+class SessionVideoControlsTarget extends StatefulWidget {
+  const SessionVideoControlsTarget({
+    super.key,
+    required this.label,
+    required this.controlsVisible,
+    required this.onToggle,
+  });
+
+  final String label;
+  final bool controlsVisible;
+  final VoidCallback onToggle;
+
+  @override
+  State<SessionVideoControlsTarget> createState() =>
+      _SessionVideoControlsTargetState();
+}
+
+class _SessionVideoControlsTargetState
+    extends State<SessionVideoControlsTarget> {
+  bool _showFocus = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      container: true,
+      label: widget.label,
+      button: true,
+      toggled: widget.controlsVisible,
+      onTap: widget.onToggle,
+      child: FocusableActionDetector(
+        shortcuts: const {
+          SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+          SingleActivator(LogicalKeyboardKey.numpadEnter): ActivateIntent(),
+          SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+        },
+        actions: {
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) => widget.onToggle(),
+          ),
+        },
+        onShowFocusHighlight: (show) => setState(() => _showFocus = show),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            border: _showFocus
+                ? const Border.fromBorderSide(
+                    BorderSide(color: Colors.white, width: 2),
+                  )
+                : null,
+          ),
+          child: const SizedBox.expand(),
+        ),
+      ),
+    );
+  }
+}
+
 class SessionVideoViewport extends StatefulWidget {
   const SessionVideoViewport({
     super.key,
@@ -158,6 +215,7 @@ class SessionVideoViewport extends StatefulWidget {
     required this.surfaceBuilder,
     required this.onFullscreen,
     required this.fullscreenTooltip,
+    required this.controlsLabel,
     this.isFullscreen = false,
     this.controlsTimeout = const Duration(seconds: 3),
   });
@@ -167,6 +225,7 @@ class SessionVideoViewport extends StatefulWidget {
   final SessionVideoSurfaceBuilder surfaceBuilder;
   final Future<void> Function() onFullscreen;
   final String fullscreenTooltip;
+  final String controlsLabel;
   final bool isFullscreen;
   final Duration controlsTimeout;
 
@@ -179,8 +238,7 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
   bool _controlsVisible = false;
   bool _cursorInside = false;
   bool _fullscreenActionRunning = false;
-
-  bool get _isControlVisible => _cursorInside || _controlsVisible;
+  bool _controlsHaveFocus = false;
 
   @override
   void didUpdateWidget(covariant SessionVideoViewport oldWidget) {
@@ -199,14 +257,17 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
 
   void _toggleControls() {
     if (!widget.videoReady || _fullscreenActionRunning) return;
-    _controlsTimer?.cancel();
     setState(() => _controlsVisible = !_controlsVisible);
-    if (_controlsVisible) {
-      _controlsTimer = Timer(widget.controlsTimeout, () {
-        if (!mounted) return;
-        setState(() => _controlsVisible = false);
-      });
-    }
+    _scheduleControlsHide();
+  }
+
+  void _scheduleControlsHide() {
+    _controlsTimer?.cancel();
+    if (!_controlsVisible || _controlsHaveFocus) return;
+    _controlsTimer = Timer(widget.controlsTimeout, () {
+      if (!mounted) return;
+      setState(() => _controlsVisible = false);
+    });
   }
 
   Future<void> _handleFullscreen() async {
@@ -230,7 +291,9 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
   @override
   Widget build(BuildContext context) {
     final showSurface = widget.videoReady && !_fullscreenActionRunning;
-    return MouseRegion(
+    final controlsVisible =
+        !_fullscreenActionRunning && (_cursorInside || _controlsVisible);
+    final viewport = MouseRegion(
       onEnter: widget.videoReady
           ? (_) => setState(() => _cursorInside = true)
           : null,
@@ -240,7 +303,12 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
             }
           : null,
       onExit: widget.videoReady
-          ? (_) => setState(() => _cursorInside = false)
+          ? (_) => setState(() {
+              _cursorInside = false;
+              if (_controlsHaveFocus && !_fullscreenActionRunning) {
+                _controlsVisible = true;
+              }
+            })
           : null,
       child: Stack(
         fit: StackFit.expand,
@@ -257,9 +325,14 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
                 cursor: SystemMouseCursors.click,
                 child: GestureDetector(
                   key: const ValueKey<String>('session_video_tap_target'),
+                  excludeFromSemantics: true,
                   behavior: HitTestBehavior.opaque,
                   onTap: _toggleControls,
-                  child: const ColoredBox(color: Colors.transparent),
+                  child: SessionVideoControlsTarget(
+                    label: widget.controlsLabel,
+                    controlsVisible: controlsVisible,
+                    onToggle: _toggleControls,
+                  ),
                 ),
               ),
             ),
@@ -270,20 +343,32 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
               child: AnimatedOpacity(
                 curve: kAppFadeCurve,
                 key: const ValueKey<String>('session_video_fullscreen_control'),
-                opacity: _isControlVisible ? 1 : 0,
+                opacity: controlsVisible ? 1 : 0,
                 duration: MediaQuery.disableAnimationsOf(context)
                     ? Duration.zero
                     : kAppFadeDuration,
                 child: IgnorePointer(
-                  ignoring: !_isControlVisible,
-                  child: AppOverlayIconButton(
-                    tooltip: widget.fullscreenTooltip,
-                    onPressed: _handleFullscreen,
-                    buttonSize: 48,
-                    icon: Icon(
-                      widget.isFullscreen
-                          ? Icons.fullscreen_exit_rounded
-                          : Icons.fullscreen_rounded,
+                  ignoring: !controlsVisible,
+                  child: ExcludeFocus(
+                    excluding: !controlsVisible,
+                    child: ExcludeSemantics(
+                      excluding: !controlsVisible,
+                      child: Semantics(
+                        container: true,
+                        label: TooltipVisibility.of(context)
+                            ? null
+                            : widget.fullscreenTooltip,
+                        child: AppOverlayIconButton(
+                          tooltip: widget.fullscreenTooltip,
+                          onPressed: _handleFullscreen,
+                          buttonSize: 48,
+                          icon: Icon(
+                            widget.isFullscreen
+                                ? Icons.fullscreen_exit_rounded
+                                : Icons.fullscreen_rounded,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -291,6 +376,16 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
             ),
         ],
       ),
+    );
+    return Focus(
+      canRequestFocus: false,
+      descendantsAreFocusable: !_fullscreenActionRunning,
+      includeSemantics: false,
+      onFocusChange: (focused) {
+        _controlsHaveFocus = focused;
+        _scheduleControlsHide();
+      },
+      child: viewport,
     );
   }
 }

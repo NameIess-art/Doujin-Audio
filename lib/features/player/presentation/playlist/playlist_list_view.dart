@@ -346,32 +346,7 @@ class SessionsEmptyState extends StatelessWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Container(
-                        width: 72,
-                        height: 72,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              cs.primaryContainer,
-                              cs.primaryContainer.withValues(alpha: 0.8),
-                            ],
-                          ),
-                          borderRadius: AppRadius.borderDialog,
-                          boxShadow: [
-                            BoxShadow(
-                              color: cs.primary.withValues(alpha: 0.12),
-                              blurRadius: 20,
-                              offset: const Offset(0, 8),
-                            ),
-                          ],
-                        ),
-                        child: PlaylistIcon(
-                          size: 36,
-                          color: cs.onPrimaryContainer,
-                        ),
-                      ),
+                      PlaylistIcon(size: 72, color: cs.primary),
                       const SizedBox(height: AppSpacing.xl),
                       Text(
                         i18n.tr('no_active_sessions'),

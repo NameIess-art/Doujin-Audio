@@ -990,20 +990,19 @@ void main() {
     );
 
     testWidgets(
-      'ASMR filter-only search automatically pages past zero matches on $platform',
+      'ASMR filter-only search pages past zero matches without refiltering the prefix on $platform',
       (tester) async {
         SharedPreferences.setMockInitialValues(const {'app_language': 'zh'});
-        final first = AsmrWork.fromJson(const {
-          'id': 41,
-          'title': 'No subtitles',
-        });
+        var oldFilterReads = 0;
+        final first = _FilterProbeWork(() => oldFilterReads++);
         final next = AsmrWork.fromJson(const {
           'id': 42,
           'title': 'Subtitled result',
           'hasSubtitle': true,
         });
         final controller = _PresentationController(createTestAsmrServices())
-          ..publishedWorks = [first]
+          ..publishedWorks = immutableList([first])
+          ..paginationToken = Object()
           ..hasMore = true
           ..remainingPages = [
             [
@@ -1044,7 +1043,22 @@ void main() {
         expect(find.text('No subtitles'), findsNothing);
         expect(find.text('Also no subtitles'), findsNothing);
         expect(controller.loadMoreCount, 2);
+        expect(oldFilterReads, 1);
         expect(fixture.settings.slice.state.asmrSearchHistory, isEmpty);
+
+        controller
+          ..appendedTo = null
+          ..paginationToken = Object()
+          ..publishedWorks = immutableList([
+            AsmrWork.fromJson(const {
+              'id': 41,
+              'title': 'Subtitles now available',
+              'hasSubtitle': true,
+            }),
+          ])
+          ..publish('Refreshed results');
+        await pumpUntilFound(tester, find.text('Subtitles now available'));
+        expect(find.text('Subtitled result'), findsNothing);
       },
       variant: TargetPlatformVariant({platform}),
     );
@@ -2649,6 +2663,37 @@ void main() {
   });
 }
 
+class _FilterProbeWork extends AsmrWork {
+  _FilterProbeWork(this.onRead)
+    : super(
+        id: 41,
+        title: 'No subtitles',
+        circleName: '',
+        sourceId: '',
+        sourceType: '',
+        sourceUrl: '',
+        coverUrl: '',
+        thumbnailUrl: '',
+        mainCoverUrl: '',
+        releaseDate: null,
+        createDate: null,
+        duration: Duration.zero,
+        dlCount: 0,
+        reviewCount: 0,
+        rating: 0,
+        voiceActors: const [],
+        tags: const [],
+      );
+
+  final VoidCallback onRead;
+
+  @override
+  bool get hasSubtitle {
+    onRead();
+    return super.hasSubtitle;
+  }
+}
+
 class _PresentationController extends AsmrLibraryController {
   _PresentationController(TestAsmrServices services)
     : super(
@@ -2845,7 +2890,14 @@ class _PresentationController extends AsmrLibraryController {
     loadMoreCount++;
     final pages = remainingPages;
     if (pages != null && pages.isNotEmpty) {
-      publishedWorks = [...?publishedWorks, ...pages.removeAt(0)];
+      if (paginationToken case final token?) {
+        appendedTo = (token: token, length: publishedWorks?.length ?? 0);
+        paginationToken = Object();
+      }
+      publishedWorks = immutableList([
+        ...?publishedWorks,
+        ...pages.removeAt(0),
+      ]);
     }
     hasMore = pages?.isNotEmpty ?? false;
     revision++;

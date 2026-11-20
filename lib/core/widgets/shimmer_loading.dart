@@ -16,6 +16,8 @@ class ShimmerLoader extends StatefulWidget {
 
 class _ShimmerLoaderState extends State<ShimmerLoader>
     with SingleTickerProviderStateMixin {
+  static const _highlightHalfWidth = 0.15;
+
   late AnimationController _controller;
   ValueListenable<bool>? _scrollActivity;
   bool _animationAllowed = false;
@@ -89,6 +91,14 @@ class _ShimmerLoaderState extends State<ShimmerLoader>
     final highlightColor = isDark
         ? Color.lerp(baseColor, cs.onSurface, pureBlack ? 0.14 : 0.08)!
         : cs.surfaceContainer;
+    // Keep the placeholder colors when the route enables the shader.
+    final clear = highlightColor.withValues(alpha: 0);
+    final gradient = LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [clear, highlightColor, clear],
+      stops: const [0.5 - _highlightHalfWidth, 0.5, 0.5 + _highlightHalfWidth],
+    );
 
     return RepaintBoundary(
       child: AnimatedBuilder(
@@ -97,20 +107,12 @@ class _ShimmerLoaderState extends State<ShimmerLoader>
           return ShaderMask(
             blendMode: BlendMode.srcATop,
             shaderCallback: (bounds) {
-              final x = -0.5 + _controller.value * 2.0;
-              return LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  baseColor,
-                  baseColor,
-                  highlightColor,
-                  baseColor,
-                  baseColor,
-                ],
-                stops: const [0.0, 0.35, 0.5, 0.65, 1.0],
-                transform: _SlidingGradientTransform(slidePercent: x),
-              ).createShader(bounds);
+              // Clear both corners at the loop boundary for any aspect ratio.
+              const travel = 0.5 + _highlightHalfWidth;
+              final offset = (_controller.value * 2 - 1) * travel;
+              return gradient.createShader(
+                bounds.shift(Offset(bounds.width, bounds.height) * offset),
+              );
             },
             child: child,
           );
@@ -118,17 +120,6 @@ class _ShimmerLoaderState extends State<ShimmerLoader>
         child: widget.child,
       ),
     );
-  }
-}
-
-class _SlidingGradientTransform extends GradientTransform {
-  const _SlidingGradientTransform({required this.slidePercent});
-
-  final double slidePercent;
-
-  @override
-  Matrix4? transform(Rect bounds, {TextDirection? textDirection}) {
-    return Matrix4.translationValues(bounds.width * slidePercent, 0.0, 0.0);
   }
 }
 

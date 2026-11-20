@@ -21,6 +21,10 @@ const wchar_t* ResolveSubtitleFontFamily(const std::wstring& family) {
 
 DWORD BlendAndScalePremul(DWORD outer, DWORD inner, double inner_cov, double outer_cov) {
   if (outer_cov <= 0.0) return 0;
+  if (outer_cov == 1.0) {
+    if (inner_cov == 1.0) return inner;
+    if (inner_cov == 0.0) return outer;
+  }
   const auto blend_channel = [&](int shift) -> DWORD {
     const double o = static_cast<double>((outer >> shift) & 255);
     const double i = static_cast<double>((inner >> shift) & 255);
@@ -166,48 +170,110 @@ void SubtitleWindow::ReleaseSurface() {
   output_bitmap_ = mask_bitmap_ = nullptr;
   previous_output_bitmap_ = previous_mask_bitmap_ = nullptr;
   pixels_ = coverage_ = nullptr;
-  surface_width_ = surface_rows_ = surface_capacity_rows_ = 0;
+  surface_width_ = surface_rows_ = 0;
+  surface_capacity_width_ = surface_capacity_rows_ = 0;
 }
 bool SubtitleWindow::EnsureSurface(HDC screen, int width, int rows) {
-  if (surface_width_ == width && rows <= surface_capacity_rows_) {
-    if (surface_rows_ != rows) {
-      surface_rows_ = rows;
-      background_pixels_.resize(static_cast<size_t>(width) * rows);
-      background_dirty_ = content_dirty_ = true;
+  if (width == surface_width_ && rows == surface_rows_) return true;
+  if (width > surface_capacity_width_ || rows > surface_capacity_rows_) {
+    // A live resize can deliver a new width for every mouse move. Keep spare
+    // DIB space so most sizes only change the painted rectangle.
+    const auto grow = [](int size, int capacity) {
+      return size <= capacity
+          ? capacity
+          : std::max(size, capacity + std::max(64, capacity / 4));
+    };
+    const int capacity_width = grow(width, surface_capacity_width_);
+    const int capacity_rows = grow(rows, surface_capacity_rows_);
+    ReleaseSurface();
+    BITMAPINFO info{};
+    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = capacity_width;
+    info.bmiHeader.biHeight = -capacity_rows;
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+    output_dc_ = CreateCompatibleDC(screen);
+    mask_dc_ = CreateCompatibleDC(screen);
+    output_bitmap_ = CreateDIBSection(screen, &info, DIB_RGB_COLORS,
+        reinterpret_cast<void**>(&pixels_), nullptr, 0);
+    mask_bitmap_ = CreateDIBSection(screen, &info, DIB_RGB_COLORS,
+        reinterpret_cast<void**>(&coverage_), nullptr, 0);
+    if (!output_dc_ || !mask_dc_ || !output_bitmap_ || !mask_bitmap_) {
+      ReleaseSurface();
+      return false;
     }
-    return true;
-  }
-  ReleaseSurface();
-  BITMAPINFO info{};
-  info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-  info.bmiHeader.biWidth = width; info.bmiHeader.biHeight = -rows;
-  info.bmiHeader.biPlanes = 1; info.bmiHeader.biBitCount = 32;
-  info.bmiHeader.biCompression = BI_RGB;
-  output_dc_ = CreateCompatibleDC(screen);
-  mask_dc_ = CreateCompatibleDC(screen);
-  output_bitmap_ = CreateDIBSection(screen, &info, DIB_RGB_COLORS,
-      reinterpret_cast<void**>(&pixels_), nullptr, 0);
-  mask_bitmap_ = CreateDIBSection(screen, &info, DIB_RGB_COLORS,
-      reinterpret_cast<void**>(&coverage_), nullptr, 0);
-  if (!output_dc_ || !mask_dc_ || !output_bitmap_ || !mask_bitmap_) {
-    ReleaseSurface();
-    return false;
-  }
-  previous_output_bitmap_ = SelectObject(output_dc_, output_bitmap_);
-  previous_mask_bitmap_ = SelectObject(mask_dc_, mask_bitmap_);
-  if (!previous_output_bitmap_ || previous_output_bitmap_ == HGDI_ERROR
-      || !previous_mask_bitmap_ || previous_mask_bitmap_ == HGDI_ERROR) {
-    if (previous_output_bitmap_ == HGDI_ERROR) previous_output_bitmap_ = nullptr;
-    if (previous_mask_bitmap_ == HGDI_ERROR) previous_mask_bitmap_ = nullptr;
-    ReleaseSurface();
-    return false;
+    previous_output_bitmap_ = SelectObject(output_dc_, output_bitmap_);
+    previous_mask_bitmap_ = SelectObject(mask_dc_, mask_bitmap_);
+    if (!previous_output_bitmap_ || previous_output_bitmap_ == HGDI_ERROR
+        || !previous_mask_bitmap_ || previous_mask_bitmap_ == HGDI_ERROR) {
+      if (previous_output_bitmap_ == HGDI_ERROR) previous_output_bitmap_ = nullptr;
+      if (previous_mask_bitmap_ == HGDI_ERROR) previous_mask_bitmap_ = nullptr;
+      ReleaseSurface();
+      return false;
+    }
+    surface_capacity_width_ = capacity_width;
+    surface_capacity_rows_ = capacity_rows;
   }
   surface_width_ = width;
   surface_rows_ = rows;
-  surface_capacity_rows_ = rows;
   background_pixels_.resize(static_cast<size_t>(width) * rows);
   background_dirty_ = content_dirty_ = true;
   return true;
+}
+void SubtitleWindow::PaintBackground(int width, int rows, double scale) {
+  const DWORD alpha = opacity_;
+  const DWORD red = GetRValue(background_) * alpha / 255;
+  const DWORD green = GetGValue(background_) * alpha / 255;
+  const DWORD blue = GetBValue(background_) * alpha / 255;
+  const DWORD background = (alpha << 24) | (red << 16) | (green << 8) | blue;
+  const DWORD frame = ((64 + alpha * 191 / 255) << 24)
+      | ((64 + red * 191 / 255) << 16)
+      | ((64 + green * 191 / 255) << 8)
+      | (64 + blue * 191 / 255);
+  const double half_width = width / 2.0, half_height = rows / 2.0;
+  const double radius = std::min({font_size_ * 1.2 * scale, half_width, half_height});
+  const double border = border_depth_ * 4 * scale;
+  const int edge_span = static_cast<int>(std::ceil(std::max(radius, border + 0.5)));
+  const int side_columns = std::min(width / 2, edge_span);
+  const int top_rows = std::min(rows / 2, edge_span);
+  const auto row_at = [&](int y) {
+    return background_pixels_.data() + static_cast<size_t>(y) * width;
+  };
+  const auto paint_row = [&](int y) {
+    auto* row = row_at(y);
+    const double qy = std::abs(y + 0.5 - half_height) - (half_height - radius);
+    const auto pixel_at = [&](int x) {
+      const double qx = std::abs(x + 0.5 - half_width) - (half_width - radius);
+      const double out_x = std::max(qx, 0.0);
+      const double out_y = std::max(qy, 0.0);
+      const double signed_dist = std::sqrt(out_x * out_x + out_y * out_y)
+          + std::min(std::max(qx, qy), 0.0) - radius;
+      const double edge = -signed_dist;
+      const double outer_cov = std::clamp(edge + 0.5, 0.0, 1.0);
+      const double inner_cov = border > 0.0
+          ? std::clamp(edge - border + 0.5, 0.0, 1.0)
+          : 1.0;
+      return BlendAndScalePremul(frame, background, inner_cov, outer_cov);
+    };
+    // The coverage in the middle of the row is constant. Only the side
+    // strips can vary, and the right strip mirrors the left one.
+    std::fill(row + side_columns, row + width - side_columns, pixel_at(width / 2));
+    for (int x = 0; x < side_columns; ++x) {
+      row[x] = row[width - x - 1] = pixel_at(x);
+    }
+  };
+  for (int y = 0; y < top_rows; ++y) {
+    paint_row(y);
+    std::copy_n(row_at(y), width, row_at(rows - y - 1));
+  }
+  if (top_rows < rows - top_rows) {
+    paint_row(top_rows);
+    for (int y = top_rows + 1; y < rows - top_rows; ++y) {
+      std::copy_n(row_at(top_rows), width, row_at(y));
+    }
+  }
+  background_dirty_ = false;
 }
 void SubtitleWindow::Paint(HDC screen) {
   RECT rect; GetClientRect(window_, &rect);
@@ -220,44 +286,18 @@ void SubtitleWindow::Paint(HDC screen) {
     background_dirty_ = content_dirty_ = true;
   }
   const double scale = dpi / 96.0;
-  if (background_dirty_) {
-    const DWORD alpha = opacity_;
-    const DWORD red = GetRValue(background_) * alpha / 255;
-    const DWORD green = GetGValue(background_) * alpha / 255;
-    const DWORD blue = GetBValue(background_) * alpha / 255;
-    const DWORD background = (alpha << 24) | (red << 16) | (green << 8) | blue;
-    const DWORD frame = ((64 + alpha * 191 / 255) << 24)
-        | ((64 + red * 191 / 255) << 16)
-        | ((64 + green * 191 / 255) << 8)
-        | (64 + blue * 191 / 255);
-    const double half_width = width / 2.0, half_height = rows / 2.0;
-    const double radius = std::min({font_size_ * 1.2 * scale, half_width, half_height});
-    const double border = border_depth_ * 4 * scale;
-    // Match the preview's rounded surface and translucent white frame with anti-aliased edges.
-    for (int y = 0; y < rows; ++y) {
-      const double qy = std::abs(y + 0.5 - half_height) - (half_height - radius);
-      for (int x = 0; x < width; ++x) {
-        const double qx = std::abs(x + 0.5 - half_width) - (half_width - radius);
-        const double out_x = std::max(qx, 0.0);
-        const double out_y = std::max(qy, 0.0);
-        const double signed_dist = std::sqrt(out_x * out_x + out_y * out_y)
-            + std::min(std::max(qx, qy), 0.0) - radius;
-        const double edge = -signed_dist;
-        const double outer_cov = std::clamp(edge + 0.5, 0.0, 1.0);
-        const double inner_cov = border > 0.0
-            ? std::clamp(edge - border + 0.5, 0.0, 1.0)
-            : 1.0;
-        background_pixels_[y * width + x] =
-            BlendAndScalePremul(frame, background, inner_cov, outer_cov);
-      }
-    }
-    background_dirty_ = false;
-  }
+  if (background_dirty_) PaintBackground(width, rows, scale);
   if (content_dirty_) {
     // Cue changes reuse the rounded background; text-only updates do no geometry work.
-    std::copy(background_pixels_.begin(), background_pixels_.end(), pixels_);
+    const size_t stride = surface_capacity_width_;
+    for (int y = 0; y < rows; ++y) {
+      std::copy_n(background_pixels_.data() + static_cast<size_t>(y) * width,
+          width, pixels_ + y * stride);
+    }
     if (!text_.empty()) {
-      std::fill(coverage_, coverage_ + width * rows, 0);
+      for (int y = 0; y < rows; ++y) {
+        std::fill_n(coverage_ + y * stride, width, 0);
+      }
       // A separate grayscale mask preserves text opacity on a translucent background.
       auto previous = SelectObject(mask_dc_, font_);
       SetBkMode(mask_dc_, TRANSPARENT);
@@ -278,14 +318,16 @@ void SubtitleWindow::Paint(HDC screen) {
       const DWORD blue = GetBValue(text_color_);
       const int shadow_dy = std::max(1, static_cast<int>(std::lround(2.0 * scale)));
       for (int y = 0; y < rows; ++y) {
+        auto* output_row = pixels_ + y * stride;
+        const auto* text_row = coverage_ + y * stride;
+        const auto* shadow_row =
+            y >= shadow_dy ? coverage_ + (y - shadow_dy) * stride : nullptr;
         for (int x = 0; x < width; ++x) {
-          const int i = y * width + x;
-          const DWORD a = coverage_[i] & 255;
-          const DWORD shadow_src =
-              y >= shadow_dy ? (coverage_[(y - shadow_dy) * width + x] & 255) : 0;
+          const DWORD a = text_row[x] & 255;
+          const DWORD shadow_src = shadow_row ? shadow_row[x] & 255 : 0;
           const DWORD alpha_s = (shadow_src * 128) / 255;
           if (a == 0 && alpha_s == 0) continue;
-          DWORD destination = pixels_[i];
+          DWORD destination = output_row[x];
           if (alpha_s > 0) {
             const DWORD inv_s = 255 - alpha_s;
             destination =
@@ -295,11 +337,11 @@ void SubtitleWindow::Paint(HDC screen) {
                 | (((destination & 255) * inv_s) / 255);
           }
           if (a == 0) {
-            pixels_[i] = destination;
+            output_row[x] = destination;
             continue;
           }
           const DWORD inverse = 255 - a;
-          pixels_[i] = ((a + ((destination >> 24) * inverse / 255)) << 24)
+          output_row[x] = ((a + ((destination >> 24) * inverse / 255)) << 24)
             | (((red * a + ((destination >> 16) & 255) * inverse) / 255) << 16)
             | (((green * a + ((destination >> 8) & 255) * inverse) / 255) << 8)
             | ((blue * a + (destination & 255) * inverse) / 255);

@@ -178,6 +178,7 @@ const Map<String, String> appLanguageZh = {
   'close': '关闭',
   'fullscreen': '全屏',
   'exit_fullscreen': '退出全屏',
+  'video_controls': '视频控制',
   'brightness': '亮度',
   'seek_backward_five_seconds': '后退 5 秒',
   'seek_forward_five_seconds': '前进 5 秒',

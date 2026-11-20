@@ -180,6 +180,7 @@ const Map<String, String> appLanguageJa = {
   'close': '閉じる',
   'fullscreen': '全画面',
   'exit_fullscreen': '全画面を終了',
+  'video_controls': '動画の操作',
   'brightness': '明るさ',
   'seek_backward_five_seconds': '5秒戻る',
   'seek_forward_five_seconds': '5秒進む',

@@ -132,7 +132,14 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   bool _startupRefreshStarted = false;
   bool _startupRefreshWaiting = false;
   bool _isSelectionMode = false;
+  bool _hasWatchedLibrarySort = false;
+  bool _libraryProjectionAvailable = false;
   final Set<String> _selectedLibraryPaths = <String>{};
+
+  void _handleProjectionAvailabilityChanged(bool available) {
+    if (_libraryProjectionAvailable == available) return;
+    setState(() => _libraryProjectionAvailable = available);
+  }
 
   final _scrollController = WindowsSmoothScrollController();
   final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
@@ -672,6 +679,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     // scroll/swipe performance.
     const listCacheExtent = 320.0;
     final canPullRefresh = listStateCanPullRefresh;
+    final rawSnapshotReady =
+        listStateIsInitialized &&
+        listStateStructureRevision == libraryFacade.structureRevision;
 
     Widget emptyListBody() {
       final relativeTop = listTopPadding;
@@ -705,18 +715,50 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           clipBehavior: Clip.none,
           children: [
             buildScrollToTopTransition(
-              AppPageContentTransition.deferred(
-                prepared:
-                    listStateIsInitialized &&
-                    listStateStructureRevision == libraryFacade.structureRevision,
-                isReady:
-                    listStateIsInitialized &&
-                    listStateStructureRevision == libraryFacade.structureRevision,
-                placeholder: LibraryLoadingSkeleton(
-                  bottomInset: listBottomPadding,
-                  topInset: listTopPadding,
-                ),
-                builder: (_) => Consumer(
+              Consumer(
+                builder: (context, ref, content) {
+                  final libraryEmpty = libraryFacade.libraryCards.isEmpty;
+                  var hasSortedRows = false;
+                  var sortFailed = false;
+                  if (_hasWatchedLibrarySort ||
+                      (rawSnapshotReady &&
+                          !libraryEmpty &&
+                          TickerMode.valuesOf(context).enabled)) {
+                    _hasWatchedLibrarySort = true;
+                    hasSortedRows = ref.watch(
+                      librarySortedTreeUiProvider.select(
+                        (nodes) => nodes.isNotEmpty,
+                      ),
+                    );
+                    sortFailed = ref.watch(
+                      librarySortedSnapshotUiProvider.select(
+                        (snapshot) => snapshot.error != null,
+                      ),
+                    );
+                  }
+                  final hasSnapshot =
+                      (rawSnapshotReady && libraryEmpty) ||
+                      hasSortedRows ||
+                      sortFailed;
+                  final listReady = rawSnapshotReady && hasSnapshot;
+                  return AppPageContentTransition.deferred(
+                    prepared: listReady,
+                    isReady: listReady,
+                    // Mount the tree for row preparation under the same
+                    // skeleton that covered restoration and sorting.
+                    holdPlaceholder:
+                        !listStateIsInitialized ||
+                        !hasSnapshot ||
+                        (hasSortedRows && !_libraryProjectionAvailable),
+                    animatePlaceholder: true,
+                    placeholder: LibraryLoadingSkeleton(
+                      bottomInset: listBottomPadding,
+                      topInset: listTopPadding,
+                    ),
+                    builder: (_) => content!,
+                  );
+                },
+                child: Consumer(
                   builder: (context, ref, _) {
                     final tree = ref.watch(librarySortedTreeUiProvider);
                     final sortingError = ref.watch(
@@ -729,60 +771,52 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                         : const SizedBox.expand();
                     return Stack(
                       children: [
-                        PlaceholderContentTransition(
-                          showPlaceholder:
-                              !listStateIsInitialized ||
-                              (tree.isEmpty &&
-                                  libraryFacade.libraryCards.isNotEmpty &&
-                                  sortingError == null),
-                          placeholder: LibraryLoadingSkeleton(
-                            bottomInset: listBottomPadding,
-                            topInset: listTopPadding,
-                          ),
-                          content: GlassRefreshIndicator(
-                            key: _refreshIndicatorKey,
-                            lockChildWhileRefreshing: true,
-                            color: Theme.of(context).colorScheme.primary,
-                            backgroundColor: Theme.of(
-                              context,
-                            ).colorScheme.surfaceContainerHighest,
-                            onRefresh: _runLibraryPullRefresh,
-                            edgeOffset: listTopPadding,
-                            displacement: 32,
-                            triggerMode:
-                                GlassRefreshIndicatorTriggerMode.anywhere,
-                            child: PlaceholderContentTransition(
-                              key: const ValueKey('library_empty_transition'),
-                              showPlaceholder: tree.isEmpty,
-                              placeholder: emptyBody,
-                              content: LibraryTreeList(
-                                tree: tree,
-                                structureRevision: listStateStructureRevision,
-                                selectedPaths: _selectedLibraryPaths,
-                                isSelectionMode: _isSelectionMode,
-                                scrollController: _scrollController,
-                                i18n: i18n,
-                                topPadding: listTopPadding,
-                                bottomPadding: listBottomPadding,
-                                cacheExtent: listCacheExtent,
-                                physics: canPullRefresh
-                                    ? AlwaysScrollableScrollPhysics(
-                                        parent:
-                                            GlassRefreshIndicatorScrollPhysics(
-                                              isIndicatorVisible: () =>
-                                                  _refreshIndicatorKey
-                                                      .currentState
-                                                      ?.isIndicatorVisible ??
-                                                  false,
-                                            ),
-                                      )
-                                    : null,
-                                loadFolder: libraryFacade.loadLibraryFolderTree,
-                                currentStructureRevision: () =>
-                                    libraryFacade.structureRevision,
-                                onLongPress: _enterSelectionMode,
-                                onToggleSelect: _toggleLibrarySelection,
-                              ),
+                        GlassRefreshIndicator(
+                          key: _refreshIndicatorKey,
+                          lockChildWhileRefreshing: true,
+                          color: Theme.of(context).colorScheme.primary,
+                          backgroundColor: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerHighest,
+                          onRefresh: _runLibraryPullRefresh,
+                          edgeOffset: listTopPadding,
+                          displacement: 32,
+                          triggerMode:
+                              GlassRefreshIndicatorTriggerMode.anywhere,
+                          child: PlaceholderContentTransition(
+                            key: const ValueKey('library_empty_transition'),
+                            showPlaceholder: tree.isEmpty,
+                            maintainContent: true,
+                            placeholder: emptyBody,
+                            content: LibraryTreeList(
+                              tree: tree,
+                              structureRevision: listStateStructureRevision,
+                              selectedPaths: _selectedLibraryPaths,
+                              isSelectionMode: _isSelectionMode,
+                              scrollController: _scrollController,
+                              i18n: i18n,
+                              topPadding: listTopPadding,
+                              bottomPadding: listBottomPadding,
+                              cacheExtent: listCacheExtent,
+                              physics: canPullRefresh
+                                  ? AlwaysScrollableScrollPhysics(
+                                      parent:
+                                          GlassRefreshIndicatorScrollPhysics(
+                                            isIndicatorVisible: () =>
+                                                _refreshIndicatorKey
+                                                    .currentState
+                                                    ?.isIndicatorVisible ??
+                                                false,
+                                          ),
+                                    )
+                                  : null,
+                              loadFolder: libraryFacade.loadLibraryFolderTree,
+                              currentStructureRevision: () =>
+                                  libraryFacade.structureRevision,
+                              onLongPress: _enterSelectionMode,
+                              onToggleSelect: _toggleLibrarySelection,
+                              onProjectionAvailabilityChanged:
+                                  _handleProjectionAvailabilityChanged,
                             ),
                           ),
                         ),
@@ -796,8 +830,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                               label: i18n.tr('operation_failed_retry'),
                               error: sortingError,
                               retryTooltip: i18n.tr('retry'),
-                              onRetry: () =>
-                                  ref.invalidate(librarySortedSnapshotUiProvider),
+                              onRetry: () => ref.invalidate(
+                                librarySortedSnapshotUiProvider,
+                              ),
                             ),
                           ),
                         ),

@@ -196,6 +196,7 @@ const Map<String, String> appLanguageEn = {
   'window_restore': 'Restore window',
   'fullscreen': 'Fullscreen',
   'exit_fullscreen': 'Exit fullscreen',
+  'video_controls': 'Video controls',
   'brightness': 'Brightness',
   'seek_backward_five_seconds': 'Rewind 5s',
   'seek_forward_five_seconds': 'Forward 5s',

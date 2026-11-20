@@ -48,6 +48,7 @@ class SessionHeroArtwork extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final library = ref.read(libraryFacadeProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final sessionId = session.id;
     final cs = Theme.of(context).colorScheme;
     final allowVideoPlayback = ref.watch(
@@ -175,9 +176,8 @@ class SessionHeroArtwork extends ConsumerWidget {
                       sessionId: sessionId,
                       trackPath: track!.path,
                     ),
-                    fullscreenTooltip: ref
-                        .read(appLanguageProviderInstanceProvider)
-                        .tr('fullscreen'),
+                    fullscreenTooltip: i18n.tr('fullscreen'),
+                    controlsLabel: i18n.tr('video_controls'),
                     poster: allowVideoPlayback && track?.isVideo == true
                         ? SessionVideoBlurredBackdrop(child: coverPoster)
                         : coverPoster,

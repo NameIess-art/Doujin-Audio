@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import '../../core/widgets/app_buttons.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,15 +14,14 @@ import '../../core/media/path_display.dart';
 import '../../core/logging/app_log_service.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
 import '../../core/widgets/app_feedback.dart';
-import '../../core/widgets/app_entry_ink_well.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/async_cover_image.dart';
+import '../../core/widgets/file_tree_row.dart';
 import '../../core/widgets/mobile_overlay_inset.dart';
 import '../../core/widgets/page_header_inset.dart';
 import '../../core/widgets/scroll_activity_gate.dart';
 import '../../core/widgets/shimmer_loading.dart';
 import '../../core/widgets/top_page_header.dart';
-import '../../core/widgets/windows_horizontal_wheel_scroll.dart';
 import '../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../features/asmr/domain/asmr_models.dart';
 import '../../features/asmr/presentation/asmr_providers.dart';
@@ -514,28 +512,6 @@ class _MyPageState extends ConsumerState<MyPage>
         );
       },
     );
-    Widget coverSkeleton(String key) => SizedBox(
-      key: ValueKey(key),
-      height: _HistoryWorkCard.coverHeight + 14,
-      child: WindowsHorizontalWheelScroll(
-        builder: (controller) => SingleChildScrollView(
-          controller: controller,
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            spacing: 12,
-            children: List.generate(
-              8,
-              (_) => const ShimmerContainer(
-                width: _HistoryWorkCard.coverWidth,
-                height: _HistoryWorkCard.coverHeight,
-                borderRadius: 12,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
     Widget interestSkeleton() => section(
       i18n.tr('my_interests'),
       Column(
@@ -582,12 +558,19 @@ class _MyPageState extends ConsumerState<MyPage>
             key: const ValueKey('my-page-skeleton'),
             child: pageList([
               listeningChart(skeleton: true),
+              interestSkeleton(),
               section(
                 i18n.tr('my_history'),
-                coverSkeleton('my-skeleton-history'),
+                FileTreeSkeleton(
+                  key: const ValueKey('my-skeleton-history'),
+                  rowHeight: _HistoryWorkRow.layoutHeight(context),
+                  viewportHeight: _HistoryWorkRow.layoutHeight(context) * 3,
+                  rowPadding: const EdgeInsets.symmetric(horizontal: 6),
+                  leadingSize: _HistoryWorkRow.coverHeight,
+                  leadingGap: 10,
+                ),
                 skeleton: true,
               ),
-              interestSkeleton(),
             ], scrollable: false),
           ),
         ),
@@ -605,15 +588,17 @@ class _MyPageState extends ConsumerState<MyPage>
                   placeholder: skeleton,
                   builder: (_) => pageList([
                     listeningChart(),
+                    interestSection(),
                     section(
                       i18n.tr('my_history'),
                       Consumer(
                         builder: (context, ref, _) => ref
                             .watch(listeningActivityProvider)
                             .when(
+                              skipError: true,
                               data: (view) => view.history.isEmpty
                                   ? Text(i18n.tr('my_no_history'))
-                                  : _HistoryStrip(
+                                  : _HistoryList(
                                       view: view,
                                       onOpen: _openHistory,
                                     ),
@@ -625,7 +610,6 @@ class _MyPageState extends ConsumerState<MyPage>
                             ),
                       ),
                     ),
-                    interestSection(),
                   ], controller: _scroll),
                 ),
               ),
@@ -667,117 +651,134 @@ class _RetainedMySectionState extends State<_RetainedMySection>
   }
 }
 
-class _HistoryStrip extends ConsumerStatefulWidget {
-  const _HistoryStrip({required this.view, required this.onOpen});
+class _HistoryList extends ConsumerStatefulWidget {
+  const _HistoryList({required this.view, required this.onOpen});
+
   final ListeningActivityView view;
   final Future<void> Function(MusicTrack track) onOpen;
+
   @override
-  ConsumerState<_HistoryStrip> createState() => _HistoryStripState();
+  ConsumerState<_HistoryList> createState() => _HistoryListState();
 }
 
-class _HistoryStripState extends ConsumerState<_HistoryStrip> {
-  final _scroll = WindowsSmoothScrollController();
-  bool _loading = false;
-  Object? _loadError;
-  @override
-  void initState() {
-    super.initState();
-    _scroll.addListener(_loadNearEnd);
-  }
+class _HistoryListState extends ConsumerState<_HistoryList> {
+  static const _pageSize = 10;
+  final _rowsKey = GlobalKey();
+  int _page = 0;
+  int? _pendingPage;
 
-  void _loadNearEnd() {
-    if (_scroll.hasClients &&
-        _scroll.position.extentAfter < 250 &&
-        !_loading &&
-        _loadError == null &&
-        widget.view.hasMoreHistory) {
-      unawaited(_loadMore());
+  int get _lastLoadedPage => (widget.view.history.length - 1) ~/ _pageSize;
+
+  @override
+  void didUpdateWidget(covariant _HistoryList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _page = _page.clamp(0, _lastLoadedPage);
+    final pending = _pendingPage;
+    if (pending == null) return;
+    if (pending <= _lastLoadedPage) {
+      _page = pending;
+      _pendingPage = null;
+      _revealFirstRow();
+    } else if (!widget.view.hasMoreHistory) {
+      _pendingPage = null;
     }
   }
 
-  Future<void> _loadMore() async {
-    setState(() {
-      _loading = true;
-      _loadError = null;
+  void _revealFirstRow() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final rows = _rowsKey.currentContext;
+      if (rows == null) return;
+      unawaited(
+        Scrollable.ensureVisible(
+          rows,
+          alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+        ),
+      );
     });
-    try {
-      await ref.read(listeningActivityServiceProvider)?.loadMoreHistory();
-    } catch (error) {
-      if (mounted) setState(() => _loadError = error);
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
   }
 
-  @override
-  void dispose() {
-    _scroll.dispose();
-    super.dispose();
+  Future<void> _goToPage(int page) async {
+    if (page <= _lastLoadedPage) {
+      setState(() => _page = page);
+      _revealFirstRow();
+      return;
+    }
+    final service = ref.read(listeningActivityServiceProvider);
+    if (service == null) return;
+    // The activity stream publishes the new rows after active scrolling settles.
+    setState(() => _pendingPage = page);
+    try {
+      await service.loadMoreHistory();
+    } catch (error, stack) {
+      AppLogService.error(
+        'my_history_load_failed',
+        error: error,
+        stackTrace: stack,
+      );
+      if (!mounted) return;
+      setState(() => _pendingPage = null);
+      showAppSnackBar(
+        context,
+        ref
+            .read(appLanguageProviderInstanceProvider)
+            .tr('operation_failed_retry'),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-    return SizedBox(
-      height: _HistoryWorkCard.coverHeight + 14,
-      child: ClipRRect(
-        key: const ValueKey('my-history-viewport'),
-        borderRadius: BorderRadius.circular(12),
-        child: WindowsHorizontalWheelScroll(
-          controller: _scroll,
-          builder: (controller) => ScrollConfiguration(
-            behavior: ScrollConfiguration.of(
-              context,
-            ).copyWith(dragDevices: PointerDeviceKind.values.toSet()),
-            child: ListView.separated(
-              controller: controller,
-              padding: const EdgeInsets.symmetric(horizontal: 2),
-              scrollDirection: Axis.horizontal,
-              itemCount:
-                  widget.view.history.length +
-                  (widget.view.hasMoreHistory ? 1 : 0),
-              separatorBuilder: (_, _) => const SizedBox.shrink(),
-              itemBuilder: (context, index) {
-                if (index == widget.view.history.length) {
-                  return SizedBox(
-                    width: 112,
-                    child: Center(
-                      child: AnimatedSwitcher(
-                        duration: MediaQuery.disableAnimationsOf(context)
-                            ? Duration.zero
-                            : kPlaceholderContentTransitionDuration,
-                        switchInCurve: kAppFadeCurve,
-                        switchOutCurve: kAppFadeCurve,
-                        child: _loading
-                            ? const SizedBox.square(
-                                key: ValueKey('loading'),
-                                dimension: 22,
-                                child: CircularProgressIndicator(strokeWidth: 2.2),
-                              )
-                            : TextButton(
-                                key: const ValueKey('load_more'),
-                                onPressed: _loadMore,
-                                child: Text(
-                                  i18n.tr(
-                                    _loadError == null
-                                        ? 'my_load_more'
-                                        : 'my_retry',
-                                  ),
-                                ),
-                              ),
-                      ),
-                    ),
-                  );
-                }
-                return _HistoryWorkCard(
-                  entry: widget.view.history[index],
-                  onOpen: widget.onOpen,
-                );
-              },
-            ),
-          ),
+    final localizations = MaterialLocalizations.of(context);
+    final loading = _pendingPage != null;
+    final hasNext = _page < _lastLoadedPage || widget.view.hasMoreHistory;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Column(
+          key: _rowsKey,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final entry
+                in widget.view.history.skip(_page * _pageSize).take(_pageSize))
+              _HistoryWorkRow(
+                key: ValueKey(entry.workKey),
+                entry: entry,
+                onOpen: widget.onOpen,
+              ),
+          ],
         ),
-      ),
+        if (_page > 0 || hasNext)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                tooltip: localizations.previousPageTooltip,
+                style: appIconButtonStyle(),
+                onPressed: _page > 0 && !loading
+                    ? () => _goToPage(_page - 1)
+                    : null,
+                icon: const Icon(Icons.chevron_left_rounded),
+              ),
+              Semantics(
+                liveRegion: true,
+                child: Text(localizations.formatDecimal(_page + 1)),
+              ),
+              IconButton(
+                tooltip: localizations.nextPageTooltip,
+                style: appIconButtonStyle(),
+                onPressed: hasNext && !loading
+                    ? () => _goToPage(_page + 1)
+                    : null,
+                icon: loading
+                    ? const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.chevron_right_rounded),
+              ),
+            ],
+          ),
+      ],
     );
   }
 }
@@ -806,10 +807,19 @@ final _historyWorkTitleProvider = FutureProvider.autoDispose
       return title.isNotEmpty ? title : folderName;
     });
 
-class _HistoryWorkCard extends ConsumerWidget {
-  const _HistoryWorkCard({required this.entry, required this.onOpen});
-  static const double coverWidth = 132;
-  static const double coverHeight = coverWidth * 3 / 4;
+class _HistoryWorkRow extends ConsumerWidget {
+  const _HistoryWorkRow({super.key, required this.entry, required this.onOpen});
+
+  static const double _minHeight = 52;
+  static const double _coverWidth = 48;
+  static const double coverHeight = 36;
+
+  static double layoutHeight(BuildContext context) => FileTreeRow.layoutHeight(
+    context,
+    minHeight: _minHeight,
+    titleMaxLines: 2,
+  );
+
   final ListeningHistoryEntry entry;
   final Future<void> Function(MusicTrack track) onOpen;
 
@@ -819,98 +829,30 @@ class _HistoryWorkCard extends ConsumerWidget {
     final title =
         ref.watch(_historyWorkTitleProvider(entry.track)).value ??
         ref.read(appLanguageProviderInstanceProvider).tr('my_untitled_work');
-    return _WorkCoverCard(
-      cardKey: 'my-history-card-${entry.workKey}',
-      titleKey: 'my-history-title-${entry.workKey}',
+    return FileTreeRow(
+      key: ValueKey('my-history-card-${entry.workKey}'),
       title: title,
-      onOpen: () => onOpen(entry.track),
-      cover: AsyncLocalCoverImage(
-        requestKey: entry.workKey,
-        future: ref
-            .read(libraryCoverUiControllerProvider)
-            .deferredPlaybackCover(entry.track, context: context),
-        initialPath: library.resolvedPlaybackCoverPathForTrack(entry.track),
-        fit: BoxFit.cover,
-        deferLoadDuringInteraction: true,
-        cacheWidth: 320,
-      ),
-    );
-  }
-}
-
-class _WorkCoverCard extends StatelessWidget {
-  const _WorkCoverCard({
-    required this.cardKey,
-    required this.titleKey,
-    required this.title,
-    required this.cover,
-    required this.onOpen,
-  });
-  final String cardKey;
-  final String titleKey;
-  final String title;
-  final Widget cover;
-  final VoidCallback onOpen;
-
-  @override
-  Widget build(BuildContext context) {
-    final radius = BorderRadius.circular(12);
-    return Tooltip(
-      message: title,
-      child: Semantics(
-        label: title,
-        button: true,
-        child: SizedBox(
-          width: _HistoryWorkCard.coverWidth + 12,
-          child: ClipRect(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
-              child: CoverArtworkFrame(
-                key: ValueKey(cardKey),
-                borderRadius: radius,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    cover,
-                    Positioned(
-                      bottom: 8,
-                      left: 8,
-                      right: 8,
-                      child: ExcludeSemantics(
-                        child: Text(
-                          title,
-                          key: ValueKey(titleKey),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            height: 1.25,
-                            shadows: [
-                              Shadow(
-                                color: Colors.black87,
-                                blurRadius: 4,
-                                offset: Offset(0, 1),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    Positioned.fill(
-                      child: Material(
-                        type: MaterialType.transparency,
-                        child: AppEntryInkWell(
-                          borderRadius: radius,
-                          onTap: onOpen,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+      minHeight: _minHeight,
+      titleMaxLines: 2,
+      navigationEntry: true,
+      onTap: () => onOpen(entry.track),
+      leading: SizedBox(
+        width: _coverWidth,
+        height: coverHeight,
+        child: CoverArtworkFrame(
+          showShadow: false,
+          child: AsyncLocalCoverImage(
+            requestKey: entry.workKey,
+            future: ref
+                .read(libraryCoverUiControllerProvider)
+                .deferredPlaybackCover(entry.track, context: context),
+            initialPath: library.resolvedPlaybackCoverPathForTrack(
+              entry.track,
             ),
+            fit: BoxFit.cover,
+            deferLoadDuringInteraction: true,
+            cacheWidth: (_coverWidth * MediaQuery.devicePixelRatioOf(context))
+                .ceil(),
           ),
         ),
       ),

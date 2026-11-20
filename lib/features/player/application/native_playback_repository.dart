@@ -17,6 +17,8 @@ class NativePlaybackRepository {
 
   final NativePlaybackBridgeBase _bridge;
 
+  bool get handlesQueueCompletion => _bridge is NativePlaybackBridge;
+
   Future<List<PlaybackUsageBatch>> readUsage() async {
     final source = _bridge;
     return source is PlaybackUsageSource

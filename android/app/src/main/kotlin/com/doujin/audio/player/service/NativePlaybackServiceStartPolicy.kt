@@ -29,8 +29,7 @@ internal data class NativePlaybackStartDecision(
     val accepted: Boolean
         get() = source != NativePlaybackStartSource.REJECTED
     val shouldAttemptRestore: Boolean
-        get() = source == NativePlaybackStartSource.INTERNAL ||
-            source == NativePlaybackStartSource.STICKY_RESTART
+        get() = source == NativePlaybackStartSource.STICKY_RESTART
 }
 
 internal fun evaluateNativePlaybackStart(

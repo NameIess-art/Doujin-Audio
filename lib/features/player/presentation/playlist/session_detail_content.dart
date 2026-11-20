@@ -96,9 +96,9 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   VoidCallback? _pendingSegmentResult;
   bool _segmentLabelsLoaded = false;
   bool _syncingSegmentText = false;
-  Completer<void>? _segmentSaveCompletion;
+  Completer<void>? _segmentWriteCompletion;
   (int, TimeSegmentLabel)? _capturedSegmentDraft;
-  bool _deletingSegment = false;
+  String? _deletingSegmentId;
   int _segmentDraftGeneration = 0;
   final Set<(String, String)> _pendingNewSegmentNames = <(String, String)>{};
 
@@ -446,13 +446,11 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     }
   }
 
-  void _toggleSelectedSegmentLoop() {
-    final selected = _selectedSegment;
-    if (selected == null) return;
+  void _toggleSegmentLoop(TimeSegmentLabel target) {
     unawaited(
       AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
     );
-    _timeSegments.toggleLoop(sessionId: widget.session.id, label: selected);
+    _timeSegments.toggleLoop(sessionId: widget.session.id, label: target);
     setState(() {});
   }
 
@@ -522,13 +520,14 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   }
 
   Future<void> _trySaveSegmentDraft() async {
-    if (_deletingSegment) return;
     final trackKey = _segmentTrackKey;
     final name = _segmentNameController.text.trim();
     final start = _draftStart;
     final end = _draftEnd;
     final draftGeneration = _segmentDraftGeneration;
     if (trackKey == null ||
+        (_deletingSegmentId != null &&
+            _deletingSegmentId == _selectedSegmentId) ||
         name.isEmpty ||
         start == null ||
         end == null ||
@@ -536,9 +535,9 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
       return;
     }
     final timeSegments = _timeSegments;
-    final previousSave = _segmentSaveCompletion;
+    final previousWrite = _segmentWriteCompletion;
     final saveCompletion = Completer<void>();
-    _segmentSaveCompletion = saveCompletion;
+    _segmentWriteCompletion = saveCompletion;
     (String, String)? pendingReservation;
     try {
       final existing = _capturedSegmentDraft?.$1 == draftGeneration
@@ -560,24 +559,14 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
         existing: existing,
       );
       _capturedSegmentDraft = (draftGeneration, label);
-      await previousSave?.future;
+      await previousWrite?.future;
       final backupSucceeded = await timeSegments.saveLabel(label);
       if (!mounted || _segmentTrackKey != trackKey) return;
       setState(() {
         if (_segmentDraftGeneration == draftGeneration) {
           _selectedSegmentId ??= label.id;
         }
-        _segmentLabels =
-            [
-              for (final current in _segmentLabels)
-                if (current.id != label.id) current,
-              label,
-            ]..sort((a, b) {
-              final startOrder = a.start.compareTo(b.start);
-              return startOrder != 0
-                  ? startOrder
-                  : a.createdAt.compareTo(b.createdAt);
-            });
+        _upsertVisibleSegmentLabel(label);
       });
       if (!backupSucceeded) {
         final i18n = ProviderScope.containerOf(
@@ -609,39 +598,49 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
       if (pendingReservation != null) {
         _pendingNewSegmentNames.remove(pendingReservation);
       }
-      if (identical(_segmentSaveCompletion, saveCompletion)) {
-        _segmentSaveCompletion = null;
+      if (identical(_segmentWriteCompletion, saveCompletion)) {
+        _segmentWriteCompletion = null;
       }
       saveCompletion.complete();
     }
   }
 
-  Future<void> _deleteSelectedSegment() async {
-    if (_deletingSegment) return;
-    final selected = _segmentLabels
-        .where((label) => label.id == _selectedSegmentId)
-        .firstOrNull;
-    if (selected == null) return;
-    _deletingSegment = true;
-    _segmentNameDebounce?.cancel();
+  void _upsertVisibleSegmentLabel(TimeSegmentLabel label) {
+    _segmentLabels = [
+      for (final current in _segmentLabels)
+        if (current.id != label.id) current,
+      label,
+    ]..sort((a, b) {
+      final startOrder = a.start.compareTo(b.start);
+      return startOrder != 0 ? startOrder : a.createdAt.compareTo(b.createdAt);
+    });
+  }
+
+  Future<void> _deleteSegment(TimeSegmentLabel target) async {
+    if (_deletingSegmentId != null) return;
+    _deletingSegmentId = target.id;
+    if (_selectedSegmentId == target.id) _segmentNameDebounce?.cancel();
+    final previousWrite = _segmentWriteCompletion;
+    final deleteCompletion = Completer<void>();
+    _segmentWriteCompletion = deleteCompletion;
     final timeSegments = _timeSegments;
     try {
-      await _segmentSaveCompletion?.future;
-      final labels = await timeSegments.loadLabels(selected.trackKey);
+      await previousWrite?.future;
+      final labels = await timeSegments.loadLabels(target.trackKey);
       final removedLabel = labels
-          .where((label) => label.id == selected.id)
+          .where((label) => label.id == target.id)
           .firstOrNull;
       if (removedLabel == null) return;
       unawaited(
         AppInteractionFeedback.trigger(AppInteractionFeedbackType.destructive),
       );
       final backupSucceeded = await timeSegments.deleteLabel(removedLabel);
-      if (!mounted || _segmentTrackKey != selected.trackKey) return;
+      if (!mounted || _segmentTrackKey != target.trackKey) return;
       setState(() {
         _segmentLabels = _segmentLabels
-            .where((label) => label.id != selected.id)
+            .where((label) => label.id != target.id)
             .toList(growable: false);
-        if (_selectedSegmentId == selected.id) _clearSegmentDraft();
+        if (_selectedSegmentId == target.id) _clearSegmentDraft();
       });
       final i18n = ProviderScope.containerOf(
         context,
@@ -664,7 +663,11 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
             unawaited(_restoreDeletedSegment(removedLabel, timeSegments)),
       );
     } finally {
-      _deletingSegment = false;
+      _deletingSegmentId = null;
+      if (identical(_segmentWriteCompletion, deleteCompletion)) {
+        _segmentWriteCompletion = null;
+      }
+      deleteCompletion.complete();
     }
   }
 
@@ -675,7 +678,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     final backupSucceeded = await timeSegments.saveLabel(label);
     if (!mounted) return;
     if (_segmentTrackKey == label.trackKey) {
-      await _loadSegmentLabels(label.trackKey);
+      setState(() => _upsertVisibleSegmentLabel(label));
     }
     if (!backupSucceeded && mounted) {
       final i18n = ref.read(appLanguageProviderInstanceProvider);
@@ -867,7 +870,6 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
       nameController: _segmentNameController,
       draftStart: _draftStart,
       draftEnd: _draftEnd,
-      draftColorValue: _draftColorValue,
       loopSegmentId: _timeSegments.loopLabelIdForSession(
         session.id,
         trackKey: _segmentTrackKey,
@@ -878,8 +880,8 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
       onSetEnd: _setDraftEndToCurrent,
       onEditStart: () => _editDraftTime(isStart: true),
       onEditEnd: () => _editDraftTime(isStart: false),
-      onDelete: _deleteSelectedSegment,
-      onToggleLoop: _toggleSelectedSegmentLoop,
+      onDelete: _deleteSegment,
+      onToggleLoop: _toggleSegmentLoop,
       onClose: collapseSegmentPanel,
     );
   }

@@ -24,6 +24,7 @@ class AppPreferences {
 
   static String? getStringSync(String key) => _instance?.getString(key);
   static bool? getBoolSync(String key) => _instance?.getBool(key);
+  static int? getIntSync(String key) => _instance?.getInt(key);
 
   static bool shouldShowOnboardingSync() {
     final prefs = _instance;
@@ -91,6 +92,15 @@ class AppPreferences {
       return await (await _prefs).setBool(key, value);
     } catch (error, stackTrace) {
       _logFailure('write_bool', key, error, stackTrace);
+      return false;
+    }
+  }
+
+  static Future<bool> setInt(String key, int value) async {
+    try {
+      return await (await _prefs).setInt(key, value);
+    } catch (error, stackTrace) {
+      _logFailure('write_int', key, error, stackTrace);
       return false;
     }
   }

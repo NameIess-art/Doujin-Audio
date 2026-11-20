@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.media.audiofx.LoudnessEnhancer
+import android.os.Looper
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.exoplayer.ExoPlayer
@@ -12,9 +13,9 @@ import com.doujin.audio.player.common.NativePrepareSessionArguments
 import com.doujin.audio.player.effects.NativeSessionAudioEffectsRuntime
 import com.doujin.audio.player.effects.NativePlaybackResumeFade
 import com.doujin.audio.player.effects.PlaybackVolumeMapper
-import com.doujin.audio.player.notification.PlaybackKeepAliveAlarmScheduler
 import com.doujin.audio.player.recovery.NativeAudioFocusController
 import com.doujin.audio.player.recovery.NativePlaybackFocusRecoveryCoordinator
+import com.doujin.audio.player.recovery.NativePlaybackRecoveryController
 import com.doujin.audio.player.service.NativePlaybackForegroundCoordinator
 import com.doujin.audio.player.service.NativePlaybackRestoreCoordinator
 import com.doujin.audio.player.service.NativePlaybackService
@@ -26,6 +27,8 @@ import com.doujin.audio.player.session.NativePlaybackSession
 import com.doujin.audio.player.session.NativeMediaItemDescriptor
 import com.doujin.audio.player.session.NativePlaybackSessionManager
 import com.doujin.audio.player.session.NativePlaybackStatePersistenceCoordinator
+import com.doujin.audio.player.session.decodeDefinition
+import com.doujin.audio.player.session.encodeDefinition
 import com.doujin.audio.player.video.NativeVideoOutputBinding
 import com.doujin.audio.player.video.shouldRetainPausedVideoPlayer
 import androidx.media3.common.C
@@ -96,6 +99,76 @@ class NativePlaybackCommandSnapshotTest {
             ReflectionHelpers.callInstanceMethod<NativeMediaSessionHost>(service, "getMediaSessionHost").release("test")
             session.release()
             shutdownPersistence(service)
+        }
+    }
+
+    @Test
+    fun `timer expiry clears a network retry waiting without a playing player`() {
+        val service = Robolectric.buildService(NativePlaybackService::class.java).get()
+        val sessions = ReflectionHelpers.callInstanceMethod<NativePlaybackSessionManager>(service, "getSessionManager")
+        val recovery = ReflectionHelpers.callInstanceMethod<NativePlaybackRecoveryController>(service, "getPlaybackRecovery")
+        val session = sessions.getOrCreate("timer-retry")
+        session.definitionRevision = NativePlaybackStateStore.sessionRevision(session.sessionId)
+        val track = NativeMediaItemDescriptor("stream", "https://audio.example.test/track.mp3", "Track", null, null)
+        session.configure(
+            descriptor = track, queue = listOf(track), queueStartIndex = 0,
+            startPositionMs = 25_000L, volume = 1f, speed = 1f,
+            repeatOne = false, repeatAll = false, shuffleModeEnabled = false,
+            autoPlay = false, deferPlayerCreation = true
+        )
+        try {
+            recovery.markIntended(session.sessionId)
+            recovery.onPlayerError(session.sessionId, recoverable = true, errorCodeName = "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED")
+            assertTrue(recovery.isPending(session.sessionId))
+
+            val paused = service.pausePlayingSessionsForTimer(generation = 1, stopAfterCurrentTrack = true)
+
+            assertEquals(listOf(session.sessionId), paused.sessionIds)
+            assertFalse(paused.waitingForTrackEnd)
+            assertFalse(recovery.isIntended(session.sessionId))
+            assertFalse(recovery.isPending(session.sessionId))
+            assertTrue(NativePlaybackStateStore.loadSessions(service, setOf(session.sessionId), activeOnly = true).isEmpty())
+        } finally {
+            shutdownPersistence(service)
+            NativePlaybackStateStore.clearSessions(service)
+        }
+    }
+
+    @Test
+    fun `sticky playback respects a timer pause and can restart from the restored position`() {
+        val service = Robolectric.buildService(NativePlaybackService::class.java).get()
+        val sessions = ReflectionHelpers.callInstanceMethod<NativePlaybackSessionManager>(service, "getSessionManager")
+        val foreground = ReflectionHelpers.callInstanceMethod<NativePlaybackForegroundCoordinator>(service, "getForegroundCoordinator")
+        val persistence = ReflectionHelpers.callInstanceMethod<NativePlaybackStatePersistenceCoordinator>(service, "getStatePersistence")
+        val audioManager = service.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        shadowOf(audioManager).setNextFocusRequestResponse(AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+        ReflectionHelpers.setField(foreground, "isStarted", true)
+        val session = sessions.getOrCreate("restored")
+        val track = NativeMediaItemDescriptor("/restored.mp3", "file:///restored.mp3", "Restored", null, null)
+        session.configure(
+            descriptor = track, queue = listOf(track), queueStartIndex = 0,
+            startPositionMs = 25_000L, volume = 1f, speed = 1f,
+            repeatOne = false, repeatAll = false, shuffleModeEnabled = false,
+            autoPlay = false, deferPlayerCreation = true
+        )
+        fun resume() = ReflectionHelpers.callInstanceMethod<Unit>(
+            service, "resumeAfterServiceRestart",
+            ReflectionHelpers.ClassParameter.from(String::class.java, session.sessionId)
+        )
+        try {
+            NativePlaybackStateStore.storePausedSessionIds(service, listOf(session.sessionId))
+            resume()
+            assertNull(session.playerOrNull())
+
+            NativePlaybackStateStore.clearPausedSessionIds(service)
+            resume()
+            val player = checkNotNull(session.playerOrNull())
+            assertTrue(player.playWhenReady)
+            assertEquals(25_000L, player.currentPosition)
+        } finally {
+            service.onDestroy()
+            assertTrue(persistence.awaitTermination())
+            NativePlaybackStateStore.clearSessions(service)
         }
     }
 
@@ -173,7 +246,7 @@ class NativePlaybackCommandSnapshotTest {
 
             assertFalse(player.playWhenReady)
             assertTrue(foreground.isStarted)
-            assertTrue(foreground.expireGraceIfOverdue())
+            shadowOf(Looper.getMainLooper()).idle()
             assertFalse(foreground.isStarted)
         } finally {
             session.release()
@@ -514,6 +587,50 @@ class NativePlaybackCommandSnapshotTest {
     }
 
     @Test
+    fun `native transition consumes a removed occurrence and resumes the requested loop`() {
+        val player = ExoPlayer.Builder(RuntimeEnvironment.getApplication()).setUsePlatformDiagnostics(false).build()
+        val session = NativePlaybackSession("detached", { _, _ -> player }, { _, _, _ -> })
+        val removed = NativeMediaItemDescriptor(
+            "/same.mp3", "file:///same.mp3", "Removed", null, null, playOnceBeforeQueue = true
+        )
+        val first = removed.copy(title = "Remaining first", playOnceBeforeQueue = false)
+        val second = first.copy(title = "Remaining second")
+        try {
+            session.configure(
+                descriptor = removed, queue = listOf(removed, first, second), queueStartIndex = 0,
+                startPositionMs = 42_000L, volume = 1f, speed = 1f, repeatOne = false,
+                repeatAll = true, shuffleModeEnabled = true, autoPlay = true
+            )
+            assertEquals(Player.REPEAT_MODE_OFF, player.repeatMode)
+            assertFalse(player.hasPreviousMediaItem())
+            assertTrue(player.hasNextMediaItem())
+            val before = checkNotNull(session.storedSnapshot().encodeDefinition().decodeDefinition())
+            assertTrue(before.queue.first().playOnceBeforeQueue)
+            assertTrue(before.repeatAll)
+
+            // The same URI at a different index is a different queue occurrence.
+            player.seekTo(2, 3_000L)
+            session.onMediaItemTransition()
+
+            assertEquals(2, player.mediaItemCount)
+            assertEquals(Player.REPEAT_MODE_ALL, player.repeatMode)
+            assertTrue(player.shuffleModeEnabled)
+            assertTrue(player.playWhenReady)
+            val snapshot = session.snapshot()
+            assertEquals("Remaining second", snapshot["title"])
+            assertEquals(1, snapshot["queueIndex"])
+            assertEquals(3_000L, snapshot["positionMs"])
+            assertEquals(true, snapshot["discardedQueuePrefix"])
+            val after = checkNotNull(session.storedSnapshot().encodeDefinition().decodeDefinition())
+            assertTrue(after.discardedQueuePrefix)
+            assertEquals(listOf("Remaining first", "Remaining second"), after.queue.map { it.title })
+            assertEquals(1, after.queueStartIndex)
+        } finally {
+            session.release()
+        }
+    }
+
+    @Test
     fun `mediaSession registers with MediaSessionService and prepareSession retains player before play`() {
         val service = Robolectric.buildService(NativePlaybackService::class.java).get()
         val sessions = ReflectionHelpers.callInstanceMethod<NativePlaybackSessionManager>(
@@ -564,7 +681,6 @@ class NativePlaybackCommandSnapshotTest {
         } finally {
             sessions.get("prep")?.release()
             shutdownPersistence(service)
-            PlaybackKeepAliveAlarmScheduler.cancel(service)
             NativePlaybackStateStore.clearSessions(service)
         }
     }

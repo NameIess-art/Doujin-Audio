@@ -53,6 +53,7 @@ typedef _NativeQueueTrack = ({
   String path,
   MusicTrack? track,
   String? coverPath,
+  bool playOnceBeforeQueue,
 });
 
 List<Map<String, Object?>> _buildNativePlaybackQueue(
@@ -76,6 +77,7 @@ List<Map<String, Object?>> _buildNativePlaybackQueue(
       if (reference.endMs != null) 'clipEndMs': reference.endMs,
       if (reference.httpHeaders.isNotEmpty)
         'httpHeaders': reference.httpHeaders,
+      if (descriptor.playOnceBeforeQueue) 'playOnceBeforeQueue': true,
       'title':
           track?.displayName ?? path.basenameWithoutExtension(descriptor.path),
       if (track != null) 'subtitle': track.groupTitle,
@@ -346,10 +348,10 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       return false;
     }
 
-    var shouldStartPlayback =
-        autoPlay && prepared && session.playbackRequested;
+    var shouldStartPlayback = autoPlay && prepared && session.playbackRequested;
     if (prepared &&
         hadDetachedPlaybackQueueCurrent &&
+        session.hasDetachedQueueTrack &&
         !_hasDetachedPlaybackQueueCurrent(session)) {
       final synced = await _syncPlaybackQueueSession(
         session,
@@ -514,7 +516,8 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
           targetQueueIndex: targetQueueIndex,
         ),
         repeatAll:
-            !_hasDetachedPlaybackQueueCurrent(session) &&
+            (_nativePlaybackRepository.handlesQueueCompletion ||
+                !_hasDetachedPlaybackQueueCurrent(session)) &&
             session.loopMode != SessionLoopMode.single &&
             !session.loopMode.isOneShot,
         shuffle: session.loopMode.isShuffle,
@@ -716,6 +719,10 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
             session.isPlaybackQueue && !session.hasDetachedQueueTrack
             ? session.playbackQueue!.expandedTracks
             : session.customQueueTracks;
+        final playDetachedOnce =
+            _nativePlaybackRepository.handlesQueueCompletion &&
+            session.hasDetachedQueueTrack &&
+            scope.queueIndices.firstOrNull == 0;
         for (final (index, trackPath) in paths.indexed) {
           final track = scope.isCustomQueue && customTracks != null
               ? customTracks[scope.queueIndices[index]]
@@ -724,6 +731,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
             path: trackPath,
             track: track,
             coverPath: resolvedPlaybackCoverPathForTrack(track),
+            playOnceBeforeQueue: playDetachedOnce && index == 0,
           ));
           if (slice.elapsedMicroseconds >= 2000) {
             await Future<void>.delayed(Duration.zero);
@@ -829,6 +837,9 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
           : const {},
       customQueueTracks: queueTracks,
       isPlaybackQueue: session.isPlaybackQueue,
+      hasDetachedQueuePrefix:
+          _nativePlaybackRepository.handlesQueueCompletion &&
+          session.hasDetachedQueueTrack,
       currentQueueIndex: session.currentQueueIndex,
       trackPath: (track) => _playbackFacade.resolveRetargetedPath(track.path),
       folderKeyForTrack: _folderKeyForTrack,

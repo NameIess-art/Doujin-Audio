@@ -242,7 +242,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
               child: TopPageHeader(
                 key: const ValueKey<String>('work_text_header'),
                 icon: AppDesignTokens.textFileIcon,
-                iconColor: AppDesignTokens.textFileIconColor,
+                iconColor: AppDesignTokens.of(context).textFileColor,
                 title: file?.displayName ?? i18n.tr('script_text_viewer_title'),
                 trailing: file != null && !file.isPdf
                     ? WorkPageTranslationButton(

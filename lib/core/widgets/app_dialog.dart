@@ -36,9 +36,6 @@ class _AppModalBackgroundState extends State<AppModalBackground> {
     sigmaY: _blurSigma,
     tileMode: ui.TileMode.clamp,
   );
-  static final ui.ImageFilter _zeroBlurFilter = ui.ImageFilter.blur(
-    tileMode: ui.TileMode.clamp,
-  );
 
   CurvedAnimation? _scrimCurved;
   CurvedAnimation? _blurCurved;
@@ -129,36 +126,36 @@ class _AppModalBackgroundState extends State<AppModalBackground> {
   @override
   Widget build(BuildContext context) {
     return RepaintBoundary(
-      child: ClipRect(
-        child: AnimatedBuilder(
-          animation: widget.animation,
-          builder: (context, _) {
-            final blurProgress = _blurAnimation.value.clamp(0.0, 1.0);
-            final scrimProgress = _scrimAnimation.value.clamp(0.0, 1.0);
-            final sigma = _blurSigma * blurProgress;
-            final enabled = sigma > _minBlurSigma;
-            final filter = !enabled
-                ? _zeroBlurFilter
-                : (blurProgress >= 1.0
-                      ? _fullBlurFilter
-                      : ui.ImageFilter.blur(
-                          sigmaX: sigma,
-                          sigmaY: sigma,
-                          tileMode: ui.TileMode.clamp,
-                        ));
-            return BackdropFilter(
-              enabled: enabled,
-              filter: filter,
-              child: ColoredBox(
-                key: widget.scrimKey,
-                color: kSecondaryOverlayConfig.scrimColor(
-                  context,
-                  scrimProgress,
-                ),
-              ),
-            );
-          },
-        ),
+      child: AnimatedBuilder(
+        animation: widget.animation,
+        builder: (context, _) {
+          final blurProgress = _blurAnimation.value.clamp(0.0, 1.0);
+          final scrimProgress = _scrimAnimation.value.clamp(0.0, 1.0);
+          final sigma = _blurSigma * blurProgress;
+          final blurActive = sigma > _minBlurSigma;
+          final scrim = ColoredBox(
+            key: widget.scrimKey,
+            color: kSecondaryOverlayConfig.scrimColor(context, scrimProgress),
+          );
+          if (!blurActive && scrimProgress == 0) {
+            // The box stays hit-testable at the ends of the transition.
+            return Opacity(opacity: 0, child: scrim);
+          }
+          return ClipRect(
+            child: blurActive
+                ? BackdropFilter(
+                    filter: blurProgress >= 1.0
+                        ? _fullBlurFilter
+                        : ui.ImageFilter.blur(
+                            sigmaX: sigma,
+                            sigmaY: sigma,
+                            tileMode: ui.TileMode.clamp,
+                          ),
+                    child: scrim,
+                  )
+                : scrim,
+          );
+        },
       ),
     );
   }
@@ -413,15 +410,19 @@ class AppDialog extends StatelessWidget {
           ],
         ),
         child: AppGlassSurface(
-          backgroundColor: cs.surfaceContainerLow,
+          backgroundColor: cs.surfaceContainerHigh,
           borderRadius: AppRadius.borderDialog,
           child: Container(
             padding: const EdgeInsets.all(AppSpacing.lg),
             decoration: BoxDecoration(
               borderRadius: AppRadius.borderDialog,
               border: Border.all(
-                color: cs.outlineVariant.withValues(alpha: 0.22),
-                width: 1.2,
+                color: theme.brightness == Brightness.dark
+                    ? Color.alphaBlend(
+                        Colors.white.withValues(alpha: 0.08),
+                        cs.outlineVariant,
+                      ).withValues(alpha: 0.40)
+                    : cs.outlineVariant.withValues(alpha: 0.36),
               ),
             ),
             child: Column(

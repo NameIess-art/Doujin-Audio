@@ -39,7 +39,8 @@ internal class NativePlaybackQueue(val descriptors: List<NativeMediaItemDescript
             StoredNativePlaybackQueueItem(
                 descriptor.path, descriptor.uri, descriptor.title, descriptor.subtitle,
                 descriptor.artUri, descriptor.candidateUris, descriptor.usageDescriptor,
-                descriptor.clipStartMs, descriptor.clipEndMs, descriptor.httpHeaders
+                descriptor.clipStartMs, descriptor.clipEndMs, descriptor.httpHeaders,
+                descriptor.playOnceBeforeQueue
             )
         }
     }

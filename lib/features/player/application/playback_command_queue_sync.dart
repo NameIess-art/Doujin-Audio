@@ -224,7 +224,8 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
             currentPath: session.currentTrackPath,
           ),
           repeatAll:
-              retainedCurrentTrack == null &&
+              (_nativePlaybackRepository.handlesQueueCompletion ||
+                  retainedCurrentTrack == null) &&
               loopMode != SessionLoopMode.single &&
               !loopMode.isOneShot,
           shuffle: loopMode.isShuffle,

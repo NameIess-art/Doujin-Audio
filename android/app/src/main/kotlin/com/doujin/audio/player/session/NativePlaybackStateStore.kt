@@ -54,7 +54,8 @@ data class StoredNativePlaybackSession(
     val definitionRevision: Long = 0L,
     val isTemporary: Boolean = false,
     val completed: Boolean = false,
-    val frontBack: Float = 0f
+    val frontBack: Float = 0f,
+    val discardedQueuePrefix: Boolean = false
 )
 
 data class StoredNativePlaybackQueueItem(
@@ -67,7 +68,8 @@ data class StoredNativePlaybackQueueItem(
     val usageDescriptor: Map<String, Any?>? = null,
     val clipStartMs: Long = 0L,
     val clipEndMs: Long? = null,
-    val httpHeaders: Map<String, String> = emptyMap()
+    val httpHeaders: Map<String, String> = emptyMap(),
+    val playOnceBeforeQueue: Boolean = false
 )
 
 data class StoredPlaybackTimerRuntimeState(
@@ -201,8 +203,8 @@ object NativePlaybackStateStore {
         }
         synchronized(stagedLock) {
             accepted.forEach { session ->
-                val staged = stagedSessions[session.sessionId]
-                if (staged != null && staged.definitionRevision <= session.definitionRevision) {
+                // A later transport state can share the definition revision.
+                if (stagedSessions[session.sessionId] == session) {
                     stagedSessions.remove(session.sessionId)
                 }
             }
@@ -224,14 +226,8 @@ object NativePlaybackStateStore {
             false
         }
         if (durable.isNotEmpty()) database(context).updateProgress(durable)
-        synchronized(stagedLock) {
-            accepted.forEach { item ->
-                val staged = stagedSessions[item.sessionId]
-                if (staged != null && staged.definitionRevision == expectedRevisions[item.sessionId]) {
-                    stagedSessions[item.sessionId] = staged.withProgressOverlay(item)
-                }
-            }
-        }
+        // The application looper stages progress before queuing this write.
+        // An older disk write must preserve a newer staged transport state.
     }
 
     @Synchronized

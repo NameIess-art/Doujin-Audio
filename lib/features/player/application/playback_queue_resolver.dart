@@ -64,6 +64,7 @@ class PlaybackQueueResolver {
     required Map<String, List<MusicTrack>> tracksByGroup,
     List<MusicTrack>? customQueueTracks,
     bool isPlaybackQueue = false,
+    bool hasDetachedQueuePrefix = false,
     int currentQueueIndex = 0,
     TrackPathResolver trackPath = _defaultTrackPath,
     TrackFolderKeyResolver folderKeyForTrack = _defaultTrackFolderKey,
@@ -74,7 +75,7 @@ class PlaybackQueueResolver {
         currentTrack: currentTrack,
         loopMode: loopMode,
         customQueueTracks: customTracks,
-        isPlaybackQueue: isPlaybackQueue,
+        hasDetachedQueuePrefix: hasDetachedQueuePrefix,
         folderKeyForTrack: folderKeyForTrack,
       );
       final paths = queueIndices
@@ -212,7 +213,7 @@ class PlaybackQueueResolver {
     required MusicTrack? currentTrack,
     required SessionLoopMode loopMode,
     required List<MusicTrack> customQueueTracks,
-    required bool isPlaybackQueue,
+    required bool hasDetachedQueuePrefix,
     required TrackFolderKeyResolver folderKeyForTrack,
   }) {
     final folderKey = currentTrack == null
@@ -221,9 +222,19 @@ class PlaybackQueueResolver {
     if (loopMode.isCrossFolder || folderKey == null) {
       return List<int>.generate(customQueueTracks.length, (index) => index);
     }
+    var targetFolder = folderKey;
+    if (hasDetachedQueuePrefix &&
+        customQueueTracks.length > 1 &&
+        !customQueueTracks
+            .skip(1)
+            .any((track) => folderKeyForTrack(track) == folderKey)) {
+      targetFolder = folderKeyForTrack(customQueueTracks[1]);
+    }
     return <int>[
       for (var index = 0; index < customQueueTracks.length; index++)
-        if (folderKeyForTrack(customQueueTracks[index]) == folderKey) index,
+        if ((index == 0 && hasDetachedQueuePrefix) ||
+            folderKeyForTrack(customQueueTracks[index]) == targetFolder)
+          index,
     ];
   }
 

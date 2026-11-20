@@ -1,7 +1,6 @@
 package com.doujin.audio.player.session
 
 import androidx.media3.common.Player
-import com.doujin.audio.player.common.isNativePlaybackNetworkUri
 
 internal class NativePlaybackSessionManager(
     private val sessionFactory: (sessionId: String) -> NativePlaybackSession
@@ -45,7 +44,8 @@ internal class NativePlaybackSessionManager(
 
     private fun NativePlaybackSession.isPlaybackActive(): Boolean =
         playerOrNull()?.let { player ->
-            player.playbackState != Player.STATE_ENDED && (player.isPlaying || player.playWhenReady)
+            (player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_BUFFERING) &&
+                player.playWhenReady
         } == true
 
     fun activePlaybackSessionIds(): List<String> = sessions.values
@@ -54,18 +54,28 @@ internal class NativePlaybackSessionManager(
 
     fun hasActivePlayback(): Boolean = sessions.values.any { it.isPlaybackActive() }
 
-    fun usageItems(): List<Map<String, Any?>> = sessions.values.mapNotNull(NativePlaybackSession::usageItem)
-
-    fun hasNetworkPlayback(isIntended: (String) -> Boolean): Boolean = sessions.values.any { session ->
-        val player = session.playerOrNull()
-        (player?.isPlaying == true || player?.playWhenReady == true || isIntended(session.sessionId)) &&
-            isNativePlaybackNetworkUri(session.uri)
+    fun syncAudioOffloadPolicies(
+        offloadAllowedForProcess: Boolean,
+        intendedSessionCount: Int,
+        isVideo: (NativePlaybackSession) -> Boolean
+    ) {
+        val activeCount = maxOf(sessions.values.count { it.isPlaybackActive() }, intendedSessionCount)
+        for (session in sessions.values) {
+            if (session.hasPlayer()) {
+                session.applyAudioOffloadPolicy(offloadAllowedForProcess, activeCount, isVideo(session))
+            }
+        }
     }
+
+    fun usageItems(): List<Map<String, Any?>> = sessions.values.mapNotNull(NativePlaybackSession::usageItem)
 
     fun storedSnapshots(intendedSessionIds: Set<String>): List<StoredNativePlaybackSession> =
         sessions.values.filterNot { it.isTemporary }.map { session ->
-            session.storedSnapshot().let { stored ->
-                if (session.sessionId in intendedSessionIds) stored.copy(playWhenReady = true) else stored
+            val stored = session.storedSnapshot()
+            when {
+                session.sessionId in intendedSessionIds -> stored.copy(playWhenReady = true)
+                session.playerOrNull()?.playerError != null -> stored.copy(playing = false, playWhenReady = false)
+                else -> stored
             }
         }
 
@@ -77,8 +87,7 @@ internal class NativePlaybackSessionManager(
     fun playbackLogState(session: NativePlaybackSession? = null): String {
         val target = session ?: foregroundSessionCandidate()
         val player = target?.playerOrNull()
-        val title = target?.title?.replace('\n', ' ')?.replace('\r', ' ')?.take(80) ?: "<none>"
-        return "sessionId=${target?.sessionId ?: "<none>"} title=\"$title\" " +
+        return "sessionId=${target?.sessionId ?: "<none>"} " +
             "playWhenReady=${player?.playWhenReady ?: target?.lastPlayWhenReady} " +
             "isPlaying=${player?.isPlaying ?: target?.lastIsPlaying} " +
             "playbackState=${player?.playbackStateName() ?: target?.lastPlaybackState} "

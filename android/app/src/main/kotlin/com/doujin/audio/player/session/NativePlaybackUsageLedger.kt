@@ -1,6 +1,7 @@
 package com.doujin.audio.player.session
 
 import android.content.Context
+import android.os.Handler
 import android.os.SystemClock
 import android.util.Log
 import org.json.JSONArray
@@ -10,6 +11,62 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
+
+internal class NativePlaybackUsageCheckpoint(
+    private val ledger: NativePlaybackUsageLedger,
+    private val handler: Handler,
+    private val items: () -> List<Map<String, Any?>>,
+    private val isScreenInteractive: () -> Boolean,
+    private val hasPlayback: () -> Boolean
+) {
+    private var scheduled = false
+    private val heartbeat = Runnable {
+        scheduled = false
+        update()
+        ledger.checkpoint()
+        ensureScheduled()
+    }
+
+    fun update() = ledger.update(items())
+
+    fun read(): List<Map<String, Any?>> {
+        update()
+        return ledger.read()
+    }
+
+    fun acknowledge(ids: Set<String>) = ledger.acknowledge(ids)
+
+    fun reset() {
+        update()
+        ledger.reset()
+    }
+
+    fun ensureScheduled() {
+        if (scheduled || !hasPlayback()) return
+        val intervalMs = if (isScreenInteractive()) 15_000L else 60_000L
+        scheduled = true
+        handler.postDelayed(heartbeat, intervalMs)
+    }
+
+    fun reschedule() {
+        if (!scheduled) return
+        stop()
+        ensureScheduled()
+    }
+
+    fun stop() {
+        if (!scheduled) return
+        handler.removeCallbacks(heartbeat)
+        scheduled = false
+    }
+
+    fun finish() {
+        update()
+        ledger.update(emptyList())
+        ledger.checkpoint()
+        stop()
+    }
+}
 
 /** Unconfirmed batches survive the Flutter engine and native service lifetime. */
 internal class NativePlaybackUsageLedger(

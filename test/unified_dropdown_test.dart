@@ -1,4 +1,5 @@
 import 'package:doujin_audio/app/theme/app_styles.dart';
+import 'package:doujin_audio/core/widgets/app_dialog.dart';
 import 'package:doujin_audio/core/widgets/unified_dropdown.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -15,6 +16,50 @@ void main() {
   Widget harness(Widget child) => MaterialApp(
     home: Scaffold(body: Center(child: child)),
   );
+
+  testWidgets('Windows dropdown clears its blur as the menu fades', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: TargetPlatform.windows),
+        home: Scaffold(
+          body: Center(
+            child: UnifiedDropdownButton<String>(
+              value: 'a',
+              items: items,
+              onChanged: (_) {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Alpha'));
+    await tester.pumpAndSettle();
+
+    final background = find.byType(AppModalBackground);
+    final blur = find.descendant(
+      of: background,
+      matching: find.byType(BackdropFilter),
+    );
+    expect(blur, findsOneWidget);
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 76));
+    expect(background, findsOneWidget);
+    expect(blur, findsNothing);
+    expect(
+      tester
+          .widget<ColoredBox>(
+            find.descendant(of: background, matching: find.byType(ColoredBox)),
+          )
+          .color
+          .a,
+      0,
+    );
+    await tester.pumpAndSettle();
+    expect(background, findsNothing);
+  });
 
   testWidgets(
     'dropdown restores v0.29 Material styling and selection',

@@ -343,11 +343,18 @@ void main() {
         const ValueKey('main_page_stack'),
         skipOffstage: false,
       );
+      final settings = ProviderScope.containerOf(
+        tester.element(mySwitch),
+        listen: false,
+      ).read(settingsRepositoryProvider);
       DropdownButton<StartupPage> startupChoice() =>
           tester.widget(find.byType(DropdownButton<StartupPage>));
       Future<void> toggleMyPage() async {
         await tester.ensureVisible(mySwitch);
-        await tester.tap(mySwitch);
+        await tester.runAsync(() async {
+          await tester.tap(mySwitch);
+          await settings.flushPendingWrites();
+        });
         await _pumpMainScreenAnimations(tester);
         await _waitForAppShellInteractionIdle(tester);
       }
@@ -7320,7 +7327,7 @@ void main() {
       appContext,
       listen: false,
     ).read(themeProviderInstanceProvider);
-    await theme.setAppThemeColor(ThemeAccentPreset.mint);
+    await theme.setAppThemeColor(ThemeAccentPreset.teal);
     await tester.pumpAndSettle();
     final expectedAccent = Theme.of(appContext).colorScheme.primary;
     unawaited(
@@ -7396,13 +7403,15 @@ void main() {
     }
     final closeColor = iconColor(Icons.keyboard_arrow_down_rounded);
     final forwardColor = iconColor(Icons.forward_5_rounded);
-    final timeColor = tester
-        .widgetList<Text>(
-          find.descendant(of: detail, matching: find.byType(Text)),
-        )
-        .firstWhere((widget) => widget.style?.fontFeatures?.isNotEmpty ?? false)
-        .style!
-        .color!;
+    final timecodes = find.descendant(
+      of: detail,
+      matching: find.byType(TimecodeLabel),
+    );
+    final timecodeText = find.descendant(
+      of: timecodes.first,
+      matching: find.byType(Text),
+    );
+    final timeColor = tester.widget<Text>(timecodeText.first).style!.color!;
     expect(
       find.descendant(of: detail, matching: find.byIcon(Icons.timer_rounded)),
       findsOneWidget,
@@ -7901,7 +7910,7 @@ void main() {
   });
 
   testWidgets(
-    'playback detail ignores swipe and handles back on Android only',
+    'playback detail ignores swipe and closes with the platform back action',
     (tester) async {
       _setLogicalTestViewSize(tester, const Size(1080, 2400));
       await _pumpAppShell(tester);
@@ -7920,18 +7929,16 @@ void main() {
         tester.getTopLeft(detail) + const Offset(48, 72),
         const Offset(420, 0),
       );
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
       expect(detail, findsOneWidget);
 
-      await tester.binding.handlePopRoute();
-      if (defaultTargetPlatform == TargetPlatform.windows) {
-        await tester.pumpAndSettle();
-        expect(detail, findsOneWidget);
-        final close = find.byKey(const ValueKey('session_detail_close_button'));
-        await tester.tap(close);
-      }
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        expect(detail, findsOneWidget);
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+      }
       expect(detail, findsNothing);
       expect(navigator.canPop(), isFalse);
       expect(tester.takeException(), isNull);
@@ -7989,7 +7996,7 @@ void main() {
           Theme.of(tester.element(mainScreen)).colorScheme.surface,
           theme.darkTheme.colorScheme.surface,
         );
-        await theme.setAppThemeColor(ThemeAccentPreset.mint);
+        await theme.setAppThemeColor(ThemeAccentPreset.teal);
         await tester.pump();
         await tester.pump();
         expect(
@@ -8107,9 +8114,10 @@ void main() {
           messenger.setMockMethodCallHandler(channel, (call) async {
             if (call.method == AppLifecycleMethod.syncAppTheme) {
               final arguments = Map<Object?, Object?>.of(call.arguments as Map);
+              expect(arguments.remove('pureBlack'), isFalse);
               if (platform == TargetPlatform.windows) {
-                expect(arguments.remove('lightTrayMenuPalette'), hasLength(3));
-                expect(arguments.remove('darkTrayMenuPalette'), hasLength(3));
+                expect(arguments.remove('lightWindowBorderColor'), isA<int>());
+                expect(arguments.remove('darkWindowBorderColor'), isA<int>());
               }
               calls.add(arguments);
             }
@@ -8170,14 +8178,14 @@ void main() {
             expect(await theme.setThemeMode(ThemeMode.dark), isFalse);
             await tester.pump();
             expect(
-              await theme.setAppThemeColor(ThemeAccentPreset.mint),
+              await theme.setAppThemeColor(ThemeAccentPreset.teal),
               isFalse,
             );
             await tester.pump();
             expect(calls, [
               {'preset': 'rose', 'themeMode': 'dark'},
               {'preset': 'rose', 'themeMode': 'system'},
-              {'preset': 'mint', 'themeMode': 'system'},
+              {'preset': 'teal', 'themeMode': 'system'},
               {'preset': 'rose', 'themeMode': 'system'},
             ]);
             expect(theme.themeMode, ThemeMode.system);
@@ -8187,18 +8195,18 @@ void main() {
             await tester.pump();
             expect(await theme.setThemeMode(ThemeMode.dark), isTrue);
             expect(
-              await theme.setAppThemeColor(ThemeAccentPreset.mint),
+              await theme.setAppThemeColor(ThemeAccentPreset.teal),
               isTrue,
             );
             await tester.pump();
             expect(
-              await theme.setAppThemeColor(ThemeAccentPreset.mint),
+              await theme.setAppThemeColor(ThemeAccentPreset.teal),
               isTrue,
             );
             await tester.pump();
             expect(calls, [
               {'preset': 'rose', 'themeMode': 'dark'},
-              {'preset': 'mint', 'themeMode': 'dark'},
+              {'preset': 'teal', 'themeMode': 'dark'},
             ]);
           }
           await tester.pumpWidget(const SizedBox.shrink());
@@ -8277,7 +8285,7 @@ void main() {
       themeProvider.darkTheme.colorScheme.surface,
     );
 
-    await themeProvider.setAppThemeColor(ThemeAccentPreset.mint);
+    await themeProvider.setAppThemeColor(ThemeAccentPreset.teal);
     await tester.pumpAndSettle();
 
     expect(
@@ -8306,7 +8314,7 @@ void main() {
     interaction.beginInteraction(source);
     addTearDown(() => interaction.cancelInteraction(source));
 
-    await themeProvider.setAppThemeColor(ThemeAccentPreset.mint);
+    await themeProvider.setAppThemeColor(ThemeAccentPreset.teal);
     await tester.pump();
 
     expect(

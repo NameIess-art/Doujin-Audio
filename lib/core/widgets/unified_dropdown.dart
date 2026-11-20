@@ -348,19 +348,31 @@ class _DropdownBackdropHostState extends State<_DropdownBackdropHost> {
     curve: Curves.easeInQuad,
   );
 
+  // DropdownButton fades its menu during the first quarter of the pop.
+  static const _windowsDropdownReverseCurve = Interval(
+    0.75,
+    1.0,
+    curve: Curves.easeInOut,
+  );
+
   @override
   Widget build(BuildContext context) => OverlayPortal(
     controller: _portal,
     // The portal paints with the trigger's route, below the dropdown route.
-    overlayChildBuilder: (context) => IgnorePointer(
-      child: AppModalBackground(
-        animation: MediaQuery.disableAnimationsOf(context)
-            ? kAlwaysCompleteAnimation
-            : (_route?.animation ?? kAlwaysDismissedAnimation),
-        reverseCurve: _dropdownReverseCurve,
-        blurReverseCurve: _dropdownReverseCurve,
-      ),
-    ),
+    overlayChildBuilder: (context) {
+      final reverseCurve = Theme.of(context).platform == TargetPlatform.windows
+          ? _windowsDropdownReverseCurve
+          : _dropdownReverseCurve;
+      return IgnorePointer(
+        child: AppModalBackground(
+          animation: MediaQuery.disableAnimationsOf(context)
+              ? kAlwaysCompleteAnimation
+              : (_route?.animation ?? kAlwaysDismissedAnimation),
+          reverseCurve: reverseCurve,
+          blurReverseCurve: reverseCurve,
+        ),
+      );
+    },
     child: _DropdownBackdropTheme(onOpen: _showFor, child: widget.child),
   );
 }

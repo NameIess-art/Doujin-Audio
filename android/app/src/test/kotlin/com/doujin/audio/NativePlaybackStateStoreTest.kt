@@ -37,6 +37,24 @@ class NativePlaybackStateStoreTest {
         progress.edit().clear().commit()
     }
 
+    @Test
+    fun `older writes with the same definition revision preserve a newer pause`() {
+        val active = session("pause-race", 2_000L).copy(playing = true, playWhenReady = true)
+        val paused = active.copy(playing = false, playWhenReady = false, positionMs = 3_000L)
+        val revision = NativePlaybackStateStore.sessionRevision(active.sessionId)
+        val revisions = mapOf(active.sessionId to revision)
+        NativePlaybackStateStore.stageSessions(listOf(paused), revisions)
+
+        NativePlaybackStateStore.upsertSessions(context, listOf(active), revisions)
+        assertTrue(NativePlaybackStateStore.loadSessions(context, activeOnly = true).isEmpty())
+
+        NativePlaybackStateStore.upsertSessionProgress(
+            context, listOf(playingProgress(active.sessionId, 2_500L)), revisions
+        )
+        assertTrue(NativePlaybackStateStore.loadSessions(context, activeOnly = true).isEmpty())
+        assertEquals(3_000L, NativePlaybackStateStore.loadSessions(context).single().positionMs)
+    }
+
     @After
     fun clearStore() {
         NativePlaybackStateStore.removeTemporarySession("T")

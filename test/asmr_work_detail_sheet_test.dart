@@ -15,6 +15,7 @@ import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/media/cover_image_resolution.dart';
 import 'package:doujin_audio/core/ui/cover_image_retention.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
+import 'package:doujin_audio/core/widgets/app_bottom_sheet.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/core/widgets/duration_overlay.dart';
@@ -1167,7 +1168,7 @@ void main() {
   );
 
   testWidgets(
-    'Windows metadata copies on tap and context menu',
+    'Work metadata uses a compact context menu and copies exact values',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(600, 1000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -1194,7 +1195,10 @@ void main() {
         fixture.build(
           Builder(
             builder: (context) => TextButton(
-              onPressed: () => showAsmrWorkDetailSheet(context, _work()),
+              onPressed: () => showAsmrWorkDetailSheet(
+                context,
+                _work(voiceActors: const ['Voice A'], tags: const ['Tag A']),
+              ),
               child: const Text('Open detail'),
             ),
           ),
@@ -1211,19 +1215,42 @@ void main() {
       await tester.ensureVisible(text);
       await tester.tap(text);
       expect(copied, ['Test circle']);
-      final click = await tester.startGesture(
-        tester.getCenter(text),
-        kind: PointerDeviceKind.mouse,
-        buttons: kSecondaryMouseButton,
-      );
-      await click.up();
-      await tester.pumpAndSettle();
-      expect(copied, ['Test circle']);
-      await tester.tap(find.text(fixture.languageProvider.tr('element_copy')));
-      await tester.pumpAndSettle();
-      expect(copied, ['Test circle', 'Test circle']);
+      final i18n = fixture.languageProvider;
+      for (final (key, value) in const [
+        ('work_detail_title_copy', 'Test work'),
+        ('work_detail_rj_copy', 'RJ000123'),
+        ('work_detail_circle_copy', 'Test circle'),
+        ('work_detail_voice_actor_Voice A', 'Voice A'),
+        ('work_detail_tag_#Tag A', 'Tag A'),
+      ]) {
+        final element = find.byKey(ValueKey<String>(key));
+        await tester.ensureVisible(element);
+        await tester.pumpAndSettle();
+        final previousCopies = copied.length;
+        if (defaultTargetPlatform == TargetPlatform.windows) {
+          await tester.tap(
+            element,
+            kind: PointerDeviceKind.mouse,
+            buttons: kSecondaryMouseButton,
+          );
+        } else {
+          await tester.longPress(element);
+        }
+        await tester.pumpAndSettle();
+        expect(copied, hasLength(previousCopies));
+        expect(find.byType(AppBottomSheetHeader), findsNothing);
+        expect(find.text(i18n.tr('element_online_search')), findsOneWidget);
+        expect(find.text(i18n.tr('element_local_search')), findsOneWidget);
+        await tester.tap(find.text(i18n.tr('element_copy')));
+        await tester.pumpAndSettle();
+        expect(copied, hasLength(previousCopies + 1));
+        expect(copied.last, value);
+      }
     },
-    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets('WorkDetailPage renders ASMR work detail header and actions', (

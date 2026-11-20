@@ -1,23 +1,18 @@
+@file:androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+
 package com.doujin.audio.player.recovery
 
+import com.doujin.audio.player.common.isNativePlaybackNetworkUri
 import com.doujin.audio.player.service.*
 import com.doujin.audio.player.session.*
 
-import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import android.net.NetworkRequest
-import android.os.Build
 import android.os.Handler
-import android.os.PowerManager
 import android.os.SystemClock
-import androidx.core.content.ContextCompat
 import androidx.media3.common.C
-import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 
@@ -32,7 +27,6 @@ internal interface NativePlaybackRecoveryHost {
     }
     fun requestAudioFocus(): Boolean
     fun establishForegroundPlayback(sessionId: String): Boolean
-    fun focusSession(sessionId: String)
     fun ensurePlayer(session: NativePlaybackSession): ExoPlayer
     fun prepareRecoveryQueue(
         sessionId: String,
@@ -42,13 +36,12 @@ internal interface NativePlaybackRecoveryHost {
     )
     fun onRecoveryTimedOut(sessionId: String)
     fun publishSession(sessionId: String)
-    fun publishAllSessions()
     fun persistNow()
     fun schedulePersist()
     fun syncForeground()
     fun onNetworkRecoveryTriggered() {}
     fun logInfo(message: String, session: NativePlaybackSession? = null)
-    fun logWarn(message: String, session: NativePlaybackSession?, error: PlaybackException?)
+    fun logWarn(message: String, session: NativePlaybackSession?)
 }
 
 internal interface NativePlaybackRecoveryEnvironment {
@@ -70,7 +63,8 @@ internal data class NativePlaybackHealthSample(
     val isPlaying: Boolean,
     val playbackSuppressionReason: Int,
     val hasPlayerError: Boolean,
-    val capturedElapsedRealtimeMs: Long
+    val capturedElapsedRealtimeMs: Long,
+    val sleepingForOffload: Boolean = false
 )
 
 internal data class NativePlaybackHealthState(
@@ -118,15 +112,22 @@ internal fun evaluateNativePlaybackHealth(
     val nearEnd = current.durationMs?.let { durationMs ->
         durationMs > 0L && durationMs - current.positionMs <= endToleranceMs
     } ?: false
-    val eligible = current.playWhenReady &&
+    val eligible = (current.playWhenReady || current.playbackState == Player.STATE_IDLE) &&
         !current.hasPlayerError &&
         current.playbackState != Player.STATE_ENDED &&
         current.playbackSuppressionReason == Player.PLAYBACK_SUPPRESSION_REASON_NONE &&
         !nearEnd
+    // Media3 can intentionally suspend its playback loop while the DSP
+    // drains queued audio. Give it a fresh baseline when that sleep ends.
+    val offloadSleep = current.playbackState == Player.STATE_READY &&
+        current.sleepingForOffload
+    val offloadWoke = previousSample?.sleepingForOffload == true && !offloadSleep
     val activityAdvanced = positionAdvanced ||
         positionRewound ||
         (current.playbackState == Player.STATE_BUFFERING && bufferAdvanced)
-    val resetBaseline = previous == null || mediaItemChanged || !eligible || activityAdvanced
+    val stateChanged = previousSample?.playbackState != current.playbackState
+    val resetBaseline = previous == null || stateChanged || mediaItemChanged || !eligible ||
+        activityAdvanced || offloadSleep || offloadWoke
     val lastActivityMs = if (resetBaseline) {
         nowMs
     } else {
@@ -165,25 +166,7 @@ internal class AndroidNativePlaybackRecoveryEnvironment(
     private val handler: Handler,
     private val logWarn: (String, Exception) -> Unit
 ) : NativePlaybackRecoveryEnvironment {
-    private var trigger: ((String) -> Unit)? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
-    private var networkAvailable = false
-    private var screenReceiverRegistered = false
-    private val screenReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.action) {
-                Intent.ACTION_SCREEN_ON -> handler.post { trigger?.invoke("screen_on") }
-                PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED -> {
-                    val powerManager = context?.getSystemService(Context.POWER_SERVICE) as? PowerManager
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-                        powerManager?.isDeviceIdleMode == false
-                    ) {
-                        handler.post { trigger?.invoke("device_idle_exited") }
-                    }
-                }
-            }
-        }
-    }
 
     override fun elapsedRealtimeMs(): Long = SystemClock.elapsedRealtime()
 
@@ -196,92 +179,61 @@ internal class AndroidNativePlaybackRecoveryEnvironment(
     }
 
     override fun startListening(onTrigger: (String) -> Unit) {
-        trigger = onTrigger
-        registerScreenReceiver()
-        registerNetworkCallback()
-    }
-
-    override fun stopListening() {
-        networkCallback?.let { callback ->
-            try {
-                connectivityManager()?.unregisterNetworkCallback(callback)
-            } catch (error: Exception) {
-                logWarn("network_recovery_callback_unregister_failed", error)
-            }
-        }
-        networkCallback = null
-        networkAvailable = false
-        if (screenReceiverRegistered) {
-            try {
-                context.unregisterReceiver(screenReceiver)
-            } catch (error: Exception) {
-                logWarn("screen_on_recovery_receiver_unregister_failed", error)
-            }
-            screenReceiverRegistered = false
-        }
-        trigger = null
-    }
-
-    private fun registerScreenReceiver() {
-        if (screenReceiverRegistered) return
-        try {
-            val filter = IntentFilter(Intent.ACTION_SCREEN_ON).apply {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    addAction(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED)
-                }
-            }
-            ContextCompat.registerReceiver(
-                context,
-                screenReceiver,
-                filter,
-                ContextCompat.RECEIVER_NOT_EXPORTED
-            )
-            screenReceiverRegistered = true
-        } catch (error: Exception) {
-            logWarn("screen_on_recovery_receiver_register_failed", error)
-        }
-    }
-
-    private fun registerNetworkCallback() {
         if (networkCallback != null) return
         val manager = connectivityManager() ?: return
         val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) = availabilityChanged(manager)
-            override fun onLost(network: Network) = availabilityChanged(manager)
+            private var currentDefault = manager.activeNetwork
+            private var validated = currentDefault?.let(manager::getNetworkCapabilities)
+                ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+
+            override fun onAvailable(network: Network) = dispatch {
+                if (currentDefault == network) return@dispatch
+                currentDefault = network
+                validated = null
+                onTrigger("network_available")
+            }
+
+            override fun onLost(network: Network) = dispatch {
+                if (currentDefault != network) return@dispatch
+                currentDefault = null
+                validated = null
+            }
+
             override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) =
-                availabilityChanged(manager)
+                dispatch {
+                    if (currentDefault != network) return@dispatch
+                    val available = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                    val regainedInternet = validated == false && available
+                    validated = available
+                    if (regainedInternet) onTrigger("network_available")
+                }
+
+            private fun dispatch(action: () -> Unit) {
+                handler.post {
+                    if (networkCallback === this) action()
+                }
+            }
         }
         try {
-            networkAvailable = isValidatedNetworkAvailable(manager)
-            manager.registerNetworkCallback(
-                NetworkRequest.Builder()
-                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                    .build(),
-                callback
-            )
+            manager.registerDefaultNetworkCallback(callback)
             networkCallback = callback
         } catch (error: Exception) {
             logWarn("network_recovery_callback_register_failed", error)
         }
     }
 
-    private fun availabilityChanged(manager: ConnectivityManager) {
-        handler.post {
-            val available = isValidatedNetworkAvailable(manager)
-            val becameAvailable = !networkAvailable && available
-            networkAvailable = available
-            if (becameAvailable) trigger?.invoke("network_available")
+    override fun stopListening() {
+        val callback = networkCallback ?: return
+        networkCallback = null
+        try {
+            connectivityManager()?.unregisterNetworkCallback(callback)
+        } catch (error: Exception) {
+            logWarn("network_recovery_callback_unregister_failed", error)
         }
     }
 
     private fun connectivityManager(): ConnectivityManager? =
         context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-
-    private fun isValidatedNetworkAvailable(manager: ConnectivityManager): Boolean {
-        val capabilities = manager.getNetworkCapabilities(manager.activeNetwork) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-    }
 }
 
 internal fun captureNativePlaybackHealthSample(
@@ -300,7 +252,8 @@ internal fun captureNativePlaybackHealthSample(
         isPlaying = player.isPlaying,
         playbackSuppressionReason = player.playbackSuppressionReason,
         hasPlayerError = player.playerError != null,
-        capturedElapsedRealtimeMs = nowElapsedRealtimeMs
+        capturedElapsedRealtimeMs = nowElapsedRealtimeMs,
+        sleepingForOffload = player.isSleepingForOffload
     )
 }
 
@@ -313,23 +266,41 @@ internal class NativePlaybackRecoveryController(
     private val frozenPositionThresholdMs: Long = 30_000L,
     private val maxRecoveryDurationMs: Long = 10 * 60 * 1000L
 ) {
+    private class Recovery {
+        var startedAtMs: Long? = null
+        var attempt = 0
+        var baseline: NativePlaybackHealthSample? = null
+        var task: Runnable? = null
+        var inFlight: Attempt? = null
+        var candidateFallback = false
+        var rebuildPlayer = false
+    }
+
+    private class Attempt(private val session: NativePlaybackSession) {
+        private val queueRevision = session.queueRevision
+        private val definitionRevision = session.definitionRevision
+        private val transportCommandId = session.transportCommandId
+        private val queueIndex = session.queueIndex
+        private val path = session.path
+        private val uri = session.uri
+
+        fun matches(current: NativePlaybackSession?): Boolean =
+            current === session && session.queueRevision == queueRevision &&
+                session.definitionRevision == definitionRevision &&
+                session.transportCommandId == transportCommandId &&
+                session.queueIndex == queueIndex && session.path == path && session.uri == uri
+    }
+
     private val intended = linkedSetOf<String>()
-    private val pending = linkedSetOf<String>()
-    private val attempts = mutableMapOf<String, Int>()
-    private val retryTasks = mutableMapOf<String, Runnable>()
+    private val recoveries = mutableMapOf<String, Recovery>()
     private val healthStates = mutableMapOf<String, NativePlaybackHealthState>()
-    private val recoveryBaselines = mutableMapOf<String, NativePlaybackHealthSample>()
-    private val recovering = mutableMapOf<String, Any>()
-    private val candidateFallbackPending = linkedSetOf<String>()
-    private val rebuildPlayerPending = linkedSetOf<String>()
-    private var triggerInProgress = false
-    private val startedAt = mutableMapOf<String, Long>()
+    private var triggering = false
     private var listening = false
     private var healthCheckScheduled = false
     private val healthCheckTask = object : Runnable {
         override fun run() {
             healthCheckScheduled = false
-            checkPlaybackHealth("scheduled_health_check", resumeUnexpectedPauses = true)
+            trigger("scheduled_health_check")
             ensureHealthCheck()
         }
     }
@@ -338,59 +309,55 @@ internal class NativePlaybackRecoveryController(
 
     fun isIntended(sessionId: String): Boolean = sessionId in intended
 
-    fun isPending(sessionId: String): Boolean = sessionId in pending
+    fun isPending(sessionId: String): Boolean = sessionId in recoveries
 
-    fun isRecovering(sessionId: String): Boolean = sessionId in recovering
+    fun isRecovering(sessionId: String): Boolean = recoveries[sessionId]?.inFlight != null
 
     fun markIntended(sessionId: String) {
         intended += sessionId
         resetHealth(sessionId, "playback_intended", cancelRecovery = true)
-        startListening()
+        if (!listening) {
+            listening = true
+            environment.startListening(::trigger)
+        }
         ensureHealthCheck()
     }
 
     fun clear(sessionId: String) {
         intended -= sessionId
-        healthStates -= sessionId
-        recoveryBaselines -= sessionId
-        recovering -= sessionId
+        healthStates.remove(sessionId)
         clearRecovery(sessionId)
-        if (intended.isEmpty()) {
-            stopHealthCheck()
-            if (pending.isEmpty()) stopListening()
-        }
+        if (intended.isEmpty()) stopMonitoring()
     }
 
     fun clearAll() {
         intended.clear()
-        (pending + retryTasks.keys).toList().forEach(::clearRecovery)
+        recoveries.values.forEach(::cancelTask)
+        recoveries.clear()
         healthStates.clear()
-        recoveryBaselines.clear()
-        recovering.clear()
-        candidateFallbackPending.clear()
-        rebuildPlayerPending.clear()
-        stopHealthCheck()
-        stopListening()
+        stopMonitoring()
     }
 
-    fun onPlaying(sessionId: String) {
-        if (sessionId in intended) ensureHealthCheck()
-    }
-
-    fun resetHealth(
-        sessionId: String,
-        reason: String,
-        cancelRecovery: Boolean = false
-    ) {
-        healthStates -= sessionId
-        if (cancelRecovery && sessionId in pending) {
-            recoveryBaselines -= sessionId
-            host.logInfo("playback_health_reset sessionId=$sessionId reason=$reason")
+    fun resetHealth(sessionId: String, reason: String, cancelRecovery: Boolean = false) {
+        healthStates.remove(sessionId)
+        val recovery = recoveries[sessionId] ?: return
+        if (cancelRecovery) {
+            host.logInfo("playback_recovery_cancelled sessionId=$sessionId reason=$reason")
             clearRecovery(sessionId)
-        } else if (sessionId in pending) {
-            captureHealth(sessionId)?.let { recoveryBaselines[sessionId] = it }
         } else {
-            recoveryBaselines -= sessionId
+            recovery.baseline = captureHealth(sessionId)
+        }
+    }
+
+    fun onMediaItemTransition(sessionId: String, reason: Int) {
+        resetHealth(sessionId, "media_item_transition")
+        val recovery = recoveries[sessionId] ?: return
+        if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO &&
+            reason != Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
+        ) return
+        val sample = recovery.baseline ?: return
+        if (sample.playWhenReady && !sample.hasPlayerError) {
+            confirmRecovery(sessionId, "natural_media_item_transition")
         }
     }
 
@@ -400,93 +367,68 @@ internal class NativePlaybackRecoveryController(
         candidateFallbackEligible: Boolean = false,
         rebuildPlayer: Boolean = false,
         immediateRetry: Boolean = false,
-        errorCodeName: String,
-        errorMessage: String?,
-        causeDescription: String?,
-        technicalError: PlaybackException? = null
+        errorCodeName: String
     ) {
-        val attempt = attempts.getOrDefault(sessionId, 0)
         val session = host.session(sessionId)
+        val attempt = recoveries[sessionId]?.attempt ?: 0
         host.logWarn(
-            "player_error code=$errorCodeName message=$errorMessage " +
-                "cause=$causeDescription " +
-                "retryAttempt=$attempt recoverable=$recoverable intended=${sessionId in intended}",
-            session,
-            technicalError
+            "player_error code=$errorCodeName retryAttempt=$attempt " +
+                "recoverable=$recoverable intended=${sessionId in intended}",
+            session
         )
-        host.publishSession(sessionId)
-        host.persistNow()
         if (!recoverable || sessionId !in intended) {
             clear(sessionId)
-            host.syncForeground()
-            return
+        } else {
+            val recovery = recoveries.getOrPut(sessionId, ::Recovery)
+            recovery.candidateFallback = recovery.candidateFallback ||
+                (candidateFallbackEligible && session?.hasAlternatePlaybackUri() == true)
+            recovery.rebuildPlayer = recovery.rebuildPlayer || rebuildPlayer
+            recovery.baseline = captureHealth(sessionId)
+            if (recovery.inFlight == null) {
+                val tryAlternateNow = recovery.candidateFallback && recovery.attempt == 0
+                scheduleRetry(sessionId, recovery, immediate = immediateRetry || tryAlternateNow)
+            }
         }
-        pending += sessionId
-        if (candidateFallbackEligible && session?.hasAlternatePlaybackUri() == true) {
-            candidateFallbackPending += sessionId
-        }
-        if (rebuildPlayer) {
-            rebuildPlayerPending += sessionId
-        }
-        captureHealth(sessionId)?.let { recoveryBaselines[sessionId] = it }
-        startListening()
-        scheduleRetry(
-            sessionId,
-            attempt,
-            immediate = immediateRetry || sessionId in candidateFallbackPending
-        )
-        ensureHealthCheck()
+        host.publishSession(sessionId)
+        host.persistNow()
         host.syncForeground()
     }
 
     fun trigger(reason: String) {
-        if (host.interruptionActive) return
-        if (triggerInProgress) {
-            host.logInfo("playback_recovery_trigger_skipped_reentrant trigger=$reason")
+        if (host.interruptionActive) {
+            healthStates.clear()
             return
         }
-        triggerInProgress = true
+        if (triggering) return
+        triggering = true
         try {
-            if (reason == "network_available") {
-                host.onNetworkRecoveryTriggered()
+            val networkChanged = reason == "network_available"
+            val sessionIds = if (networkChanged) {
+                intended.filter { isNativePlaybackNetworkUri(host.session(it)?.uri) }
+            } else {
+                intended.toList()
             }
-            val resumeUnexpectedPauses =
-                reason == "keep_alive_heartbeat" ||
-                    reason == "foreground_watchdog" ||
-                    reason == "screen_on" ||
-                    reason == "device_idle_exited"
-            checkPlaybackHealth(reason, resumeUnexpectedPauses = resumeUnexpectedPauses)
-            if (pending.isNotEmpty()) {
-                host.logInfo("playback_recovery_trigger trigger=$reason pending=${pending.size}")
-                pending.toList().forEach { retry(it, reason) }
+            if (networkChanged && sessionIds.isNotEmpty()) host.onNetworkRecoveryTriggered()
+            sessionIds.forEach { sessionId ->
+                if (sessionId in intended) checkPlaybackHealth(sessionId, reason, networkChanged)
             }
-            recoverIntendedPlayback(reason)
         } finally {
-            triggerInProgress = false
+            triggering = false
         }
     }
 
-    /**
-     * Retry one session immediately after an explicit user play request.
-     *
-     * The normal trigger also evaluates every intended session. A user retry
-     * must only touch the failed session, while still using the same candidate
-     * fallback and in-flight guards as the scheduled recovery path.
-     */
     fun retryNow(sessionId: String, reason: String) {
-        if (triggerInProgress) {
-            host.logInfo(
-                "playback_recovery_retry_skipped_reentrant " +
-                    "sessionId=$sessionId trigger=$reason"
-            )
-            return
+        if (sessionId !in intended) return
+        val recovery = recoveries.getOrPut(sessionId) {
+            Recovery().apply {
+                val session = host.session(sessionId) ?: return@apply
+                val error = session.playerOrNull()?.playerError ?: return@apply
+                rebuildPlayer = isPlayerRebuildRequiredForErrorCode(error.errorCode)
+                candidateFallback = isCandidateFallbackPlaybackErrorCode(error.errorCode) &&
+                    session.hasAlternatePlaybackUri()
+            }
         }
-        triggerInProgress = true
-        try {
-            retry(sessionId, reason)
-        } finally {
-            triggerInProgress = false
-        }
+        retry(sessionId, recovery, reason)
     }
 
     fun shouldKeepAlive(): Boolean = intended.any { sessionId ->
@@ -495,94 +437,123 @@ internal class NativePlaybackRecoveryController(
         shouldKeepAliveForIntendedPlayback(
             playbackState = player.playbackState,
             hasPlayerError = player.playerError != null,
-            hasRecoverablePlaybackError = sessionId in pending
+            hasRecoverablePlaybackError = sessionId in recoveries
         )
-    } || pending.any { host.session(it) != null }
-
-    fun dispose() = clearAll()
+    }
 
     private fun scheduleRetry(
         sessionId: String,
-        attempt: Int,
-        immediate: Boolean = false
+        recovery: Recovery,
+        immediate: Boolean = false,
+        waitingForBuffer: Boolean = false
     ) {
-        retryTasks.remove(sessionId)?.let(environment::remove)
-        val deferredForFocus = host.interruptionActive
-        // A phone call or ducking interruption is not a failed playback retry.
-        // Restart the bounded recovery window after focus returns, and keep the
-        // pending task at the health-check cadence without advancing backoff.
-        if (deferredForFocus) startedAt -= sessionId
-        val delayMs: Long
-        if (deferredForFocus) {
-            delayMs = healthCheckIntervalMs
+        if (recoveries[sessionId] !== recovery) return
+        val delayMs = if (host.interruptionActive) {
+            // Phone calls and ducking interruptions do not count against recovery.
+            recovery.startedAtMs = null
+            healthCheckIntervalMs
         } else {
-            val recoveryStarted = startedAt.getOrPut(sessionId, environment::elapsedRealtimeMs)
-            val remainingMs = maxRecoveryDurationMs -
-                (environment.elapsedRealtimeMs() - recoveryStarted).coerceAtLeast(0L)
+            val nowMs = environment.elapsedRealtimeMs()
+            val startedAt = recovery.startedAtMs ?: nowMs.also { recovery.startedAtMs = it }
+            val remainingMs = maxRecoveryDurationMs - (nowMs - startedAt)
             if (remainingMs <= 0L) {
-                timeOutRecovery(sessionId)
+                timeOut(sessionId)
                 return
             }
-            delayMs = if (immediate) {
-                0L
-            } else {
-                playbackRecoveryDelayMs(
-                    attempt,
-                    recoveryStarted,
-                    environment.elapsedRealtimeMs()
-                ).coerceAtMost(remainingMs)
+            val retryDelay = when {
+                immediate -> 0L
+                waitingForBuffer -> healthCheckIntervalMs
+                else -> playbackRecoveryDelayMs(recovery.attempt, startedAt, nowMs)
             }
-            attempts[sessionId] = attempt + 1
+            if (!waitingForBuffer) recovery.attempt++
+            retryDelay.coerceAtMost(remainingMs)
         }
+        host.logInfo(
+            "playback_retry_scheduled sessionId=$sessionId delayMs=$delayMs " +
+                "attempt=${recovery.attempt} interrupted=${host.interruptionActive}"
+        )
+        scheduleTask(sessionId, recovery, delayMs) {
+            retry(sessionId, recovery, "scheduled_retry", waitForPlayback = true)
+        }
+    }
+
+    private fun scheduleTask(sessionId: String, recovery: Recovery, delayMs: Long, action: () -> Unit) {
+        cancelTask(recovery)
         lateinit var task: Runnable
         task = Runnable {
-            if (retryTasks[sessionId] !== task) return@Runnable
-            retryTasks.remove(sessionId)
-            retry(sessionId, "scheduled_retry")
+            if (recoveries[sessionId] !== recovery || recovery.task !== task) return@Runnable
+            recovery.task = null
+            action()
         }
-        retryTasks[sessionId] = task
-        host.logInfo(
-            "player_error_retry_scheduled sessionId=$sessionId delay=${delayMs}ms " +
-                "attempt=${attempts.getOrDefault(sessionId, 0)} deferredForFocus=$deferredForFocus"
-        )
+        recovery.task = task
         environment.postDelayed(task, delayMs)
     }
 
-    private fun retry(sessionId: String, reason: String) {
+    private fun cancelTask(recovery: Recovery) {
+        recovery.task?.let(environment::remove)
+        recovery.task = null
+    }
+
+    private fun retry(
+        sessionId: String,
+        recovery: Recovery,
+        reason: String,
+        waitForPlayback: Boolean = false
+    ) {
+        if (recoveries[sessionId] !== recovery || recovery.inFlight != null) return
         val session = host.session(sessionId) ?: return clear(sessionId)
-        if (sessionId !in intended) return clearRecovery(sessionId)
         if (host.interruptionActive) {
-            scheduleRetry(sessionId, attempts.getOrDefault(sessionId, 0))
-            return
-        }
-        if (recoveryDurationExceeded(sessionId)) {
-            timeOutRecovery(sessionId)
-            return
-        }
-        if (sessionId in recovering) {
-            host.logInfo("playback_recovery_skip_in_flight sessionId=$sessionId trigger=$reason")
+            scheduleRetry(sessionId, recovery)
             return
         }
         val currentHealth = captureHealth(sessionId)
-        val recoveryBaseline = recoveryBaselines[sessionId]
-        if (hasRecoveredProgress(recoveryBaseline, currentHealth)) {
-            host.logInfo(
-                "playback_recovery_progress_confirmed sessionId=$sessionId " +
-                    "trigger=$reason position=${currentHealth?.positionMs}"
-            )
-            clearRecovery(sessionId)
+        if (hasRecoveredProgress(recovery.baseline, currentHealth)) {
+            confirmRecovery(sessionId, reason)
             return
         }
-        retryTasks.remove(sessionId)?.let(environment::remove)
-        val attempt = attempts.getOrDefault(sessionId, 0)
+        val nowMs = environment.elapsedRealtimeMs()
+        val startedAt = recovery.startedAtMs ?: nowMs.also { recovery.startedAtMs = it }
+        val remainingMs = maxRecoveryDurationMs - (nowMs - startedAt)
+        if (remainingMs <= 0L) {
+            timeOut(sessionId)
+            return
+        }
+        if (waitForPlayback && currentHealth != null && !currentHealth.hasPlayerError &&
+            currentHealth.playWhenReady &&
+            (currentHealth.playbackState == Player.STATE_BUFFERING || currentHealth.sleepingForOffload)
+        ) {
+            val evaluation = evaluateHealth(sessionId, currentHealth)
+            if (evaluation.stallReason == null) {
+                // A retry at each backoff interval could reset an active load.
+                scheduleRetry(sessionId, recovery, waitingForBuffer = true)
+                return
+            }
+        }
+
+        // Foreground and focus changes can dispatch playback callbacks on the
+        // main Looper before returning, so reserve the slot before either call.
+        cancelTask(recovery)
+        val attempt = Attempt(session)
+        recovery.inFlight = attempt
+        fun ownsAttempt() = recoveries[sessionId] === recovery && recovery.inFlight === attempt
+        fun isCurrent() = ownsAttempt() && attempt.matches(host.session(sessionId))
+
         host.logInfo(
-            "playback_recovery_executing sessionId=$sessionId trigger=$reason " +
-                "attempt=$attempt position=${currentHealth?.positionMs} " +
-                "buffered=${currentHealth?.bufferedPositionMs} " +
-                "state=${currentHealth?.playbackState?.let(::playbackStateName)} " +
-                "suppression=${currentHealth?.playbackSuppressionReason}"
+            "playback_retry sessionId=$sessionId trigger=$reason attempt=${recovery.attempt} " +
+                "positionMs=${currentHealth?.positionMs}"
         )
-        if (!host.establishForegroundPlayback(sessionId)) {
+        val canStart = host.establishForegroundPlayback(sessionId) && isCurrent() &&
+            host.requestAudioFocus()
+        if (!isCurrent()) {
+            if (ownsAttempt()) clearRecovery(sessionId)
+            return
+        }
+        if (host.interruptionActive) {
+            recovery.inFlight = null
+            scheduleRetry(sessionId, recovery)
+            return
+        }
+        if (!canStart) {
             clear(sessionId)
             session.playerOrNull()?.pause()
             host.publishSession(sessionId)
@@ -590,310 +561,182 @@ internal class NativePlaybackRecoveryController(
             host.syncForeground()
             return
         }
-        if (!host.requestAudioFocus()) {
-            clear(sessionId)
-            session.playerOrNull()?.pause()
-            host.publishSession(sessionId)
-            host.persistNow()
-            host.syncForeground()
-            return
-        }
-        val recovery = Any()
-        recovering[sessionId] = recovery
-        val queueRevision = session.queueRevision
-        val definitionRevision = session.definitionRevision
-        val transportCommandId = session.transportCommandId
-        val queueIndex = session.queueIndex
-        val path = session.path
-        val uri = session.uri
-        fun isCurrent() = recovering[sessionId] === recovery &&
-            host.session(sessionId) === session && sessionId in intended &&
-            session.queueRevision == queueRevision &&
-            session.definitionRevision == definitionRevision &&
-            session.transportCommandId == transportCommandId &&
-            session.path == path && session.uri == uri && session.queueIndex == queueIndex
 
         fun completeRecovery(prepared: Result<NativePlaybackQueue>?) {
             if (!isCurrent()) {
-                if (recovering[sessionId] === recovery) recovering.remove(sessionId)
+                if (ownsAttempt()) clearRecovery(sessionId)
                 return
             }
-            if (recoveryDurationExceeded(sessionId)) {
-                timeOutRecovery(sessionId)
-                return
-            }
+            cancelTask(recovery)
             if (host.interruptionActive) {
-                recovering.remove(sessionId)
-                scheduleRetry(sessionId, attempts.getOrDefault(sessionId, 0))
+                recovery.inFlight = null
+                scheduleRetry(sessionId, recovery)
+                return
+            }
+            if (environment.elapsedRealtimeMs() - startedAt >= maxRecoveryDurationMs) {
+                timeOut(sessionId)
                 return
             }
             try {
                 val preparedQueue = prepared?.getOrThrow()
-                val shouldRebuildPlayer = sessionId in rebuildPlayerPending || attempt >= 1
-                host.onNetworkRecoveryTriggered()
-                host.focusSession(sessionId)
+                val rebuildPlayer = recovery.rebuildPlayer || recovery.attempt >= 2
+                recovery.rebuildPlayer = false
+                recovery.candidateFallback = false
                 session.applyFadeMultiplier(1f)
-                session.reprepareCurrentMediaItem(
-                    preparedQueue = preparedQueue,
-                    rebuildPlayer = shouldRebuildPlayer
-                )
-                if (shouldRebuildPlayer) {
-                    rebuildPlayerPending.remove(sessionId)
-                }
-                if (preparedQueue != null) {
-                    candidateFallbackPending.remove(sessionId)
-                    host.logInfo(
-                        "playback_candidate_advanced sessionId=$sessionId uri=${session.uri}",
-                        session
-                    )
-                }
+                session.reprepareCurrentMediaItem(preparedQueue, rebuildPlayer)
+                if (!ownsAttempt()) return
+                if (preparedQueue != null) host.logInfo("playback_candidate_advanced sessionId=$sessionId", session)
                 host.ensurePlayer(session).play()
-                (captureHealth(sessionId) ?: currentHealth)?.let {
-                    recoveryBaselines[sessionId] = it
-                }
+                if (!ownsAttempt()) return
+                recovery.baseline = captureHealth(sessionId) ?: currentHealth
                 host.publishSession(sessionId)
                 host.schedulePersist()
-                host.syncForeground()
-                scheduleRetry(sessionId, attempts.getOrDefault(sessionId, 0))
             } catch (error: Exception) {
                 host.logWarn(
-                    "playback_recovery_failed sessionId=$sessionId trigger=$reason",
-                    session,
-                    error as? PlaybackException
+                    "playback_recovery_failed sessionId=$sessionId trigger=$reason " +
+                        "exception=${error.javaClass.simpleName}",
+                    session
                 )
-                scheduleRetry(sessionId, attempts.getOrDefault(sessionId, 0))
-                host.syncForeground()
             } finally {
-                if (recovering[sessionId] === recovery) recovering.remove(sessionId)
+                if (ownsAttempt()) {
+                    recovery.inFlight = null
+                    scheduleRetry(sessionId, recovery)
+                    host.syncForeground()
+                }
             }
         }
-        val candidateQueue = if (sessionId in candidateFallbackPending) {
-            session.nextPlaybackCandidateQueue()
-        } else null
+        val candidateQueue = if (recovery.candidateFallback) session.nextPlaybackCandidateQueue() else null
         if (candidateQueue == null) {
             completeRecovery(null)
         } else {
-            host.prepareRecoveryQueue(sessionId, candidateQueue, ::isCurrent, ::completeRecovery)
+            scheduleTask(sessionId, recovery, remainingMs) {
+                if (!isCurrent()) {
+                    if (ownsAttempt()) clearRecovery(sessionId)
+                } else if (host.interruptionActive) {
+                    recovery.inFlight = null
+                    scheduleRetry(sessionId, recovery)
+                } else {
+                    timeOut(sessionId)
+                }
+            }
+            try {
+                host.prepareRecoveryQueue(sessionId, candidateQueue, ::isCurrent, ::completeRecovery)
+            } catch (error: Exception) {
+                completeRecovery(Result.failure(error))
+            }
         }
     }
 
-    private fun clearRecovery(sessionId: String) {
-        pending -= sessionId
-        attempts -= sessionId
-        startedAt -= sessionId
-        recoveryBaselines -= sessionId
-        recovering -= sessionId
-        candidateFallbackPending -= sessionId
-        rebuildPlayerPending -= sessionId
-        retryTasks.remove(sessionId)?.let(environment::remove)
-        if (pending.isEmpty() && intended.isEmpty()) stopListening()
-    }
-
-    private fun recoveryDurationExceeded(sessionId: String): Boolean {
-        val recoveryStarted = startedAt[sessionId] ?: return false
-        return environment.elapsedRealtimeMs() - recoveryStarted >= maxRecoveryDurationMs
-    }
-
-    private fun timeOutRecovery(sessionId: String) {
-        if (sessionId !in pending && sessionId !in intended) return
-        host.logInfo(
-            "playback_recovery_timed_out sessionId=$sessionId " +
-                "duration=${maxRecoveryDurationMs}ms"
-        )
-        intended -= sessionId
-        healthStates -= sessionId
-        clearRecovery(sessionId)
-        if (intended.isEmpty()) stopHealthCheck()
-        host.onRecoveryTimedOut(sessionId)
-    }
-
-    private fun recoverIntendedPlayback(reason: String) {
-        val sessionIds = intended.toList()
-        if (sessionIds.isEmpty()) return
-        if (!host.requestAudioFocus()) {
-            sessionIds.forEach { sessionId ->
-                clear(sessionId)
-                host.session(sessionId)?.playerOrNull()?.pause()
-            }
-            host.publishAllSessions()
-            host.persistNow()
-            host.syncForeground()
+    private fun checkPlaybackHealth(sessionId: String, trigger: String, networkChanged: Boolean) {
+        val sample = captureHealth(sessionId)
+        if (sample?.playbackState == Player.STATE_ENDED) {
+            clear(sessionId)
             return
         }
-        var recovered = false
-        sessionIds.forEach { sessionId ->
-            val session = host.session(sessionId) ?: run {
-                clear(sessionId)
-                return@forEach
-            }
-            if (sessionId in recovering) return@forEach
-            val player = session.playerOrNull()
-            if (player == null) {
-                if (session.uri == null) {
-                    clear(sessionId)
-                    return@forEach
-                }
-                host.logInfo("recover_intended_playback trigger=$reason recreate_player", session)
-                host.focusSession(sessionId)
-                session.applyFadeMultiplier(1f)
-                host.ensurePlayer(session).play()
-                recovered = true
-                return@forEach
-            }
-            if (sessionId in pending) {
-                return@forEach
-            }
-            val monitoredHealth = healthStates[sessionId]
-            if (player.playerError == null &&
-                player.playWhenReady &&
-                (player.playbackState == Player.STATE_READY ||
-                    player.playbackState == Player.STATE_BUFFERING) &&
-                monitoredHealth != null
-            ) {
-                val evaluation = evaluateNativePlaybackHealth(
-                    previous = monitoredHealth,
-                    current = captureHealth(sessionId) ?: monitoredHealth.sample,
-                    readyStallThresholdMs = readyStallThresholdMs,
-                    bufferingStallThresholdMs = bufferingStallThresholdMs,
-                    frozenPositionThresholdMs = frozenPositionThresholdMs
-                )
-                healthStates[sessionId] = evaluation.state
-                if (evaluation.stallReason == null) return@forEach
-                beginStallRecovery(sessionId, evaluation, reason)
-                return@forEach
-            }
-            if (player.playerError == null && player.isPlaying) return@forEach
-            if (!shouldRecoverIntendedPlayback(player.playbackState, player.playerError != null, sessionId in pending)) {
-                if (player.playbackState == Player.STATE_ENDED) clear(sessionId)
-                return@forEach
-            }
-            host.logInfo(
-                "recover_intended_playback trigger=$reason state=${playbackStateName(player.playbackState)}",
-                session
-            )
-            host.focusSession(sessionId)
-            session.applyFadeMultiplier(1f)
-            if (player.playbackState == Player.STATE_IDLE || player.playerError != null) {
-                session.reprepareCurrentMediaItem(rebuildPlayer = player.playerError != null)
-            }
-            host.ensurePlayer(session).play()
-            recovered = true
+        val recovery = recoveries[sessionId]
+        if (recovery != null && hasRecoveredProgress(recovery.baseline, sample)) {
+            confirmRecovery(sessionId, trigger)
+            return
         }
-        if (recovered) {
-            host.publishAllSessions()
-            host.schedulePersist()
+        val evaluation = sample?.let { evaluateHealth(sessionId, it) }
+        if (recovery != null) {
+            if (recovery.inFlight?.matches(host.session(sessionId)) == false) {
+                clearRecovery(sessionId)
+                return
+            }
+            // Handler timers use uptime. A power callback can run before an
+            // overdue timer after suspend, so enforce the elapsed-time limit.
+            val startedAt = recovery.startedAtMs
+            if (startedAt != null &&
+                environment.elapsedRealtimeMs() - startedAt >= maxRecoveryDurationMs
+            ) {
+                timeOut(sessionId)
+                return
+            }
+            // Failed loads can retry early on the new route. Media3 can
+            // continue a healthy or still-buffering stream on its own.
+            if (networkChanged && (sample == null || sample.hasPlayerError ||
+                    sample.playbackState == Player.STATE_IDLE)
+            ) {
+                retry(sessionId, recovery, trigger)
+            }
+            return
+        }
+        if (sample == null) {
+            if (host.session(sessionId)?.uri != null) retryNow(sessionId, trigger)
+            return
+        }
+        if (sample.playbackState == Player.STATE_READY && !sample.playWhenReady &&
+            !sample.hasPlayerError && !sample.sleepingForOffload &&
+            sample.playbackSuppressionReason == Player.PLAYBACK_SUPPRESSION_REASON_NONE
+        ) {
+            resumeUnexpectedPause(sessionId)
+        } else if (evaluation?.stallReason != null) {
+            val stalled = Recovery().apply {
+                baseline = sample
+                rebuildPlayer = evaluation.stallReason != NativePlaybackStallReason.BUFFERING
+            }
+            recoveries[sessionId] = stalled
+            host.logInfo(
+                "playback_stalled sessionId=$sessionId trigger=$trigger reason=${evaluation.stallReason.logValue} " +
+                    "positionMs=${sample.positionMs} bufferedMs=${sample.bufferedPositionMs}"
+            )
+            scheduleRetry(sessionId, stalled)
+            host.publishSession(sessionId)
+            host.persistNow()
+            host.syncForeground()
         }
     }
 
-    private fun checkPlaybackHealth(trigger: String, resumeUnexpectedPauses: Boolean = false) {
-        val nowMs = environment.elapsedRealtimeMs()
-        intended.toList().forEach { sessionId ->
-            val sample = host.healthSample(sessionId, nowMs) ?: return@forEach
-            val evaluation = evaluateNativePlaybackHealth(
-                previous = healthStates[sessionId],
-                current = sample,
-                readyStallThresholdMs = readyStallThresholdMs,
-                bufferingStallThresholdMs = bufferingStallThresholdMs,
-                frozenPositionThresholdMs = frozenPositionThresholdMs
-            )
-            healthStates[sessionId] = evaluation.state
-            if (resumeUnexpectedPauses &&
-                !sample.playWhenReady &&
-                sample.playbackState == Player.STATE_READY &&
-                !sample.hasPlayerError &&
-                sample.playbackSuppressionReason == Player.PLAYBACK_SUPPRESSION_REASON_NONE
-            ) {
-                resumeUnexpectedPause(sessionId)
-                return@forEach
-            }
-            if (evaluation.positionAdvanced &&
-                sample.isPlaying &&
-                sample.playWhenReady &&
-                !sample.hasPlayerError
-            ) {
-                if (sessionId in pending) {
-                    host.logInfo(
-                        "playback_health_recovered sessionId=$sessionId trigger=$trigger " +
-                            "position=${sample.positionMs}"
-                    )
-                    clearRecovery(sessionId)
-                }
-                return@forEach
-            }
-            if (evaluation.stallReason != null) {
-                beginStallRecovery(sessionId, evaluation, trigger)
-            }
-        }
-    }
+    private fun evaluateHealth(
+        sessionId: String,
+        sample: NativePlaybackHealthSample
+    ): NativePlaybackHealthEvaluation = evaluateNativePlaybackHealth(
+        previous = healthStates[sessionId],
+        current = sample,
+        readyStallThresholdMs = readyStallThresholdMs,
+        bufferingStallThresholdMs = bufferingStallThresholdMs,
+        frozenPositionThresholdMs = frozenPositionThresholdMs
+    ).also { healthStates[sessionId] = it.state }
 
     private fun resumeUnexpectedPause(sessionId: String) {
-        if (!canResumeUnexpectedPause(sessionId)) return
         val session = host.session(sessionId) ?: return
         val player = session.playerOrNull() ?: return
         if (!host.establishForegroundPlayback(sessionId) || !host.requestAudioFocus()) return
-        if (!canResumeUnexpectedPause(sessionId) || host.session(sessionId) !== session ||
-            session.playerOrNull() !== player
+        if (host.interruptionActive || sessionId !in intended || sessionId in recoveries ||
+            host.session(sessionId) !== session || session.playerOrNull() !== player
         ) return
-
-        host.logInfo("playback_health_resuming_unexpected_pause sessionId=$sessionId", session)
+        host.logInfo("playback_resuming_unexpected_pause sessionId=$sessionId", session)
         player.play()
     }
 
-    private fun canResumeUnexpectedPause(sessionId: String): Boolean =
-        sessionId in intended && sessionId !in pending && sessionId !in retryTasks &&
-            sessionId !in recovering && !host.interruptionActive
-
-    private fun beginStallRecovery(
-        sessionId: String,
-        evaluation: NativePlaybackHealthEvaluation,
-        trigger: String = "health_check"
-    ) {
-        if (sessionId in pending) return
-        val sample = evaluation.state.sample
-        val stalledForMs = (
-            sample.capturedElapsedRealtimeMs - evaluation.state.lastActivityElapsedRealtimeMs
-        ).coerceAtLeast(0L)
-        host.logInfo(
-            "playback_health_stalled sessionId=$sessionId trigger=$trigger " +
-                "reason=${evaluation.stallReason?.logValue} stalledFor=${stalledForMs}ms " +
-                "position=${sample.positionMs} buffered=${sample.bufferedPositionMs} " +
-                "state=${playbackStateName(sample.playbackState)} " +
-                "isPlaying=${sample.isPlaying} playWhenReady=${sample.playWhenReady} " +
-                "suppression=${sample.playbackSuppressionReason}"
-        )
-        pending += sessionId
-        if (evaluation.stallReason != NativePlaybackStallReason.BUFFERING) {
-            rebuildPlayerPending += sessionId
-        }
-        recoveryBaselines[sessionId] = sample
-        startListening()
-        val immediate = trigger == "screen_on" ||
-            trigger == "keep_alive_heartbeat" ||
-            trigger == "foreground_watchdog" ||
-            trigger == "device_idle_exited"
-        scheduleRetry(
-            sessionId,
-            attempts.getOrDefault(sessionId, 0),
-            immediate = immediate
-        )
-        host.publishSession(sessionId)
-        host.persistNow()
-        host.syncForeground()
-    }
-
-    private fun captureHealth(sessionId: String): NativePlaybackHealthSample? {
-        return host.healthSample(sessionId, environment.elapsedRealtimeMs())
-    }
+    private fun captureHealth(sessionId: String): NativePlaybackHealthSample? =
+        host.healthSample(sessionId, environment.elapsedRealtimeMs())
 
     private fun hasRecoveredProgress(
         baseline: NativePlaybackHealthSample?,
         current: NativePlaybackHealthSample?
     ): Boolean {
-        if (baseline == null || current == null) return false
-        if (current.hasPlayerError || !current.playWhenReady || !current.isPlaying) return false
+        if (baseline == null || current == null || current.hasPlayerError ||
+            !current.playWhenReady || !current.isPlaying
+        ) return false
         return current.mediaItemIndex != baseline.mediaItemIndex ||
-            current.positionMs - baseline.positionMs >= 250L ||
-            baseline.positionMs - current.positionMs >= 250L
+            kotlin.math.abs(current.positionMs - baseline.positionMs) >= 250L
+    }
+
+    private fun confirmRecovery(sessionId: String, trigger: String) {
+        host.logInfo("playback_recovered sessionId=$sessionId trigger=$trigger")
+        clearRecovery(sessionId)
+    }
+
+    private fun clearRecovery(sessionId: String) {
+        recoveries.remove(sessionId)?.let(::cancelTask)
+    }
+
+    private fun timeOut(sessionId: String) {
+        host.logInfo("playback_recovery_timed_out sessionId=$sessionId durationMs=$maxRecoveryDurationMs")
+        clear(sessionId)
+        host.onRecoveryTimedOut(sessionId)
     }
 
     private fun ensureHealthCheck() {
@@ -902,21 +745,12 @@ internal class NativePlaybackRecoveryController(
         environment.postDelayed(healthCheckTask, healthCheckIntervalMs)
     }
 
-    private fun stopHealthCheck() {
-        if (!healthCheckScheduled) return
+    private fun stopMonitoring() {
         environment.remove(healthCheckTask)
         healthCheckScheduled = false
-    }
-
-    private fun startListening() {
-        if (listening) return
-        listening = true
-        environment.startListening(::trigger)
-    }
-
-    private fun stopListening() {
-        if (!listening) return
-        listening = false
-        environment.stopListening()
+        if (listening) {
+            listening = false
+            environment.stopListening()
+        }
     }
 }

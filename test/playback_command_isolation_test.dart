@@ -630,6 +630,93 @@ void main() {
       );
     },
   );
+
+  test(
+    'Android completion does not ask Flutter to start another track',
+    () async {
+      var completionCallbacks = 0;
+      playback.attachSessionRuntime(
+        onSessionRegistered: (_) {},
+        onSessionsReordered: () {},
+        onSessionStateChanged: () {},
+        onSessionCompleted: (_) {
+          completionCallbacks++;
+        },
+      );
+      final session = register('native-completion', playing: true, queue: true);
+      commands.handleNativeSnapshot(
+        NativePlaybackSnapshot(
+          sessionId: session.id,
+          path: session.currentTrackPath,
+          playing: false,
+          playWhenReady: false,
+          processingState: 'completed',
+          position: const Duration(minutes: 1),
+          bufferedPosition: const Duration(minutes: 1),
+          volume: 1,
+          boostGain: 1,
+          channelSwapEnabled: false,
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(completionCallbacks, 0);
+      expect(session.state.processingState, ProcessingState.completed);
+      expect(session.isAdvancingAfterCompletion, false);
+      expect(native.played, isEmpty);
+    },
+  );
+
+  test(
+    'Android reconciles a detached duplicate without rewriting the queue',
+    () async {
+      final session = register('native-handoff', playing: true, queue: true);
+      final first = catalog.tracks.first;
+      final repeated = [first, first];
+      session.playbackQueue = PlaybackQueueDefinition(
+        name: session.id,
+        entries: [
+          PlaybackQueueEntry(
+            id: 'repeated',
+            kind: PlaybackQueueEntryKind.work,
+            title: first.displayName,
+            tracks: repeated,
+          ),
+        ],
+      );
+      session
+        ..customQueueTracks = [first, ...repeated]
+        ..hasDetachedQueueTrack = true;
+      final queue = await commands.nativePlaybackQueueFor(
+        session,
+        currentPath: first.path,
+      );
+      expect(queue.map((item) => item['playOnceBeforeQueue']), [
+        true,
+        null,
+        null,
+      ]);
+
+      final reconnected = NativePlaybackSnapshot.fromMap({
+        'sessionId': session.id,
+        'path': first.path,
+        'playing': true,
+        'playWhenReady': true,
+        'processingState': 'ready',
+        'positionMs': 3000,
+        'queueIndex': 1,
+        'discardedQueuePrefix': true,
+      });
+      commands.handleNativeSnapshot(reconnected);
+      commands.handleNativeSnapshot(reconnected);
+
+      expect(session.hasDetachedQueueTrack, false);
+      expect(session.customQueueTracks, repeated);
+      expect(session.currentQueueIndex, 1);
+      expect(session.position, const Duration(seconds: 3));
+      expect(native.queueUpdates, isEmpty);
+    },
+  );
   test(
     'cold recovery stores the current duplicate occurrence without playback',
     () async {

@@ -1188,9 +1188,7 @@ void main() {
           final context = tester.element(cardFinder);
           expect(
             card.color,
-            Theme.of(
-              context,
-            ).colorScheme.surfaceContainerHigh.withValues(alpha: 0.6),
+            Theme.of(context).colorScheme.surfaceContainerLow,
           );
           final shape =
               (card.shape ?? CardTheme.of(context).shape)!
@@ -1842,6 +1840,14 @@ void main() {
       await tester.tap(find.text(i18n.tr('section_appearance')));
       await tester.pumpAndSettle();
       final toggle = find.byKey(const ValueKey('bar_glass_enabled_tile'));
+      final sectionTitle = find.byKey(
+        const ValueKey<String>('settings_section_pill_appearance_0'),
+      );
+      final titleBlur = find.descendant(
+        of: sectionTitle,
+        matching: find.byType(BackdropFilter),
+      );
+      expect(titleBlur, findsNothing);
       expect(tester.widget<SwitchListTile>(toggle).value, isFalse);
       expect(find.text(i18n.tr('bar_glass_enabled')), findsOneWidget);
       expect(tester.widget<SwitchListTile>(toggle).subtitle, isNull);
@@ -1860,6 +1866,7 @@ void main() {
       );
       final preferences = await SharedPreferences.getInstance();
       expect(preferences.getBool('barGlassEnabled'), isTrue);
+      expect(tester.widget<BackdropFilter>(titleBlur).enabled, isTrue);
 
       await tester.tap(toggle);
       await tester.pump();
@@ -1872,6 +1879,7 @@ void main() {
         isFalse,
       );
       expect(preferences.getBool('barGlassEnabled'), isFalse);
+      expect(titleBlur, findsNothing);
     },
     variant: const TargetPlatformVariant({
       TargetPlatform.android,
@@ -2029,17 +2037,17 @@ void main() {
       ),
       findsNWidgets(16),
     );
-    final mintChoice = find.byKey(const ValueKey('theme_color_mint'));
-    final mintSwatch = tester.widget<AnimatedContainer>(
-      find.descendant(of: mintChoice, matching: find.byType(AnimatedContainer)),
+    final tealChoice = find.byKey(const ValueKey('theme_color_teal'));
+    final tealSwatch = tester.widget<AnimatedContainer>(
+      find.descendant(of: tealChoice, matching: find.byType(AnimatedContainer)),
     );
     expect(
-      (mintSwatch.decoration! as BoxDecoration).color,
-      ThemeAccentPreset.mint.colorScheme(Brightness.light).primary,
+      (tealSwatch.decoration! as BoxDecoration).color,
+      ThemeAccentPreset.teal.colorScheme(Brightness.light).primary,
     );
-    await tester.tap(mintChoice);
+    await tester.tap(tealChoice);
     await tester.pumpAndSettle();
-    expect(themeProvider.appThemeColor, ThemeAccentPreset.mint);
+    expect(themeProvider.appThemeColor, ThemeAccentPreset.teal);
     final appIndicator = tester.widget<Container>(
       find.byKey(const ValueKey('app_theme_color_indicator')),
     );
@@ -2056,6 +2064,49 @@ void main() {
     await tester.ensureVisible(appThemeColorTile);
     expect(tester.getSize(appThemeColorTile).height, 64);
   });
+
+  testWidgets(
+    'appearance theme color dialog supports custom HSL color and system accent',
+    (tester) async {
+      await AppPreferences.init();
+      final themeProvider = ThemeProvider();
+      themeProvider.setSystemAccentColor(const Color(0xFF1E88E5));
+      final harness = AppRuntimeWidgetTestFixture();
+      addTearDown(harness.dispose);
+      await tester.pumpWidget(
+        harness.build(const SettingsTab(), themeProvider: themeProvider),
+      );
+      await tester.pump();
+
+      final i18n = harness.languageProvider;
+      await tester.tap(find.text(i18n.tr('section_appearance')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('app_theme_color_tile')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('theme_color_system_option')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('theme_color_system_option')));
+      await tester.pumpAndSettle();
+      expect(themeProvider.useSystemAccentColor, isTrue);
+
+      await tester.tap(find.byKey(const ValueKey('app_theme_color_tile')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('theme_color_custom_toggle')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('theme_color_custom_editor')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('theme_color_custom_apply')));
+      await tester.pumpAndSettle();
+      expect(themeProvider.customThemeColor, isNotNull);
+      expect(themeProvider.useSystemAccentColor, isFalse);
+    },
+  );
 
   testWidgets('appearance reports a failed theme preference write', (
     tester,

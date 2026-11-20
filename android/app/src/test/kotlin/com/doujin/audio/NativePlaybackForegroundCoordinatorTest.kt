@@ -20,7 +20,7 @@ class NativePlaybackForegroundCoordinatorTest {
         assertTrue(coordinator.hasPendingPlaybackStarts)
         environment.runFirst(5_000L)
         assertFalse(coordinator.hasPendingPlaybackStarts)
-        assertEquals(listOf(10_000L), environment.delays())
+        assertEquals(listOf(0L), environment.delays())
     }
 
     @Test
@@ -100,7 +100,7 @@ class NativePlaybackForegroundCoordinatorTest {
     }
 
     @Test
-    fun `grace is scheduled once and cancelled when playback resumes`() {
+    fun `idle stop is scheduled once and cancelled when playback resumes`() {
         val environment = FakeForegroundEnvironment()
         val host = FakeForegroundHost(hasPlaybackToKeepAlive = false)
         val coordinator = coordinator(host, environment)
@@ -108,116 +108,28 @@ class NativePlaybackForegroundCoordinatorTest {
         coordinator.sync()
         coordinator.sync()
 
-        assertEquals(listOf(10_000L), environment.delays())
+        assertEquals(listOf(0L), environment.delays())
 
         host.hasPlaybackToKeepAlive = true
         coordinator.sync()
 
         assertTrue(environment.delays().contains(4_000L))
-        assertFalse(environment.delays().contains(10_000L))
+        assertFalse(environment.delays().contains(0L))
         assertEquals(1, host.activeSyncs)
     }
 
     @Test
-    fun `idle grace notifies once at window start not at expiry`() {
+    fun `idle playback requests one deferred teardown`() {
         val environment = FakeForegroundEnvironment()
         val host = FakeForegroundHost(hasPlaybackToKeepAlive = false)
         val coordinator = coordinator(host, environment)
-
-        // sync() runs on nearly every player event while paused; the hook must
-        // fire once so releasing the wake lock is not re-done in a loop.
-        coordinator.sync()
-        coordinator.sync()
-        coordinator.sync()
-
-        assertEquals(1, host.idleGraceBegans)
-        assertEquals(0, host.graceExpiries)
-    }
-
-    @Test
-    fun `overdue grace is force closed when its timer slept through the deadline`() {
-        val environment = FakeForegroundEnvironment()
-        val host = FakeForegroundHost(
-            hasPlaybackToKeepAlive = false,
-            hasSessions = false
-        )
-        val coordinator = coordinator(host, environment)
         coordinator.startBootstrap()
-        environment.elapsedRealtimeMs = 100_000L
         coordinator.sync()
 
-        // Deep sleep: the postDelayed grace runnable never ran, but the
-        // sleep-inclusive clock is well past the deadline.
-        environment.elapsedRealtimeMs = 100_000L + 10_000L
-        val closed = coordinator.expireGraceIfOverdue()
+        environment.runFirst(0L)
 
-        assertTrue(closed)
-        assertEquals(1, host.graceExpiries)
-        assertEquals(1, host.foregroundStops)
-        assertFalse(coordinator.isStarted)
-        // The stale runnable must not fire a second time later.
+        assertEquals(1, host.idleStopRequests)
         assertTrue(environment.tasks.isEmpty())
-    }
-
-    @Test
-    fun `grace still inside its window is left alone`() {
-        val environment = FakeForegroundEnvironment()
-        val host = FakeForegroundHost(hasPlaybackToKeepAlive = false)
-        val coordinator = coordinator(host, environment)
-        coordinator.sync()
-
-        environment.elapsedRealtimeMs = 9_999L
-
-        assertFalse(coordinator.expireGraceIfOverdue())
-        assertEquals(0, host.graceExpiries)
-    }
-
-    @Test
-    fun `overdue check is inert when no grace window is open`() {
-        val environment = FakeForegroundEnvironment()
-        val host = FakeForegroundHost()
-        val coordinator = coordinator(host, environment)
-        coordinator.startOrUpdate()
-
-        environment.elapsedRealtimeMs = 10_000_000L
-
-        assertFalse(coordinator.expireGraceIfOverdue())
-        assertEquals(0, host.graceExpiries)
-        assertTrue(coordinator.isStarted)
-    }
-
-    @Test
-    fun `expired grace stops resources when playback remains idle`() {
-        val environment = FakeForegroundEnvironment()
-        val host = FakeForegroundHost(
-            hasPlaybackToKeepAlive = false,
-            hasSessions = false
-        )
-        val coordinator = coordinator(host, environment)
-        coordinator.startBootstrap()
-        coordinator.sync()
-
-        environment.runFirst(10_000L)
-
-        assertEquals(1, host.graceExpiries)
-        assertEquals(1, host.foregroundStops)
-        assertFalse(coordinator.isStarted)
-    }
-
-    @Test
-    fun `idle grace removes the minimal notification while paused sessions remain`() {
-        val environment = FakeForegroundEnvironment()
-        val host = FakeForegroundHost()
-        val coordinator = coordinator(host, environment)
-        coordinator.startOrUpdate()
-
-        host.hasPlaybackToKeepAlive = false
-        coordinator.sync()
-        environment.runFirst(10_000L)
-
-        assertTrue(host.hasSessions)
-        assertEquals(1, host.foregroundStops)
-        assertFalse(coordinator.isStarted)
     }
 
     @Test
@@ -227,36 +139,11 @@ class NativePlaybackForegroundCoordinatorTest {
         val coordinator = coordinator(host, environment)
 
         repeat(3) { coordinator.sync() }
-        coordinator.triggerWatchdog()
+        coordinator.repairNotificationIfMissing()
 
         assertEquals(1, host.playbackStarts)
         assertTrue(coordinator.isStarted)
         assertEquals(0, host.foregroundStops)
-    }
-
-    /**
-     * Force-closing an overdue window reports true even when it decided not to
-     * stop, because playback resumed inside the window. Callers must therefore
-     * re-check playback state instead of treating true as "service stopped" -
-     * the alarm-backed heartbeat would otherwise cancel the Doze backstop for
-     * playback that is still running.
-     */
-    @Test
-    fun `force closed grace reports true without stopping resumed playback`() {
-        val environment = FakeForegroundEnvironment()
-        val host = FakeForegroundHost(hasPlaybackToKeepAlive = false)
-        val coordinator = coordinator(host, environment)
-        coordinator.startOrUpdate()
-        environment.elapsedRealtimeMs = 100_000L
-        coordinator.sync()
-
-        host.hasPlaybackToKeepAlive = true
-        environment.elapsedRealtimeMs = 100_000L + 10_000L
-
-        assertTrue(coordinator.expireGraceIfOverdue())
-        assertEquals(0, host.graceExpiries)
-        assertEquals(0, host.foregroundStops)
-        assertTrue(coordinator.isStarted)
     }
 
     @Test
@@ -266,52 +153,14 @@ class NativePlaybackForegroundCoordinatorTest {
         val coordinator = coordinator(host, environment)
         coordinator.startOrUpdate()
 
-        coordinator.ensureWatchdog()
-        coordinator.ensureWatchdog()
+        coordinator.sync()
+        coordinator.sync()
         environment.runFirst(4_000L)
 
-        assertEquals(1, host.watchdogRefreshes)
         // Still posted and signature unchanged: no re-post. A blind forceRefresh
         // here costs ~180 notification rebuilds over a 12h session.
         assertEquals(1, host.playbackStarts)
         assertEquals(listOf(4_000L), environment.delays())
-    }
-
-    @Test
-    fun `twelve hours of playback retains foreground and one watchdog then releases on pause`() {
-        val environment = FakeForegroundEnvironment()
-        val host = FakeForegroundHost()
-        val watchdogIntervalMs = 4 * 60 * 1000L
-        val coordinator = NativePlaybackForegroundCoordinator(
-            host = host,
-            environment = environment,
-            stopGraceMs = 0L,
-            watchdogIntervalMs = watchdogIntervalMs
-        )
-        coordinator.sync()
-
-        repeat(180) { tick ->
-            environment.elapsedRealtimeMs = (tick + 1) * watchdogIntervalMs
-            environment.runFirst(watchdogIntervalMs)
-            // Removing the Activity task must not release ongoing playback.
-            assertFalse(coordinator.onTaskRemoved())
-            assertTrue(coordinator.isStarted)
-            assertEquals(listOf(watchdogIntervalMs), environment.delays())
-        }
-
-        assertEquals(12 * 60 * 60 * 1000L, environment.elapsedRealtimeMs)
-        assertEquals(180, host.watchdogRefreshes)
-        assertEquals(1, host.playbackStarts)
-        assertEquals(0, host.foregroundStops)
-
-        host.hasPlaybackToKeepAlive = false
-        coordinator.sync()
-        environment.runFirst(0L)
-
-        assertEquals(1, host.idleGraceBegans)
-        assertEquals(1, host.foregroundStops)
-        assertFalse(coordinator.isStarted)
-        assertTrue(environment.tasks.isEmpty())
     }
 
     @Test
@@ -321,7 +170,7 @@ class NativePlaybackForegroundCoordinatorTest {
         val coordinator = coordinator(host, environment)
         coordinator.startOrUpdate()
 
-        coordinator.ensureWatchdog()
+        coordinator.sync()
         environment.runFirst(4_000L)
 
         assertEquals(2, host.playbackStarts)
@@ -334,7 +183,7 @@ class NativePlaybackForegroundCoordinatorTest {
         val coordinator = coordinator(host, environment)
         coordinator.startOrUpdate()
 
-        coordinator.ensureWatchdog()
+        coordinator.sync()
         environment.runFirst(4_000L)
 
         assertEquals(1, host.playbackStarts)
@@ -346,7 +195,7 @@ class NativePlaybackForegroundCoordinatorTest {
         val host = FakeForegroundHost()
         val coordinator = coordinator(host, environment)
         coordinator.startOrUpdate()
-        coordinator.ensureWatchdog()
+        coordinator.sync()
 
         host.hasPlaybackToKeepAlive = false
         environment.runFirst(4_000L)
@@ -355,32 +204,17 @@ class NativePlaybackForegroundCoordinatorTest {
     }
 
     @Test
-    fun `task removal preserves active sessions and stops empty service`() {
-        val environment = FakeForegroundEnvironment()
-        val host = FakeForegroundHost()
-        val coordinator = coordinator(host, environment)
-
-        assertFalse(coordinator.onTaskRemoved())
-        host.hasPlaybackToKeepAlive = false
-        assertFalse(coordinator.onTaskRemoved())
-        assertTrue(environment.delays().contains(10_000L))
-
-        host.hasSessions = false
-        assertTrue(coordinator.onTaskRemoved())
-        assertEquals(1, host.foregroundStops)
-    }
-
-    @Test
     fun `stop removes the minimal notification and shutdown cancels tasks`() {
         val environment = FakeForegroundEnvironment()
         val host = FakeForegroundHost()
         val coordinator = coordinator(host, environment)
         coordinator.startOrUpdate()
-        coordinator.ensureWatchdog()
+        coordinator.sync()
         host.hasPlaybackToKeepAlive = false
         coordinator.sync()
 
         coordinator.stop(reason = "test")
+        assertTrue(environment.tasks.isEmpty())
         coordinator.shutdown()
 
         assertEquals(2, host.foregroundStops)
@@ -394,14 +228,12 @@ class NativePlaybackForegroundCoordinatorTest {
     ) = NativePlaybackForegroundCoordinator(
         host = host,
         environment = environment,
-        stopGraceMs = 10_000L,
         watchdogIntervalMs = 4_000L
     )
 }
 
 private class FakeForegroundEnvironment : NativePlaybackForegroundEnvironment {
     val tasks = linkedMapOf<Runnable, Long>()
-    var elapsedRealtimeMs = 0L
 
     override fun postDelayed(runnable: Runnable, delayMs: Long) {
         tasks[runnable] = delayMs
@@ -410,8 +242,6 @@ private class FakeForegroundEnvironment : NativePlaybackForegroundEnvironment {
     override fun remove(runnable: Runnable) {
         tasks.remove(runnable)
     }
-
-    override fun elapsedRealtimeMs(): Long = elapsedRealtimeMs
 
     fun delays(): List<Long> = tasks.values.toList()
 
@@ -424,16 +254,13 @@ private class FakeForegroundEnvironment : NativePlaybackForegroundEnvironment {
 
 private class FakeForegroundHost(
     override var hasPlaybackToKeepAlive: Boolean = true,
-    override var hasSessions: Boolean = true,
     override var playbackSuspended: Boolean = false,
     var signature: String? = "playback",
     var notificationPosted: Boolean? = true,
     var failPlaybackStart: Boolean = false
 ) : NativePlaybackForegroundHost {
     var activeSyncs = 0
-    var graceExpiries = 0
-    var idleGraceBegans = 0
-    var watchdogRefreshes = 0
+    var idleStopRequests = 0
     var playbackStarts = 0
     var bootstrapStarts = 0
     var foregroundStops = 0
@@ -445,18 +272,10 @@ private class FakeForegroundHost(
         activeSyncs += 1
     }
 
-    override fun onIdleGraceBegan() {
-        idleGraceBegans += 1
-    }
-
     override fun isForegroundNotificationPosted(): Boolean? = notificationPosted
 
-    override fun onGraceExpired() {
-        graceExpiries += 1
-    }
-
-    override fun onWatchdog() {
-        watchdogRefreshes += 1
+    override fun onIdleStop() {
+        idleStopRequests += 1
     }
 
     override fun startPlaybackForeground() {

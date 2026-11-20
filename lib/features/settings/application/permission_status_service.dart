@@ -17,7 +17,6 @@ class PermissionStatusSnapshot {
   const PermissionStatusSnapshot({
     required this.backgroundRunAllowed,
     this.notificationsAllowed = true,
-    required this.exactAlarmsAllowed,
     required this.manageFilesAllowed,
     required this.overlayAllowed,
     required this.updateInstallsAllowed,
@@ -25,7 +24,6 @@ class PermissionStatusSnapshot {
 
   final bool backgroundRunAllowed;
   final bool notificationsAllowed;
-  final bool exactAlarmsAllowed;
   final bool manageFilesAllowed;
   final bool overlayAllowed;
   final bool updateInstallsAllowed;
@@ -33,7 +31,6 @@ class PermissionStatusSnapshot {
   Map<String, bool> toJson() => <String, bool>{
     'backgroundRunAllowed': backgroundRunAllowed,
     'notificationsAllowed': notificationsAllowed,
-    'exactAlarmsAllowed': exactAlarmsAllowed,
     'manageFilesAllowed': manageFilesAllowed,
     'overlayAllowed': overlayAllowed,
     'updateInstallsAllowed': updateInstallsAllowed,
@@ -148,28 +145,31 @@ class PermissionStatusService {
     if (!_isAndroid) {
       return const PermissionStatusSnapshot(
         backgroundRunAllowed: true,
-        exactAlarmsAllowed: true,
         manageFilesAllowed: true,
         overlayAllowed: true,
         updateInstallsAllowed: true,
       );
     }
 
-    final results = await Future.wait<bool>([
+    final (
+      backgroundRun,
+      notifications,
+      manageFiles,
+      overlay,
+      updateInstalls,
+    ) = await (
       isGranted(PermissionCapability.backgroundRun),
       isGranted(PermissionCapability.notifications),
-      isGranted(PermissionCapability.exactAlarms),
       isGranted(PermissionCapability.manageFiles),
       isGranted(PermissionCapability.overlay),
       isGranted(PermissionCapability.updateInstalls),
-    ]);
+    ).wait;
     return PermissionStatusSnapshot(
-      backgroundRunAllowed: results[0],
-      notificationsAllowed: results[1],
-      exactAlarmsAllowed: results[2],
-      manageFilesAllowed: results[3],
-      overlayAllowed: results[4],
-      updateInstallsAllowed: results[5],
+      backgroundRunAllowed: backgroundRun,
+      notificationsAllowed: notifications,
+      manageFilesAllowed: manageFiles,
+      overlayAllowed: overlay,
+      updateInstallsAllowed: updateInstalls,
     );
   }
 

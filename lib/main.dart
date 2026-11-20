@@ -66,10 +66,16 @@ Future<void> main() async {
         ]);
         startupRestoreOutcome = await _initializeAudioPlayerApp();
         await themeProvider.reloadPersistedState();
+        final lifecycleService = AppLifecyclePlatformService();
+        final systemAccent = await lifecycleService.getSystemAccentColor();
+        if (systemAccent != null) {
+          themeProvider.setSystemAccentColor(Color(systemAccent));
+        }
         unawaited(
-          AppLifecyclePlatformService().syncAppTheme(
-            preset: themeProvider.appThemeColor.name,
+          lifecycleService.syncAppTheme(
+            preset: themeProvider.effectiveStartupPreset.name,
             themeMode: themeProvider.themeMode.name,
+            pureBlack: themeProvider.pureBlackTheme,
           ),
         );
         shouldShowOnboarding = AppPreferences.shouldShowOnboardingSync();

@@ -42,13 +42,12 @@ void main() {
     );
     return tester
         .widgetList<Transform>(transforms)
-        .firstWhere((widget) => !widget.transformHitTests)
-        .transform
-        .entry(0, 0);
+        .where((widget) => !widget.transformHitTests)
+        .fold<double>(1.0, (scale, t) => scale * t.transform.entry(0, 0));
   }
 
   testWidgets(
-    'Windows card actions scale only their icon without pointer ink',
+    'Windows card actions keep their size and highlight without pointer ink',
     (tester) async {
       final hoverColor = ValueNotifier(Colors.black26);
       addTearDown(hoverColor.dispose);
@@ -113,7 +112,7 @@ void main() {
         await mouse.down(center);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 90));
-        expect(scaleOf(tester, activeIcon), 0.82);
+        expect(scaleOf(tester, activeIcon), 1.0);
         expect(scaleOf(tester, otherIcon), 1.0);
         expect(visibleInk(), isEmpty);
         await mouse.up();

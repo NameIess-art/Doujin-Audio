@@ -887,22 +887,13 @@ void main() {
         Colors.transparent,
       );
 
-      final iconTransform = find
-          .ancestor(of: backIconFinder, matching: find.byType(Transform))
-          .first;
-      expect(
-        tester.widget<Transform>(iconTransform).transform.getMaxScaleOnAxis(),
-        closeTo(1.0, 0.001),
-      );
+      final iconBounds = tester.getRect(backIconFinder);
 
       final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
       await mouse.addPointer(location: tester.getCenter(backButtonFinder));
       await tester.pumpAndSettle();
 
-      expect(
-        tester.widget<Transform>(iconTransform).transform.getMaxScaleOnAxis(),
-        closeTo(1.0, 0.001),
-      );
+      expect(tester.getRect(backIconFinder), iconBounds);
       expect(
         IconTheme.of(tester.element(backIconFinder)).color,
         theme.colorScheme.primary,

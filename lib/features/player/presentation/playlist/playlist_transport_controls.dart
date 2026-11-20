@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:flutter/gestures.dart' show kPrimaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -106,7 +107,7 @@ class TransportPlaybackControlPanel extends StatelessWidget {
   }
 }
 
-class PrimaryPlaybackControls extends ConsumerWidget {
+class PrimaryPlaybackControls extends ConsumerStatefulWidget {
   const PrimaryPlaybackControls({
     super.key,
     required this.session,
@@ -119,7 +120,135 @@ class PrimaryPlaybackControls extends ConsumerWidget {
   final bool isLandscape;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PrimaryPlaybackControls> createState() =>
+      _PrimaryPlaybackControlsState();
+}
+
+class _PrimaryPlaybackControlsState
+    extends ConsumerState<PrimaryPlaybackControls> {
+  static const _rewindOffset = Duration(seconds: -5);
+  static const _forwardOffset = Duration(seconds: 5);
+  static const _seekRepeatInterval = Duration(milliseconds: 300);
+
+  late final AppLifecycleListener _lifecycle;
+  Timer? _seekRepeatTimer;
+  Duration? _heldSeekOffset;
+  bool _repeatSeekInFlight = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycle = AppLifecycleListener(
+      onStateChange: (state) {
+        if (state != AppLifecycleState.resumed) _stopSeekRepeat();
+      },
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant PrimaryPlaybackControls oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.playback != oldWidget.playback ||
+        widget.session.id != oldWidget.session.id ||
+        widget.session.currentTrackPath != oldWidget.session.currentTrackPath ||
+        widget.session.currentQueueIndex !=
+            oldWidget.session.currentQueueIndex) {
+      _stopSeekRepeat();
+    }
+  }
+
+  @override
+  void deactivate() {
+    _stopSeekRepeat();
+    super.deactivate();
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    _stopSeekRepeat();
+    super.dispose();
+  }
+
+  void _seekOnce(Duration offset) {
+    unawaited(
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+    );
+    unawaited(widget.playback.seekSessionByOffset(widget.session.id, offset));
+  }
+
+  void _startSeekRepeat(Duration offset) {
+    final lifecycleState = WidgetsBinding.instance.lifecycleState;
+    if (_seekRepeatTimer != null ||
+        (lifecycleState != null && lifecycleState != AppLifecycleState.resumed) ||
+        ModalRoute.isCurrentOf(context) == false) {
+      return;
+    }
+    final playback = widget.playback;
+    final session = playback.sessionById(widget.session.id);
+    if (session == null ||
+        session.isDisposed ||
+        session.currentTrackPath.isEmpty ||
+        session.currentTrackPath != widget.session.currentTrackPath ||
+        session.currentQueueIndex != widget.session.currentQueueIndex) {
+      return;
+    }
+    final trackPath = session.currentTrackPath;
+    final queueIndex = session.currentQueueIndex;
+    final loadGeneration = session.loadGeneration;
+
+    Future<void> repeatSeek() async {
+      final duration = session.duration;
+      final atBoundary = offset.isNegative
+          ? session.position <= Duration.zero
+          : duration != null &&
+                duration > Duration.zero &&
+                session.position >= duration;
+      if (ModalRoute.isCurrentOf(context) == false ||
+          !identical(playback.sessionById(session.id), session) ||
+          session.isDisposed ||
+          session.currentTrackPath != trackPath ||
+          session.currentQueueIndex != queueIndex ||
+          session.loadGeneration != loadGeneration ||
+          atBoundary) {
+        _stopSeekRepeat();
+        return;
+      }
+      if (_repeatSeekInFlight) return;
+      _repeatSeekInFlight = true;
+      try {
+        await playback.seekSessionByOffset(session.id, offset);
+      } finally {
+        _repeatSeekInFlight = false;
+      }
+    }
+
+    _heldSeekOffset = offset;
+    _seekRepeatTimer = Timer.periodic(
+      _seekRepeatInterval,
+      (_) => unawaited(repeatSeek()),
+    );
+    unawaited(
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+    );
+    unawaited(repeatSeek());
+  }
+
+  void _finishSeekRepeat(Duration offset) {
+    if (_heldSeekOffset == offset) _stopSeekRepeat();
+  }
+
+  void _stopSeekRepeat() {
+    _seekRepeatTimer?.cancel();
+    _seekRepeatTimer = null;
+    _heldSeekOffset = null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final session = widget.session;
+    final playback = widget.playback;
+    final isLandscape = widget.isLandscape;
     final transport = ref.watch(
       sessionDetailTransportProvider(session.id).select(
         (state) => (
@@ -193,15 +322,9 @@ class PrimaryPlaybackControls extends ConsumerWidget {
                 icon: Icons.replay_5_rounded,
                 iconSize: skipIconSize * 0.85,
                 nudgeX: -4,
-                onPressed: () {
-                  AppInteractionFeedback.trigger(
-                    AppInteractionFeedbackType.selection,
-                  );
-                  playback.seekSessionByOffset(
-                    session.id,
-                    const Duration(seconds: -5),
-                  );
-                },
+                onPressed: () => _seekOnce(_rewindOffset),
+                onHold: () => _startSeekRepeat(_rewindOffset),
+                onHoldEnd: () => _finishSeekRepeat(_rewindOffset),
               ),
               Container(
                 decoration: sessionDetailPlayButtonDecoration(
@@ -263,15 +386,9 @@ class PrimaryPlaybackControls extends ConsumerWidget {
                 icon: Icons.forward_5_rounded,
                 iconSize: skipIconSize * 0.8,
                 nudgeX: 4,
-                onPressed: () {
-                  AppInteractionFeedback.trigger(
-                    AppInteractionFeedbackType.selection,
-                  );
-                  playback.seekSessionByOffset(
-                    session.id,
-                    const Duration(seconds: 5),
-                  );
-                },
+                onPressed: () => _seekOnce(_forwardOffset),
+                onHold: () => _startSeekRepeat(_forwardOffset),
+                onHoldEnd: () => _finishSeekRepeat(_forwardOffset),
               ),
               PrimaryTransportButton(
                 tooltip: i18n.tr('next_track'),
@@ -765,6 +882,8 @@ class PrimaryTransportButton extends StatefulWidget {
     required this.icon,
     required this.iconSize,
     required this.onPressed,
+    this.onHold,
+    this.onHoldEnd,
     this.tooltip,
     this.nudgeX = 0,
   });
@@ -774,6 +893,8 @@ class PrimaryTransportButton extends StatefulWidget {
   final IconData icon;
   final double iconSize;
   final VoidCallback onPressed;
+  final VoidCallback? onHold;
+  final VoidCallback? onHoldEnd;
   final String? tooltip;
   final double nudgeX;
 
@@ -785,6 +906,7 @@ class _PrimaryTransportButtonState extends State<PrimaryTransportButton>
     with SingleTickerProviderStateMixin {
   late final AnimationController _nudgeController;
   late Animation<double> _nudgeOffset;
+  int? _pressedPointer;
 
   @override
   void initState() {
@@ -804,6 +926,7 @@ class _PrimaryTransportButtonState extends State<PrimaryTransportButton>
     }
     if (!widget.enabled && oldWidget.enabled) {
       _nudgeController.reset();
+      _pressedPointer = null;
     }
   }
 
@@ -845,6 +968,12 @@ class _PrimaryTransportButtonState extends State<PrimaryTransportButton>
     widget.onPressed();
   }
 
+  void _finishPointer(PointerEvent event) {
+    if (event.pointer != _pressedPointer) return;
+    _pressedPointer = null;
+    widget.onHoldEnd?.call();
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -863,7 +992,7 @@ class _PrimaryTransportButtonState extends State<PrimaryTransportButton>
 
     final iconWidget = Icon(widget.icon, size: widget.iconSize);
 
-    return Container(
+    final button = Container(
       constraints: widget.constraints,
       decoration: BoxDecoration(shape: BoxShape.circle, color: plateColor),
       child: IconButton(
@@ -878,6 +1007,16 @@ class _PrimaryTransportButtonState extends State<PrimaryTransportButton>
           ),
         ),
         onPressed: widget.enabled ? _handlePressed : null,
+        onLongPress: widget.enabled && widget.onHold != null
+            ? () {
+                // Semantics can invoke long press without a pointer release.
+                if (_pressedPointer == null) {
+                  _handlePressed();
+                } else {
+                  widget.onHold!();
+                }
+              }
+            : null,
         icon: widget.nudgeX == 0
             ? iconWidget
             : AnimatedBuilder(
@@ -893,6 +1032,18 @@ class _PrimaryTransportButtonState extends State<PrimaryTransportButton>
                 },
               ),
       ),
+    );
+    if (!widget.enabled || widget.onHold == null) return button;
+    return Listener(
+      onPointerDown: (event) {
+        if (event.buttons == kPrimaryButton) _pressedPointer ??= event.pointer;
+      },
+      onPointerMove: (event) {
+        if ((event.buttons & kPrimaryButton) == 0) _finishPointer(event);
+      },
+      onPointerUp: _finishPointer,
+      onPointerCancel: _finishPointer,
+      child: button,
     );
   }
 }

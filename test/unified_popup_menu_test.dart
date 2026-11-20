@@ -4,6 +4,7 @@ import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_buttons.dart';
 import 'package:doujin_audio/core/widgets/app_dialog.dart';
 import 'package:doujin_audio/core/widgets/app_entry_ink_well.dart';
+import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
 import 'package:doujin_audio/core/widgets/unified_popup_menu.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/app/presentation/work_detail_navigation.dart';
@@ -138,6 +139,81 @@ void main() {
     expect(selected, 1);
     expect(first, findsNothing);
   });
+
+  for (final interruptOpening in [false, true]) {
+    testWidgets(
+      'Windows toolbar menu scales around the trigger (interrupted: $interruptOpening)',
+      (tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(platform: TargetPlatform.windows),
+            home: Scaffold(
+              body: Center(
+                child: UnifiedPopupMenuButton<int>(
+                  icon: Icons.more_vert,
+                  tooltip: 'Open toolbar menu',
+                  entries: const [
+                    UnifiedMenuEntry.action(value: 1, label: 'Menu action'),
+                  ],
+                  onSelected: (_) {},
+                ),
+              ),
+            ),
+          ),
+        );
+        final trigger = find.byTooltip('Open toolbar menu');
+        final anchor = tester.getCenter(trigger);
+        await tester.tap(trigger);
+        await tester.pump();
+
+        final action = find.text('Menu action');
+        final menuTransform = find
+            .ancestor(
+              of: action,
+              matching: find.byElementPredicate(
+                (element) =>
+                    element is RenderObjectElement &&
+                    element.renderObject is RenderTransform,
+              ),
+            )
+            .first;
+        final menu = tester.renderObject<RenderTransform>(menuTransform).child!;
+        final pivot = menu.globalToLocal(anchor);
+        double scale() => menu.getTransformTo(null).entry(0, 0);
+
+        var previous = scale();
+        expect(previous, lessThan(1));
+        final openingFrames = interruptOpening ? 4 : 13;
+        for (var frame = 0; frame < openingFrames; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          final current = scale();
+          expect(current, inInclusiveRange(previous, 1));
+          expect(
+            (menu.localToGlobal(pivot) - anchor).distance,
+            lessThan(0.001),
+          );
+          previous = current;
+        }
+        expect(previous, interruptOpening ? lessThan(1) : equals(1));
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pump();
+        expect(scale(), closeTo(previous, 0.001));
+        for (var frame = 0; frame < 13; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          if (action.evaluate().isEmpty) break;
+          final current = scale();
+          expect(current, inInclusiveRange(0.88, previous));
+          expect(
+            (menu.localToGlobal(pivot) - anchor).distance,
+            lessThan(0.001),
+          );
+          previous = current;
+        }
+        expect(action, findsNothing);
+      },
+    );
+  }
 
   for (final atLeft in [false, true]) {
     testWidgets(
@@ -1647,7 +1723,61 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('tall popup menu clamps inside short viewport and scrolls', (
+  testWidgets(
+    'short context menu stays fixed when dragged at either edge',
+    (tester) async {
+      late BuildContext hostContext;
+      var overscrollIndicators = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          scrollBehavior: const AppScrollBehavior(),
+          builder: (_, child) =>
+              NotificationListener<OverscrollIndicatorNotification>(
+                onNotification: (_) {
+                  overscrollIndicators++;
+                  return false;
+                },
+                child: child!,
+              ),
+          home: Builder(
+            builder: (context) {
+              hostContext = context;
+              return const Scaffold();
+            },
+          ),
+        ),
+      );
+      final menu = showUnifiedContextMenu<int>(
+        context: hostContext,
+        globalPosition: const Offset(360, 200),
+        entries: const [UnifiedMenuEntry.action(value: 1, label: 'Action')],
+      );
+      await tester.pumpAndSettle();
+
+      final row = find.byType(AppEntryInkWell);
+      final rowBounds = tester.getRect(row);
+      for (final delta in [const Offset(0, 60), const Offset(0, -60)]) {
+        final drag = await tester.startGesture(rowBounds.center);
+        await drag.moveBy(delta / 2);
+        await drag.moveBy(delta / 2);
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(tester.getRect(row), rowBounds);
+        await drag.up();
+        await tester.pumpAndSettle();
+      }
+      expect(overscrollIndicators, 0);
+
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      expect(await menu, 1);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets('tall popup menu scrolls rows inside a fixed shadow', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(400, 320));
@@ -1655,6 +1785,7 @@ void main() {
     int? chosen;
     await tester.pumpWidget(
       MaterialApp(
+        scrollBehavior: const AppScrollBehavior(),
         home: Scaffold(
           body: Align(
             alignment: Alignment.bottomRight,
@@ -1676,12 +1807,21 @@ void main() {
 
     final firstRect = tester.getRect(find.text('Option 1'));
     expect(firstRect.top, greaterThanOrEqualTo(0));
+    final shadow = find.byWidgetPredicate(
+      (widget) =>
+          widget is DecoratedBox &&
+          widget.decoration is BoxDecoration &&
+          (widget.decoration as BoxDecoration).boxShadow?.isNotEmpty == true,
+    );
+    final shadowBounds = tester.getRect(shadow);
+    expect(shadowBounds.bottom, lessThanOrEqualTo(320));
     final scrollable = find.byType(Scrollable).last;
     await tester.scrollUntilVisible(
       find.text('Option 12'),
       120,
       scrollable: scrollable,
     );
+    expect(tester.getRect(shadow), shadowBounds);
     final lastRect = tester.getRect(find.text('Option 12'));
     expect(lastRect.bottom, lessThanOrEqualTo(320));
     await tester.tap(find.text('Option 12'));

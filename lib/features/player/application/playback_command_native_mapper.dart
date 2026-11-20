@@ -13,24 +13,40 @@ extension PlaybackCommandNativeMapper on PlaybackCommandCoordinator {
     final wasDetachedCurrent =
         currentSession != null &&
         _hasDetachedPlaybackQueueCurrent(currentSession);
+    final discardDetachedQueuePrefix =
+        currentSession?.hasDetachedQueueTrack == true &&
+        snapshot.discardedQueuePrefix;
+    var consumeDetachedTrack = false;
     if (snapshot.queueIndex >= 0 &&
         currentSession != null &&
         (currentSession.customQueueTracks?.isNotEmpty == true ||
             currentSession.isPlaybackQueue)) {
       // Translating the native index only needs the cached paths and indices.
-      final scope = _playbackQueueScopeFor(
-        currentSession,
-        currentPath: snapshot.path ?? currentSession.currentTrackPath,
-        repositionCurrentIndex: false,
-      );
-      if (snapshot.queueIndex < scope.queueIndices.length &&
+      final scope =
+          (discardDetachedQueuePrefix
+              ? currentSession.nativePlaybackQueueScopeCache
+              : null) ??
+          _playbackQueueScopeFor(
+            currentSession,
+            currentPath: discardDetachedQueuePrefix
+                ? currentSession.customQueueTracks?.firstOrNull?.path ??
+                      currentSession.currentTrackPath
+                : snapshot.path ?? currentSession.currentTrackPath,
+            repositionCurrentIndex: false,
+          );
+      final nativeIndex = discardDetachedQueuePrefix
+          ? snapshot.queueIndex + 1
+          : snapshot.queueIndex;
+      if (nativeIndex < scope.queueIndices.length &&
           (snapshot.path == null ||
               PathMatcher.equalsNormalized(
-                scope.paths[snapshot.queueIndex],
+                scope.paths[nativeIndex],
                 _playbackFacade.resolveRetargetedPath(snapshot.path!),
               ))) {
+        final queueIndex = scope.queueIndices[nativeIndex];
+        consumeDetachedTrack = discardDetachedQueuePrefix && queueIndex > 0;
         snapshot = snapshot.copyWith(
-          queueIndex: scope.queueIndices[snapshot.queueIndex],
+          queueIndex: consumeDetachedTrack ? queueIndex - 1 : queueIndex,
         );
       }
     }
@@ -64,11 +80,15 @@ extension PlaybackCommandNativeMapper on PlaybackCommandCoordinator {
     final normalizedSnapshot = application.snapshot;
     final session = application.session;
     final previousTrackPath = application.previousTrackPath;
+    if (consumeDetachedTrack && session != null) {
+      session.customQueueTracks = session.playbackQueue?.expandedTracks;
+      session.hasDetachedQueueTrack = false;
+    }
 
     // Update track duration in library if it was unknown
     if (session != null &&
         previousTrackPath != null &&
-        application.trackChanged) {
+        (application.trackChanged || consumeDetachedTrack)) {
       _refreshNotificationSubtitleForSession(
         session,
         position: session.position,
@@ -83,6 +103,8 @@ extension PlaybackCommandNativeMapper on PlaybackCommandCoordinator {
       _notifyPlaybackChanged(snapshot.sessionId);
     }
     if (wasDetachedCurrent &&
+        !consumeDetachedTrack &&
+        !snapshot.discardedQueuePrefix &&
         session != null &&
         session.currentQueueIndex > 0) {
       unawaited(_syncPlaybackQueueSession(session));

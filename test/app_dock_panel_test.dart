@@ -20,9 +20,7 @@ void main() {
         final headerColor = brightness == Brightness.dark
             ? cs.surfaceBright
             : cs.surfaceContainerHigh;
-        final dockColor = brightness == Brightness.dark
-            ? cs.surfaceContainer
-            : cs.surfaceContainerHigh;
+        final dockColor = cs.surfaceContainerHigh;
         await tester.pumpWidget(
           ValueListenableBuilder<bool>(
             valueListenable: enabled,
@@ -161,7 +159,7 @@ void main() {
       final glass = tester.widget<AppGlassSurface>(
         find.byType(AppGlassSurface),
       );
-      expect(glass.blurSigma, 6);
+      expect(glass.blurSigma, 16);
       final tint = tester.widget<ColoredBox>(
         find.descendant(
           of: find.byType(AppGlassSurface),
@@ -170,7 +168,12 @@ void main() {
       );
       expect(
         tint.color.a,
-        closeTo(brightness == Brightness.dark ? 0.756 : 0.72, 1e-6),
+        closeTo(
+          brightness == Brightness.dark
+              ? AppGlassSurface.darkGlassOpacity
+              : AppGlassSurface.lightGlassOpacity,
+          1e-6,
+        ),
       );
       expect(glass.borderRadius, BorderRadius.circular(100));
       final backgrounds = tester.widgetList<DecoratedBox>(

@@ -94,8 +94,8 @@ class _AsmrWorkCover extends ConsumerWidget {
           Positioned(
             right: -2,
             bottom: -2,
-            child: _AsmrSelectionIndicator(
-              workId: workKey,
+            child: SelectionCheckmark(
+              indicatorKey: ValueKey<String>('asmr_selection_indicator_$workKey'),
               isSelected: isSelected,
             ),
           ),

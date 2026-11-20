@@ -506,7 +506,6 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                           ) ??
                           isPinned,
                       sessionId: sessionId,
-                      color: activeColor,
                     ),
                   ),
                 ),

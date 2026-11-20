@@ -68,7 +68,7 @@ void main() {
   });
 
   testWidgets(
-    'Windows ASMR account logout button highlights and scales on hover and press',
+    'Windows ASMR account logout button highlights and keeps its size',
     (tester) async {
       final controller = _LogoutFailureAsmrLibraryController(
         createTestAsmrServices(),
@@ -129,7 +129,7 @@ void main() {
 
       await mouse.down(tester.getCenter(logoutFinder));
       await tester.pumpAndSettle();
-      expect(readScale(), closeTo(0.94, 0.001));
+      expect(readScale(), 1.0);
       await mouse.up();
       await tester.pumpAndSettle();
       await mouse.removePointer();

@@ -5,7 +5,7 @@
     <!-- System mode dynamic surface colors (night mode overrides) -->
     <color name="launch_background_rose">#141112</color>
     <color name="launch_background_lavender">#131117</color>
-    <color name="launch_background_blue">#101417</color>
+    <color name="launch_background_blue">#101218</color>
     <color name="launch_background_mint">#101513</color>
     <color name="launch_background_amber">#151310</color>
     <color name="launch_background_gray">#121315</color>

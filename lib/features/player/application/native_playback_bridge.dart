@@ -35,6 +35,7 @@ class NativePlaybackSnapshot {
     this.duration,
     this.error,
     this.queueIndex = 0,
+    this.discardedQueuePrefix = false,
     List<String> retainedUris = const <String>[],
     this.hasRetainedUrisPayload = false,
     this.transportCommandId,
@@ -66,6 +67,7 @@ class NativePlaybackSnapshot {
   final EqCapabilities eqCapabilities;
   final String? error;
   final int queueIndex;
+  final bool discardedQueuePrefix;
   final List<String> retainedUris;
   final bool hasRetainedUrisPayload;
   final int? transportCommandId;
@@ -136,6 +138,7 @@ class NativePlaybackSnapshot {
       eqCapabilities: eqCapabilities ?? this.eqCapabilities,
       error: clearError ? null : (error ?? this.error),
       queueIndex: queueIndex ?? this.queueIndex,
+      discardedQueuePrefix: discardedQueuePrefix,
       retainedUris: retainedUris ?? this.retainedUris,
       hasRetainedUrisPayload:
           hasRetainedUrisPayload ?? this.hasRetainedUrisPayload,
@@ -186,6 +189,7 @@ class NativePlaybackSnapshot {
       eqCapabilities: EqCapabilities.fromJson(map['eqCapabilities']),
       error: map['error'] as String?,
       queueIndex: (map['queueIndex'] as num?)?.toInt() ?? 0,
+      discardedQueuePrefix: map['discardedQueuePrefix'] as bool? ?? false,
       retainedUris:
           (map['retainedUris'] as List?)
               ?.whereType<String>()

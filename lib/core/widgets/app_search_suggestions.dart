@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'app_buttons.dart';
 import 'app_entry_ink_well.dart';
 import 'app_search_filters.dart';
+import 'unified_popup_menu.dart';
 import '../media/search_query_utils.dart';
 import '../ui/ui_interaction_coordinator.dart';
 
@@ -27,6 +28,7 @@ class AppSearchSuggestionSection extends StatelessWidget {
     this.maxExpandedItems,
     this.onClear,
     this.clearLabel = 'Clear',
+    this.buildItemMenu,
   }) : assert(maxExpandedItems == null || maxExpandedItems > 0);
 
   final String title;
@@ -46,6 +48,7 @@ class AppSearchSuggestionSection extends StatelessWidget {
   final int? maxExpandedItems;
   final VoidCallback? onClear;
   final String clearLabel;
+  final List<UnifiedMenuEntry<VoidCallback>> Function(String)? buildItemMenu;
 
   @override
   Widget build(BuildContext context) {
@@ -58,6 +61,7 @@ class AppSearchSuggestionSection extends StatelessWidget {
         items: items,
         isSelected: isSelected,
         onToggle: onToggle,
+        buildItemMenu: buildItemMenu,
         accentColor: accent,
         maxItems: maxExpandedItems,
         collapsedRows: 3,
@@ -189,6 +193,7 @@ class AppElementChipSliver extends StatefulWidget {
     this.collapsedRows,
     this.headerBuilder,
     this.resolveRowCount = false,
+    this.buildItemMenu,
   }) : assert(maxItems == null || maxItems > 0),
        assert(collapsedRows == null || collapsedRows > 0);
 
@@ -198,6 +203,7 @@ class AppElementChipSliver extends StatefulWidget {
   final bool Function(String) isSelected;
   final bool Function(String)? isEnabled;
   final ValueChanged<String> onToggle;
+  final List<UnifiedMenuEntry<VoidCallback>> Function(String)? buildItemMenu;
   final bool Function(String)? isMuted;
   final String? mutedHint;
   final bool readOnly;
@@ -452,8 +458,12 @@ class _AppElementChipSliverState extends State<AppElementChipSliver> {
   Widget _chip(String item, double maxWidth, Color accent) {
     final enabled = widget.isEnabled?.call(item) ?? true;
     final muted = !enabled || (widget.isMuted?.call(item) ?? false);
-    return AppElementChip(
-      key: ValueKey(item),
+    final buildItemMenu = enabled && !widget.readOnly
+        ? widget.buildItemMenu
+        : null;
+    final key = ValueKey(item);
+    final chip = AppElementChip(
+      key: buildItemMenu == null ? key : null,
       label: widget.labels?[item] ?? item,
       maxWidth: maxWidth,
       accentColor: accent,
@@ -463,6 +473,15 @@ class _AppElementChipSliverState extends State<AppElementChipSliver> {
       onPressed: !enabled || widget.readOnly
           ? null
           : () => widget.onToggle(item),
+    );
+    if (buildItemMenu == null) return chip;
+    return UnifiedContextMenuRegion(
+      key: key,
+      buildEntries: () => buildItemMenu(item),
+      shape: const RoundedRectangleBorder(borderRadius: AppElementChip._radius),
+      openOnAndroidLongPress: true,
+      skipTraversal: true,
+      child: chip,
     );
   }
 }

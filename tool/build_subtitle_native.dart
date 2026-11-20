@@ -376,6 +376,9 @@ Future<void> main(List<String> args) async {
         '-DANDROID_ABI=$abi',
         '-DANDROID_PLATFORM=android-24',
         '-DCMAKE_BUILD_TYPE=Release',
+        // CrispASR uses headers. Module scanning can pull the host's
+        // libstdc++ module into the Android NDK's libc++ build.
+        '-DCMAKE_CXX_SCAN_FOR_MODULES=OFF',
         // Keep Release CPU optimizations and the public C ABI, including
         // upstream APIs without explicit export annotations.
         '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON',

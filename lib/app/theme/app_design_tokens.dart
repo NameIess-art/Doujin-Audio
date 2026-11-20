@@ -31,9 +31,9 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     return baseSize * scale;
   }
 
-  static const folderIconColor = Color(0xFFF59E0B);
-  static const textFileIconColor = Color(0xFF0EA5E9);
-  static const imageFileIconColor = Color(0xFFEC4899);
+  static const folderIconColor = Color(0xFFD97706);
+  static const textFileIconColor = Color(0xFF0284C7);
+  static const imageFileIconColor = Color(0xFFDB2777);
 
   const AppDesignTokens({
     required this.subtleBorderAlpha,
@@ -46,7 +46,11 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     required this.onWarning,
     required this.warningContainer,
     required this.onWarningContainer,
+    required this.folderColor,
+    required this.textFileColor,
+    required this.imageFileColor,
     this.barGlassEnabled = false,
+    this.pureBlack = false,
     this.spaceXxs = 4,
     this.spaceXs = 8,
     this.spaceSm = 12,
@@ -83,11 +87,14 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     onWarning: Color(0xFFFFF9F2),
     warningContainer: Color(0xFFFFDDB7),
     onWarningContainer: Color(0xFF5A3000),
+    folderColor: folderIconColor,
+    textFileColor: textFileIconColor,
+    imageFileColor: imageFileIconColor,
   );
 
   static const dark = AppDesignTokens(
-    subtleBorderAlpha: 0.15,
-    standardBorderAlpha: 0.28,
+    subtleBorderAlpha: 0.16,
+    standardBorderAlpha: 0.30,
     success: Color(0xFF8FDBA6),
     onSuccess: Color(0xFF0B3A1D),
     successContainer: Color(0xFF174D2A),
@@ -96,6 +103,9 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     onWarning: Color(0xFF4A2800),
     warningContainer: Color(0xFF603B08),
     onWarningContainer: Color(0xFFFFDDB7),
+    folderColor: Color(0xFFFBBF24),
+    textFileColor: Color(0xFF67C6F0),
+    imageFileColor: Color(0xFFF48FB1),
   );
 
   static AppDesignTokens of(BuildContext context) {
@@ -114,7 +124,11 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
   final Color onWarning;
   final Color warningContainer;
   final Color onWarningContainer;
+  final Color folderColor;
+  final Color textFileColor;
+  final Color imageFileColor;
   final bool barGlassEnabled;
+  final bool pureBlack;
   final double spaceXxs;
   final double spaceXs;
   final double spaceSm;
@@ -151,7 +165,11 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     Color? onWarning,
     Color? warningContainer,
     Color? onWarningContainer,
+    Color? folderColor,
+    Color? textFileColor,
+    Color? imageFileColor,
     bool? barGlassEnabled,
+    bool? pureBlack,
     double? spaceXxs,
     double? spaceXs,
     double? spaceSm,
@@ -187,7 +205,11 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
       onWarning: onWarning ?? this.onWarning,
       warningContainer: warningContainer ?? this.warningContainer,
       onWarningContainer: onWarningContainer ?? this.onWarningContainer,
+      folderColor: folderColor ?? this.folderColor,
+      textFileColor: textFileColor ?? this.textFileColor,
+      imageFileColor: imageFileColor ?? this.imageFileColor,
       barGlassEnabled: barGlassEnabled ?? this.barGlassEnabled,
+      pureBlack: pureBlack ?? this.pureBlack,
       spaceXxs: spaceXxs ?? this.spaceXxs,
       spaceXs: spaceXs ?? this.spaceXs,
       spaceSm: spaceSm ?? this.spaceSm,
@@ -222,6 +244,7 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     if (other == null) return this;
     return AppDesignTokens(
       barGlassEnabled: other.barGlassEnabled,
+      pureBlack: other.pureBlack,
       subtleBorderAlpha: lerpDouble(
         subtleBorderAlpha,
         other.subtleBorderAlpha,
@@ -256,6 +279,9 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
         other.onWarningContainer,
         t,
       )!,
+      folderColor: Color.lerp(folderColor, other.folderColor, t)!,
+      textFileColor: Color.lerp(textFileColor, other.textFileColor, t)!,
+      imageFileColor: Color.lerp(imageFileColor, other.imageFileColor, t)!,
       spaceXxs: lerpDouble(spaceXxs, other.spaceXxs, t)!,
       spaceXs: lerpDouble(spaceXs, other.spaceXs, t)!,
       spaceSm: lerpDouble(spaceSm, other.spaceSm, t)!,

@@ -51,6 +51,7 @@ internal fun StoredNativePlaybackSession.encodeDefinition(): JSONObject = JSONOb
                         .put("clipStartMs", queueItem.clipStartMs)
                         .put("clipEndMs", queueItem.clipEndMs)
                         .put("httpHeaders", JSONObject(queueItem.httpHeaders))
+                        .put("playOnceBeforeQueue", queueItem.playOnceBeforeQueue)
                         .put(
                             "candidateUris",
                             JSONArray(queueItem.candidateUris)
@@ -63,6 +64,7 @@ internal fun StoredNativePlaybackSession.encodeDefinition(): JSONObject = JSONOb
     .put("playing", playing)
     .put("playWhenReady", playWhenReady)
     .put("completed", completed)
+    .put("discardedQueuePrefix", discardedQueuePrefix)
 
 internal fun JSONObject.decodeDefinition(): StoredNativePlaybackSession? {
     val sessionId = optNullableString("sessionId") ?: return null
@@ -94,7 +96,8 @@ internal fun JSONObject.decodeDefinition(): StoredNativePlaybackSession? {
         playing = optBoolean("playing", false),
         playWhenReady = optBoolean("playWhenReady", false),
         completed = optBoolean("completed", false),
-        frontBack = optDouble("frontBack", 0.0).takeIf { it in -1.0..1.0 }?.toFloat() ?: 0f
+        frontBack = optDouble("frontBack", 0.0).takeIf { it in -1.0..1.0 }?.toFloat() ?: 0f,
+        discardedQueuePrefix = optBoolean("discardedQueuePrefix", false)
     )
 }
 
@@ -135,7 +138,8 @@ private fun JSONObject.optQueueItems(): List<StoredNativePlaybackQueueItem> {
                     clipEndMs = if (item.has("clipEndMs") && !item.isNull("clipEndMs")) item.getLong("clipEndMs") else null,
                     httpHeaders = item.optJSONObject("httpHeaders")?.let { headers ->
                         headers.keys().asSequence().associateWith { headers.getString(it) }
-                    } ?: emptyMap()
+                    } ?: emptyMap(),
+                    playOnceBeforeQueue = item.optBoolean("playOnceBeforeQueue", false)
                 )
             )
         }

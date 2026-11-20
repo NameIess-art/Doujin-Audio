@@ -37,8 +37,9 @@ class AppLifecyclePlatformService {
   Future<bool> syncAppTheme({
     required String preset,
     required String themeMode,
-    List<int>? lightTrayMenuPalette,
-    List<int>? darkTrayMenuPalette,
+    bool pureBlack = false,
+    int? lightWindowBorderColor,
+    int? darkWindowBorderColor,
   }) async {
     if (!_isAndroid && !_isWindows) return true;
     final result = await _client.invoke<void>(
@@ -46,12 +47,22 @@ class AppLifecyclePlatformService {
       arguments: <String, Object>{
         'preset': preset,
         'themeMode': themeMode,
-        'lightTrayMenuPalette': ?lightTrayMenuPalette,
-        'darkTrayMenuPalette': ?darkTrayMenuPalette,
+        'pureBlack': pureBlack,
+        'lightWindowBorderColor': ?lightWindowBorderColor,
+        'darkWindowBorderColor': ?darkWindowBorderColor,
       },
       decode: (_) {},
     );
     return result.isOk;
+  }
+
+  Future<int?> getSystemAccentColor() async {
+    if (!_isAndroid && !_isWindows) return null;
+    final result = await _client.invoke<int?>(
+      AppLifecycleMethod.getSystemAccentColor,
+      decode: (raw) => raw is int ? raw : null,
+    );
+    return result.isOk ? result.valueOrNull : null;
   }
 
   Future<bool> syncTrayMenu({

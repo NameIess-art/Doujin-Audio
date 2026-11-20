@@ -112,6 +112,30 @@ void main() {
     },
   );
 
+  test('removes one normalized query in the requested history only', () async {
+    await settings.recordSearchQuery('Older local', online: false);
+    await settings.recordSearchQuery('Actor, Tag', online: false);
+    await settings.recordSearchQuery('Newer local', online: false);
+    await settings.recordSearchQuery('Actor, Tag', online: true);
+
+    expect(
+      await settings.removeSearchHistoryEntry(' actor , TAG ', online: false),
+      isTrue,
+    );
+    final saved = preferences.writes.length;
+    expect(
+      await settings.removeSearchHistoryEntry('Actor, Tag', online: false),
+      isFalse,
+    );
+    expect(preferences.writes, hasLength(saved));
+    await settings.loadPersistedState(enforceCacheLimit: false);
+    expect(settings.slice.state.librarySearchHistory, [
+      'Newer local',
+      'Older local',
+    ]);
+    expect(settings.slice.state.asmrSearchHistory, ['Actor, Tag']);
+  });
+
   test(
     'restores full queries after restart and follows backup restore and reset',
     () async {

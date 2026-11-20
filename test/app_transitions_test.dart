@@ -4712,6 +4712,19 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 85));
         expect(tester.element(button), same(originalElement));
+        if (Theme.of(tester.element(button)).platform ==
+            TargetPlatform.windows) {
+          expect(tester.getRect(button), target);
+          expect(
+            find.descendant(
+              of: find.byType(AppPressScale),
+              matching: find.byWidgetPredicate(
+                (widget) => widget is Transform && !widget.transformHitTests,
+              ),
+            ),
+            findsNothing,
+          );
+        }
         final edge = Offset(target.center.dx, target.top + 1);
         expect(
           tester.hitTestOnBinding(edge).path.any(
@@ -4727,7 +4740,10 @@ void main() {
         expect(presses, 2);
         await tester.pumpAndSettle();
         expect(tester.element(button), same(originalElement));
-      });
+      }, variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }));
     }
 
     testWidgets('scales down on press and springs back on release', (

@@ -111,10 +111,10 @@ class _LibraryManagementPageState extends ConsumerState<LibraryManagementPage> {
                             minHeight: 64,
                             verticalPadding: 2,
                             isFolder: true,
-                            leading: const Icon(
+                            leading: Icon(
                               AppDesignTokens.folderIcon,
                               size: AppDesignTokens.fileEntryIconSize,
-                              color: AppDesignTokens.folderIconColor,
+                              color: AppDesignTokens.of(context).folderColor,
                             ),
                             onTap: () => Navigator.of(context).push(
                               buildAppPageRoute<void>(

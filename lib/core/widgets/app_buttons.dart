@@ -8,6 +8,8 @@ import '../../app/theme/app_styles.dart';
 import 'app_tap_highlight.dart';
 import 'app_transitions.dart';
 
+const _windowsButtonFeedbackCurve = Curves.easeInOut;
+
 /// Removes pointer ink while letting Material paint keyboard focus.
 ButtonStyle appButtonStyle([ButtonStyle? style]) =>
     (style ?? const ButtonStyle()).copyWith(
@@ -114,10 +116,8 @@ resolveAppButtonIconFeedback({
     color = cs.primary;
   }
   return (
-    scale: !reduceMotion && isPressed
-        ? (isTransportControl
-              ? (isWindows ? 0.90 : 0.92)
-              : (isWindows ? 0.82 : 0.84))
+    scale: !isWindows && !reduceMotion && isPressed
+        ? (isTransportControl ? 0.92 : 0.84)
         : 1.0,
     opacity: reduceMotion && isPressed
         ? 0.72
@@ -162,7 +162,7 @@ resolveAppTextButtonFeedback({
       ? Color.lerp(accent, isDark ? Colors.white : cs.onPrimaryContainer, 0.35)
       : accent;
   return (
-    scale: !reduceMotion && isPressed ? 0.94 : 1.0,
+    scale: !isWindows && !reduceMotion && isPressed ? 0.94 : 1.0,
     opacity: reduceMotion && isPressed
         ? 0.72
         : reduceMotion && isHovered
@@ -201,7 +201,7 @@ resolveAppSurfaceButtonFeedback({
   final isPressed = visible && enabled && pressed;
   final isHovered = visible && enabled && hovered && isWindows;
   return (
-    scale: !reduceMotion && isPressed ? (isWindows ? 0.975 : 0.98) : 1.0,
+    scale: !isWindows && !reduceMotion && isPressed ? 0.98 : 1.0,
     pressed: isPressed,
     hovered: isHovered,
     duration: !visible || reduceMotion || !enabled
@@ -472,7 +472,7 @@ class _AnimatedForegroundFeedback extends StatelessWidget {
             key: ValueKey(baseColor),
             tween: ColorTween(end: color),
             duration: duration,
-            curve: Curves.easeOutQuad,
+            curve: isWindows ? _windowsButtonFeedbackCurve : Curves.easeOutQuad,
             child: child,
             builder: (context, resolvedColor, child) {
               if (resolvedColor == null) return child!;
@@ -490,13 +490,14 @@ class _AnimatedForegroundFeedback extends StatelessWidget {
           )
         : child;
 
+    final content = Opacity(opacity: opacity, child: tintedChild);
+    if (isWindows) return content;
+
     return TweenAnimationBuilder<double>(
       tween: Tween(end: scale),
       duration: duration,
-      curve: isWindows
-          ? Curves.easeOutQuad
-          : (scale == 1.0 ? kAppSpringBackCurve : Curves.easeOutCubic),
-      child: Opacity(opacity: opacity, child: tintedChild),
+      curve: scale == 1.0 ? kAppSpringBackCurve : Curves.easeOutCubic,
+      child: content,
       // Paint the glyph directly so glass toolbars can composite it while scaled.
       builder: (context, value, child) =>
           Transform.scale(scale: value, transformHitTests: false, child: child),
@@ -922,15 +923,16 @@ class AppSurfaceButtonShell extends StatelessWidget {
           hovered: value.contains(WidgetState.hovered),
           enabled: enabled,
         );
+        final button = builder(context, feedback);
+        if (Theme.of(context).platform == TargetPlatform.windows) return button;
+
         return TweenAnimationBuilder<double>(
           tween: Tween(end: feedback.scale),
           duration: feedback.duration,
-          curve: Theme.of(context).platform == TargetPlatform.windows
-              ? Curves.easeOutQuad
-              : (feedback.scale == 1.0
-                    ? kAppSpringBackCurve
-                    : Curves.easeOutCubic),
-          child: builder(context, feedback),
+          curve: feedback.scale == 1.0
+              ? kAppSpringBackCurve
+              : Curves.easeOutCubic,
+          child: button,
           builder: (context, scale, child) => Transform.scale(
             scale: scale,
             transformHitTests: false,

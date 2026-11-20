@@ -239,7 +239,7 @@ class _QueueTreeNodeTile extends StatelessWidget {
               ? AppDesignTokens.openFolderIcon
               : AppDesignTokens.folderIcon,
           size: AppDesignTokens.fileEntryIconSize,
-          color: AppDesignTokens.folderIconColor,
+          color: AppDesignTokens.of(context).folderColor,
         ),
         trailing: FileTreeExpansionArrow(expanded: expanded),
       ),

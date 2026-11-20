@@ -1,45 +1,5 @@
 part of 'asmr_tab.dart';
 
-const Color _asmrSelectionCheckmarkColor = Color(0xFF4CAF50);
-
-class _AsmrSelectionIndicator extends StatelessWidget {
-  const _AsmrSelectionIndicator({this.workId, this.isSelected = true});
-
-  final String? workId;
-  final bool isSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return IgnorePointer(
-      child: ExcludeSemantics(
-        child: AppDeferredFade(
-          visible: isSelected,
-          beginScale: 0.86,
-          fadeInDuration: kAppMotionFast,
-          child: Container(
-            key: workId == null
-                ? const ValueKey<String>('asmr_selection_indicator')
-                : ValueKey<String>('asmr_selection_indicator_$workId'),
-            width: 22,
-            height: 22,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _asmrSelectionCheckmarkColor,
-              border: Border.all(color: cs.surface, width: 2),
-            ),
-            child: const Icon(
-              Icons.check_rounded,
-              size: 14,
-              color: Colors.white,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _AsmrWorkTreeCard extends ConsumerStatefulWidget {
   const _AsmrWorkTreeCard({
     required this.work,

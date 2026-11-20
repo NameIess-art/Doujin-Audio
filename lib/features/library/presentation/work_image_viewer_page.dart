@@ -725,7 +725,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
                 TopPageHeader(
                   key: const ValueKey<String>('work_image_header'),
                   icon: AppDesignTokens.imageFileIcon,
-                  iconColor: AppDesignTokens.imageFileIconColor,
+                  iconColor: AppDesignTokens.of(context).imageFileColor,
                   title: currentImage.name,
                   leading: const AppHeaderBackButton(),
                   trailing: widget.onSetAsCover != null

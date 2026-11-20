@@ -249,7 +249,7 @@ class NativePlaybackFocusRecoveryPolicyTest {
             )
         )
         assertTrue(
-            shouldRecoverIntendedPlayback(
+            shouldKeepAliveForIntendedPlayback(
                 playbackState = Player.STATE_IDLE,
                 hasPlayerError = false
             )
@@ -261,14 +261,14 @@ class NativePlaybackFocusRecoveryPolicyTest {
             )
         )
         assertFalse(
-            shouldRecoverIntendedPlayback(
+            shouldKeepAliveForIntendedPlayback(
                 playbackState = Player.STATE_READY,
                 hasPlayerError = true,
                 hasRecoverablePlaybackError = false
             )
         )
         assertTrue(
-            shouldRecoverIntendedPlayback(
+            shouldKeepAliveForIntendedPlayback(
                 playbackState = Player.STATE_IDLE,
                 hasPlayerError = true,
                 hasRecoverablePlaybackError = true

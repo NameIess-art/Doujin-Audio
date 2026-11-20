@@ -11,6 +11,45 @@ import 'package:doujin_audio/core/widgets/unified_popup_menu.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 
 void main() {
+  testWidgets('the modal only creates a blur layer above its blur threshold', (
+    tester,
+  ) async {
+    final animation = AnimationController(vsync: tester);
+    addTearDown(animation.dispose);
+    const scrimKey = ValueKey('test_scrim');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppModalBackground(
+          animation: animation,
+          scrimKey: scrimKey,
+          curve: Curves.linear,
+          reverseCurve: Curves.linear,
+          blurReverseCurve: Curves.linear,
+        ),
+      ),
+    );
+
+    for (final progress in [0.0, 0.005, 0.25, 1.0, 0.005, 0.0]) {
+      animation.value = progress;
+      await tester.pump();
+      final scrim = find.byKey(scrimKey);
+      expect(scrim.hitTestable(), findsOneWidget);
+      expect(
+        tester.widget<ColoredBox>(scrim).color.a,
+        closeTo(kSecondaryOverlayConfig.backgroundOpacity * progress, 1e-6),
+      );
+      final blurActive = progress >= 0.25;
+      expect(
+        find.byType(BackdropFilter),
+        blurActive ? findsOneWidget : findsNothing,
+      );
+      expect(
+        tester.layers.whereType<BackdropFilterLayer>(),
+        hasLength(blurActive ? 1 : 0),
+      );
+    }
+  });
+
   for (final overlay in ['Dialog', 'Overlay panel', 'Dropdown']) {
     testWidgets(
       '$overlay blurs only the page behind it',
@@ -278,13 +317,13 @@ void main() {
           expect(tailContrast, greaterThan(240));
 
           await tester.pump(const Duration(milliseconds: 30));
-          final filter = tester.widget<BackdropFilter>(
+          expect(
             find.descendant(
               of: find.byType(AppModalBackground),
               matching: find.byType(BackdropFilter),
             ),
+            findsNothing,
           );
-          expect(filter.enabled, isFalse);
         }
 
         await tester.pumpAndSettle();

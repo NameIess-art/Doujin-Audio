@@ -374,7 +374,11 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                 isSelected: isHistory
                     ? (item) => item == canonicalElementQuery(draft)
                     : isSelected,
-                onToggle: isHistory ? _setDraft : _toggleTerm,
+                onToggle: isHistory ? _onSubmitted : _toggleTerm,
+                buildItemMenu: isHistory
+                    ? (item) =>
+                          buildSearchHistoryMenu(context, item, online: false)
+                    : null,
                 emptyText: emptyText,
                 expandLabel: i18n.tr('expand'),
                 collapseLabel: i18n.tr('collapse'),

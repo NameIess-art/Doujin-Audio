@@ -47,7 +47,10 @@ class DiagnosticReportService {
 
   Future<File> exportReport(String outputPath) async {
     final version = await _appVersionProvider();
-    final permissions = await _permissionStatusService.load();
+    final (permissions, exactAlarmsAllowed) = await (
+      _permissionStatusService.load(),
+      _permissionStatusService.isGranted(PermissionCapability.exactAlarms),
+    ).wait;
     final cacheBytes = await _cacheBytesProvider();
     final backgroundRunDiagnostics = await _backgroundRunDiagnosticsProvider();
     final report = <String, Object?>{
@@ -57,7 +60,10 @@ class DiagnosticReportService {
       'platformVersion': _platformVersion,
       'databaseSchemaVersion': AppDatabase.schemaVersion,
       'applicationCacheBytes': cacheBytes,
-      'permissions': permissions.toJson(),
+      'permissions': {
+        ...permissions.toJson(),
+        'exactAlarmsAllowed': exactAlarmsAllowed,
+      },
       if (backgroundRunDiagnostics != null)
         'backgroundRun': backgroundRunDiagnostics.toJson(),
       'privacy':

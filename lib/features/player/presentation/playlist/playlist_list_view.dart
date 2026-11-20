@@ -19,6 +19,7 @@ import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/marquee_text.dart';
 import '../../../../core/widgets/playing_sound_wave_indicator.dart';
 import '../../../../core/widgets/playlist_icon.dart';
+import '../../../../core/widgets/selection_checkmark.dart';
 import '../../../../core/widgets/shimmer_loading.dart';
 import '../../../../core/widgets/swipe_reveal_card.dart';
 import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
@@ -32,8 +33,6 @@ import 'playlist_media_widgets.dart';
 import 'playlist_shared_helpers.dart';
 
 const double playlistListHorizontalPadding = AppSpacing.xs;
-
-const Color _playlistSelectionCheckmarkColor = Color(0xFF4CAF50);
 
 /// Scopes playlist multi-selection state to mode-only (`''`) or row-only
 /// (`sessionId`) dependents so card contents do not rebuild on selection changes.
@@ -125,51 +124,25 @@ class PlaylistSelectionIndicator extends StatelessWidget {
   final bool isSelected;
 
   @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return IgnorePointer(
-      child: ExcludeSemantics(
-        child: AppDeferredFade(
-          visible: isSelected,
-          beginScale: 0.86,
-          fadeInDuration: kAppMotionFast,
-          child: Container(
-            key: ValueKey<String>('playlist_selection_indicator_$sessionId'),
-            width: 22,
-            height: 22,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _playlistSelectionCheckmarkColor,
-              border: Border.all(color: cs.surface, width: 2),
-            ),
-            child: const Icon(
-              Icons.check_rounded,
-              size: 14,
-              color: Colors.white,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => SelectionCheckmark(
+    indicatorKey: ValueKey<String>('playlist_selection_indicator_$sessionId'),
+    isSelected: isSelected,
+  );
 }
 
 class PlaylistPinnedIndicator extends StatelessWidget {
   const PlaylistPinnedIndicator({
     super.key,
     required this.sessionId,
-    this.color,
     this.isPinned = true,
   });
 
   final String sessionId;
-  final Color? color;
   final bool isPinned;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final pinColor = color ?? cs.primary;
     return IgnorePointer(
       child: ExcludeSemantics(
         child: AppDeferredFade(
@@ -182,13 +155,13 @@ class PlaylistPinnedIndicator extends StatelessWidget {
             height: 22,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: pinColor,
+              color: cs.primary,
               border: Border.all(color: cs.surface, width: 2),
             ),
-            child: const Icon(
+            child: Icon(
               Icons.push_pin_rounded,
               size: 13,
-              color: Colors.white,
+              color: cs.onPrimary,
             ),
           ),
         ),
@@ -638,9 +611,9 @@ class SessionListCard extends ConsumerWidget {
             customBorder: playlistRowShape,
             excludeFromSemantics: true,
             onTap: () {
-              final selectionActive = !isTemporary &&
-                  (PlaylistSelectionScope.maybeReadIsSelectionMode(context) ??
-                      isSelectionMode);
+              final selectionActive =
+                  PlaylistSelectionScope.maybeReadIsSelectionMode(context) ??
+                  isSelectionMode;
               if (selectionActive) {
                 onToggleSelect?.call();
               } else {
@@ -670,85 +643,62 @@ class SessionListCard extends ConsumerWidget {
                   Positioned(
                     right: -2,
                     bottom: -2,
-                    child: isTemporary
-                        ? PlaylistSelectionIndicator(
-                            sessionId: sessionId,
-                            isSelected: isSelected,
-                          )
-                        : Builder(
-                            builder: (badgeContext) =>
-                                PlaylistSelectionIndicator(
-                                  sessionId: sessionId,
-                                  isSelected:
-                                      PlaylistSelectionScope.maybeIsSelectedOf(
-                                        badgeContext,
-                                        sessionId,
-                                      ) ??
-                                      isSelected,
-                                ),
-                          ),
+                    child: Builder(
+                      builder: (badgeContext) => PlaylistSelectionIndicator(
+                        sessionId: sessionId,
+                        isSelected:
+                            PlaylistSelectionScope.maybeIsSelectedOf(
+                              badgeContext,
+                              sessionId,
+                            ) ??
+                            isSelected,
+                      ),
+                    ),
                   ),
-                  Positioned(
-                    top: -2,
-                    right: -2,
-                    child: isTemporary
-                        ? PlaylistPinnedIndicator(
-                            isPinned: isPinned,
-                            sessionId: sessionId,
-                            color: activeColor,
-                          )
-                        : Builder(
-                            builder: (badgeContext) => PlaylistPinnedIndicator(
-                              isPinned:
-                                  PlaylistPinnedScope.maybeIsPinnedOf(
-                                    badgeContext,
-                                    sessionId,
-                                  ) ??
-                                  isPinned,
-                              sessionId: sessionId,
-                              color: activeColor,
-                            ),
-                          ),
-                  ),
+                  if (!isTemporary)
+                    Positioned(
+                      top: -2,
+                      right: -2,
+                      child: Builder(
+                        builder: (badgeContext) => PlaylistPinnedIndicator(
+                          isPinned:
+                              PlaylistPinnedScope.maybeIsPinnedOf(
+                                badgeContext,
+                                sessionId,
+                              ) ??
+                              isPinned,
+                          sessionId: sessionId,
+                        ),
+                      ),
+                    ),
                 ],
               ),
-              labels: isTemporary
-                  ? Semantics(
-                      button: true,
-                      selected: isSelectionMode ? isSelected : null,
-                      label: i18n.tr('open_playback_details'),
-                      onTap: isSelectionMode
-                          ? onToggleSelect
-                          : () => onOpen(context),
-                      onLongPress: onLongPress,
-                      child: labelsContent,
-                    )
-                  : Builder(
-                      builder: (semanticsContext) {
-                        final selectionMode =
-                            PlaylistSelectionScope.maybeIsSelectionModeOf(
+              labels: Builder(
+                builder: (semanticsContext) {
+                  final selectionMode =
+                      PlaylistSelectionScope.maybeIsSelectionModeOf(
+                        semanticsContext,
+                      ) ??
+                      isSelectionMode;
+                  final selected = selectionMode
+                      ? (PlaylistSelectionScope.maybeIsSelectedOf(
                               semanticsContext,
+                              sessionId,
                             ) ??
-                            isSelectionMode;
-                        final selected = selectionMode
-                            ? (PlaylistSelectionScope.maybeIsSelectedOf(
-                                    semanticsContext,
-                                    sessionId,
-                                  ) ??
-                                  isSelected)
-                            : null;
-                        return Semantics(
-                          button: true,
-                          selected: selected,
-                          label: i18n.tr('open_playback_details'),
-                          onTap: selectionMode
-                              ? onToggleSelect
-                              : () => onOpen(context),
-                          onLongPress: onLongPress,
-                          child: labelsContent,
-                        );
-                      },
-                    ),
+                            isSelected)
+                      : null;
+                  return Semantics(
+                    button: true,
+                    selected: selected,
+                    label: i18n.tr('open_playback_details'),
+                    onTap: selectionMode
+                        ? onToggleSelect
+                        : () => onOpen(context),
+                    onLongPress: onLongPress,
+                    child: labelsContent,
+                  );
+                },
+              ),
               actions: SessionFeatureBadgeStack(
                 featureIcons: sessionFeatureBadgeIcons(
                   showSubtitles: showSubtitles,
@@ -822,67 +772,38 @@ class SessionListCard extends ConsumerWidget {
       ),
     );
 
-    final card = isTemporary
-        ? SwipeRevealCard(
-            key: ValueKey(sessionId),
-            shape: playlistRowShape,
-            swipeEnabled: false,
-            closedColor: cardColor,
-            enabled: !isSelectionMode,
-            actionLabel: i18n.tr('remove'),
-            removeTooltip: i18n.tr('remove_audio'),
-            onRemove: () =>
-                stagePlaybackSessionRemovals(context, ref, [sessionId]),
-            onLeadingAction: onTogglePin,
-            onSelectMultiple: onLongPress,
-            selectMultipleLabel: i18n.tr('select_multiple'),
-            leadingActionLabel: i18n.tr(
-              isPinned ? 'unpin_from_top' : 'pin_to_top',
-            ),
-            leadingActionTooltip: i18n.tr(
-              isPinned ? 'unpin_from_top' : 'pin_to_top',
-            ),
-            leadingActionIcon: Icons.push_pin_rounded,
-            leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
-            child: cardBody,
-          )
-        : Builder(
-            builder: (swipeContext) {
-              final selectionMode =
-                  PlaylistSelectionScope.maybeIsSelectionModeOf(swipeContext) ??
-                  isSelectionMode;
-              final pinned =
-                  PlaylistPinnedScope.maybeIsPinnedOf(
-                    swipeContext,
-                    sessionId,
-                  ) ??
-                  isPinned;
-              return SwipeRevealCard(
-                key: ValueKey(sessionId),
-                shape: playlistRowShape,
-                swipeEnabled: false,
-                closedColor: cardColor,
-                enabled: !selectionMode,
-                actionLabel: i18n.tr('remove'),
-                removeTooltip: i18n.tr('remove_audio'),
-                onRemove: () =>
-                    stagePlaybackSessionRemovals(context, ref, [sessionId]),
-                onLeadingAction: onTogglePin,
-                onSelectMultiple: onLongPress,
-                selectMultipleLabel: i18n.tr('select_multiple'),
-                leadingActionLabel: i18n.tr(
-                  pinned ? 'unpin_from_top' : 'pin_to_top',
-                ),
-                leadingActionTooltip: i18n.tr(
-                  pinned ? 'unpin_from_top' : 'pin_to_top',
-                ),
-                leadingActionIcon: Icons.push_pin_rounded,
-                leadingActionIconWidget:
-                    pinned ? const PushPinOffIcon() : null,
-                child: cardBody,
-              );
-            },
-          );
+    final card = Builder(
+      builder: (swipeContext) {
+        final selectionMode =
+            PlaylistSelectionScope.maybeIsSelectionModeOf(swipeContext) ??
+            isSelectionMode;
+        final pinned =
+            !isTemporary &&
+            (PlaylistPinnedScope.maybeIsPinnedOf(swipeContext, sessionId) ??
+                isPinned);
+        return SwipeRevealCard(
+          key: ValueKey(sessionId),
+          shape: playlistRowShape,
+          swipeEnabled: false,
+          closedColor: cardColor,
+          enabled: !selectionMode,
+          actionLabel: i18n.tr('remove'),
+          removeTooltip: i18n.tr('remove_audio'),
+          onRemove: () =>
+              stagePlaybackSessionRemovals(context, ref, [sessionId]),
+          onLeadingAction: isTemporary ? null : onTogglePin,
+          onSelectMultiple: onLongPress,
+          selectMultipleLabel: i18n.tr('select_multiple'),
+          leadingActionLabel: i18n.tr(pinned ? 'unpin_from_top' : 'pin_to_top'),
+          leadingActionTooltip: i18n.tr(
+            pinned ? 'unpin_from_top' : 'pin_to_top',
+          ),
+          leadingActionIcon: Icons.push_pin_rounded,
+          leadingActionIconWidget: pinned ? const PushPinOffIcon() : null,
+          child: cardBody,
+        );
+      },
+    );
     return UndoableRemovalTransition(hidden: isHidden, child: card);
   }
 }

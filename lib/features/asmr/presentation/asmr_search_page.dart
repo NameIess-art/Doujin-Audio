@@ -501,7 +501,9 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
                         clearLabel: i18n.tr('clear'),
                         isSelected: (item) =>
                             item == canonicalElementQuery(_inputQuery.value),
-                        onToggle: _setDraft,
+                        onToggle: (item) => unawaited(_onSubmitted(item)),
+                        buildItemMenu: (item) =>
+                            buildSearchHistoryMenu(context, item, online: true),
                         emptyText: i18n.tr('search_history_empty'),
                         expandLabel: i18n.tr('expand'),
                         collapseLabel: i18n.tr('collapse'),

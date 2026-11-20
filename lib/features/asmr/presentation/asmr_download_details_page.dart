@@ -286,7 +286,9 @@ class _AsmrDownloadDetailsPageState
                                       expanded
                                           ? AppDesignTokens.openFolderIcon
                                           : AppDesignTokens.folderIcon,
-                                      color: AppDesignTokens.folderIconColor,
+                                      color: AppDesignTokens.of(
+                                        context,
+                                      ).folderColor,
                                       size: AppDesignTokens.fileEntryIconSize,
                                     ),
                                     trailing: FileTreeExpansionArrow(
@@ -496,6 +498,7 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
           node,
           audioColor: primaryColor,
           fallbackColor: cs.onSurfaceVariant,
+          tokens: AppDesignTokens.of(context),
         ),
       ),
       subtitleWidget: Row(

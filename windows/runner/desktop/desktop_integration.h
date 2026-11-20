@@ -63,19 +63,11 @@ class DesktopIntegration {
   bool screen_on_ = false;
   bool playback_active_ = false;
   std::string theme_mode_ = "system";
+  bool tray_menu_open_ = false;
   std::array<std::wstring, 5> tray_labels_ = {
       L"Open", L"Play / pause", L"Previous", L"Next", L"Exit"};
-  struct TrayMenuPalette {
-    COLORREF background;
-    COLORREF foreground;
-    COLORREF highlight;
-  };
-  TrayMenuPalette tray_light_palette_{
-      RGB(250, 250, 250), RGB(23, 23, 23), RGB(222, 234, 250)};
-  TrayMenuPalette tray_dark_palette_{
-      RGB(32, 32, 32), RGB(245, 245, 245), RGB(65, 65, 65)};
-  struct TrayMenuAppearance;
-  const TrayMenuAppearance* active_tray_menu_ = nullptr;
+  std::optional<COLORREF> light_window_border_color_;
+  std::optional<COLORREF> dark_window_border_color_;
   EXECUTION_STATE power_flags_ = 0;
   int initial_show_command_ = SW_SHOWNORMAL;
   WINDOWPLACEMENT placement_{sizeof(WINDOWPLACEMENT)};

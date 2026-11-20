@@ -1792,17 +1792,21 @@ class _QueueSectionCapsule extends StatelessWidget {
     required this.label,
     this.icon,
     this.iconWidget,
+    this.backgroundOpacity = 1,
   }) : assert(icon != null || iconWidget != null);
 
   final String label;
   final IconData? icon;
   final Widget? iconWidget;
+  final double backgroundOpacity;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     const iconSize = 17.0;
     return HeaderFloatingSurface(
+      followBarGlass: true,
+      backgroundOpacity: backgroundOpacity,
       height: 32,
       radius: 16,
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1923,6 +1927,7 @@ class _QueueAudioSourceSectionState
     final playlistAreaBackground = isDark
         ? cs.surfaceContainerLowest
         : cs.surfaceContainer;
+    final glassEnabled = AppDesignTokens.of(context).barGlassEnabled;
     final showLocalLibrary = _showLocalLibrary;
     final ordinarySessions = showLocalLibrary
         ? const <PlaybackDirectoryEntry>[]
@@ -1979,6 +1984,7 @@ class _QueueAudioSourceSectionState
                 label: label,
                 icon: icon,
                 iconWidget: iconWidget,
+                backgroundOpacity: glassEnabled ? 0.75 : 1,
               )
             : TextButton(
                 onPressed: () => setState(() => _showLocalLibrary = local),
@@ -2022,6 +2028,8 @@ class _QueueAudioSourceSectionState
               child: AppEdgeFadeMask(
                 direction: AppEdgeFadeDirection.towardTop,
                 color: playlistAreaBackground,
+                // Leave enough of the scrolling artwork for the glass to sample.
+                opacity: glassEnabled ? 0.2 : 1,
               ),
             ),
             Positioned(
@@ -2084,6 +2092,10 @@ class _QueueAudioSourceList extends ConsumerStatefulWidget {
 
 class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
     with SingleTickerProviderStateMixin {
+  final ScrollController _scrollController =
+      defaultTargetPlatform == TargetPlatform.windows
+      ? WindowsSmoothScrollController()
+      : ScrollController();
   final _trees = <String, _QueueEditorTree>{};
   late final _QueueExpansionMotion _treeMotion;
   final _loading = <String, Object>{};
@@ -2107,6 +2119,7 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _treeMotion.dispose();
     super.dispose();
   }
@@ -2464,6 +2477,7 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
     );
     return ListView.builder(
       key: PageStorageKey<bool>(showLibrary),
+      controller: _scrollController,
       padding: widget.padding,
       addAutomaticKeepAlives: false,
       itemCount: rows.length,
@@ -2536,7 +2550,7 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
           key: ValueKey((id, node.key)),
         );
       },
-    ).withWindowsSmoothScroll();
+    );
   }
 }
 
@@ -2701,7 +2715,7 @@ class _QueueAudioRowState extends ConsumerState<_QueueAudioRow> {
                   : AppDesignTokens.audioFileIcon,
               size: AppDesignTokens.fileEntryIconSize,
               color: widget.folder
-                  ? AppDesignTokens.folderIconColor
+                  ? AppDesignTokens.of(context).folderColor
                   : cs.primary,
             ),
       trailingSpacing: AppSpacing.xxs,

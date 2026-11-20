@@ -400,7 +400,6 @@ final class PlaybackCommandCoordinator
       queue: queue,
       queueStartIndex: startIndex,
       repeatAll:
-          !_hasDetachedPlaybackQueueCurrent(session) &&
           session.loopMode != SessionLoopMode.single &&
           !session.loopMode.isOneShot,
       shuffle: session.loopMode.isShuffle,

@@ -142,6 +142,7 @@ class _SettingsSectionTitlePill extends StatelessWidget {
       child: Align(
         alignment: Alignment.centerLeft,
         child: HeaderFloatingSurface(
+          followBarGlass: true,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: ConstrainedBox(
             constraints: BoxConstraints(

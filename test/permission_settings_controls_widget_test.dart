@@ -11,6 +11,7 @@ import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/core/platform/power_platform_service.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/features/settings/presentation/permission_settings_controls.dart';
 import 'package:doujin_audio/features/settings/application/permission_status_service.dart';
 
@@ -200,24 +201,22 @@ void main() {
   });
 
   testWidgets(
-    'allow_background_run requires both battery optimizations and exact alarms',
+    'background settings are enabled and open independently of exact alarms',
     (tester) async {
       final language = AppLanguageProvider();
+      final powerService = _PowerWithoutExactAlarms();
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
             appLanguageProviderInstanceProvider.overrideWithValue(language),
+            uiOperationServiceProvider.overrideWithValue(UiOperationService()),
           ],
           child: MaterialApp(
             home: Scaffold(
               body: PermissionSettingsControls(
                 statusService: PermissionStatusService(
                   isAndroidOverride: true,
-                  powerService: _PartialPowerService(
-                    ignoringBattery: true,
-                    exactAlarms: false,
-                  ),
-
+                  powerService: powerService,
                   overlayCheck: () async => false,
                   updateInstallCheck: () async => false,
                 ),
@@ -236,10 +235,21 @@ void main() {
       expect(
         find.descendant(
           of: find.ancestor(of: backgroundRunTile, matching: find.byType(Card)),
-          matching: find.text(language.tr('permission_not_enabled')),
+          matching: find.text(language.tr('permission_enabled')),
         ),
         findsOneWidget,
       );
+
+      await tester.tap(backgroundRunTile);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(language.tr('go_settings')));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 800));
+      await tester.pumpAndSettle();
+
+      expect(powerService.backgroundSettingsOpens, 1);
+      expect(powerService.exactAlarmChecks, 0);
+      expect(powerService.exactAlarmSettingsOpens, 0);
     },
   );
 
@@ -275,7 +285,6 @@ void main() {
       pending.complete(
         const PermissionStatusSnapshot(
           backgroundRunAllowed: false,
-          exactAlarmsAllowed: false,
           manageFilesAllowed: false,
           overlayAllowed: false,
           updateInstallsAllowed: false,
@@ -382,7 +391,6 @@ class _TestPermissionStatusService extends PermissionStatusService {
   int openCalls = 0;
   static const granted = PermissionStatusSnapshot(
     backgroundRunAllowed: true,
-    exactAlarmsAllowed: true,
     manageFilesAllowed: true,
     overlayAllowed: true,
     updateInstallsAllowed: true,
@@ -401,22 +409,36 @@ class _TestPermissionStatusService extends PermissionStatusService {
   }
 }
 
-class _PartialPowerService extends PowerPlatformService {
-  _PartialPowerService({
-    required this.ignoringBattery,
-    required this.exactAlarms,
-  });
-
-  final bool ignoringBattery;
-  final bool exactAlarms;
+class _PowerWithoutExactAlarms extends PowerPlatformService {
+  int backgroundSettingsOpens = 0;
+  int exactAlarmChecks = 0;
+  int exactAlarmSettingsOpens = 0;
 
   @override
   Future<bool> isIgnoringBatteryOptimizations({
     bool errorDefault = false,
-  }) async => ignoringBattery;
+  }) async => true;
 
   @override
-  Future<bool> canScheduleExactAlarms() async => exactAlarms;
+  Future<bool> canPostNotifications() async => true;
+
+  @override
+  Future<bool> openBackgroundRunSettings() async {
+    backgroundSettingsOpens++;
+    return true;
+  }
+
+  @override
+  Future<bool> canScheduleExactAlarms() async {
+    exactAlarmChecks++;
+    return false;
+  }
+
+  @override
+  Future<bool> openExactAlarmSettings() async {
+    exactAlarmSettingsOpens++;
+    return true;
+  }
 
   @override
   Future<bool> canManageAllFilesAccess() async => true;

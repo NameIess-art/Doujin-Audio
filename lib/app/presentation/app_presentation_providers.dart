@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import '../../core/widgets/app_feedback.dart';
+import '../../core/widgets/unified_popup_menu.dart';
 import '../state/subtitle_settings_provider.dart';
 import '../../features/player/application/playback_session.dart';
 import '../../features/library/presentation/library_providers.dart';
@@ -806,6 +808,54 @@ final sessionDetailTransportProvider = Provider.autoDispose
           ? null
           : sessionDetailViewStateFromSession(session);
     });
+
+List<UnifiedMenuEntry<VoidCallback>> buildSearchHistoryMenu(
+  BuildContext context,
+  String query, {
+  required bool online,
+}) {
+  final container = ProviderScope.containerOf(context, listen: false);
+  final i18n = container.read(appLanguageProviderInstanceProvider);
+
+  Future<void> copy() async {
+    await Clipboard.setData(ClipboardData(text: query));
+    if (!context.mounted) return;
+    showAppSnackBar(
+      context,
+      i18n.tr('copied_to_clipboard', {'value': query}),
+      icon: Icons.content_copy_rounded,
+    );
+  }
+
+  Future<void> remove() async {
+    final settings = container.read(settingsRepositoryProvider);
+    var removed = false;
+    final saved = await saveSettingsWithFeedback(context, () async {
+      removed = await settings.removeSearchHistoryEntry(query, online: online);
+    });
+    if (!saved || !removed || !context.mounted) return;
+    showAppSnackBar(
+      context,
+      i18n.tr('removed_prefix', {'name': query}),
+      icon: Icons.delete_outline_rounded,
+      tone: AppFeedbackTone.destructive,
+    );
+  }
+
+  return [
+    UnifiedMenuEntry.action(
+      value: () => unawaited(copy()),
+      label: i18n.tr('search_history_copy_keyword'),
+      icon: Icons.content_copy_rounded,
+    ),
+    UnifiedMenuEntry.action(
+      value: () => unawaited(remove()),
+      label: i18n.tr('search_history_remove_entry'),
+      icon: Icons.delete_outline_rounded,
+      destructive: true,
+    ),
+  ];
+}
 
 Future<void> clearSearchHistoryWithFeedback(
   BuildContext context, {

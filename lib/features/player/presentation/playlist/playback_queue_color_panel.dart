@@ -49,7 +49,12 @@ class PlaybackQueueColorPanel extends StatelessWidget {
         key: const ValueKey('playback_queue_color_panel'),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(tokens.radiusOverlay),
-          color: cs.surfaceContainerLow,
+          color: cs.surfaceContainerHigh,
+          border: Border.all(
+            color: cs.outlineVariant.withValues(
+              alpha: tokens.standardBorderAlpha,
+            ),
+          ),
           boxShadow: [
             BoxShadow(
               color: cs.shadow.withValues(alpha: 0.22),

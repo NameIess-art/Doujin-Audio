@@ -7,6 +7,7 @@ import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -101,20 +102,21 @@ Future<void> _drainDetailFixture(
   await tester.pumpWidget(const SizedBox.shrink());
   var completed = false;
   final pending = Future.wait<void>([
+    browseThumbnailDecodesIdle,
     fixture.library.coverArtworkCacheService.initialize(),
     fixture.library.detailCacheService.suspendAndWait(),
   ]).then((_) => fixture.library.flushPendingPersistence()).then((_) {
     completed = true;
   });
-  // SQLite's shared queue can still depend on this test's fake-async zone.
-  // Drain it while both its simulated clock and the real I/O loop can advance.
+  // Shared database and image queues can depend on this test's fake clock.
+  // Drain them while both simulated frames and real I/O can advance.
   for (var tick = 0; tick < 1000 && !completed; tick++) {
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 5)),
     );
     await tester.pump(const Duration(milliseconds: 5));
   }
-  expect(completed, isTrue, reason: 'Work detail database work did not drain');
+  expect(completed, isTrue, reason: 'Work detail background work did not drain');
   await pending;
   await tester.pump(UiInteractionCoordinator.instance.idleDelay);
 }
@@ -1052,7 +1054,7 @@ void main() {
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
       for (final local in [false, true]) {
         _detailTestWidgets(
-          'expanded work cover stays 4:3 on pane resize, local=$local on $platform',
+          'expanded work cover follows 4:3 up to its height cap, local=$local on $platform',
           (tester) async {
             await tester.binding.setSurfaceSize(null);
             tester.view.physicalSize = const Size(1280, 1000);
@@ -1117,9 +1119,7 @@ void main() {
               await tester.pump();
               await tester.pump();
               final size = tester.getSize(cover);
-              expect(size.width, value);
-              expect(size.height, closeTo(value * 3 / 4, 0.001));
-              expect(size.aspectRatio, closeTo(4 / 3, 0.001));
+              expect(size, Size(value, math.min(value * 3 / 4, 404.0)));
               expect(tester.getTopLeft(cover).dx, closeTo(1280 - value, 0.001));
             }
             scroll.jumpTo(40);
@@ -1685,7 +1685,7 @@ void main() {
             find.byKey(const ValueKey('work_detail_entries_skeleton')),
             findsNothing,
           );
-          await tester.binding.setSurfaceSize(const Size(800, 600));
+          await tester.binding.setSurfaceSize(const Size(800, 400));
           await tester.pump();
           await tester.drag(scroll, const Offset(0, -250));
           await tester.pump(const Duration(milliseconds: 300));
@@ -4463,7 +4463,7 @@ void main() {
     );
 
     _detailTestWidgets(
-      'set as cover animates the icon and label together',
+      'Windows set as cover highlights its icon and label at a fixed size',
       (tester) async {
         final fixture = AppRuntimeWidgetTestFixture();
         addTearDown(fixture.dispose);
@@ -4494,39 +4494,36 @@ void main() {
           of: button,
           matching: find.byIcon(Icons.photo_size_select_actual_outlined),
         );
-        Transform foreground(Finder glyph) => tester
-            .widgetList<Transform>(
-              find.ancestor(of: glyph, matching: find.byType(Transform)),
-            )
-            .firstWhere((transform) => !transform.transformHitTests);
         Color? glyphColor(Finder glyph) => glyph == icon
             ? IconTheme.of(tester.element(glyph)).color
             : DefaultTextStyle.of(tester.element(glyph)).style.color;
         final restColor = glyphColor(label);
         final bounds = tester.getRect(button);
+        final labelBounds = tester.getRect(label);
+        final iconBounds = tester.getRect(icon);
         final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
         await mouse.addPointer(location: bounds.center);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
 
-        void expectFeedback(double scale) {
-          expect(foreground(label), same(foreground(icon)));
-          expect(foreground(label).transform.entry(0, 0), scale);
+        void expectFeedback() {
+          expect(tester.getRect(label), labelBounds);
+          expect(tester.getRect(icon), iconBounds);
           expect(glyphColor(label), isNot(restColor));
           expect(glyphColor(icon), glyphColor(label));
           expect(tester.getRect(button), bounds);
         }
 
-        expectFeedback(1.0);
+        expectFeedback();
         await mouse.down(bounds.center);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 120));
-        expectFeedback(0.94);
+        expectFeedback();
         await mouse.up();
         await mouse.removePointer();
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 150));
-        expect(foreground(label).transform.entry(0, 0), 1);
+        expect(tester.getRect(label), labelBounds);
         expect(glyphColor(label), restColor);
         expect(coverSelections, 1);
       },
@@ -4605,13 +4602,14 @@ void main() {
         final viewerCanvas = tester.widget<Scaffold>(
           find.ancestor(of: viewport, matching: find.byType(Scaffold)).first,
         );
-        final layers =
-            ((viewerCanvas.body! as ClipRect).child! as Stack).children;
         expect(
-          layers.whereType<Positioned>().map((layer) => layer.child),
-          contains(
-            isA<ColoredBox>().having((box) => box.color, 'color', themeSurface),
+          find.descendant(
+            of: find.byWidget(viewerCanvas),
+            matching: find.byWidgetPredicate(
+              (widget) => widget is ColoredBox && widget.color == themeSurface,
+            ),
           ),
+          findsWidgets,
         );
         expect(find.byType(ImageFiltered), findsNothing);
         final pageView = tester.widget<PageView>(find.byType(PageView));
@@ -4988,8 +4986,13 @@ void main() {
         await waitForArtwork();
         expect(downloads, 1);
 
+        final provider = tester.widget<Image>(
+          find.descendant(
+            of: find.byType(RetryingFileImage),
+            matching: find.byType(Image),
+          ),
+        ).image;
         await tester.pumpWidget(const SizedBox.shrink());
-        final provider = FileImage(File(image.path));
         releaseRetainedCoverImage(provider);
         await provider.evict();
         await tester.runAsync(() => File(image.path).delete());
@@ -5420,20 +5423,20 @@ void main() {
                 greaterThan(tester.getSize(tiles.first).height),
               );
             }
-            final tile = find.descendant(
-              of: row,
-              matching: find.byType(ListTile),
-            );
-            expect(tester.widget<ListTile>(tile).leading, isA<Icon>());
-            final icon = tester.widget<ListTile>(tile).leading! as Icon;
-            final expectedIcon = switch (WorkEntryType.values[index]) {
+            final expectedIcon = switch (type) {
               WorkEntryType.folder => AppDesignTokens.folderIcon,
               WorkEntryType.audio => AppDesignTokens.audioFileIcon,
               WorkEntryType.text => AppDesignTokens.textFileIcon,
               WorkEntryType.image => AppDesignTokens.imageFileIcon,
             };
-            expect(icon.icon, expectedIcon);
-            expect(icon.size, AppDesignTokens.fileEntryIconSize);
+            final icon = find.descendant(
+              of: row,
+              matching: find.byIcon(expectedIcon),
+            );
+            expect(
+              tester.widget<Icon>(icon).size,
+              AppDesignTokens.fileEntryIconSize,
+            );
             if (index > 0) {
               expect(
                 tester.getRect(row).top,
@@ -5587,7 +5590,12 @@ void main() {
                 body: WorkDetailEntryTile(
                   item: item,
                   accentColor: Colors.blue,
-                  menuEntries: const [],
+                  menuEntries: const [
+                    UnifiedMenuEntry.action(
+                      value: WorkEntryAction.copy,
+                      label: 'Copy name',
+                    ),
+                  ],
                   moreLabel: 'More',
                   unknownSizeLabel: '大小未知',
                   onAction: (action) => performedAction = action,
@@ -5632,8 +5640,9 @@ void main() {
           );
 
           await tester.longPress(listTileFinder);
-          await tester.pump();
-          expect(performedAction, WorkEntryAction.copy);
+          await tester.pumpAndSettle();
+          expect(performedAction, WorkEntryAction.open);
+          expect(find.text('Copy name'), findsOneWidget);
           expect(
             calls
                 .where((call) => call.method == 'HapticFeedback.vibrate')
@@ -5641,12 +5650,90 @@ void main() {
             ['HapticFeedbackType.selectionClick'],
           );
 
+          await tester.tap(find.text('Copy name'));
+          await tester.pumpAndSettle();
+          expect(performedAction, WorkEntryAction.copy);
           await tester.pumpWidget(const SizedBox.shrink());
         } finally {
           debugDefaultTargetPlatformOverride = null;
         }
       },
     );
+
+    for (final type in WorkEntryType.values) {
+      _detailTestWidgets(
+        'WorkDetailEntryTile opens the same menu by long press and More for ${type.name}',
+        (tester) async {
+          final actions = <WorkEntryAction>[];
+          final tapAction = type == WorkEntryType.audio
+              ? WorkEntryAction.play
+              : WorkEntryAction.open;
+          await tester.pumpWidget(
+            MaterialApp(
+              home: Scaffold(
+                body: WorkDetailEntryTile(
+                  item: WorkEntryItem(
+                    name: 'File entry',
+                    relativePath: 'File entry',
+                    type: type,
+                  ),
+                  accentColor: Colors.blue,
+                  menuEntries: const [
+                    UnifiedMenuEntry.action(
+                      value: WorkEntryAction.copy,
+                      label: 'Copy name',
+                    ),
+                    UnifiedMenuEntry.action(
+                      value: WorkEntryAction.rename,
+                      label: 'Rename',
+                      enabled: false,
+                    ),
+                  ],
+                  moreLabel: 'More',
+                  unknownSizeLabel: 'Unknown size',
+                  onAction: actions.add,
+                ),
+              ),
+            ),
+          );
+
+          final row = find.byType(ListTile);
+          await tester.tap(row);
+          await tester.pumpAndSettle();
+          expect(actions, [tapAction]);
+          actions.clear();
+
+          final copy = find.text('Copy name');
+          final rename = find.text('Rename');
+          for (final openMenu in [
+            () => tester.longPress(row),
+            () => tester.tap(find.byTooltip('More')),
+          ]) {
+            await openMenu();
+            await tester.pumpAndSettle();
+            expect(actions, isEmpty);
+            expect(copy, findsOneWidget);
+            expect(rename, findsOneWidget);
+            expect(
+              tester.getCenter(copy).dy,
+              lessThan(tester.getCenter(rename).dy),
+            );
+
+            await tester.tap(rename);
+            await tester.pumpAndSettle();
+            expect(actions, isEmpty);
+            expect(copy, findsOneWidget);
+
+            await tester.tap(copy);
+            await tester.pumpAndSettle();
+            expect(actions, [WorkEntryAction.copy]);
+            expect(copy, findsNothing);
+            actions.clear();
+          }
+        },
+        variant: TargetPlatformVariant.only(TargetPlatform.android),
+      );
+    }
 
     _detailTestWidgets(
       'WorkDetailEntryTile highlights item on Windows when more menu is opened',
@@ -5941,10 +6028,9 @@ void main() {
                 children: [
                   WorkDetailEntryTile(
                     item: const WorkEntryItem(
-                      name: 'notes.txt',
-                      relativePath: 'notes.txt',
-                      type: WorkEntryType.text,
-                      fileSizeBytes: 512,
+                      name: 'Folder',
+                      relativePath: 'Folder',
+                      type: WorkEntryType.folder,
                     ),
                     accentColor: Colors.deepPurple,
                     menuEntries: const [],
@@ -5997,7 +6083,7 @@ void main() {
         );
         await tester.pump();
 
-        final textRow = find.byType(WorkDetailEntryTile).at(0);
+        final folderRow = find.byType(WorkDetailEntryTile).at(0);
         final validRow = find.byType(WorkDetailEntryTile).at(1);
         final missingRow = find.byType(WorkDetailEntryTile).at(2);
 
@@ -6007,6 +6093,12 @@ void main() {
           of: validRow,
           matching: find.byIcon(AppDesignTokens.imageFileIcon),
         );
+        final iconCenterX = tester.getCenter(
+          find.descendant(
+            of: folderRow,
+            matching: find.byIcon(AppDesignTokens.folderIcon),
+          ),
+        ).dx;
         expect(validIconFinder, findsOneWidget);
         expect(
           tester.widget<Icon>(validIconFinder).color,
@@ -6016,24 +6108,9 @@ void main() {
           find.descendant(of: validRow, matching: find.byType(Image)),
           findsNothing,
         );
-        expect(
-          tester.getTopLeft(validIconFinder).dx,
-          closeTo(
-            tester
-                .getTopLeft(
-                  find.descendant(
-                    of: textRow,
-                    matching: find.byIcon(AppDesignTokens.textFileIcon),
-                  ),
-                )
-                .dx,
-            0.01,
-          ),
-        );
-        expect(
-          tester.getTopLeft(find.text('cover')).dx,
-          closeTo(tester.getTopLeft(find.text('notes')).dx, 0.01),
-        );
+        expect(tester.getCenter(validIconFinder).dx, closeTo(iconCenterX, 0.01));
+        final titleX = tester.getTopLeft(find.text('Folder')).dx;
+        expect(tester.getTopLeft(find.text('cover')).dx, closeTo(titleX, 0.01));
 
         interaction.endNavigation(source);
         for (var attempt = 0; attempt < 100; attempt++) {
@@ -6057,6 +6134,8 @@ void main() {
         expect(validThumbnail, findsOneWidget);
         expect(tester.widget<Image>(validThumbnail).fit, BoxFit.cover);
         expect(tester.getSize(validThumbnail), const Size(32, 32));
+        expect(tester.getCenter(validThumbnail).dx, closeTo(iconCenterX, 0.01));
+        expect(tester.getTopLeft(find.text('cover')).dx, closeTo(titleX, 0.01));
         expect(
           find.descendant(
             of: validRow,
@@ -6068,13 +6147,12 @@ void main() {
           find.descendant(of: missingRow, matching: find.byType(Image)),
           findsNothing,
         );
-        expect(
-          find.descendant(
-            of: missingRow,
-            matching: find.byIcon(AppDesignTokens.imageFileIcon),
-          ),
-          findsOneWidget,
+        final missingIcon = find.descendant(
+          of: missingRow,
+          matching: find.byIcon(AppDesignTokens.imageFileIcon),
         );
+        expect(missingIcon, findsOneWidget);
+        expect(tester.getCenter(missingIcon).dx, closeTo(iconCenterX, 0.01));
         expect(tester.takeException(), isNull);
 
         await tester.pumpWidget(const SizedBox.shrink());
@@ -6146,7 +6224,9 @@ void main() {
         await tester.pump();
         await tester.pump(UiInteractionCoordinator.instance.idleDelay);
 
-        expect(find.byIcon(AppDesignTokens.imageFileIcon), findsOneWidget);
+        final imageIcon = find.byIcon(AppDesignTokens.imageFileIcon);
+        expect(imageIcon, findsOneWidget);
+        final iconCenterX = tester.getCenter(imageIcon).dx;
         expect(find.byType(Image), findsNothing);
 
         covers.cover.complete(remoteImageFile.path);
@@ -6164,7 +6244,8 @@ void main() {
         expect(thumbnail, findsOneWidget);
         expect(tester.widget<Image>(thumbnail).fit, BoxFit.cover);
         expect(tester.getSize(thumbnail), const Size(32, 32));
-        expect(find.byIcon(AppDesignTokens.imageFileIcon), findsNothing);
+        expect(tester.getCenter(thumbnail).dx, closeTo(iconCenterX, 0.01));
+        expect(imageIcon, findsNothing);
         expect(tester.takeException(), isNull);
 
         await tester.pumpWidget(const SizedBox.shrink());

@@ -26,10 +26,10 @@ void main() {
 
     expect(snapshot.backgroundRunAllowed, isTrue);
     expect(snapshot.notificationsAllowed, isTrue);
-    expect(snapshot.exactAlarmsAllowed, isTrue);
     expect(snapshot.manageFilesAllowed, isTrue);
     expect(snapshot.overlayAllowed, isFalse);
     expect(snapshot.updateInstallsAllowed, isFalse);
+    expect(await service.isGranted(PermissionCapability.exactAlarms), isTrue);
   });
 
   test('Android notifications capability delegates to power platform service', () async {

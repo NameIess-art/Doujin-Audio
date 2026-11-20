@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/presentation/app_orientation_controller.dart';
@@ -13,6 +14,9 @@ import '../../../core/platform/video_display_platform_gateway.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../application/playback_session.dart';
+
+/// Low-blue-light warm amber foreground designed for dark bedroom viewing.
+const Color _bedtimeWarmForeground = Color(0xFFFFE6C4);
 
 class BedtimeCanvasPage extends ConsumerStatefulWidget {
   const BedtimeCanvasPage({super.key});
@@ -341,140 +345,153 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     final timeStr =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Listener(
-        behavior: HitTestBehavior.opaque,
-        onPointerDown: _onPointerDown,
-        onPointerMove: _onPointerMove,
-        onPointerUp: _onPointerUp,
-        onPointerCancel: _onPointerCancel,
-        child: GestureDetector(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarDividerColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+        systemNavigationBarIconBrightness: Brightness.light,
+        systemStatusBarContrastEnforced: false,
+        systemNavigationBarContrastEnforced: false,
+      ),
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Listener(
           behavior: HitTestBehavior.opaque,
-          onDoubleTap: _handleDoubleTap,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // Main content with gentle breathing animation
-              FadeTransition(
-                opacity: _breathingAnimation,
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Clock time display
-                      Text(
-                        timeStr,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 68,
-                          fontWeight: FontWeight.w200,
-                          letterSpacing: 2,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      // Sleep timer / status subtitle
-                      const _BedtimeTimerStatus(),
-                    ],
-                  ),
-                ),
-              ),
-
-              // Bottom subtle hint
-              Positioned(
-                bottom: 32,
-                left: 20,
-                right: 20,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      i18n.tr('hold_to_exit_sleep_mode'),
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.16),
-                        fontSize: 12,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Faint gesture feedback badge
-              if (_feedbackIcon != null)
-                Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 14,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
+          onPointerDown: _onPointerDown,
+          onPointerMove: _onPointerMove,
+          onPointerUp: _onPointerUp,
+          onPointerCancel: _onPointerCancel,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onDoubleTap: _handleDoubleTap,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Main content with gentle breathing animation
+                FadeTransition(
+                  opacity: _breathingAnimation,
+                  child: Center(
+                    child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          _feedbackIcon,
-                          color: Colors.white.withValues(alpha: 0.35),
-                          size: 26,
+                        // Clock time display
+                        Text(
+                          timeStr,
+                          style: const TextStyle(
+                            color: _bedtimeWarmForeground,
+                            fontSize: 68,
+                            fontWeight: FontWeight.w200,
+                            letterSpacing: 2,
+                          ),
                         ),
+                        const SizedBox(height: 12),
+                        // Sleep timer / status subtitle
+                        const _BedtimeTimerStatus(),
                       ],
                     ),
                   ),
                 ),
 
-              // Long-press hold indicator
-              AnimatedBuilder(
-                animation: _holdExitController,
-                builder: (context, _) {
-                  final progress = _holdExitController.value;
-                  if (progress <= 0.0) return const SizedBox.shrink();
-
-                  final pos =
-                      _touchPosition ??
-                      Offset(
-                        MediaQuery.sizeOf(context).width / 2,
-                        MediaQuery.sizeOf(context).height / 2,
-                      );
-
-                  return Positioned(
-                    left: pos.dx - 40,
-                    top: pos.dy - 40,
-                    child: IgnorePointer(
-                      child: SizedBox(
-                        width: 80,
-                        height: 80,
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            CircularProgressIndicator(
-                              value: progress,
-                              strokeWidth: 3,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                Colors.white.withValues(alpha: 0.4),
-                              ),
-                              backgroundColor: Colors.white.withValues(
-                                alpha: 0.1,
-                              ),
-                            ),
-                            Icon(
-                              Icons.lock_open_rounded,
-                              size: 20,
-                              color: Colors.white.withValues(
-                                alpha: math.min(0.4, 0.15 + progress * 0.25),
-                              ),
-                            ),
-                          ],
+                // Bottom subtle hint
+                Positioned(
+                  bottom: 32,
+                  left: 20,
+                  right: 20,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        i18n.tr('hold_to_exit_sleep_mode'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: _bedtimeWarmForeground.withValues(alpha: 0.18),
+                          fontSize: 12,
+                          letterSpacing: 0.5,
                         ),
                       ),
+                    ],
+                  ),
+                ),
+
+                // Faint gesture feedback badge
+                if (_feedbackIcon != null)
+                  Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 14,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _bedtimeWarmForeground.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _feedbackIcon,
+                            color: _bedtimeWarmForeground.withValues(
+                              alpha: 0.35,
+                            ),
+                            size: 26,
+                          ),
+                        ],
+                      ),
                     ),
-                  );
-                },
-              ),
-            ],
+                  ),
+
+                // Long-press hold indicator
+                AnimatedBuilder(
+                  animation: _holdExitController,
+                  builder: (context, _) {
+                    final progress = _holdExitController.value;
+                    if (progress <= 0.0) return const SizedBox.shrink();
+
+                    final pos =
+                        _touchPosition ??
+                        Offset(
+                          MediaQuery.sizeOf(context).width / 2,
+                          MediaQuery.sizeOf(context).height / 2,
+                        );
+
+                    return Positioned(
+                      left: pos.dx - 40,
+                      top: pos.dy - 40,
+                      child: IgnorePointer(
+                        child: SizedBox(
+                          width: 80,
+                          height: 80,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              CircularProgressIndicator(
+                                value: progress,
+                                strokeWidth: 3,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  _bedtimeWarmForeground.withValues(alpha: 0.4),
+                                ),
+                                backgroundColor: _bedtimeWarmForeground
+                                    .withValues(alpha: 0.1),
+                              ),
+                              Icon(
+                                Icons.lock_open_rounded,
+                                size: 20,
+                                color: _bedtimeWarmForeground.withValues(
+                                  alpha: math.min(0.4, 0.15 + progress * 0.25),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -517,13 +534,13 @@ class _BedtimeTimerStatus extends ConsumerWidget {
               ? Icons.timer_outlined
               : Icons.nights_stay_outlined,
           size: 14,
-          color: Colors.white.withValues(alpha: 0.85),
+          color: _bedtimeWarmForeground.withValues(alpha: 0.85),
         ),
         const SizedBox(width: 6),
         Text(
           timerText,
           style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.85),
+            color: _bedtimeWarmForeground.withValues(alpha: 0.85),
             fontSize: 13,
             fontWeight: FontWeight.w400,
             letterSpacing: 0.5,

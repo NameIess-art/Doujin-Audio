@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../app/theme/app_design_tokens.dart';
 import 'scroll_activity_gate.dart';
 
 class ShimmerLoader extends StatefulWidget {
@@ -80,12 +81,13 @@ class _ShimmerLoaderState extends State<ShimmerLoader>
 
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final pureBlack = AppDesignTokens.of(context).pureBlack;
 
     final baseColor = isDark
         ? cs.surfaceContainerHigh
         : cs.surfaceContainerHighest;
     final highlightColor = isDark
-        ? cs.surfaceContainerHighest
+        ? Color.lerp(baseColor, cs.onSurface, pureBlack ? 0.14 : 0.08)!
         : cs.surfaceContainer;
 
     return RepaintBoundary(

@@ -185,11 +185,11 @@ void main() {
       expect(downloadValues.single, isEmpty);
 
       await language.setLanguage(AppLanguage.en);
-      await theme.setAppThemeColor(ThemeAccentPreset.mint);
+      await theme.setAppThemeColor(ThemeAccentPreset.teal);
       downloads.emit(const <String>['code:RJ000042']);
       await container.pump();
       expect(languageValues.last.language, AppLanguage.en);
-      expect(themeValues.last.appThemeColor, ThemeAccentPreset.mint);
+      expect(themeValues.last.appThemeColor, ThemeAccentPreset.teal);
       expect(downloadValues.last, const <String>['code:RJ000042']);
 
       for (final subscription in subscriptions) {

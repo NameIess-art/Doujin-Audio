@@ -119,54 +119,67 @@ class WindowsWindowTitleBar extends ConsumerWidget {
       );
     }
 
+    final titleBarColor = landscapeNavigationBackground(colors);
+    final showPureBlackDivider = isDark && titleBarColor == colors.surface;
     return SizedBox(
       height: height,
       child: Material(
-        color: landscapeNavigationBackground(colors),
-        child: Row(
-          children: [
-            Expanded(
-              child: WindowsWindowDragArea(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Row(
-                    children: [
-                      Image.asset(appBrandIconAsset, width: 16, height: 16),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          language.tr('app_title'),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+        color: titleBarColor,
+        child: DecoratedBox(
+          decoration: showPureBlackDivider
+              ? BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: colors.outlineVariant.withValues(alpha: 0.22),
+                    ),
+                  ),
+                )
+              : const BoxDecoration(),
+          child: Row(
+            children: [
+              Expanded(
+                child: WindowsWindowDragArea(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Row(
+                      children: [
+                        Image.asset(appBrandIconAsset, width: 16, height: 16),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            language.tr('app_title'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-            ExcludeFocus(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  button(
-                    WindowsWindowCommand.minimize,
-                    'window_minimize',
-                    Icons.remove,
-                  ),
-                  ValueListenableBuilder<bool>(
-                    valueListenable: controls.maximized,
-                    builder: (context, maximized, _) => button(
-                      WindowsWindowCommand.toggleMaximized,
-                      maximized ? 'window_restore' : 'window_maximize',
-                      maximized ? Icons.filter_none : Icons.crop_square,
+              ExcludeFocus(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    button(
+                      WindowsWindowCommand.minimize,
+                      'window_minimize',
+                      Icons.remove,
                     ),
-                  ),
-                  button(WindowsWindowCommand.close, 'close', Icons.close),
-                ],
+                    ValueListenableBuilder<bool>(
+                      valueListenable: controls.maximized,
+                      builder: (context, maximized, _) => button(
+                        WindowsWindowCommand.toggleMaximized,
+                        maximized ? 'window_restore' : 'window_maximize',
+                        maximized ? Icons.filter_none : Icons.crop_square,
+                      ),
+                    ),
+                    button(WindowsWindowCommand.close, 'close', Icons.close),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

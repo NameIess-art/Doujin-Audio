@@ -31,6 +31,7 @@ abstract final class AppLifecycleMethod {
   static const String terminateForPendingRestore = 'terminateForPendingRestore';
   static const String syncAppTheme = 'syncAppTheme';
   static const String syncTrayMenu = 'syncTrayMenu';
+  static const String getSystemAccentColor = 'getSystemAccentColor';
 }
 
 abstract final class PowerChannel {

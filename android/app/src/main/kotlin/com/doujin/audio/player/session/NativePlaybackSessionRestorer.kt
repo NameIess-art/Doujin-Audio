@@ -36,7 +36,8 @@ internal fun StoredNativePlaybackSession.restoredQueue(cacheDirectory: File? = n
             usageDescriptor = queueItem.usageDescriptor,
             clipStartMs = queueItem.clipStartMs,
             clipEndMs = queueItem.clipEndMs,
-            httpHeaders = queueItem.httpHeaders
+            httpHeaders = queueItem.httpHeaders,
+            playOnceBeforeQueue = queueItem.playOnceBeforeQueue
         ).withPlaybackCandidateUris(queueItem.candidateUris.map { candidate ->
             restoredPlaybackUri(queueItem.path, candidate, cacheDirectory)
         })
@@ -118,7 +119,8 @@ internal class NativePlaybackSessionRestorer(
                     shuffleModeEnabled = stored.shuffleModeEnabled,
                     autoPlay = shouldPlay,
                     deferPlayerCreation = !shouldPlay,
-                    preparedQueue = prepared
+                    preparedQueue = prepared,
+                    discardedQueuePrefix = stored.discardedQueuePrefix
                 )
                 focusSession(stored.sessionId)
                 restoredSessionIds += stored.sessionId

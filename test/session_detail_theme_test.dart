@@ -687,4 +687,81 @@ void main() {
     await tester.pump();
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'pure black dark theme retains OLED black surface under cover extraction and preserves 3-level text hierarchy',
+    (tester) async {
+      final file = await _cover(tester, Colors.blue);
+      final pureBlackTheme = _base(Brightness.dark).copyWith(
+        extensions: [AppDesignTokens.dark.copyWith(pureBlack: true)],
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: pureBlackTheme,
+          themeAnimationDuration: Duration.zero,
+          home: SessionDetailTheme(
+            coverPathFuture: Future.value(file.path),
+            initialCoverPath: file.path,
+            requestKey: 'pure-black-cover',
+            coverRevision: (scope: 'track', epoch: 0, revision: 0),
+            queueColorValue: null,
+            child: const SizedBox(key: _probeKey),
+          ),
+        ),
+      );
+      await _waitForTarget(
+        tester,
+        (theme) =>
+            theme.colorScheme.primary != pureBlackTheme.colorScheme.primary,
+      );
+      await tester.pumpAndSettle();
+      final theme = _theme(tester);
+      final scheme = theme.colorScheme;
+      expect(scheme.surface, const Color(0xFF000000));
+      expect(theme.scaffoldBackgroundColor, const Color(0xFF000000));
+      expect(scheme.primary.b, greaterThan(scheme.primary.r));
+      expect(theme.textTheme.titleMedium!.color, scheme.onSurface);
+      expect(theme.textTheme.bodyMedium!.color, isNot(scheme.onSurface));
+      expect(theme.textTheme.bodySmall!.color, scheme.onSurfaceVariant);
+    },
+  );
+
+  test('extreme queue colors are adjusted to remain readable against surface', () {
+    final darkBase = _base(Brightness.dark);
+    final darkFromBlack = createPlaybackQueueSessionDetailTheme(
+      darkBase,
+      const Color(0xFF000000),
+    );
+    expect(
+      _contrast(darkFromBlack.colorScheme.primary, darkBase.colorScheme.surface),
+      greaterThanOrEqualTo(3.5),
+    );
+    expect(
+      _contrast(
+        darkFromBlack.colorScheme.primary,
+        darkFromBlack.colorScheme.onPrimary,
+      ),
+      greaterThanOrEqualTo(4.5),
+    );
+
+    final lightBase = _base(Brightness.light);
+    final lightFromWhite = createPlaybackQueueSessionDetailTheme(
+      lightBase,
+      const Color(0xFFFFFFFF),
+    );
+    expect(
+      _contrast(
+        lightFromWhite.colorScheme.primary,
+        lightBase.colorScheme.surface,
+      ),
+      greaterThanOrEqualTo(3.5),
+    );
+    expect(
+      _contrast(
+        lightFromWhite.colorScheme.primary,
+        lightFromWhite.colorScheme.onPrimary,
+      ),
+      greaterThanOrEqualTo(4.5),
+    );
+  });
 }

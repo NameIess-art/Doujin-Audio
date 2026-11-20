@@ -652,6 +652,7 @@ class _LibraryLikeCardActionsState extends State<LibraryLikeCardActions>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isWindows = theme.platform == TargetPlatform.windows;
     final colors = theme.colorScheme;
     // The card already owns an ink surface. Driving both icons from a single
     // State avoids allocating extra stateful wrappers inside each scrolling row.
@@ -695,11 +696,13 @@ class _LibraryLikeCardActionsState extends State<LibraryLikeCardActions>
               width: 22,
               height: _libraryLikeInfoLineHeight,
               child: Center(
-                child: Transform.scale(
-                  scale: motion.controller.value,
-                  transformHitTests: false,
-                  child: iconWidget,
-                ),
+                child: isWindows
+                    ? iconWidget
+                    : Transform.scale(
+                        scale: motion.controller.value,
+                        transformHitTests: false,
+                        child: iconWidget,
+                      ),
               ),
             ),
           ),

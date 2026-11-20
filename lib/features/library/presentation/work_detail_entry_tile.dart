@@ -44,6 +44,7 @@ class WorkDetailEntryTile extends StatefulWidget {
 
 class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
   bool _isMenuOpen = false;
+  Offset? _lastPointerPosition;
   ValueNotifier<bool>? _menuDismissal;
 
   @override
@@ -53,16 +54,20 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
     super.dispose();
   }
 
-  Future<void> _showMenu(BuildContext context, RelativeRect position) async {
+  Future<void> _showMenu(BuildContext context, {Offset? globalPosition}) async {
     if (!mounted || _isMenuOpen) return;
     setState(() => _isMenuOpen = true);
     try {
-      final result = await showDockAwareMenu<WorkEntryAction>(
-        context: context,
-        position: position,
-        entries: widget.menuEntries,
-        dismissOn: _menuDismissal ??= ValueNotifier(false),
-      );
+      final dismissal = _menuDismissal ??= ValueNotifier(false);
+      final menu = globalPosition == null
+          ? _showAnchoredMenu(context, dismissal)
+          : showUnifiedContextMenu<WorkEntryAction>(
+              context: context,
+              globalPosition: globalPosition,
+              entries: widget.menuEntries,
+              dismissOn: dismissal,
+            );
+      final result = await menu;
       if (context.mounted && result != null) {
         widget.onAction(result);
       }
@@ -73,18 +78,23 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
     }
   }
 
-  Future<void> _showButtonMenu(BuildContext context) async {
-    final button = context.findRenderObject() as RenderBox?;
+  Future<WorkEntryAction?> _showAnchoredMenu(
+    BuildContext context,
+    ValueNotifier<bool> dismissal,
+  ) async {
+    final anchor = context.findRenderObject() as RenderBox?;
     final overlay =
         MobileOverlayInset.menuOverlayOf(context) ?? Overlay.maybeOf(context);
     final box = overlay?.context.findRenderObject() as RenderBox?;
-    if (button == null || !button.hasSize || box == null || !box.hasSize) {
-      return;
+    if (anchor == null || !anchor.hasSize || box == null || !box.hasSize) {
+      return null;
     }
-    final rect = button.localToGlobal(Offset.zero, ancestor: box) & button.size;
-    await _showMenu(
-      context,
-      RelativeRect.fromRect(rect, Offset.zero & box.size),
+    final rect = anchor.localToGlobal(Offset.zero, ancestor: box) & anchor.size;
+    return showDockAwareMenu<WorkEntryAction>(
+      context: context,
+      position: RelativeRect.fromRect(rect, Offset.zero & box.size),
+      entries: widget.menuEntries,
+      dismissOn: dismissal,
     );
   }
 
@@ -122,18 +132,19 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
       WorkEntryType.text => AppDesignTokens.textFileIcon,
       WorkEntryType.image => AppDesignTokens.imageFileIcon,
     };
+    final tokens = AppDesignTokens.of(context);
     final color = switch (item.type) {
-      WorkEntryType.folder => AppDesignTokens.folderIconColor,
+      WorkEntryType.folder => tokens.folderColor,
       WorkEntryType.audio => widget.accentColor,
-      WorkEntryType.text => AppDesignTokens.textFileIconColor,
-      WorkEntryType.image => AppDesignTokens.imageFileIconColor,
+      WorkEntryType.text => tokens.textFileColor,
+      WorkEntryType.image => tokens.imageFileColor,
     };
-    final isHighlighted =
-        defaultTargetPlatform == TargetPlatform.windows && _isMenuOpen;
+    final isWindows = defaultTargetPlatform == TargetPlatform.windows;
+    final isHighlighted = isWindows && _isMenuOpen;
 
     final opensPage =
         item.type == WorkEntryType.text || item.type == WorkEntryType.image;
-    final onLongPress = defaultTargetPlatform == TargetPlatform.windows
+    final onLongPress = isWindows
         ? null
         : () {
             unawaited(
@@ -141,7 +152,7 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
                 AppInteractionFeedbackType.selection,
               ),
             );
-            widget.onAction(WorkEntryAction.copy);
+            unawaited(_showMenu(context, globalPosition: _lastPointerPosition));
           };
 
     void onTap() {
@@ -160,12 +171,16 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
     final imagePath = item.type == WorkEntryType.image
         ? (item.imageItem?.path ?? item.fullPathOrUrl).trim()
         : '';
+    const thumbnailOutset =
+        (_WorkImageEntryLeading.thumbnailSize -
+            AppDesignTokens.fileEntryIconSize) /
+        2;
     final leading = imagePath.isNotEmpty && !PathMatcher.isContentUri(imagePath)
-        ? _WorkImageEntryLeading(
-            path: imagePath,
-            fallbackIcon: fallbackIcon,
-          )
-        : fallbackIcon;
+        ? _WorkImageEntryLeading(path: imagePath, fallbackIcon: fallbackIcon)
+        : Padding(
+            padding: const EdgeInsetsDirectional.only(start: thumbnailOutset),
+            child: fallbackIcon,
+          );
 
     final tile = ListTile(
       dense: true,
@@ -174,9 +189,11 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
       minVerticalPadding: 4,
       titleAlignment: ListTileTitleAlignment.center,
       horizontalTitleGap: 0,
-      // Preserve the name's leading offset while tightening the action gap.
-      minLeadingWidth: 40,
-      contentPadding: const EdgeInsets.only(left: 16),
+      // Make room for the wider thumbnail around the icon's center.
+      minLeadingWidth: 40 + thumbnailOutset,
+      contentPadding: const EdgeInsetsDirectional.only(
+        start: 16 - thumbnailOutset,
+      ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       selected: isHighlighted,
       selectedTileColor: widget.accentColor.withValues(alpha: 0.16),
@@ -219,7 +236,7 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
             ),
             icon: const Icon(Icons.more_vert_rounded),
             tooltip: widget.moreLabel,
-            onPressed: () => _showButtonMenu(buttonContext),
+            onPressed: () => _showMenu(buttonContext),
           ),
         ),
       ),
@@ -227,42 +244,31 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
       onTap: opensPage ? null : onTap,
     );
 
-    return GestureDetector(
-      onSecondaryTapDown: defaultTargetPlatform == TargetPlatform.windows
-          ? (details) async {
-              if (_isMenuOpen) return;
-              if (mounted) {
-                setState(() => _isMenuOpen = true);
-              }
-              try {
-                final result = await showUnifiedContextMenu<WorkEntryAction>(
-                  context: context,
-                  globalPosition: details.globalPosition,
-                  entries: widget.menuEntries,
-                  dismissOn: _menuDismissal ??= ValueNotifier(false),
+    return Listener(
+      // Long press callbacks carry no position; keep the touch point so the
+      // menu opens where the user pressed.
+      onPointerDown: (event) => _lastPointerPosition = event.position,
+      child: GestureDetector(
+        onSecondaryTapDown: isWindows
+            ? (details) {
+                unawaited(
+                  _showMenu(context, globalPosition: details.globalPosition),
                 );
-                if (context.mounted && result != null) {
-                  widget.onAction(result);
-                }
-              } finally {
-                if (mounted) {
-                  setState(() => _isMenuOpen = false);
-                }
               }
-            }
-          : null,
-      child: Material(
-        color: Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        clipBehavior: Clip.antiAlias,
-        child: opensPage
-            ? AppEntryInkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: onTap,
-                onLongPress: onLongPress,
-                child: tile,
-              )
-            : tile,
+            : null,
+        child: Material(
+          color: Colors.transparent,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          clipBehavior: Clip.antiAlias,
+          child: opensPage
+              ? AppEntryInkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: onTap,
+                  onLongPress: onLongPress,
+                  child: tile,
+                )
+              : tile,
+        ),
       ),
     );
   }
@@ -282,10 +288,7 @@ class _WorkImageEntryLeading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final placeholder = Align(
-      alignment: AlignmentDirectional.centerStart,
-      child: fallbackIcon,
-    );
+    final placeholder = Center(child: fallbackIcon);
     Widget buildPlaceholder(BuildContext _) => placeholder;
     final isRemote = PathMatcher.isRemoteUri(path);
     return SizedBox.square(

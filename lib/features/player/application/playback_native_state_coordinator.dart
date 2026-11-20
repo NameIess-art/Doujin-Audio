@@ -88,6 +88,7 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
       final currentGeneration = session.playbackCommandGeneration;
       final shouldAutoAdvanceAfterCompletion =
           isNewCompletion &&
+          !nativeRepository.handlesQueueCompletion &&
           session.state.processingState == ProcessingState.completed &&
           !session.loopMode.isOneShot &&
           !session.completedByTrackStop &&

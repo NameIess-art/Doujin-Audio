@@ -298,7 +298,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
             '${_currentIndex + 1}/${_images.length}',
             key: const ValueKey<String>('audio_detail_cover_position'),
             style: const TextStyle(
-              color: Color(0xFFF8F5F7),
+              color: Colors.white,
               fontSize: 12,
               fontWeight: FontWeight.w700,
             ),
@@ -626,7 +626,7 @@ class _CoverCaption extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
-            color: Color(0xFFF8F5F7),
+            color: Colors.white,
             fontSize: 12,
             fontWeight: FontWeight.w700,
           ),

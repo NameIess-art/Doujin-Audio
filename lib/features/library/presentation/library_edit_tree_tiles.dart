@@ -376,7 +376,9 @@ class _LibraryEditFolderTreeTile extends ConsumerWidget {
                     ? AppDesignTokens.openFolderIcon
                     : AppDesignTokens.folderIcon),
           size: AppDesignTokens.fileEntryIconSize,
-          color: muted ? cs.onSurfaceVariant : AppDesignTokens.folderIconColor,
+          color: muted
+              ? cs.onSurfaceVariant
+              : AppDesignTokens.of(context).folderColor,
         ),
         trailingSpacing: AppSpacing.xxs,
         trailing: Row(

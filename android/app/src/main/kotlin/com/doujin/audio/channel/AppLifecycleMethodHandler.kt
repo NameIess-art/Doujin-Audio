@@ -5,11 +5,20 @@ import io.flutter.plugin.common.MethodChannel
 
 internal class AppLifecycleMethodHandler(
     private val terminateForPendingRestore: () -> Unit,
-    private val syncAppTheme: (String, String) -> Unit,
+    private val syncAppTheme: (String, String, Boolean) -> Unit,
+    private val getSystemAccentColor: () -> Int? = { null },
 ) : MethodChannel.MethodCallHandler {
     constructor(terminateForPendingRestore: () -> Unit) : this(
         terminateForPendingRestore,
-        { _, _ -> },
+        { _, _, _ -> },
+    )
+
+    constructor(
+        terminateForPendingRestore: () -> Unit,
+        syncAppTheme: (String, String) -> Unit,
+    ) : this(
+        terminateForPendingRestore,
+        { preset, themeMode, _ -> syncAppTheme(preset, themeMode) },
     )
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
@@ -22,7 +31,13 @@ internal class AppLifecycleMethodHandler(
                 try {
                     val preset = call.requiredString("preset")
                     val themeMode = call.requiredString("themeMode")
-                    syncAppTheme(preset, themeMode)
+                    val pureBlackRaw = call.argument<Any?>("pureBlack")
+                    val pureBlack = when (pureBlackRaw) {
+                        null -> false
+                        is Boolean -> pureBlackRaw
+                        else -> throw IllegalArgumentException("pureBlack must be a boolean")
+                    }
+                    syncAppTheme(preset, themeMode, pureBlack)
                     result.success(channelSuccess(null))
                 } catch (error: IllegalArgumentException) {
                     result.success(
@@ -32,6 +47,9 @@ internal class AppLifecycleMethodHandler(
                         )
                     )
                 }
+            }
+            AppLifecycleMethods.GET_SYSTEM_ACCENT_COLOR -> {
+                result.success(channelSuccess(getSystemAccentColor()))
             }
             else -> result.notImplemented()
         }

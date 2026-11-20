@@ -1,6 +1,7 @@
 import 'package:doujin_audio/core/widgets/app_edit_panel.dart';
 import 'package:doujin_audio/core/widgets/app_entry_ink_well.dart';
 import 'package:doujin_audio/core/widgets/app_dialog.dart';
+import 'package:doujin_audio/core/widgets/app_glass_surface.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/playlist_icon.dart';
 import 'package:doujin_audio/core/widgets/unified_dropdown.dart';
@@ -281,6 +282,7 @@ _pumpSubtitleDetail({
   List<NavigatorObserver> navigatorObservers = const [],
   FutureOr<void> Function(AppRuntimeWidgetTestFixture)? configureFixture,
   NativePlaybackRepository? nativePlaybackRepository,
+  ThemeProvider? themeProvider,
   List<Override> overrides = const [],
 }) async {
   tester.view.devicePixelRatio = 3;
@@ -373,6 +375,7 @@ _pumpSubtitleDetail({
               ),
             ),
       subtitleService: subtitleService,
+      themeProvider: themeProvider,
       navigatorObservers: navigatorObservers,
       overrides: overrides,
     ),
@@ -789,25 +792,18 @@ void main() {
                   .widgetList<Transform>(
                     find.ancestor(of: label, matching: find.byType(Transform)),
                   )
-                  .firstWhere((widget) => !widget.transformHitTests);
-              expect(scale.transform.entry(0, 0), 1.0);
+                  .where((widget) => !widget.transformHitTests)
+                  .fold<double>(1.0, (scale, t) => scale * t.transform.entry(0, 0));
+              expect(scale, 1.0);
               await mouse.down(tester.getCenter(label));
               await mouse.up();
             } else {
               await tester.longPress(label);
             }
             await tester.pumpAndSettle();
-            expect(
-              find.widgetWithIcon(ListTile, Icons.travel_explore_rounded),
-              findsOneWidget,
-            );
-            expect(
-              find.widgetWithIcon(ListTile, Icons.search_rounded),
-              findsOneWidget,
-            );
-            await tester.tap(
-              find.widgetWithIcon(ListTile, Icons.content_copy_rounded),
-            );
+            expect(find.text('Search online'), findsOneWidget);
+            expect(find.text('Search locally'), findsOneWidget);
+            await tester.tap(find.text('Copy'));
             await tester.pumpAndSettle();
             expect(copied.last, value);
             await tester.pump(const Duration(seconds: 3));
@@ -1322,14 +1318,15 @@ void main() {
         final seekPress = await tester.startGesture(initialPosition);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 110));
-        final glyphTransform = tester
+        final glyphScale = tester
             .widgetList<Transform>(
               find.ancestor(of: seekButton, matching: find.byType(Transform)),
             )
-            .firstWhere((widget) => !widget.transformHitTests);
+            .where((widget) => !widget.transformHitTests)
+            .fold<double>(1.0, (scale, t) => scale * t.transform.entry(0, 0));
         expect(
-          glyphTransform.transform.entry(0, 0),
-          defaultTargetPlatform == TargetPlatform.windows ? 0.90 : 0.92,
+          glyphScale,
+          defaultTargetPlatform == TargetPlatform.windows ? 1.0 : 0.92,
         );
         expect(IconTheme.of(tester.element(seekButton)).color, initialColor);
         await seekPress.up();
@@ -1365,6 +1362,157 @@ void main() {
       }),
     );
   }
+
+  for (final forward in [false, true]) {
+    testWidgets(
+      'holding five-second ${forward ? 'forward' : 'rewind'} repeats until release or cancellation',
+      (tester) async {
+        final harness = await _pumpSubtitleDetail(
+          tester: tester,
+          subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+          initialPosition: const Duration(seconds: 20),
+          physicalSize: defaultTargetPlatform == TargetPlatform.windows
+              ? const Size(3840, 2400)
+              : const Size(1080, 2400),
+        );
+        final session = harness.session
+          ..setOptimisticDuration(const Duration(seconds: 40));
+        final button = find.byIcon(
+          forward ? Icons.forward_5_rounded : Icons.replay_5_rounded,
+        );
+        final kind = defaultTargetPlatform == TargetPlatform.windows
+            ? PointerDeviceKind.mouse
+            : PointerDeviceKind.touch;
+        final delta = forward ? 5 : -5;
+
+        await tester.tap(button, kind: kind);
+        await tester.pump(const Duration(milliseconds: 600));
+        expect(session.position, Duration(seconds: 20 + delta));
+
+        final hold = await tester.startGesture(
+          tester.getCenter(button),
+          kind: kind,
+        );
+        await tester.pump(kLongPressTimeout);
+        expect(session.position, Duration(seconds: 20 + 2 * delta));
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(session.position, Duration(seconds: 20 + 3 * delta));
+        await hold.up();
+        await tester.pump(const Duration(milliseconds: 600));
+        expect(session.position, Duration(seconds: 20 + 3 * delta));
+
+        final cancelledHold = await tester.startGesture(
+          tester.getCenter(button),
+          kind: kind,
+        );
+        await tester.pump(kLongPressTimeout);
+        final boundary = Duration(seconds: forward ? 40 : 0);
+        expect(session.position, boundary);
+        await tester.pump(const Duration(milliseconds: 300));
+        session.setOptimisticPosition(const Duration(seconds: 20));
+        await tester.pump(const Duration(milliseconds: 600));
+        expect(session.position, const Duration(seconds: 20));
+        await cancelledHold.cancel();
+
+        final activeHold = await tester.startGesture(
+          tester.getCenter(button),
+          kind: kind,
+        );
+        await tester.pump(kLongPressTimeout);
+        await activeHold.cancel();
+        await tester.pump(const Duration(milliseconds: 600));
+        expect(session.position, Duration(seconds: 20 + delta));
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
+  testWidgets('held seek skips busy ticks and stops after switching tracks', (
+    tester,
+  ) async {
+    final harness = await _pumpSubtitleDetail(
+      tester: tester,
+      subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+      initialPosition: const Duration(seconds: 20),
+      nativePlaybackRepository: NativePlaybackRepository(
+        bridge: NativePlaybackBridge.instance,
+      ),
+    );
+    final session = harness.session
+      ..loadedPath = harness.session.currentTrackPath
+      ..setOptimisticDuration(const Duration(minutes: 1));
+    final positions = <int>[];
+    final firstSeek = Completer<void>();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+          if (call.method != NativePlaybackMethod.seek) {
+            return <String, Object?>{'ok': true, 'value': null};
+          }
+          final position = (call.arguments as Map)['positionMs'] as int;
+          final path = session.currentTrackPath;
+          positions.add(position);
+          if (positions.length == 1) await firstSeek.future;
+          return <String, Object?>{
+            'ok': true,
+            'value': {
+              'sessionId': session.id,
+              'path': path,
+              'positionMs': position,
+              'queueIndex': 0,
+            },
+          };
+        });
+    final button = find.byIcon(Icons.forward_5_rounded);
+    final hold = await tester.startGesture(tester.getCenter(button));
+    await tester.pump(kLongPressTimeout);
+    expect(positions, [25000]);
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(session.position, const Duration(seconds: 25));
+    expect(positions, [25000]);
+    firstSeek.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(positions, [25000, 30000]);
+
+    session
+      ..currentTrackPath = '/library/subtitles/another.mp3'
+      ..setOptimisticPosition(Duration.zero);
+    harness.fixture.runtimeGraph.playback.publishSessionState(session.id);
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(session.position, Duration.zero);
+    expect(positions, [25000, 30000]);
+    await hold.up();
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('held seek stops when the app loses focus', (tester) async {
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    addTearDown(() {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    });
+    final harness = await _pumpSubtitleDetail(
+      tester: tester,
+      subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+      initialPosition: const Duration(seconds: 20),
+    );
+    final button = find.byIcon(Icons.forward_5_rounded);
+    final hold = await tester.startGesture(tester.getCenter(button));
+    await tester.pump(kLongPressTimeout);
+    expect(harness.session.position, const Duration(seconds: 25));
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump(const Duration(milliseconds: 600));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump(const Duration(milliseconds: 600));
+    await hold.up();
+    await tester.pump();
+    expect(harness.session.position, const Duration(seconds: 25));
+  });
 
   testWidgets('detail transport updates do not request artwork again', (
     tester,
@@ -4064,7 +4212,6 @@ void main() {
                 nameController: nameController,
                 draftStart: null,
                 draftEnd: null,
-                draftColorValue: null,
                 loopSegmentId: null,
                 onSelect: (_) {},
                 onAdd: () {},
@@ -4072,8 +4219,8 @@ void main() {
                 onSetEnd: () {},
                 onEditStart: () {},
                 onEditEnd: () {},
-                onDelete: () {},
-                onToggleLoop: () {},
+                onDelete: (_) {},
+                onToggleLoop: (_) {},
                 onClose: () {},
               ),
             ),
@@ -4270,10 +4417,9 @@ void main() {
       final draw = canvas.invocations
           .singleWhere((call) => call.invocation.memberName == #drawRRect)
           .invocation;
-      expect(
-        (draw.positionalArguments.last as Paint).color,
-        isSameColorAs(accent.withValues(alpha: 0.19)),
-      );
+      final fillColor = (draw.positionalArguments.last as Paint).color;
+      expect(fillColor.withValues(alpha: 1), isSameColorAs(accent));
+      expect(fillColor.a, inExclusiveRange(0, 1));
       return draw.positionalArguments.first as RRect;
     }
 
@@ -4391,7 +4537,7 @@ void main() {
     );
     final panelDecoration =
         tester.widget<DecoratedBox>(panelSurface).decoration as BoxDecoration;
-    expect(panelDecoration.color, isNotNull);
+    expect(panelDecoration.color, isNull);
     expect(panelDecoration.border, isNotNull);
     expect(tester.getSize(find.byKey(expandedPanel)).width, 398);
     expect(
@@ -4423,33 +4569,21 @@ void main() {
     );
     expect(closeButtonFinder, findsOneWidget);
     final header = find.byType(SegmentPanelPageHeader);
-    final capsule = find.descendant(
-      of: header,
-      matching: find.byType(HeaderFloatingSurface),
-    );
-    expect(capsule, findsOneWidget);
-    final capsuleWidget = tester.widget<HeaderFloatingSurface>(capsule);
-    expect(capsuleWidget.radius, 19);
-    expect(capsuleWidget.height, 38);
-    final capsuleFill = tester.widget<Material>(
-      find.descendant(of: capsule, matching: find.byType(Material)).first,
-    );
-    expect(capsuleFill.color, Colors.transparent);
-    final panelRect = tester.getRect(panelSurface);
-    final capsuleRect = tester.getRect(capsule);
-    expect(panelRect.contains(tester.getCenter(closeButtonFinder)), isTrue);
-    expect(panelRect.contains(capsuleRect.center), isTrue);
     expect(
-      tester.getRect(find.byKey(expandedPanel)).contains(capsuleRect.center),
-      isTrue,
+      find.descendant(of: header, matching: find.byType(HeaderFloatingSurface)),
+      findsNothing,
     );
-    expect(capsuleRect.top, closeTo(panelRect.top, 1));
-    expect(capsuleRect.left, closeTo(panelRect.left, 1));
-    expect(capsuleRect.right, closeTo(panelRect.right, 1));
-    final tabScrollClip = tester.widget<ClipRRect>(
-      find.byKey(const ValueKey<String>('console_tab_scroll_clip')),
+    final headerMaterial = tester.widget<Material>(
+      find.descendant(of: header, matching: find.byType(Material)).first,
     );
-    expect(tabScrollClip.borderRadius, BorderRadius.circular(19));
+    expect(headerMaterial.type, MaterialType.transparency);
+    final panelRect = tester.getRect(panelSurface);
+    final headerRect = tester.getRect(header);
+    expect(panelRect.contains(tester.getCenter(closeButtonFinder)), isTrue);
+    expect(headerRect.height, 38);
+    expect(headerRect.top, closeTo(panelRect.top, 1));
+    expect(headerRect.left, closeTo(panelRect.left, 1));
+    expect(headerRect.right, closeTo(panelRect.right, 1));
     final tabScrollView = tester.widget<SingleChildScrollView>(
       find.descendant(of: header, matching: find.byType(SingleChildScrollView)),
     );
@@ -4462,7 +4596,7 @@ void main() {
     );
     final firstTabRect = tester.getRect(tabTaps.at(0));
     final secondTabRect = tester.getRect(tabTaps.at(1));
-    await tester.tapAt(capsuleRect.topLeft + const Offset(1, 1));
+    await tester.tapAt(headerRect.topLeft + const Offset(1, 1));
     await tester.pumpAndSettle();
     expect(tester.widget<SegmentPanelPageHeader>(header).pageIndex, 2);
     await tester.tapAt(
@@ -4516,7 +4650,10 @@ void main() {
       of: find.byType(EqualizerPage),
       matching: find.byType(ListView),
     );
-    expect(tester.getRect(equalizerList).top, closeTo(panelRect.top, 1));
+    expect(
+      tester.getRect(equalizerList).top,
+      closeTo(tester.getRect(header).bottom, 1),
+    );
     expect(
       find.descendant(
         of: find.byKey(expandedPanel),
@@ -8853,8 +8990,15 @@ void main() {
         isInitialized: true,
       );
 
+      final themeProvider = ThemeProvider(
+        loadPersistedState: false,
+        preferenceWriter: (_, _) async => true,
+      );
       await tester.pumpWidget(
-        fixture.build(PlaybackQueueAudioEditPage(sessionId: queueSession.id)),
+        fixture.build(
+          PlaybackQueueAudioEditPage(sessionId: queueSession.id),
+          themeProvider: themeProvider,
+        ),
       );
       await tester.pumpAndSettle();
 
@@ -8873,6 +9017,13 @@ void main() {
       final rightEdge = tester.getRect(titleBar.last).right;
       final isWindows = defaultTargetPlatform == TargetPlatform.windows;
       final addedCapsule = sectionCapsule('queue_added_audio');
+      final sourceCapsule = sectionCapsule('playback_sessions');
+      Finder capsuleBlur(Finder capsule) => find.descendant(
+        of: capsule,
+        matching: find.byType(BackdropFilter),
+      );
+      expect(capsuleBlur(addedCapsule), findsNothing);
+      expect(capsuleBlur(sourceCapsule), findsNothing);
       expect(
         tester.getRect(addedCapsule).left,
         leftEdge,
@@ -9019,6 +9170,14 @@ void main() {
       )) {
         expect(icon.color, primary);
       }
+      expect(await themeProvider.setBarGlassEnabled(true), isTrue);
+      await tester.pumpAndSettle();
+      for (final capsule in [addedCapsule, sourceCapsule]) {
+        expect(
+          tester.widget<BackdropFilter>(capsuleBlur(capsule)).enabled,
+          isTrue,
+        );
+      }
       await tester.pump(const Duration(seconds: 10));
     },
     variant: const TargetPlatformVariant({
@@ -9068,20 +9227,44 @@ void main() {
         fixture.library.addTracks([localTrack, localSingle], persist: false);
         await fixture.library.ensureCardSnapshot();
       });
+      final extraSources = List.generate(14, (index) {
+        final track = testMusicTrack(
+          name: 'Extra session $index',
+          path: '/playlist/extra-$index.mp3',
+          groupKey: '/playlist',
+          groupTitle: 'Playlist',
+          isSingle: true,
+        );
+        return fixture.playback.createTrackSession(
+          track,
+          customQueueTracks: [track],
+        );
+      });
       final source = fixture.playback.createTrackSession(
         playlistTrack,
         customQueueTracks: [playlistTrack],
       );
       final queue = fixture.playback.createPlaybackQueue('Queue');
       fixture.playbackService.syncSlice(
-        activeSessions: [source, queue],
+        activeSessions: [source, ...extraSources, queue],
         playingSessionCount: 0,
         focusedSessionId: source.id,
         coverGeneration: 0,
         isInitialized: true,
       );
+      final themeProvider = ThemeProvider(
+        loadPersistedState: false,
+        preferenceWriter: (_, _) async => true,
+      );
+      final frameKey = GlobalKey();
       await tester.pumpWidget(
-        fixture.build(PlaybackQueueAudioEditPage(sessionId: queue.id)),
+        fixture.build(
+          RepaintBoundary(
+            key: frameKey,
+            child: PlaybackQueueAudioEditPage(sessionId: queue.id),
+          ),
+          themeProvider: themeProvider,
+        ),
       );
       await tester.pumpAndSettle();
 
@@ -9092,6 +9275,20 @@ void main() {
         of: tab,
         matching: find.byType(HeaderFloatingSurface),
       );
+      Finder blur(Finder tab) => find.descendant(
+        of: capsule(tab),
+        matching: find.byType(BackdropFilter),
+      );
+      void expectSelectedTabBlur(Finder selected, Finder unselected) {
+        final filter = blur(selected);
+        expect(tester.widget<BackdropFilter>(filter).enabled, isTrue);
+        expect(
+          tester.layers,
+          contains(tester.renderObject<RenderBackdropFilter>(filter).debugLayer),
+        );
+        expect(blur(unselected), findsNothing);
+      }
+
       Finder row(String label) => find.byWidgetPredicate(
         (widget) => widget is FileTreeRow && widget.title == label,
       );
@@ -9103,11 +9300,68 @@ void main() {
       expect(capsule(library), findsNothing);
       expect(row(playlistTrack.displayName), findsOneWidget);
       expect(row('Local work'), findsNothing);
+      expect(blur(playlist), findsNothing);
+      expect(await themeProvider.setBarGlassEnabled(true), isTrue);
+      await tester.pumpAndSettle();
+      expectSelectedTabBlur(playlist, library);
+
+      final sourceRow = row(playlistTrack.displayName);
+      final sourceScroll = tester
+          .state<ScrollableState>(
+            find.ancestor(of: sourceRow, matching: find.byType(Scrollable)),
+          )
+          .position;
+      final frame = tester.renderObject<RenderRepaintBoundary>(
+        find.byKey(frameKey),
+      );
+      Future<ByteData> captureFrame() async =>
+          (await tester.runAsync(() async {
+            final image = await frame.toImage();
+            try {
+              return (await image.toByteData())!;
+            } finally {
+              image.dispose();
+            }
+          }))!;
+      final pill = tester.getRect(capsule(playlist));
+      final cover = tester.getRect(
+        find.descendant(
+          of: sourceRow,
+          matching: find.byType(CoverFallbackArtwork),
+        ),
+      );
+      final beforeScroll = await captureFrame();
+      sourceScroll.jumpTo(cover.center.dy - pill.center.dy);
+      await tester.pumpAndSettle();
+      final afterScroll = await captureFrame();
+      final frameWidth = frame.size.width.toInt();
+      final sample = frame.globalToLocal(Offset(cover.center.dx, pill.center.dy));
+      var strongestChange = 0;
+      for (var y = sample.dy.round() - 8; y <= sample.dy.round() + 8; y++) {
+        for (var x = sample.dx.round() - 8; x <= sample.dx.round() + 8; x++) {
+          final offset = (y * frameWidth + x) * 4;
+          for (var channel = 0; channel < 3; channel++) {
+            final change =
+                (beforeScroll.getUint8(offset + channel) -
+                        afterScroll.getUint8(offset + channel))
+                    .abs();
+            if (change > strongestChange) strongestChange = change;
+          }
+        }
+      }
+      expect(
+        strongestChange,
+        greaterThan(12),
+        reason: 'Scrolling artwork must visibly affect pixels inside the glass.',
+      );
+      sourceScroll.jumpTo(0);
+      await tester.pumpAndSettle();
 
       await tester.tap(library);
       await tester.pumpAndSettle();
       expect(capsule(library), findsOneWidget);
       expect(capsule(playlist), findsNothing);
+      expectSelectedTabBlur(library, playlist);
       expect(row(playlistTrack.displayName), findsNothing);
       expect(row(localSingle.displayName), findsOneWidget);
       await tester.tap(row('Local work'));
@@ -9128,9 +9382,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(capsule(playlist), findsOneWidget);
       expect(capsule(library), findsNothing);
+      expectSelectedTabBlur(playlist, library);
       expect(row(playlistTrack.displayName), findsOneWidget);
       expect(row(localSingle.displayName), findsNothing);
       expect(queue.playbackQueue!.entries.single.id, added.id);
+      expect(await themeProvider.setBarGlassEnabled(false), isTrue);
+      await tester.pumpAndSettle();
+      expect(blur(playlist), findsNothing);
       expect(tester.takeException(), isNull);
     },
     variant: const TargetPlatformVariant({
@@ -10053,6 +10311,7 @@ void main() {
             ..currentTrackPath = trackWithCover.path
             ..playbackQueue = PlaybackQueueDefinition(
               name: 'Cover Queue',
+              colorValue: 0xFFFFFFFF,
               entries: <PlaybackQueueEntry>[
                 PlaybackQueueEntry(
                   id: 'cover-entry',
@@ -10115,6 +10374,21 @@ void main() {
         ValueKey<String>('playlist_session_pinned_${sessionQueueCover.id}'),
       );
       expect(pinQueueFinder, findsOneWidget);
+      final pinScheme = Theme.of(tester.element(pinQueueFinder)).colorScheme;
+      final pinDecoration =
+          tester.widget<Container>(pinQueueFinder).decoration! as BoxDecoration;
+      expect(pinDecoration.color, pinScheme.primary);
+      expect(
+        tester
+            .widget<Icon>(
+              find.descendant(
+                of: pinQueueFinder,
+                matching: find.byIcon(Icons.push_pin_rounded),
+              ),
+            )
+            .color,
+        pinScheme.onPrimary,
+      );
       final queueCoverFinder = find.byKey(
         const ValueKey('playback_queue_cover_grid'),
       );
@@ -12932,15 +13206,32 @@ void main() {
         await pumpFiniteTransitions(tester);
 
         final actionLabel = fixture.languageProvider.tr('select_multiple');
+        final temporaryTitle = find.text(temporaryTrack.displayName);
+        Finder indicator(String id) =>
+            find.byKey(ValueKey<String>('playlist_selection_indicator_$id'));
         await tester.tap(
-          find.text(temporaryTrack.displayName),
+          temporaryTitle,
           buttons: kSecondaryMouseButton,
           kind: PointerDeviceKind.mouse,
         );
         await tester.pumpAndSettle();
-        expect(find.text(actionLabel), findsNothing);
-        await tester.tapAt(const Offset(490, 950));
+        expect(find.text(actionLabel), findsOneWidget);
+        expect(
+          find.text(fixture.languageProvider.tr('pin_to_top')),
+          findsNothing,
+        );
+        await tester.tap(find.text(actionLabel));
         await tester.pumpAndSettle();
+        expect(indicator(temporary.id), findsOneWidget);
+        expect(
+          tester.widget<IconButton>(
+            find.byKey(const ValueKey('batch_pin_button')),
+          ).onPressed,
+          isNull,
+        );
+        await tester.tap(temporaryTitle);
+        await tester.pumpAndSettle();
+        expect(indicator(temporary.id), findsNothing);
 
         final first = selectQueueFirst ? queue : session;
         final second = selectQueueFirst ? session : queue;
@@ -12950,8 +13241,6 @@ void main() {
         final secondTitle = find.text(
           selectQueueFirst ? track.displayName : 'Right-click selection queue',
         );
-        Finder indicator(String id) =>
-            find.byKey(ValueKey<String>('playlist_selection_indicator_$id'));
         await tester.tap(
           firstTitle,
           buttons: kSecondaryMouseButton,
@@ -12975,13 +13264,14 @@ void main() {
           findsOneWidget,
         );
         await tester.tap(secondTitle);
+        await tester.tap(temporaryTitle);
         await tester.pumpAndSettle();
         expect(indicator(first.id), findsOneWidget);
         expect(indicator(second.id), findsOneWidget);
-        expect(indicator(temporary.id), findsNothing);
+        expect(indicator(temporary.id), findsOneWidget);
         expect(
           find.bySemanticsLabel(
-            fixture.languageProvider.tr('selected_count', {'count': '2'}),
+            fixture.languageProvider.tr('selected_count', {'count': '3'}),
           ),
           findsOneWidget,
         );
@@ -12989,6 +13279,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(indicator(first.id), findsOneWidget);
         expect(indicator(second.id), findsNothing);
+        expect(indicator(temporary.id), findsNothing);
         expect(
           find.bySemanticsLabel(
             fixture.languageProvider.tr('selected_count', {'count': '1'}),
@@ -13620,7 +13911,7 @@ void main() {
   );
 
   testWidgets(
-    'temporary playback stays above saved items without a pin action',
+    'temporary playback stays above saved items and can be selected without pinning',
     (tester) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(500, 1000);
@@ -13723,12 +14014,26 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('playlist_batch_selection_header')),
-        findsNothing,
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(ValueKey('playlist_selection_indicator_${temporary.id}')),
+        findsOneWidget,
+      );
+      for (final action in ['play', 'pause', 'remove']) {
+        final button = find.byKey(ValueKey('batch_${action}_button'));
+        expect(tester.widget<IconButton>(button).onPressed, isNotNull);
+      }
+      expect(
+        tester.widget<IconButton>(
+          find.byKey(const ValueKey('batch_pin_button')),
+        ).onPressed,
+        isNull,
       );
     },
   );
 
-  testWidgets('playlist multiselect batch pin pins and unpins selected sessions', (
+  testWidgets('playlist multiselect batch pin skips temporary sessions', (
     WidgetTester tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -13753,14 +14058,25 @@ void main() {
       groupKey: PathMatcher.normalize('/library/work2'),
       groupTitle: 'Work 2',
     );
+    final temporaryTrack = testMusicTrack(
+      name: 'Temporary track',
+      path: PathMatcher.normalize('/library/temporary/03.mp3'),
+      groupKey: PathMatcher.normalize('/library/temporary'),
+      groupTitle: 'Temporary',
+    );
     fixture.runtimeGraph.library.addTracks(<MusicTrack>[
       track1,
       track2,
+      temporaryTrack,
     ], persist: false);
     final session1 = fixture.runtimeGraph.playback.createTrackSession(track1);
     final session2 = fixture.runtimeGraph.playback.createTrackSession(track2);
+    final temporary = fixture.runtimeGraph.playback.createTrackSession(
+      temporaryTrack,
+      isTemporary: true,
+    );
     fixture.playbackService.syncSlice(
-      activeSessions: <PlaybackSession>[session1, session2],
+      activeSessions: <PlaybackSession>[session1, session2, temporary],
       playingSessionCount: 0,
       focusedSessionId: session1.id,
       coverGeneration: 0,
@@ -13772,6 +14088,10 @@ void main() {
 
     final track1Title = find.text('Track 1');
     final track2Title = find.text('Track 2');
+    final temporaryTitle = find.text(temporaryTrack.displayName);
+    final temporarySelected = find.byKey(
+      ValueKey('playlist_selection_indicator_${temporary.id}'),
+    );
 
     // 1. Long press Track 1 to enter selection mode
     await tester.longPress(track1Title);
@@ -13782,9 +14102,20 @@ void main() {
     );
     expect(batchHeader, findsOneWidget);
 
-    // Select Track 2 as well
     await tester.tap(track2Title);
+    await tester.tap(temporaryTitle);
     await tester.pumpAndSettle();
+    expect(temporarySelected, findsOneWidget);
+
+    fixture.playbackService.syncSlice(
+      activeSessions: [temporary, session1, session2],
+      playingSessionCount: 0,
+      focusedSessionId: session1.id,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    await tester.pumpAndSettle();
+    expect(temporarySelected, findsOneWidget);
 
     final batchPinButton = find.byKey(
       const ValueKey<String>('batch_pin_button'),
@@ -13795,25 +14126,24 @@ void main() {
       fixture.languageProvider.tr('pin_to_top'),
     );
 
-    // Tap batch pin button -> both sessions should be pinned and selection mode exits
     await tester.tap(batchPinButton);
     await tester.pumpAndSettle();
 
     expect(batchHeader, findsNothing);
     expect(
       fixture.settingsRepository.pinnedPlaylistSessionIds,
-      containsAll(<String>[session1.id, session2.id]),
+      unorderedEquals(<String>[session1.id, session2.id]),
     );
 
-    // 2. Long press Track 1 again and select Track 2
     await tester.longPress(track1Title);
     await tester.pumpAndSettle();
     expect(batchHeader, findsOneWidget);
 
     await tester.tap(track2Title);
+    await tester.tap(temporaryTitle);
     await tester.pumpAndSettle();
+    expect(temporarySelected, findsOneWidget);
 
-    // Since both are pinned, tooltip should be 'unpin_from_top'
     final batchUnpinButton = find.byKey(
       const ValueKey<String>('batch_pin_button'),
     );
@@ -13823,20 +14153,19 @@ void main() {
       fixture.languageProvider.tr('unpin_from_top'),
     );
 
-    // Tap batch unpin button -> both should be unpinned and selection mode exits
     await tester.tap(batchUnpinButton);
     await tester.pumpAndSettle();
 
     expect(batchHeader, findsNothing);
+    expect(fixture.settingsRepository.pinnedPlaylistSessionIds, isEmpty);
     expect(
-      fixture.settingsRepository.pinnedPlaylistSessionIds,
-      isNot(contains(session1.id)),
+      find.byKey(ValueKey('playlist_session_pinned_${temporary.id}')),
+      findsNothing,
     );
-    expect(
-      fixture.settingsRepository.pinnedPlaylistSessionIds,
-      isNot(contains(session2.id)),
-    );
-  });
+  }, variant: const TargetPlatformVariant({
+    TargetPlatform.android,
+    TargetPlatform.windows,
+  }));
 
   testWidgets(
     'adding playback queue enters immediately without entrance animation',
@@ -14490,15 +14819,16 @@ void main() {
                 ),
                 findsNothing,
               );
-              final hoverTransform = tester
+              final hoverScale = tester
                   .widgetList<Transform>(
                     find.descendant(
                       of: timer,
                       matching: find.byType(Transform),
                     ),
                   )
-                  .firstWhere((transform) => !transform.transformHitTests);
-              expect(hoverTransform.transform.entry(0, 0), 1.0);
+                  .where((transform) => !transform.transformHitTests)
+                  .fold<double>(1.0, (scale, t) => scale * t.transform.entry(0, 0));
+              expect(hoverScale, 1.0);
               await mouse.removePointer();
               await tester.pump();
             } else {
@@ -14652,8 +14982,9 @@ void main() {
               .widgetList<Transform>(
                 find.ancestor(of: arrow, matching: find.byType(Transform)),
               )
-              .firstWhere((transform) => !transform.transformHitTests);
-          expect(iconScale.transform.entry(0, 0), 1.0);
+              .where((transform) => !transform.transformHitTests)
+              .fold<double>(1.0, (scale, t) => scale * t.transform.entry(0, 0));
+          expect(iconScale, 1.0);
           await pointer.removePointer();
           await tester.pumpAndSettle();
           expect(IconTheme.of(tester.element(arrow)).color, Colors.white);
@@ -14948,11 +15279,16 @@ void main() {
   testWidgets(
     'landscape session detail keeps secondary controls visible when feature menu is open',
     (tester) async {
+      final themeProvider = ThemeProvider(
+        loadPersistedState: false,
+        preferenceWriter: (_, _) async => true,
+      );
       final pumped = await _pumpSubtitleDetail(
         tester: tester,
         subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
         initialPosition: Duration.zero,
         physicalSize: const Size(2400, 1080),
+        themeProvider: themeProvider,
       );
 
       final secondaryControlsFinder = find.byKey(
@@ -15026,10 +15362,20 @@ void main() {
       final decoration =
           tester.widget<DecoratedBox>(surface).decoration as BoxDecoration;
       final colors = Theme.of(tester.element(surface)).colorScheme;
+      final panelGlass = find.ancestor(
+        of: surface,
+        matching: find.byType(AppGlassSurface),
+      );
+      final panelBlur = find.ancestor(
+        of: surface,
+        matching: find.byType(BackdropFilter),
+      );
+      expect(panelBlur, findsNothing);
       expect(
-        decoration.color,
+        tester.widget<AppGlassSurface>(panelGlass).backgroundColor,
         colors.surfaceContainerHigh.withValues(alpha: 0.9),
       );
+      expect(decoration.color, isNull);
       expect(
         decoration.border,
         Border.all(color: colors.outlineVariant.withValues(alpha: 0.55)),
@@ -15065,27 +15411,15 @@ void main() {
       final equalizerScroll = find
           .descendant(of: equalizerList, matching: find.byType(Scrollable))
           .first;
-      expect(tester.getRect(equalizerList).top, closeTo(surfaceRect.top, 1));
-      final scrollExtent = tester
+      expect(tester.getRect(equalizerList).top, closeTo(headerRect.bottom, 1));
+      final scrollPosition = tester
           .state<ScrollableState>(equalizerScroll)
-          .position
-          .maxScrollExtent;
-      if (scrollExtent > 0) {
-        final equalizerTile = find
-            .descendant(
-              of: find.byType(EqualizerPage),
-              matching: find.byType(SwitchListTile),
-            )
-            .first;
-        final tileTopBeforeScroll = tester.getRect(equalizerTile).top;
-        await tester.drag(equalizerList, const Offset(0, -120));
-        await tester.pumpAndSettle();
-        expect(
-          tester.getRect(equalizerTile).top,
-          lessThan(tileTopBeforeScroll),
-        );
-        expect(tester.getRect(find.byType(SegmentPanelPageHeader)), headerRect);
-      }
+          .position;
+      expect(scrollPosition.pixels, 0);
+      await tester.drag(equalizerList, const Offset(0, -120));
+      await tester.pumpAndSettle();
+      expect(scrollPosition.pixels, greaterThan(0));
+      expect(tester.getRect(find.byType(SegmentPanelPageHeader)), headerRect);
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('segments_landscape')),
@@ -15108,6 +15442,12 @@ void main() {
       );
       // Secondary controls capsule remains visible in landscape
       expect(secondaryControlsFinder, findsOneWidget);
+
+      expect(await themeProvider.setBarGlassEnabled(true), isTrue);
+      await tester.pumpAndSettle();
+      expect(tester.widget<BackdropFilter>(panelBlur).enabled, isTrue);
+      expect(tester.getRect(panelBlur), surfaceRect);
+      expect(tester.getRect(find.byType(SegmentPanelPageHeader)), headerRect);
 
       final menuCloseButton = find.byKey(
         const ValueKey<String>('close_console_panel'),

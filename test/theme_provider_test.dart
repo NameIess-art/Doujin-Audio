@@ -272,7 +272,7 @@ void main() {
     () async {
       SharedPreferences.setMockInitialValues({
         'themeMode': 'dark',
-        'appThemeColor': 'mint',
+        'appThemeColor': 'teal',
         'pureBlackTheme': true,
         'barGlassEnabled': true,
       });
@@ -285,7 +285,7 @@ void main() {
       expect(provider.barGlassEnabled, false);
       await provider.reloadPersistedState();
       expect(provider.themeMode, ThemeMode.dark);
-      expect(provider.appThemeColor, ThemeAccentPreset.mint);
+      expect(provider.appThemeColor, ThemeAccentPreset.teal);
       expect(provider.pureBlackTheme, true);
       expect(provider.barGlassEnabled, true);
     },
@@ -330,58 +330,112 @@ void main() {
     expect(find.text('More'), findsNothing);
   });
 
-  test('theme presets convert only the light primary palette', () {
-    expect(
-      ThemeAccentPreset.values.map((preset) => preset.primaryColor),
-      const <Color>[
-        Color(0xFFFFB4A9),
-        Color(0xFFFFB2BD),
-        Color(0xFFEBB5ED),
-        Color(0xFFD3BCFD),
-        Color(0xFFBAC3FF),
-        Color(0xFFA1C9FD),
-        Color(0xFF8BD0F0),
-        Color(0xFF83D2E4),
-        Color(0xFF82D5C7),
-        Color(0xFFA2D399),
-        Color(0xFFB0D18B),
-        Color(0xFFC3CD7B),
-        Color(0xFFF0BE6D),
-        Color(0xFFFFB77B),
-        Color(0xFFE7BDB0),
-        Color(0xFFC7C6C6),
-      ],
-    );
+  test('theme presets cover core hues, monochrome black/white, and readable palettes', () {
+    expect(ThemeAccentPreset.values, const <ThemeAccentPreset>[
+      ThemeAccentPreset.red,
+      ThemeAccentPreset.rose,
+      ThemeAccentPreset.pink,
+      ThemeAccentPreset.purple,
+      ThemeAccentPreset.indigo,
+      ThemeAccentPreset.blue,
+      ThemeAccentPreset.sky,
+      ThemeAccentPreset.cyan,
+      ThemeAccentPreset.teal,
+      ThemeAccentPreset.green,
+      ThemeAccentPreset.olive,
+      ThemeAccentPreset.yellow,
+      ThemeAccentPreset.orange,
+      ThemeAccentPreset.brown,
+      ThemeAccentPreset.gray,
+      ThemeAccentPreset.monochrome,
+    ]);
     for (final preset in ThemeAccentPreset.values) {
-      if (preset == ThemeAccentPreset.gray) {
-        final lightScheme = preset.colorScheme(Brightness.light);
-        expect(lightScheme.primary, const Color(0xFF5C5F62));
-        expect(
-          _contrastRatio(lightScheme.onPrimary, lightScheme.primary),
-          greaterThan(4.5),
-        );
-
-        final darkScheme = preset.colorScheme(Brightness.dark);
-        expect(darkScheme.primary, preset.primaryColor);
-        expect(
-          _contrastRatio(darkScheme.onPrimary, darkScheme.primary),
-          greaterThan(4.5),
-        );
-        continue;
-      }
       final lightScheme = preset.colorScheme(Brightness.light);
-      final generatedLightScheme = ColorScheme.fromSeed(
-        seedColor: preset.primaryColor,
-      );
-      expect(lightScheme.primary, generatedLightScheme.primary);
-      expect(lightScheme.primary, isNot(preset.primaryColor));
-
       final darkScheme = preset.colorScheme(Brightness.dark);
-      expect(darkScheme.primary, preset.primaryColor);
+      expect(
+        _contrastRatio(lightScheme.onPrimary, lightScheme.primary),
+        greaterThan(4.5),
+        reason: '${preset.name} light onPrimary contrast',
+      );
       expect(
         _contrastRatio(darkScheme.onPrimary, darkScheme.primary),
         greaterThan(4.5),
+        reason: '${preset.name} dark onPrimary contrast',
       );
+      expect(
+        lightScheme.surface,
+        preset.bootstrapSurfaceColor(Brightness.light),
+      );
+      expect(
+        lightScheme.surfaceContainerLowest.computeLuminance(),
+        greaterThanOrEqualTo(lightScheme.surfaceContainerLow.computeLuminance()),
+      );
+      expect(
+        lightScheme.surfaceContainerLow.computeLuminance(),
+        greaterThan(lightScheme.surfaceContainer.computeLuminance()),
+      );
+      expect(
+        lightScheme.surfaceContainer.computeLuminance(),
+        greaterThan(lightScheme.surfaceContainerHigh.computeLuminance()),
+      );
+      expect(
+        darkScheme.surfaceContainerLow.computeLuminance(),
+        lessThan(darkScheme.surfaceContainer.computeLuminance()),
+      );
+      expect(
+        darkScheme.surfaceContainer.computeLuminance(),
+        lessThan(darkScheme.surfaceContainerHigh.computeLuminance()),
+      );
+      expect(
+        darkScheme.surfaceContainerHigh.computeLuminance(),
+        lessThan(darkScheme.surfaceContainerHighest.computeLuminance()),
+      );
+      if (preset == ThemeAccentPreset.gray) {
+        expect(lightScheme.primary, const Color(0xFF5A6068));
+        expect(darkScheme.primary, preset.primaryColor);
+        continue;
+      }
+      if (preset == ThemeAccentPreset.monochrome) {
+        expect(lightScheme.primary, const Color(0xFF141417));
+        expect(lightScheme.onPrimary, const Color(0xFFFFFFFF));
+        expect(darkScheme.primary, const Color(0xFFF5F5F7));
+        expect(darkScheme.onPrimary, const Color(0xFF111114));
+        expect(
+          preset.colorScheme(Brightness.light, highContrast: true).primary,
+          const Color(0xFF000000),
+        );
+        expect(
+          preset.colorScheme(Brightness.dark, highContrast: true).primary,
+          const Color(0xFFFFFFFF),
+        );
+        continue;
+      }
+      final generatedLightScheme = ColorScheme.fromSeed(
+        seedColor: preset.lightSeedColor,
+        dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
+      );
+      expect(lightScheme.primary, generatedLightScheme.primary);
+      expect(lightScheme.primary, isNot(preset.primaryColor));
+      expect(darkScheme.primary, preset.primaryColor);
+    }
+  });
+
+  test('legacy persisted preset names migrate cleanly to new presets', () async {
+    for (final (legacyName, expected) in const [
+      ('coral', ThemeAccentPreset.red),
+      ('lavender', ThemeAccentPreset.purple),
+      ('periwinkle', ThemeAccentPreset.indigo),
+      ('mint', ThemeAccentPreset.teal),
+      ('lightGreen', ThemeAccentPreset.green),
+      ('lime', ThemeAccentPreset.olive),
+      ('amber', ThemeAccentPreset.yellow),
+      ('peach', ThemeAccentPreset.brown),
+    ]) {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'appThemeColor': legacyName,
+      });
+      await AppPreferences.init();
+      expect(ThemeProvider.readAppThemeColorSync(), expected);
     }
   });
 
@@ -493,7 +547,7 @@ void main() {
       expect(await provider.setThemeMode(ThemeMode.dark), isFalse);
       expect(provider.themeMode, ThemeMode.system);
 
-      expect(await provider.setAppThemeColor(ThemeAccentPreset.mint), isFalse);
+      expect(await provider.setAppThemeColor(ThemeAccentPreset.teal), isFalse);
       expect(provider.appThemeColor, ThemeAccentPreset.rose);
 
       expect(await provider.setPureBlackTheme(true), isFalse);
@@ -565,6 +619,9 @@ void main() {
     expect(lightTokens.minimumTapTarget, 48);
     expect(lightTokens.success, isNot(darkTokens.success));
     expect(lightTokens.warning, isNot(darkTokens.warning));
+    expect(lightTokens.folderColor, isNot(darkTokens.folderColor));
+    expect(lightTokens.textFileColor, isNot(darkTokens.textFileColor));
+    expect(lightTokens.imageFileColor, isNot(darkTokens.imageFileColor));
   });
 
   test('shared legacy radii use the compact corner scale', () {
@@ -582,17 +639,17 @@ void main() {
 
   test('loads and saves the app theme color', () async {
     SharedPreferences.setMockInitialValues(const <String, Object>{
-      'appThemeColor': 'mint',
+      'appThemeColor': 'teal',
     });
     await AppPreferences.init();
     final provider = ThemeProvider();
 
-    expect(provider.appThemeColor, ThemeAccentPreset.mint);
+    expect(provider.appThemeColor, ThemeAccentPreset.teal);
 
-    await provider.setAppThemeColor(ThemeAccentPreset.lavender);
+    await provider.setAppThemeColor(ThemeAccentPreset.purple);
 
     final preferences = await SharedPreferences.getInstance();
-    expect(preferences.getString('appThemeColor'), 'lavender');
+    expect(preferences.getString('appThemeColor'), 'purple');
   });
 
   test('selected app color updates both brightness theme schemes', () async {
@@ -602,10 +659,10 @@ void main() {
     final previousLightPrimary = provider.lightTheme.colorScheme.primary;
     final previousDarkPrimary = provider.darkTheme.colorScheme.primary;
 
-    await provider.setAppThemeColor(ThemeAccentPreset.mint);
+    await provider.setAppThemeColor(ThemeAccentPreset.teal);
 
-    final expectedLight = ThemeAccentPreset.mint.colorScheme(Brightness.light);
-    final expectedDark = ThemeAccentPreset.mint.colorScheme(Brightness.dark);
+    final expectedLight = ThemeAccentPreset.teal.colorScheme(Brightness.light);
+    final expectedDark = ThemeAccentPreset.teal.colorScheme(Brightness.dark);
     expect(provider.lightTheme.colorScheme.primary, expectedLight.primary);
     expect(provider.darkTheme.colorScheme.primary, expectedDark.primary);
     expect(provider.lightTheme.colorScheme.secondary, expectedLight.secondary);
@@ -628,23 +685,23 @@ void main() {
       await AppPreferences.init();
       final provider = ThemeProvider();
 
-      await provider.setAppThemeColor(ThemeAccentPreset.mint);
+      await provider.setAppThemeColor(ThemeAccentPreset.teal);
 
       expect(
         provider.lightTheme.colorScheme.surface,
-        ThemeAccentPreset.mint.bootstrapSurfaceColor(Brightness.light),
+        ThemeAccentPreset.teal.bootstrapSurfaceColor(Brightness.light),
       );
       expect(
         provider.darkTheme.colorScheme.surface,
-        ThemeAccentPreset.mint.bootstrapSurfaceColor(Brightness.dark),
+        ThemeAccentPreset.teal.bootstrapSurfaceColor(Brightness.dark),
       );
       expect(
         provider.lightTheme.scaffoldBackgroundColor,
-        ThemeAccentPreset.mint.bootstrapSurfaceColor(Brightness.light),
+        ThemeAccentPreset.teal.bootstrapSurfaceColor(Brightness.light),
       );
       expect(
         provider.darkTheme.scaffoldBackgroundColor,
-        ThemeAccentPreset.mint.bootstrapSurfaceColor(Brightness.dark),
+        ThemeAccentPreset.teal.bootstrapSurfaceColor(Brightness.dark),
       );
     },
   );
@@ -794,6 +851,97 @@ void main() {
       expect(lightSurface, const Color(0xFFF7F9FF));
       expect(lightSurface.b, greaterThan(lightSurface.g));
       expect(lightSurface.b, greaterThan(lightSurface.r));
+    }
+  });
+
+  test('pure black surfaces preserve elevation hierarchy and token flag', () async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    await AppPreferences.init();
+    final provider = ThemeProvider();
+    addTearDown(provider.dispose);
+
+    await provider.setPureBlackTheme(true);
+    final scheme = provider.darkTheme.colorScheme;
+    final tokens = provider.darkTheme.extension<AppDesignTokens>()!;
+    expect(tokens.pureBlack, isTrue);
+    expect(scheme.surface, const Color(0xFF000000));
+    expect(scheme.surfaceContainerLowest, const Color(0xFF000000));
+    expect(landscapeNavigationBackground(scheme), const Color(0xFF000000));
+    expect(
+      scheme.surfaceContainerLow.computeLuminance(),
+      greaterThan(scheme.surface.computeLuminance()),
+    );
+    expect(
+      scheme.surfaceContainer.computeLuminance(),
+      greaterThan(scheme.surfaceContainerLow.computeLuminance()),
+    );
+    expect(
+      scheme.surfaceContainerHigh.computeLuminance(),
+      greaterThan(scheme.surfaceContainer.computeLuminance()),
+    );
+    expect(
+      provider.darkTheme.dialogTheme.backgroundColor,
+      scheme.surfaceContainerHigh,
+    );
+    expect(
+      provider.darkTheme.bottomSheetTheme.backgroundColor,
+      scheme.surfaceContainerHigh,
+    );
+    expect(
+      provider.darkTheme.snackBarTheme.backgroundColor,
+      scheme.surfaceContainerHigh,
+    );
+  });
+
+  test('custom and system accent colors persist, apply, and clear on preset selection', () async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    await AppPreferences.init();
+    final provider = ThemeProvider();
+    addTearDown(provider.dispose);
+
+    const customGreen = Color(0xFF2E9C8B);
+    expect(await provider.setCustomThemeColor(customGreen), isTrue);
+    expect(provider.customThemeColor, customGreen);
+    expect(provider.effectiveStartupPreset, ThemeAccentPreset.teal);
+
+    final restored = ThemeProvider();
+    addTearDown(restored.dispose);
+    expect(restored.customThemeColor, customGreen);
+
+    restored.setSystemAccentColor(const Color(0xFF1E88E5));
+    expect(await restored.setUseSystemAccentColor(true), isTrue);
+    expect(restored.useSystemAccentColor, isTrue);
+    expect(restored.activeCustomSeedColor, const Color(0xFF1E88E5));
+    expect(restored.effectiveStartupPreset, ThemeAccentPreset.blue);
+
+    expect(await restored.setAppThemeColor(ThemeAccentPreset.purple), isTrue);
+    expect(restored.customThemeColor, isNull);
+    expect(restored.useSystemAccentColor, isFalse);
+    expect(restored.effectiveStartupPreset, ThemeAccentPreset.purple);
+  });
+
+  test('high contrast themes increase foreground contrast in both brightnesses', () async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    await AppPreferences.init();
+    final provider = ThemeProvider();
+    addTearDown(provider.dispose);
+
+    for (final (standard, highContrast) in [
+      (provider.lightTheme.colorScheme, provider.highContrastLightTheme.colorScheme),
+      (provider.darkTheme.colorScheme, provider.highContrastDarkTheme.colorScheme),
+    ]) {
+      expect(
+        _contrastRatio(highContrast.primary, highContrast.onPrimary),
+        greaterThanOrEqualTo(
+          _contrastRatio(standard.primary, standard.onPrimary),
+        ),
+      );
+      expect(
+        _contrastRatio(highContrast.onSurface, highContrast.surface),
+        greaterThanOrEqualTo(
+          _contrastRatio(standard.onSurface, standard.surface),
+        ),
+      );
     }
   });
 }

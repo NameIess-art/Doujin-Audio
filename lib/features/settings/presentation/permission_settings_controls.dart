@@ -139,38 +139,36 @@ class _PermissionSettingsControlsState
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final status = _status;
     final content = AppSettingsGroupCard(
       children: [
         _PermissionActionTile(
           title: i18n.tr('allow_background_run'),
           description: i18n.tr('permission_background_description'),
           icon: Icons.battery_saver_rounded,
-          enabled: _enabled(PermissionCapability.backgroundRun),
+          enabled: status == null
+              ? null
+              : status.backgroundRunAllowed && status.notificationsAllowed,
           enabledLabel: i18n.tr('permission_enabled'),
           disabledLabel: i18n.tr('permission_not_enabled'),
-          onTap: () {
-            final status = _status;
-            final capability = (status != null && status.backgroundRunAllowed)
-                ? !status.notificationsAllowed
-                      ? PermissionCapability.notifications
-                      : !status.exactAlarmsAllowed
-                      ? PermissionCapability.exactAlarms
-                      : PermissionCapability.backgroundRun
-                : PermissionCapability.backgroundRun;
-            unawaited(
-              _open(
-                title: i18n.tr('allow_background_run'),
-                description: i18n.tr('permission_background_description'),
-                capability: capability,
-              ),
-            );
-          },
+          onTap: () => _open(
+            title: i18n.tr('allow_background_run'),
+            description: i18n.tr('permission_background_description'),
+            capability: switch (_status) {
+              PermissionStatusSnapshot(
+                backgroundRunAllowed: true,
+                notificationsAllowed: false,
+              ) =>
+                PermissionCapability.notifications,
+              _ => PermissionCapability.backgroundRun,
+            },
+          ),
         ),
         _PermissionActionTile(
           title: i18n.tr('manage_files_permission_title'),
           description: i18n.tr('permission_manage_files_description'),
           icon: Icons.folder_open_rounded,
-          enabled: _enabled(PermissionCapability.manageFiles),
+          enabled: status?.manageFilesAllowed,
           enabledLabel: i18n.tr('permission_enabled'),
           disabledLabel: i18n.tr('permission_not_enabled'),
           onTap: () => _open(
@@ -183,7 +181,7 @@ class _PermissionSettingsControlsState
           title: i18n.tr('overlay_permission_title'),
           description: i18n.tr('permission_overlay_description'),
           icon: Icons.layers_rounded,
-          enabled: _enabled(PermissionCapability.overlay),
+          enabled: status?.overlayAllowed,
           enabledLabel: i18n.tr('permission_enabled'),
           disabledLabel: i18n.tr('permission_not_enabled'),
           onTap: () => _open(
@@ -196,7 +194,7 @@ class _PermissionSettingsControlsState
           title: i18n.tr('install_permission_title'),
           description: i18n.tr('permission_update_install_description'),
           icon: Icons.install_mobile_rounded,
-          enabled: _enabled(PermissionCapability.updateInstalls),
+          enabled: status?.updateInstallsAllowed,
           enabledLabel: i18n.tr('permission_enabled'),
           disabledLabel: i18n.tr('permission_not_enabled'),
           onTap: () => _open(
@@ -216,22 +214,6 @@ class _PermissionSettingsControlsState
         return content;
       },
     );
-  }
-
-  bool? _enabled(PermissionCapability capability) {
-    final status = _status;
-    if (status == null) return null;
-    return switch (capability) {
-      PermissionCapability.backgroundRun =>
-        status.backgroundRunAllowed &&
-            status.notificationsAllowed &&
-            status.exactAlarmsAllowed,
-      PermissionCapability.notifications => status.notificationsAllowed,
-      PermissionCapability.exactAlarms => status.exactAlarmsAllowed,
-      PermissionCapability.manageFiles => status.manageFilesAllowed,
-      PermissionCapability.overlay => status.overlayAllowed,
-      PermissionCapability.updateInstalls => status.updateInstallsAllowed,
-    };
   }
 }
 

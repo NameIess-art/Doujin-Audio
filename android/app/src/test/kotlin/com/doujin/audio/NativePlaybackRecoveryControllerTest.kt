@@ -9,12 +9,17 @@ import com.doujin.audio.player.service.shouldClearPlaybackIntentForPlayWhenReady
 
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
+import java.io.IOException
 import java.lang.reflect.Proxy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 class NativePlaybackRecoveryControllerTest {
     @Test
@@ -90,8 +95,7 @@ class NativePlaybackRecoveryControllerTest {
         controller.markIntended("failed")
         controller.markIntended("pending")
         controller.onPlayerError(
-            "pending", recoverable = true, errorCodeName = "ERROR_CODE_IO_UNSPECIFIED",
-            errorMessage = null, causeDescription = null
+            "pending", recoverable = true, errorCodeName = "ERROR_CODE_IO_UNSPECIFIED"
         )
 
         environment.runFirst(15_000L)
@@ -120,7 +124,7 @@ class NativePlaybackRecoveryControllerTest {
     }
 
     @Test
-    fun `track boundary pause cannot be resumed by a later watchdog trigger`() {
+    fun `track boundary pause cannot be resumed by a power event`() {
         val environment = FakeRecoveryEnvironment()
         val host = FakeRecoveryHost(recoverySession(environment))
         val controller = NativePlaybackRecoveryController(host, environment)
@@ -132,7 +136,7 @@ class NativePlaybackRecoveryControllerTest {
             )) {
             controller.clear("player")
         }
-        controller.trigger("foreground_watchdog")
+        controller.trigger("screen_on")
 
         assertFalse(controller.isIntended("player"))
         assertFalse(controller.shouldKeepAlive())
@@ -303,6 +307,24 @@ class NativePlaybackRecoveryControllerTest {
     }
 
     @Test
+    fun `candidate preparation that never completes still times out`() {
+        val environment = FakeRecoveryEnvironment()
+        val session = candidateSession(environment)
+        val host = FakeRecoveryHost(session).apply { deferPreparation = true }
+        val controller = NativePlaybackRecoveryController(host, environment, maxRecoveryDurationMs = 10_000L)
+        startCandidateRetry(controller)
+
+        environment.runFirst(10_000L)
+
+        assertEquals(listOf("player"), host.recoveryTimeouts)
+        assertFalse(controller.isIntended("player"))
+        assertFalse(controller.isRecovering("player"))
+        assertTrue(environment.tasks.isEmpty())
+        host.completePreparation()
+        assertEquals("https://one/0.mp3", session.uri)
+    }
+
+    @Test
     fun `old retry cannot execute or remove a replacement retry after the same session is restarted`() {
         val environment = FakeRecoveryEnvironment()
         val host = FakeRecoveryHost(recoverySession(environment))
@@ -311,8 +333,7 @@ class NativePlaybackRecoveryControllerTest {
             controller.markIntended("player")
             controller.onPlayerError(
                 sessionId = "player", recoverable = true,
-                errorCodeName = "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED",
-                errorMessage = "network", causeDescription = null
+                errorCodeName = "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED"
             )
         }
         scheduleError()
@@ -351,9 +372,7 @@ class NativePlaybackRecoveryControllerTest {
         controller.onPlayerError(
             sessionId = "player",
             recoverable = true,
-            errorCodeName = "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED",
-            errorMessage = "network",
-            causeDescription = null
+            errorCodeName = "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED"
         )
         host.interruptionActive = true
 
@@ -397,8 +416,7 @@ class NativePlaybackRecoveryControllerTest {
         controller.markIntended("player")
         controller.onPlayerError(
             sessionId = "player", recoverable = true,
-            errorCodeName = "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED",
-            errorMessage = "network", causeDescription = null
+            errorCodeName = "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED"
         )
 
         controller.clear("player")
@@ -458,16 +476,55 @@ class NativePlaybackRecoveryControllerTest {
     }
 
     @Test
-    fun foregroundSyncCannotReenterAnActiveRecoveryTrigger() {
+    fun `scheduled retry reserves recovery before focus can reenter it`() {
         val environment = FakeRecoveryEnvironment()
-        val host = FakeRecoveryHost()
+        val host = FakeRecoveryHost(candidateSession(environment)).apply { deferPreparation = true }
         val controller = NativePlaybackRecoveryController(host, environment)
-        host.onRequestAudioFocus = { controller.trigger("foreground_sync") }
         controller.markIntended("player")
+        controller.onPlayerError(
+            "player", recoverable = true, candidateFallbackEligible = true,
+            errorCodeName = "ERROR_CODE_IO_BAD_HTTP_STATUS"
+        )
+        host.onRequestAudioFocus = { controller.trigger("network_available") }
 
-        controller.trigger("network_available")
+        environment.runFirst(0L)
 
         assertEquals(1, host.requestAudioFocusCalls)
+        assertEquals(1, host.preparationQueues.size)
+        assertTrue(controller.isRecovering("player"))
+    }
+
+    @Test
+    fun `retry preserves buffer progress and lets Media3 finish loading`() {
+        val environment = FakeRecoveryEnvironment()
+        val playback = HealthCheckPlayer("player", environment).apply {
+            playbackState = Player.STATE_BUFFERING
+            playWhenReady = true
+            hasPlayerError = true
+        }
+        val host = healthCheckHost(playback)
+        val controller = NativePlaybackRecoveryController(host, environment)
+        controller.markIntended("player")
+        controller.onPlayerError(
+            "player", recoverable = true,
+            errorCodeName = "ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT"
+        )
+
+        playback.hasPlayerError = false
+        environment.runFirst(2_000L)
+        repeat(6) {
+            playback.bufferedPositionMs += 2_000L
+            environment.runFirst(15_000L)
+        }
+
+        assertEquals(0, host.requestAudioFocusCalls)
+        assertTrue(controller.isPending("player"))
+        playback.playbackState = Player.STATE_READY
+        playback.positionMs += 2_000L
+        environment.runFirst(15_000L)
+
+        assertEquals(0, host.requestAudioFocusCalls)
+        assertFalse(controller.isPending("player"))
     }
 
     @Test
@@ -480,9 +537,7 @@ class NativePlaybackRecoveryControllerTest {
         controller.onPlayerError(
             sessionId = "player",
             recoverable = true,
-            errorCodeName = "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED",
-            errorMessage = "network",
-            causeDescription = null
+            errorCodeName = "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED"
         )
 
         assertTrue(controller.isIntended("player"))
@@ -505,9 +560,7 @@ class NativePlaybackRecoveryControllerTest {
         controller.onPlayerError(
             sessionId = "player",
             recoverable = true,
-            errorCodeName = "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED",
-            errorMessage = "network",
-            causeDescription = null
+            errorCodeName = "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED"
         )
 
         environment.runFirst(2_000L)
@@ -532,9 +585,7 @@ class NativePlaybackRecoveryControllerTest {
         controller.onPlayerError(
             sessionId = "player",
             recoverable = false,
-            errorCodeName = "ERROR_CODE_IO_FILE_NOT_FOUND",
-            errorMessage = "missing",
-            causeDescription = null
+            errorCodeName = "ERROR_CODE_IO_FILE_NOT_FOUND"
         )
 
         assertFalse(controller.isIntended("player"))
@@ -554,9 +605,7 @@ class NativePlaybackRecoveryControllerTest {
         controller.onPlayerError(
             sessionId = "player",
             recoverable = true,
-            errorCodeName = "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED",
-            errorMessage = "network",
-            causeDescription = null
+            errorCodeName = "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED"
         )
 
         environment.runFirst(2_000L)
@@ -574,9 +623,7 @@ class NativePlaybackRecoveryControllerTest {
         controller.onPlayerError(
             sessionId = "player",
             recoverable = true,
-            errorCodeName = "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED",
-            errorMessage = "network",
-            causeDescription = null
+            errorCodeName = "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED"
         )
 
         controller.clear("player")
@@ -630,9 +677,7 @@ class NativePlaybackRecoveryControllerTest {
             sessionId = "player",
             recoverable = true,
             candidateFallbackEligible = true,
-            errorCodeName = "ERROR_CODE_IO_BAD_HTTP_STATUS",
-            errorMessage = "503",
-            causeDescription = null
+            errorCodeName = "ERROR_CODE_IO_BAD_HTTP_STATUS"
         )
 
         assertTrue(environment.delays.contains(0L))
@@ -670,9 +715,7 @@ class NativePlaybackRecoveryControllerTest {
         controller.onPlayerError(
             sessionId = "player",
             recoverable = true,
-            errorCodeName = "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED",
-            errorMessage = "network",
-            causeDescription = null
+            errorCodeName = "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED"
         )
 
         val staleRetry = environment.tasks.entries.first { it.value == 2_000L }.key
@@ -685,37 +728,28 @@ class NativePlaybackRecoveryControllerTest {
     }
 
     @Test
-    fun `keep alive and screen on triggers resume unexpected pauses and recover idle players`() {
+    fun `screen and Doze callbacks resume unexpected pauses without treating a new idle state as a stall`() {
         val environment = FakeRecoveryEnvironment()
         val paused = HealthCheckPlayer("paused", environment)
         val idle = HealthCheckPlayer("idle", environment).apply { playWhenReady = true }
-        val host = healthCheckHost(paused, idle).apply {
-            onEnsurePlayer = { session ->
-                when (session.sessionId) {
-                    "idle" -> idle.player
-                    else -> paused.player
-                }
-            }
-        }
+        val host = healthCheckHost(paused, idle)
         val controller = NativePlaybackRecoveryController(host, environment)
         controller.markIntended("paused")
         controller.markIntended("idle")
 
-        // Record health state for idle and verify keep_alive_heartbeat resumes paused.
-        controller.trigger("keep_alive_heartbeat")
+        controller.trigger("device_idle_exited")
         assertEquals(1, paused.playCalls)
         assertTrue(paused.playWhenReady)
         assertEquals(0, idle.playCalls)
 
-        // Transition idle session to STATE_IDLE with existing monitoredHealth entry
-        // and verify screen_on recovers both unexpected pause and idle player.
         idle.playbackState = Player.STATE_IDLE
         paused.playWhenReady = false
 
         controller.trigger("screen_on")
         assertEquals(2, paused.playCalls)
         assertTrue(paused.playWhenReady)
-        assertEquals(1, idle.playCalls)
+        assertEquals(0, idle.playCalls)
+        assertFalse(controller.isPending("idle"))
     }
 
     @Test
@@ -736,51 +770,83 @@ class NativePlaybackRecoveryControllerTest {
     }
 
     @Test
-    fun `intended playback keeps power and network listeners active and reacts to Doze exit`() {
+    fun `network and Doze events recover only the relevant intended sessions`() {
         val environment = FakeRecoveryEnvironment()
-        val paused = HealthCheckPlayer("paused", environment)
-        val host = healthCheckHost(paused).apply {
-            onEnsurePlayer = { paused.player }
+        val local = HealthCheckPlayer("local", environment)
+        val remote = HealthCheckPlayer("remote", environment).apply {
+            session.uri = "https://remote/audio.mp3"
         }
+        val host = healthCheckHost(local, remote)
         val controller = NativePlaybackRecoveryController(host, environment)
 
-        controller.markIntended("paused")
+        controller.markIntended("local")
+        controller.markIntended("remote")
         assertTrue(environment.listening)
 
         controller.trigger("network_available")
         assertEquals(1, host.networkRecoveryTriggers)
-        assertEquals(1, paused.playCalls)
-        assertTrue(paused.playWhenReady)
+        assertEquals(1, remote.playCalls)
+        assertEquals(0, local.playCalls)
 
-        paused.playWhenReady = false
         controller.trigger("device_idle_exited")
-        assertEquals(2, paused.playCalls)
-        assertTrue(paused.playWhenReady)
+        assertEquals(1, remote.playCalls)
+        assertEquals(1, local.playCalls)
 
-        controller.clear("paused")
+        controller.clearAll()
         assertFalse(environment.listening)
     }
 
     @Test
-    fun `recoverIntendedPlayback pauses players persists and syncs foreground when audio focus is denied`() {
+    fun `focus denial stops only the failing session and persists the new intent`() {
         val environment = FakeRecoveryEnvironment()
         val stalled = HealthCheckPlayer("stalled", environment).apply {
             playWhenReady = true
             playbackState = Player.STATE_IDLE
         }
-        val host = healthCheckHost(stalled).apply {
+        val healthy = HealthCheckPlayer("healthy", environment).apply { playWhenReady = true }
+        val host = healthCheckHost(stalled, healthy).apply {
             audioFocusAllowed = false
         }
         val controller = NativePlaybackRecoveryController(host, environment)
         controller.markIntended("stalled")
+        controller.markIntended("healthy")
+        controller.onPlayerError(
+            "stalled", recoverable = true,
+            errorCodeName = "ERROR_CODE_DECODING_FAILED"
+        )
 
-        controller.trigger("keep_alive_heartbeat")
+        environment.runFirst(2_000L)
 
         assertEquals(1, stalled.pauseCalls)
         assertFalse(stalled.playWhenReady)
         assertFalse(controller.isIntended("stalled"))
-        assertEquals(1, host.persistNowCalls)
-        assertEquals(1, host.syncForegroundCalls)
+        assertTrue(controller.isIntended("healthy"))
+        assertEquals(0, healthy.pauseCalls)
+        assertEquals(2, host.persistNowCalls)
+        assertEquals(2, host.syncForegroundCalls)
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33], manifest = Config.NONE)
+class NativePlaybackRetryIntegrationTest {
+    @Test
+    fun `new user intent retries the failed player on an alternate candidate`() {
+        val environment = FakeRecoveryEnvironment()
+        val playback = HealthCheckPlayer("player", environment, session = candidateSession(environment))
+        playback.reportedError = ExoPlaybackException.createForSource(
+            IOException("media connection failed"), PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED
+        )
+        val host = healthCheckHost(playback).apply { deferPreparation = true }
+        val controller = NativePlaybackRecoveryController(host, environment)
+        startCandidateRetry(controller)
+        controller.markIntended("player")
+
+        controller.retryNow("player", "user_retry")
+
+        assertEquals(2, host.preparationQueues.size)
+        assertEquals("https://two/0.mp3", host.preparationQueues.last().single().uri)
+        assertTrue(controller.isRecovering("player"))
     }
 }
 
@@ -840,15 +906,27 @@ private fun candidateSession(environment: FakeRecoveryEnvironment, count: Int = 
 private fun startCandidateRetry(controller: NativePlaybackRecoveryController) {
     controller.markIntended("player")
     controller.onPlayerError("player", recoverable = true, candidateFallbackEligible = true,
-        errorCodeName = "ERROR_CODE_IO_BAD_HTTP_STATUS", errorMessage = "503", causeDescription = null)
+        errorCodeName = "ERROR_CODE_IO_BAD_HTTP_STATUS")
     controller.retryNow("player", "user_retry")
 }
 
-private class HealthCheckPlayer(sessionId: String, environment: FakeRecoveryEnvironment) {
+private class HealthCheckPlayer(
+    sessionId: String,
+    environment: FakeRecoveryEnvironment,
+    val session: NativePlaybackSession = NativePlaybackSession(
+        sessionId = sessionId,
+        createPlayer = { _, _ -> error("unused") },
+        logWarn = { _, _, _ -> },
+        elapsedRealtimeMs = { environment.now }
+    )
+) {
     var playWhenReady = false
     var playbackState = Player.STATE_READY
     var suppressionReason = Player.PLAYBACK_SUPPRESSION_REASON_NONE
     var hasPlayerError = false
+    var reportedError: PlaybackException? = null
+    var positionMs = 8_000L
+    var bufferedPositionMs = 15_000L
     var playCalls = 0
         private set
     var pauseCalls = 0
@@ -862,9 +940,10 @@ private class HealthCheckPlayer(sessionId: String, environment: FakeRecoveryEnvi
             "isPlaying" -> playWhenReady && playbackState == Player.STATE_READY
             "getPlaybackState" -> playbackState
             "getPlaybackSuppressionReason" -> suppressionReason
-            "getPlayerError" -> null
-            "getCurrentPosition" -> 8_000L
-            "getBufferedPosition" -> 15_000L
+            "getPlayerError" -> reportedError
+            "getCurrentPosition" -> positionMs
+            "getBufferedPosition" -> bufferedPositionMs
+            "isSleepingForOffload" -> false
             "getDuration" -> 60_000L
             "getCurrentMediaItemIndex" -> 2
             "setVolume" -> null
@@ -881,12 +960,7 @@ private class HealthCheckPlayer(sessionId: String, environment: FakeRecoveryEnvi
             else -> error("Unexpected ExoPlayer access: ${method.name}")
         }
     } as ExoPlayer
-    val session = NativePlaybackSession(
-        sessionId = sessionId,
-        createPlayer = { _, _ -> error("unused") },
-        logWarn = { _, _, _ -> },
-        elapsedRealtimeMs = { environment.now }
-    ).also { session ->
+    init {
         val playerField = NativePlaybackSession::class.java.getDeclaredField("_player")
         playerField.isAccessible = true
         playerField.set(session, player)
@@ -953,14 +1027,12 @@ private class FakeRecoveryHost(
     }
     override fun establishForegroundPlayback(sessionId: String): Boolean =
         foregroundPlaybackAllowed
-    override fun focusSession(sessionId: String) = Unit
     override fun ensurePlayer(session: NativePlaybackSession): ExoPlayer =
         onEnsurePlayer?.invoke(session) ?: error("unused")
     override fun onRecoveryTimedOut(sessionId: String) {
         recoveryTimeouts += sessionId
     }
     override fun publishSession(sessionId: String) = Unit
-    override fun publishAllSessions() = Unit
     override fun persistNow() {
         persistNowCalls += 1
     }
@@ -975,7 +1047,6 @@ private class FakeRecoveryHost(
     override fun logInfo(message: String, session: NativePlaybackSession?) = Unit
     override fun logWarn(
         message: String,
-        session: NativePlaybackSession?,
-        error: PlaybackException?
+        session: NativePlaybackSession?
     ) = Unit
 }

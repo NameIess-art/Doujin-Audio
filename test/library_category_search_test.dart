@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/core/widgets/search_highlight.dart';
@@ -333,7 +335,44 @@ void main() {
           of: find.byKey(const ValueKey('library_search_history')),
           matching: find.text('Alpha, ASMR'),
         );
+        Future<void> openHistoryMenu(Finder item) async {
+          if (platform == TargetPlatform.windows) {
+            await tester.tap(
+              item,
+              buttons: kSecondaryMouseButton,
+              kind: PointerDeviceKind.mouse,
+            );
+          } else {
+            await tester.longPress(item);
+          }
+          await tester.pumpAndSettle();
+        }
+
+        final messenger = tester.binding.defaultBinaryMessenger;
+        String? copiedQuery;
+        messenger.setMockMethodCallHandler(SystemChannels.platform, (
+          call,
+        ) async {
+          if (call.method == 'Clipboard.setData') {
+            copiedQuery = (call.arguments as Map)['text'] as String;
+          }
+          return null;
+        });
+        addTearDown(
+          () =>
+              messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+        );
+        await openHistoryMenu(historyItem);
+        await tester.tap(find.text('复制关键词'));
+        await tester.pumpAndSettle();
+        expect(copiedQuery, 'Alpha, ASMR');
+        expect(tester.widget<TextField>(field).controller!.text, 'Beta');
+        expect(find.byType(LibraryTreeItem), findsNothing);
+
         await tester.tap(historyItem);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('search_/Alpha.mp3')), findsOneWidget);
+        await tester.tap(find.byKey(const ValueKey('app_search_element_summary')));
         await tester.pumpAndSettle();
         expect(tester.widget<TextField>(field).controller!.text, 'Alpha, ASMR');
         await tester.enterText(field, 'Beta');
@@ -354,6 +393,19 @@ void main() {
         expect(find.byType(LibraryTreeItem), findsNothing);
         await tester.enterText(field, 'Keep draft');
         await tester.pumpAndSettle();
+        await openHistoryMenu(
+          find.descendant(
+            of: find.byKey(const ValueKey('library_search_history')),
+            matching: find.text('Beta'),
+          ),
+        );
+        await tester.tap(find.text('移除这条历史'));
+        await tester.pumpAndSettle();
+        expect(fixture.settings.slice.state.librarySearchHistory, [
+          'Alpha, ASMR',
+        ]);
+        expect(tester.widget<TextField>(field).controller!.text, 'Keep draft');
+        expect(find.byType(LibraryTreeItem), findsNothing);
         final historyBeforeClear =
             fixture.settings.slice.state.librarySearchHistory;
         await tester.tap(
@@ -633,6 +685,40 @@ void main() {
           expect(find.byType(FilterChip), findsNWidgets(41));
           expect(find.text('term1999'), findsOneWidget);
           expect(find.text('term40'), findsNothing);
+          final term = find.widgetWithText(FilterChip, 'term1999');
+          await tester.ensureVisible(term);
+          if (platform == TargetPlatform.windows) {
+            await tester.tap(
+              term,
+              kind: PointerDeviceKind.mouse,
+              buttons: kSecondaryMouseButton,
+            );
+          } else {
+            await tester.longPress(term);
+          }
+          await tester.pumpAndSettle();
+          expect(find.text('Search locally'), findsOneWidget);
+          expect(find.text('Search online'), findsOneWidget);
+          expect(find.text('Copy'), findsOneWidget);
+          expect(selected.value, {'term1999'});
+          final highlight = find.ancestor(
+            of: term,
+            matching: find.byWidgetPredicate(
+              (widget) =>
+                  widget is DecoratedBox &&
+                  widget.position == DecorationPosition.foreground &&
+                  widget.decoration is ShapeDecoration,
+            ),
+          );
+          final surface = find.descendant(
+            of: term,
+            matching: find.byType(Material),
+          );
+          expect(tester.getRect(highlight), tester.getRect(surface));
+          await tester.tapAt(
+            tester.getBottomRight(find.byType(Scaffold)) - const Offset(4, 4),
+          );
+          await tester.pumpAndSettle();
           final more = find.byKey(
             const ValueKey('library_category_terms_more_tags'),
           );

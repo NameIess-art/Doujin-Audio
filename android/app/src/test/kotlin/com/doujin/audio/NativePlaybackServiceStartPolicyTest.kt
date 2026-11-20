@@ -12,7 +12,7 @@ class NativePlaybackServiceStartPolicyTest {
     private val expectedToken = "internal-token"
 
     @Test
-    fun `matching internal start request is accepted`() {
+    fun `matching internal start is accepted without replaying a previous session`() {
         val decision = evaluateNativePlaybackStart(
             intentPresent = true,
             action = nativePlaybackStartAction,
@@ -24,7 +24,7 @@ class NativePlaybackServiceStartPolicyTest {
 
         assertEquals(NativePlaybackStartSource.INTERNAL, decision.source)
         assertTrue(decision.accepted)
-        assertTrue(decision.shouldAttemptRestore)
+        assertFalse(decision.shouldAttemptRestore)
         assertTrue(decision.requireForegroundBootstrap)
     }
 
@@ -41,6 +41,7 @@ class NativePlaybackServiceStartPolicyTest {
 
         assertEquals(NativePlaybackStartSource.STICKY_RESTART, decision.source)
         assertTrue(decision.accepted)
+        assertTrue(decision.shouldAttemptRestore)
         assertFalse(decision.requireForegroundBootstrap)
     }
 

@@ -2,11 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../core/widgets/app_bottom_sheet.dart';
-import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/app_search_page.dart';
 import '../../core/widgets/app_transitions.dart';
-import '../../core/widgets/windows_smooth_scroll_controller.dart';
+import '../../core/widgets/unified_popup_menu.dart';
 import '../../features/asmr/presentation/asmr_tab.dart';
 import '../../features/library/presentation/library_search_page.dart';
 import '../../features/player/presentation/playlist/session_detail_route.dart';
@@ -31,42 +29,17 @@ class ElementActionMenu extends StatelessWidget {
     required this.value,
     required this.onCopy,
     required this.child,
+    this.shape = const RoundedRectangleBorder(
+      borderRadius: BorderRadius.all(Radius.circular(8)),
+    ),
   });
 
   final String value;
   final VoidCallback onCopy;
   final Widget child;
+  final ShapeBorder shape;
 
-  Future<void> _show(BuildContext context) async {
-    final labels = switch (Localizations.localeOf(context).languageCode) {
-      'zh' => appLanguageZh,
-      'ja' => appLanguageJa,
-      _ => appLanguageEn,
-    };
-    final action = await AppBottomSheet.show<_ElementAction>(
-      context: context,
-      builder: (sheetContext) => SafeArea(
-        top: false,
-        child: ListView(
-          shrinkWrap: true,
-          padding: AppBottomSheet.contentPadding,
-          children: [
-            AppBottomSheetHeader(
-              icon: Icons.label_outline_rounded,
-              title: value,
-            ),
-            const SizedBox(height: 18),
-            for (final action in _ElementAction.values)
-              ListTile(
-                leading: Icon(action.icon),
-                title: Text(labels[action.labelKey]!),
-                onTap: () => Navigator.of(sheetContext).pop(action),
-              ),
-          ],
-        ).withWindowsSmoothScroll(),
-      ),
-    );
-    if (!context.mounted || action == null) return;
+  Future<void> _runAction(BuildContext context, _ElementAction action) async {
     final searchPage = switch (action) {
       _ElementAction.onlineSearch => AsmrSearchPage(initialQuery: value),
       _ElementAction.localSearch => LibrarySearchPage(initialQuery: value),
@@ -110,21 +83,24 @@ class ElementActionMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (value.trim().isEmpty) return child;
-    final isWindows = Theme.of(context).platform == TargetPlatform.windows;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      excludeFromSemantics: isWindows,
-      onLongPress: isWindows
-          ? null
-          : () {
-              unawaited(
-                AppInteractionFeedback.trigger(
-                  AppInteractionFeedbackType.selection,
-                ),
-              );
-              _show(context);
-            },
-      onSecondaryTap: isWindows ? () => _show(context) : null,
+    final labels = switch (Localizations.localeOf(context).languageCode) {
+      'zh' => appLanguageZh,
+      'ja' => appLanguageJa,
+      _ => appLanguageEn,
+    };
+    return UnifiedContextMenuRegion(
+      key: ValueKey(value),
+      shape: shape,
+      skipTraversal: true,
+      openOnAndroidLongPress: true,
+      buildEntries: () => [
+        for (final action in _ElementAction.values)
+          UnifiedMenuEntry.action(
+            value: () => unawaited(_runAction(context, action)),
+            label: labels[action.labelKey]!,
+            icon: action.icon,
+          ),
+      ],
       child: child,
     );
   }

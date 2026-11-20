@@ -16,6 +16,8 @@ import 'sliding_selection_indicator.dart';
 import 'unified_popup_menu.dart';
 import 'windows_horizontal_wheel_scroll.dart';
 
+const _titleCapsulePadding = EdgeInsets.symmetric(horizontal: 14);
+
 class TopPageHeader extends StatefulWidget {
   const TopPageHeader({
     super.key,
@@ -162,10 +164,7 @@ class _TopPageHeaderState extends State<TopPageHeader> {
       if (widget.icon != null) {
         return Icon(
           widget.icon,
-          size: AppDesignTokens.opticalIconSize(
-            widget.icon,
-            AppPageHeaderMetrics.titleIconSize,
-          ),
+          size: AppPageHeaderMetrics.titleIconSize,
           color: color,
         );
       }
@@ -185,15 +184,12 @@ class _TopPageHeaderState extends State<TopPageHeader> {
       final titleStyle = appPageHeaderTitleStyle(context);
       return HeaderFloatingSurface(
         height: null,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        padding: _titleCapsulePadding,
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 38),
           child: Row(
             children: [
-              if (headerIcon != null) ...[
-                headerIcon,
-                const SizedBox(width: 8),
-              ],
+              if (headerIcon != null) _HeaderTitleIcon(child: headerIcon),
               Expanded(
                 child: Align(
                   alignment: Alignment.centerLeft,
@@ -453,6 +449,23 @@ TextStyle? appPageHeaderTitleStyle(BuildContext context) {
   );
 }
 
+class _HeaderTitleIcon extends StatelessWidget {
+  const _HeaderTitleIcon({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(end: AppSpacing.xs),
+      child: SizedBox.square(
+        dimension: AppPageHeaderMetrics.titleIconSize,
+        child: Center(child: child),
+      ),
+    );
+  }
+}
+
 class HeaderFloatingSurface extends StatelessWidget {
   const HeaderFloatingSurface({
     super.key,
@@ -496,7 +509,7 @@ class HeaderFloatingSurface extends StatelessWidget {
             context.findAncestorWidgetOfExactType<AppPageHeaderTransition>() !=
                 null);
     final restBackground = background.withValues(
-      alpha: background.a * backgroundOpacity * (useGlass ? 0.9 : 1),
+      alpha: background.a * backgroundOpacity,
     );
     final backgroundColor = appSurfaceHighlight(
       cs,
@@ -1142,10 +1155,10 @@ class HeaderTopCapsule extends StatelessWidget {
     return HeaderFloatingSurface(
       height: height,
       radius: height / 2,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
+      padding: _titleCapsulePadding,
       child: Row(
         children: [
-          if (leading != null) ...[leading!, const SizedBox(width: 6)],
+          if (leading != null) _HeaderTitleIcon(child: leading!),
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) => FittedBox(

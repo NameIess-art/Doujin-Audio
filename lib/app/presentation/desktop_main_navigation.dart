@@ -219,7 +219,14 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
     final sidebarColor = isLandscapeLayout
         ? landscapeNavigationBackground(cs)
         : cs.surfaceContainerLow;
-    final indicatorColor = SlidingSelectionIndicator.fill(cs.primary);
+    final pureBlackSidebar =
+        isLandscapeLayout &&
+        cs.brightness == Brightness.dark &&
+        sidebarColor == cs.surface;
+    final indicatorColor = SlidingSelectionIndicator.fill(
+      cs.primary,
+      brightness: cs.brightness,
+    );
 
     final sidebar = AnimatedContainer(
       key: ValueKey<bool>(isLandscapeLayout),
@@ -241,7 +248,13 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
             ? BorderRadius.zero
             : BorderRadius.circular(AppRadius.section),
         border: isLandscapeLayout
-            ? null
+            ? (pureBlackSidebar
+                  ? Border(
+                      right: BorderSide(
+                        color: cs.outlineVariant.withValues(alpha: 0.24),
+                      ),
+                    )
+                  : null)
             : Border.all(color: cs.outlineVariant.withValues(alpha: 0.85)),
       ),
       child: Column(

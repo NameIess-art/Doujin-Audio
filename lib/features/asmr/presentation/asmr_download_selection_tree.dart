@@ -216,6 +216,7 @@ class AsmrDownloadNodeTile extends ConsumerWidget {
           node.track,
           audioColor: primaryColor,
           fallbackColor: cs.onSurfaceVariant,
+          tokens: AppDesignTokens.of(context),
         ),
       ),
       trailing: Row(

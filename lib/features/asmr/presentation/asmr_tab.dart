@@ -46,6 +46,7 @@ import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/scroll_to_top_list.dart';
 import '../../../core/widgets/search_highlight.dart';
+import '../../../core/widgets/selection_checkmark.dart';
 import '../../../core/widgets/swipe_reveal_card.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/page_translation_scope.dart';

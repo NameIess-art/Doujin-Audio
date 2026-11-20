@@ -1939,7 +1939,9 @@ class _AppPressScaleState extends State<AppPressScale>
 
   @override
   Widget build(BuildContext context) {
+    final isWindows = Theme.of(context).platform == TargetPlatform.windows;
     final animationsDisabled =
+        isWindows ||
         MediaQuery.disableAnimationsOf(context) ||
         !TickerMode.valuesOf(context).enabled;
     if (!widget.enabled || animationsDisabled) {
@@ -1947,6 +1949,8 @@ class _AppPressScaleState extends State<AppPressScale>
         _snapToRest();
       }
     }
+    if (isWindows) return widget.child;
+
     return Listener(
       onPointerDown: widget.enabled && !animationsDisabled
           ? _handlePointerDown

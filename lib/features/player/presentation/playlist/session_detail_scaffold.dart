@@ -798,26 +798,24 @@ class _SessionDetailBlurredCoverBackground extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          RepaintBoundary(
-            // Palette changes repaint the tint without invalidating the artwork.
-            child: Transform.scale(
-              scale: isDark ? 1.12 : 1.08,
-              child: ImageFiltered(
-                imageFilter: isDark ? _darkBlur : _lightBlur,
-                child: image,
-              ),
+          Transform.scale(
+            scale: isDark ? 1.12 : 1.08,
+            // ImageFiltered already isolates the artwork from the tint.
+            child: ImageFiltered(
+              imageFilter: isDark ? _darkBlur : _lightBlur,
+              child: image,
             ),
           ),
-          ColoredBox(color: surface.withValues(alpha: isDark ? 0.70 : 0.80)),
+          ColoredBox(color: surface.withValues(alpha: isDark ? 0.62 : 0.68)),
           DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  surface.withValues(alpha: isDark ? 0.35 : 0.25),
+                  surface.withValues(alpha: isDark ? 0.32 : 0.22),
                   Colors.transparent,
-                  surface.withValues(alpha: isDark ? 0.50 : 0.40),
+                  surface.withValues(alpha: isDark ? 0.48 : 0.36),
                 ],
                 stops: const [0.0, 0.45, 1.0],
               ),

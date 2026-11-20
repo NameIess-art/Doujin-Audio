@@ -7,19 +7,20 @@
     <color name="launch_background_rose_dark">#141112</color>
     <color name="launch_background_lavender_light">#FAF8FF</color>
     <color name="launch_background_lavender_dark">#131117</color>
-    <color name="launch_background_blue_light">#F5FBFF</color>
-    <color name="launch_background_blue_dark">#101417</color>
+    <color name="launch_background_blue_light">#F7F9FF</color>
+    <color name="launch_background_blue_dark">#101218</color>
     <color name="launch_background_mint_light">#F5FFF9</color>
     <color name="launch_background_mint_dark">#101513</color>
     <color name="launch_background_amber_light">#FFF9F2</color>
     <color name="launch_background_amber_dark">#151310</color>
     <color name="launch_background_gray_light">#F7F8FA</color>
     <color name="launch_background_gray_dark">#121315</color>
+    <color name="launch_background_pure_black">#000000</color>
 
     <!-- System mode dynamic surface colors (light mode defaults) -->
     <color name="launch_background_rose">#FFF8F8</color>
     <color name="launch_background_lavender">#FAF8FF</color>
-    <color name="launch_background_blue">#F5FBFF</color>
+    <color name="launch_background_blue">#F7F9FF</color>
     <color name="launch_background_mint">#F5FFF9</color>
     <color name="launch_background_amber">#FFF9F2</color>
     <color name="launch_background_gray">#F7F8FA</color>

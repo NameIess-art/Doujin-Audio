@@ -854,34 +854,21 @@ final class PlaybackFacade {
     scheduleSessionStatePersistence(sessionId: session.id);
   }
 
-  Future<void> seekSessionToNext(String sessionId) async {
-    final session = _service.sessions[sessionId];
-    if (session == null || session.pendingNativeTrackPath != null) return;
-    if (session.queueLoadingRequired &&
-        !await ensureSessionQueueLoaded(sessionId)) {
-      return;
-    }
-    final target = _commandPort?.resolveAdvance(
-      session,
-      forward: true,
-      manualAdvance: true,
-    );
-    if (target == null) return;
-    session.beginLoadingIndicatorThreshold();
-    await _commandPort?.prepareSession(
-      session,
-      nextPath: target.path,
-      autoPlay: session.effectivePlaying,
-      forceStartAtZero: true,
-      showLoading: false,
-      targetQueueIndex: target.queueIndex,
-    );
-  }
+  Future<void> seekSessionToNext(String sessionId) =>
+      _seekSessionToAdjacentTrack(sessionId, forward: true);
 
-  Future<void> seekSessionToPrev(String sessionId) async {
+  Future<void> seekSessionToPrev(String sessionId) =>
+      _seekSessionToAdjacentTrack(sessionId, forward: false);
+
+  Future<void> _seekSessionToAdjacentTrack(
+    String sessionId, {
+    required bool forward,
+  }) async {
     final session = _service.sessions[sessionId];
     if (session == null || session.pendingNativeTrackPath != null) return;
-    if (!session.isPlaybackQueue && session.position.inSeconds > 3) {
+    if (!forward &&
+        !session.isPlaybackQueue &&
+        session.position.inSeconds > 3) {
       await seekSession(sessionId, Duration.zero);
       return;
     }
@@ -891,7 +878,7 @@ final class PlaybackFacade {
     }
     final target = _commandPort?.resolveAdvance(
       session,
-      forward: false,
+      forward: forward,
       manualAdvance: true,
     );
     if (target == null) return;
@@ -929,10 +916,7 @@ final class PlaybackFacade {
       session.nonSingleLoopMode = mode;
     }
     _notifySessionSettingsChanged(session);
-    final synchronize = _synchronizeLoopMode;
-    if (synchronize != null) {
-      unawaited(synchronize(session, mode));
-    }
+    unawaited(_synchronizeLoopMode?.call(session, mode));
     scheduleSessionStatePersistence(sessionId: session.id);
   }
 

@@ -26,10 +26,8 @@ import '../presentation/onboarding_page.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
 import '../../core/cache/app_cache_service.dart';
 import '../../core/logging/app_log_service.dart';
-import '../../core/widgets/app_buttons.dart';
 import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/app_transitions.dart';
-import '../../core/widgets/unified_popup_menu.dart';
 import '../theme/theme_provider.dart';
 import '../../core/persistence/app_preferences.dart';
 import '../../features/settings/application/settings_state.dart';
@@ -167,7 +165,14 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
     }
     ref.listenManual(
       themeProviderInstanceProvider.select(
-        (theme) => (theme.appThemeColor, theme.themeMode),
+        (theme) => (
+          theme.effectiveStartupPreset,
+          theme.themeMode,
+          theme.pureBlackTheme,
+          theme.customThemeColorValue,
+          theme.useSystemAccentColor,
+          theme.systemAccentColor,
+        ),
       ),
       (_, next) {
         final theme = ref.read(themeProviderInstanceProvider);
@@ -176,17 +181,19 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
           ref.read(appLifecyclePlatformServiceProvider).syncAppTheme(
             preset: next.$1.name,
             themeMode: next.$2.name,
-            lightTrayMenuPalette: windows
-                ? _trayMenuPalette(theme.lightTheme.colorScheme)
+            pureBlack: next.$3,
+            lightWindowBorderColor: windows
+                ? _windowBorderColor(theme.lightTheme.colorScheme)
                 : null,
-            darkTrayMenuPalette: windows
-                ? _trayMenuPalette(theme.darkTheme.colorScheme)
+            darkWindowBorderColor: windows
+                ? _windowBorderColor(theme.darkTheme.colorScheme)
                 : null,
           ),
         );
       },
       fireImmediately: defaultTargetPlatform == TargetPlatform.windows,
     );
+    unawaited(_refreshSystemAccentColor());
     _runtime = ref.read(audioRuntimeCoordinatorProvider);
     _orientationController = ref.read(appOrientationControllerProvider);
     WidgetsBinding.instance.addObserver(this);
@@ -228,6 +235,24 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
 
   @override
   void didChangeMetrics() => _updateDisplayOrientation();
+
+  @override
+  void didChangePlatformBrightness() {
+    super.didChangePlatformBrightness();
+    unawaited(_refreshSystemAccentColor());
+  }
+
+  Future<void> _refreshSystemAccentColor() async {
+    try {
+      final accent = await ref
+          .read(appLifecyclePlatformServiceProvider)
+          .getSystemAccentColor();
+      if (!mounted || accent == null) return;
+      ref.read(themeProviderInstanceProvider).setSystemAccentColor(Color(accent));
+    } catch (_) {
+      // Optional platform accent lookup falls back to the selected preset.
+    }
+  }
 
   void _updateDisplayOrientation() {
     if (defaultTargetPlatform == TargetPlatform.windows) return;
@@ -402,6 +427,8 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
               ],
               theme: themeProvider.lightTheme,
               darkTheme: themeProvider.darkTheme,
+              highContrastTheme: themeProvider.highContrastLightTheme,
+              highContrastDarkTheme: themeProvider.highContrastDarkTheme,
               themeMode: themeProvider.themeMode,
               // AnimatedTheme interpolates the entire multi-tab widget tree via
               // ThemeData.lerp across every frame; snap theme changes cleanly
@@ -590,11 +617,12 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
   }
 }
 
-List<int> _trayMenuPalette(ColorScheme colors) {
-  final background = unifiedPopupMenuBackground(colors);
-  return [
-    background,
-    colors.onSurface,
-    Color.alphaBlend(appHoverTint(colors), background),
-  ].map((color) => color.toARGB32() & 0xffffff).toList();
+int _windowBorderColor(ColorScheme colors) {
+  final border = Color.alphaBlend(
+    colors.outlineVariant.withValues(
+      alpha: colors.brightness == Brightness.dark ? 0.45 : 0.65,
+    ),
+    colors.surface,
+  );
+  return border.toARGB32() & 0xffffff;
 }

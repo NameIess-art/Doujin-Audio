@@ -236,16 +236,20 @@ String formatSpeedValue(double value) {
   return '${rounded.toStringAsFixed(2)}x';
 }
 
-ButtonStyle sessionDetailResetButtonStyle(BuildContext context) {
+ButtonStyle sessionDetailResetButtonStyle(
+  BuildContext context, {
+  Color? accent,
+}) {
   final theme = Theme.of(context);
   final cs = theme.colorScheme;
+  final color = accent ?? cs.primary;
   return appSurfaceButtonStyle(
     colorScheme: cs,
     platform: theme.platform,
     defaultBackgroundColor: cs.secondaryContainer,
     style: FilledButton.styleFrom(
-      backgroundColor: cs.primary.withValues(alpha: 0.12),
-      foregroundColor: cs.primary,
+      backgroundColor: color.withValues(alpha: 0.12),
+      foregroundColor: color,
       elevation: 0,
       minimumSize: const Size.fromHeight(48),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),

@@ -2,7 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:doujin_audio/app/theme/app_design_tokens.dart';
+import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/core/widgets/playlist_icon.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 
@@ -16,6 +16,61 @@ Widget _buildThemedApp({required Widget child, ThemeData? theme}) {
 }
 
 void main() {
+  testWidgets(
+    'page titles and icons line up across header layouts',
+    (tester) async {
+      final headers = [
+        (title: 'Timer', icon: find.byIcon(Icons.timer_rounded)),
+        (title: 'Online', icon: find.byIcon(Icons.cloud_rounded)),
+        (title: 'My page', icon: find.byIcon(Icons.person_rounded)),
+        (title: 'Playlist', icon: find.byType(PlaylistIcon)),
+      ];
+      await tester.pumpWidget(
+        _buildThemedApp(
+          child: Column(
+            children: [
+              TopPageHeader(icon: Icons.timer_rounded, title: headers[0].title),
+              TopPageHeader(
+                icon: Icons.cloud_rounded,
+                topCapsuleTitle: headers[1].title,
+                topCapsuleData: '123 works',
+                titleWidget: const SizedBox.shrink(),
+              ),
+              TopPageHeader(
+                icon: Icons.person_rounded,
+                topCapsuleTitle: headers[2].title,
+              ),
+              TopPageHeader(
+                iconWidget: const PlaylistIcon(),
+                topCapsuleTitle: headers[3].title,
+              ),
+            ],
+          ),
+        ),
+      );
+
+      final firstIcon = tester.getRect(headers.first.icon);
+      final firstTitle = tester.getRect(find.text(headers.first.title));
+      expect(firstTitle.left - firstIcon.right, AppSpacing.xs);
+      for (final header in headers.skip(1)) {
+        final icon = tester.getRect(header.icon);
+        final title = tester.getRect(find.text(header.title));
+        expect(icon.left, firstIcon.left, reason: header.title);
+        expect(icon.width, firstIcon.width, reason: header.title);
+        expect(title.left, firstTitle.left, reason: header.title);
+        expect(
+          icon.center.dy - title.center.dy,
+          firstIcon.center.dy - firstTitle.center.dy,
+          reason: header.title,
+        );
+      }
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets('title capsules use larger text and icons within their row height', (
     tester,
   ) async {
@@ -60,10 +115,7 @@ void main() {
                 )
               : find.byIcon(icon);
           final size = tester.widget<Icon>(iconFinder).size;
-          expect(
-            size,
-            closeTo(AppDesignTokens.opticalIconSize(icon, 22), 0.001),
-          );
+          expect(size, AppPageHeaderMetrics.titleIconSize);
         }
         expect(tester.widget<Text>(find.text('Playlist')).style!.fontSize, 16);
         if (topCapsule) {
@@ -202,7 +254,7 @@ void main() {
             drawCall.invocation.positionalArguments[1] as Paint;
         expect(
           indicatorPaintArg.color,
-          isSameColorAs(customAccent.withValues(alpha: 0.19)),
+          isSameColorAs(customAccent.withValues(alpha: 0.14)),
         );
         expect(
           indicatorRRect.blRadius,

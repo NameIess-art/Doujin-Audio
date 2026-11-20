@@ -53,6 +53,54 @@ class AppLifecycleMethodHandlerTest {
     }
 
     @Test
+    fun `app theme sync forwards pureBlack flag and rejects invalid pureBlack type`() {
+        var receivedPureBlack = false
+        val handler = AppLifecycleMethodHandler(
+            terminateForPendingRestore = {},
+            syncAppTheme = { _, _, pureBlack -> receivedPureBlack = pureBlack },
+        )
+        val okResult = RecordingAppLifecycleResult()
+        handler.onMethodCall(
+            MethodCall(
+                AppLifecycleMethods.SYNC_APP_THEME,
+                mapOf("preset" to "mint", "themeMode" to "dark", "pureBlack" to true),
+            ),
+            okResult,
+        )
+        assertTrue(receivedPureBlack)
+        assertTrue((okResult.successValue as Map<*, *>)["ok"] == true)
+
+        val badResult = RecordingAppLifecycleResult()
+        handler.onMethodCall(
+            MethodCall(
+                AppLifecycleMethods.SYNC_APP_THEME,
+                mapOf("preset" to "mint", "themeMode" to "dark", "pureBlack" to "yes"),
+            ),
+            badResult,
+        )
+        val response = badResult.successValue as Map<*, *>
+        assertEquals(false, response["ok"])
+        assertEquals(ChannelErrorCodes.INVALID_ARGUMENT, response["errorCode"])
+    }
+
+    @Test
+    fun `getSystemAccentColor returns provided accent value`() {
+        val handler = AppLifecycleMethodHandler(
+            terminateForPendingRestore = {},
+            syncAppTheme = { _, _, _ -> },
+            getSystemAccentColor = { 0xFF3366CC.toInt() },
+        )
+        val result = RecordingAppLifecycleResult()
+        handler.onMethodCall(
+            MethodCall(AppLifecycleMethods.GET_SYSTEM_ACCENT_COLOR, null),
+            result,
+        )
+        val response = result.successValue as Map<*, *>
+        assertEquals(true, response["ok"])
+        assertEquals(0xFF3366CC.toInt(), response["value"])
+    }
+
+    @Test
     fun `app theme sync rejects missing arguments`() {
         val handler = AppLifecycleMethodHandler(terminateForPendingRestore = {})
         val result = RecordingAppLifecycleResult()

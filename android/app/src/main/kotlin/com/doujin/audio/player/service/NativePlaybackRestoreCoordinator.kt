@@ -51,6 +51,7 @@ internal class NativePlaybackRestoreCoordinator(
     private val hasPendingCommandDelivery: () -> Boolean,
     private val stopIdleService: (Int, String) -> Unit,
     private val onMissingSessionsRestored: (List<String>) -> Unit,
+    private val resumeRestartSession: (String) -> Unit,
     private val logInfo: (String) -> Unit,
     private val logWarn: (String, Throwable) -> Unit = { message, error -> logInfo("$message error=$error") },
     private val prepareSessionsOnBackground: (List<StoredNativePlaybackSession>) -> Unit = {},
@@ -238,7 +239,11 @@ internal class NativePlaybackRestoreCoordinator(
             if (!sessionExists(stored.sessionId) &&
                 excludedSessionIds?.contains(stored.sessionId) != true
             ) {
-                restoredSessionIds += restoreSessions(listOf(stored), { false }, {})
+                restoredSessionIds += restoreSessions(listOf(stored), { false }) { sessionId ->
+                    if (!stored.completed && (stored.playing || stored.playWhenReady)) {
+                        resumeRestartSession(sessionId)
+                    }
+                }
             }
             environment.postMain { restoreNext(index + 1) }
         }

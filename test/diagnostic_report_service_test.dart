@@ -52,6 +52,7 @@ void main() {
     );
     expect(report['appVersion'], '1.2.3+4');
     expect(report['applicationCacheBytes'], 42);
+    expect(report['permissions'], containsPair('exactAlarmsAllowed', true));
     expect(
       (report['backgroundRun']
           as Map<String, dynamic>)['cleanerForceStopDetected'],

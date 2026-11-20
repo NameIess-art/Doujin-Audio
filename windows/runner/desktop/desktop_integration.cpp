@@ -18,6 +18,7 @@
 #include <stdexcept>
 #include <system_error>
 #include <thread>
+#include <winternl.h>
 #include <windowsx.h>
 #include <winrt/base.h>
 
@@ -61,43 +62,62 @@ void Launch(const std::wstring& path) {
   if (result <= 32) throw std::runtime_error("Unable to open target: " + std::to_string(result));
 }
 
-thread_local HMENU tray_popup_menu = nullptr;
+class ScopedTrayMenuTheme {
+ public:
+  explicit ScopedTrayMenuTheme(bool dark) {
+    static const bool supports_preferred_app_mode = [] {
+      const auto ntdll = GetModuleHandleW(L"ntdll.dll");
+      if (!ntdll) return false;
+      const auto get_version = reinterpret_cast<NTSTATUS(WINAPI*)(PRTL_OSVERSIONINFOW)>(
+          GetProcAddress(ntdll, "RtlGetVersion"));
+      RTL_OSVERSIONINFOW version{sizeof(version)};
+      // Ordinal 135 had a different signature before Windows 10 version 1903.
+      return get_version && get_version(&version) == 0 &&
+             version.dwMajorVersion >= 10 && version.dwBuildNumber >= 18362;
+    }();
+    HIGHCONTRASTW contrast{sizeof(contrast)};
+    if (!supports_preferred_app_mode ||
+        !SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0) ||
+        (contrast.dwFlags & HCF_HIGHCONTRASTON)) {
+      return;
+    }
 
-constexpr int kTrayMenuWidth = 236;
-constexpr int kTrayMenuRowHeight = 48;
-constexpr int kTrayMenuHorizontalPadding = 14;
-constexpr int kTrayMenuIconSize = 21;
-constexpr int kTrayMenuIconGap = 12;
-constexpr int kTrayMenuRadius = 16;
-// Segoe MDL2 Assets glyphs for OpenInNewWindow, Play, Previous, Next, Close.
-constexpr std::array<wchar_t, 5> kTrayMenuIcons = {
-    L'\uE8A7', L'\uE768', L'\uE892', L'\uE893', L'\uE8BB'};
+    module_ = LoadLibraryExW(L"uxtheme.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (!module_) return;
+    const auto set_mode =
+        reinterpret_cast<SetMode>(GetProcAddress(module_, MAKEINTRESOURCEA(135)));
+    const auto flush =
+        reinterpret_cast<Flush>(GetProcAddress(module_, MAKEINTRESOURCEA(136)));
+    if (!set_mode || !flush) return;
 
-void CALLBACK RoundTrayPopup(HWINEVENTHOOK, DWORD, HWND popup, LONG, LONG,
-                             DWORD, DWORD) {
-  if (!tray_popup_menu || !popup) return;
-  wchar_t class_name[16]{};
-  GetClassNameW(popup, class_name, ARRAYSIZE(class_name));
-  if (wcscmp(class_name, L"#32768") != 0) return;
-
-  RECT window{}, first{}, last{}, content{};
-  const int count = GetMenuItemCount(tray_popup_menu);
-  if (count <= 0 || !GetWindowRect(popup, &window) ||
-      !GetMenuItemRect(nullptr, tray_popup_menu, 0, &first) ||
-      !GetMenuItemRect(nullptr, tray_popup_menu, count - 1, &last)) {
-    return;
+    // The native menu palette is process-wide, so restore it when the popup closes.
+    set_mode_ = set_mode;
+    flush_ = flush;
+    previous_mode_ = set_mode_(dark ? Mode::kForceDark : Mode::kForceLight);
+    flush_();
   }
-  UnionRect(&content, &first, &last);
-  if (!IntersectRect(&content, &content, &window)) return;
 
-  // Clip to the menu rows to remove the system-painted outer frame.
-  OffsetRect(&content, -window.left, -window.top);
-  const int diameter = MulDiv(2 * kTrayMenuRadius, GetDpiForWindow(popup), 96);
-  const HRGN region = CreateRoundRectRgn(
-      content.left, content.top, content.right, content.bottom,
-      diameter, diameter);
-  if (region && !SetWindowRgn(popup, region, TRUE)) DeleteObject(region);
-}
+  ~ScopedTrayMenuTheme() {
+    if (set_mode_) {
+      set_mode_(previous_mode_);
+      flush_();
+    }
+    if (module_) FreeLibrary(module_);
+  }
+
+  ScopedTrayMenuTheme(const ScopedTrayMenuTheme&) = delete;
+  ScopedTrayMenuTheme& operator=(const ScopedTrayMenuTheme&) = delete;
+
+ private:
+  enum class Mode { kDefault = 0, kForceDark = 2, kForceLight = 3 };
+  using SetMode = Mode(WINAPI*)(Mode);
+  using Flush = void(WINAPI*)();
+
+  HMODULE module_ = nullptr;
+  SetMode set_mode_ = nullptr;
+  Flush flush_ = nullptr;
+  Mode previous_mode_ = Mode::kDefault;
+};
 }
 
 struct DesktopIntegration::FolderOpenState {
@@ -110,15 +130,6 @@ struct DesktopIntegration::FolderOpenState {
   std::mutex mutex;
   HWND window = nullptr;
   std::vector<std::shared_ptr<Request>> pending;
-};
-
-struct DesktopIntegration::TrayMenuAppearance {
-  std::array<std::wstring, 5> labels;
-  HFONT font;
-  HFONT icon_font;
-  TrayMenuPalette palette;
-  UINT dpi;
-  int Scale(int logical) const { return MulDiv(logical, dpi, 96); }
 };
 
 DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* messenger) : window_(window) {
@@ -221,26 +232,28 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
       const auto& args = Arguments(call);
       auto mode = RequiredText(args,"themeMode");
       if (mode != "system" && mode != "dark" && mode != "light") throw std::invalid_argument("themeMode");
-      if (Find(args, "lightTrayMenuPalette") || Find(args, "darkTrayMenuPalette")) {
-        const auto read_palette = [&args](const char* key) -> TrayMenuPalette {
-          const auto value = Find(args, key);
-          const auto colors = value ? std::get_if<flutter::EncodableList>(value) : nullptr;
-          if (!colors || colors->size() != 3) throw std::invalid_argument(key);
-          std::array<COLORREF, 3> palette{};
-          for (size_t i = 0; i < palette.size(); ++i) {
-            const auto color = std::get_if<int32_t>(&(*colors)[i]);
-            if (!color || *color < 0 || *color > 0xffffff) throw std::invalid_argument(key);
-            palette[i] = RGB(*color >> 16, *color >> 8, *color);
-          }
-          return {palette[0], palette[1], palette[2]};
-        };
-        const auto light = read_palette("lightTrayMenuPalette");
-        const auto dark = read_palette("darkTrayMenuPalette");
-        tray_light_palette_ = light;
-        tray_dark_palette_ = dark;
+      const auto read_optional_rgb = [&args](const char* key) -> std::optional<COLORREF> {
+        const auto value = Find(args, key);
+        if (!value || std::holds_alternative<std::monostate>(*value)) return std::nullopt;
+        const auto color = std::get_if<int32_t>(value);
+        if (!color || *color < 0 || *color > 0xffffff) throw std::invalid_argument(key);
+        return RGB((*color >> 16) & 0xff, (*color >> 8) & 0xff, *color & 0xff);
+      };
+      if (Find(args, "lightWindowBorderColor") || Find(args, "darkWindowBorderColor")) {
+        light_window_border_color_ = read_optional_rgb("lightWindowBorderColor");
+        dark_window_border_color_ = read_optional_rgb("darkWindowBorderColor");
       }
       theme_mode_ = mode;
       UpdateTheme(); Success(result);
+    } else if (call.method_name() == "getSystemAccentColor") {
+      DWORD color = 0;
+      BOOL opaque = FALSE;
+      if (SUCCEEDED(DwmGetColorizationColor(&color, &opaque))) {
+        const int64_t argb = static_cast<int64_t>(0xff000000u | (color & 0x00ffffffu));
+        Success(result, Value(argb));
+      } else {
+        Success(result);
+      }
     } else if (call.method_name() == "syncTrayMenu") {
       const auto& args = Arguments(call);
       tray_labels_ = {
@@ -313,8 +326,8 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
 }
 DesktopIntegration::~DesktopIntegration() {
   *alive_ = false;
-  if (active_tray_menu_) {
-    active_tray_menu_ = nullptr;
+  if (tray_menu_open_) {
+    tray_menu_open_ = false;
     EndMenu();
   }
   if (content_) RemoveWindowSubclass(content_, ContentProc, 0);
@@ -483,82 +496,44 @@ bool DesktopIntegration::UsesDarkTheme() const {
 }
 void DesktopIntegration::UpdateTheme() {
   const BOOL dark = UsesDarkTheme();
-  DwmSetWindowAttribute(window_,20,&dark,sizeof(dark));
+  DwmSetWindowAttribute(window_, 20, &dark, sizeof(dark));
+  HIGHCONTRASTW contrast{sizeof(contrast)};
+  SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0);
+  const bool high_contrast = (contrast.dwFlags & HCF_HIGHCONTRASTON) != 0;
+  constexpr DWORD kDwmwaBorderColor = 34;
+  constexpr COLORREF kDwmwaColorDefault = 0xFFFFFFFF;
+  const auto& preferred = dark ? dark_window_border_color_ : light_window_border_color_;
+  const COLORREF border_color =
+      (!high_contrast && preferred.has_value()) ? *preferred : kDwmwaColorDefault;
+  DwmSetWindowAttribute(window_, kDwmwaBorderColor, &border_color, sizeof(border_color));
 }
 
 void DesktopIntegration::ShowTrayMenu() {
-  if (active_tray_menu_) return;
+  if (tray_menu_open_) return;
   const HMENU menu = CreatePopupMenu();
   if (!menu) return;
 
+  for (size_t index = 0; index < tray_labels_.size(); ++index) {
+    if (index + 1 == tray_labels_.size()) {
+      AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    }
+    AppendMenuW(menu, MF_STRING, index + 1, tray_labels_[index].c_str());
+  }
+
   POINT point{};
   GetCursorPos(&point);
-  const UINT cursor_dpi = GetDpiForWindow(WindowFromPoint(point));
-  const UINT dpi = cursor_dpi ? cursor_dpi : GetDpiForWindow(window_);
-  HIGHCONTRASTW contrast{sizeof(contrast)};
-  SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0);
-  const bool custom_colors = !(contrast.dwFlags & HCF_HIGHCONTRASTON);
-  const bool dark = UsesDarkTheme();
-  NONCLIENTMETRICSW metrics{sizeof(metrics)};
-  HFONT font = nullptr;
-  HFONT icon_font = nullptr;
-  if (custom_colors && SystemParametersInfoForDpi(
-      SPI_GETNONCLIENTMETRICS, sizeof(metrics), &metrics, 0, dpi)) {
-    metrics.lfMenuFont.lfHeight = -MulDiv(14, dpi, 96);
-    metrics.lfMenuFont.lfWeight = FW_BOLD;
-    font = CreateFontIndirectW(&metrics.lfMenuFont);
-    LOGFONTW icon_metrics = metrics.lfMenuFont;
-    icon_metrics.lfHeight = -MulDiv(kTrayMenuIconSize, dpi, 96);
-    icon_metrics.lfWeight = FW_NORMAL;
-    wcscpy_s(icon_metrics.lfFaceName, L"Segoe MDL2 Assets");
-    icon_font = CreateFontIndirectW(&icon_metrics);
-  }
-  TrayMenuAppearance appearance{
-      tray_labels_,
-      font ? font : static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT)),
-      icon_font,
-      dark ? tray_dark_palette_ : tray_light_palette_,
-      dpi,
-  };
-  const HBRUSH background = custom_colors
-      ? CreateSolidBrush(appearance.palette.background) : nullptr;
-  if (background) {
-    MENUINFO info{sizeof(info)};
-    info.fMask = MIM_BACKGROUND;
-    info.hbrBack = background;
-    SetMenuInfo(menu, &info);
-  }
-
-  for (size_t index = 0; index < appearance.labels.size(); ++index) {
-    if (index == 4) AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    MENUITEMINFOW item{sizeof(item)};
-    item.fMask = MIIM_ID | MIIM_STRING | MIIM_FTYPE | MIIM_DATA;
-    item.wID = static_cast<UINT>(index + 1);
-    item.fType = custom_colors ? MFT_OWNERDRAW : MFT_STRING;
-    item.dwTypeData = appearance.labels[index].data();
-    item.dwItemData = reinterpret_cast<ULONG_PTR>(&appearance);
-    InsertMenuItemW(menu, static_cast<UINT>(GetMenuItemCount(menu)), TRUE, &item);
-  }
-
   const auto alive = alive_;
+  tray_menu_open_ = true;
   SetForegroundWindow(window_);
-  active_tray_menu_ = &appearance;
-  const HWINEVENTHOOK frame_hook = custom_colors
-      ? SetWinEventHook(EVENT_SYSTEM_MENUPOPUPSTART, EVENT_SYSTEM_MENUPOPUPSTART,
-                        nullptr, RoundTrayPopup, GetCurrentProcessId(),
-                        GetCurrentThreadId(), WINEVENT_OUTOFCONTEXT)
-      : nullptr;
-  tray_popup_menu = frame_hook ? menu : nullptr;
-  const auto command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
-                                      point.x, point.y, 0, window_, nullptr);
-  tray_popup_menu = nullptr;
-  if (frame_hook) UnhookWinEvent(frame_hook);
+  int command;
+  {
+    const ScopedTrayMenuTheme theme(UsesDarkTheme());
+    command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
+                             point.x, point.y, 0, window_, nullptr);
+  }
   DestroyMenu(menu);
-  if (background) DeleteObject(background);
-  if (font) DeleteObject(font);
-  if (icon_font) DeleteObject(icon_font);
   if (!*alive) return;
-  active_tray_menu_ = nullptr;
+  tray_menu_open_ = false;
   PostMessage(window_, WM_NULL, 0, 0);
   switch (command) {
     case 1: Show(); break;
@@ -728,47 +703,6 @@ std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp
     if (hit != HTNOWHERE) return hit;
   }
   if (message == WM_SIZE) PublishWindowMaximized();
-  if (active_tray_menu_ && message == WM_MEASUREITEM) {
-    auto& item = *reinterpret_cast<MEASUREITEMSTRUCT*>(lp);
-    const auto& style = *active_tray_menu_;
-    if (item.CtlType == ODT_MENU &&
-        item.itemData == reinterpret_cast<ULONG_PTR>(&style)) {
-      item.itemWidth = style.Scale(kTrayMenuWidth);
-      item.itemHeight = style.Scale(kTrayMenuRowHeight);
-      return TRUE;
-    }
-  }
-  if (active_tray_menu_ && message == WM_DRAWITEM) {
-    const auto& item = *reinterpret_cast<const DRAWITEMSTRUCT*>(lp);
-    const auto& style = *active_tray_menu_;
-    if (item.CtlType == ODT_MENU &&
-        item.itemData == reinterpret_cast<ULONG_PTR>(&style)) {
-      const int saved = SaveDC(item.hDC);
-      SetDCBrushColor(item.hDC, item.itemState & ODS_SELECTED
-                                  ? style.palette.highlight : style.palette.background);
-      FillRect(item.hDC, &item.rcItem, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
-      SetBkMode(item.hDC, TRANSPARENT);
-      SetTextColor(item.hDC, style.palette.foreground);
-      RECT text = item.rcItem;
-      text.left += style.Scale(kTrayMenuHorizontalPadding);
-      text.right -= style.Scale(kTrayMenuHorizontalPadding);
-      const auto index = item.itemID - 1;
-      if (style.icon_font) {
-        SelectObject(item.hDC, style.icon_font);
-        RECT icon = text;
-        icon.right = icon.left + style.Scale(kTrayMenuIconSize);
-        DrawTextW(item.hDC, &kTrayMenuIcons[index], 1, &icon,
-                  DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
-        text.left = icon.right + style.Scale(kTrayMenuIconGap);
-      }
-      SelectObject(item.hDC, style.font);
-      const auto& label = style.labels[index];
-      DrawTextW(item.hDC, label.c_str(), static_cast<int>(label.size()), &text,
-                DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
-      RestoreDC(item.hDC, saved);
-      return TRUE;
-    }
-  }
   if (message == WM_DWMCOLORIZATIONCOLORCHANGED) { UpdateTheme(); return 0; }
   if (message == WM_SETTINGCHANGE && theme_mode_ == "system") UpdateTheme();
   if (message == ScheduledTasks::kReply) { scheduled_tasks_->Reply(); return 0; }

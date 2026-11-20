@@ -13,19 +13,6 @@ import androidx.core.content.ContextCompat
 internal interface NativePlaybackProgressHeartbeatHost {
     fun shouldRunProgressHeartbeat(): Boolean
     fun publishProgress(nowElapsedRealtimeMs: Long)
-}
-
-internal interface NativePlaybackKeepAliveHeartbeatHost {
-    val hasPlaybackToKeepAlive: Boolean
-    val foregroundStarted: Boolean
-    val focusInterrupted: Boolean
-    fun refreshWakeLock(force: Boolean = false)
-    fun triggerRecovery(reason: String)
-    fun expireGraceIfOverdue(): Boolean
-    fun syncForeground()
-    fun cancelAlarm()
-    fun ensureAlarm()
-    fun logHeartbeat()
     fun onScreenInteractiveChanged(interactive: Boolean) {}
     fun onDeviceIdleModeChanged(deviceIdle: Boolean) {}
 }
@@ -128,13 +115,11 @@ internal class AndroidNativePlaybackProgressHeartbeatEnvironment(
 internal class NativePlaybackProgressHeartbeatCoordinator(
     private val host: NativePlaybackProgressHeartbeatHost,
     private val environment: NativePlaybackProgressHeartbeatEnvironment,
-    private val screenOnIntervalMs: Long,
-    private val keepAliveHost: NativePlaybackKeepAliveHeartbeatHost? = null
+    private val screenOnIntervalMs: Long
 ) {
     var isScheduled: Boolean = false
         private set
     private var started = false
-    private var parkedForScreenOff = false
     private val ticker = Runnable(::tick)
 
     fun start() {
@@ -148,16 +133,7 @@ internal class NativePlaybackProgressHeartbeatCoordinator(
     }
 
     fun ensure() {
-        if (!host.shouldRunProgressHeartbeat()) return
-        if (!environment.isScreenInteractive()) {
-            // Park the Flutter EventChannel ticker completely while the screen
-            // is off so the background Dart isolate is not woken periodically.
-            parkedForScreenOff = true
-            if (isScheduled) stopTickerOnly()
-            return
-        }
-        parkedForScreenOff = false
-        if (isScheduled) return
+        if (isScheduled || !host.shouldRunProgressHeartbeat() || !environment.isScreenInteractive()) return
         isScheduled = true
         environment.post(ticker)
     }
@@ -167,56 +143,7 @@ internal class NativePlaybackProgressHeartbeatCoordinator(
         stop()
     }
 
-    fun restart() {
-        if (!host.shouldRunProgressHeartbeat()) {
-            stop()
-            return
-        }
-        if (!environment.isScreenInteractive()) {
-            parkedForScreenOff = true
-            if (isScheduled) stopTickerOnly()
-            return
-        }
-        parkedForScreenOff = false
-        environment.remove(ticker)
-        isScheduled = true
-        environment.post(ticker)
-    }
-
     fun isScreenInteractive(): Boolean = environment.isScreenInteractive()
-
-    fun isDeviceIdleMode(): Boolean = environment.isDeviceIdleMode()
-
-    fun onKeepAliveHeartbeat() {
-        val keepAlive = keepAliveHost ?: return
-        if (!keepAlive.hasPlaybackToKeepAlive && !keepAlive.foregroundStarted) {
-            keepAlive.cancelAlarm()
-            return
-        }
-        var shouldRearm = true
-        try {
-            keepAlive.logHeartbeat()
-            if (keepAlive.hasPlaybackToKeepAlive) {
-                keepAlive.refreshWakeLock(force = true)
-                if (environment.isScreenInteractive()) restart()
-                if (!keepAlive.focusInterrupted) {
-                    keepAlive.triggerRecovery("keep_alive_heartbeat")
-                }
-            }
-            if (keepAlive.expireGraceIfOverdue() && !keepAlive.hasPlaybackToKeepAlive) {
-                shouldRearm = false
-                keepAlive.cancelAlarm()
-                return
-            }
-            keepAlive.syncForeground()
-        } finally {
-            if (shouldRearm &&
-                (keepAlive.hasPlaybackToKeepAlive || keepAlive.foregroundStarted)
-            ) {
-                keepAlive.ensureAlarm()
-            }
-        }
-    }
 
     fun shutdown() {
         stop()
@@ -226,32 +153,22 @@ internal class NativePlaybackProgressHeartbeatCoordinator(
     }
 
     private fun onScreenOn() {
-        if (parkedForScreenOff || isScheduled) {
-            restart()
-        }
-        keepAliveHost?.onScreenInteractiveChanged(true)
+        ensure()
+        host.onScreenInteractiveChanged(true)
     }
 
     private fun onScreenOff() {
-        if (isScheduled) {
-            parkedForScreenOff = true
-            stopTickerOnly()
-        }
-        keepAliveHost?.onScreenInteractiveChanged(false)
+        stop()
+        host.onScreenInteractiveChanged(false)
     }
 
     private fun onDeviceIdleChanged(deviceIdle: Boolean) {
-        keepAliveHost?.onDeviceIdleModeChanged(deviceIdle)
+        host.onDeviceIdleModeChanged(deviceIdle)
     }
 
     private fun tick() {
-        if (!host.shouldRunProgressHeartbeat()) {
+        if (!host.shouldRunProgressHeartbeat() || !environment.isScreenInteractive()) {
             stop()
-            return
-        }
-        if (!environment.isScreenInteractive()) {
-            parkedForScreenOff = true
-            stopTickerOnly()
             return
         }
         val now = environment.elapsedRealtimeMs()
@@ -259,13 +176,9 @@ internal class NativePlaybackProgressHeartbeatCoordinator(
         environment.postDelayed(ticker, screenOnIntervalMs)
     }
 
-    private fun stopTickerOnly() {
+    fun stop() {
+        if (!isScheduled) return
         environment.remove(ticker)
         isScheduled = false
-    }
-
-    fun stop() {
-        parkedForScreenOff = false
-        stopTickerOnly()
     }
 }

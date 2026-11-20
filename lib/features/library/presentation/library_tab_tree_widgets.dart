@@ -25,6 +25,7 @@ import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/search_highlight.dart';
+import '../../../core/widgets/selection_checkmark.dart';
 import '../../../core/widgets/page_translation_scope.dart';
 import '../../../core/translation/text_translation_service.dart';
 import '../../../core/widgets/swipe_reveal_card.dart';
@@ -34,7 +35,6 @@ import '../../../app/theme/app_styles.dart';
 import 'library_card_artwork.dart';
 import 'library_tab_ui_helpers.dart';
 
-const Color _librarySelectionCheckmarkColor = Color(0xFF4CAF50);
 const double kLibraryChildFolderTileHeight = 44;
 const double kLibraryTrackTileHeight = 38;
 
@@ -71,35 +71,14 @@ class LibrarySelectionIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final normalizedPath = path == null ? null : PathMatcher.normalize(path!);
-    return IgnorePointer(
-      child: ExcludeSemantics(
-        child: AppDeferredFade(
-          visible: isSelected,
-          beginScale: 0.86,
-          fadeInDuration: kAppMotionFast,
-          child: Container(
-            key: normalizedPath == null
-                ? const ValueKey<String>('library_selection_indicator')
-                : ValueKey<String>(
-                    'library_selection_indicator_$normalizedPath',
-                  ),
-            width: 22,
-            height: 22,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _librarySelectionCheckmarkColor,
-              border: Border.all(color: cs.surface, width: 2),
+    final path = this.path;
+    return SelectionCheckmark(
+      indicatorKey: path == null
+          ? const ValueKey<String>('library_selection_indicator')
+          : ValueKey<String>(
+              'library_selection_indicator_${PathMatcher.normalize(path)}',
             ),
-            child: const Icon(
-              Icons.check_rounded,
-              size: 14,
-              color: Colors.white,
-            ),
-          ),
-        ),
-      ),
+      isSelected: isSelected,
     );
   }
 }
@@ -108,18 +87,15 @@ class LibraryPinnedIndicator extends StatelessWidget {
   const LibraryPinnedIndicator({
     super.key,
     this.path,
-    this.color,
     this.isPinned = true,
   });
 
   final String? path;
-  final Color? color;
   final bool isPinned;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final pinColor = color ?? cs.primary;
     final normalizedPath = path == null ? null : PathMatcher.normalize(path!);
     return IgnorePointer(
       child: ExcludeSemantics(
@@ -135,13 +111,13 @@ class LibraryPinnedIndicator extends StatelessWidget {
             height: 22,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: pinColor,
+              color: cs.primary,
               border: Border.all(color: cs.surface, width: 2),
             ),
-            child: const Icon(
+            child: Icon(
               Icons.push_pin_rounded,
               size: 13,
-              color: Colors.white,
+              color: cs.onPrimary,
             ),
           ),
         ),

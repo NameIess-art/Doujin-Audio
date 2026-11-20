@@ -75,6 +75,7 @@ class WorkDetailMetadata extends StatelessWidget {
         child: ElementActionMenu(
           value: voiceActor,
           onCopy: () => onCopy(voiceActor),
+          shape: const StadiumBorder(),
           child: InkWell(
             mouseCursor: WidgetStateMouseCursor.clickable,
             key: ValueKey<String>('work_detail_voice_actor_$voiceActor'),
@@ -83,10 +84,12 @@ class WorkDetailMetadata extends StatelessWidget {
             child: Ink(
               padding: _workMetadataCapsulePadding,
               decoration: BoxDecoration(
-                color: cs.primary.withValues(alpha: isDark ? 0.14 : 0.10),
+                color: cs.secondaryContainer.withValues(
+                  alpha: isDark ? 0.42 : 0.72,
+                ),
                 borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
                 border: Border.all(
-                  color: cs.primary.withValues(alpha: isDark ? 0.30 : 0.22),
+                  color: cs.secondary.withValues(alpha: isDark ? 0.34 : 0.24),
                   width: 0.8,
                 ),
               ),
@@ -99,13 +102,13 @@ class WorkDetailMetadata extends StatelessWidget {
                       Icons.person_rounded,
                       13,
                     ),
-                    color: cs.primary,
+                    color: cs.secondary,
                   ),
                   const SizedBox(width: 4),
                   Text(
                     voiceActor,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: isDark ? cs.primary : cs.onSurface,
+                      color: cs.onSecondaryContainer,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
@@ -129,6 +132,7 @@ class WorkDetailMetadata extends StatelessWidget {
       child: ElementActionMenu(
         value: value,
         onCopy: () => onCopy(value),
+        shape: const StadiumBorder(),
         child: InkWell(
           mouseCursor: WidgetStateMouseCursor.clickable,
           key: ValueKey<String>('work_detail_tag_$displayLabel'),

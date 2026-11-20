@@ -149,6 +149,27 @@ class NativePlaybackHealthPolicyTest {
     }
 
     @Test
+    fun `a sleeping offload renderer gets a new health baseline when it wakes`() {
+        val initial = evaluateNativePlaybackHealth(previous = null, current = sample(nowMs = 0L))
+        val sleeping = evaluateNativePlaybackHealth(
+            previous = initial.state,
+            current = sample(nowMs = 60_000L).copy(sleepingForOffload = true)
+        )
+        val woke = evaluateNativePlaybackHealth(
+            previous = sleeping.state,
+            current = sample(nowMs = 120_000L)
+        )
+        val frozen = evaluateNativePlaybackHealth(
+            previous = woke.state,
+            current = sample(nowMs = 150_000L)
+        )
+
+        assertNull(sleeping.stallReason)
+        assertNull(woke.stallReason)
+        assertEquals(NativePlaybackStallReason.POSITION_FROZEN, frozen.stallReason)
+    }
+
+    @Test
     fun `pause suppression seek and track transition reset health baseline`() {
         val stale = NativePlaybackHealthState(
             sample = sample(nowMs = 0L, mediaItemIndex = 0),

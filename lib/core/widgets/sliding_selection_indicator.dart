@@ -21,7 +21,14 @@ class SlidingSelectionIndicator extends StatelessWidget {
 
   static const shape = StadiumBorder();
 
-  static Color fill(Color accent) => accent.withValues(alpha: 0.19);
+  static Color fill(Color accent, {Brightness? brightness}) {
+    final alpha = switch (brightness) {
+      Brightness.light => 0.14,
+      Brightness.dark => 0.20,
+      null => 0.16,
+    };
+    return accent.withValues(alpha: alpha);
+  }
 
   static Rect? rectAt(double position, Rect? Function(int) slotAt) {
     final lower = position.floor();
@@ -103,9 +110,15 @@ class SlidingSelectionPainter extends CustomPainter {
         canvas.clipRect(Rect.fromLTRB(0, top, size.width, size.height));
       }
     }
+    final context = containerKey.currentContext;
+    final brightness = context == null ? null : Theme.of(context).brightness;
     canvas.drawRRect(
       RRect.fromRectAndRadius(rect, Radius.circular(rect.shortestSide / 2)),
-      Paint()..color = SlidingSelectionIndicator.fill(accentColor),
+      Paint()
+        ..color = SlidingSelectionIndicator.fill(
+          accentColor,
+          brightness: brightness,
+        ),
     );
     canvas.restore();
   }

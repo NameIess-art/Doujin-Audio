@@ -146,6 +146,22 @@ class NativePlaybackSessionManagerTest {
         assertSame(focusedPaused, manager.foregroundSessionCandidate())
     }
 
+    @Test
+    fun `idle player retaining playWhenReady after an error is no longer active`() {
+        val manager = NativePlaybackSessionManager(::createTestSession)
+        val failed = manager.getOrCreate("failed")
+        attachFakePlayer(failed) { method ->
+            when (method) {
+                "getPlaybackState" -> Player.STATE_IDLE
+                "getPlayWhenReady" -> true
+                else -> error("Unexpected player call: $method")
+            }
+        }
+
+        assertFalse(manager.hasActivePlayback())
+        assertTrue(manager.activePlaybackSessionIds().isEmpty())
+    }
+
     private fun attachFakePlayer(
         session: NativePlaybackSession,
         handler: (String) -> Any?

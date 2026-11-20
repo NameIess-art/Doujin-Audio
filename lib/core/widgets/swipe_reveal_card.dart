@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../ui/ui_interaction_coordinator.dart';
 import 'app_feedback.dart';
@@ -271,69 +270,57 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     });
   }
 
-  Future<void> _showContextMenu([TapDownDetails? details]) async {
-    if (!widget.enabled) return;
+  List<UnifiedMenuEntry<VoidCallback>> _buildContextMenuEntries() {
     widget.onWillReveal?.call();
-    final box = context.findRenderObject()! as RenderBox;
-    final action = await showUnifiedContextMenu<VoidCallback>(
-      context: context,
-      globalPosition:
-          details?.globalPosition ??
-          box.localToGlobal(box.size.center(Offset.zero)),
-      entries: [
-        if (_hasLeadingAction)
-          UnifiedMenuEntry.action(
-            value: widget.onLeadingAction!,
-            label:
-                widget.leadingActionLabel ?? widget.leadingActionTooltip ?? '',
-            icon: widget.leadingActionIcon,
-            iconWidget: widget.leadingActionIconWidget,
-          ),
-        if (_hasSecondaryLeadingAction)
-          UnifiedMenuEntry.action(
-            value: widget.onSecondaryLeadingAction!,
-            label:
-                widget.secondaryLeadingActionLabel ??
-                widget.secondaryLeadingActionTooltip ??
-                '',
-            icon: widget.secondaryLeadingActionIcon,
-            iconWidget: widget.secondaryLeadingActionIconWidget,
-          ),
-        if (_hasTertiaryAction)
-          UnifiedMenuEntry.action(
-            value: widget.onTertiaryAction!,
-            label:
-                widget.tertiaryActionLabel ??
-                widget.tertiaryActionTooltip ??
-                '',
-            icon: widget.tertiaryActionIcon,
-          ),
-        if (_hasSecondaryAction)
-          UnifiedMenuEntry.action(
-            value: widget.onSecondaryAction!,
-            label:
-                widget.secondaryActionLabel ??
-                widget.secondaryActionTooltip ??
-                '',
-            icon: widget.secondaryActionIcon,
-            iconWidget: widget.secondaryActionIconWidget,
-          ),
-        if (widget.onSelectMultiple != null)
-          UnifiedMenuEntry.action(
-            value: widget.onSelectMultiple!,
-            label: widget.selectMultipleLabel!,
-            icon: Icons.checklist_rounded,
-          ),
+    return [
+      if (_hasLeadingAction)
         UnifiedMenuEntry.action(
-          value: widget.onRemove,
-          label: widget.actionLabel,
-          icon: widget.primaryActionIcon,
-          iconWidget: widget.primaryActionIconWidget,
-          destructive: widget.destructive,
+          value: widget.onLeadingAction!,
+          label: widget.leadingActionLabel ?? widget.leadingActionTooltip ?? '',
+          icon: widget.leadingActionIcon,
+          iconWidget: widget.leadingActionIconWidget,
         ),
-      ],
-    );
-    if (mounted && widget.enabled) action?.call();
+      if (_hasSecondaryLeadingAction)
+        UnifiedMenuEntry.action(
+          value: widget.onSecondaryLeadingAction!,
+          label:
+              widget.secondaryLeadingActionLabel ??
+              widget.secondaryLeadingActionTooltip ??
+              '',
+          icon: widget.secondaryLeadingActionIcon,
+          iconWidget: widget.secondaryLeadingActionIconWidget,
+        ),
+      if (_hasTertiaryAction)
+        UnifiedMenuEntry.action(
+          value: widget.onTertiaryAction!,
+          label:
+              widget.tertiaryActionLabel ?? widget.tertiaryActionTooltip ?? '',
+          icon: widget.tertiaryActionIcon,
+        ),
+      if (_hasSecondaryAction)
+        UnifiedMenuEntry.action(
+          value: widget.onSecondaryAction!,
+          label:
+              widget.secondaryActionLabel ??
+              widget.secondaryActionTooltip ??
+              '',
+          icon: widget.secondaryActionIcon,
+          iconWidget: widget.secondaryActionIconWidget,
+        ),
+      if (widget.onSelectMultiple != null)
+        UnifiedMenuEntry.action(
+          value: widget.onSelectMultiple!,
+          label: widget.selectMultipleLabel!,
+          icon: Icons.checklist_rounded,
+        ),
+      UnifiedMenuEntry.action(
+        value: widget.onRemove,
+        label: widget.actionLabel,
+        icon: widget.primaryActionIcon,
+        iconWidget: widget.primaryActionIconWidget,
+        destructive: widget.destructive,
+      ),
+    ];
   }
 
   void _handleHorizontalDragStart(DragStartDetails details) {
@@ -486,24 +473,12 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     if (defaultTargetPlatform == TargetPlatform.windows) {
       return Padding(
         padding: widget.margin,
-        child: CallbackShortcuts(
-          bindings: widget.enabled
-              ? {
-                  const SingleActivator(LogicalKeyboardKey.f10, shift: true):
-                      _showContextMenu,
-                  const SingleActivator(LogicalKeyboardKey.contextMenu):
-                      _showContextMenu,
-                }
-              : const {},
-          child: Focus(
-            canRequestFocus: widget.enabled,
-            skipTraversal: true,
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onSecondaryTapDown: widget.enabled ? _showContextMenu : null,
-              child: closedContent,
-            ),
-          ),
+        child: UnifiedContextMenuRegion(
+          buildEntries: _buildContextMenuEntries,
+          shape: widget.shape,
+          enabled: widget.enabled,
+          skipTraversal: true,
+          child: closedContent,
         ),
       );
     }

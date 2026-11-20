@@ -164,7 +164,7 @@ void main() {
   final displayScales = ValueVariant<double>({1, 1.25, 1.5});
   for (final isPill in [false, true]) {
     testWidgets(
-      'Windows ${isPill ? 'pill' : 'icon'} scale settles across rapid pointer changes',
+      'Windows ${isPill ? 'pill' : 'icon'} keeps its size during rapid clicks',
       (tester) async {
         const buttonKey = ValueKey('button');
         const glyph = Icons.check;
@@ -208,11 +208,9 @@ void main() {
         final button = find.byKey(buttonKey);
         final content = isPill ? find.text('Confirm') : find.byIcon(glyph);
         final bounds = tester.getRect(button);
-        final center = tester.getCenter(content);
+        final contentBounds = tester.getRect(content);
         final edge = bounds.centerRight - const Offset(0.5, 0);
         final outside = bounds.centerRight + const Offset(30, 0);
-        const hoverScale = 1.0;
-        final pressScale = isPill ? 0.975 : 0.82;
 
         Future<List<int>> raster() async => (await tester.runAsync(() async {
           final boundary = tester.renderObject<RenderRepaintBoundary>(button);
@@ -228,43 +226,27 @@ void main() {
           }
         }))!;
 
-        double sample() {
-          final transform = tester
-              .widgetList<Transform>(
-                find.ancestor(of: content, matching: find.byType(Transform)),
-              )
-              .singleWhere((widget) => !widget.transformHitTests);
-          expect(transform.filterQuality, isNull);
-          expect((tester.getCenter(content) - center).distance, lessThan(1e-6));
+        void expectStableSize() {
+          expect(_scale(tester, content), 1.0);
+          expect(tester.getRect(content), contentBounds);
           expect(tester.getRect(button), bounds);
-          return transform.transform.entry(0, 0);
         }
 
-        Future<double> advanceToward(double target, int frameCount) async {
-          var previous = sample();
+        Future<void> checkFrames(int frameCount) async {
+          await tester.pump();
+          expectStableSize();
           for (var frame = 0; frame < frameCount; frame++) {
             await tester.pump(const Duration(milliseconds: 15));
-            final current = sample();
-            expect(
-              current,
-              inInclusiveRange(
-                previous < target ? previous : target,
-                previous > target ? previous : target,
-              ),
-            );
-            previous = current;
+            expectStableSize();
           }
-          return previous;
         }
 
         final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
         await mouse.addPointer(location: outside);
-        expect(sample(), 1);
+        expectStableSize();
         final idleRaster = await raster();
         await mouse.moveTo(edge);
-        await tester.pump();
-        expect(sample(), 1);
-        expect(await advanceToward(hoverScale, 9), hoverScale);
+        await checkFrames(9);
         if (!isPill) {
           await tester.pump(const Duration(milliseconds: 600));
           final pixels = await raster();
@@ -281,45 +263,32 @@ void main() {
         }
 
         for (var click = 0; click < 2; click++) {
-          final beforePress = sample();
           await mouse.down(edge);
-          await tester.pump();
-          expect(sample(), beforePress);
-          final pressed = await advanceToward(pressScale, 1);
-          expect(pressed, lessThan(beforePress));
+          await checkFrames(1);
           await mouse.up();
-          await tester.pump();
-          expect(sample(), pressed);
-          await advanceToward(hoverScale, 1);
+          await checkFrames(1);
           expect(taps, click + 1);
         }
-        expect(await advanceToward(hoverScale, 8), hoverScale);
+        await checkFrames(8);
 
         await mouse.down(edge);
-        await tester.pump();
-        expect(await advanceToward(pressScale, 6), pressScale);
+        await checkFrames(6);
         await mouse.moveTo(outside);
-        await tester.pump();
-        expect(sample(), pressScale);
-        expect(await advanceToward(1, 9), 1);
+        await checkFrames(9);
         await mouse.up();
         expect(taps, 2);
 
         await mouse.moveTo(edge);
-        await tester.pump();
-        expect(await advanceToward(hoverScale, 9), hoverScale);
+        await checkFrames(9);
         await mouse.moveTo(outside);
-        await tester.pump();
-        expect(await advanceToward(1, 9), 1);
+        await checkFrames(9);
         expect(await raster(), orderedEquals(idleRaster));
         await mouse.moveTo(edge);
-        await tester.pump();
-        expect(await advanceToward(hoverScale, 9), hoverScale);
+        await checkFrames(9);
         await mouse.moveTo(outside);
-        await tester.pump();
-        expect(await advanceToward(1, 9), 1);
+        await checkFrames(9);
         expect(await raster(), orderedEquals(idleRaster));
-        expect(await advanceToward(1, 2), 1);
+        await checkFrames(2);
         expect(await raster(), orderedEquals(idleRaster));
         expect(taps, 2);
         await mouse.removePointer();
@@ -409,6 +378,7 @@ void main() {
             final enabled = key != disabled;
             await mouse.moveTo(tapPoint);
             await tester.pumpAndSettle();
+            final isWindows = platform == TargetPlatform.windows;
             if (icon != null) {
               expect(_scale(tester, icon), 1);
               final windowsHighlight =
@@ -443,14 +413,10 @@ void main() {
             if (icon != null) {
               expect(
                 _scale(tester, icon),
-                enabled
-                    ? (text == null
-                          ? (platform == TargetPlatform.windows ? 0.82 : 0.84)
-                          : 0.94)
-                    : 1,
+                enabled && !isWindows ? (text == null ? 0.84 : 0.94) : 1,
               );
               if (text != null) {
-                expect(_scale(tester, text), 0.94);
+                expect(_scale(tester, text), isWindows ? 1 : 0.94);
                 final textColor = _glyphColor(tester, text);
                 expect(textColor, isNot(restTextColor));
                 expect(_glyphColor(tester, icon), textColor);
@@ -460,7 +426,7 @@ void main() {
                 );
               }
             } else if (key == textOnly) {
-              expect(_scale(tester, text!), 0.94);
+              expect(_scale(tester, text!), isWindows ? 1 : 0.94);
             }
             expect(tester.getRect(button), bounds);
             expect(_visibleInk(tester, button), isEmpty);
@@ -666,7 +632,7 @@ void main() {
             if (enabled) expectHighlightedContent();
             expect(
               _scale(tester, labelFinder),
-              enabled ? (isWindows ? 0.975 : 0.98) : 1.0,
+              enabled && !isWindows ? 0.98 : 1.0,
             );
             expect(
               _visibleInk(tester, target),
@@ -889,7 +855,7 @@ void main() {
       await mouse.down(center);
       await tester.pumpAndSettle();
       if (key == customIcon) {
-        expect(_scale(tester, find.byIcon(Icons.check)), 0.82);
+        expect(_scale(tester, find.byIcon(Icons.check)), 1.0);
       }
       expect(_visibleInk(tester, target), isEmpty, reason: '$key press');
       await mouse.up();

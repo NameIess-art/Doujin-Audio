@@ -127,26 +127,34 @@ class NativePlaybackRestoreCoordinatorTest {
     }
 
     @Test
-    fun `restore after service restart restores snapshot without autoplay`() {
+    fun `sticky restart requests playback only after restoring a previously active definition`() {
         val environment = FakeRestoreEnvironment().apply {
-            sessions = listOf(storedSession("player"))
+            sessions = listOf(
+                storedSession("player"),
+                storedSession("paused").copy(playing = false, playWhenReady = false),
+                storedSession("completed").copy(completed = true)
+            )
         }
         val autoPlayValues = mutableListOf<Boolean>()
+        val resumed = mutableListOf<String>()
         val coordinator = coordinator(
             environment = environment,
-            restore = { stored, autoPlay, _ ->
+            restore = { stored, autoPlay, onRestored ->
                 stored.map { session ->
                     autoPlayValues += autoPlay(session)
+                    onRestored(session.sessionId)
                     session.sessionId
                 }
             },
+            resumeRestartSession = resumed::add,
             startBootstrap = { NativePlaybackForegroundStartResult.STARTED }
         )
 
         coordinator.restoreAfterServiceRestart(startId = 1)
         environment.runAll()
 
-        assertEquals(listOf(false), autoPlayValues)
+        assertEquals(listOf(false, false), autoPlayValues)
+        assertEquals(listOf("player"), resumed)
     }
 
     @Test
@@ -306,6 +314,7 @@ class NativePlaybackRestoreCoordinatorTest {
         sessionExists: (String) -> Boolean = { false },
         resetRestoreState: () -> Unit = {},
         onMissingSessionsRestored: (List<String>) -> Unit = {},
+        resumeRestartSession: (String) -> Unit = {},
         startBootstrap: () -> NativePlaybackForegroundStartResult = {
             NativePlaybackForegroundStartResult.STARTED
         },
@@ -323,6 +332,7 @@ class NativePlaybackRestoreCoordinatorTest {
         hasPendingCommandDelivery = hasPendingCommandDelivery,
         stopIdleService = stopIdleService,
         onMissingSessionsRestored = onMissingSessionsRestored,
+        resumeRestartSession = resumeRestartSession,
         logInfo = {},
         prepareSessionsOnBackground = prepareQueues,
         discardPreparedSessions = discardQueues

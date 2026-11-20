@@ -54,6 +54,8 @@ class AppBootstrapHost extends StatelessWidget {
           color: windowSurface,
           theme: lightTheme,
           darkTheme: darkTheme,
+          highContrastTheme: themeProvider.highContrastLightTheme,
+          highContrastDarkTheme: themeProvider.highContrastDarkTheme,
           themeMode: themeMode,
           locale: locale,
           supportedLocales: AppLanguageProvider.supportedLocales,

@@ -16,7 +16,9 @@ import androidx.media3.common.C
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.ShuffleOrder
 import kotlin.math.roundToLong
+import kotlin.random.Random
 
 internal data class NativeMediaItemDescriptor(
     val path: String,
@@ -28,7 +30,8 @@ internal data class NativeMediaItemDescriptor(
     val usageDescriptor: Map<String, Any?>? = null,
     val clipStartMs: Long = 0L,
     val clipEndMs: Long? = null,
-    val httpHeaders: Map<String, String> = emptyMap()
+    val httpHeaders: Map<String, String> = emptyMap(),
+    val playOnceBeforeQueue: Boolean = false
 ) {
     fun withPlaybackCandidateUris(candidates: List<String>): NativeMediaItemDescriptor {
         val ordered = LinkedHashSet<String>()
@@ -175,6 +178,7 @@ internal class NativePlaybackSession(
     private var queue: List<NativeMediaItemDescriptor> = emptyList()
     private var queueStructure = NativePlaybackQueue(emptyList())
     private var currentQueueIndex = 0
+    private var discardedQueuePrefix = false
     var channelSwapEnabled: Boolean
         get() = audioEffects.channelSwapEnabled
         set(value) {
@@ -280,8 +284,7 @@ internal class NativePlaybackSession(
             applySpeedToPlayer(p)
             applyAudioEffectsToPlayer(p)
             applyWakeModeToPlayer(p)
-            p.repeatMode = repeatModeFor(descriptors.size)
-            p.shuffleModeEnabled = shuffleModeEnabled && descriptors.size > 1
+            applyQueuePlaybackMode(p)
             p.playWhenReady = lastPlayWhenReady
             p.prepare()
         }
@@ -358,8 +361,7 @@ internal class NativePlaybackSession(
         } else {
             repeatAll = args.repeatAll
             shuffleModeEnabled = args.shuffle
-            playerOrNull()?.repeatMode = currentRepeatMode()
-            playerOrNull()?.shuffleModeEnabled = currentShuffleModeEnabled()
+            playerOrNull()?.let(::applyQueuePlaybackMode)
         }
     }
 
@@ -375,13 +377,15 @@ internal class NativePlaybackSession(
         shuffleModeEnabled: Boolean,
         autoPlay: Boolean,
         deferPlayerCreation: Boolean = false,
-        preparedQueue: NativePlaybackQueue? = null
+        preparedQueue: NativePlaybackQueue? = null,
+        discardedQueuePrefix: Boolean = false
     ) {
         val descriptors = queue.ifEmpty { listOf(descriptor) }
         if (descriptors !== this.queue) {
             queueStructure = preparedQueue ?: NativePlaybackQueue(descriptors)
         }
         this.queue = descriptors
+        this.discardedQueuePrefix = discardedQueuePrefix
         currentQueueIndex = queueStartIndex.coerceIn(0, descriptors.lastIndex)
         this.path = descriptor.path
         this.uri = descriptor.uri
@@ -419,8 +423,7 @@ internal class NativePlaybackSession(
         applySpeedToPlayer(p)
         applyAudioEffectsToPlayer(p)
         applyWakeModeToPlayer(p)
-        p.repeatMode = repeatModeFor(this.queue.size)
-        p.shuffleModeEnabled = shuffleModeEnabled && this.queue.size > 1
+        applyQueuePlaybackMode(p)
         p.playWhenReady = autoPlay
         p.prepare()
         syncCurrentMediaItemFromPlayer()
@@ -520,6 +523,13 @@ internal class NativePlaybackSession(
             .buildUpon()
             .setAudioOffloadPreferences(nativePlaybackAudioOffloadPreferences(enable))
             .build()
+    }
+
+    fun markTrackStopBoundary() {
+        stoppedAtTrackBoundary = stoppedAtTrackBoundary ||
+            stopAfterCurrentTrack || timerStopAfterCurrentTrack
+        stopAfterCurrentTrack = false
+        syncPauseAtTrackEnd()
     }
 
     fun hasPreviousMediaItem(): Boolean {
@@ -644,6 +654,7 @@ internal class NativePlaybackSession(
         }
         this.queue = queue
         this.queueStructure = nextQueueStructure
+        this.discardedQueuePrefix = false
         this.currentQueueIndex = queueStartIndex
         this.path = selected.path
         this.uri = selected.uri
@@ -668,8 +679,7 @@ internal class NativePlaybackSession(
         }
 
         applyWakeModeToPlayer(player)
-        player.repeatMode = repeatModeFor(this.queue.size)
-        player.shuffleModeEnabled = shuffleModeEnabled && this.queue.size > 1
+        applyQueuePlaybackMode(player)
     }
 
     fun clearQueue() {
@@ -677,6 +687,7 @@ internal class NativePlaybackSession(
         queue = emptyList()
         queueStructure = NativePlaybackQueue(queue)
         currentQueueIndex = 0
+        discardedQueuePrefix = false
         path = null
         uri = null
         subtitle = null
@@ -703,7 +714,6 @@ internal class NativePlaybackSession(
         val p = _player
         val currentPositionMs = p?.currentPosition?.coerceAtLeast(0L) ?: lastPositionMs
         val shouldResume = p?.let { it.playWhenReady || it.isPlaying } ?: lastPlayWhenReady
-        val isRepeatOne = (p?.repeatMode == Player.REPEAT_MODE_ONE) || (p == null && repeatOne)
         val descriptors = preparedQueue?.descriptors ?: queue.takeIf { it.isNotEmpty() } ?: listOf(
             NativeMediaItemDescriptor(
                 path = path ?: currentUri,
@@ -725,12 +735,13 @@ internal class NativePlaybackSession(
             startPositionMs = currentPositionMs,
             volume = volume,
             speed = speed,
-            repeatOne = isRepeatOne,
+            repeatOne = repeatOne,
             repeatAll = repeatAll,
             shuffleModeEnabled = shuffleModeEnabled,
             autoPlay = shouldResume,
             deferPlayerCreation = false,
             preparedQueue = preparedQueue,
+            discardedQueuePrefix = discardedQueuePrefix
         )
     }
 
@@ -829,6 +840,7 @@ internal class NativePlaybackSession(
             "queueRevision" to queueRevision,
             "error" to p?.playerError?.message
         )
+        if (discardedQueuePrefix) result["discardedQueuePrefix"] = true
         if (includeRetainedUris) {
             result["retainedUris"] = queueStructure.retainedUris
         }
@@ -882,8 +894,26 @@ internal class NativePlaybackSession(
             playWhenReady = isPWR,
             isTemporary = isTemporary,
             completed = p?.let { it.playbackState == Player.STATE_ENDED } ?: (lastPlaybackState == "completed"),
-            frontBack = audioEffects.frontBack
+            frontBack = audioEffects.frontBack,
+            discardedQueuePrefix = discardedQueuePrefix
         )
+    }
+
+    fun onMediaItemTransition() {
+        val player = _player ?: return
+        val index = player.currentMediaItemIndex
+        if (index in 1 until queue.size &&
+            queue.first().playOnceBeforeQueue &&
+            player.mediaItemCount == queue.size
+        ) {
+            queue = queue.drop(1)
+            queueStructure = NativePlaybackQueue(queue)
+            discardedQueuePrefix = true
+            player.removeMediaItem(0)
+            applyWakeModeToPlayer(player)
+            applyQueuePlaybackMode(player)
+        }
+        syncCurrentMediaItemFromPlayer()
     }
 
     fun syncCurrentMediaItemFromPlayer() {
@@ -900,6 +930,7 @@ internal class NativePlaybackSession(
 
     private fun repeatModeFor(queueSize: Int): Int {
         return when {
+            queue.firstOrNull()?.playOnceBeforeQueue == true -> Player.REPEAT_MODE_OFF
             repeatOne -> Player.REPEAT_MODE_ONE
             // Single-item playlists/folders with repeat-all must loop inside ExoPlayer
             // rather than hitting STATE_ENDED while the screen is off and waking Dart.
@@ -911,6 +942,17 @@ internal class NativePlaybackSession(
     fun currentRepeatMode(): Int = repeatModeFor(queue.size)
 
     fun currentShuffleModeEnabled(): Boolean = shuffleModeEnabled && queue.size > 1
+
+    private fun applyQueuePlaybackMode(player: ExoPlayer) {
+        player.repeatMode = currentRepeatMode()
+        val shouldShuffle = currentShuffleModeEnabled()
+        if (shouldShuffle && queue.first().playOnceBeforeQueue) {
+            // The removed item must play before the shuffled queue, then disappear from it.
+            val order = listOf(0) + (1 until queue.size).shuffled()
+            player.setShuffleOrder(ShuffleOrder.DefaultShuffleOrder(order.toIntArray(), Random.nextLong()))
+        }
+        player.shuffleModeEnabled = shouldShuffle
+    }
 
     private fun currentQueueIndexFor(descriptors: List<NativeMediaItemDescriptor>): Int {
         return if (descriptors.isEmpty()) 0 else currentQueueIndex.coerceIn(0, descriptors.lastIndex)

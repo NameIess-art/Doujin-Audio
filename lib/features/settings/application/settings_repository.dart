@@ -458,6 +458,30 @@ class SettingsRepository {
     });
   }
 
+  Future<bool> removeSearchHistoryEntry(
+    String query, {
+    required bool online,
+  }) async {
+    final normalized = canonicalElementQuery(query).toLowerCase();
+    if (normalized.isEmpty) return false;
+    var removed = false;
+    await _change(() async {
+      final history = online ? asmrSearchHistory : librarySearchHistory;
+      final index = history.indexWhere(
+        (entry) => entry.toLowerCase() == normalized,
+      );
+      if (index == -1) return;
+      final next = List<String>.unmodifiable(history.toList()..removeAt(index));
+      if (online) {
+        asmrSearchHistory = next;
+      } else {
+        librarySearchHistory = next;
+      }
+      removed = true;
+    });
+    return removed;
+  }
+
   Future<List<String>> clearSearchHistory({required bool online}) async {
     var removed = const <String>[];
     await _change(() async {

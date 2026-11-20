@@ -122,8 +122,6 @@ void main() {
           await AppLifecyclePlatformService().syncAppTheme(
             preset: 'rose',
             themeMode: 'system',
-            lightTrayMenuPalette: const [0xfaf0f1, 0x201819, 0xf1dce1],
-            darkTrayMenuPalette: const [0x352a2c, 0xffeeef, 0x50363d],
           ),
           isTrue,
         );

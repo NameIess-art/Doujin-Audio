@@ -639,7 +639,13 @@ void main() {
       );
       expect(find.byType(AppDialog), findsOneWidget);
       expect(find.byType(AppGlassSurface), findsOneWidget);
-      expect(find.byType(BackdropFilter), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(AppModalBackground),
+          matching: find.byType(BackdropFilter),
+        ),
+        findsOneWidget,
+      );
       expect(
         tester.getSize(find.byType(AppGlassSurface)).width,
         closeTo(680, 0.5),

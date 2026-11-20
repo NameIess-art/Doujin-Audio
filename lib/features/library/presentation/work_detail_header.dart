@@ -130,7 +130,9 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
               '|',
               style: TextStyle(
                 fontSize: 13,
-                color: Colors.grey.withValues(alpha: 0.6),
+                color: Theme.of(
+                  context,
+                ).colorScheme.outlineVariant.withValues(alpha: 0.8),
                 fontWeight: FontWeight.w300,
               ),
             ),

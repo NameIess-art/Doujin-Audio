@@ -3,31 +3,16 @@ package com.doujin.audio.player.service
 internal interface NativePlaybackForegroundEnvironment {
     fun postDelayed(runnable: Runnable, delayMs: Long)
     fun remove(runnable: Runnable)
-
-    /**
-     * Sleep-inclusive clock. [postDelayed] runs on `uptimeMillis`, which stalls
-     * in deep sleep, so the grace window needs an independent way to tell that
-     * its own timer is overdue.
-     */
-    fun elapsedRealtimeMs(): Long
 }
 
 internal interface NativePlaybackForegroundHost {
     val hasPlaybackToKeepAlive: Boolean
-    val hasSessions: Boolean
     val playbackSuspended: Boolean
 
     fun playbackSignature(): String?
     fun onActiveSync()
 
-    /**
-     * Playback stopped and the stop-grace window has just begun. The foreground
-     * service must stay up (transient buffering/focus gaps), but nothing is
-     * driving the audio pipeline, so CPU-holding resources should be dropped
-     * now rather than at the end of the grace window.
-     */
-    fun onIdleGraceBegan()
-    fun onGraceExpired()
+    fun onIdleStop()
 
     /**
      * Whether the foreground notification is still posted. Used to avoid
@@ -37,7 +22,6 @@ internal interface NativePlaybackForegroundHost {
      * answerable" when the platform query failed and must not force a re-post.
      */
     fun isForegroundNotificationPosted(): Boolean?
-    fun onWatchdog()
     fun startPlaybackForeground()
     fun startBootstrapForeground()
     fun stopForeground(wasStarted: Boolean)
@@ -57,15 +41,13 @@ internal enum class NativePlaybackForegroundStartResult {
 internal class NativePlaybackForegroundCoordinator(
     private val host: NativePlaybackForegroundHost,
     private val environment: NativePlaybackForegroundEnvironment,
-    private val stopGraceMs: Long,
     private val watchdogIntervalMs: Long
 ) {
     var isStarted: Boolean = false
         private set
 
     private var signature: String? = null
-    private var graceScheduled = false
-    private var graceStartedElapsedRealtimeMs = 0L
+    private var idleStopScheduled = false
     private var watchdogScheduled = false
     private val pendingPlaybackStarts = linkedMapOf<String, Runnable>()
     val hasPendingPlaybackStarts: Boolean get() = pendingPlaybackStarts.isNotEmpty()
@@ -80,7 +62,7 @@ internal class NativePlaybackForegroundCoordinator(
             sync()
         }
         pendingPlaybackStarts[sessionId] = expiry
-        cancelGrace()
+        cancelIdleStop()
         environment.postDelayed(expiry, 5_000L)
     }
 
@@ -88,78 +70,51 @@ internal class NativePlaybackForegroundCoordinator(
         pendingPlaybackStarts.remove(sessionId)?.let(environment::remove)
     }
 
-    private val graceRunnable = Runnable {
-        graceScheduled = false
-        if (!host.hasPlaybackToKeepAlive) {
-            host.logInfo("foreground_stop_grace_expired executing_deferred_stop")
-            host.onGraceExpired()
-            stopWatchdog()
-            stop(reason = "grace_expired_no_active_playback")
-        } else {
-            host.logInfo("foreground_stop_grace_expired playback_resumed_skip")
-        }
+    private val idleStop = Runnable {
+        idleStopScheduled = false
+        if (!host.hasPlaybackToKeepAlive) host.onIdleStop()
     }
 
     private val watchdogRunnable = object : Runnable {
         override fun run() {
             if (!watchdogScheduled) return
-            if (host.hasPlaybackToKeepAlive) {
-                // Only rebuild when the notification actually went missing.
-                // A blind forceRefresh re-posts ~180 times over a 12h session.
-                val foregroundStart = startOrUpdate(
-                    forceRefresh = host.isForegroundNotificationPosted() == false
-                )
-                if (foregroundStart.playbackAllowed) {
-                    host.onWatchdog()
-                    environment.postDelayed(this, watchdogIntervalMs)
-                } else {
-                    stopWatchdog()
-                }
-            } else {
+            if (!host.hasPlaybackToKeepAlive || !isStarted) {
                 stopWatchdog()
+                return
             }
+            repairNotificationIfMissing()
+            environment.postDelayed(this, watchdogIntervalMs)
         }
     }
 
-    fun triggerWatchdog() {
-        if (!host.hasPlaybackToKeepAlive) return
-        val foregroundStart = startOrUpdate(
-            forceRefresh = host.isForegroundNotificationPosted() == false
-        )
-        if (foregroundStart.playbackAllowed) {
-            host.onWatchdog()
-            if (watchdogScheduled) {
-                environment.remove(watchdogRunnable)
-                environment.postDelayed(watchdogRunnable, watchdogIntervalMs)
-            }
+    fun repairNotificationIfMissing() {
+        if (!isStarted || !host.hasPlaybackToKeepAlive) return
+        if (host.isForegroundNotificationPosted() == false) {
+            startOrUpdate(forceRefresh = true)
         }
     }
 
-    fun sync(forceRefresh: Boolean = false) {
+    fun sync() {
         if (host.hasPlaybackToKeepAlive) {
-            cancelGrace()
-            if (startOrUpdate(forceRefresh = forceRefresh).playbackAllowed) {
+            cancelIdleStop()
+            if (startOrUpdate().playbackAllowed) {
                 host.onActiveSync()
                 ensureWatchdog()
             } else {
                 stopWatchdog()
             }
-        } else {
-            scheduleGrace()
+        } else if (!idleStopScheduled) {
+            // Let the current player callback finish before releasing its session.
+            idleStopScheduled = true
+            environment.postDelayed(idleStop, 0L)
         }
     }
 
     fun startOrUpdate(
         forceRefresh: Boolean = false
     ): NativePlaybackForegroundStartResult {
-        if (host.playbackSuspended) {
-            host.logInfo("start_foreground_skip playback_suspended forceRefresh=$forceRefresh")
-            return NativePlaybackForegroundStartResult.SKIPPED
-        }
-        val nextSignature = host.playbackSignature() ?: run {
-            host.logInfo("start_foreground_skip no_session")
-            return NativePlaybackForegroundStartResult.SKIPPED
-        }
+        if (host.playbackSuspended) return NativePlaybackForegroundStartResult.SKIPPED
+        val nextSignature = host.playbackSignature() ?: return NativePlaybackForegroundStartResult.SKIPPED
         if (!forceRefresh && isStarted && signature == nextSignature) {
             return NativePlaybackForegroundStartResult.ALREADY_STARTED
         }
@@ -168,12 +123,12 @@ internal class NativePlaybackForegroundCoordinator(
             isStarted = true
             signature = nextSignature
             host.logInfo(
-                "start_foreground_success forceRefresh=$forceRefresh signature=$nextSignature"
+                "start_foreground_success forceRefresh=$forceRefresh"
             )
             NativePlaybackForegroundStartResult.STARTED
         } catch (error: Exception) {
             host.logWarn(
-                "start_foreground_failed forceRefresh=$forceRefresh signature=$nextSignature",
+                "start_foreground_failed forceRefresh=$forceRefresh",
                 error
             )
             if (isStarted) {
@@ -186,7 +141,6 @@ internal class NativePlaybackForegroundCoordinator(
 
     fun startBootstrap(): NativePlaybackForegroundStartResult {
         if (isStarted) {
-            host.logInfo("start_bootstrap_foreground_skip already_started")
             return NativePlaybackForegroundStartResult.ALREADY_STARTED
         }
         return try {
@@ -201,81 +155,36 @@ internal class NativePlaybackForegroundCoordinator(
         }
     }
 
-    fun scheduleGrace() {
-        if (graceScheduled) return
-        graceScheduled = true
-        graceStartedElapsedRealtimeMs = environment.elapsedRealtimeMs()
-        host.logInfo("foreground_stop_grace_scheduled delay=${stopGraceMs}ms")
-        host.onIdleGraceBegan()
-        environment.postDelayed(graceRunnable, stopGraceMs)
+    private fun cancelIdleStop() {
+        if (!idleStopScheduled) return
+        environment.remove(idleStop)
+        idleStopScheduled = false
     }
 
-    /**
-     * Closes a grace window whose [postDelayed] timer never fired because the
-     * device slept through it. Called from the alarm-backed heartbeat.
-     *
-     * Returns true when the window was force-closed.
-     */
-    fun expireGraceIfOverdue(): Boolean {
-        if (!graceScheduled) return false
-        val elapsedMs = environment.elapsedRealtimeMs() - graceStartedElapsedRealtimeMs
-        if (elapsedMs < stopGraceMs) return false
-        host.logInfo("foreground_stop_grace_overdue elapsed=${elapsedMs}ms forcing_stop")
-        environment.remove(graceRunnable)
-        graceRunnable.run()
-        return true
-    }
-
-    fun cancelGrace() {
-        if (!graceScheduled) return
-        environment.remove(graceRunnable)
-        graceScheduled = false
-        host.logInfo("foreground_stop_grace_cancelled")
-    }
-
-    fun ensureWatchdog() {
+    private fun ensureWatchdog() {
         if (watchdogScheduled) return
         watchdogScheduled = true
         environment.postDelayed(watchdogRunnable, watchdogIntervalMs)
     }
 
-    fun stopWatchdog() {
+    private fun stopWatchdog() {
         if (!watchdogScheduled) return
         environment.remove(watchdogRunnable)
         watchdogScheduled = false
     }
 
     fun stop(reason: String) {
+        cancelIdleStop()
+        stopWatchdog()
         host.logInfo("stop_foreground reason=$reason wasStarted=$isStarted")
         host.stopForeground(wasStarted = isStarted)
         isStarted = false
         signature = null
     }
 
-    fun onTaskRemoved(): Boolean {
-        return when {
-            host.hasPlaybackToKeepAlive -> {
-                sync()
-                false
-            }
-            host.hasSessions -> {
-                scheduleGrace()
-                false
-            }
-            else -> {
-                stopWatchdog()
-                cancelGrace()
-                stop(reason = "task_removed_no_sessions")
-                true
-            }
-        }
-    }
-
     fun shutdown() {
         pendingPlaybackStarts.values.forEach(environment::remove)
         pendingPlaybackStarts.clear()
-        cancelGrace()
-        stopWatchdog()
         stop(reason = "on_destroy")
     }
 

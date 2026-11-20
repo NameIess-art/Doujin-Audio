@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
 Color landscapeNavigationBackground(ColorScheme colors) {
-  if (colors.brightness == Brightness.dark &&
-      colors.surfaceContainerLowest != colors.surface) {
+  if (colors.brightness == Brightness.dark) {
+    // Pure black keeps a true-black chrome rather than inverting lighter than
+    // the canvas; non-black dark themes step one level deeper than content.
     return colors.surfaceContainerLowest;
   }
   return colors.surfaceContainerLow;

@@ -38,10 +38,11 @@ Color asmrDownloadFileColor(
   AsmrTrackFile track, {
   required Color audioColor,
   required Color fallbackColor,
+  AppDesignTokens tokens = AppDesignTokens.light,
 }) => switch (asmrDownloadFileIcon(track)) {
-  AppDesignTokens.folderIcon => AppDesignTokens.folderIconColor,
+  AppDesignTokens.folderIcon => tokens.folderColor,
   AppDesignTokens.audioFileIcon || Icons.videocam_outlined => audioColor,
-  AppDesignTokens.textFileIcon => AppDesignTokens.textFileIconColor,
-  AppDesignTokens.imageFileIcon => AppDesignTokens.imageFileIconColor,
+  AppDesignTokens.textFileIcon => tokens.textFileColor,
+  AppDesignTokens.imageFileIcon => tokens.imageFileColor,
   _ => fallbackColor,
 };

@@ -123,23 +123,33 @@ List<Widget> _buildSettingsAppearanceSection({
         ),
         Consumer(
           builder: (context, ref, _) {
-            final appThemeColor = ref.watch(
-              themeProviderInstanceProvider.select((t) => t.appThemeColor),
+            final selection = ref.watch(
+              themeProviderInstanceProvider.select(
+                (t) => (
+                  t.appThemeColor,
+                  t.customThemeColor,
+                  t.useSystemAccentColor,
+                  t.systemAccentColor,
+                ),
+              ),
             );
             return _ThemeColorTile(
               key: const ValueKey<String>('app_theme_color_tile'),
               title: i18n.tr('app_theme_color'),
               indicatorKey: const ValueKey<String>('app_theme_color_indicator'),
-              color: appThemeColor
-                  .colorScheme(Theme.of(context).brightness)
-                  .primary,
+              color: Theme.of(context).colorScheme.primary,
               iconColor: cs.primary,
               onTap: () => _showThemeColorPicker(
                 context: context,
                 i18n: i18n,
                 title: i18n.tr('app_theme_color'),
-                selected: themeProvider.appThemeColor,
+                selected: selection.$1,
+                customColor: selection.$2,
+                useSystemAccent: selection.$3,
+                systemAccentColor: selection.$4,
                 onSelected: themeProvider.setAppThemeColor,
+                onCustomColorSelected: themeProvider.setCustomThemeColor,
+                onSystemAccentSelected: themeProvider.setUseSystemAccentColor,
               ),
             );
           },
@@ -231,7 +241,12 @@ void _showThemeColorPicker({
   required AppLanguageProvider i18n,
   required String title,
   required ThemeAccentPreset selected,
+  required Color? customColor,
+  required bool useSystemAccent,
+  required Color? systemAccentColor,
   required Future<bool> Function(ThemeAccentPreset value) onSelected,
+  required Future<bool> Function(Color? value) onCustomColorSelected,
+  required Future<bool> Function(bool value) onSystemAccentSelected,
 }) {
   showAppDialog<void>(
     context: context,
@@ -239,6 +254,9 @@ void _showThemeColorPicker({
     builder: (dialogContext) => _ThemeColorPickerMenu(
       title: title,
       selected: selected,
+      customColor: customColor,
+      useSystemAccent: useSystemAccent,
+      systemAccentColor: systemAccentColor,
       i18n: i18n,
       onSelected: (value) {
         Navigator.of(dialogContext).pop();
@@ -247,6 +265,26 @@ void _showThemeColorPicker({
             context: context,
             i18n: i18n,
             change: () => onSelected(value),
+          ),
+        );
+      },
+      onCustomColorSelected: (value) {
+        Navigator.of(dialogContext).pop();
+        unawaited(
+          _applyThemeChange(
+            context: context,
+            i18n: i18n,
+            change: () => onCustomColorSelected(value),
+          ),
+        );
+      },
+      onSystemAccentSelected: () {
+        Navigator.of(dialogContext).pop();
+        unawaited(
+          _applyThemeChange(
+            context: context,
+            i18n: i18n,
+            change: () => onSystemAccentSelected(true),
           ),
         );
       },
@@ -314,83 +352,390 @@ class _ThemeColorTile extends StatelessWidget {
   }
 }
 
-class _ThemeColorPickerMenu extends StatelessWidget {
+class _ThemeColorPickerMenu extends StatefulWidget {
   const _ThemeColorPickerMenu({
     required this.title,
     required this.selected,
+    required this.customColor,
+    required this.useSystemAccent,
+    required this.systemAccentColor,
     required this.i18n,
     required this.onSelected,
+    required this.onCustomColorSelected,
+    required this.onSystemAccentSelected,
   });
 
   final String title;
   final ThemeAccentPreset selected;
+  final Color? customColor;
+  final bool useSystemAccent;
+  final Color? systemAccentColor;
   final AppLanguageProvider i18n;
   final ValueChanged<ThemeAccentPreset> onSelected;
+  final ValueChanged<Color> onCustomColorSelected;
+  final VoidCallback onSystemAccentSelected;
+
+  @override
+  State<_ThemeColorPickerMenu> createState() => _ThemeColorPickerMenuState();
+}
+
+class _ThemeColorPickerMenuState extends State<_ThemeColorPickerMenu> {
+  late bool _customExpanded;
+  late HSLColor _draftHsl;
+
+  @override
+  void initState() {
+    super.initState();
+    _customExpanded = widget.customColor != null && !widget.useSystemAccent;
+    final initial = widget.customColor ?? widget.selected.primaryColor;
+    _draftHsl = HSLColor.fromColor(initial);
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final tokens = AppDesignTokens.of(context);
+    final hasCustomActive =
+        widget.customColor != null && !widget.useSystemAccent;
+    final hasSystemActive =
+        widget.useSystemAccent && widget.systemAccentColor != null;
+    final draftColor = _draftHsl.toColor();
+    final draftScheme = buildAppColorScheme(
+      seedColor: draftColor,
+      brightness: theme.brightness,
+    );
+    final hexCode =
+        '#${(draftColor.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
+
     return AppDialog(
       key: const ValueKey<String>('theme_color_dialog'),
-      title: title,
+      title: widget.title,
       icon: Icons.palette_outlined,
-      content: GridView.builder(
-        key: const ValueKey<String>('theme_color_grid'),
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 4,
-          mainAxisExtent: 56,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 4,
-        ),
-        itemCount: ThemeAccentPreset.values.length,
-        itemBuilder: (context, index) {
-          final preset = ThemeAccentPreset.values[index];
-          final isSelected = preset == selected;
-          final label = i18n.tr(preset.labelKey);
-          final color = preset.colorScheme(theme.brightness).primary;
-          final foreground =
-              ThemeData.estimateBrightnessForColor(color) == Brightness.dark
-              ? Colors.white
-              : const Color(0xFF242126);
-          return Semantics(
-            button: true,
-            selected: isSelected,
-            label: label,
-            child: Tooltip(
-              message: label,
-              child: InkWell(
-                mouseCursor: WidgetStateMouseCursor.clickable,
-                key: ValueKey<String>('theme_color_${preset.name}'),
-                customBorder: const CircleBorder(),
-                onTap: () => onSelected(preset),
-                child: Center(
-                  child: AnimatedContainer(
-                    duration: tokens.motionFast,
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: color,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: isSelected
-                            ? cs.onSurface
-                            : cs.outlineVariant.withValues(alpha: 0.7),
-                        width: isSelected ? 3 : 1,
+      scrollable: true,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          GridView.builder(
+            key: const ValueKey<String>('theme_color_grid'),
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 4,
+              mainAxisExtent: 56,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 4,
+            ),
+            itemCount: ThemeAccentPreset.values.length,
+            itemBuilder: (context, index) {
+              final preset = ThemeAccentPreset.values[index];
+              final isSelected =
+                  !hasCustomActive &&
+                  !hasSystemActive &&
+                  preset == widget.selected;
+              final label = widget.i18n.tr(preset.labelKey);
+              final color = preset.colorScheme(theme.brightness).primary;
+              final foreground =
+                  ThemeData.estimateBrightnessForColor(color) == Brightness.dark
+                  ? Colors.white
+                  : const Color(0xFF242126);
+              return Semantics(
+                button: true,
+                selected: isSelected,
+                label: label,
+                child: Tooltip(
+                  message: label,
+                  child: InkWell(
+                    mouseCursor: WidgetStateMouseCursor.clickable,
+                    key: ValueKey<String>('theme_color_${preset.name}'),
+                    customBorder: const CircleBorder(),
+                    onTap: () => widget.onSelected(preset),
+                    child: Center(
+                      child: AnimatedContainer(
+                        duration: tokens.motionFast,
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: color,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: isSelected
+                                ? cs.onSurface
+                                : cs.outlineVariant.withValues(alpha: 0.7),
+                            width: isSelected ? 3 : 1,
+                          ),
+                        ),
+                        child: isSelected
+                            ? Icon(
+                                Icons.check_rounded,
+                                color: foreground,
+                                size: 24,
+                              )
+                            : null,
                       ),
                     ),
-                    child: isSelected
-                        ? Icon(Icons.check_rounded, color: foreground, size: 24)
-                        : null,
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          Divider(
+            height: 1,
+            color: cs.outlineVariant.withValues(
+              alpha: tokens.subtleBorderAlpha,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (widget.systemAccentColor != null) ...[
+            _ThemeColorOptionRow(
+              key: const ValueKey<String>('theme_color_system_option'),
+              label: widget.i18n.tr('theme_color_system'),
+              previewColor: buildAppColorScheme(
+                seedColor: widget.systemAccentColor!,
+                brightness: theme.brightness,
+              ).primary,
+              selected: hasSystemActive,
+              onTap: widget.onSystemAccentSelected,
+            ),
+            const SizedBox(height: 4),
+          ],
+          _ThemeColorOptionRow(
+            key: const ValueKey<String>('theme_color_custom_toggle'),
+            label: widget.i18n.tr('theme_color_custom'),
+            previewColor: draftScheme.primary,
+            selected: hasCustomActive,
+            trailingIcon: _customExpanded
+                ? Icons.expand_less_rounded
+                : Icons.expand_more_rounded,
+            onTap: () => setState(() => _customExpanded = !_customExpanded),
+          ),
+          if (_customExpanded) ...[
+            const SizedBox(height: 8),
+            Container(
+              key: const ValueKey<String>('theme_color_custom_editor'),
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              decoration: BoxDecoration(
+                color: cs.surfaceContainer,
+                borderRadius: BorderRadius.circular(tokens.radiusCard),
+                border: Border.all(
+                  color: cs.outlineVariant.withValues(
+                    alpha: tokens.subtleBorderAlpha,
                   ),
                 ),
               ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: draftScheme.primary,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: cs.outlineVariant.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        hexCode,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: cs.onSurface,
+                        ),
+                      ),
+                      const Spacer(),
+                      FilledButton(
+                        key: const ValueKey<String>('theme_color_custom_apply'),
+                        onPressed: () =>
+                            widget.onCustomColorSelected(draftColor),
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(72, 36),
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          backgroundColor: draftScheme.primary,
+                          foregroundColor: draftScheme.onPrimary,
+                        ),
+                        child: Text(widget.i18n.tr('confirm')),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  _HslColorSliderRow(
+                    label: widget.i18n.tr('theme_color_hue'),
+                    value: _draftHsl.hue,
+                    min: 0,
+                    max: 360,
+                    activeColor: draftScheme.primary,
+                    onChanged: (hue) => setState(
+                      () => _draftHsl = _draftHsl.withHue(hue),
+                    ),
+                  ),
+                  _HslColorSliderRow(
+                    label: widget.i18n.tr('theme_color_saturation'),
+                    value: _draftHsl.saturation,
+                    min: 0.1,
+                    max: 1.0,
+                    activeColor: draftScheme.primary,
+                    onChanged: (sat) => setState(
+                      () => _draftHsl = _draftHsl.withSaturation(sat),
+                    ),
+                  ),
+                  _HslColorSliderRow(
+                    label: widget.i18n.tr('theme_color_lightness'),
+                    value: _draftHsl.lightness,
+                    min: 0.25,
+                    max: 0.85,
+                    activeColor: draftScheme.primary,
+                    onChanged: (light) => setState(
+                      () => _draftHsl = _draftHsl.withLightness(light),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          );
-        },
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ThemeColorOptionRow extends StatelessWidget {
+  const _ThemeColorOptionRow({
+    super.key,
+    required this.label,
+    required this.previewColor,
+    required this.selected,
+    required this.onTap,
+    this.trailingIcon,
+  });
+
+  final String label;
+  final Color previewColor;
+  final bool selected;
+  final VoidCallback onTap;
+  final IconData? trailingIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tokens = AppDesignTokens.of(context);
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(tokens.radiusControl),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        mouseCursor: WidgetStateMouseCursor.clickable,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          child: Row(
+            children: [
+              Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: previewColor,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: selected
+                        ? cs.onSurface
+                        : cs.outlineVariant.withValues(alpha: 0.7),
+                    width: selected ? 2.2 : 1,
+                  ),
+                ),
+                child: selected
+                    ? Icon(
+                        Icons.check_rounded,
+                        size: 14,
+                        color:
+                            ThemeData.estimateBrightnessForColor(
+                                  previewColor,
+                                ) ==
+                                Brightness.dark
+                            ? Colors.white
+                            : const Color(0xFF1B1B1F),
+                      )
+                    : null,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    color: cs.onSurface,
+                  ),
+                ),
+              ),
+              if (trailingIcon != null)
+                Icon(trailingIcon, size: 20, color: cs.onSurfaceVariant),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HslColorSliderRow extends StatelessWidget {
+  const _HslColorSliderRow({
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.activeColor,
+    required this.onChanged,
+  });
+
+  final String label;
+  final double value;
+  final double min;
+  final double max;
+  final Color activeColor;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return SizedBox(
+      height: 32,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 52,
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: cs.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 4,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                activeTrackColor: activeColor,
+                thumbColor: activeColor,
+              ),
+              child: Slider(
+                min: min,
+                max: max,
+                value: value.clamp(min, max),
+                onChanged: onChanged,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

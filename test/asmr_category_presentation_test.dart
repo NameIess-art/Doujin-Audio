@@ -1093,13 +1093,24 @@ void main() {
         expect(controller.categoryReads, reads);
         expect(controller.categoryLoads, loads);
         expect(controller.suggestionLoads, 1);
-        final history = tester.widget<AppSearchSuggestionSection>(
-          find.byKey(const ValueKey('asmr_search_history')),
+        final historyItem = find.descendant(
+          of: find.byKey(const ValueKey('asmr_search_history')),
+          matching: find.text('Voice Actor, Sleep'),
         );
-        history.onToggle('Voice Actor, Sleep');
+        await tester.tap(historyItem);
         await tester.pumpAndSettle();
         expect(search().controller.text, 'Voice Actor, Sleep');
-        expect(controller.categoryLoads, loads);
+        expect(controller.lastSearchQuery, 'Voice Actor, Sleep');
+        expect(
+          find.byKey(const ValueKey('asmr_search_collected')),
+          findsOneWidget,
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('app_search_element_summary')),
+        );
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), 'Voice Actor, Sleep ');
+        await tester.pumpAndSettle();
         expect(search().onConfirm, isNotNull);
         expect(
           tester
@@ -1147,6 +1158,21 @@ void main() {
           isNot(contains('Unconfirmed')),
         );
         final loadsBeforeClear = controller.categoryLoads;
+        if (platform == TargetPlatform.windows) {
+          await tester.tap(
+            historyItem,
+            buttons: kSecondaryMouseButton,
+            kind: PointerDeviceKind.mouse,
+          );
+        } else {
+          await tester.longPress(historyItem);
+        }
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('移除这条历史'));
+        await tester.pumpAndSettle();
+        expect(fixture.settings.slice.state.asmrSearchHistory, ['Voice Actor']);
+        expect(search().controller.text, 'Unconfirmed');
+        expect(controller.categoryLoads, loadsBeforeClear);
         final historyBeforeClear =
             fixture.settings.slice.state.asmrSearchHistory;
         await tester.tap(

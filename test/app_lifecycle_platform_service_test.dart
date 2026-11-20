@@ -48,7 +48,7 @@ void main() {
     expect(await service.terminateForPendingRestore(), isFalse);
   });
 
-  test('app theme sync sends preset and theme mode to Android', () async {
+  test('app theme sync sends preset, theme mode, and pureBlack to Android', () async {
     MethodCall? received;
     messenger.setMockMethodCallHandler(channel, (call) async {
       received = call;
@@ -60,13 +60,33 @@ void main() {
     );
 
     expect(
-      await service.syncAppTheme(preset: 'mint', themeMode: 'dark'),
+      await service.syncAppTheme(
+        preset: 'mint',
+        themeMode: 'dark',
+        pureBlack: true,
+      ),
       isTrue,
     );
     expect(received?.method, 'syncAppTheme');
     expect(received?.arguments, <String, Object>{
       'preset': 'mint',
       'themeMode': 'dark',
+      'pureBlack': true,
     });
+  });
+
+  test('getSystemAccentColor returns native ARGB accent when available', () async {
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'getSystemAccentColor') {
+        return <String, Object?>{'ok': true, 'value': 0xFF3366CC};
+      }
+      return null;
+    });
+    final service = AppLifecyclePlatformService(
+      channel: channel,
+      isAndroidOverride: true,
+    );
+
+    expect(await service.getSystemAccentColor(), 0xFF3366CC);
   });
 }

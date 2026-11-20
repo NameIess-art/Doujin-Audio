@@ -132,7 +132,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   void _reconcileSelection(PlaylistStructureState structureState) {
     if (_selectedSessionIds.isEmpty) return;
     final availableSessionIds = structureState.entries
-        .where((entry) => !entry.isTemporary)
         .map((entry) => entry.id)
         .toSet();
     if (_selectedSessionIds.every(availableSessionIds.contains)) return;
@@ -151,7 +150,11 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
   Future<void> _handleBatchPin() async {
     if (_creatingQueue) return;
-    final sessionIds = _selectedSessionIds.toList(growable: false);
+    final sessionIds = PlaylistBatchActions.pinnableSessionIds(
+      ref.read(playlistStructureUiProvider).entries,
+      _selectedSessionIds,
+    );
+    if (sessionIds.isEmpty) return;
     _exitSelectionMode();
     await PlaylistBatchActions.pinSelected(
       context: context,
@@ -456,15 +459,23 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                   playbackFacadeProvider,
                                 );
                                 final count = selectedIds.length;
+                                final entries = ref
+                                    .watch(playlistStructureUiProvider)
+                                    .entries;
+                                final pinTargets =
+                                    PlaylistBatchActions.pinnableSessionIds(
+                                      entries,
+                                      selectedIds,
+                                    );
                                 final isPlayEnabled =
                                     count > 0 && !_creatingQueue;
                                 final isPauseEnabled =
                                     count > 0 && !_creatingQueue;
                                 final isPinEnabled =
-                                    count > 0 && !_creatingQueue;
+                                    pinTargets.isNotEmpty && !_creatingQueue;
                                 final isAllPinned =
-                                    count > 0 &&
-                                    selectedIds.every(
+                                    pinTargets.isNotEmpty &&
+                                    pinTargets.every(
                                       pinnedPlaylistSessionIds.contains,
                                     );
                                 final isRemoveEnabled =
@@ -829,9 +840,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                   library: library,
                   playback: playback,
                   coverCacheWidth: coverCacheWidth,
-                  onLongPress: isTemporary
-                      ? null
-                      : () => _selectOnlySession(session.id),
+                  onLongPress: () => _selectOnlySession(session.id),
                   onToggleSelect: () => _toggleSessionSelection(session.id),
                   onTogglePin: isTemporary
                       ? null
@@ -863,9 +872,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                   library: library,
                   playback: playback,
                   isTemporary: isTemporary,
-                  onLongPress: isTemporary
-                      ? null
-                      : () => _selectOnlySession(session.id),
+                  onLongPress: () => _selectOnlySession(session.id),
                   onToggleSelect: () => _toggleSessionSelection(session.id),
                   onTogglePin: isTemporary
                       ? null

@@ -13,6 +13,7 @@ import 'package:doujin_audio/app/localization/app_language_ja.dart';
 import 'package:doujin_audio/app/localization/app_language_zh.dart';
 import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
+import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
@@ -1577,7 +1578,16 @@ void main() {
       final container = tester.widget<Container>(checkmarkFinder);
       final decoration = container.decoration as BoxDecoration;
       expect(decoration.shape, BoxShape.circle);
+      expect(decoration.color, const Color(0xFF4CAF50));
       expect(decoration.border?.top.width, 2.0);
+      final icon = tester.widget<Icon>(
+        find.descendant(
+          of: checkmarkFinder,
+          matching: find.byIcon(Icons.check_rounded),
+        ),
+      );
+      expect(icon.color, Colors.white);
+      expect(icon.size, 14);
 
       // Verify mid-animation opacity
       await tester.pump(kAppMotionFast ~/ 2);
@@ -1623,6 +1633,10 @@ void main() {
       await tester.pump(const Duration(milliseconds: 250));
       expect(checkmarkFinder, findsNothing);
     },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   for (final kind in ['library', 'library anonymous', 'playlist']) {
@@ -1707,6 +1721,50 @@ void main() {
       expect(find.byIcon(Icons.push_pin_rounded), findsOneWidget);
     },
   );
+
+  testWidgets('pin badges follow the light and dark monochrome palettes', (
+    tester,
+  ) async {
+    for (final brightness in Brightness.values) {
+      final scheme = ThemeAccentPreset.monochrome.colorScheme(brightness);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.from(colorScheme: scheme),
+          home: const Scaffold(
+            body: Column(
+              children: [
+                LibraryPinnedIndicator(path: 'theme-pin'),
+                PlaylistPinnedIndicator(sessionId: 'theme-pin'),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      for (final key in [
+        'library_pinned_theme-pin',
+        'playlist_session_pinned_theme-pin',
+      ]) {
+        final badge = find.byKey(ValueKey<String>(key));
+        final decoration =
+            tester.widget<Container>(badge).decoration! as BoxDecoration;
+        final pin = tester.widget<Icon>(
+          find.descendant(
+            of: badge,
+            matching: find.byIcon(Icons.push_pin_rounded),
+          ),
+        );
+        expect(decoration.color, scheme.primary);
+        expect(decoration.border?.top.color, scheme.surface);
+        expect(pin.color, scheme.onPrimary);
+        expect(
+          appColorContrastRatio(pin.color!, decoration.color!),
+          greaterThanOrEqualTo(4.5),
+        );
+      }
+    }
+  });
 
   testWidgets(
     'SingleMediaFileCardContent places selection at bottom-right and pin at top-right',

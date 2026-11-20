@@ -107,4 +107,11 @@
         <item name="android:statusBarColor">@color/launch_background_gray_dark</item>
         <item name="android:navigationBarColor">@color/launch_background_gray_dark</item>
     </style>
+
+    <!-- Pure Black (OLED Dark) -->
+    <style name="LaunchTheme_PureBlack" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@color/launch_background_pure_black</item>
+        <item name="android:statusBarColor">@color/launch_background_pure_black</item>
+        <item name="android:navigationBarColor">@color/launch_background_pure_black</item>
+    </style>
 </resources>

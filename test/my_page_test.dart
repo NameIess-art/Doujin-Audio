@@ -1299,15 +1299,13 @@ void main() {
               find.ancestor(of: entry, matching: find.byType(Transform)),
             )
             .where((t) => !t.transformHitTests)
-            .first
-            .transform
-            .entry(0, 0);
+            .fold<double>(1.0, (scale, t) => scale * t.transform.entry(0, 0));
         final gesture = await tester.startGesture(tester.getCenter(addVoice));
         await tester.pumpAndSettle();
         expect(pressedInk(), isEmpty);
         expect(
           buttonScale(),
-          platform == TargetPlatform.windows ? 0.975 : 0.98,
+          platform == TargetPlatform.windows ? 1.0 : 0.98,
         );
         await gesture.up();
         expect(pressedInk(), isEmpty);

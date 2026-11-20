@@ -363,9 +363,8 @@ void main() {
             .widgetList<Transform>(
               find.ancestor(of: targetIcon, matching: find.byType(Transform)),
             )
-            .firstWhere((transform) => !transform.transformHitTests)
-            .transform
-            .entry(0, 0);
+            .where((transform) => !transform.transformHitTests)
+            .fold<double>(1.0, (scale, t) => scale * t.transform.entry(0, 0));
 
         final rail = tester.widget<NavigationRail>(find.byType(NavigationRail));
         final labelFinder = find.byWidget(rail.destinations[1].label);
@@ -412,9 +411,9 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(await capsulePixels(), idlePixels);
-        expect(iconScale(), platform == TargetPlatform.windows ? 0.82 : 0.84);
+        expect(iconScale(), windows ? 1.0 : 0.84);
         expect(labelColor(), primary);
-        expect(labelScale(), 0.94);
+        expect(labelScale(), windows ? 1.0 : 0.94);
         expect(activePage.value, 0);
         await mouse.cancel();
         await tester.pumpAndSettle();
@@ -427,7 +426,7 @@ void main() {
         await mouse.down(center);
         await tester.pumpAndSettle();
         expect(await capsulePixels(), idlePixels);
-        expect(iconScale(), platform == TargetPlatform.windows ? 0.82 : 0.84);
+        expect(iconScale(), windows ? 1.0 : 0.84);
         await mouse.cancel();
         await tester.pumpAndSettle();
         await mouse.moveTo(center + const Offset(25, 0));

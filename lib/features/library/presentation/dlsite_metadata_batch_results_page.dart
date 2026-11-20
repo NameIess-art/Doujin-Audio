@@ -3,7 +3,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
@@ -232,78 +231,40 @@ class _DlsiteMetadataBatchResultsPageState
                           ),
                         );
                         if (isWindows) {
-                          Future<void> openContextMenu(
-                            Offset globalPosition,
-                          ) async {
-                            if (_savingAll) return;
-                            final selected =
-                                await showUnifiedContextMenu<VoidCallback>(
-                                  context: context,
-                                  globalPosition: globalPosition,
-                                  entries: [
-                                    if (!isExcluded &&
-                                        item.status !=
-                                            DlsiteMetadataBatchLookupStatus
-                                                .searching)
-                                      UnifiedMenuEntry<VoidCallback>.action(
-                                        value: () =>
-                                            unawaited(_handleItemTap(index)),
-                                        icon: item.isReviewable
-                                            ? Icons.rate_review_rounded
-                                            : Icons.refresh_rounded,
-                                        label: i18n.tr(
-                                          item.isReviewable
-                                              ? 'dlsite_review_title'
-                                              : 'retry',
-                                        ),
-                                      ),
-                                    UnifiedMenuEntry<VoidCallback>.action(
-                                      value: toggleExcluded,
-                                      icon: isExcluded
-                                          ? Icons.undo_rounded
-                                          : Icons.block_rounded,
-                                      label: i18n.tr(
-                                        isExcluded
-                                            ? 'batch_metadata_action_restore'
-                                            : 'batch_metadata_action_exclude',
-                                      ),
-                                    ),
-                                  ],
-                                );
-                            if (mounted) selected?.call();
-                          }
-
-                          void openKeyboardMenu() {
-                            final box =
-                                context.findRenderObject() as RenderBox?;
-                            if (box == null || !box.hasSize) return;
-                            unawaited(
-                              openContextMenu(
-                                box.localToGlobal(box.size.center(Offset.zero)),
-                              ),
-                            );
-                          }
-
-                          return CallbackShortcuts(
-                            bindings: {
-                              const SingleActivator(
-                                LogicalKeyboardKey.f10,
-                                shift: true,
-                              ): openKeyboardMenu,
-                              const SingleActivator(
-                                LogicalKeyboardKey.contextMenu,
-                              ): openKeyboardMenu,
-                            },
-                            child: Focus(
-                              child: GestureDetector(
-                                onSecondaryTapDown: _savingAll
-                                    ? null
-                                    : (details) => unawaited(
-                                        openContextMenu(details.globalPosition),
-                                      ),
-                                child: row,
-                              ),
+                          return UnifiedContextMenuRegion(
+                            enabled: !_savingAll,
+                            shape: const RoundedRectangleBorder(
+                              borderRadius: FileTreeRow.borderRadius,
                             ),
+                            buildEntries: () => [
+                              if (!isExcluded &&
+                                  item.status !=
+                                      DlsiteMetadataBatchLookupStatus.searching)
+                                UnifiedMenuEntry.action(
+                                  value: () =>
+                                      unawaited(_handleItemTap(index)),
+                                  icon: item.isReviewable
+                                      ? Icons.rate_review_rounded
+                                      : Icons.refresh_rounded,
+                                  label: i18n.tr(
+                                    item.isReviewable
+                                        ? 'dlsite_review_title'
+                                        : 'retry',
+                                  ),
+                                ),
+                              UnifiedMenuEntry.action(
+                                value: toggleExcluded,
+                                icon: isExcluded
+                                    ? Icons.undo_rounded
+                                    : Icons.block_rounded,
+                                label: i18n.tr(
+                                  isExcluded
+                                      ? 'batch_metadata_action_restore'
+                                      : 'batch_metadata_action_exclude',
+                                ),
+                              ),
+                            ],
+                            child: row,
                           );
                         }
                         return Dismissible(

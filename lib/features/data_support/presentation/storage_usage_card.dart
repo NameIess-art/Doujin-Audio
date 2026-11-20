@@ -142,7 +142,7 @@ class _StorageUsageUnavailableCard extends StatelessWidget {
     return Card(
       key: const ValueKey('data-support-storage-unavailable'),
       elevation: 0,
-      color: cs.surfaceContainerHigh.withValues(alpha: 0.6),
+      color: cs.surfaceContainerLow,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(
           AppDesignTokens.of(context).radiusCard,
@@ -193,13 +193,13 @@ class _StorageUsageCard extends StatelessWidget {
     );
     final otherUsedSegment = (
       bytes: current?.otherUsedBytes ?? 0,
-      color: cs.secondary,
+      color: cs.tertiary,
       label: i18n.tr('storage_usage_other'),
       key: 'other',
     );
     final availableSegment = (
       bytes: current?.availableBytes ?? 0,
-      color: cs.outline,
+      color: cs.outlineVariant,
       label: i18n.tr('storage_usage_available'),
       key: 'available',
     );
@@ -218,7 +218,7 @@ class _StorageUsageCard extends StatelessWidget {
 
     return Card(
       elevation: 0,
-      color: cs.surfaceContainerHigh.withValues(alpha: 0.6),
+      color: cs.surfaceContainerLow,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(tokens.radiusCard),
       ),

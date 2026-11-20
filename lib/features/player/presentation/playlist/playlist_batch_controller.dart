@@ -51,6 +51,14 @@ abstract final class PlaylistBatchActions {
     }
   }
 
+  static List<String> pinnableSessionIds(
+    Iterable<PlaybackDirectoryEntry> entries,
+    Set<String> selectedSessionIds,
+  ) => [
+    for (final entry in entries)
+      if (!entry.isTemporary && selectedSessionIds.contains(entry.id)) entry.id,
+  ];
+
   static Future<void> pinSelected({
     required BuildContext context,
     required WidgetRef ref,

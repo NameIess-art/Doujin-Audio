@@ -6,6 +6,7 @@ import '../../settings/presentation/settings_providers.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../../app/presentation/element_action_menu.dart';
 import '../../../core/widgets/app_entry_ink_well.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -411,18 +412,10 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
                             final selected = widget.selectedTerms.contains(
                               term,
                             );
-                            return GestureDetector(
-                              behavior: HitTestBehavior.translucent,
-                              onSecondaryTap:
-                                  defaultTargetPlatform ==
-                                      TargetPlatform.windows
-                                  ? () => _copyCategoryTerm(context, term)
-                                  : null,
-                              onLongPress:
-                                  defaultTargetPlatform ==
-                                      TargetPlatform.android
-                                  ? () => _copyCategoryTerm(context, term)
-                                  : null,
+                            return ElementActionMenu(
+                              value: term,
+                              onCopy: () => _copyCategoryTerm(context, term),
+                              shape: const StadiumBorder(),
                               child: SizedBox(
                                 height: 28,
                                 child: appNoPointerInkTheme(

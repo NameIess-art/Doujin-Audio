@@ -21,20 +21,22 @@ class AppDockPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? cs.surfaceContainer : cs.surfaceContainerHigh;
+    final bgColor = cs.surfaceContainerHigh;
     final glassEnabled = AppDesignTokens.of(context).barGlassEnabled;
+    final borderColor = isDark
+        ? Color.alphaBlend(
+            Colors.white.withValues(alpha: 0.08),
+            cs.outlineVariant,
+          ).withValues(alpha: 0.34)
+        : cs.outlineVariant.withValues(alpha: 0.42);
     return AppGlassSurface(
       enabled: glassEnabled,
       borderRadius: BorderRadius.circular(radius),
-      backgroundColor: glassEnabled
-          ? bgColor.withValues(alpha: bgColor.a * 0.9)
-          : bgColor,
+      backgroundColor: bgColor,
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(radius),
-          border: Border.all(
-            color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
-          ),
+          border: Border.all(color: borderColor),
         ),
         child: Stack(
           children: [
@@ -48,10 +50,10 @@ class AppDockPanel extends StatelessWidget {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          Colors.white.withValues(alpha: isDark ? 0.18 : 0.45),
+                          Colors.white.withValues(alpha: isDark ? 0.12 : 0.38),
                           Colors.white.withValues(alpha: 0),
                         ],
-                        stops: const [0, 0.15],
+                        stops: const [0, 0.08],
                       ),
                     ),
                   ),

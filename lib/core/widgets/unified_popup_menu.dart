@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 
 import '../ui/ui_interaction_coordinator.dart';
 import '../../app/theme/app_design_tokens.dart';
+import 'app_buttons.dart' show appPressedTint;
 import 'app_dialog.dart';
 import 'app_entry_ink_well.dart';
 import 'app_feedback.dart';
@@ -20,16 +21,12 @@ const _menuEnterDuration = Duration(milliseconds: 200);
 const _menuExitDuration = Duration(milliseconds: 200);
 const _entryMenuScale = 0.75;
 const _textSelectionMenuWidth = 236.0;
+const _windowsMenuCurve = Curves.easeInOut;
 const _blurredMenuCardReverseCurve = Interval(
   0.20,
   1.0,
   curve: Curves.easeInCubic,
 );
-
-Color unifiedPopupMenuBackground(ColorScheme colors) =>
-    colors.brightness == Brightness.dark
-    ? colors.surfaceBright
-    : colors.surfaceContainerHighest;
 
 class _AnchoredMenuScale extends SingleChildRenderObjectWidget {
   const _AnchoredMenuScale({
@@ -279,6 +276,7 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
     final anchorOffset = box.localToGlobal(Offset.zero, ancestor: overlayBox);
     final anchorRect = anchorOffset & box.size;
     if (overlayBox.size.width <= 20) return;
+    final isWindows = Theme.of(context).platform == TargetPlatform.windows;
 
     var hoverEnabled = false;
     final entry = OverlayEntry(
@@ -287,6 +285,7 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
           animation: _controller,
           anchorRect: anchorRect,
           entries: widget.entries,
+          isWindows: isWindows,
           blurBackground: true,
           hoverEnabled: hoverEnabled,
           onDismiss: _removeOverlay,
@@ -394,6 +393,7 @@ class _UnifiedPopupOverlay<T> extends StatefulWidget {
     required this.anchorRect,
     required this.entries,
     required this.hoverEnabled,
+    required this.isWindows,
     required this.onDismiss,
     required this.onSelected,
     this.blurBackground = false,
@@ -408,6 +408,7 @@ class _UnifiedPopupOverlay<T> extends StatefulWidget {
   final bool blurBackground;
   final double layoutScale;
   final bool hoverEnabled;
+  final bool isWindows;
   final bool pointerAnchored;
   final Future<void> Function() onDismiss;
   final ValueChanged<T> onSelected;
@@ -421,7 +422,7 @@ class _UnifiedPopupOverlay<T> extends StatefulWidget {
 class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
   final _focusScope = FocusScopeNode();
   late CurvedAnimation _curved;
-  late CurvedAnimation _scaleCurved;
+  CurvedAnimation? _scaleCurved;
   late Animation<double> _scale;
   late Animation<Offset> _slide;
 
@@ -443,35 +444,41 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
   }
 
   void _bindAnimation() {
+    final isWindows = widget.isWindows;
     final reverseCurve = widget.blurBackground
         ? _blurredMenuCardReverseCurve
         : Curves.easeInCubic;
     _curved = CurvedAnimation(
       parent: widget.animation,
-      curve: kAppSpringCurve,
-      reverseCurve: reverseCurve,
+      curve: isWindows ? _windowsMenuCurve : kAppSpringCurve,
+      reverseCurve: isWindows ? _windowsMenuCurve : reverseCurve,
     );
-    _scaleCurved = CurvedAnimation(
-      parent: widget.animation,
-      curve: widget.pointerAnchored
-          ? kAppSpringCurve
-          : const Cubic(0.2, 0.92, 0.25, 1.032),
-      reverseCurve: reverseCurve,
-    );
-    _scale = Tween<double>(begin: 0.88, end: 1).animate(_scaleCurved);
-    _slide = Tween<Offset>(
-      begin: widget.pointerAnchored ? Offset.zero : const Offset(0, -0.025),
-      end: Offset.zero,
-    ).animate(_curved);
+    _scaleCurved = isWindows
+        ? null
+        : CurvedAnimation(
+            parent: widget.animation,
+            curve: widget.pointerAnchored
+                ? kAppSpringCurve
+                : const Cubic(0.2, 0.92, 0.25, 1.032),
+            reverseCurve: reverseCurve,
+          );
+    _scale = (_scaleCurved ?? _curved).drive(Tween(begin: 0.88, end: 1.0));
+    // A slide would move the pivot away from the desktop launch point.
+    _slide = isWindows || widget.pointerAnchored
+        ? const AlwaysStoppedAnimation(Offset.zero)
+        : _curved.drive(
+            Tween(begin: const Offset(0, -0.025), end: Offset.zero),
+          );
   }
 
   @override
   void didUpdateWidget(covariant _UnifiedPopupOverlay<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.animation != widget.animation) {
+    if (oldWidget.animation != widget.animation ||
+        oldWidget.isWindows != widget.isWindows) {
       oldWidget.animation.removeStatusListener(_handleAnimationStatus);
       _curved.dispose();
-      _scaleCurved.dispose();
+      _scaleCurved?.dispose();
       _bindAnimation();
       widget.animation.addStatusListener(_handleAnimationStatus);
     }
@@ -481,13 +488,16 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
   void dispose() {
     widget.animation.removeStatusListener(_handleAnimationStatus);
     _curved.dispose();
-    _scaleCurved.dispose();
+    _scaleCurved?.dispose();
     _focusScope.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final backgroundReverseCurve = widget.isWindows
+        ? _windowsMenuCurve
+        : Curves.easeInQuad;
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.escape): widget.onDismiss,
@@ -511,7 +521,11 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
                     child: widget.blurBackground
                         ? AppModalBackground(
                             animation: widget.animation,
-                            reverseCurve: Curves.easeInQuad,
+                            curve: widget.isWindows
+                                ? _windowsMenuCurve
+                                : kAppSpringCurve,
+                            reverseCurve: backgroundReverseCurve,
+                            blurReverseCurve: backgroundReverseCurve,
                           )
                         : null,
                   ),
@@ -548,17 +562,15 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
                                   ignoring:
                                       widget.animation.status ==
                                       AnimationStatus.reverse,
-                                  child: SingleChildScrollView(
-                                    child: _UnifiedPopupMenuCard<T>(
-                                      entries: widget.entries,
-                                      fitContent: true,
-                                      blurBackground: widget.blurBackground,
-                                      suppressHover: !widget.hoverEnabled,
-                                      onSelected: widget.onSelected,
-                                      onTrailingSelected:
-                                          widget.onTrailingSelected,
-                                    ),
-                                  ).withWindowsSmoothScroll(),
+                                  child: _UnifiedPopupMenuCard<T>(
+                                    entries: widget.entries,
+                                    fitContent: true,
+                                    blurBackground: widget.blurBackground,
+                                    suppressHover: !widget.hoverEnabled,
+                                    onSelected: widget.onSelected,
+                                    onTrailingSelected:
+                                        widget.onTrailingSelected,
+                                  ),
                                 ),
                               ),
                             ),
@@ -645,7 +657,7 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final tokens = AppDesignTokens.of(context);
-    final background = unifiedPopupMenuBackground(cs);
+    final background = isDark ? cs.surfaceBright : cs.surfaceContainerHighest;
     final reserveIconSpace =
         fitContent &&
         entries.any((entry) => entry.icon != null || entry.iconWidget != null);
@@ -682,18 +694,27 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
               ),
             ),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final entry in entries)
-                _UnifiedPopupMenuRow<T>(
-                  entry: entry,
-                  reserveIconSpace: reserveIconSpace,
-                  suppressHover: suppressHover,
-                  onSelected: onSelected,
-                  onTrailingSelected: onTrailingSelected,
-                ),
-            ],
+          child: ScrollConfiguration(
+            // Page overscroll effects would stretch the menu's hit bounds.
+            behavior: ScrollConfiguration.of(context).copyWith(
+              overscroll: false,
+              physics: const ClampingScrollPhysics(),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final entry in entries)
+                    _UnifiedPopupMenuRow<T>(
+                      entry: entry,
+                      reserveIconSpace: reserveIconSpace,
+                      suppressHover: suppressHover,
+                      onSelected: onSelected,
+                      onTrailingSelected: onTrailingSelected,
+                    ),
+                ],
+              ),
+            ).withWindowsSmoothScroll(),
           ),
         ),
       ),
@@ -1082,11 +1103,119 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
               Offset.zero & constraints.biggest,
             ),
             entries: widget.entries,
+            isWindows: Theme.of(context).platform == TargetPlatform.windows,
             layoutScale: _entryMenuScale,
             hoverEnabled: widget.hoverEnabled,
             pointerAnchored: widget.pointerAnchored,
             onDismiss: () => _dismiss(null),
             onSelected: _dismiss,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class UnifiedContextMenuRegion extends StatefulWidget {
+  const UnifiedContextMenuRegion({
+    super.key,
+    required this.buildEntries,
+    required this.shape,
+    required this.child,
+    this.enabled = true,
+    this.skipTraversal = false,
+    this.openOnAndroidLongPress = false,
+  });
+
+  final List<UnifiedMenuEntry<VoidCallback>> Function() buildEntries;
+  final ShapeBorder shape;
+  final Widget child;
+  final bool enabled;
+  final bool skipTraversal;
+  final bool openOnAndroidLongPress;
+
+  @override
+  State<UnifiedContextMenuRegion> createState() =>
+      _UnifiedContextMenuRegionState();
+}
+
+class _UnifiedContextMenuRegionState extends State<UnifiedContextMenuRegion> {
+  ValueNotifier<bool>? _menuDismissal;
+
+  @override
+  void dispose() {
+    _menuDismissal?.value = true;
+    super.dispose();
+  }
+
+  Future<void> _openMenu([Offset? globalPosition]) async {
+    if (!widget.enabled || _menuDismissal != null) return;
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    final entries = widget.buildEntries();
+    if (entries.isEmpty || !mounted) return;
+    final dismissal = ValueNotifier(false);
+    setState(() => _menuDismissal = dismissal);
+    final VoidCallback? action;
+    try {
+      action = await showUnifiedContextMenu<VoidCallback>(
+        context: context,
+        globalPosition:
+            globalPosition ?? box.localToGlobal(box.size.center(Offset.zero)),
+        entries: entries,
+        dismissOn: dismissal,
+      );
+    } finally {
+      dismissal.dispose();
+      if (mounted) setState(() => _menuDismissal = null);
+    }
+    if (mounted && widget.enabled) action?.call();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final shape = widget.shape;
+    final opensOnLongPress =
+        widget.enabled &&
+        widget.openOnAndroidLongPress &&
+        Theme.of(context).platform == TargetPlatform.android;
+    return CallbackShortcuts(
+      bindings: widget.enabled
+          ? {
+              const SingleActivator(LogicalKeyboardKey.f10, shift: true):
+                  _openMenu,
+              const SingleActivator(LogicalKeyboardKey.contextMenu): _openMenu,
+            }
+          : const {},
+      child: Focus(
+        canRequestFocus: widget.enabled,
+        skipTraversal: widget.skipTraversal,
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onSecondaryTapDown: widget.enabled && !opensOnLongPress
+              ? (details) => _openMenu(details.globalPosition)
+              : null,
+          onLongPressStart: opensOnLongPress
+              ? (details) {
+                  unawaited(
+                    AppInteractionFeedback.trigger(
+                      AppInteractionFeedbackType.selection,
+                    ),
+                  );
+                  unawaited(_openMenu(details.globalPosition));
+                }
+              : null,
+          child: DecoratedBox(
+            position: DecorationPosition.foreground,
+            decoration: _menuDismissal == null
+                ? const BoxDecoration()
+                : ShapeDecoration(
+                    color: appPressedTint(Theme.of(context).colorScheme),
+                    shape: shape is OutlinedBorder
+                        ? shape.copyWith(side: BorderSide.none)
+                        : shape,
+                  ),
+            child: widget.child,
           ),
         ),
       ),
@@ -1182,14 +1311,12 @@ Widget _buildTextSelectionMenu(
           preferredTop: anchor.dy,
           menuWidth: _textSelectionMenuWidth,
         ),
-        child: SingleChildScrollView(
-          child: _UnifiedPopupMenuCard<VoidCallback>(
-            entries: entries,
-            fitContent: false,
-            blurBackground: true,
-            onSelected: (action) => action(),
-          ),
-        ).withWindowsSmoothScroll(),
+        child: _UnifiedPopupMenuCard<VoidCallback>(
+          entries: entries,
+          fitContent: false,
+          blurBackground: true,
+          onSelected: (action) => action(),
+        ),
       ),
     ],
   );

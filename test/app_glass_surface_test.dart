@@ -144,7 +144,12 @@ void main() {
           .color;
       expect(
         color.a,
-        closeTo(brightness == Brightness.dark ? 0.42 : 0.4, 1e-6),
+        closeTo(
+          brightness == Brightness.dark
+              ? AppGlassSurface.darkGlassOpacity * 0.5
+              : AppGlassSurface.lightGlassOpacity * 0.5,
+          1e-6,
+        ),
       );
       final clip = find.descendant(
         of: surface,
@@ -195,7 +200,9 @@ void main() {
   ) async {
     final boundaryKey = GlobalKey();
     final opacity = ValueNotifier(1.0);
+    final seam = ValueNotifier(100.0);
     addTearDown(opacity.dispose);
+    addTearDown(seam.dispose);
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData.light(),
@@ -207,13 +214,21 @@ void main() {
               height: 100,
               child: Stack(
                 children: [
-                  const Positioned.fill(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(child: ColoredBox(color: Colors.black)),
-                        Expanded(child: ColoredBox(color: Colors.white)),
-                      ],
+                  Positioned.fill(
+                    child: ValueListenableBuilder<double>(
+                      valueListenable: seam,
+                      builder: (context, split, _) => Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SizedBox(
+                            width: split,
+                            child: const ColoredBox(color: Colors.black),
+                          ),
+                          const Expanded(
+                            child: ColoredBox(color: Colors.white),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   Positioned(
@@ -221,8 +236,9 @@ void main() {
                     top: 20,
                     child: ValueListenableBuilder<double>(
                       valueListenable: opacity,
-                      builder: (context, value, child) =>
-                          Opacity(opacity: value, child: child),
+                      builder: (context, value, child) => value == 1
+                          ? child!
+                          : Opacity(opacity: value, child: child),
                       child: AppGlassSurface(
                         backgroundColor: Colors.black.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
@@ -285,5 +301,24 @@ void main() {
     expect(channel(99, 50, 0), closeTo(leftBlur * 0.5, 2));
     expect(channel(100, 50, 0), closeTo(rightBlur * 0.5 + 255 * 0.5, 2));
     expect(channel(66, 50, 0), closeTo(255 * 0.5, 2));
+
+    opacity.value = 1;
+    await tester.pump();
+    final filter = tester.layers.whereType<BackdropFilterLayer>().single;
+    final engineLayer = filter.engineLayer;
+    expect(engineLayer, isNotNull);
+    for (final split in [108.0, 116.0, 124.0]) {
+      seam.value = split;
+      await tester.pump();
+      expect(
+        tester.layers.whereType<BackdropFilterLayer>().single.engineLayer,
+        same(engineLayer),
+      );
+    }
+    pixels = await capture();
+    expect(channel(100, 50, 0), lessThan(rightBlur));
+    expect(channel(123, 50, 0), closeTo(leftBlur, 2));
+    expect(channel(124, 50, 0), closeTo(rightBlur, 2));
+    expect(channel(66, 50, 0), 255);
   });
 }

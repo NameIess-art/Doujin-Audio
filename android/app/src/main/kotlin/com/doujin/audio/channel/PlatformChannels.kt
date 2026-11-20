@@ -37,6 +37,7 @@ internal object NativePlaybackMethods {
 internal object AppLifecycleMethods {
     const val TERMINATE_FOR_PENDING_RESTORE = "terminateForPendingRestore"
     const val SYNC_APP_THEME = "syncAppTheme"
+    const val GET_SYSTEM_ACCENT_COLOR = "getSystemAccentColor"
 }
 
 internal object VideoDisplayMethods {

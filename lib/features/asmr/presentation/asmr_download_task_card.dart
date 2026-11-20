@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/theme/app_design_tokens.dart';
@@ -39,19 +38,18 @@ class AsmrDownloadTaskCard extends StatelessWidget {
           )
         : null;
 
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(tokens.radiusSection),
+      side: BorderSide(
+        color: cs.outlineVariant.withValues(alpha: tokens.standardBorderAlpha),
+      ),
+    );
     final card = Card(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
       elevation: 0,
       color: cs.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(tokens.radiusSection),
-        side: BorderSide(
-          color: cs.outlineVariant.withValues(
-            alpha: tokens.standardBorderAlpha,
-          ),
-        ),
-      ),
+      shape: shape,
       child: AppEntryInkWell(
         onTap: onOpen,
         child: Padding(
@@ -161,40 +159,19 @@ class AsmrDownloadTaskCard extends StatelessWidget {
       ),
     );
 
-    if (defaultTargetPlatform == TargetPlatform.windows) {
-      void showKeyboardMenu() {
-        final box = context.findRenderObject() as RenderBox?;
-        if (box == null || !box.hasSize) return;
-        _showContextMenu(
-          context,
-          box.localToGlobal(box.size.center(Offset.zero)),
-        );
-      }
-
-      return CallbackShortcuts(
-        bindings: {
-          const SingleActivator(LogicalKeyboardKey.f10, shift: true):
-              showKeyboardMenu,
-          const SingleActivator(LogicalKeyboardKey.contextMenu):
-              showKeyboardMenu,
-        },
-        child: Focus(
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onSecondaryTapDown: (details) =>
-                _showContextMenu(context, details.globalPosition),
-            child: card,
-          ),
-        ),
-      );
-    }
-    return card;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: defaultTargetPlatform == TargetPlatform.windows
+          ? UnifiedContextMenuRegion(
+              buildEntries: _buildContextMenuEntries,
+              shape: shape,
+              child: card,
+            )
+          : card,
+    );
   }
 
-  Future<void> _showContextMenu(
-    BuildContext context,
-    Offset globalPosition,
-  ) async {
+  List<UnifiedMenuEntry<VoidCallback>> _buildContextMenuEntries() {
     final pauseResumeLabel = task.status == AsmrDownloadTaskStatus.failed
         ? i18n.tr('retry')
         : task.status == AsmrDownloadTaskStatus.paused
@@ -206,32 +183,27 @@ class AsmrDownloadTaskCard extends StatelessWidget {
         ? Icons.play_arrow_rounded
         : Icons.pause_rounded;
 
-    final action = await showUnifiedContextMenu<VoidCallback>(
-      context: context,
-      globalPosition: globalPosition,
-      entries: [
+    return [
+      UnifiedMenuEntry.action(
+        value: onOpen,
+        label: i18n.tr('asmr_download_details_title'),
+        icon: Icons.info_outline_rounded,
+      ),
+      if (task.status != AsmrDownloadTaskStatus.completed)
         UnifiedMenuEntry.action(
-          value: onOpen,
-          label: i18n.tr('asmr_download_details_title'),
-          icon: Icons.info_outline_rounded,
+          value: onTogglePause ?? () {},
+          label: pauseResumeLabel,
+          icon: pauseResumeIcon,
+          enabled: onTogglePause != null,
         ),
-        if (task.status != AsmrDownloadTaskStatus.completed)
-          UnifiedMenuEntry.action(
-            value: onTogglePause ?? () {},
-            label: pauseResumeLabel,
-            icon: pauseResumeIcon,
-            enabled: onTogglePause != null,
-          ),
-        UnifiedMenuEntry.action(
-          value: onRemove ?? () {},
-          label: i18n.tr('asmr_download_remove_task'),
-          icon: Icons.delete_outline_rounded,
-          destructive: true,
-          enabled: onRemove != null,
-        ),
-      ],
-    );
-    action?.call();
+      UnifiedMenuEntry.action(
+        value: onRemove ?? () {},
+        label: i18n.tr('asmr_download_remove_task'),
+        icon: Icons.delete_outline_rounded,
+        destructive: true,
+        enabled: onRemove != null,
+      ),
+    ];
   }
 }
 

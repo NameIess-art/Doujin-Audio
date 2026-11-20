@@ -18,6 +18,7 @@ import android.animation.ValueAnimator
 import android.content.ComponentCallbacks2
 import android.content.Intent
 import android.content.res.Configuration
+import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.os.Bundle
@@ -103,28 +104,34 @@ open class MainActivity : FlutterFragmentActivity() {
         val preferences = getSharedPreferences("FlutterSharedPreferences", MODE_PRIVATE)
         val preset = preferences.getString("flutter.appThemeColor", "rose") ?: "rose"
         val mode = preferences.getString("flutter.themeMode", "system") ?: "system"
+        val pureBlack = preferences.getBoolean("flutter.pureBlackTheme", false)
         val dark = when (mode) {
             "dark" -> true
             "light" -> false
             else -> (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
                 Configuration.UI_MODE_NIGHT_YES
         }
-        val surfaceColor = StartupWindowTheme.surfaceColor(preset, dark)
-        syncWindowSurface(surfaceColor, dark)
+        val surfaceColor = StartupWindowTheme.surfaceColor(preset, dark, pureBlack)
+        syncWindowSurface(surfaceColor, dark, transparentSystemBars = false)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             try {
                 splashScreen.setSplashScreenTheme(
-                    StartupWindowTheme.splashThemeResId(preset, mode)
+                    StartupWindowTheme.splashThemeResId(preset, mode, pureBlack, dark)
                 )
             } catch (_: Exception) {
             }
         }
     }
 
-    private fun syncWindowSurface(color: Int, dark: Boolean) {
+    private fun syncWindowSurface(
+        color: Int,
+        dark: Boolean,
+        transparentSystemBars: Boolean = false,
+    ) {
         window.setBackgroundDrawable(ColorDrawable(color))
-        window.statusBarColor = color
-        window.navigationBarColor = color
+        val barColor = if (transparentSystemBars) Color.TRANSPARENT else color
+        window.statusBarColor = barColor
+        window.navigationBarColor = barColor
         val decorView = window.peekDecorView() ?: return
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -158,23 +165,34 @@ open class MainActivity : FlutterFragmentActivity() {
         }
     }
 
-    private fun syncAppTheme(preset: String, themeMode: String) {
+    private fun syncAppTheme(preset: String, themeMode: String, pureBlack: Boolean) {
         val dark = when (themeMode) {
             "dark" -> true
             "light" -> false
             else -> (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
                 Configuration.UI_MODE_NIGHT_YES
         }
-        val surfaceColor = StartupWindowTheme.surfaceColor(preset, dark)
-        syncWindowSurface(surfaceColor, dark)
+        val surfaceColor = StartupWindowTheme.surfaceColor(preset, dark, pureBlack)
+        // Runtime theme updates keep edge-to-edge transparent system bars so
+        // Flutter controls top/bottom bar layering without opaque color bands.
+        syncWindowSurface(surfaceColor, dark, transparentSystemBars = true)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             try {
                 splashScreen.setSplashScreenTheme(
-                    StartupWindowTheme.splashThemeResId(preset, themeMode)
+                    StartupWindowTheme.splashThemeResId(preset, themeMode, pureBlack, dark)
                 )
             } catch (_: Exception) {
             }
+        }
+    }
+
+    private fun getSystemAccentColor(): Int? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return null
+        return try {
+            getColor(android.R.color.system_accent1_500)
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -187,13 +205,14 @@ open class MainActivity : FlutterFragmentActivity() {
                     val preferences = getSharedPreferences("FlutterSharedPreferences", MODE_PRIVATE)
                     val preset = preferences.getString("flutter.appThemeColor", "rose") ?: "rose"
                     val mode = preferences.getString("flutter.themeMode", "system") ?: "system"
+                    val pureBlack = preferences.getBoolean("flutter.pureBlackTheme", false)
                     val dark = when (mode) {
                         "dark" -> true
                         "light" -> false
                         else -> (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
                             Configuration.UI_MODE_NIGHT_YES
                     }
-                    val surfaceColor = StartupWindowTheme.surfaceColor(preset, dark)
+                    val surfaceColor = StartupWindowTheme.surfaceColor(preset, dark, pureBlack)
                     splashScreenView.setBackgroundColor(surfaceColor)
 
                     if (!ValueAnimator.areAnimatorsEnabled()) {
@@ -279,6 +298,7 @@ open class MainActivity : FlutterFragmentActivity() {
                 AppLifecycleMethodHandler(
                     terminateForPendingRestore = ::schedulePendingRestoreTermination,
                     syncAppTheme = ::syncAppTheme,
+                    getSystemAccentColor = ::getSystemAccentColor,
                 )
             )
         }
@@ -455,41 +475,55 @@ open class MainActivity : FlutterFragmentActivity() {
 }
 
 internal object StartupWindowTheme {
-    fun surfaceColor(preset: String, dark: Boolean): Int {
+    fun surfaceColor(preset: String, dark: Boolean, pureBlack: Boolean = false): Int {
+        if (pureBlack && dark) return 0xFF000000.toInt()
         return when (preset) {
-            "lavender", "periwinkle" -> if (dark) 0xFF131117.toInt() else 0xFFFAF8FF.toInt()
-            "blue", "sky", "cyan" -> if (dark) 0xFF101417.toInt() else 0xFFF5FBFF.toInt()
-            "mint", "green", "lightGreen" -> if (dark) 0xFF101513.toInt() else 0xFFF5FFF9.toInt()
-            "lime", "amber", "orange", "peach" -> if (dark) 0xFF151310.toInt() else 0xFFFFF9F2.toInt()
-            "gray" -> if (dark) 0xFF121315.toInt() else 0xFFF7F8FA.toInt()
+            "purple", "indigo", "lavender", "periwinkle" ->
+                if (dark) 0xFF131117.toInt() else 0xFFFAF8FF.toInt()
+            "blue", "sky", "cyan" ->
+                if (dark) 0xFF101218.toInt() else 0xFFF7F9FF.toInt()
+            "teal", "green", "olive", "mint", "lightGreen" ->
+                if (dark) 0xFF101513.toInt() else 0xFFF5FFF9.toInt()
+            "yellow", "orange", "brown", "lime", "amber", "peach" ->
+                if (dark) 0xFF151310.toInt() else 0xFFFFF9F2.toInt()
+            "gray", "monochrome" ->
+                if (dark) 0xFF121315.toInt() else 0xFFF7F8FA.toInt()
             else -> if (dark) 0xFF141112.toInt() else 0xFFFFF8F8.toInt()
         }
     }
 
-    fun splashThemeResId(preset: String, mode: String): Int {
+    fun splashThemeResId(
+        preset: String,
+        mode: String,
+        pureBlack: Boolean = false,
+        dark: Boolean = false,
+    ): Int {
+        if (pureBlack && (mode == "dark" || (mode == "system" && dark))) {
+            return R.style.LaunchTheme_PureBlack
+        }
         return when (mode) {
             "light" -> when (preset) {
-                "lavender", "periwinkle" -> R.style.LaunchTheme_Lavender_Light
+                "purple", "indigo", "lavender", "periwinkle" -> R.style.LaunchTheme_Lavender_Light
                 "blue", "sky", "cyan" -> R.style.LaunchTheme_Blue_Light
-                "mint", "green", "lightGreen" -> R.style.LaunchTheme_Mint_Light
-                "lime", "amber", "orange", "peach" -> R.style.LaunchTheme_Amber_Light
-                "gray" -> R.style.LaunchTheme_Gray_Light
+                "teal", "green", "olive", "mint", "lightGreen" -> R.style.LaunchTheme_Mint_Light
+                "yellow", "orange", "brown", "lime", "amber", "peach" -> R.style.LaunchTheme_Amber_Light
+                "gray", "monochrome" -> R.style.LaunchTheme_Gray_Light
                 else -> R.style.LaunchTheme_Rose_Light
             }
             "dark" -> when (preset) {
-                "lavender", "periwinkle" -> R.style.LaunchTheme_Lavender_Dark
+                "purple", "indigo", "lavender", "periwinkle" -> R.style.LaunchTheme_Lavender_Dark
                 "blue", "sky", "cyan" -> R.style.LaunchTheme_Blue_Dark
-                "mint", "green", "lightGreen" -> R.style.LaunchTheme_Mint_Dark
-                "lime", "amber", "orange", "peach" -> R.style.LaunchTheme_Amber_Dark
-                "gray" -> R.style.LaunchTheme_Gray_Dark
+                "teal", "green", "olive", "mint", "lightGreen" -> R.style.LaunchTheme_Mint_Dark
+                "yellow", "orange", "brown", "lime", "amber", "peach" -> R.style.LaunchTheme_Amber_Dark
+                "gray", "monochrome" -> R.style.LaunchTheme_Gray_Dark
                 else -> R.style.LaunchTheme_Rose_Dark
             }
             else -> when (preset) {
-                "lavender", "periwinkle" -> R.style.LaunchTheme_Lavender
+                "purple", "indigo", "lavender", "periwinkle" -> R.style.LaunchTheme_Lavender
                 "blue", "sky", "cyan" -> R.style.LaunchTheme_Blue
-                "mint", "green", "lightGreen" -> R.style.LaunchTheme_Mint
-                "lime", "amber", "orange", "peach" -> R.style.LaunchTheme_Amber
-                "gray" -> R.style.LaunchTheme_Gray
+                "teal", "green", "olive", "mint", "lightGreen" -> R.style.LaunchTheme_Mint
+                "yellow", "orange", "brown", "lime", "amber", "peach" -> R.style.LaunchTheme_Amber
+                "gray", "monochrome" -> R.style.LaunchTheme_Gray
                 else -> R.style.LaunchTheme_Rose
             }
         }

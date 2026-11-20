@@ -5,21 +5,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../core/media/time_text_formatters.dart';
 import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_edit_panel.dart';
+import '../../../../core/widgets/app_entry_ink_well.dart';
 import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/app_glass_surface.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/scroll_activity_gate.dart';
 import '../../../../core/widgets/top_page_header.dart';
+import '../../../../core/widgets/unified_popup_menu.dart';
 import '../../../../core/widgets/windows_horizontal_wheel_scroll.dart';
 import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../application/playback_facade.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../domain/time_segment_label.dart';
 import 'playlist_audio_features.dart';
+import 'playlist_shared_helpers.dart';
 import 'playlist_speed_controls.dart';
-import '../../../../core/widgets/unified_popup_menu.dart';
 
 class TimeSegmentPanel extends StatefulWidget {
   const TimeSegmentPanel({
@@ -33,7 +37,6 @@ class TimeSegmentPanel extends StatefulWidget {
     required this.nameController,
     required this.draftStart,
     required this.draftEnd,
-    required this.draftColorValue,
     required this.loopSegmentId,
     required this.onSelect,
     required this.onAdd,
@@ -55,7 +58,6 @@ class TimeSegmentPanel extends StatefulWidget {
   final TextEditingController nameController;
   final Duration? draftStart;
   final Duration? draftEnd;
-  final int? draftColorValue;
   final String? loopSegmentId;
   final ValueChanged<TimeSegmentLabel> onSelect;
   final VoidCallback onAdd;
@@ -63,8 +65,8 @@ class TimeSegmentPanel extends StatefulWidget {
   final VoidCallback onSetEnd;
   final VoidCallback onEditStart;
   final VoidCallback onEditEnd;
-  final VoidCallback onDelete;
-  final VoidCallback onToggleLoop;
+  final ValueChanged<TimeSegmentLabel> onDelete;
+  final ValueChanged<TimeSegmentLabel> onToggleLoop;
   final VoidCallback onClose;
 
   @override
@@ -73,6 +75,19 @@ class TimeSegmentPanel extends StatefulWidget {
 
 class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
   final _pageIndex = ValueNotifier<int>(2);
+  int _trackRevision = 0;
+
+  @override
+  void didUpdateWidget(covariant TimeSegmentPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final oldSession = oldWidget.session;
+    final session = widget.session;
+    if (oldSession.id != session.id ||
+        oldSession.currentTrackPath != session.currentTrackPath ||
+        oldSession.currentQueueIndex != session.currentQueueIndex) {
+      _trackRevision++;
+    }
+  }
 
   @override
   void dispose() {
@@ -86,6 +101,56 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
     _pageIndex.value = index;
   }
 
+  List<UnifiedMenuEntry<VoidCallback>> _segmentMenuEntries(
+    BuildContext context,
+    TimeSegmentLabel label,
+  ) {
+    final revision = _trackRevision;
+    final session = widget.session;
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
+    final loopActive = label.id == widget.loopSegmentId;
+
+    void run(ValueChanged<TimeSegmentLabel> action) {
+      if (!mounted || revision != _trackRevision) return;
+      final runtime = widget.playback.sessionById(session.id);
+      if (runtime == null ||
+          runtime.currentTrackPath != session.currentTrackPath ||
+          runtime.currentQueueIndex != session.currentQueueIndex) {
+        return;
+      }
+      final target = widget.labels
+          .where(
+            (candidate) =>
+                candidate.id == label.id &&
+                candidate.trackKey == label.trackKey,
+          )
+          .firstOrNull;
+      if (target != null) action(target);
+    }
+
+    return [
+      UnifiedMenuEntry.action(
+        value: () => run(widget.onSelect),
+        icon: Icons.edit_outlined,
+        label: i18n.tr('segment_edit'),
+      ),
+      UnifiedMenuEntry.action(
+        value: () => run(widget.onToggleLoop),
+        icon: loopActive ? Icons.repeat_one_rounded : Icons.repeat_rounded,
+        label: i18n.tr(loopActive ? 'segment_stop_loop' : 'segment_menu_loop'),
+      ),
+      UnifiedMenuEntry.action(
+        value: () => run(widget.onDelete),
+        icon: Icons.delete_outline_rounded,
+        label: i18n.tr('remove'),
+        destructive: true,
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -96,11 +161,6 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
     final selected = widget.labels
         .where((label) => label.id == widget.selectedId)
         .firstOrNull;
-    final activeColor = Color(
-      selected?.colorValue ??
-          widget.draftColorValue ??
-          kTimeSegmentLabelPalette.first,
-    );
     final loopActive = selected != null && selected.id == widget.loopSegmentId;
     final mediaHeight = MediaQuery.sizeOf(context).height;
     final isPortrait =
@@ -109,9 +169,7 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
     final targetHeight = isPortrait
         ? max(420.0, min(560.0, mediaHeight * 0.54))
         : max(360.0, mediaHeight * 0.5 - 130.0);
-    const headerHeight = 38.0;
-    const headerGap = 12.0;
-    const pageTopInset = headerHeight + headerGap;
+    const pageTopInset = 12.0;
     const panelRadius = BorderRadius.only(
       topLeft: Radius.circular(19),
       topRight: Radius.circular(19),
@@ -119,9 +177,25 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
       bottomRight: Radius.circular(16),
     );
 
-    final content = Stack(
+    final content = Column(
       children: [
-        Positioned.fill(
+        ValueListenableBuilder<int>(
+          valueListenable: _pageIndex,
+          builder: (context, pageIndex, _) => SegmentPanelPageHeader(
+            pageIndex: pageIndex,
+            onSelected: _animateToPanelPage,
+            onClose: widget.onClose,
+            closeTooltip: i18n.tr('close'),
+            labels: [
+              i18n.tr('equalizer'),
+              i18n.tr('audio_features'),
+              i18n.tr('playback_speed'),
+              i18n.tr('audio_detail_tags'),
+              i18n.tr('volume_balance'),
+            ],
+          ),
+        ),
+        Expanded(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: ScrollActivityGate(
@@ -139,7 +213,6 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
                   widget.loading,
                   widget.draftStart,
                   widget.draftEnd,
-                  widget.draftColorValue,
                   widget.loopSegmentId,
                   pageTopInset,
                 ),
@@ -162,14 +235,11 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
                       playback: widget.playback,
                     ),
                   ),
-                  3 => Padding(
-                    padding: const EdgeInsets.only(top: pageTopInset),
-                    child: _buildSegmentPage(
-                      context,
-                      selected: selected,
-                      activeColor: activeColor,
-                      loopActive: loopActive,
-                    ),
+                  3 => _buildSegmentPage(
+                    context,
+                    selected: selected,
+                    loopActive: loopActive,
+                    topInset: pageTopInset,
                   ),
                   _ => Padding(
                     padding: const EdgeInsets.only(top: pageTopInset),
@@ -184,41 +254,20 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
             ),
           ),
         ),
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          height: headerHeight,
-          child: ValueListenableBuilder<int>(
-            valueListenable: _pageIndex,
-            builder: (context, pageIndex, _) => SegmentPanelPageHeader(
-              pageIndex: pageIndex,
-              onSelected: _animateToPanelPage,
-              onClose: widget.onClose,
-              closeTooltip: i18n.tr('close'),
-              labels: [
-                i18n.tr('equalizer'),
-                i18n.tr('audio_features'),
-                i18n.tr('playback_speed'),
-                i18n.tr('audio_detail_tags'),
-                i18n.tr('volume_balance'),
-              ],
-            ),
-          ),
-        ),
       ],
     );
     final panel = SizedBox(
       key: const ValueKey<String>('playback_expanded_control_panel'),
       height: targetHeight,
-      child: ClipRRect(
+      child: AppGlassSurface(
+        enabled: AppDesignTokens.of(context).barGlassEnabled,
+        backgroundColor: cs.surfaceContainerHigh.withValues(alpha: 0.9),
         borderRadius: panelRadius,
         child: DecoratedBox(
           key: const ValueKey<String>(
             'playback_expanded_control_panel_surface',
           ),
           decoration: BoxDecoration(
-            color: cs.surfaceContainerHigh.withValues(alpha: 0.9),
             borderRadius: panelRadius,
             border: Border.all(
               color: cs.outlineVariant.withValues(alpha: 0.55),
@@ -237,63 +286,78 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
   Widget _buildSegmentPage(
     BuildContext context, {
     required TimeSegmentLabel? selected,
-    required Color activeColor,
     required bool loopActive,
+    required double topInset,
   }) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    return SingleChildScrollView(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.paddingOf(context).bottom + 8,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(
-            height: 42,
+    final labelSize = theme.chipTheme.labelStyle?.fontSize ?? 14.0;
+    final chipRowHeight = max(
+      42.0,
+      MediaQuery.textScalerOf(context).scale(labelSize) + 24,
+    );
+
+    return ListView(
+      padding: EdgeInsets.only(top: topInset + 2),
+      children: [
+        SizedBox(
+          height: chipRowHeight,
           child: Row(
             children: [
               Expanded(
                 child: widget.loading
                     ? Align(
-                        alignment: Alignment.centerLeft,
-                        child: SizedBox(
-                          width: 22,
-                          height: 22,
+                        alignment: AlignmentDirectional.centerStart,
+                        child: SizedBox.square(
+                          dimension: 22,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: Theme.of(context).colorScheme.primary,
+                            color: cs.primary,
                           ),
                         ),
                       )
                     : WindowsHorizontalWheelScroll(
-                        builder: (scrollController) => ListView.separated(
-                          controller: scrollController,
+                        builder: (controller) => ListView.separated(
+                          controller: controller,
                           scrollDirection: Axis.horizontal,
                           physics: const ClampingScrollPhysics(),
                           itemCount: widget.labels.length,
                           separatorBuilder: (_, _) => const SizedBox(width: 8),
                           itemBuilder: (context, index) {
                             final label = widget.labels[index];
-                            return TimeSegmentChip(
-                              label: label,
-                              selected: label.id == widget.selectedId,
-                              onTap: () => widget.onSelect(label),
+                            return Center(
+                              key: ValueKey(label.id),
+                              child: UnifiedContextMenuRegion(
+                                shape: const StadiumBorder(),
+                                skipTraversal: true,
+                                openOnAndroidLongPress: true,
+                                buildEntries: () =>
+                                    _segmentMenuEntries(context, label),
+                                child: TimeSegmentChip(
+                                  label: label,
+                                  selected: label.id == widget.selectedId,
+                                  onTap: () => widget.onSelect(label),
+                                ),
+                              ),
                             );
                           },
                         ),
                       ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
               IconButton.filledTonal(
-                constraints: const BoxConstraints.tightFor(
-                  width: 40,
-                  height: 40,
+                style: appIconButtonStyle(
+                  IconButton.styleFrom(
+                    fixedSize: const Size.square(40),
+                    padding: EdgeInsets.zero,
+                    backgroundColor: cs.primary.withValues(alpha: 0.12),
+                    foregroundColor: cs.primary,
+                  ),
                 ),
-                padding: EdgeInsets.zero,
                 onPressed: widget.onAdd,
                 icon: const Icon(Icons.add_rounded),
                 tooltip: i18n.tr('segment_add'),
@@ -302,130 +366,83 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
           ),
         ),
         if (widget.showEditor) ...[
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              SegmentTimeRow(
-                label: i18n.tr('segment_start'),
-                value: widget.draftStart,
-                color: activeColor,
-                onSet: widget.onSetStart,
-                onEdit: widget.onEditStart,
+          const SizedBox(height: 12),
+          TextField(
+            contextMenuBuilder: buildAppEditableTextMenu,
+            controller: widget.nameController,
+            textInputAction: TextInputAction.done,
+            decoration: InputDecoration(
+              labelText: i18n.tr('segment_name'),
+              hintText: i18n.tr('segment_name_hint'),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
               ),
-              const SizedBox(width: 12),
-              SegmentTimeRow(
-                label: i18n.tr('segment_end'),
-                value: widget.draftEnd,
-                color: activeColor,
-                onSet: widget.onSetEnd,
-                onEdit: widget.onEditEnd,
-              ),
-            ],
+            ),
           ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  contextMenuBuilder: buildAppEditableTextMenu,
-                  controller: widget.nameController,
-                  textInputAction: TextInputAction.done,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                  decoration: InputDecoration(
-                    labelText: i18n.tr('segment_name'),
-                    hintText: i18n.tr('segment_name_hint'),
-                    filled: true,
-                    fillColor: Theme.of(context)
-                        .colorScheme
-                        .surfaceContainerHighest
-                        .withValues(alpha: 0.2),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 16,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(
-                        color: activeColor.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(
-                        color: activeColor.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: activeColor, width: 2),
+          const SizedBox(height: 12),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const gap = 10.0;
+              final width = constraints.maxWidth;
+              final textScale = MediaQuery.textScalerOf(context).scale(14) / 14;
+              final endpointWidth = width >= 320 * textScale
+                  ? (width - gap) / 2
+                  : width;
+              return Wrap(
+                spacing: gap,
+                runSpacing: gap,
+                children: [
+                  SizedBox(
+                    width: endpointWidth,
+                    child: SegmentTimeRow(
+                      label: i18n.tr('segment_start'),
+                      value: widget.draftStart,
+                      onSet: widget.onSetStart,
+                      onEdit: widget.onEditStart,
                     ),
                   ),
-                ),
-              ),
-            ],
+                  SizedBox(
+                    width: endpointWidth,
+                    child: SegmentTimeRow(
+                      label: i18n.tr('segment_end'),
+                      value: widget.draftEnd,
+                      onSet: widget.onSetEnd,
+                      onEdit: widget.onEditEnd,
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
           if (selected != null) ...[
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
-                  child: AppLabelledButton(
-                    FilledButton.tonalIcon,
-                    style: appButtonStyle(
-                      FilledButton.styleFrom(
-                        foregroundColor: loopActive
-                            ? activeColor
-                            : Theme.of(context).colorScheme.onSurface,
-                        backgroundColor: loopActive
-                            ? activeColor.withValues(alpha: 0.18)
-                            : Theme.of(context)
-                                  .colorScheme
-                                  .surfaceContainerHighest
-                                  .withValues(alpha: 0.28),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: const StadiumBorder(),
-                      ),
+                  child: FilledButton.tonal(
+                    style: sessionDetailResetButtonStyle(
+                      context,
+                      accent: loopActive ? cs.primary : cs.onSurfaceVariant,
                     ),
-                    onPressed: widget.onToggleLoop,
-                    icon: Icon(
-                      loopActive
-                          ? Icons.repeat_one_rounded
-                          : Icons.repeat_rounded,
-                    ),
-                    label: Text(
-                      i18n.tr('segment_loop'),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
+                    onPressed: () => widget.onToggleLoop(selected),
+                    child: Text(
+                      i18n.tr(
+                        loopActive ? 'segment_stop_loop' : 'segment_loop',
                       ),
+                      textAlign: TextAlign.center,
                     ),
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: AppLabelledButton(
-                    FilledButton.tonalIcon,
-                    style: appButtonStyle(
-                      FilledButton.styleFrom(
-                        foregroundColor: Theme.of(context).colorScheme.error,
-                        backgroundColor: Theme.of(
-                          context,
-                        ).colorScheme.errorContainer.withValues(alpha: 0.5),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: const StadiumBorder(),
-                      ),
+                  child: FilledButton.tonal(
+                    style: sessionDetailResetButtonStyle(
+                      context,
+                      accent: cs.error,
                     ),
-                    onPressed: widget.onDelete,
-                    icon: const Icon(Icons.delete_outline_rounded),
-                    label: Text(
-                      i18n.tr('remove'),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
-                      ),
-                    ),
+                    onPressed: () => widget.onDelete(selected),
+                    child: Text(i18n.tr('remove'), textAlign: TextAlign.center),
                   ),
                 ),
               ],
@@ -433,7 +450,6 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
           ],
         ],
       ],
-      ),
     ).withWindowsSmoothScroll();
   }
 }
@@ -456,16 +472,18 @@ class SegmentPanelPageHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return HeaderFloatingSurface(
+    return SizedBox(
+      height: 38,
       child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(19),
+        type: MaterialType.transparency,
         child: Row(
           children: [
             Expanded(
+              // Scrolled tabs end in a semicircle instead of a flat cut.
               child: ClipRRect(
-                key: const ValueKey<String>('console_tab_scroll_clip'),
-                borderRadius: BorderRadius.circular(19),
+                borderRadius: const BorderRadius.horizontal(
+                  right: Radius.circular(19),
+                ),
                 child: SegmentedCategoryPillStrip<int>(
                   items: List<int>.generate(labels.length, (index) => index),
                   selected: pageIndex,
@@ -515,6 +533,7 @@ class TimeSegmentChip extends StatelessWidget {
       context: context,
       androidPressHighlight: true,
       child: ActionChip(
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         mouseCursor: WidgetStateMouseCursor.clickable,
         onPressed: onTap,
         side: BorderSide(
@@ -526,13 +545,7 @@ class TimeSegmentChip extends StatelessWidget {
           platform: Theme.of(context).platform,
           background: color.withValues(alpha: selected ? 0.34 : 0.2),
         ),
-        label: Text(
-          label.name,
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            color: cs.onSurface,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
+        label: Text(label.name),
         shape: const StadiumBorder(),
       ),
     );
@@ -544,69 +557,59 @@ class SegmentTimeRow extends StatelessWidget {
     super.key,
     required this.label,
     required this.value,
-    required this.color,
     required this.onSet,
     required this.onEdit,
   });
 
   final String label;
   final Duration? value;
-  final Color color;
   final VoidCallback onSet;
   final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Expanded(
-      child: Container(
-        height: 52,
-        decoration: BoxDecoration(
-          color: cs.surfaceContainerHighest.withValues(alpha: 0.2),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withValues(alpha: 0.3)),
-        ),
-        child: Row(
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: FilledButton.tonal(
-                style: appButtonStyle(
-                  FilledButton.styleFrom(
-                    backgroundColor: color.withValues(alpha: 0.15),
-                    foregroundColor: color,
-                    minimumSize: const Size(48, 36),
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    shape: const StadiumBorder(),
-                  ),
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return Material(
+      color: cs.surfaceContainerHighest.withValues(alpha: 0.18),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.35)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        children: [
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 8),
+            child: FilledButton.tonal(
+              style: sessionDetailResetButtonStyle(context).copyWith(
+                minimumSize: const WidgetStatePropertyAll(Size(48, 36)),
+                padding: const WidgetStatePropertyAll(
+                  EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 ),
-                onPressed: onSet,
+              ),
+              onPressed: onSet,
+              child: Text(label),
+            ),
+          ),
+          Expanded(
+            child: AppEntryInkWell(
+              onTap: onEdit,
+              child: Container(
+                constraints: const BoxConstraints(minHeight: 52),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                alignment: Alignment.center,
                 child: Text(
-                  label,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-              ),
-            ),
-            Expanded(
-              child: InkWell(
-                mouseCursor: WidgetStateMouseCursor.clickable,
-                borderRadius: const BorderRadius.horizontal(
-                  right: Radius.circular(16),
-                ),
-                onTap: onEdit,
-                child: Center(
-                  child: Text(
-                    value == null ? '--:--' : formatDurationCompact(value!),
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: value == null ? cs.onSurfaceVariant : cs.onSurface,
-                      fontWeight: FontWeight.w800,
-                    ),
+                  value == null ? '--:--' : formatDurationCompact(value!),
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: value == null ? cs.onSurfaceVariant : cs.onSurface,
                   ),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

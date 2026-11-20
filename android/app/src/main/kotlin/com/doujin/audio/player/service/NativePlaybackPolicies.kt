@@ -184,18 +184,6 @@ internal fun shouldKeepAliveForIntendedPlayback(
         (!hasPlayerError || hasRecoverablePlaybackError)
 }
 
-internal fun shouldRecoverIntendedPlayback(
-    playbackState: Int,
-    hasPlayerError: Boolean,
-    hasRecoverablePlaybackError: Boolean = false
-): Boolean {
-    return shouldKeepAliveForIntendedPlayback(
-        playbackState = playbackState,
-        hasPlayerError = hasPlayerError,
-        hasRecoverablePlaybackError = hasRecoverablePlaybackError
-    )
-}
-
 internal fun playbackRecoveryDelayMs(
     attempt: Int,
     recoveryStartedElapsedRealtimeMs: Long,

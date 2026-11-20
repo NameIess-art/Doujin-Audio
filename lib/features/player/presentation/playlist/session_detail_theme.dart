@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../../../app/theme/app_design_tokens.dart';
+import '../../../../app/theme/theme_provider.dart';
 import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/cache/app_cache_service.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
@@ -267,6 +269,7 @@ class _SessionDetailThemeState extends State<SessionDetailTheme>
   @override
   Widget build(BuildContext context) {
     final base = Theme.of(context);
+    final pureBlack = AppDesignTokens.of(context).pureBlack;
     final queueColor = widget.queueColorValue;
     final inputs = (base, _scheme, queueColor);
     final snap = _snap || MediaQuery.disableAnimationsOf(context);
@@ -274,8 +277,13 @@ class _SessionDetailThemeState extends State<SessionDetailTheme>
       _themeInputs = inputs;
       // Reuse the complete theme: state-property callbacks use identity
       // equality, so recreating them would animate unchanged colors again.
-      final target = _scheme != null
-          ? _applyDetailColorScheme(base, _scheme!)
+      final effectiveCoverScheme = _scheme == null
+          ? null
+          : (pureBlack && base.brightness == Brightness.dark
+                ? applyPureBlackSurface(_scheme!)
+                : _scheme!);
+      final target = effectiveCoverScheme != null
+          ? _applyDetailColorScheme(base, effectiveCoverScheme)
           : queueColor != null
           ? createPlaybackQueueSessionDetailTheme(base, Color(queueColor))
           : base;
@@ -316,10 +324,7 @@ ThemeData _applyDetailColorScheme(ThemeData base, ColorScheme scheme) {
     hoverColor: appHoverTint(scheme),
     focusColor: scheme.primary.withValues(alpha: 0.12),
     splashColor: appPressedTint(scheme),
-    textTheme: base.textTheme.apply(
-      bodyColor: scheme.onSurface,
-      displayColor: scheme.onSurface,
-    ),
+    textTheme: applyAppTextThemeColors(base.textTheme, scheme),
     iconTheme: base.iconTheme.copyWith(color: scheme.onSurface),
     appBarTheme: base.appBarTheme.copyWith(
       backgroundColor: scheme.surface,
@@ -330,8 +335,8 @@ ThemeData _applyDetailColorScheme(ThemeData base, ColorScheme scheme) {
       shape: surfaceBorder(base.cardTheme.shape),
     ),
     bottomSheetTheme: base.bottomSheetTheme.copyWith(
-      backgroundColor: scheme.surfaceContainerLow,
-      modalBackgroundColor: scheme.surfaceContainerLow,
+      backgroundColor: scheme.surfaceContainerHigh,
+      modalBackgroundColor: scheme.surfaceContainerHigh,
       dragHandleColor: scheme.onSurfaceVariant.withValues(alpha: 0.42),
       shape: surfaceBorder(base.bottomSheetTheme.shape),
     ),
@@ -350,7 +355,7 @@ ThemeData _applyDetailColorScheme(ThemeData base, ColorScheme scheme) {
       shape: surfaceBorder(base.popupMenuTheme.shape),
     ),
     snackBarTheme: base.snackBarTheme.copyWith(
-      backgroundColor: scheme.surfaceContainerLow,
+      backgroundColor: scheme.surfaceContainerHigh,
       contentTextStyle: base.snackBarTheme.contentTextStyle?.copyWith(
         color: scheme.onSurface,
       ),
@@ -514,6 +519,23 @@ BoxDecoration sessionDetailPlayButtonDecoration(
   );
 }
 
+Color _ensureReadableQueueAccent(Color queueColor, Color surface) {
+  if (appColorContrastRatio(queueColor, surface) >= 2.0) return queueColor;
+  final isDarkSurface =
+      ThemeData.estimateBrightnessForColor(surface) == Brightness.dark;
+  final hsl = HSLColor.fromColor(queueColor);
+  for (var step = 1; step <= 16; step++) {
+    final targetLightness = isDarkSurface
+        ? (hsl.lightness + step * 0.05).clamp(0.0, 0.88)
+        : (hsl.lightness - step * 0.05).clamp(0.16, 1.0);
+    final candidate = hsl.withLightness(targetLightness).toColor();
+    if (appColorContrastRatio(candidate, surface) >= 3.5) {
+      return candidate;
+    }
+  }
+  return isDarkSurface ? const Color(0xFFD0D4DC) : const Color(0xFF3A3F4B);
+}
+
 ThemeData createPlaybackQueueSessionDetailTheme(
   ThemeData base,
   Color queueColor,
@@ -521,21 +543,37 @@ ThemeData createPlaybackQueueSessionDetailTheme(
   final generated = ColorScheme.fromSeed(
     seedColor: queueColor,
     brightness: base.brightness,
+    dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
   );
-  final onQueueColor =
-      ThemeData.estimateBrightnessForColor(queueColor) == Brightness.dark
-      ? Colors.white
-      : const Color(0xFF1B1B1F);
+  final accent = _ensureReadableQueueAccent(
+    queueColor,
+    base.colorScheme.surface,
+  );
+  Color onAccent = generated.onPrimary;
+  if (appColorContrastRatio(onAccent, accent) < 4.5) {
+    const darkInk = Color(0xFF1B1B1F);
+    final bestDark =
+        appColorContrastRatio(darkInk, accent) >= 4.5 ? darkInk : Colors.black;
+    onAccent =
+        appColorContrastRatio(bestDark, accent) >=
+            appColorContrastRatio(Colors.white, accent)
+        ? bestDark
+        : Colors.white;
+  }
   final scheme = base.colorScheme.copyWith(
-    primary: queueColor,
-    onPrimary: onQueueColor,
+    primary: accent,
+    onPrimary: onAccent,
     primaryContainer: generated.primaryContainer,
     onPrimaryContainer: generated.onPrimaryContainer,
-    secondary: queueColor,
-    onSecondary: onQueueColor,
-    secondaryContainer: generated.primaryContainer,
-    onSecondaryContainer: generated.onPrimaryContainer,
-    surfaceTint: queueColor,
+    secondary: generated.secondary,
+    onSecondary: generated.onSecondary,
+    secondaryContainer: generated.secondaryContainer,
+    onSecondaryContainer: generated.onSecondaryContainer,
+    tertiary: generated.tertiary,
+    onTertiary: generated.onTertiary,
+    tertiaryContainer: generated.tertiaryContainer,
+    onTertiaryContainer: generated.onTertiaryContainer,
+    surfaceTint: accent,
   );
   return _applyDetailColorScheme(base, scheme);
 }

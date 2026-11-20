@@ -40,8 +40,7 @@ internal data class NativePrepareSessionArguments(
             audioEffects.noiseReductionEnabled, audioEffects.eqEnabled, audioEffects.eqPresetId,
             audioEffects.eqBandLevels, audioEffects.volumeNormalizationEnabled, audioEffects.panning,
             repeatOne, repeatAll, shuffle, queueStartIndex,
-            items.map { StoredNativePlaybackQueueItem(it.path, it.uri, it.title, it.subtitle,
-                it.artUri, it.candidateUris, it.usageDescriptor, it.clipStartMs, it.clipEndMs, it.httpHeaders) }, audioEffects.channelSwapEnabled,
+            NativePlaybackQueue(items).storedItems, audioEffects.channelSwapEnabled,
             playing = false, playWhenReady = false, isTemporary = isTemporary,
             frontBack = audioEffects.frontBack
         )
@@ -194,7 +193,12 @@ internal object NativePlaybackCommandPayloads {
                         key to value
                     }
                 } ?: emptyMap(),
-                usageDescriptor = (rawItem["usageDescriptor"] as? Map<*, *>)?.entries?.associate { (key, value) -> key.toString() to value }
+                usageDescriptor = (rawItem["usageDescriptor"] as? Map<*, *>)?.entries?.associate { (key, value) -> key.toString() to value },
+                playOnceBeforeQueue = if (rawItem.containsKey("playOnceBeforeQueue")) {
+                    rawItem.requiredBoolean("playOnceBeforeQueue").also {
+                        require(!it || index == 0) { "The one-time item must lead the queue." }
+                    }
+                } else false
             ).withPlaybackCandidateUris(parseCandidateUris(rawItem["candidateUris"]))
         }
     }

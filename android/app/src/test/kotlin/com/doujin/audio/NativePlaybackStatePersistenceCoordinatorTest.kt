@@ -137,6 +137,40 @@ class NativePlaybackStatePersistenceCoordinatorTest {
     }
 
     @Test
+    fun `twelve hours of screen off checkpoints write progress at most once per minute`() {
+        val hourMs = 60 * 60 * 1000L
+        val minuteMs = 60_000L
+        val environment = FakeStatePersistenceEnvironment()
+        var elapsedMs = 0L
+        val coordinator = NativePlaybackStatePersistenceCoordinator(
+            environment = environment,
+            intervalMs = 15_000L,
+            debounceMs = 800L,
+            hasSessions = { true },
+            hasActivePlayback = { true },
+            storedSessions = { listOf(storedSession(elapsedMs).copy(playing = true, playWhenReady = true)) },
+            screenOffIntervalMs = minuteMs,
+            isScreenInteractive = { false }
+        )
+        coordinator.persistNow()
+        environment.runBackgroundTasks()
+        coordinator.ensureTicker()
+
+        while (elapsedMs < 12 * hourMs) {
+            val (checkpoint, delayMs) = environment.delayedTasks.entries.single()
+            assertEquals(minuteMs, delayMs)
+            elapsedMs += delayMs
+            environment.delayedTasks.remove(checkpoint)
+            checkpoint.run()
+            environment.runBackgroundTasks()
+        }
+
+        assertEquals(1, environment.savedSessions.size)
+        assertEquals(720, environment.savedProgress.size)
+        assertEquals(12 * hourMs, environment.storedDefinitions.single().positionMs)
+    }
+
+    @Test
     fun `progress overlay wins over the structural snapshot on restore`() {
         val stored = storedSession(positionMs = 1_000L)
 

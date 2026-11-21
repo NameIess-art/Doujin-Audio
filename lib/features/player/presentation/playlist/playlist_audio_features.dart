@@ -628,6 +628,9 @@ class EqualizerPage extends ConsumerWidget {
             AppInteractionFeedback.trigger(
               AppInteractionFeedbackType.selection,
             );
+            if (!eqEnabled) {
+              unawaited(playback.setSessionEqEnabled(session.id, true));
+            }
             unawaited(playback.applySessionEqPreset(session.id, preset));
           },
         ),
@@ -839,6 +842,16 @@ class _EqBandSliderState extends State<EqBandSlider> {
     }
   }
 
+  void _resetToZero() {
+    final onChanged = widget.onChanged;
+    if (onChanged == null) return;
+    final zeroValue = 0.0.clamp(widget.min, widget.max);
+    _dragging = false;
+    setState(() => _dragValue = zeroValue);
+    onChanged(zeroValue);
+    widget.onChangeEnd?.call(zeroValue);
+  }
+
   @override
   Widget build(BuildContext context) {
     final activeValue = (_dragValue ?? widget.value).clamp(
@@ -885,11 +898,18 @@ class _EqBandSliderState extends State<EqBandSlider> {
                   },
           ),
         ),
-        SizedBox(
-          width: 54,
-          child: Text(
-            '${activeValue.toStringAsFixed(1)} dB',
-            textAlign: TextAlign.end,
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onChanged == null ? null : _resetToZero,
+          child: SizedBox(
+            width: 54,
+            child: Text(
+              '${activeValue.toStringAsFixed(1)} dB',
+              textAlign: TextAlign.end,
+              style: const TextStyle(
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
           ),
         ),
       ],

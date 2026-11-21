@@ -36,11 +36,33 @@ class DlsiteMetadataBatchResultsPage extends ConsumerStatefulWidget {
 class _DlsiteMetadataBatchResultsPageState
     extends ConsumerState<DlsiteMetadataBatchResultsPage> {
   bool _savingAll = false;
+  late Map<String, int> _itemIndexByKey;
 
   @override
   void initState() {
     super.initState();
+    _rebuildItemIndexMap();
     widget.session.start();
+  }
+
+  @override
+  void didUpdateWidget(covariant DlsiteMetadataBatchResultsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.session, widget.session)) {
+      _rebuildItemIndexMap();
+    }
+  }
+
+  void _rebuildItemIndexMap() {
+    final items = widget.session.items;
+    _itemIndexByKey = <String, int>{
+      for (var i = 0; i < items.length; i++) ...{
+        'batch_metadata_swipe_${AudioLibraryCategorySnapshot.targetKey(items[i].entry.target)}':
+            i,
+        'batch_metadata_context_${AudioLibraryCategorySnapshot.targetKey(items[i].entry.target)}':
+            i,
+      },
+    };
   }
 
   @override
@@ -130,9 +152,17 @@ class _DlsiteMetadataBatchResultsPageState
                                 MobileOverlayInset.of(context),
                           ),
                           itemCount: items.length,
+                          findChildIndexCallback: (key) =>
+                              key is ValueKey<String>
+                              ? _itemIndexByKey[key.value]
+                              : null,
                           itemBuilder: (context, index) {
                         final item = items[index];
                         final entry = item.entry;
+                        final targetKey =
+                            AudioLibraryCategorySnapshot.targetKey(
+                              entry.target,
+                            );
                         final title = entry.detail.workTitle.isNotEmpty
                             ? entry.detail.workTitle
                             : entry.title;
@@ -144,89 +174,60 @@ class _DlsiteMetadataBatchResultsPageState
                           if (!_savingAll) widget.session.toggleExcluded(index);
                         }
 
-                        Widget row = ColorFiltered(
-                          colorFilter: isExcluded
-                              ? const ColorFilter.matrix(<double>[
-                                  0.2126,
-                                  0.7152,
-                                  0.0722,
-                                  0,
-                                  0,
-                                  0.2126,
-                                  0.7152,
-                                  0.0722,
-                                  0,
-                                  0,
-                                  0.2126,
-                                  0.7152,
-                                  0.0722,
-                                  0,
-                                  0,
-                                  0,
-                                  0,
-                                  0,
-                                  1,
-                                  0,
-                                ])
-                              : const ColorFilter.mode(
-                                  Colors.transparent,
-                                  BlendMode.dst,
-                                ),
-                          child: Opacity(
-                            opacity: isExcluded ? 0.38 : 1.0,
-                            child: FileTreeRow(
-                              key: ValueKey<String>(
-                                'batch_metadata_result_$index',
-                              ),
-                              minHeight: 48,
-                              verticalPadding: 2,
-                              reserveSubtitleSpace: true,
-                              title: title,
-                              titleColor: isExcluded
-                                  ? cs.onSurface.withValues(alpha: 0.38)
-                                  : null,
-                              subtitle: entry.detail.rjCode.isEmpty
-                                  ? null
-                                  : entry.detail.rjCode,
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  _BatchMetadataStatusIcon(
-                                    key: ValueKey<String>(
-                                      'batch_metadata_status_$index',
-                                    ),
-                                    status: item.status,
-                                    isExcluded: isExcluded,
-                                  ),
-                                  if (isWindows)
-                                    IconButton(
-                                      key: ValueKey<String>(
-                                        'batch_metadata_exclude_$index',
-                                      ),
-                                      tooltip: i18n.tr(
-                                        isExcluded
-                                            ? 'batch_metadata_action_restore'
-                                            : 'batch_metadata_action_exclude',
-                                      ),
-                                      onPressed: _savingAll
-                                          ? null
-                                          : toggleExcluded,
-                                      icon: Icon(
-                                        isExcluded
-                                            ? Icons.undo_rounded
-                                            : Icons.block_rounded,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                              onTap: isExcluded
-                                  ? null
-                                  : () => _handleItemTap(index),
+                        Widget row = Opacity(
+                          opacity: isExcluded ? 0.38 : 1.0,
+                          child: FileTreeRow(
+                            key: ValueKey<String>(
+                              'batch_metadata_result_$index',
                             ),
+                            minHeight: 48,
+                            verticalPadding: 2,
+                            reserveSubtitleSpace: true,
+                            title: title,
+                            subtitle: entry.detail.rjCode.isEmpty
+                                ? null
+                                : entry.detail.rjCode,
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _BatchMetadataStatusIcon(
+                                  key: ValueKey<String>(
+                                    'batch_metadata_status_$index',
+                                  ),
+                                  status: item.status,
+                                  isExcluded: isExcluded,
+                                ),
+                                if (isWindows)
+                                  IconButton(
+                                    key: ValueKey<String>(
+                                      'batch_metadata_exclude_$index',
+                                    ),
+                                    tooltip: i18n.tr(
+                                      isExcluded
+                                          ? 'batch_metadata_action_restore'
+                                          : 'batch_metadata_action_exclude',
+                                    ),
+                                    onPressed: _savingAll
+                                        ? null
+                                        : toggleExcluded,
+                                    icon: Icon(
+                                      isExcluded
+                                          ? Icons.undo_rounded
+                                          : Icons.block_rounded,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            onTap: isExcluded
+                                ? null
+                                : () => _handleItemTap(index),
                           ),
                         );
                         if (isWindows) {
                           return UnifiedContextMenuRegion(
+                            key: ValueKey<String>(
+                              'batch_metadata_context_$targetKey',
+                            ),
                             enabled: !_savingAll,
                             shape: const RoundedRectangleBorder(
                               borderRadius: FileTreeRow.borderRadius,
@@ -269,7 +270,7 @@ class _DlsiteMetadataBatchResultsPageState
                         );
                         return SwipeRevealCard(
                           key: ValueKey<String>(
-                            'batch_metadata_swipe_${AudioLibraryCategorySnapshot.targetKey(entry.target)}',
+                            'batch_metadata_swipe_$targetKey',
                           ),
                           enabled: !_savingAll,
                           shape: const RoundedRectangleBorder(
@@ -487,8 +488,10 @@ class _RotatingBatchMetadataStatusIconState
   }
 
   @override
-  Widget build(BuildContext context) => RotationTransition(
-    turns: _controller,
-    child: Icon(Icons.autorenew_rounded, color: widget.color, size: 22),
+  Widget build(BuildContext context) => RepaintBoundary(
+    child: RotationTransition(
+      turns: _controller,
+      child: Icon(Icons.autorenew_rounded, color: widget.color, size: 22),
+    ),
   );
 }

@@ -588,38 +588,41 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
     final bottomInset = AppSearchPageScaffold.contentBottomInset(context);
     final resultsBody = _submittedQuery == null
         ? null
-        : AppFadeThroughIndexedStack.lazy(
-            key: const ValueKey<String>('asmr_search_category_stack'),
-            indexListenable: _activeCategoryIndex,
-            itemCount: kAsmrSelectableCategories.length,
-            contentRevision: (
-              _query,
-              _filters,
-              i18n.language,
-              _showSearchPlaceholder,
-              topInset,
-              bottomInset,
+        : PageHeaderInset(
+            topInset: topInset,
+            child: AppFadeThroughIndexedStack.lazy(
+              key: const ValueKey<String>('asmr_search_category_stack'),
+              indexListenable: _activeCategoryIndex,
+              itemCount: kAsmrSelectableCategories.length,
+              contentRevision: (
+                _query,
+                _filters,
+                i18n.language,
+                _showSearchPlaceholder,
+                topInset,
+                bottomInset,
+              ),
+              itemBuilder: (context, index) {
+                final category = kAsmrSelectableCategories[index];
+                return _AsmrCategoryList(
+                  key: ValueKey<String>('asmr_search_${category.name}'),
+                  isActive: () => category == _category,
+                  isPageActive: () => _submittedQuery != null,
+                  category: category,
+                  isLoadPending: _showSearchPlaceholder,
+                  scrollController: _scrollControllers[category]!,
+                  searchQuery: _query,
+                  filters: _filters,
+                  searchSession: true,
+                  topInset: topInset,
+                  bottomInset: bottomInset,
+                  onRefresh: () => _refresh(force: true),
+                  selectionListenable: _selectionListenable,
+                  onEnterSelectionMode: _enterSelectionMode,
+                  onToggleSelection: _toggleWorkSelection,
+                );
+              },
             ),
-            itemBuilder: (context, index) {
-              final category = kAsmrSelectableCategories[index];
-              return _AsmrCategoryList(
-                key: ValueKey<String>('asmr_search_${category.name}'),
-                isActive: () => category == _category,
-                isPageActive: () => _submittedQuery != null,
-                category: category,
-                isLoadPending: _showSearchPlaceholder,
-                scrollController: _scrollControllers[category]!,
-                searchQuery: _query,
-                filters: _filters,
-                searchSession: true,
-                topInset: topInset,
-                bottomInset: bottomInset,
-                onRefresh: () => _refresh(force: true),
-                selectionListenable: _selectionListenable,
-                onEnterSelectionMode: _enterSelectionMode,
-                onToggleSelection: _toggleWorkSelection,
-              );
-            },
           );
     final page = ValueListenableBuilder<int>(
       valueListenable: _activeCategoryIndex,

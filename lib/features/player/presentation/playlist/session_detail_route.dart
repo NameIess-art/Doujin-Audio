@@ -286,11 +286,7 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
     _startFlight(source, sourceBounds, detail, detailBounds, image.clone());
   }
 
-  void _prepareCoverExit() {
-    final detail = detailCoverKey.currentState;
-    final detailBounds = detail?.bounds();
-    final image = detail?.decodedImage;
-    if (detail == null || detailBounds == null || image == null) return;
+  SessionCoverAnchorState? _findCoverExitTarget() {
     final source = _source;
     final mountedSource = source?.mounted == true ? source : null;
     final candidates = {
@@ -305,16 +301,38 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
       if (!target.mounted || target.widget.sessionId != sessionId) continue;
       final bounds = target.bounds();
       if (bounds == null || target.decodedImage == null) continue;
-      _startFlight(
-        detail,
-        detailBounds,
-        target,
-        bounds,
-        image.clone(),
-        reverse: true,
-      );
-      break;
+      return target;
     }
+    return null;
+  }
+
+  bool canRunCoverExitFlight() {
+    if (_reducedMotion || requiresPortraitRestore) return false;
+    final detail = detailCoverKey.currentState;
+    if (detail == null ||
+        detail.decodedImage == null ||
+        detail.bounds() == null) {
+      return false;
+    }
+    return _findCoverExitTarget() != null;
+  }
+
+  void _prepareCoverExit() {
+    final detail = detailCoverKey.currentState;
+    final detailBounds = detail?.bounds();
+    final image = detail?.decodedImage;
+    if (detail == null || detailBounds == null || image == null) return;
+    final target = _findCoverExitTarget();
+    final bounds = target?.bounds();
+    if (target == null || bounds == null) return;
+    _startFlight(
+      detail,
+      detailBounds,
+      target,
+      bounds,
+      image.clone(),
+      reverse: true,
+    );
   }
 
   Iterable<SessionCoverAnchorState> _targetsAt(SessionCoverLocation location) =>

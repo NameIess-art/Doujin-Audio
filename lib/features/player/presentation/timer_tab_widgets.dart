@@ -201,7 +201,11 @@ class _TimerSummaryChip extends StatelessWidget {
                   (compact
                           ? Theme.of(context).textTheme.labelSmall
                           : Theme.of(context).textTheme.labelMedium)
-                      ?.copyWith(color: fg, fontWeight: FontWeight.w700),
+                      ?.copyWith(
+                        color: fg,
+                        fontWeight: FontWeight.w700,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
             ),
           ),
         ],

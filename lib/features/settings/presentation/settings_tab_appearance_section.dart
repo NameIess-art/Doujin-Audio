@@ -378,14 +378,20 @@ class _ThemeColorPickerMenu extends StatefulWidget {
 
 class _ThemeColorPickerMenuState extends State<_ThemeColorPickerMenu> {
   late bool _customExpanded;
-  late HSLColor _draftHsl;
+  late final ValueNotifier<HSLColor> _draftHsl;
 
   @override
   void initState() {
     super.initState();
     _customExpanded = widget.customColor != null && !widget.useSystemAccent;
     final initial = widget.customColor ?? widget.selected.primaryColor;
-    _draftHsl = HSLColor.fromColor(initial);
+    _draftHsl = ValueNotifier<HSLColor>(HSLColor.fromColor(initial));
+  }
+
+  @override
+  void dispose() {
+    _draftHsl.dispose();
+    super.dispose();
   }
 
   @override
@@ -397,13 +403,6 @@ class _ThemeColorPickerMenuState extends State<_ThemeColorPickerMenu> {
         widget.customColor != null && !widget.useSystemAccent;
     final hasSystemActive =
         widget.useSystemAccent && widget.systemAccentColor != null;
-    final draftColor = _draftHsl.toColor();
-    final draftScheme = buildAppColorScheme(
-      seedColor: draftColor,
-      brightness: theme.brightness,
-    );
-    final hexCode =
-        '#${(draftColor.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
 
     return AppDialog(
       key: const ValueKey<String>('theme_color_dialog'),
@@ -497,119 +496,137 @@ class _ThemeColorPickerMenuState extends State<_ThemeColorPickerMenu> {
             ),
             const SizedBox(height: 4),
           ],
-          _ThemeColorOptionRow(
-            key: const ValueKey<String>('theme_color_custom_toggle'),
-            label: widget.i18n.tr('theme_color_custom'),
-            previewColor: draftScheme.primary,
-            selected: hasCustomActive,
-            trailingIcon: _customExpanded
-                ? Icons.expand_less_rounded
-                : Icons.expand_more_rounded,
-            onTap: () => setState(() => _customExpanded = !_customExpanded),
-          ),
-          if (_customExpanded) ...[
-            const SizedBox(height: 8),
-            Container(
-              key: const ValueKey<String>('theme_color_custom_editor'),
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-              decoration: BoxDecoration(
-                color: cs.surfaceContainer,
-                borderRadius: BorderRadius.circular(tokens.radiusCard),
-                border: Border.all(
-                  color: cs.outlineVariant.withValues(
-                    alpha: tokens.subtleBorderAlpha,
-                  ),
-                ),
-              ),
-              child: Column(
+          ValueListenableBuilder<HSLColor>(
+            valueListenable: _draftHsl,
+            builder: (context, draftHsl, _) {
+              final draftColor = draftHsl.toColor();
+              final draftScheme = buildAppColorScheme(
+                seedColor: draftColor,
+                brightness: theme.brightness,
+              );
+              final hexCode =
+                  '#${(draftColor.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
+              return Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          color: draftScheme.primary,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: cs.outlineVariant.withValues(alpha: 0.7),
+                  _ThemeColorOptionRow(
+                    key: const ValueKey<String>('theme_color_custom_toggle'),
+                    label: widget.i18n.tr('theme_color_custom'),
+                    previewColor: draftScheme.primary,
+                    selected: hasCustomActive,
+                    trailingIcon: _customExpanded
+                        ? Icons.expand_less_rounded
+                        : Icons.expand_more_rounded,
+                    onTap: () =>
+                        setState(() => _customExpanded = !_customExpanded),
+                  ),
+                  if (_customExpanded) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      key: const ValueKey<String>('theme_color_custom_editor'),
+                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                      decoration: BoxDecoration(
+                        color: cs.surfaceContainer,
+                        borderRadius: BorderRadius.circular(tokens.radiusCard),
+                        border: Border.all(
+                          color: cs.outlineVariant.withValues(
+                            alpha: tokens.subtleBorderAlpha,
                           ),
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      Text(
-                        hexCode,
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: cs.onSurface,
-                        ),
-                      ),
-                      const Spacer(),
-                      AppSurfaceButtonShell(
-                        enabled: true,
-                        builder: (context, _) => FilledButton(
-                          key: const ValueKey<String>(
-                            'theme_color_custom_apply',
-                          ),
-                          onPressed: () =>
-                              widget.onCustomColorSelected(draftColor),
-                          style: appSurfaceButtonStyle(
-                            style: FilledButton.styleFrom(
-                              minimumSize: const Size(72, 36),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 28,
+                                height: 28,
+                                decoration: BoxDecoration(
+                                  color: draftScheme.primary,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: cs.outlineVariant.withValues(
+                                      alpha: 0.7,
+                                    ),
+                                  ),
+                                ),
                               ),
-                              backgroundColor: draftScheme.primary,
-                              foregroundColor: draftScheme.onPrimary,
-                            ),
-                            colorScheme: draftScheme,
-                            platform: theme.platform,
-                            defaultBackgroundColor: draftScheme.primary,
-                            animationDuration:
-                                MediaQuery.disableAnimationsOf(context)
-                                ? Duration.zero
-                                : const Duration(milliseconds: 130),
+                              const SizedBox(width: 10),
+                              Text(
+                                hexCode,
+                                style: theme.textTheme.labelLarge?.copyWith(
+                                  color: cs.onSurface,
+                                ),
+                              ),
+                              const Spacer(),
+                              AppSurfaceButtonShell(
+                                enabled: true,
+                                builder: (context, _) => FilledButton(
+                                  key: const ValueKey<String>(
+                                    'theme_color_custom_apply',
+                                  ),
+                                  onPressed: () =>
+                                      widget.onCustomColorSelected(draftColor),
+                                  style: appSurfaceButtonStyle(
+                                    style: FilledButton.styleFrom(
+                                      minimumSize: const Size(72, 36),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                      ),
+                                      backgroundColor: draftScheme.primary,
+                                      foregroundColor: draftScheme.onPrimary,
+                                    ),
+                                    colorScheme: draftScheme,
+                                    platform: theme.platform,
+                                    defaultBackgroundColor: draftScheme.primary,
+                                    animationDuration:
+                                        MediaQuery.disableAnimationsOf(context)
+                                        ? Duration.zero
+                                        : const Duration(milliseconds: 130),
+                                  ),
+                                  child: Text(widget.i18n.tr('confirm')),
+                                ),
+                              ),
+                            ],
                           ),
-                          child: Text(widget.i18n.tr('confirm')),
-                        ),
+                          const SizedBox(height: 6),
+                          _HslColorSliderRow(
+                            label: widget.i18n.tr('theme_color_hue'),
+                            value: draftHsl.hue,
+                            min: 0,
+                            max: 360,
+                            activeColor: draftScheme.primary,
+                            onChanged: (hue) =>
+                                _draftHsl.value = draftHsl.withHue(hue),
+                          ),
+                          _HslColorSliderRow(
+                            label: widget.i18n.tr('theme_color_saturation'),
+                            value: draftHsl.saturation,
+                            min: 0.1,
+                            max: 1.0,
+                            activeColor: draftScheme.primary,
+                            onChanged: (sat) =>
+                                _draftHsl.value = draftHsl.withSaturation(sat),
+                          ),
+                          _HslColorSliderRow(
+                            label: widget.i18n.tr('theme_color_lightness'),
+                            value: draftHsl.lightness,
+                            min: 0.25,
+                            max: 0.85,
+                            activeColor: draftScheme.primary,
+                            onChanged: (light) =>
+                                _draftHsl.value = draftHsl.withLightness(light),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  _HslColorSliderRow(
-                    label: widget.i18n.tr('theme_color_hue'),
-                    value: _draftHsl.hue,
-                    min: 0,
-                    max: 360,
-                    activeColor: draftScheme.primary,
-                    onChanged: (hue) => setState(
-                      () => _draftHsl = _draftHsl.withHue(hue),
                     ),
-                  ),
-                  _HslColorSliderRow(
-                    label: widget.i18n.tr('theme_color_saturation'),
-                    value: _draftHsl.saturation,
-                    min: 0.1,
-                    max: 1.0,
-                    activeColor: draftScheme.primary,
-                    onChanged: (sat) => setState(
-                      () => _draftHsl = _draftHsl.withSaturation(sat),
-                    ),
-                  ),
-                  _HslColorSliderRow(
-                    label: widget.i18n.tr('theme_color_lightness'),
-                    value: _draftHsl.lightness,
-                    min: 0.25,
-                    max: 0.85,
-                    activeColor: draftScheme.primary,
-                    onChanged: (light) => setState(
-                      () => _draftHsl = _draftHsl.withLightness(light),
-                    ),
-                  ),
+                  ],
                 ],
-              ),
-            ),
-          ],
+              );
+            },
+          ),
         ],
       ),
     );

@@ -722,12 +722,6 @@ class _PlaybackQueueAudioEditPageState
                         return null;
                       }
                       final sourceId = idAt(oldIndex);
-                      final sourceKind = requiresLoad
-                          ? previews[oldIndex].kind
-                          : queueEntries[oldIndex].kind;
-                      if (sourceKind != PlaybackQueueEntryKind.work) {
-                        return null;
-                      }
                       final afterLast = newIndex == rowCount;
                       final targetId = idAt(
                         afterLast ? newIndex - 1 : newIndex,
@@ -1045,11 +1039,9 @@ class _PlaybackQueueAudioEditPageState
                                         entry.kind ==
                                         PlaybackQueueEntryKind.work;
                                     final dragIndex =
-                                        isFolder &&
-                                            !(requiresLoad &&
-                                                _savingRestoredDrop)
-                                        ? index
-                                        : null;
+                                        requiresLoad && _savingRestoredDrop
+                                        ? null
+                                        : index;
                                     final expanded =
                                         tree != null &&
                                         !draggingThis &&
@@ -2511,7 +2503,9 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
             workRootPath: work?.path,
             folderCoverPath: work?.path,
             subtitle: track.isSingle ? null : track.displayName,
-            count: tree?.tracks.length ?? work?.totalTrackCount,
+            count: track.isSingle
+                ? 1
+                : tree?.tracks.length ?? work?.totalTrackCount,
             expanded: tree != null && !_treeMotion.isClosingRoot(id),
             loading: _loading.containsKey(id) && tree == null,
             toggle: track.isSingle
@@ -2694,15 +2688,16 @@ class _QueueAudioRowState extends ConsumerState<_QueueAudioRow> {
     final tile = FileTreeRow(
       availableWidth: widget.availableWidth,
       title: resolvedTitle,
-      subtitle: widget.folder && widget.count != null
+      subtitle: widget.count != null
           ? i18n.tr('audio_count', {'count': widget.count})
           : widget.subtitle,
       depth: widget.depth,
-      minHeight: root && widget.folder ? 64 : _queueChildRowMinHeight,
+      minHeight: root ? 64 : _queueChildRowMinHeight,
       titleMaxLines: !root && widget.folder ? 1 : 2,
-      verticalPadding: root && widget.folder ? 4 : 2,
-      reserveSubtitleSpace: widget.folder,
+      verticalPadding: root ? 4 : 2,
+      reserveSubtitleSpace: root || widget.folder,
       isFolder: widget.folder,
+      compactTitle: root ? false : null,
       onTap: widget.toggle == null ? null : _handleToggle,
       titleColor: widget.expanded ? cs.primary : null,
       leading: root
@@ -2743,9 +2738,11 @@ class _QueueAudioRowState extends ConsumerState<_QueueAudioRow> {
               ),
             ),
           ),
-          if (widget.folder) ...[
+          if (root || widget.folder) ...[
             const SizedBox(width: 2),
-            if (widget.loading)
+            if (!widget.folder)
+              const SizedBox(width: 20)
+            else if (widget.loading)
               const SizedBox.square(
                 dimension: 20,
                 child: CircularProgressIndicator(strokeWidth: 2),

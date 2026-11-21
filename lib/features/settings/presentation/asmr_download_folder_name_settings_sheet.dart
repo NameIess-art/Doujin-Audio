@@ -10,7 +10,6 @@ import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
-import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../asmr/domain/asmr_download.dart';
@@ -184,32 +183,14 @@ class _AsmrDownloadFolderNameSettingsSheetState
                   contentPadding: EdgeInsets.zero,
                 ),
               const SizedBox(height: 8),
-              SizedBox(
+              AppBottomSheetActions(
                 key: const ValueKey('asmr_download_folder_name_actions'),
-                width: double.infinity,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextButton(
-                      key: const ValueKey('asmr_download_folder_name_cancel'),
-                      onPressed: _saving
-                          ? null
-                          : () => Navigator.of(context).pop(),
-                      child: Text(i18n.tr('cancel')),
-                    ),
-                    const SizedBox(width: 8),
-                    AppPillButton(
-                      key: const ValueKey('asmr_download_folder_name_confirm'),
-                      onPressed: _saving ? null : _confirm,
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size(72, 40),
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                      ),
-                      child: Text(i18n.tr('confirm')),
-                    ),
-                  ],
-                ),
+                cancelKey: const ValueKey('asmr_download_folder_name_cancel'),
+                confirmKey: const ValueKey('asmr_download_folder_name_confirm'),
+                cancelLabel: i18n.tr('cancel'),
+                confirmLabel: i18n.tr('confirm'),
+                onCancel: _saving ? null : () => Navigator.of(context).pop(),
+                onConfirm: _saving ? null : _confirm,
               ),
             ],
           ).withWindowsSmoothScroll(),

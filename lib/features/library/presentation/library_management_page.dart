@@ -100,40 +100,66 @@ class _LibraryManagementPageState extends ConsumerState<LibraryManagementPage> {
                         itemCount: visibleLibraries.length,
                         itemBuilder: (context, index) {
                           final libraryPath = visibleLibraries[index];
-                          return FileTreeRow(
-                            surfaceKey: ValueKey(
-                              'library-management-surface:$libraryPath',
-                            ),
-                            title: PathDisplay.folderName(libraryPath),
-                            subtitle: PathDisplay.displayPathFor(libraryPath),
-                            subtitleMaxLines: 2,
-                            minHeight: 64,
-                            verticalPadding: 2,
-                            isFolder: true,
-                            leading: Icon(
-                              AppDesignTokens.folderIcon,
-                              size: AppDesignTokens.fileEntryIconSize,
-                              color: AppDesignTokens.of(context).folderColor,
-                            ),
-                            onTap: () => Navigator.of(context).push(
+                          void openLibraryEditor() {
+                            Navigator.of(context).push(
                               buildAppPageRoute<void>(
                                 context: context,
                                 child: LibraryEditPage(
                                   libraryPath: libraryPath,
                                 ),
                               ),
+                            );
+                          }
+
+                          void removeLibrary() {
+                            stageLibraryRemoval(
+                              context,
+                              ref,
+                              targetPath: libraryPath,
+                              target: LibraryRemovalTarget.library,
+                            );
+                          }
+
+                          return UnifiedContextMenuRegion(
+                            shape: const RoundedRectangleBorder(
+                              borderRadius: FileTreeRow.borderRadius,
                             ),
-                            trailing: IconButton(
-                              tooltip: i18n.tr('remove_library'),
-                              onPressed: () => stageLibraryRemoval(
-                                context,
-                                ref,
-                                targetPath: libraryPath,
-                                target: LibraryRemovalTarget.library,
+                            buildEntries: () => [
+                              UnifiedMenuEntry.action(
+                                value: openLibraryEditor,
+                                icon: Icons.edit_rounded,
+                                label: i18n.tr('edit'),
                               ),
-                              icon: Icon(
-                                Icons.delete_outline_rounded,
-                                color: cs.error.withValues(alpha: 0.8),
+                              UnifiedMenuEntry.action(
+                                value: removeLibrary,
+                                icon: Icons.delete_outline_rounded,
+                                label: i18n.tr('remove_library'),
+                                destructive: true,
+                              ),
+                            ],
+                            child: FileTreeRow(
+                              surfaceKey: ValueKey(
+                                'library-management-surface:$libraryPath',
+                              ),
+                              title: PathDisplay.folderName(libraryPath),
+                              subtitle: PathDisplay.displayPathFor(libraryPath),
+                              subtitleMaxLines: 2,
+                              minHeight: 64,
+                              verticalPadding: 2,
+                              isFolder: true,
+                              leading: Icon(
+                                AppDesignTokens.folderIcon,
+                                size: AppDesignTokens.fileEntryIconSize,
+                                color: AppDesignTokens.of(context).folderColor,
+                              ),
+                              onTap: openLibraryEditor,
+                              trailing: IconButton(
+                                tooltip: i18n.tr('remove_library'),
+                                onPressed: removeLibrary,
+                                icon: Icon(
+                                  Icons.delete_outline_rounded,
+                                  color: cs.error.withValues(alpha: 0.8),
+                                ),
                               ),
                             ),
                           );

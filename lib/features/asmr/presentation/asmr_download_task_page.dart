@@ -256,9 +256,22 @@ class _DownloadTaskItem extends ConsumerWidget {
   final String workId;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final task = ref.watch(asmrDownloadTaskProvider(workId));
+    final chrome = ref.watch(
+      asmrDownloadTaskProvider(workId).select(
+        (task) => task == null
+            ? null
+            : (
+                workKey: task.work.workKey,
+                title: task.work.title,
+                status: task.status,
+              ),
+      ),
+    );
     final manager = ref.read(asmrDownloadManagerProvider);
-    if (task == null || manager == null) return const SizedBox.shrink();
+    final task = ref.read(asmrDownloadTaskProvider(workId));
+    if (chrome == null || task == null || manager == null) {
+      return const SizedBox.shrink();
+    }
     final ready = ref.watch(coreRuntimeReadyProvider);
     ref.watch(appLanguageStateProvider);
     final language = ref.read(appLanguageProviderInstanceProvider);
@@ -269,6 +282,7 @@ class _DownloadTaskItem extends ConsumerWidget {
       child: AsmrDownloadTaskCard(
         task: task,
         i18n: language,
+        progressSection: _DownloadTaskProgressView(workId: workId),
         onOpen: () => Navigator.of(context).push(
           buildAppPageRoute<void>(
             context: context,
@@ -278,8 +292,8 @@ class _DownloadTaskItem extends ConsumerWidget {
         onTogglePause: !ready
             ? null
             : () {
-                if (task.status == AsmrDownloadTaskStatus.paused ||
-                    task.status == AsmrDownloadTaskStatus.failed) {
+                if (chrome.status == AsmrDownloadTaskStatus.paused ||
+                    chrome.status == AsmrDownloadTaskStatus.failed) {
                   manager.resumeTask(workId);
                 } else {
                   manager.pauseTask(workId);
@@ -346,6 +360,46 @@ class _DownloadTaskItem extends ConsumerWidget {
                 );
               },
       ),
+    );
+  }
+}
+
+class _DownloadTaskProgressView extends ConsumerWidget {
+  const _DownloadTaskProgressView({required this.workId});
+
+  final String workId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final state = ref.watch(
+      asmrDownloadTaskProvider(workId).select(
+        (task) => task == null
+            ? null
+            : (
+                status: task.status,
+                progress: task.progress,
+                downloadedBytes: task.downloadedBytes,
+                totalBytes: task.totalBytes,
+                hasUnknownFileSizes: task.hasUnknownFileSizes,
+                estimatedTotalBytes: task.estimatedTotalBytes,
+                retryAttempt: AsmrDownloadTaskCard.highestRetryAttempt(task),
+                automaticFileRetryCount: task.automaticFileRetryCount,
+              ),
+      ),
+    );
+    if (state == null) return const SizedBox.shrink();
+    return AsmrDownloadTaskProgressSection(
+      status: state.status,
+      progress: state.progress,
+      downloadedBytes: state.downloadedBytes,
+      totalBytes: state.totalBytes,
+      hasUnknownFileSizes: state.hasUnknownFileSizes,
+      estimatedTotalBytes: state.estimatedTotalBytes,
+      retryAttempt: state.retryAttempt,
+      automaticFileRetryCount: state.automaticFileRetryCount,
+      i18n: i18n,
     );
   }
 }

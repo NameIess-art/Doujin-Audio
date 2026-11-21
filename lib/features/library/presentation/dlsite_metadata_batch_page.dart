@@ -50,6 +50,12 @@ class _DlsiteMetadataBatchPageState
     extends ConsumerState<DlsiteMetadataBatchPage> {
   List<AudioLibraryCategoryEntry> _entries =
       const <AudioLibraryCategoryEntry>[];
+  List<AudioLibraryCategoryEntry> _anyMissingEntries =
+      const <AudioLibraryCategoryEntry>[];
+  List<AudioLibraryCategoryEntry> _noMetadataEntries =
+      const <AudioLibraryCategoryEntry>[];
+  List<AudioLibraryCategoryEntry> _hasRjCodeEntries =
+      const <AudioLibraryCategoryEntry>[];
   List<AudioLibraryCategoryEntry> _specificEntries =
       const <AudioLibraryCategoryEntry>[];
   late DlsiteMetadataBatchScope _scope;
@@ -57,8 +63,24 @@ class _DlsiteMetadataBatchPageState
   final GlobalKey _headerKey = GlobalKey();
   double _headerHeight = 0;
   bool _headerMeasurementScheduled = false;
+  Object? _lastHeaderLayoutKey;
 
-  void _scheduleHeaderMeasurement() {
+  void _setEntries(List<AudioLibraryCategoryEntry> entries) {
+    _entries = entries;
+    _anyMissingEntries = entries
+        .where((entry) => entry.detail.hasMissingMetadata)
+        .toList(growable: false);
+    _noMetadataEntries = entries
+        .where((entry) => entry.detail.hasNoMetadata)
+        .toList(growable: false);
+    _hasRjCodeEntries = entries
+        .where((entry) => entry.detail.hasRjCode)
+        .toList(growable: false);
+  }
+
+  void _scheduleHeaderMeasurement(Object layoutKey) {
+    if (_headerHeight > 0 && _lastHeaderLayoutKey == layoutKey) return;
+    _lastHeaderLayoutKey = layoutKey;
     if (_headerMeasurementScheduled) return;
     _headerMeasurementScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -74,17 +96,6 @@ class _DlsiteMetadataBatchPageState
   }
   bool _loading = false;
 
-  List<AudioLibraryCategoryEntry> get _anyMissingEntries => _entries
-      .where((entry) => entry.detail.hasMissingMetadata)
-      .toList(growable: false);
-
-  List<AudioLibraryCategoryEntry> get _noMetadataEntries => _entries
-      .where((entry) => entry.detail.hasNoMetadata)
-      .toList(growable: false);
-
-  List<AudioLibraryCategoryEntry> get _hasRjCodeEntries =>
-      _entries.where((entry) => entry.detail.hasRjCode).toList(growable: false);
-
   List<AudioLibraryCategoryEntry> get _selectedEntries => switch (_scope) {
     DlsiteMetadataBatchScope.anyMissing => _anyMissingEntries,
     DlsiteMetadataBatchScope.noMetadata => _noMetadataEntries,
@@ -99,17 +110,19 @@ class _DlsiteMetadataBatchPageState
     _scope = widget.initialScope;
     final entries = widget.entries;
     if (entries != null) {
-      _entries = entries;
+      _setEntries(entries);
     } else {
       _loading = true;
       final cachedSnapshot = ref.read(libraryFacadeProvider).categorySnapshot;
       if (cachedSnapshot != null) {
         final initialTargets = widget.initialTargets;
-        _entries = initialTargets == null
-            ? cachedSnapshot.entries
-            : cachedSnapshot.entries
-                  .where((entry) => initialTargets.contains(entry.target))
-                  .toList(growable: false);
+        _setEntries(
+          initialTargets == null
+              ? cachedSnapshot.entries
+              : cachedSnapshot.entries
+                    .where((entry) => initialTargets.contains(entry.target))
+                    .toList(growable: false),
+        );
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_load());
@@ -159,7 +172,7 @@ class _DlsiteMetadataBatchPageState
                 .where((entry) => initialTargets.contains(entry.target))
                 .toList(growable: false);
       setState(() {
-        _entries = loadedEntries;
+        _setEntries(loadedEntries);
         _loading = false;
       });
     } catch (error) {
@@ -210,16 +223,22 @@ class _DlsiteMetadataBatchPageState
     final startForeground = canStart
         ? cs.onPrimary
         : cs.onSurface.withValues(alpha: 0.38);
-    _scheduleHeaderMeasurement();
+    final mediaPadding = MediaQuery.paddingOf(context);
+    _scheduleHeaderMeasurement((
+      _error != null,
+      MediaQuery.sizeOf(context).width,
+      mediaPadding.top,
+      MediaQuery.textScalerOf(context),
+      i18n.language,
+    ));
     final effectiveHeaderHeight = _headerHeight > 0
         ? _headerHeight
         : (_error == null
-              ? MediaQuery.paddingOf(context).top + 140.0
+              ? mediaPadding.top + 140.0
               : AppPageHeaderMetrics.headerHeight(context));
     final contentTopInset =
         effectiveHeaderHeight + AppPageHeaderMetrics.firstContentSpacing;
-    final bottomInset =
-        MediaQuery.paddingOf(context).bottom + MobileOverlayInset.of(context);
+    final bottomInset = mediaPadding.bottom + MobileOverlayInset.of(context);
     return Scaffold(
       backgroundColor: cs.surface,
       body: PageHeaderInset(

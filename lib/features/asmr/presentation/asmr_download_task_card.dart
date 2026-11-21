@@ -18,6 +18,7 @@ class AsmrDownloadTaskCard extends StatelessWidget {
     required this.onOpen,
     required this.onTogglePause,
     required this.onRemove,
+    this.progressSection,
   });
 
   final AsmrDownloadTaskSnapshot task;
@@ -25,19 +26,21 @@ class AsmrDownloadTaskCard extends StatelessWidget {
   final VoidCallback onOpen;
   final VoidCallback? onTogglePause;
   final VoidCallback? onRemove;
+  final Widget? progressSection;
+
+  static int? highestRetryAttempt(AsmrDownloadTaskSnapshot task) {
+    if (!task.isActive) return null;
+    return task.fileRetryAttempts.values.fold<int?>(
+      null,
+      (highest, attempt) =>
+          highest == null || attempt > highest ? attempt : highest,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
-    final primaryColor = Theme.of(context).colorScheme.primary;
-    final retryAttempt = task.isActive
-        ? task.fileRetryAttempts.values.fold<int?>(
-            null,
-            (highest, attempt) =>
-                highest == null || attempt > highest ? attempt : highest,
-          )
-        : null;
 
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(tokens.radiusCard),
@@ -114,45 +117,18 @@ class AsmrDownloadTaskCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 12),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: task.progress,
-                  minHeight: 6,
-                  color: primaryColor,
-                  backgroundColor: primaryColor.withValues(alpha: 0.2),
-                ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: Wrap(
-                  alignment: WrapAlignment.spaceBetween,
-                  spacing: 8,
-                  runSpacing: 4,
-                  children: [
-                    Text(
-                      retryAttempt == null
-                          ? _statusText(i18n, task.status)
-                          : i18n.tr('asmr_download_status_retrying', {
-                              'attempt': retryAttempt,
-                              'max': task.automaticFileRetryCount,
-                            }),
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: cs.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    Text(
-                      '${formatMediaFileSize(task.downloadedBytes)} / ${formatAsmrDownloadTotalSize(total: task.totalBytes, unknown: task.hasUnknownFileSizes, unknownLabel: i18n.tr('asmr_download_size_unknown'), estimate: task.estimatedTotalBytes)}',
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: cs.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              progressSection ??
+                  AsmrDownloadTaskProgressSection(
+                    status: task.status,
+                    progress: task.progress,
+                    downloadedBytes: task.downloadedBytes,
+                    totalBytes: task.totalBytes,
+                    hasUnknownFileSizes: task.hasUnknownFileSizes,
+                    estimatedTotalBytes: task.estimatedTotalBytes,
+                    retryAttempt: highestRetryAttempt(task),
+                    automaticFileRetryCount: task.automaticFileRetryCount,
+                    i18n: i18n,
+                  ),
             ],
           ),
         ),
@@ -204,6 +180,84 @@ class AsmrDownloadTaskCard extends StatelessWidget {
         enabled: onRemove != null,
       ),
     ];
+  }
+}
+
+class AsmrDownloadTaskProgressSection extends StatelessWidget {
+  const AsmrDownloadTaskProgressSection({
+    super.key,
+    required this.status,
+    required this.progress,
+    required this.downloadedBytes,
+    required this.totalBytes,
+    required this.hasUnknownFileSizes,
+    required this.estimatedTotalBytes,
+    required this.retryAttempt,
+    required this.automaticFileRetryCount,
+    required this.i18n,
+  });
+
+  final AsmrDownloadTaskStatus status;
+  final double? progress;
+  final int downloadedBytes;
+  final int totalBytes;
+  final bool hasUnknownFileSizes;
+  final int? estimatedTotalBytes;
+  final int? retryAttempt;
+  final int automaticFileRetryCount;
+  final AppLanguageProvider i18n;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final primaryColor = cs.primary;
+    return RepaintBoundary(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 6,
+              color: primaryColor,
+              backgroundColor: primaryColor.withValues(alpha: 0.2),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                Text(
+                  retryAttempt == null
+                      ? _statusText(i18n, status)
+                      : i18n.tr('asmr_download_status_retrying', {
+                          'attempt': retryAttempt,
+                          'max': automaticFileRetryCount,
+                        }),
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: cs.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  '${formatMediaFileSize(downloadedBytes)} / ${formatAsmrDownloadTotalSize(total: totalBytes, unknown: hasUnknownFileSizes, unknownLabel: i18n.tr('asmr_download_size_unknown'), estimate: estimatedTotalBytes)}',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: cs.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

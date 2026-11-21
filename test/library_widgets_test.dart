@@ -4106,16 +4106,15 @@ void main() {
     final cancelRect = tester.getRect(
       find.byKey(const ValueKey('sort_options_cancel')),
     );
-    final confirmRect = tester.getRect(
-      find.byKey(const ValueKey('sort_options_confirm')),
-    );
+    final confirmButton = find.byKey(const ValueKey('sort_options_confirm'));
+    final confirmRect = tester.getRect(confirmButton);
     expect(
-      tester.widget(find.byKey(const ValueKey('sort_options_confirm'))),
-      isA<TextButton>(),
+      find.descendant(of: confirmButton, matching: find.byType(FilledButton)),
+      findsOneWidget,
     );
     expect(confirmRect.bottom, lessThanOrEqualTo(viewportSize.height));
     expect(cancelRect.center.dx, greaterThan(viewportSize.width / 2));
-    expect(confirmRect.left, greaterThan(cancelRect.right));
+    expect(confirmRect.left - cancelRect.right, closeTo(8, 0.01));
     expect(confirmRect.center.dy, closeTo(cancelRect.center.dy, 0.01));
     expect(confirmRect.width, lessThan(120));
     await tester.ensureVisible(

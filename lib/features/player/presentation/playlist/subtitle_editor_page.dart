@@ -76,8 +76,17 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     }
   }
 
-  Future<void> _editText(SubtitleCue cue) async {
-    if (_saving || !_cues!.contains(cue)) return;
+  int _resolveCueIndex(int index, SubtitleCue cue) {
+    final cues = _cues;
+    if (cues == null) return -1;
+    if (index >= 0 && index < cues.length && identical(cues[index], cue)) {
+      return index;
+    }
+    return cues.indexOf(cue);
+  }
+
+  Future<void> _editText(int index, SubtitleCue cue) async {
+    if (_saving || _resolveCueIndex(index, cue) < 0) return;
     final generation = _saveGeneration;
     String normalizeLines(String value) => value
         .split(RegExp(r'\r?\n'))
@@ -174,7 +183,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
         (next.text == cue.text && next.originalText == cue.originalText)) {
       return;
     }
-    final currentIndex = _cues!.indexOf(cue);
+    final currentIndex = _resolveCueIndex(index, cue);
     if (currentIndex < 0) return;
     setState(() {
       _cues![currentIndex] = SubtitleCue(
@@ -188,10 +197,10 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     });
   }
 
-  Future<void> _editTime(SubtitleCue cue) async {
+  Future<void> _editTime(int index, SubtitleCue cue) async {
     if (_saving) return;
-    final index = _cues!.indexOf(cue);
-    if (index < 0) return;
+    final resolvedIndex = _resolveCueIndex(index, cue);
+    if (resolvedIndex < 0) return;
     final generation = _saveGeneration;
     final hasTime = cue.end > cue.start;
     var startText = hasTime ? _formatTime(cue.start) : '';
@@ -239,26 +248,28 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
           submitLabel: i18n.tr('save'),
           onCancel: () => Navigator.pop(context),
           onSubmit: () {
+            final activeIndex = _resolveCueIndex(resolvedIndex, cue);
             if (_saving ||
                 generation != _saveGeneration ||
-                _cues!.indexOf(cue) != index) {
+                activeIndex != resolvedIndex) {
               return;
             }
             final start = _parseTime(startText);
             final end = _parseTime(endText);
-            final previousEnd = index == 0
+            final previousEnd = activeIndex == 0
                 ? Duration.zero
-                : _cues![index - 1].end;
-            final nextStart =
-                index + 1 == _cues!.length ||
-                    _cues![index + 1].end <= _cues![index + 1].start
-                ? null
-                : _cues![index + 1].start;
+                : _cues![activeIndex - 1].end;
+            final nextCue = activeIndex + 1 < _cues!.length
+                ? _cues![activeIndex + 1]
+                : null;
+            final nextEnd = nextCue != null && nextCue.end > nextCue.start
+                ? nextCue.end
+                : null;
             if (start == null ||
                 end == null ||
                 start < previousEnd ||
                 end <= start ||
-                (nextStart != null && end > nextStart)) {
+                (nextEnd != null && end > nextEnd)) {
               setDialogState(
                 () => validationError = i18n.tr('subtitle_invalid_time'),
               );
@@ -276,7 +287,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
         (next.$1 == cue.start && next.$2 == cue.end)) {
       return;
     }
-    final currentIndex = _cues!.indexOf(cue);
+    final currentIndex = _resolveCueIndex(resolvedIndex, cue);
     if (currentIndex < 0) return;
     setState(() {
       _cues![currentIndex] = SubtitleCue(
@@ -286,33 +297,45 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
         originalText: cue.originalText,
         assSourceLine: cue.assSourceLine,
       );
+      if (currentIndex + 1 < _cues!.length) {
+        final nextCue = _cues![currentIndex + 1];
+        if (nextCue.start < next.$2 && nextCue.end >= next.$2) {
+          _cues![currentIndex + 1] = SubtitleCue(
+            start: next.$2,
+            end: nextCue.end,
+            text: nextCue.text,
+            originalText: nextCue.originalText,
+            assSourceLine: nextCue.assSourceLine,
+          );
+        }
+      }
       _dirty = true;
     });
   }
 
-  void _insertAfter(SubtitleCue cue) {
+  void _insertAfter(int index, SubtitleCue cue) {
     if (_saving) return;
-    final index = _cues?.indexOf(cue) ?? -1;
-    if (index < 0) return;
+    final resolvedIndex = _resolveCueIndex(index, cue);
+    if (resolvedIndex < 0) return;
     setState(() {
       _cues!.insert(
-        index + 1,
+        resolvedIndex + 1,
         SubtitleCue(start: cue.end, end: cue.end, text: ''),
       );
       _dirty = true;
     });
   }
 
-  void _deleteCue(SubtitleCue cue) {
+  void _deleteCue(int index, SubtitleCue cue) {
     if (_saving) return;
-    final index = _cues?.indexOf(cue) ?? -1;
-    if (index < 0) return;
+    final resolvedIndex = _resolveCueIndex(index, cue);
+    if (resolvedIndex < 0) return;
     setState(() {
       if (_cues!.length == 1) {
         // The outgoing list can still build its final row while fading.
         _cues = [];
       } else {
-        _cues!.removeAt(index);
+        _cues!.removeAt(resolvedIndex);
       }
       _dirty = true;
     });
@@ -532,10 +555,10 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               closedColor: cs.surfaceContainerLow,
-                              onRemove: () => _deleteCue(cue),
+                              onRemove: () => _deleteCue(index, cue),
                               actionLabel: i18n.tr('subtitle_delete_cue'),
                               removeTooltip: i18n.tr('subtitle_delete_cue'),
-                              onLeadingAction: () => _insertAfter(cue),
+                              onLeadingAction: () => _insertAfter(index, cue),
                               leadingActionLabel: i18n.tr('subtitle_add_below'),
                               leadingActionTooltip: i18n.tr(
                                 'subtitle_add_below',
@@ -558,7 +581,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                                                   BorderRadius.circular(12),
                                               onTap: _saving
                                                   ? null
-                                                  : () => _editText(cue),
+                                                  : () => _editText(index, cue),
                                               child: Padding(
                                                 padding: const EdgeInsets.all(
                                                   14,
@@ -588,7 +611,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                                             ),
                                             onTap: _saving
                                                 ? null
-                                                : () => _editTime(cue),
+                                                : () => _editTime(index, cue),
                                             child: Padding(
                                               padding: const EdgeInsets.all(12),
                                               child: needsTime

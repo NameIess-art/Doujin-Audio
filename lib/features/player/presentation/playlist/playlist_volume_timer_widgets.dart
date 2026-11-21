@@ -69,6 +69,7 @@ class TimerCountdownCapsule extends StatelessWidget {
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: cs.primary,
                       fontWeight: FontWeight.w800,
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                 ],
@@ -115,6 +116,7 @@ class TimecodeLabel extends StatelessWidget {
         letterSpacing: 0.5,
         fontSize: 13,
         height: 1.1,
+        fontFeatures: const [FontFeature.tabularFigures()],
       ),
     );
     final reserved = reserveText;

@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
+import '../../../core/media/path_matcher.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/widgets/app_entry_ink_well.dart';
@@ -68,6 +69,9 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
     return remainder < 0 ? remainder + length : remainder;
   }
 
+  static bool _sameOptionalPath(String? a, String? b) =>
+      a == b || (a != null && b != null && PathMatcher.equalsNormalized(a, b));
+
   @override
   void initState() {
     super.initState();
@@ -89,6 +93,71 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
   }
 
   @override
+  void didUpdateWidget(covariant FolderCoverSelector oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final folderChanged = !PathMatcher.equalsNormalized(
+      oldWidget.folderPath,
+      widget.folderPath,
+    );
+    final initialCoverChanged = !_sameOptionalPath(
+      oldWidget.initialCoverPath,
+      widget.initialCoverPath,
+    );
+    if (folderChanged) {
+      UiInteractionCoordinator.instance.cancelCommit(_loadCommitKey);
+      _pageController?.dispose();
+      _pageController = null;
+      _targetVirtualPage = null;
+      _currentIndex = 0;
+      _saving = false;
+      final initialCoverPath = widget.initialCoverPath;
+      if (initialCoverPath != null && initialCoverPath.isNotEmpty) {
+        _images = <String>[initialCoverPath];
+        _currentCoverPath = initialCoverPath;
+        _loading = false;
+        _pageController = PageController();
+      } else {
+        _images = const <String>[];
+        _currentCoverPath = null;
+        _loading = true;
+      }
+      UiInteractionCoordinator.instance.scheduleCommit(
+        key: _loadCommitKey,
+        commit: () {
+          if (mounted) unawaited(_load());
+        },
+      );
+      return;
+    }
+    if (initialCoverChanged) {
+      final initialCoverPath = widget.initialCoverPath;
+      if (initialCoverPath != null &&
+          initialCoverPath.isNotEmpty &&
+          !_sameOptionalPath(_currentCoverPath, initialCoverPath)) {
+        _currentCoverPath = initialCoverPath;
+        final foundIndex = _images.indexWhere(
+          (path) => PathMatcher.equalsNormalized(path, initialCoverPath),
+        );
+        if (foundIndex >= 0 && foundIndex != _currentIndex) {
+          _currentIndex = foundIndex;
+          _targetVirtualPage = null;
+          final controller = _pageController;
+          if (controller != null && controller.hasClients) {
+            controller.jumpToPage(_pageForIndex(foundIndex, _images.length));
+          }
+        } else if (foundIndex < 0) {
+          UiInteractionCoordinator.instance.scheduleCommit(
+            key: _loadCommitKey,
+            commit: () {
+              if (mounted) unawaited(_load());
+            },
+          );
+        }
+      }
+    }
+  }
+
+  @override
   void dispose() {
     UiInteractionCoordinator.instance.cancelCommit(_loadCommitKey);
     _pageController?.dispose();
@@ -96,12 +165,19 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
   }
 
   Future<void> _load() async {
+    final requestedFolderPath = widget.folderPath;
     try {
       final library = ref.read(libraryFacadeProvider);
       final currentCover = await library.coverPathFutureForFolder(
-        widget.folderPath,
+        requestedFolderPath,
       );
-      if (!mounted) return;
+      if (!mounted ||
+          !PathMatcher.equalsNormalized(
+            widget.folderPath,
+            requestedFolderPath,
+          )) {
+        return;
+      }
       if (_images.isEmpty && currentCover != null && currentCover.isNotEmpty) {
         setState(() {
           _images = <String>[currentCover];
@@ -111,11 +187,22 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
         });
       }
       final images = await library.discoverCoverCandidatesInFolder(
-        widget.folderPath,
+        requestedFolderPath,
         selectedCoverPath: currentCover ?? widget.initialCoverPath,
-        isCancelled: () => !mounted,
+        isCancelled: () =>
+            !mounted ||
+            !PathMatcher.equalsNormalized(
+              widget.folderPath,
+              requestedFolderPath,
+            ),
       );
-      if (!mounted) return;
+      if (!mounted ||
+          !PathMatcher.equalsNormalized(
+            widget.folderPath,
+            requestedFolderPath,
+          )) {
+        return;
+      }
       if (images.isEmpty) {
         setState(() {
           _images = const <String>[];
@@ -125,7 +212,9 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
       }
       var initialIndex = 0;
       if (currentCover != null) {
-        final foundIndex = images.indexOf(currentCover);
+        final foundIndex = images.indexWhere(
+          (path) => PathMatcher.equalsNormalized(path, currentCover),
+        );
         if (foundIndex >= 0) initialIndex = foundIndex;
       }
       final initialPage = _pageForIndex(initialIndex, images.length);
@@ -322,7 +411,10 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
 
   Widget _buildCompactCoverAction(AppLanguageProvider i18n) {
     final tokens = AppDesignTokens.of(context);
-    final isCurrent = _currentCoverPath == _images[_currentIndex];
+    final isCurrent = _sameOptionalPath(
+      _currentCoverPath,
+      _images[_currentIndex],
+    );
     final enabled = !isCurrent && !_saving;
     final foregroundColor = isCurrent
         ? Colors.white.withValues(alpha: 0.65)
@@ -599,7 +691,10 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
         if (!widget.compactNavigation) ...[
           const SizedBox(height: 12),
           Center(
-            child: _currentCoverPath == _images[_currentIndex]
+            child: _sameOptionalPath(
+                  _currentCoverPath,
+                  _images[_currentIndex],
+                )
                 ? AppLabelledButton(
                     TextButton.icon,
                     onPressed: null,

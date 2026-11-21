@@ -237,8 +237,14 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
   Timer? _controlsTimer;
   bool _controlsVisible = false;
   bool _cursorInside = false;
+  bool _suppressedWhileHovered = false;
+  Offset? _lastHoverPosition;
   bool _fullscreenActionRunning = false;
   bool _controlsHaveFocus = false;
+
+  bool get _effectiveControlsVisible =>
+      !_fullscreenActionRunning &&
+      ((_cursorInside && !_suppressedWhileHovered) || _controlsVisible);
 
   @override
   void didUpdateWidget(covariant SessionVideoViewport oldWidget) {
@@ -247,6 +253,8 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
     _controlsTimer?.cancel();
     _controlsVisible = false;
     _cursorInside = false;
+    _suppressedWhileHovered = false;
+    _lastHoverPosition = null;
   }
 
   @override
@@ -257,7 +265,18 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
 
   void _toggleControls() {
     if (!widget.videoReady || _fullscreenActionRunning) return;
-    setState(() => _controlsVisible = !_controlsVisible);
+    final currentlyVisible = _effectiveControlsVisible;
+    setState(() {
+      if (currentlyVisible) {
+        _controlsVisible = false;
+        if (_cursorInside) {
+          _suppressedWhileHovered = true;
+        }
+      } else {
+        _controlsVisible = true;
+        _suppressedWhileHovered = false;
+      }
+    });
     _scheduleControlsHide();
   }
 
@@ -276,6 +295,8 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
     setState(() {
       _controlsVisible = false;
       _cursorInside = false;
+      _suppressedWhileHovered = false;
+      _lastHoverPosition = null;
       _fullscreenActionRunning = true;
     });
     await WidgetsBinding.instance.endOfFrame;
@@ -291,20 +312,39 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
   @override
   Widget build(BuildContext context) {
     final showSurface = widget.videoReady && !_fullscreenActionRunning;
-    final controlsVisible =
-        !_fullscreenActionRunning && (_cursorInside || _controlsVisible);
+    final controlsVisible = _effectiveControlsVisible;
     final viewport = MouseRegion(
       onEnter: widget.videoReady
-          ? (_) => setState(() => _cursorInside = true)
+          ? (event) => setState(() {
+              _cursorInside = true;
+              _suppressedWhileHovered = false;
+              _lastHoverPosition = event.localPosition;
+            })
           : null,
       onHover: widget.videoReady
-          ? (_) {
-              if (!_cursorInside) setState(() => _cursorInside = true);
+          ? (event) {
+              final previousPosition = _lastHoverPosition;
+              final movedEnough =
+                  previousPosition == null ||
+                  (event.localPosition - previousPosition).distance > 2.0;
+              if (!_suppressedWhileHovered || movedEnough) {
+                _lastHoverPosition = event.localPosition;
+              }
+              if (!_cursorInside || (_suppressedWhileHovered && movedEnough)) {
+                setState(() {
+                  _cursorInside = true;
+                  if (movedEnough) {
+                    _suppressedWhileHovered = false;
+                  }
+                });
+              }
             }
           : null,
       onExit: widget.videoReady
           ? (_) => setState(() {
               _cursorInside = false;
+              _suppressedWhileHovered = false;
+              _lastHoverPosition = null;
               if (_controlsHaveFocus && !_fullscreenActionRunning) {
                 _controlsVisible = true;
               }

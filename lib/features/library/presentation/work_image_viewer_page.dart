@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -78,7 +79,9 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
   double _headerHeight = 0;
   double _switcherHeight = 0;
   bool _layoutMeasurementScheduled = false;
+  Object? _lastLayoutMeasurementKey;
   late int _currentIndex;
+  late int _currentPage;
   late final PageController _pageController;
   int? _targetVirtualPage;
   String? _selectedCoverPath;
@@ -91,6 +94,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
   late final AnimationController _dragResetController;
   Animation<double>? _dragResetAnimation;
   final ValueNotifier<double> _dragOffset = ValueNotifier<double>(0);
+  final ValueNotifier<bool> _isDraggingDismiss = ValueNotifier<bool>(false);
   bool _dismissThresholdReached = false;
   bool _chromeVisible = true;
   bool _isDismissing = false;
@@ -138,11 +142,32 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
               _dragOffset.value = animation.value;
             }
           });
+    _dragOffset.addListener(() {
+      final isDragging = _dragOffset.value != 0;
+      if (_isDraggingDismiss.value != isDragging) {
+        _isDraggingDismiss.value = isDragging;
+      }
+    });
     WidgetsBinding.instance.addObserver(this);
     final count = widget.images.length;
     _currentIndex = widget.initialIndex.clamp(0, count == 0 ? 0 : count - 1);
-    final initialPage = _pageForIndex(_currentIndex, count);
-    _pageController = PageController(initialPage: initialPage);
+    _currentPage = _pageForIndex(_currentIndex, count);
+    _pageController = PageController(initialPage: _currentPage);
+  }
+
+  @override
+  void didUpdateWidget(covariant WorkImageViewerPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!listEquals(oldWidget.images, widget.images)) {
+      final count = widget.images.length;
+      _currentIndex = _currentIndex.clamp(0, count == 0 ? 0 : count - 1);
+      _currentPage = _pageForIndex(_currentIndex, count);
+      _targetVirtualPage = null;
+      _isCurrentZoomed = false;
+      if (_pageController.hasClients && count > 0) {
+        _pageController.jumpToPage(_currentPage);
+      }
+    }
   }
 
   @override
@@ -154,6 +179,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
     _chromeController.dispose();
     _dragResetController.dispose();
     _dragOffset.dispose();
+    _isDraggingDismiss.dispose();
     super.dispose();
   }
 
@@ -275,8 +301,9 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
     // Intermediate pages must not replace the target of rapid button presses.
     if (_targetVirtualPage != null && page != _targetVirtualPage) return;
     final index = _indexForPage(page, count);
-    if (_currentIndex != index || _isCurrentZoomed) {
+    if (_currentPage != page || _currentIndex != index || _isCurrentZoomed) {
       setState(() {
+        _currentPage = page;
         _currentIndex = index;
         _isCurrentZoomed = false;
       });
@@ -297,6 +324,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
     final targetPage = basePage + delta;
     _targetVirtualPage = targetPage;
     setState(() {
+      _currentPage = targetPage;
       _currentIndex = _indexForPage(targetPage, widget.images.length);
       _isCurrentZoomed = false;
     });
@@ -376,34 +404,10 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
       ),
     );
     if (isRemoteImage) {
-      return Consumer(
-        builder: (context, ref, _) {
-          final library = ref.read(libraryFacadeProvider);
-          ref.watch(
-            coverGenerationProvider.select(
-              (_) =>
-                  library.coverArtworkCacheService.revisionForScope(imagePath),
-            ),
-          );
-          final coverUi = ref.read(libraryCoverUiControllerProvider);
-          final resolved = library.resolvedCoverPathForRemoteCover(imagePath);
-          Future<String?> loadImage() =>
-              coverUi.deferredRemoteCover(imagePath, context: context);
-          return AsyncRemoteCoverImage(
-            deferLoadDuringInteraction: true,
-            url: imagePath,
-            future: resolved != null ? Future.value(resolved) : loadImage(),
-            initialPath: resolved,
-            retryFutureBuilder: loadImage,
-            onImageError:
-                library.coverArtworkCacheService.reportArtworkReadFailure,
-            fit: BoxFit.contain,
-            cacheWidth: maxCacheWidth,
-            useDefaultCacheWidth: false,
-            loadingBuilder: loadingIndicator,
-            fallbackBuilder: loadingIndicator,
-          );
-        },
+      return _RemoteWorkImage(
+        url: imagePath,
+        maxCacheWidth: maxCacheWidth,
+        loadingBuilder: loadingIndicator,
       );
     }
     return RetryingFileImage(
@@ -417,7 +421,12 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
     );
   }
 
-  void _scheduleLayoutMeasurement() {
+  void _scheduleLayoutMeasurement(Object layoutKey) {
+    final hasMeasured =
+        _headerHeight > 0 &&
+        (widget.images.length <= 1 || _switcherHeight > 0);
+    if (hasMeasured && _lastLayoutMeasurementKey == layoutKey) return;
+    _lastLayoutMeasurementKey = layoutKey;
     if (_layoutMeasurementScheduled) return;
     _layoutMeasurementScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -583,19 +592,29 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
               coverPath,
             ) ||
             PathMatcher.equalsNormalized(currentImage.path, coverPath));
-    _scheduleLayoutMeasurement();
+    final mediaSize = MediaQuery.sizeOf(context);
+    final mediaPadding = MediaQuery.paddingOf(context);
+    _scheduleLayoutMeasurement((
+      widget.images.length > 1,
+      widget.onSetAsCover != null,
+      mediaSize.width,
+      mediaPadding.top,
+      mediaPadding.bottom,
+      MediaQuery.textScalerOf(context),
+      i18n.language,
+      _fullscreenController.isShowing,
+    ));
     final imageTop =
         (_headerHeight > 0
             ? _headerHeight
             : AppPageHeaderMetrics.headerHeight(context)) +
         AppPageHeaderMetrics.firstContentSpacing;
-    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final bottomInset = mediaPadding.bottom;
     final switcherHeight = _switcherHeight > 0 ? _switcherHeight : 38.0;
     final imageBottom = widget.images.length > 1
         ? bottomInset + 20.0 + switcherHeight + _imageSwitcherGap
         : bottomInset + 20.0;
 
-    final mediaSize = MediaQuery.sizeOf(context);
     final dpr = MediaQuery.devicePixelRatioOf(context);
     final maxCacheWidth = (mediaSize.longestSide * dpr * 1.5)
         .round()
@@ -648,13 +667,13 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
           ),
           child: NotificationListener<ScrollNotification>(
             onNotification: _handlePageScroll,
-            child: ValueListenableBuilder<double>(
-              valueListenable: _dragOffset,
-              builder: (context, dragOffset, child) => PageView.builder(
+            child: ValueListenableBuilder<bool>(
+              valueListenable: _isDraggingDismiss,
+              builder: (context, isDraggingDismiss, child) => PageView.builder(
                 key: const ValueKey<String>('work_image_viewport'),
                 clipBehavior: Clip.none,
                 controller: _pageController,
-                physics: _isCurrentZoomed || dragOffset != 0
+                physics: _isCurrentZoomed || isDraggingDismiss
                     ? const NeverScrollableScrollPhysics()
                     : (widget.images.length > 1
                           ? const PageScrollPhysics()
@@ -668,7 +687,9 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
                   final img = widget.images[index];
                   return _WorkImageViewerItem(
                     key: ValueKey<String>('image_item_${img.path}_$page'),
-                    isActive: index == _currentIndex,
+                    isActive: widget.images.length > 1
+                        ? page == _currentPage
+                        : index == _currentIndex,
                     onToggleChrome: _toggleChrome,
                     onZoomChanged: (zoomed) {
                       setState(() => _isCurrentZoomed = zoomed);
@@ -897,6 +918,62 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
           ],
         ),
       ),
+    );
+  }
+}
+
+class _RemoteWorkImage extends ConsumerStatefulWidget {
+  const _RemoteWorkImage({
+    required this.url,
+    required this.maxCacheWidth,
+    required this.loadingBuilder,
+  });
+
+  final String url;
+  final int maxCacheWidth;
+  final WidgetBuilder loadingBuilder;
+
+  @override
+  ConsumerState<_RemoteWorkImage> createState() => _RemoteWorkImageState();
+}
+
+class _RemoteWorkImageState extends ConsumerState<_RemoteWorkImage> {
+  Object? _requestKey;
+  Future<String?>? _future;
+
+  @override
+  Widget build(BuildContext context) {
+    final library = ref.read(libraryFacadeProvider);
+    final (revision, resolved) = ref.watch(
+      coverGenerationProvider.select(
+        (_) => (
+          library.coverArtworkCacheService.revisionForScope(widget.url),
+          library.resolvedCoverPathForRemoteCover(widget.url),
+        ),
+      ),
+    );
+    final coverUi = ref.read(libraryCoverUiControllerProvider);
+    Future<String?> loadImage() =>
+        coverUi.deferredRemoteCover(widget.url, context: context);
+    final requestKey = (widget.url, resolved, revision);
+    if (_requestKey != requestKey) {
+      _requestKey = requestKey;
+      _future = resolved != null
+          ? SynchronousFuture<String?>(resolved)
+          : loadImage();
+    }
+    return AsyncRemoteCoverImage(
+      deferLoadDuringInteraction: true,
+      url: widget.url,
+      future: _future!,
+      initialPath: resolved,
+      retryFutureBuilder: loadImage,
+      onImageError: library.coverArtworkCacheService.reportArtworkReadFailure,
+      fit: BoxFit.contain,
+      cacheWidth: widget.maxCacheWidth,
+      useDefaultCacheWidth: false,
+      loadingBuilder: widget.loadingBuilder,
+      fallbackBuilder: widget.loadingBuilder,
     );
   }
 }

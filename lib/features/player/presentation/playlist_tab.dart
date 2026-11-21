@@ -608,7 +608,21 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                               ),
                               builder: (context, ref, _) {
                                 final headerState = ref.watch(
-                                  playlistHeaderUiProvider,
+                                  playlistHeaderUiProvider.select(
+                                    (s) => PlaylistHeaderState(
+                                      sessionCount: s.sessionCount,
+                                      playingCount: s.playingCount,
+                                      hasPlayingAudioSession:
+                                          s.hasPlayingAudioSession,
+                                      timerDuration: s.timerDuration,
+                                      timerRemaining: null,
+                                      timerActive: s.timerActive,
+                                      autoResumeAt: s.autoResumeAt,
+                                      hasActivePlayback: s.hasActivePlayback,
+                                      canResumeLastPlayback:
+                                          s.canResumeLastPlayback,
+                                    ),
+                                  ),
                                 );
                                 return TopPageHeader(
                                   key: headerKey,
@@ -954,12 +968,19 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       openOnWindowsLongPress: true,
       buildEntries: () => _buildTimerQuickMenuEntries(i18n),
       child: state.hasTimer
-          ? TimerCountdownCapsule(
-              remaining:
-                  state.timerRemaining ?? state.timerDuration ?? Duration.zero,
-              active: state.timerActive,
-              autoResumeAt: state.autoResumeAt,
-              onTap: widget.onTimerTap,
+          ? Consumer(
+              builder: (context, ref, _) {
+                final timerRemaining = ref.watch(
+                  playlistHeaderUiProvider.select((s) => s.timerRemaining),
+                );
+                return TimerCountdownCapsule(
+                  remaining:
+                      timerRemaining ?? state.timerDuration ?? Duration.zero,
+                  active: state.timerActive,
+                  autoResumeAt: state.autoResumeAt,
+                  onTap: widget.onTimerTap,
+                );
+              },
             )
           : HeaderFloatingButton(
               child: TooltipTheme(

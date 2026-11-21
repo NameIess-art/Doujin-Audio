@@ -34,7 +34,7 @@ typedef _DownloadSelectionRow = ({
 class _AsmrDownloadSelectionListState extends State<AsmrDownloadSelectionList>
     with SingleTickerProviderStateMixin {
   final Set<String> _expandedPaths = <String>{};
-  Key _listKey = UniqueKey();
+  Key _listKey = const ValueKey<String>('asmr_download_selection_list');
   List<_DownloadSelectionRow> _rows = const [];
   Map<Key, int> _rowIndices = const {};
   late final FileTreeExpansionMotion<String, _DownloadSelectionRow> _motion;
@@ -56,13 +56,20 @@ class _AsmrDownloadSelectionListState extends State<AsmrDownloadSelectionList>
 
   void _resetExpansion() {
     _motion.finish();
-    _listKey = UniqueKey();
+    _listKey = ValueKey<int>(identityHashCode(widget.selection));
     _expandedPaths
       ..clear()
       ..addAll(
         widget.selection.rootNodes.map((node) => node.track.relativePath),
       );
     _projectRows();
+  }
+
+  void _handleNodeSelectionChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+    widget.onSelectionChanged();
   }
 
   Key _rowKey(_DownloadSelectionRow row) {
@@ -155,7 +162,7 @@ class _AsmrDownloadSelectionListState extends State<AsmrDownloadSelectionList>
                 selection: widget.selection,
                 expanded: _expandedPaths.contains(path),
                 onToggleExpansion: () => _toggleExpansion(path),
-                onSelectionChanged: widget.onSelectionChanged,
+                onSelectionChanged: _handleNodeSelectionChanged,
               );
         return _motion.wrap(index, tile, key: _rowKey(row));
       },

@@ -43,6 +43,7 @@ class _AsmrDownloadDetailsPageState
   final GlobalKey _headerKey = GlobalKey();
   double _headerHeight = 0;
   bool _headerMeasurementScheduled = false;
+  Object? _lastHeaderLayoutKey;
   final Set<String> _collapsedPaths = {};
   List<AsmrTrackFile>? _rowsSource;
   List<_DownloadDetailsRow> _rows = const [];
@@ -114,6 +115,7 @@ class _AsmrDownloadDetailsPageState
       _rows = const [];
       _rowIndices = const {};
       _headerHeight = 0;
+      _lastHeaderLayoutKey = null;
     }
   }
 
@@ -123,7 +125,9 @@ class _AsmrDownloadDetailsPageState
     super.dispose();
   }
 
-  void _scheduleHeaderMeasurement() {
+  void _scheduleHeaderMeasurement(Object layoutKey) {
+    if (_headerHeight > 0 && _lastHeaderLayoutKey == layoutKey) return;
+    _lastHeaderLayoutKey = layoutKey;
     if (_headerMeasurementScheduled) return;
     _headerMeasurementScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -201,10 +205,17 @@ class _AsmrDownloadDetailsPageState
     }
 
     final tracks = structure.roots;
+    final mediaTopPadding = MediaQuery.paddingOf(context).top;
 
-    _scheduleHeaderMeasurement();
+    _scheduleHeaderMeasurement((
+      structure.title,
+      MediaQuery.sizeOf(context).width,
+      mediaTopPadding,
+      MediaQuery.textScalerOf(context),
+      i18n.language,
+    ));
 
-    final defaultHeaderHeight = MediaQuery.paddingOf(context).top + 140.0;
+    final defaultHeaderHeight = mediaTopPadding + 140.0;
     final effectiveHeaderHeight = _headerHeight > 0
         ? _headerHeight
         : defaultHeaderHeight;

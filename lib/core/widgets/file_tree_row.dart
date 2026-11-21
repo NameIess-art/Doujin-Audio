@@ -42,6 +42,7 @@ class FileTreeRow extends StatelessWidget {
     this.horizontalPadding = 6,
     this.verticalPadding = 4,
     this.isFolder = false,
+    this.compactTitle,
     this.emphasized = false,
     this.titleColor,
     this.backgroundColor,
@@ -68,6 +69,7 @@ class FileTreeRow extends StatelessWidget {
   final double horizontalPadding;
   final double verticalPadding;
   final bool isFolder;
+  final bool? compactTitle;
   final bool emphasized;
   final Color? titleColor;
   final Color? backgroundColor;
@@ -151,6 +153,7 @@ class FileTreeRow extends StatelessWidget {
   Widget _buildContent(BuildContext context, double maxWidth) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    final compactTitle = this.compactTitle ?? !isFolder;
     // Preserve room for names and actions even in deeply nested directories.
     final indent = math.min(
       depth * indentWidth,
@@ -205,9 +208,9 @@ class FileTreeRow extends StatelessWidget {
                               (theme.textTheme.bodyMedium ?? const TextStyle())
                                   .copyWith(
                                     color: titleColor ?? cs.onSurface,
-                                    fontSize: isFolder ? null : 13,
+                                    fontSize: compactTitle ? 13 : null,
                                     height: titleMaxLines > 1 ? 1.2 : null,
-                                    fontWeight: isFolder || emphasized
+                                    fontWeight: !compactTitle || emphasized
                                         ? FontWeight.w700
                                         : FontWeight.w600,
                                   ),

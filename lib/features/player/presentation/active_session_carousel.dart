@@ -283,7 +283,11 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     setState(() {
       _currentSessions = _incomingSessions;
       if (_currentSessions.isNotEmpty) {
-        _alignPageWithSession(leftSessionId, _currentSessions);
+        final targetSessionId =
+            _currentSessions.any((session) => session.id == leftSessionId)
+            ? leftSessionId
+            : _currentSessions.first.id;
+        _alignPageWithSession(targetSessionId, _currentSessions);
       }
       _removingFocusedSession = false;
     });
@@ -325,6 +329,10 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     BuildContext context,
     PlaybackSessionSnapshot session,
   ) {
+    if (_removingFocusedSession &&
+        !_incomingSessions.any((item) => item.id == session.id)) {
+      return;
+    }
     final onOpenSession = widget.onOpenSession;
     if (onOpenSession != null) {
       onOpenSession(session.id, context);
@@ -350,6 +358,8 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     }
     if (sessions.isEmpty) {
       _currentSessions = const [];
+      _incomingSessions = const [];
+      _removingFocusedSession = false;
       if (_lastVisibleSessionId != null) {
         _lastVisibleSessionId = null;
         WidgetsBinding.instance.addPostFrameCallback((_) {

@@ -139,6 +139,13 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
       return;
     }
     if (oldWidget.playbackSubtitleIndex != widget.playbackSubtitleIndex) {
+      if (widget.cues.isNotEmpty) {
+        _focusedIndex = playbackIndex;
+        if (!_windowContains(playbackIndex)) {
+          _resetWindowAround(playbackIndex);
+        }
+        _extendWindowNearFocusedIndex(inBuildOrUpdate: true);
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && !_isBrowsing && !_isPointerDown) {
           _scrollToIndex(playbackIndex);
@@ -375,7 +382,7 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
     _invalidateLayoutMetrics();
   }
 
-  void _extendWindowNearFocusedIndex() {
+  void _extendWindowNearFocusedIndex({bool inBuildOrUpdate = false}) {
     final threshold =
         (_viewportHeight / (2 * _minimumItemExtent)).ceil() +
         _windowExpansionThreshold;
@@ -388,6 +395,11 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
       nextEnd = min(widget.cues.length, _windowEnd + _windowExpansionSize);
     }
     if (nextStart == _windowStart && nextEnd == _windowEnd) return;
+    if (inBuildOrUpdate) {
+      _windowStart = nextStart;
+      _windowEnd = nextEnd;
+      return;
+    }
     setState(() {
       _windowStart = nextStart;
       _windowEnd = nextEnd;

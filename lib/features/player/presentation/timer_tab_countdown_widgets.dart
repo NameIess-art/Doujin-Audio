@@ -128,6 +128,7 @@ class _CountdownCard extends ConsumerWidget {
                           fontWeight: FontWeight.bold,
                           letterSpacing: compact ? 1.4 : 2.6,
                           color: timeColor,
+                          fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                       );
                     },

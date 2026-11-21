@@ -151,7 +151,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
         subtitles.generationJob?.status == SubtitleGenerationStatus.running) {
       return;
     }
-    final menuHeight = _menuKey.currentContext!.size!.height;
+    final menuHeight = _menuKey.currentContext?.size?.height;
     final trackPath = widget.session.currentTrackPath;
     setState(() => _subtitleBusy = true);
     try {
@@ -309,7 +309,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
 
   Future<void> _pickScriptFile() async {
     if (_importing) return;
-    final menuHeight = _menuKey.currentContext!.size!.height;
+    final menuHeight = _menuKey.currentContext?.size?.height;
     setState(() => _importing = true);
     try {
       final i18n = ref.read(appLanguageProviderInstanceProvider);
@@ -1403,6 +1403,18 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
             ).withWindowsSmoothScroll(),
           ),
         );
+        final screenHeight = MediaQuery.sizeOf(context).height;
+        final availableHeight =
+            (screenHeight - MediaQuery.viewPaddingOf(context).vertical).clamp(
+              0.0,
+              screenHeight,
+            );
+        final effectiveSelectionHeight =
+            !selectingFiles || _selectionMenuHeight == null
+            ? null
+            : availableHeight > 0
+            ? _selectionMenuHeight!.clamp(0.0, availableHeight).toDouble()
+            : _selectionMenuHeight;
         return PopScope(
           canPop: !selectingFiles,
           onPopInvokedWithResult: (didPop, _) {
@@ -1415,7 +1427,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
           },
           child: SizedBox(
             key: _menuKey,
-            height: !selectingFiles ? null : _selectionMenuHeight,
+            height: effectiveSelectionHeight,
             child: AppMenuContentTransition(
               primary: menu,
               secondary: selectionContent,

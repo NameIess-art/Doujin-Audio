@@ -25,6 +25,7 @@ import '../../application/subtitle_overlay_controller.dart';
 import '../bedtime_canvas_page.dart';
 import '../timer_tab.dart';
 import 'playlist_media_widgets.dart';
+import 'playlist_progress_widgets.dart';
 import 'playlist_volume_timer_widgets.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../library/presentation/library_providers.dart';
@@ -82,6 +83,8 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
   final ValueNotifier<double> _dragOffset = ValueNotifier(0);
   bool _dragThresholdReached = false;
   bool _dragDismissClosing = false;
+  bool _dragDismissCanStart = false;
+  bool _dragDismissInteractionActive = false;
 
   SessionDetailRoute? get _detailRoute {
     final route = readAppRoute(context);
@@ -160,6 +163,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
 
   @override
   void dispose() {
+    _dragDismissInteractionActive = false;
     UiInteractionCoordinator.instance.cancelInteraction(_dragDismissInteraction);
     _dragResetController.dispose();
     _dragOffset.dispose();
@@ -174,17 +178,25 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
   void _handleDragDismissStart(DragStartDetails details) {
     if (widget.transitionActive.value ||
         _dragDismissClosing ||
-        widget.segmentPanelExpandedNotifier.value) {
+        widget.segmentPanelExpandedNotifier.value ||
+        SessionProgressBar.isInteracting ||
+        SessionProgressBar.isInProgressOrBottomControlsZone(
+          details.globalPosition,
+        )) {
+      _dragDismissCanStart = false;
       return;
     }
+    _dragDismissCanStart = true;
     _dragResetController.stop();
-    UiInteractionCoordinator.instance.beginInteraction(_dragDismissInteraction);
   }
 
   void _handleDragDismissUpdate(DragUpdateDetails details) {
-    if (widget.transitionActive.value ||
+    if (!_dragDismissCanStart ||
+        widget.transitionActive.value ||
         _dragDismissClosing ||
-        (_dragOffset.value == 0 && widget.segmentPanelExpandedNotifier.value)) {
+        (_dragOffset.value == 0 &&
+            (widget.segmentPanelExpandedNotifier.value ||
+                SessionProgressBar.isInteracting))) {
       return;
     }
     final delta = details.delta.dy;
@@ -200,6 +212,12 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
     }
     if (nextOffset == offset) return;
     if (nextOffset > 0 && offset == 0) {
+      if (!_dragDismissInteractionActive) {
+        _dragDismissInteractionActive = true;
+        UiInteractionCoordinator.instance.beginInteraction(
+          _dragDismissInteraction,
+        );
+      }
       _detailRoute?.beginInteractiveDismiss();
     }
     final crossed = nextOffset >= _dragDismissThreshold;
@@ -215,7 +233,15 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
   }
 
   void _handleDragDismissEnd(DragEndDetails details) {
-    UiInteractionCoordinator.instance.endInteraction(_dragDismissInteraction);
+    final wasCanStart = _dragDismissCanStart;
+    _dragDismissCanStart = false;
+    if (_dragDismissInteractionActive) {
+      _dragDismissInteractionActive = false;
+      UiInteractionCoordinator.instance.endInteraction(_dragDismissInteraction);
+    }
+    if (!wasCanStart && _dragOffset.value == 0) {
+      return;
+    }
     if (widget.transitionActive.value || _dragDismissClosing) {
       _animateDragDismissBack();
       return;
@@ -227,8 +253,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
         (offset > 20 && velocity >= _dragDismissVelocity);
     if (shouldDismiss) {
       _dragDismissClosing = true;
-      final hasCoverFlight =
-          _detailRoute?.detailCoverKey.currentState?.decodedImage != null;
+      final hasCoverFlight = _detailRoute?.canRunCoverExitFlight() ?? false;
       if (!hasCoverFlight &&
           !MediaQuery.disableAnimationsOf(context) &&
           TickerMode.valuesOf(context).enabled) {
@@ -249,7 +274,11 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
   }
 
   void _handleDragDismissCancel() {
-    UiInteractionCoordinator.instance.endInteraction(_dragDismissInteraction);
+    _dragDismissCanStart = false;
+    if (_dragDismissInteractionActive) {
+      _dragDismissInteractionActive = false;
+      UiInteractionCoordinator.instance.endInteraction(_dragDismissInteraction);
+    }
     _animateDragDismissBack();
   }
 

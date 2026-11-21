@@ -26,10 +26,11 @@ class SubtitleWindowPreviewCard extends StatelessWidget {
       AppDesignTokens.of(context).radiusOverlay,
     );
 
-    return SizedBox(
-      key: const ValueKey<String>('subtitle_window_preview_card'),
-      height: height,
-      child: DecoratedBox(
+    return RepaintBoundary(
+      child: SizedBox(
+        key: const ValueKey<String>('subtitle_window_preview_card'),
+        height: height,
+        child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: cardRadius,
           gradient: LinearGradient(
@@ -102,6 +103,7 @@ class SubtitleWindowPreviewCard extends StatelessWidget {
           ),
         ),
       ),
+    ),
     );
   }
 }

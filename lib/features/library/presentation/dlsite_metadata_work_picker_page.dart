@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -34,6 +35,8 @@ class _DlsiteMetadataWorkPickerPageState
   late final Set<String> _selectedIds;
   String _searchQuery = '';
   late final TextEditingController _searchController;
+  late List<AudioLibraryCategoryEntry> _filteredEntries;
+  late Map<String, int> _filteredIndexByKey;
 
   @override
   void initState() {
@@ -42,6 +45,15 @@ class _DlsiteMetadataWorkPickerPageState
         .map((e) => AudioLibraryCategorySnapshot.targetKey(e.target))
         .toSet();
     _searchController = TextEditingController();
+    _updateFilteredEntries();
+  }
+
+  @override
+  void didUpdateWidget(covariant DlsiteMetadataWorkPickerPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!listEquals(oldWidget.entries, widget.entries)) {
+      _updateFilteredEntries();
+    }
   }
 
   @override
@@ -60,18 +72,30 @@ class _DlsiteMetadataWorkPickerPageState
     });
   }
 
-  List<AudioLibraryCategoryEntry> get _filteredEntries {
-    if (_searchQuery.trim().isEmpty) return widget.entries;
+  void _updateFilteredEntries() {
     final query = _searchQuery.trim().toLowerCase();
-    return widget.entries
-        .where((e) {
-          final title =
-              (e.detail.workTitle.isNotEmpty ? e.detail.workTitle : e.title)
-                  .toLowerCase();
-          final rjCode = e.detail.rjCode.toLowerCase();
-          return title.contains(query) || rjCode.contains(query);
-        })
-        .toList(growable: false);
+    final filtered = query.isEmpty
+        ? widget.entries
+        : widget.entries
+              .where((e) {
+                final title =
+                    (e.detail.workTitle.isNotEmpty
+                            ? e.detail.workTitle
+                            : e.title)
+                        .toLowerCase();
+                final rjCode = e.detail.rjCode.toLowerCase();
+                return title.contains(query) || rjCode.contains(query);
+              })
+              .toList(growable: false);
+    _filteredEntries = filtered;
+    _filteredIndexByKey = <String, int>{
+      for (var i = 0; i < filtered.length; i++) ...{
+        'batch_metadata_picker_${AudioLibraryCategorySnapshot.targetKey(filtered[i].target)}':
+            i,
+        'batch_metadata_picker_row_${AudioLibraryCategorySnapshot.targetKey(filtered[i].target)}':
+            i,
+      },
+    };
   }
 
   @override
@@ -106,6 +130,11 @@ class _DlsiteMetadataWorkPickerPageState
                           MobileOverlayInset.of(context),
                     ),
                     itemCount: filtered.isEmpty ? 1 : filtered.length,
+                    findChildIndexCallback: filtered.isEmpty
+                        ? null
+                        : (key) => key is ValueKey<String>
+                              ? _filteredIndexByKey[key.value]
+                              : null,
                     itemBuilder: (context, index) {
                       if (filtered.isEmpty) {
                         return Padding(
@@ -125,6 +154,7 @@ class _DlsiteMetadataWorkPickerPageState
                       );
                       final selected = _selectedIds.contains(id);
                       return MergeSemantics(
+                        key: ValueKey<String>('batch_metadata_picker_row_$id'),
                         child: FileTreeRow(
                           key: ValueKey<String>('batch_metadata_picker_$id'),
                           minHeight: 48,
@@ -212,6 +242,7 @@ class _DlsiteMetadataWorkPickerPageState
                                     _searchController.clear();
                                     setState(() {
                                       _searchQuery = '';
+                                      _updateFilteredEntries();
                                     });
                                   },
                                 ),
@@ -224,6 +255,7 @@ class _DlsiteMetadataWorkPickerPageState
                         onChanged: (val) {
                           setState(() {
                             _searchQuery = val;
+                            _updateFilteredEntries();
                           });
                         },
                       ),

@@ -233,27 +233,14 @@ class _SortOptionsSheetState<T> extends State<_SortOptionsSheet<T>> {
                       ),
                     ).withWindowsSmoothScroll(),
                   ),
-                  SizedBox(
+                  AppBottomSheetActions(
                     key: const ValueKey('sort_options_actions'),
-                    width: double.infinity,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        TextButton(
-                          key: const ValueKey('sort_options_cancel'),
-                          onPressed: () => Navigator.of(context).pop(),
-                          child: Text(widget.cancelLabel),
-                        ),
-                        const SizedBox(width: 8),
-                        TextButton(
-                          key: const ValueKey('sort_options_confirm'),
-                          onPressed: () =>
-                              Navigator.of(context).pop(_selection),
-                          child: Text(widget.confirmLabel),
-                        ),
-                      ],
-                    ),
+                    cancelKey: const ValueKey('sort_options_cancel'),
+                    confirmKey: const ValueKey('sort_options_confirm'),
+                    cancelLabel: widget.cancelLabel,
+                    confirmLabel: widget.confirmLabel,
+                    onCancel: () => Navigator.of(context).pop(),
+                    onConfirm: () => Navigator.of(context).pop(_selection),
                   ),
                 ],
               ),

@@ -139,6 +139,8 @@ class _SessionVideoFullscreenPageState
   double _panStartBrightness = 0.5;
   Size _panViewportSize = Size.zero;
   Offset? _doubleTapPosition;
+  Offset? _lastPointerPosition;
+  Offset? _hiddenAtPointerPosition;
 
   String get _volumeCommitKey =>
       SessionVolumeControls.commitKey(widget.sessionId);
@@ -254,6 +256,11 @@ class _SessionVideoFullscreenPageState
 
   void _setControlsVisible(bool visible) {
     if (_controlsVisible == visible) return;
+    if (!visible) {
+      _hiddenAtPointerPosition = _lastPointerPosition;
+    } else {
+      _hiddenAtPointerPosition = null;
+    }
     setState(() => _controlsVisible = visible);
     // The gate retains the latest position for gestures without rebuilding
     // hidden controls, then publishes it immediately when controls return.
@@ -263,6 +270,18 @@ class _SessionVideoFullscreenPageState
   void _showControls() {
     _setControlsVisible(true);
     _scheduleControlsHide();
+  }
+
+  void _handleMouseHover(PointerHoverEvent event) {
+    _lastPointerPosition = event.localPosition;
+    if (!_controlsVisible) {
+      final hiddenAt = _hiddenAtPointerPosition;
+      if (hiddenAt != null &&
+          (event.localPosition - hiddenAt).distance <= 4.0) {
+        return;
+      }
+    }
+    _showControls();
   }
 
   void _toggleControls() {
@@ -720,7 +739,12 @@ class _SessionVideoFullscreenPageState
                 backgroundColor: Colors.black,
                 body: AppPageContentTransition(
                   child: MouseRegion(
-                    onHover: (_) => _showControls(),
+                    cursor: _controlsVisible
+                        ? MouseCursor.defer
+                        : SystemMouseCursors.none,
+                    onEnter: (event) =>
+                        _lastPointerPosition = event.localPosition,
+                    onHover: _handleMouseHover,
                     child: LayoutBuilder(
                       builder: (context, constraints) {
                         final viewportSize = constraints.biggest;
@@ -773,13 +797,19 @@ class _SessionVideoFullscreenPageState
                             Positioned.fromRect(
                               rect: gestureRect,
                               child: MouseRegion(
-                                cursor: SystemMouseCursors.click,
+                                cursor: _controlsVisible
+                                    ? SystemMouseCursors.click
+                                    : SystemMouseCursors.none,
                                 child: GestureDetector(
                                   key: const ValueKey<String>(
                                     'fullscreen_video_gesture_surface',
                                   ),
                                   excludeFromSemantics: true,
                                   behavior: HitTestBehavior.opaque,
+                                  onTapDown: (details) =>
+                                      _lastPointerPosition =
+                                          gestureRect.topLeft +
+                                          details.localPosition,
                                   onTap: _toggleControls,
                                   onDoubleTapDown: (details) =>
                                       _doubleTapPosition = details.localPosition,

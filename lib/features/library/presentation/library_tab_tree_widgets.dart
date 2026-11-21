@@ -27,6 +27,7 @@ import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/search_highlight.dart';
 import '../../../core/widgets/selection_checkmark.dart';
 import '../../../core/widgets/page_translation_scope.dart';
+import '../../../core/widgets/playlist_icon.dart';
 import '../../../core/translation/text_translation_service.dart';
 import '../../../core/widgets/swipe_reveal_card.dart';
 import 'audio_detail_sheet.dart';
@@ -571,6 +572,7 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
                                         onFolderExpansionChanged:
                                             widget.onFolderExpansionChanged,
                                         searchQuery: widget.searchQuery,
+                                        isSelectionMode: widget.isSelectionMode,
                                       ),
                                     ),
                                   ),
@@ -779,17 +781,15 @@ class _TrackNodeWidget extends ConsumerWidget {
       }
     }
 
+    Future<void> addTrackToPlaylist() => runLibraryCardAction(
+      context: context,
+      ref: ref,
+      selection: LibraryBatchSelection.fromNode(trackNode),
+      temporary: false,
+    );
+
     final actions = LibraryLikeCardActions(
-      onAdd: isSelectionMode
-          ? null
-          : () => unawaited(
-              runLibraryCardAction(
-                context: context,
-                ref: ref,
-                selection: LibraryBatchSelection.fromNode(trackNode),
-                temporary: false,
-              ),
-            ),
+      onAdd: isSelectionMode ? null : () => unawaited(addTrackToPlaylist()),
       onPlay: isSelectionMode ? null : () => unawaited(playSingleTrack()),
       addLabel: i18n.tr('add'),
       playLabel: i18n.tr('play'),
@@ -900,52 +900,72 @@ class _TrackNodeWidget extends ConsumerWidget {
             tertiaryActionLabel: i18n.tr('open_containing_folder'),
             tertiaryActionTooltip: i18n.tr('open_containing_folder'),
             tertiaryActionIcon: Icons.folder_open_rounded,
+            onLeadingAction: () => unawaited(playSingleTrack()),
+            leadingActionLabel: i18n.tr('play'),
+            leadingActionTooltip: i18n.tr('play'),
+            leadingActionIcon: Icons.play_arrow_rounded,
+            onSecondaryLeadingAction: () => unawaited(addTrackToPlaylist()),
+            secondaryLeadingActionLabel: i18n.tr('add_to_playlist'),
+            secondaryLeadingActionTooltip: i18n.tr('add_to_playlist'),
+            secondaryLeadingActionIconWidget: const PlaylistIcon.add(),
             shape: cardShape,
             swipeEnabled: false,
+            enabled: !isSelectionMode,
+            closedColor: cs.surface,
             actionLabel: removalLabel,
             removeTooltip: removalLabel,
             onRemove: () => _removeTrack(context, ref, track),
-            child: ColoredBox(
+            child: Material(
               color: Colors.transparent,
-              child: SizedBox(
-                height: kLibraryTrackTileHeight,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.xs,
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.audio_file_rounded,
-                        size: 16,
-                        color: cs.onSurfaceVariant.withValues(alpha: 0.6),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: WorkPageTranslationBuilder(
-                          texts: [nameParts.source],
-                          builder: (context, translate, _) => SearchHighlightedText(
-                            text:
-                                '${translate(nameParts.source)}${nameParts.suffix}',
-                            terms: searchQuery.trim().isEmpty
-                                ? null
-                                : extractSearchTerms(searchQuery),
-                            maxLines: 1,
-                            style:
-                                Theme.of(
-                                  context,
-                                ).textTheme.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                  color: isAlreadyPlaying
-                                      ? cs.primary
-                                      : cs.onSurface,
-                                ) ??
-                                const TextStyle(),
+              shadowColor: Colors.transparent,
+              surfaceTintColor: Colors.transparent,
+              child: AppEntryInkWell(
+                canRequestFocus: isSelectionMode,
+                onLongPress: onLongPress,
+                onTap: isSelectionMode
+                    ? onToggleSelect
+                    : () => unawaited(playSingleTrack()),
+                child: SizedBox(
+                  height: kLibraryTrackTileHeight,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.xs,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.audio_file_rounded,
+                          size: 16,
+                          color: cs.onSurfaceVariant.withValues(alpha: 0.6),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: WorkPageTranslationBuilder(
+                            texts: [nameParts.source],
+                            builder: (context, translate, _) =>
+                                SearchHighlightedText(
+                                  text:
+                                      '${translate(nameParts.source)}${nameParts.suffix}',
+                                  terms: searchQuery.trim().isEmpty
+                                      ? null
+                                      : extractSearchTerms(searchQuery),
+                                  maxLines: 1,
+                                  style:
+                                      Theme.of(
+                                        context,
+                                      ).textTheme.bodyMedium?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13,
+                                        color: isAlreadyPlaying
+                                            ? cs.primary
+                                            : cs.onSurface,
+                                      ) ??
+                                      const TextStyle(),
+                                ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),

@@ -379,26 +379,6 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
     );
   }
 
-  Widget _buildFadeInContent({
-    required BuildContext context,
-    required Widget child,
-  }) {
-    final disableAnimations = MediaQuery.disableAnimationsOf(context);
-    return TweenAnimationBuilder<double>(
-      key: ValueKey<int>(_loadGeneration),
-      tween: Tween<double>(begin: disableAnimations ? 1.0 : 0.0, end: 1.0),
-      duration: disableAnimations ? Duration.zero : kAppFadeDuration,
-      curve: kAppFadeCurve,
-      builder: (context, opacity, child) {
-        return FadeTransition(
-          opacity: AlwaysStoppedAnimation<double>(opacity),
-          child: child,
-        );
-      },
-      child: child,
-    );
-  }
-
   Widget _buildDocumentContent(
     BuildContext context,
     ThemeData theme,
@@ -443,54 +423,51 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
     final maxWidth = AppDesignTokens.of(context).readableContentMaxWidth;
     return SelectionArea(
       contextMenuBuilder: buildAppSelectableTextMenu,
-      child: _buildFadeInContent(
-        context: context,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final horizontalPadding = math.max(
-              20.0,
-              (constraints.maxWidth - maxWidth) / 2,
-            );
-            return CustomScrollView(
-              controller: _scrollController,
-              physics: const AlwaysScrollableScrollPhysics(),
-              slivers: [
-                SliverPadding(
-                  padding: EdgeInsets.fromLTRB(
-                    horizontalPadding,
-                    contentTopInset,
-                    horizontalPadding,
-                    bottomPadding + 76,
-                  ),
-                  sliver: SliverList.builder(
-                    itemCount: markdown
-                        ? document.markdownNodes.length
-                        : document.textBlocks.length,
-                    itemBuilder: (context, index) => Padding(
-                      key: ValueKey('work_document_${_loadGeneration}_$index'),
-                      padding: EdgeInsets.only(
-                        bottom: markdown
-                            ? (markdownStyle.blockSpacing ?? 8)
-                            : 0,
-                      ),
-                      child: markdown
-                          ? TranslatedMarkdownBody(
-                              nodes: [document.markdownNodes[index]],
-                              styleSheet: markdownStyle,
-                            )
-                          : _buildTextBlock(
-                              document.textBlocks[index],
-                              textStyle,
-                              collapseBoundary:
-                                  index < document.textBlocks.length - 1,
-                            ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final horizontalPadding = math.max(
+            20.0,
+            (constraints.maxWidth - maxWidth) / 2,
+          );
+          return CustomScrollView(
+            controller: _scrollController,
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(
+                  horizontalPadding,
+                  contentTopInset,
+                  horizontalPadding,
+                  bottomPadding + 76,
+                ),
+                sliver: SliverList.builder(
+                  itemCount: markdown
+                      ? document.markdownNodes.length
+                      : document.textBlocks.length,
+                  itemBuilder: (context, index) => Padding(
+                    key: ValueKey('work_document_${_loadGeneration}_$index'),
+                    padding: EdgeInsets.only(
+                      bottom: markdown
+                          ? (markdownStyle.blockSpacing ?? 8)
+                          : 0,
                     ),
+                    child: markdown
+                        ? TranslatedMarkdownBody(
+                            nodes: [document.markdownNodes[index]],
+                            styleSheet: markdownStyle,
+                          )
+                        : _buildTextBlock(
+                            document.textBlocks[index],
+                            textStyle,
+                            collapseBoundary:
+                                index < document.textBlocks.length - 1,
+                          ),
                   ),
                 ),
-              ],
-            );
-          },
-        ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -505,7 +482,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
       final text = translate(block);
       final content = Text(text, style: style);
       return collapseBoundary && text.endsWith('\n')
-          ? _TextBlockBoundary(child: content)
+          ? _TextBlockBoundary(textLength: text.length, child: content)
           : content;
     },
   );
@@ -729,14 +706,34 @@ class _WorkPdfContentState extends State<_WorkPdfContent> {
 }
 
 class _TextBlockBoundary extends SingleChildRenderObjectWidget {
-  const _TextBlockBoundary({required super.child});
+  const _TextBlockBoundary({required this.textLength, required super.child});
+
+  final int textLength;
 
   @override
   RenderObject createRenderObject(BuildContext context) =>
-      _TextBlockBoundaryBox();
+      _TextBlockBoundaryBox(textLength);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _TextBlockBoundaryBox renderObject,
+  ) {
+    renderObject.textLength = textLength;
+  }
 }
 
 class _TextBlockBoundaryBox extends RenderProxyBox {
+  _TextBlockBoundaryBox(this._textLength);
+
+  int _textLength;
+  int get textLength => _textLength;
+  set textLength(int value) {
+    if (_textLength == value) return;
+    _textLength = value;
+    markNeedsLayout();
+  }
+
   @override
   void performLayout() {
     super.performLayout();
@@ -749,7 +746,7 @@ class _TextBlockBoundaryBox extends RenderProxyBox {
     // Keep the newline in selection/copy, but reuse the paragraph's completed
     // layout to omit its empty last line. The next block supplies that line.
     final end = paragraph.getOffsetForCaret(
-      TextPosition(offset: paragraph.text.toPlainText().length),
+      TextPosition(offset: _textLength),
       Rect.zero,
     );
     size = constraints.constrain(Size(size.width, end.dy));

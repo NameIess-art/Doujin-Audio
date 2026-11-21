@@ -98,12 +98,22 @@ final class SubtitleOverlayController {
     _runtimeSyncing = true;
     try {
       if (!_runtimeEnabled) {
-        await stopRuntime(immediate: true);
+        if (_runtimeRunning ||
+            _runtimePositionSubscription != null ||
+            _observedRuntimeSession != null ||
+            _observedRuntimeSubtitles != null) {
+          await stopRuntime(immediate: true);
+        }
         return;
       }
       final session = _runtimeSession?.call();
       if (session == null) {
-        await stopRuntime(immediate: true);
+        if (_runtimeRunning ||
+            _runtimePositionSubscription != null ||
+            _observedRuntimeSession != null ||
+            _observedRuntimeSubtitles != null) {
+          await stopRuntime(immediate: true);
+        }
         return;
       }
       final sessionId = session.id;

@@ -125,6 +125,7 @@ class _DlsiteMetadataReviewPageState
   final ScrollController _scrollController = WindowsSmoothScrollController();
   double _headerHeight = 0;
   bool _headerMeasurementScheduled = false;
+  Object? _lastHeaderLayoutKey;
   final _titleController = TextEditingController();
   final _folderNameController = TextEditingController();
   final _rjCodeController = TextEditingController();
@@ -689,7 +690,9 @@ class _DlsiteMetadataReviewPageState
     }
   }
 
-  void _scheduleHeaderMeasurement() {
+  void _scheduleHeaderMeasurement(Object layoutKey) {
+    if (_headerHeight > 0 && _lastHeaderLayoutKey == layoutKey) return;
+    _lastHeaderLayoutKey = layoutKey;
     if (_headerMeasurementScheduled) return;
     _headerMeasurementScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -721,13 +724,14 @@ class _DlsiteMetadataReviewPageState
       ref.watch(coverImageResolutionProvider),
     );
 
+    final mediaSize = MediaQuery.sizeOf(context);
+    final mediaPadding = MediaQuery.paddingOf(context);
     final hasBatchNavigation =
         widget.onBatchNavigate != null ||
         (widget.batchIndex != null && widget.batchTotal != null);
-    final stackBottomActions =
-        hasBatchNavigation && MediaQuery.sizeOf(context).width < 360;
+    final stackBottomActions = hasBatchNavigation && mediaSize.width < 360;
     final bottomInset =
-        MediaQuery.paddingOf(context).bottom +
+        mediaPadding.bottom +
         MobileOverlayInset.of(context) +
         78 +
         (stackBottomActions ? 54 : 0);
@@ -735,17 +739,26 @@ class _DlsiteMetadataReviewPageState
         ? i18n.tr('audio_detail_edit_info')
         : i18n.tr('dlsite_review_title');
     final targetName = PathDisplay.fileName(widget.detail.target.targetPath);
+    final hasCandidateNavigation = _candidates.length > 1 && !_loading;
 
-    _scheduleHeaderMeasurement();
+    _scheduleHeaderMeasurement((
+      reviewTitle,
+      targetName,
+      widget.batchIndex,
+      widget.batchTotal,
+      hasCandidateNavigation,
+      mediaSize.width,
+      mediaPadding.top,
+      MediaQuery.textScalerOf(context),
+      i18n.language,
+    ));
 
-    final defaultHeaderHeight = MediaQuery.paddingOf(context).top + 135.0;
+    final defaultHeaderHeight = mediaPadding.top + 135.0;
     final effectiveHeaderHeight = _headerHeight > 0
         ? _headerHeight
         : defaultHeaderHeight;
     final listTopPadding =
         effectiveHeaderHeight + AppPageHeaderMetrics.firstContentSpacing;
-
-    final hasCandidateNavigation = _candidates.length > 1 && !_loading;
 
     final Widget? headerTrailing = hasCandidateNavigation
         ? HeaderActionPill(

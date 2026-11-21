@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/media/path_display.dart';
+import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/library_edit_icon.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../application/library_entry_editor_service.dart';
@@ -26,6 +27,21 @@ class LibraryEditPage extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
   ) async {
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
+    final confirmed = await showConfirmActionDialog(
+      context: context,
+      title: i18n.tr('remove_library'),
+      message: i18n.tr('remove_library_confirm', {
+        'name': PathDisplay.displayPathFor(libraryPath),
+      }),
+      cancelLabel: i18n.tr('cancel'),
+      confirmLabel: i18n.tr('remove'),
+      confirmIcon: Icons.delete_outline_rounded,
+    );
+    if (!confirmed || !context.mounted) return;
     final removed = await stageLibraryRemoval(
       context,
       ref,

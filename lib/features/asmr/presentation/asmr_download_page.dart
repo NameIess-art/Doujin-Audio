@@ -57,6 +57,8 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
   final GlobalKey _headerKey = GlobalKey();
   double _headerHeight = 0;
   bool _headerMeasurementScheduled = false;
+  Object? _lastHeaderLayoutKey;
+  final ValueNotifier<int> _selectionRevision = ValueNotifier<int>(0);
   AsmrDownloadSelectionModel? _selection;
   String? _destinationRoot;
   AsmrWork? _work;
@@ -105,6 +107,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
   void dispose() {
     UiInteractionCoordinator.instance.cancelCommit(_bootstrapCommitKey);
     _pendingBootstrapCommit = null;
+    _selectionRevision.dispose();
     super.dispose();
   }
 
@@ -265,7 +268,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
 
   void _refreshSelection() {
     if (!mounted) return;
-    setState(() {});
+    _selectionRevision.value++;
   }
 
   Future<void> _startDownload() async {
@@ -399,7 +402,9 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     }
   }
 
-  void _scheduleHeaderMeasurement() {
+  void _scheduleHeaderMeasurement(Object layoutKey) {
+    if (_headerHeight > 0 && _lastHeaderLayoutKey == layoutKey) return;
+    _lastHeaderLayoutKey = layoutKey;
     if (_headerMeasurementScheduled) return;
     _headerMeasurementScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -420,12 +425,10 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     final primaryColor = Theme.of(context).colorScheme.primary;
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final summary = selection?.selectedSummary();
-    final selectedLeafCount = summary?.leafCount ?? 0;
-    final selectedTotalSizeBytes = summary?.totalSizeBytes ?? 0;
-    final selectedHasUnknownSize = summary?.hasUnknownSize ?? false;
     final hasDestination = (_destinationRoot?.trim().isNotEmpty ?? false);
-    final compactHeader = MediaQuery.sizeOf(context).width < 400;
+    final mediaSize = MediaQuery.sizeOf(context);
+    final mediaPadding = MediaQuery.paddingOf(context);
+    final compactHeader = mediaSize.width < 400;
     final destinationLabel = i18n.tr(
       hasDestination
           ? 'asmr_download_change_path'
@@ -437,13 +440,26 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     final chooseDestination = (_starting || _loading || _choosingDestination)
         ? null
         : _chooseDestination;
-    final bottomInset =
-        MediaQuery.paddingOf(context).bottom + MobileOverlayInset.of(context);
+    final bottomInset = mediaPadding.bottom + MobileOverlayInset.of(context);
     final listBottomPadding = 76 + bottomInset;
 
-    _scheduleHeaderMeasurement();
+    _scheduleHeaderMeasurement((
+      _work?.id,
+      _work?.title,
+      widget.initialRjCode,
+      widget.batchIndex,
+      widget.batchTotal,
+      widget.customWorkFolderName,
+      mediaSize.width,
+      mediaPadding.top,
+      MediaQuery.textScalerOf(context),
+      i18n.language,
+    ));
 
-    final defaultHeaderHeight = MediaQuery.paddingOf(context).top + 140.0;
+    final defaultHeaderHeight =
+        mediaPadding.top +
+        140.0 +
+        ((widget.batchTotal ?? 0) > 1 ? 36.0 : 0.0);
     final effectiveHeaderHeight = _headerHeight > 0
         ? _headerHeight
         : defaultHeaderHeight;
@@ -659,22 +675,29 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                       ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-                      child: AnimatedSwitcher(
-                        duration: MediaQuery.disableAnimationsOf(context)
-                            ? Duration.zero
-                            : kAppFadeDuration,
-                        switchInCurve: kAppFadeCurve,
-                        switchOutCurve: kAppFadeCurve,
-                        child: AsmrDownloadSummaryCard(
-                          key: ValueKey(_work == null),
-                          work: _work,
-                          initialRjCode: widget.initialRjCode,
-                          selectedLeafCount: selectedLeafCount,
-                          selectedTotalSizeBytes: selectedTotalSizeBytes,
-                          selectedHasUnknownSize: selectedHasUnknownSize,
-
-                          customWorkFolderName: widget.customWorkFolderName,
-                        ),
+                      child: ValueListenableBuilder<int>(
+                        valueListenable: _selectionRevision,
+                        builder: (context, _, _) {
+                          final summary = selection?.selectedSummary();
+                          return AnimatedSwitcher(
+                            duration: MediaQuery.disableAnimationsOf(context)
+                                ? Duration.zero
+                                : kAppFadeDuration,
+                            switchInCurve: kAppFadeCurve,
+                            switchOutCurve: kAppFadeCurve,
+                            child: AsmrDownloadSummaryCard(
+                              key: ValueKey(_work == null),
+                              work: _work,
+                              initialRjCode: widget.initialRjCode,
+                              selectedLeafCount: summary?.leafCount ?? 0,
+                              selectedTotalSizeBytes:
+                                  summary?.totalSizeBytes ?? 0,
+                              selectedHasUnknownSize:
+                                  summary?.hasUnknownSize ?? false,
+                              customWorkFolderName: widget.customWorkFolderName,
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ],

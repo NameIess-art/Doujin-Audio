@@ -7,8 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
-import '../../../../core/widgets/app_buttons.dart';
-import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../application/playback_facade.dart';
@@ -59,13 +57,46 @@ class _LoopModeSheetState extends ConsumerState<LoopModeSheet> {
   }
 
   void _selectPlaybackOptions(Set<_PlaybackOption> selected) {
-    final loopSelected = selected.contains(_PlaybackOption.loop);
-    final shuffleSelected = selected.contains(_PlaybackOption.shuffle);
-    if (!loopSelected && !shuffleSelected) return;
+    if (selected.isEmpty) return;
     _triggerSelectionFeedback();
     setState(() {
-      _shuffle = loopSelected && shuffleSelected ? !_shuffle : shuffleSelected;
+      _shuffle = selected.first == _PlaybackOption.shuffle;
     });
+  }
+
+  Future<void> _confirm() async {
+    final targetNonSingleMode = _crossFolder
+        ? (_pauseAfterPlay
+              ? (_shuffle
+                    ? SessionLoopMode.crossRandomOnce
+                    : SessionLoopMode.crossOnce)
+              : (_shuffle
+                    ? SessionLoopMode.crossRandom
+                    : SessionLoopMode.crossSequential))
+        : (_pauseAfterPlay
+              ? (_shuffle
+                    ? SessionLoopMode.folderRandomOnce
+                    : SessionLoopMode.folderOnce)
+              : (_shuffle
+                    ? SessionLoopMode.folderRandom
+                    : SessionLoopMode.folderSequential));
+
+    if (_single) {
+      await widget.playback.setSessionLoopMode(
+        widget.session.id,
+        targetNonSingleMode,
+      );
+      await widget.playback.setSessionLoopMode(
+        widget.session.id,
+        SessionLoopMode.single,
+      );
+    } else {
+      await widget.playback.setSessionLoopMode(
+        widget.session.id,
+        targetNonSingleMode,
+      );
+    }
+    if (mounted) Navigator.of(context).pop();
   }
 
   @override
@@ -176,14 +207,22 @@ class _LoopModeSheetState extends ConsumerState<LoopModeSheet> {
                                       ButtonSegment<bool>(
                                         value: false,
                                         icon: const Icon(Icons.folder_rounded),
-                                        label: Text(i18n.tr('current_folder')),
+                                        label: Text(
+                                          i18n.tr('current_folder'),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ),
                                       ButtonSegment<bool>(
                                         value: true,
                                         icon: const Icon(
                                           Icons.folder_copy_rounded,
                                         ),
-                                        label: Text(i18n.tr('cross_folder')),
+                                        label: Text(
+                                          i18n.tr('cross_folder'),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ),
                                     ],
                                     selected: {_crossFolder},
@@ -220,7 +259,6 @@ class _LoopModeSheetState extends ConsumerState<LoopModeSheet> {
                                         ),
                                       ),
                                     ],
-                                    multiSelectionEnabled: true,
                                     selected: _playbackOptions,
                                     onSelectionChanged: _selectPlaybackOptions,
                                     expandedInsets: EdgeInsets.zero,
@@ -233,60 +271,14 @@ class _LoopModeSheetState extends ConsumerState<LoopModeSheet> {
                       ),
                     ).withWindowsSmoothScroll(),
                   ),
-                  const SizedBox(height: 8),
-                  SizedBox(
+                  AppBottomSheetActions(
                     key: const ValueKey('loop_mode_actions'),
-                    width: double.infinity,
-                    child: AppDialogActions(
-                      children: [
-                        AppSecondaryButton(
-                          key: const ValueKey('loop_mode_cancel'),
-                          onPressed: () => Navigator.of(context).pop(),
-                          label: i18n.tr('cancel'),
-                        ),
-                        AppPrimaryButton(
-                          key: const ValueKey('loop_mode_confirm'),
-                          onPressed: () async {
-                            final targetNonSingleMode = _crossFolder
-                                ? (_pauseAfterPlay
-                                      ? (_shuffle
-                                            ? SessionLoopMode.crossRandomOnce
-                                            : SessionLoopMode.crossOnce)
-                                      : (_shuffle
-                                            ? SessionLoopMode.crossRandom
-                                            : SessionLoopMode.crossSequential))
-                                : (_pauseAfterPlay
-                                      ? (_shuffle
-                                            ? SessionLoopMode.folderRandomOnce
-                                            : SessionLoopMode.folderOnce)
-                                      : (_shuffle
-                                            ? SessionLoopMode.folderRandom
-                                            : SessionLoopMode
-                                                  .folderSequential));
-
-                            if (_single) {
-                              await widget.playback.setSessionLoopMode(
-                                widget.session.id,
-                                targetNonSingleMode,
-                              );
-                              await widget.playback.setSessionLoopMode(
-                                widget.session.id,
-                                SessionLoopMode.single,
-                              );
-                            } else {
-                              await widget.playback.setSessionLoopMode(
-                                widget.session.id,
-                                targetNonSingleMode,
-                              );
-                            }
-                            if (context.mounted) {
-                              Navigator.of(context).pop();
-                            }
-                          },
-                          label: i18n.tr('confirm'),
-                        ),
-                      ],
-                    ),
+                    cancelKey: const ValueKey('loop_mode_cancel'),
+                    confirmKey: const ValueKey('loop_mode_confirm'),
+                    cancelLabel: i18n.tr('cancel'),
+                    confirmLabel: i18n.tr('confirm'),
+                    onCancel: () => Navigator.of(context).pop(),
+                    onConfirm: _confirm,
                   ),
                 ],
               ),

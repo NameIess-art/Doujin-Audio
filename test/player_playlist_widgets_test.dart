@@ -7185,16 +7185,15 @@ void main() {
     final cancelRect = tester.getRect(
       find.byKey(const ValueKey('sort_options_cancel')),
     );
-    final confirmRect = tester.getRect(
-      find.byKey(const ValueKey('sort_options_confirm')),
-    );
+    final confirmButton = find.byKey(const ValueKey('sort_options_confirm'));
+    final confirmRect = tester.getRect(confirmButton);
     expect(
-      tester.widget(find.byKey(const ValueKey('sort_options_confirm'))),
-      isA<TextButton>(),
+      find.descendant(of: confirmButton, matching: find.byType(FilledButton)),
+      findsOneWidget,
     );
     expect(confirmRect.bottom, lessThanOrEqualTo(viewportSize.height));
     expect(cancelRect.center.dx, greaterThan(viewportSize.width / 2));
-    expect(confirmRect.left, greaterThan(cancelRect.right));
+    expect(confirmRect.left - cancelRect.right, closeTo(8, 0.01));
     expect(confirmRect.center.dy, closeTo(cancelRect.center.dy, 0.01));
     expect(confirmRect.width, lessThan(120));
     final sortControls = find.byWidgetPredicate(
@@ -7855,7 +7854,13 @@ void main() {
       findsOneWidget,
     );
     expect(find.byType(ReorderableListView), findsOneWidget);
-    expect(find.byType(ReorderableDelayedDragStartListener), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('queue-entry')),
+        matching: find.byType(ReorderableDelayedDragStartListener),
+      ),
+      findsOneWidget,
+    );
 
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 50)),
@@ -7927,7 +7932,7 @@ void main() {
 
   for (final loadFails in [false, true]) {
     testWidgets(
-      'first queue reorder keeps its drop position until load completes (failure: $loadFails)',
+      'first queue reorder moves a single track before a work (load failure: $loadFails)',
       (tester) async {
         tester.view.physicalSize = defaultTargetPlatform == TargetPlatform.windows
             ? const Size(960, 600)
@@ -7966,32 +7971,55 @@ void main() {
         await tester.pumpAndSettle();
 
         final work = find.byKey(const ValueKey('saved-entry-0'));
-        final originalTop = tester.getTopLeft(work).dy;
+        final single = find.byKey(const ValueKey('saved-entry-1'));
+        final originalTop = tester.getTopLeft(single).dy;
+        Finder row(Finder entry) =>
+            find.descendant(of: entry, matching: find.byType(FileTreeRow));
+        final singleRow = tester.widget<FileTreeRow>(row(single));
+        expect(singleRow.titleMaxLines, 2);
+        expect(singleRow.subtitleMaxLines, 1);
+        expect(
+          singleRow.subtitle,
+          fixture.languageProvider.tr('audio_count', {'count': 1}),
+        );
+        expect(tester.getSize(row(single)), tester.getSize(row(work)));
+        expect(singleRow.onTap, isNull);
         expect(repository.queueLoads, 0);
-        final drag = await tester.startGesture(tester.getCenter(work));
+        final drag = await tester.startGesture(
+          tester.getCenter(single),
+          kind: defaultTargetPlatform == TargetPlatform.windows
+              ? PointerDeviceKind.mouse
+              : PointerDeviceKind.touch,
+        );
         await tester.pump(kLongPressTimeout);
-        await drag.moveBy(const Offset(0, 150));
+        await drag.moveTo(tester.getCenter(work));
         await tester.pumpAndSettle();
         await drag.up();
         await tester.pumpAndSettle();
 
         expect(repository.queueLoads, 1);
         expect(session.queueLoadingRequired, isTrue);
-        final previewTop = tester.getTopLeft(work).dy;
-        expect(previewTop, greaterThan(originalTop));
+        final previewTop = tester.getTopLeft(single).dy;
+        expect(previewTop, lessThan(originalTop));
 
         if (loadFails) {
           load.completeError(StateError('Failed to restore queue'));
           await tester.pumpAndSettle();
           expect(session.queueLoadingRequired, isTrue);
-          expect(tester.getTopLeft(work).dy, closeTo(originalTop, 0.01));
-          expect(find.byType(ReorderableDelayedDragStartListener), findsOneWidget);
+          expect(tester.getTopLeft(single).dy, closeTo(originalTop, 0.01));
+          expect(
+            find.descendant(
+              of: single,
+              matching: find.byType(ReorderableDelayedDragStartListener),
+            ),
+            findsOneWidget,
+          );
         } else {
           load.complete();
           await tester.pumpAndSettle();
           expect(session.queueLoadingRequired, isFalse);
           expect(session.playbackQueue!.entries.first.id, 'saved-entry-1');
-          expect(tester.getTopLeft(work).dy, closeTo(previewTop, 0.01));
+          expect(tester.getTopLeft(single).dy, closeTo(previewTop, 0.01));
         }
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
@@ -8558,17 +8586,20 @@ void main() {
       final queueSession = playback.createPlaybackQueue('Queue');
       addTearDown(queueSession.shutdown);
       for (var index = 0; index < 4; index++) {
+        final track = testMusicTrack(
+          name: 'Track $index',
+          path: '/library/work$index/track.mp3',
+          groupKey: '/library/work$index',
+          groupTitle: 'Work $index',
+        );
+        if (index == 1) {
+          await playback.addTrackToPlaybackQueue(queueSession.id, track);
+          continue;
+        }
         await playback.addWorkToPlaybackQueue(
           queueSession.id,
           title: 'Work $index',
-          tracks: [
-            testMusicTrack(
-              name: 'Track $index',
-              path: '/library/work$index/track.mp3',
-              groupKey: '/library/work$index',
-              groupTitle: 'Work $index',
-            ),
-          ],
+          tracks: [track],
         );
       }
       fixture.playbackService.syncSlice(

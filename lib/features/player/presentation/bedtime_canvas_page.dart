@@ -44,10 +44,14 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
   late final Animation<double> _breathingAnimation;
   late final AnimationController _holdExitController;
 
+  static const double _moveCancelThreshold = 24.0;
+  static const double _holdVisibleThreshold = 0.12;
+
   Timer? _clockTimer;
   Timer? _idleDimTimer;
   Timer? _feedbackTimer;
   IconData? _feedbackIcon;
+  int? _activePointerId;
   Offset? _touchPosition;
   Offset? _touchStartPosition;
   final Set<String> _targetSessionIds = <String>{};
@@ -309,29 +313,38 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
 
   void _onPointerDown(PointerDownEvent event) {
     _onUserInteraction();
+    if (_activePointerId != null) return;
+    _activePointerId = event.pointer;
     _touchStartPosition = event.position;
     _touchPosition = event.position;
     _holdExitController.forward(from: 0.0);
   }
 
   void _onPointerMove(PointerMoveEvent event) {
-    _touchPosition = event.position;
-    if (_touchStartPosition != null) {
-      final distance = (event.position - _touchStartPosition!).distance;
-      if (distance > 24) {
-        _holdExitController.reset();
-        _touchStartPosition = null;
-      }
+    if (_activePointerId != event.pointer || _touchStartPosition == null) {
+      return;
+    }
+    final distance = (event.position - _touchStartPosition!).distance;
+    if (distance > _moveCancelThreshold) {
+      _holdExitController.reset();
+      _touchStartPosition = null;
+      _touchPosition = null;
+    } else {
+      _touchPosition = _touchStartPosition;
     }
   }
 
   void _onPointerUp(PointerUpEvent event) {
+    if (_activePointerId != event.pointer) return;
+    _activePointerId = null;
     _holdExitController.reset();
     _touchStartPosition = null;
     _touchPosition = null;
   }
 
   void _onPointerCancel(PointerCancelEvent event) {
+    if (_activePointerId != event.pointer) return;
+    _activePointerId = null;
     _holdExitController.reset();
     _touchStartPosition = null;
     _touchPosition = null;
@@ -385,6 +398,7 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
                             fontSize: 68,
                             fontWeight: FontWeight.w200,
                             letterSpacing: 2,
+                            fontFeatures: [FontFeature.tabularFigures()],
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -447,11 +461,19 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
                 AnimatedBuilder(
                   animation: _holdExitController,
                   builder: (context, _) {
-                    final progress = _holdExitController.value;
-                    if (progress <= 0.0) return const SizedBox.shrink();
+                    final rawProgress = _holdExitController.value;
+                    if (rawProgress <= _holdVisibleThreshold) {
+                      return const SizedBox.shrink();
+                    }
+                    final progress =
+                        ((rawProgress - _holdVisibleThreshold) /
+                                (1.0 - _holdVisibleThreshold))
+                            .clamp(0.0, 1.0);
+                    final fadeOpacity = (progress / 0.18).clamp(0.0, 1.0);
 
                     final pos =
                         _touchPosition ??
+                        _touchStartPosition ??
                         Offset(
                           MediaQuery.sizeOf(context).width / 2,
                           MediaQuery.sizeOf(context).height / 2,
@@ -461,29 +483,37 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
                       left: pos.dx - 40,
                       top: pos.dy - 40,
                       child: IgnorePointer(
-                        child: SizedBox(
-                          width: 80,
-                          height: 80,
-                          child: Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              CircularProgressIndicator(
-                                value: progress,
-                                strokeWidth: 3,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  _bedtimeWarmForeground.withValues(alpha: 0.4),
+                        child: Opacity(
+                          opacity: fadeOpacity,
+                          child: SizedBox(
+                            width: 80,
+                            height: 80,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                CircularProgressIndicator(
+                                  value: progress,
+                                  strokeWidth: 3,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    _bedtimeWarmForeground.withValues(
+                                      alpha: 0.4,
+                                    ),
+                                  ),
+                                  backgroundColor: _bedtimeWarmForeground
+                                      .withValues(alpha: 0.1),
                                 ),
-                                backgroundColor: _bedtimeWarmForeground
-                                    .withValues(alpha: 0.1),
-                              ),
-                              Icon(
-                                Icons.lock_open_rounded,
-                                size: 20,
-                                color: _bedtimeWarmForeground.withValues(
-                                  alpha: math.min(0.4, 0.15 + progress * 0.25),
+                                Icon(
+                                  Icons.lock_open_rounded,
+                                  size: 20,
+                                  color: _bedtimeWarmForeground.withValues(
+                                    alpha: math.min(
+                                      0.4,
+                                      0.15 + progress * 0.25,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -544,6 +574,7 @@ class _BedtimeTimerStatus extends ConsumerWidget {
             fontSize: 13,
             fontWeight: FontWeight.w400,
             letterSpacing: 0.5,
+            fontFeatures: const [FontFeature.tabularFigures()],
           ),
         ),
       ],

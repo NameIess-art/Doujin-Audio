@@ -7868,11 +7868,24 @@ void main() {
     expect(headerIcon, findsOneWidget);
     expect(tester.widget<Icon>(headerIcon).size, 24);
     expect(tester.widget<Icon>(headerIcon).icon, Icons.repeat_rounded);
+    final actions = find.byKey(const ValueKey('loop_mode_actions'));
+    final cancel = find.byKey(const ValueKey('loop_mode_cancel'));
+    final confirm = find.byKey(const ValueKey('loop_mode_confirm'));
+    expect(tester.widget(cancel), isA<TextButton>());
+    expect(
+      find.descendant(of: confirm, matching: find.byType(FilledButton)),
+      findsOneWidget,
+    );
+    final cancelRect = tester.getRect(cancel);
+    final confirmRect = tester.getRect(confirm);
+    expect(confirmRect.right, closeTo(tester.getRect(actions).right, 0.01));
+    expect(confirmRect.left - cancelRect.right, closeTo(8, 0.01));
+    expect(confirmRect.center.dy, closeTo(cancelRect.center.dy, 0.01));
     await tester.tap(find.text(harness.language.tr('single_loop')));
     await tester.pump();
     await tester.tap(find.text(harness.language.tr('cross_folder')));
     await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('loop_mode_confirm')));
+    await tester.tap(confirm);
     await tester.pumpAndSettle();
     expect(session.loopMode, SessionLoopMode.crossSequential);
     await _settleSessionDetailAsyncWork(tester);

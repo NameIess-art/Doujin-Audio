@@ -1,5 +1,5 @@
 import 'dart:math' as math;
-import 'dart:ui' as ui show Image;
+import 'dart:ui' as ui show Image, PathMetric;
 
 import '../../../library/presentation/library_providers.dart';
 import '../../../settings/presentation/settings_providers.dart';
@@ -326,10 +326,20 @@ class SessionCoverProgressRing extends ConsumerStatefulWidget {
       _SessionCoverProgressRingState();
 }
 
+class _CoverRingGeometryCache {
+  (Size, double, double)? key;
+  RRect? rrect;
+  Path? basePath;
+  ui.PathMetric? firstMetric;
+}
+
 class _SessionCoverProgressRingState
     extends ConsumerState<SessionCoverProgressRing> {
   PlaybackPositionUiGate? _positionGate;
   PlaybackSessionSnapshot? _lastSession;
+  final ValueNotifier<int> _quantizedStep = ValueNotifier<int>(0);
+  final _CoverRingGeometryCache _geometryCache = _CoverRingGeometryCache();
+  int _stepResolution = 720;
 
   PlaybackSessionSnapshot? _resolveSession() {
     if (widget.session != null) return widget.session;
@@ -340,11 +350,33 @@ class _SessionCoverProgressRingState
     return null;
   }
 
+  int _computeQuantizedStep() {
+    final snapshot = _positionGate?.value;
+    final duration = snapshot?.duration;
+    if (snapshot == null || duration == null || duration.inMilliseconds <= 0) {
+      return 0;
+    }
+    final clamped =
+        (snapshot.position.inMilliseconds / duration.inMilliseconds).clamp(
+          0.0,
+          1.0,
+        );
+    if (clamped <= 0.0) return 0;
+    if (clamped >= 0.999) return _stepResolution + 1;
+    return 1 + (clamped * _stepResolution).round();
+  }
+
+  void _handlePositionTick() {
+    _quantizedStep.value = _computeQuantizedStep();
+  }
+
   void _syncGate(PlaybackSessionSnapshot? session) {
     if (session == null) {
+      _positionGate?.removeListener(_handlePositionTick);
       _positionGate?.dispose();
       _positionGate = null;
       _lastSession = null;
+      _quantizedStep.value = 0;
       return;
     }
 
@@ -352,12 +384,13 @@ class _SessionCoverProgressRingState
       _positionGate = PlaybackPositionUiGate(
         session: session,
         includeBufferedPosition: false,
-      );
+      )..addListener(_handlePositionTick);
       _positionGate!.tickerModeEnabled = TickerMode.valuesOf(context).enabled;
     } else if (_lastSession != session) {
       _positionGate!.updateSession(session);
     }
     _lastSession = session;
+    _handlePositionTick();
   }
 
   @override
@@ -378,8 +411,10 @@ class _SessionCoverProgressRingState
 
   @override
   void dispose() {
+    _positionGate?.removeListener(_handlePositionTick);
     _positionGate?.dispose();
     _positionGate = null;
+    _quantizedStep.dispose();
     super.dispose();
   }
 
@@ -392,6 +427,13 @@ class _SessionCoverProgressRingState
 
     final w = widget.width ?? widget.size ?? playlistCoverSize;
     final h = widget.height ?? widget.size ?? playlistCoverSize;
+    final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
+    final circumference = math.max(w, h) * 4.0;
+    final nextResolution = (circumference * dpr * 2).round().clamp(360, 1440);
+    if (_stepResolution != nextResolution) {
+      _stepResolution = nextResolution;
+      _quantizedStep.value = _computeQuantizedStep();
+    }
     final insets = 2 * (widget.strokeWidth + widget.gap);
     final innerW = (w - insets).clamp(0.0, double.infinity);
     final innerH = (h - insets).clamp(0.0, double.infinity);
@@ -409,6 +451,8 @@ class _SessionCoverProgressRingState
                 child: CustomPaint(
                   painter: _CoverProgressRingPainter(
                     positionGate: _positionGate,
+                    quantizedStep: _quantizedStep,
+                    geometryCache: _geometryCache,
                     activeColor: activeColor,
                     trackColor: trackColor,
                     strokeWidth: widget.strokeWidth,
@@ -427,13 +471,19 @@ class _SessionCoverProgressRingState
 class _CoverProgressRingPainter extends CustomPainter {
   _CoverProgressRingPainter({
     required this.positionGate,
+    required this.quantizedStep,
+    required this.geometryCache,
     required this.activeColor,
     required this.trackColor,
     required this.strokeWidth,
     this.borderRadius,
-  }) : super(repaint: positionGate);
+  }) : initialStep = quantizedStep.value,
+       super(repaint: quantizedStep);
 
   final PlaybackPositionUiGate? positionGate;
+  final ValueNotifier<int> quantizedStep;
+  final _CoverRingGeometryCache geometryCache;
+  final int initialStep;
   final Color activeColor;
   final Color trackColor;
   final double strokeWidth;
@@ -484,36 +534,16 @@ class _CoverProgressRingPainter extends CustomPainter {
 
     // Rounded rectangle progress ring
     final halfStroke = strokeWidth / 2;
-    final rect = Rect.fromLTWH(
-      halfStroke,
-      halfStroke,
-      math.max(0.0, size.width - strokeWidth),
-      math.max(0.0, size.height - strokeWidth),
-    );
-    if (rect.width <= 0 || rect.height <= 0) return;
+    final rectW = math.max(0.0, size.width - strokeWidth);
+    final rectH = math.max(0.0, size.height - strokeWidth);
+    if (rectW <= 0 || rectH <= 0) return;
 
-    final maxRadius = math.min(rect.width, rect.height) / 2;
+    final maxRadius = math.min(rectW, rectH) / 2;
     final r = (br.topLeft.x - halfStroke).clamp(0.0, maxRadius);
-    final rrect = RRect.fromRectAndRadius(rect, Radius.circular(r));
-
-    final trackPaint = Paint()
-      ..color = trackColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth;
-    canvas.drawRRect(rrect, trackPaint);
-
-    final clamped = fraction.clamp(0.0, 1.0);
-    if (clamped <= 0.0) return;
-
-    final progressPaint = Paint()
-      ..color = activeColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round;
-
-    if (clamped >= 0.999) {
-      canvas.drawRRect(rrect, progressPaint);
-    } else {
+    final cacheKey = (size, strokeWidth, r);
+    if (geometryCache.key != cacheKey) {
+      final rect = Rect.fromLTWH(halfStroke, halfStroke, rectW, rectH);
+      final rrect = RRect.fromRectAndRadius(rect, Radius.circular(r));
       final top = rect.top;
       final bottom = rect.bottom;
       final left = rect.left;
@@ -541,9 +571,35 @@ class _CoverProgressRingPainter extends CustomPainter {
       path.lineTo(cx, top);
       path.close();
 
-      final metrics = path.computeMetrics().toList();
-      if (metrics.isNotEmpty) {
-        final metric = metrics.first;
+      final metrics = path.computeMetrics();
+      geometryCache
+        ..key = cacheKey
+        ..rrect = rrect
+        ..basePath = path
+        ..firstMetric = metrics.isEmpty ? null : metrics.first;
+    }
+
+    final rrect = geometryCache.rrect!;
+    final trackPaint = Paint()
+      ..color = trackColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth;
+    canvas.drawRRect(rrect, trackPaint);
+
+    final clamped = fraction.clamp(0.0, 1.0);
+    if (clamped <= 0.0) return;
+
+    final progressPaint = Paint()
+      ..color = activeColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+
+    if (clamped >= 0.999) {
+      canvas.drawRRect(rrect, progressPaint);
+    } else {
+      final metric = geometryCache.firstMetric;
+      if (metric != null) {
         final extract = metric.extractPath(0.0, metric.length * clamped);
         canvas.drawPath(extract, progressPaint);
       }
@@ -553,6 +609,8 @@ class _CoverProgressRingPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _CoverProgressRingPainter oldDelegate) {
     return oldDelegate.positionGate != positionGate ||
+        oldDelegate.quantizedStep != quantizedStep ||
+        oldDelegate.initialStep != initialStep ||
         oldDelegate.activeColor != activeColor ||
         oldDelegate.trackColor != trackColor ||
         oldDelegate.strokeWidth != strokeWidth ||

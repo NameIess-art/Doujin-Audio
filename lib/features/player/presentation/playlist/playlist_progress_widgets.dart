@@ -44,6 +44,27 @@ class SessionProgressBar extends StatelessWidget {
     this.onManualSeek,
   });
 
+  static final Set<_ProgressSliderFrameState> _mountedFrames =
+      <_ProgressSliderFrameState>{};
+
+  static bool get isInteracting =>
+      _mountedFrames.any((frame) => frame._sliderDragging || frame._pointerDown);
+
+  static bool isInProgressOrBottomControlsZone(Offset globalPosition) {
+    for (final frame in _mountedFrames) {
+      if (!frame.mounted) continue;
+      final box =
+          frame.widget.sliderKey.currentContext?.findRenderObject()
+              as RenderBox?;
+      if (box == null || !box.attached || !box.hasSize) continue;
+      final topLeft = box.localToGlobal(Offset.zero);
+      if (globalPosition.dy >= topLeft.dy - 16) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
   final bool inlineTimecodes;
@@ -186,8 +207,6 @@ class _ProgressSliderAndTimecodesState
         primaryColor: widget.primaryColor,
         onHover: _handleSliderHover,
         onHoverExit: _handleSliderHoverExit,
-        onLongPressMove: _handleLongPressPosition,
-        onLongPressEnd: _clearTooltip,
         onChangeStart: _handleSliderChangeStart,
         onChanged: _handleSliderChanged,
         onChangeEnd: _handleSliderChangeEnd,
@@ -288,11 +307,6 @@ class _ProgressSliderAndTimecodesState
     _hoverValueMs = null;
     _clearTooltip();
     _publishProgressValue();
-  }
-
-  void _handleLongPressPosition(Offset localPosition) {
-    final valueMs = _sliderValueAt(localPosition);
-    if (valueMs != null) _showLabelsAtSliderValue(valueMs);
   }
 
   double? _sliderValueAt(Offset localPosition) {
@@ -423,8 +437,6 @@ class _ProgressSliderFrame extends StatefulWidget {
     required this.primaryColor,
     required this.onHover,
     required this.onHoverExit,
-    required this.onLongPressMove,
-    required this.onLongPressEnd,
     required this.onChangeStart,
     required this.onChanged,
     required this.onChangeEnd,
@@ -439,8 +451,6 @@ class _ProgressSliderFrame extends StatefulWidget {
   final Color primaryColor;
   final ValueChanged<Offset> onHover;
   final VoidCallback onHoverExit;
-  final ValueChanged<Offset> onLongPressMove;
-  final VoidCallback onLongPressEnd;
   final ValueChanged<double> onChangeStart;
   final ValueChanged<double> onChanged;
   final ValueChanged<double> onChangeEnd;
@@ -463,6 +473,7 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
   bool _disableAnimations = false;
   bool _sliderHovered = false;
   bool _sliderDragging = false;
+  bool _pointerDown = false;
   double _scrubScale = 1.0;
   bool _usedFineScrub = false;
   double? _lastRawValueMs;
@@ -489,10 +500,12 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
     if (!_sliderDragging) return;
     final nextScale = _scrubScaleForOffset(localPosition);
     if (nextScale == _scrubScale) return;
-    _scrubScale = nextScale;
-    if (nextScale < 1.0) {
-      _usedFineScrub = true;
-    }
+    setState(() {
+      _scrubScale = nextScale;
+      if (nextScale < 1.0) {
+        _usedFineScrub = true;
+      }
+    });
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
   }
 
@@ -506,6 +519,7 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
   @override
   void initState() {
     super.initState();
+    SessionProgressBar._mountedFrames.add(this);
     _tooltipAnimation =
         AnimationController(vsync: this, duration: kAppFadeDuration)
           ..addStatusListener((status) {
@@ -550,6 +564,7 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
 
   @override
   void dispose() {
+    SessionProgressBar._mountedFrames.remove(this);
     widget.tooltipValue.removeListener(_handleTooltipChanged);
     _tooltipAnimation.dispose();
     super.dispose();
@@ -596,6 +611,9 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final showFineScrubBadge = _sliderDragging && _scrubScale < 1.0;
+    final fineScrubText = _scrubScale <= 0.25 ? '0.25×' : '0.5×';
     final slider = CompositedTransformTarget(
       key: widget.sliderKey,
       link: _layerLink,
@@ -610,128 +628,151 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
           _setSliderHovered(false);
           widget.onHoverExit();
         },
-        child: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onLongPressStart: (details) {
-            _setSliderDragging(true);
-            widget.onLongPressMove(details.localPosition);
-          },
-          onLongPressMoveUpdate: (details) =>
-              widget.onLongPressMove(details.localPosition),
-          onLongPressEnd: (_) {
-            _setSliderDragging(false);
-            widget.onLongPressEnd();
-          },
-          onLongPressCancel: () {
-            _setSliderDragging(false);
-            widget.onLongPressEnd();
-          },
-          child: SizedBox(
-            height: 20,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Positioned.fill(child: widget.staticLayer),
-                TweenAnimationBuilder<double>(
-                  tween: Tween<double>(
-                    end: (_sliderHovered || _sliderDragging) ? 1.0 : 0.0,
-                  ),
-                  duration:
-                      (_disableAnimations ||
-                          !TickerMode.valuesOf(context).enabled)
-                      ? Duration.zero
-                      : kAppMotionFast,
-                  curve: kAppSpringCurve,
-                  builder: (context, engagement, _) {
-                    final baseTheme = sessionDetailProgressSliderTheme(
-                      context,
-                      widget.primaryColor,
-                    );
-                    final sliderTheme = engagement == 0.0
-                        ? baseTheme
-                        : baseTheme.copyWith(
-                            trackHeight: 3.0 + 2.0 * engagement,
-                            thumbShape: RoundSliderThumbShape(
-                              enabledThumbRadius: 6.0 + 2.0 * engagement,
-                              elevation: 2,
-                              pressedElevation: 5,
-                            ),
-                          );
-                    return SliderTheme(
-                      data: sliderTheme,
-                      child: ValueListenableBuilder<_ProgressSliderValue>(
-                        valueListenable: widget.sliderValue,
-                        builder: (context, value, child) {
-                          return Listener(
-                            behavior: HitTestBehavior.translucent,
-                            onPointerDown: (event) {
-                              if (!_sliderDragging) {
-                                _resetFineScrub();
-                                _scrubScale = _scrubScaleForOffset(
-                                  event.localPosition,
-                                );
-                              }
-                            },
-                            onPointerMove: (event) =>
-                                _handlePointerMoveScrub(event.localPosition),
-                            child: Slider(
-                              max: value.maxMillis,
-                              value: value.sliderValue,
-                              secondaryTrackValue: value.bufferedValue,
-                              onChangeStart: value.canSeek
-                                  ? (v) {
-                                      _setSliderDragging(true);
+        child: SizedBox(
+          height: 20,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned.fill(child: widget.staticLayer),
+              TweenAnimationBuilder<double>(
+                tween: Tween<double>(
+                  end: (_sliderHovered || _sliderDragging) ? 1.0 : 0.0,
+                ),
+                duration:
+                    (_disableAnimations ||
+                        !TickerMode.valuesOf(context).enabled)
+                    ? Duration.zero
+                    : kAppMotionFast,
+                curve: kAppSpringCurve,
+                builder: (context, engagement, _) {
+                  final baseTheme = sessionDetailProgressSliderTheme(
+                    context,
+                    widget.primaryColor,
+                  );
+                  final sliderTheme = engagement == 0.0
+                      ? baseTheme
+                      : baseTheme.copyWith(
+                          trackHeight: 3.0 + 2.0 * engagement,
+                          thumbShape: RoundSliderThumbShape(
+                            enabledThumbRadius: 6.0 + 2.0 * engagement,
+                            elevation: 2,
+                            pressedElevation: 5,
+                          ),
+                        );
+                  return SliderTheme(
+                    data: sliderTheme,
+                    child: ValueListenableBuilder<_ProgressSliderValue>(
+                      valueListenable: widget.sliderValue,
+                      builder: (context, value, child) {
+                        return Listener(
+                          behavior: HitTestBehavior.translucent,
+                          onPointerDown: (event) {
+                            _pointerDown = true;
+                            if (!_sliderDragging) {
+                              _resetFineScrub();
+                              _scrubScale = _scrubScaleForOffset(
+                                event.localPosition,
+                              );
+                            }
+                          },
+                          onPointerMove: (event) =>
+                              _handlePointerMoveScrub(event.localPosition),
+                          onPointerUp: (_) => _pointerDown = false,
+                          onPointerCancel: (_) => _pointerDown = false,
+                          child: Slider(
+                            max: value.maxMillis,
+                            value: value.sliderValue,
+                            secondaryTrackValue: value.bufferedValue,
+                            onChangeStart: value.canSeek
+                                ? (v) {
+                                    _setSliderDragging(true);
+                                    _lastRawValueMs = v;
+                                    _fineValueMs = v;
+                                    _usedFineScrub = _scrubScale < 1.0;
+                                    widget.onChangeStart(v);
+                                  }
+                                : null,
+                            onChanged: value.canSeek
+                                ? (v) {
+                                    if (!_usedFineScrub) {
                                       _lastRawValueMs = v;
                                       _fineValueMs = v;
-                                      _usedFineScrub = _scrubScale < 1.0;
-                                      widget.onChangeStart(v);
+                                      widget.onChanged(v);
+                                      return;
                                     }
-                                  : null,
-                              onChanged: value.canSeek
-                                  ? (v) {
-                                      if (!_usedFineScrub) {
-                                        _lastRawValueMs = v;
-                                        _fineValueMs = v;
-                                        widget.onChanged(v);
-                                        return;
-                                      }
-                                      final deltaMs =
-                                          v - (_lastRawValueMs ?? v);
-                                      _lastRawValueMs = v;
-                                      final nextFine =
-                                          ((_fineValueMs ?? v) +
-                                                  deltaMs * _scrubScale)
-                                              .clamp(0.0, value.maxMillis);
-                                      _fineValueMs = nextFine;
-                                      widget.onChanged(nextFine);
-                                    }
-                                  : null,
-                              onChangeEnd: value.canSeek
-                                  ? (v) {
-                                      final resolved = _usedFineScrub
-                                          ? (_fineValueMs ?? v)
-                                          : v;
-                                      _resetFineScrub();
-                                      _setSliderDragging(false);
-                                      widget.onChangeEnd(resolved);
-                                    }
-                                  : null,
-                              semanticFormatterCallback: (rawValue) {
-                                final position = Duration(
-                                  milliseconds: rawValue.round(),
-                                );
-                                return '${formatDurationCompact(position)} / '
-                                    '${formatDurationCompact(value.duration)}';
-                              },
-                            ),
-                          );
-                        },
+                                    final deltaMs =
+                                        v - (_lastRawValueMs ?? v);
+                                    _lastRawValueMs = v;
+                                    final nextFine =
+                                        ((_fineValueMs ?? v) +
+                                                deltaMs * _scrubScale)
+                                            .clamp(0.0, value.maxMillis);
+                                    _fineValueMs = nextFine;
+                                    widget.onChanged(nextFine);
+                                  }
+                                : null,
+                            onChangeEnd: value.canSeek
+                                ? (v) {
+                                    final resolved = _usedFineScrub
+                                        ? (_fineValueMs ?? v)
+                                        : v;
+                                    _resetFineScrub();
+                                    _pointerDown = false;
+                                    _setSliderDragging(false);
+                                    widget.onChangeEnd(resolved);
+                                  }
+                                : null,
+                            semanticFormatterCallback: (rawValue) {
+                              final position = Duration(
+                                milliseconds: rawValue.round(),
+                              );
+                              return '${formatDurationCompact(position)} / '
+                                  '${formatDurationCompact(value.duration)}';
+                            },
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
+              if (showFineScrubBadge)
+                Positioned(
+                  top: -22,
+                  left: 0,
+                  right: 0,
+                  child: IgnorePointer(
+                    child: Center(
+                      child: DecoratedBox(
+                        key: const ValueKey('progress_fine_scrub_badge'),
+                        decoration: BoxDecoration(
+                          color: cs.surfaceContainerHigh.withValues(
+                            alpha: 0.94,
+                          ),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: widget.primaryColor.withValues(alpha: 0.35),
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          child: Text(
+                            fineScrubText,
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(
+                                  color: widget.primaryColor,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                        ),
                       ),
-                    );
-                  },
+                    ),
+                  ),
                 ),
-              ],
-            ),
+            ],
           ),
         ),
       ),
@@ -850,12 +891,14 @@ class _ProgressBarStaticLayer extends StatelessWidget {
         final paintLabels = duration.inMilliseconds > 0
             ? labels
             : const <TimeSegmentLabel>[];
-        return CustomPaint(
-          painter: _TimeSegmentProgressPainter(
-            labels: paintLabels,
-            duration: duration,
-            selectedSegmentId: selectedSegmentId,
-            colorScheme: colorScheme,
+        return RepaintBoundary(
+          child: CustomPaint(
+            painter: _TimeSegmentProgressPainter(
+              labels: paintLabels,
+              duration: duration,
+              selectedSegmentId: selectedSegmentId,
+              colorScheme: colorScheme,
+            ),
           ),
         );
       },

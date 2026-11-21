@@ -16,6 +16,7 @@ class AsmrDownloadSelectionModel {
   final List<AsmrDownloadSelectionNode> rootNodes;
   final Map<String, AsmrDownloadSelectionNode> _nodesByPath =
       <String, AsmrDownloadSelectionNode>{};
+  ({int leafCount, int totalSizeBytes, bool hasUnknownSize})? _cachedSummary;
 
   bool? stateForPath(String path) => _nodesByPath[path]?.checkboxValue;
 
@@ -23,6 +24,7 @@ class AsmrDownloadSelectionModel {
     final node = _nodesByPath[path];
     if (node == null) return;
     final shouldSelect = nextValue ?? !node.selected;
+    _cachedSummary = null;
     _setSubtree(node, shouldSelect);
     _rebuildAncestorState(node.parent);
   }
@@ -36,6 +38,8 @@ class AsmrDownloadSelectionModel {
   }
 
   ({int leafCount, int totalSizeBytes, bool hasUnknownSize}) selectedSummary() {
+    final cached = _cachedSummary;
+    if (cached != null) return cached;
     var leafCount = 0;
     var totalSizeBytes = 0;
     var hasUnknownSize = false;
@@ -55,7 +59,7 @@ class AsmrDownloadSelectionModel {
     for (final node in rootNodes) {
       visit(node);
     }
-    return (
+    return _cachedSummary = (
       leafCount: leafCount,
       totalSizeBytes: totalSizeBytes,
       hasUnknownSize: hasUnknownSize,
@@ -79,6 +83,7 @@ class AsmrDownloadSelectionModel {
   }
 
   void selectAll() {
+    _cachedSummary = null;
     for (final node in rootNodes) {
       _setSubtree(node, true);
     }
@@ -92,6 +97,7 @@ class AsmrDownloadSelectionModel {
   }
 
   void clearAll() {
+    _cachedSummary = null;
     for (final node in rootNodes) {
       _setSubtree(node, false);
     }

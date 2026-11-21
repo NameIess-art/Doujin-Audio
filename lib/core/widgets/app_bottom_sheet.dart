@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_styles.dart';
+import 'app_buttons.dart';
 import 'app_transitions.dart';
 
 class AppBottomSheet {
@@ -108,6 +109,54 @@ class AppBottomSheetHeader extends StatelessWidget {
         ),
         if (trailing != null) ...[const SizedBox(width: 12), trailing!],
       ],
+    );
+  }
+}
+
+class AppBottomSheetActions extends StatelessWidget {
+  const AppBottomSheetActions({
+    super.key,
+    this.cancelKey,
+    this.confirmKey,
+    required this.cancelLabel,
+    required this.confirmLabel,
+    required this.onCancel,
+    required this.onConfirm,
+  });
+
+  final Key? cancelKey;
+  final Key? confirmKey;
+  final String cancelLabel;
+  final String confirmLabel;
+  final VoidCallback? onCancel;
+  final VoidCallback? onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: Wrap(
+        alignment: WrapAlignment.end,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        runSpacing: 4,
+        children: [
+          TextButton(
+            key: cancelKey,
+            onPressed: onCancel,
+            child: Text(cancelLabel),
+          ),
+          AppPillButton(
+            key: confirmKey,
+            onPressed: onConfirm,
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(72, 40),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+            ),
+            child: Text(confirmLabel),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_edit_panel.dart';
 import '../../../../core/widgets/app_entry_ink_well.dart';
 
@@ -13,7 +14,7 @@ const List<Color> _queuePresetColors = [
   Color(0xFFFB8C00), // Orange
 ];
 
-class PlaybackQueueColorPanel extends StatelessWidget {
+class PlaybackQueueColorPanel extends StatefulWidget {
   const PlaybackQueueColorPanel({
     super.key,
     required this.colorValue,
@@ -28,8 +29,48 @@ class PlaybackQueueColorPanel extends StatelessWidget {
   final VoidCallback onBack;
 
   @override
+  State<PlaybackQueueColorPanel> createState() =>
+      _PlaybackQueueColorPanelState();
+}
+
+class _PlaybackQueueColorPanelState extends State<PlaybackQueueColorPanel> {
+  static const String _throttleKey = 'playback_queue_color_panel';
+  int? _draggingColorValue;
+  bool _isDragging = false;
+
+  @override
+  void didUpdateWidget(covariant PlaybackQueueColorPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_isDragging && oldWidget.colorValue != widget.colorValue) {
+      _draggingColorValue = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    UiInteractionCoordinator.instance.cancelThrottledCommit(_throttleKey);
+    super.dispose();
+  }
+
+  int _colorWithChannel(Color baseColor, String channel, int next) {
+    final r = channel == 'R' ? next : (baseColor.r * 255).round();
+    final g = channel == 'G' ? next : (baseColor.g * 255).round();
+    final b = channel == 'B' ? next : (baseColor.b * 255).round();
+    return Color.fromARGB(255, r, g, b).toARGB32();
+  }
+
+  void _commitImmediateColor(int? nextColorValue) {
+    _isDragging = false;
+    UiInteractionCoordinator.instance.cancelThrottledCommit(_throttleKey);
+    setState(() {
+      _draggingColorValue = nextColorValue;
+    });
+    widget.onColorChanged(nextColorValue);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final value = colorValue;
+    final value = _draggingColorValue ?? widget.colorValue;
     final color = value == null
         ? Theme.of(context).colorScheme.primary
         : Color(value);
@@ -44,7 +85,7 @@ class PlaybackQueueColorPanel extends StatelessWidget {
     return SizedBox(
       key: const ValueKey('playback_queue_color_panel'),
       width: double.infinity,
-      height: height,
+      height: widget.height,
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -66,6 +107,7 @@ class PlaybackQueueColorPanel extends StatelessWidget {
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: cs.onSurfaceVariant,
                     fontWeight: FontWeight.w600,
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
                 const SizedBox(width: 4),
@@ -79,7 +121,7 @@ class PlaybackQueueColorPanel extends StatelessWidget {
                   ),
                   padding: EdgeInsets.zero,
                   icon: const Icon(Icons.arrow_back_rounded),
-                  onPressed: onBack,
+                  onPressed: widget.onBack,
                 ),
               ],
             ),
@@ -110,17 +152,28 @@ class PlaybackQueueColorPanel extends StatelessWidget {
                 label: channel.$1,
                 value: channel.$2,
                 color: color,
+                onChangeStart: (_) => _isDragging = true,
                 onChanged: (next) {
-                  final r = channel.$1 == 'R'
-                      ? next
-                      : (color.r * 255).round();
-                  final g = channel.$1 == 'G'
-                      ? next
-                      : (color.g * 255).round();
-                  final b = channel.$1 == 'B'
-                      ? next
-                      : (color.b * 255).round();
-                  onColorChanged(Color.fromARGB(255, r, g, b).toARGB32());
+                  final nextColorValue = _colorWithChannel(
+                    color,
+                    channel.$1,
+                    next,
+                  );
+                  setState(() {
+                    _draggingColorValue = nextColorValue;
+                  });
+                  UiInteractionCoordinator.instance.scheduleThrottledCommit(
+                    key: _throttleKey,
+                    commit: () => widget.onColorChanged(nextColorValue),
+                  );
+                },
+                onChangeEnd: (next) {
+                  final nextColorValue = _colorWithChannel(
+                    color,
+                    channel.$1,
+                    next,
+                  );
+                  _commitImmediateColor(nextColorValue);
                 },
               ),
               if (channel.$1 != 'B') const SizedBox(height: 16),
@@ -130,7 +183,16 @@ class PlaybackQueueColorPanel extends StatelessWidget {
               alignment: Alignment.centerRight,
               child: TextButton(
                 style: appEditPanelActionStyle(),
-                onPressed: () => onColorChanged(null),
+                onPressed: () {
+                  _isDragging = false;
+                  UiInteractionCoordinator.instance.cancelThrottledCommit(
+                    _throttleKey,
+                  );
+                  setState(() {
+                    _draggingColorValue = null;
+                  });
+                  widget.onColorChanged(null);
+                },
                 child: Text(i18n.tr('reset_to_default')),
               ),
             ),
@@ -153,7 +215,7 @@ class PlaybackQueueColorPanel extends StatelessWidget {
       button: true,
       selected: isSelected,
       child: AppEntryInkWell(
-        onTap: () => onColorChanged(presetColor.toARGB32()),
+        onTap: () => _commitImmediateColor(presetColor.toARGB32()),
         customBorder: const CircleBorder(),
         child: AnimatedContainer(
           duration: MediaQuery.disableAnimationsOf(context)
@@ -202,13 +264,17 @@ class _QueueColorSlider extends StatelessWidget {
     required this.label,
     required this.value,
     required this.color,
+    this.onChangeStart,
     required this.onChanged,
+    this.onChangeEnd,
   });
 
   final String label;
   final int value;
   final Color color;
+  final ValueChanged<int>? onChangeStart;
   final ValueChanged<int> onChanged;
+  final ValueChanged<int>? onChangeEnd;
 
   @override
   Widget build(BuildContext context) {
@@ -240,7 +306,13 @@ class _QueueColorSlider extends StatelessWidget {
               child: Slider(
                 max: 255,
                 value: value.toDouble(),
+                onChangeStart: onChangeStart == null
+                    ? null
+                    : (next) => onChangeStart!(next.round()),
                 onChanged: (next) => onChanged(next.round()),
+                onChangeEnd: onChangeEnd == null
+                    ? null
+                    : (next) => onChangeEnd!(next.round()),
               ),
             ),
           ),
@@ -252,6 +324,7 @@ class _QueueColorSlider extends StatelessWidget {
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 color: cs.onSurfaceVariant,
                 fontWeight: FontWeight.w700,
+                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ),

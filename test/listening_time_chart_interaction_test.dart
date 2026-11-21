@@ -2,6 +2,8 @@ import 'dart:collection';
 
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/presentation/listening_time_chart.dart';
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
+import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/core/widgets/app_dialog.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
@@ -37,11 +39,12 @@ void main() {
     ListeningChartStyle style = ListeningChartStyle.bar,
     Brightness brightness = Brightness.light,
     double width = 320,
+    ThemeData? theme,
   }) async {
     var selectedStyle = style;
     await tester.pumpWidget(
       MaterialApp(
-        theme: ThemeData(platform: platform, brightness: brightness),
+        theme: theme ?? ThemeData(platform: platform, brightness: brightness),
         home: Scaffold(
           body: Center(
             child: SizedBox(
@@ -930,7 +933,10 @@ void main() {
   testWidgets(
     'invalid dates stay in input and cancellation preserves selection',
     (tester) async {
-      await pumpChart(tester);
+      final provider = ThemeProvider(loadPersistedState: false);
+      addTearDown(provider.dispose);
+      final theme = provider.lightTheme;
+      await pumpChart(tester, theme: theme);
       final before = tester
           .widget<Text>(
             find.descendant(of: selector, matching: find.byType(Text)),
@@ -946,6 +952,22 @@ void main() {
       expect(
         find.descendant(of: background, matching: find.byType(BackdropFilter)),
         findsOneWidget,
+      );
+      final dialog = tester.widget<Dialog>(find.byType(Dialog));
+      expect(dialog.backgroundColor, theme.colorScheme.surfaceContainerLow);
+      expect(
+        dialog.shape,
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(
+            theme.extension<AppDesignTokens>()!.radiusOverlay,
+          ),
+        ),
+      );
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.decoration?.fillColor, theme.inputDecorationTheme.fillColor);
+      expect(
+        field.decoration?.focusedBorder,
+        theme.inputDecorationTheme.focusedBorder,
       );
       final localizations = MaterialLocalizations.of(
         tester.element(find.byType(DatePickerDialog)),
@@ -964,6 +986,10 @@ void main() {
       );
       expect(tester.takeException(), isNull);
     },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets('date input maps to a quarter and keeps future recorded data', (

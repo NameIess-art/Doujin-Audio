@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../media/search_query_utils.dart';
+import 'app_edit_panel.dart';
 import 'app_fixed_extent_wheel.dart';
 import 'unified_popup_menu.dart';
 
@@ -65,15 +66,19 @@ class AppSearchFiltersPanel extends StatelessWidget {
       Navigator.pop(context, value);
     }
 
-    final selected = await showDialog<Duration>(
+    final header = AppEditPanelHeader(
+      icon: Icons.schedule_rounded,
+      title: translate(
+        minimum ? 'search_minimum_duration' : 'search_maximum_duration',
+      ),
+    );
+    final selected = await showAppInputPanel<Duration>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          translate(
-            minimum ? 'search_minimum_duration' : 'search_maximum_duration',
-          ),
-        ),
-        content: Form(
+      header: header,
+      preferredHeight: null,
+      builder: (context, _) => AppEditPanelForm(
+        header: header,
+        fields: Form(
           key: form,
           child: TextFormField(
             contextMenuBuilder: buildAppEditableTextMenu,
@@ -101,16 +106,10 @@ class AppSearchFiltersPanel extends StatelessWidget {
             onFieldSubmitted: (_) => confirm(context),
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(translate('cancel')),
-          ),
-          TextButton(
-            onPressed: () => confirm(context),
-            child: Text(translate('confirm')),
-          ),
-        ],
+        cancelLabel: translate('cancel'),
+        submitLabel: translate('confirm'),
+        onCancel: () => Navigator.pop(context),
+        onSubmit: () => confirm(context),
       ),
     );
     if (!context.mounted || selected == null) return;

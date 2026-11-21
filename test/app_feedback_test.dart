@@ -686,7 +686,7 @@ void main() {
   });
 
   testWidgets(
-    'undo stays visually stable and restores pending removals',
+    'undo gives text feedback and restores pending removals',
     (tester) async {
       final service = UndoableRemovalService();
       addTearDown(service.dispose);
@@ -721,11 +721,12 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       final undo = find.text('Undo (5s)');
+      final button = find.ancestor(of: undo, matching: find.byType(TextButton));
+      final buttonRect = tester.getRect(button);
       final restingRect = tester.getRect(undo);
-      final restingStyle = tester
-          .renderObject<RenderParagraph>(undo)
-          .text
-          .style;
+      Color? undoColor() =>
+          tester.renderObject<RenderParagraph>(undo).text.style?.color;
+      final restingColor = undoColor();
       final isWindows = defaultTargetPlatform == TargetPlatform.windows;
       final pointer = await tester.createGesture(
         kind: isWindows ? PointerDeviceKind.mouse : PointerDeviceKind.touch,
@@ -738,20 +739,19 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 180));
         expect(tester.getRect(undo), restingRect);
-        expect(
-          tester.renderObject<RenderParagraph>(undo).text.style,
-          restingStyle,
-        );
+        expect(tester.getRect(button), buttonRect);
+        expect(undoColor(), isNot(restingColor));
       }
 
       await pointer.down(restingRect.center);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 250));
-      expect(tester.getRect(undo), restingRect);
+      expect(tester.getRect(button), buttonRect);
       expect(
-        tester.renderObject<RenderParagraph>(undo).text.style,
-        restingStyle,
+        tester.getRect(undo).width,
+        closeTo(restingRect.width * (isWindows ? 1.0 : 0.94), .01),
       );
+      expect(undoColor(), isNot(restingColor));
       expect(undos, 0);
       await pointer.up();
       if (isWindows) await pointer.removePointer();

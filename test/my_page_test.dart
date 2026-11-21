@@ -23,6 +23,7 @@ import 'package:doujin_audio/features/player/domain/playback_usage.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/app_edit_panel.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/widgets/app_search_suggestions.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
@@ -142,23 +143,7 @@ void main() {
   testWidgets(
     'history paginates past the initial batch and stops at the last page',
     (tester) async {
-      final repository = _ListeningRepository()
-        ..history = [
-          for (var i = 0; i < 43; i++)
-            ListeningHistoryEntry(
-              workKey: 'history-$i',
-              track: MusicTrack(
-                path: 'https://example.com/history-$i.mp3',
-                displayName: 'Track $i',
-                groupKey: 'work-$i',
-                groupTitle: 'Work $i',
-                groupSubtitle: '',
-                isSingle: false,
-                remoteMetadataKind: MusicTrack.remoteMetadataKindAsmrOne,
-                remoteMetadata: {'title': 'Work $i'},
-              ),
-            ),
-        ];
+      final repository = _ListeningRepository.withHistory(43);
       final activity = ListeningActivityService(
         repository: repository,
         readUsage: () async => [],
@@ -207,6 +192,152 @@ void main() {
       expect(find.text('Work 30'), findsOneWidget);
       expect(find.text('Work 40'), findsNothing);
     },
+  );
+
+  testWidgets(
+    'tapping the history page number jumps past unloaded pages',
+    (tester) async {
+      final repository = _ListeningRepository.withHistory(103);
+      final activity = ListeningActivityService(
+        repository: repository,
+        readUsage: () async => [],
+        acknowledgeUsage: (_) async {},
+        resolveTrack: (_) => null,
+        recordInterests: ({required batchId, required contributions}) async {},
+      );
+      final fixture = AppRuntimeWidgetTestFixture(listeningActivity: activity);
+      addTearDown(fixture.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          const MyPage(tabIndex: 3),
+          overrides: [
+            listeningActivityServiceProvider.overrideWithValue(activity),
+          ],
+        ),
+      );
+      await pumpAndSettleWithAsync(tester);
+
+      final pageNumber = find.widgetWithText(TextButton, '1');
+      await tester.ensureVisible(pageNumber);
+      await tester.pump();
+      await tester.tap(pageNumber);
+      await pumpAndSettleWithAsync(tester);
+
+      final i18n = fixture.languageProvider;
+      final field = find.byType(TextFormField);
+      final panel = find.byType(AppEditPanelForm);
+      expect(panel, findsOneWidget);
+      final editor = tester.widget<EditableText>(find.byType(EditableText));
+      expect(editor.focusNode.hasFocus, isTrue);
+      expect(editor.controller.text, isEmpty);
+      expect(
+        find.text(i18n.tr('my_history_page_number', {'max': 11})),
+        findsOneWidget,
+      );
+      await tester.enterText(field, '12');
+      await tester.tap(
+        find.descendant(
+          of: panel,
+          matching: find.widgetWithText(TextButton, i18n.tr('confirm')),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(i18n.tr('my_history_invalid_page')), findsOneWidget);
+      expect(pageNumber, findsOneWidget);
+
+      await tester.enterText(field, '11');
+      await tester.testTextInput.receiveAction(TextInputAction.go);
+      await pumpAndSettleWithAsync(tester);
+      expect(field, findsNothing);
+      expect(find.widgetWithText(TextButton, '11'), findsOneWidget);
+      expect(find.byType(FileTreeRow), findsNWidgets(3));
+      expect(find.text('Work 100'), findsOneWidget);
+      expect(find.text('Work 102'), findsOneWidget);
+      expect(find.text('Work 99'), findsNothing);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'history entry menu confirms deletion and closes an emptied page',
+    (tester) async {
+      final repository = _ListeningRepository.withHistory(11);
+      final activity = ListeningActivityService(
+        repository: repository,
+        readUsage: () async => [],
+        acknowledgeUsage: (_) async {},
+        resolveTrack: (_) => null,
+        recordInterests: ({required batchId, required contributions}) async {},
+      );
+      final fixture = AppRuntimeWidgetTestFixture(listeningActivity: activity);
+      addTearDown(fixture.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          const MyPage(tabIndex: 3),
+          overrides: [
+            listeningActivityServiceProvider.overrideWithValue(activity),
+          ],
+        ),
+      );
+      await pumpAndSettleWithAsync(tester);
+
+      final next = find.widgetWithIcon(IconButton, Icons.chevron_right_rounded);
+      await tester.ensureVisible(next);
+      await tester.pump();
+      await tester.tap(next);
+      await pumpAndSettleWithAsync(tester);
+      final entry = find.byKey(const ValueKey('my-history-card-history-10'));
+      await tester.ensureVisible(entry);
+      await tester.pump();
+      expect(find.byType(FileTreeRow), findsOneWidget);
+
+      final i18n = fixture.languageProvider;
+      final delete = i18n.tr('my_history_delete');
+      final dialogTitle = find.text(i18n.tr('my_history_delete_title'));
+      if (Theme.of(tester.element(entry)).platform == TargetPlatform.windows) {
+        await tester.tap(
+          entry,
+          kind: PointerDeviceKind.mouse,
+          buttons: kSecondaryMouseButton,
+        );
+      } else {
+        await tester.longPress(entry);
+      }
+      await tester.pumpAndSettle();
+      expect(find.text(delete), findsOneWidget);
+      await tester.tap(find.text(delete));
+      await tester.pumpAndSettle();
+      expect(dialogTitle, findsOneWidget);
+      await tester.tap(
+        find.widgetWithText(AppSecondaryButton, i18n.tr('cancel')),
+      );
+      await tester.pumpAndSettle();
+      expect(entry, findsOneWidget);
+      expect(repository.history, hasLength(11));
+
+      await tester.longPress(entry);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(delete));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(AppPrimaryButton, delete));
+      await pumpAndSettleWithAsync(tester);
+      expect(dialogTitle, findsNothing);
+      expect(entry, findsNothing);
+      expect(
+        repository.history.map((entry) => entry.workKey),
+        isNot(contains('history-10')),
+      );
+      expect(find.text('Work 0'), findsOneWidget);
+      expect(find.byType(FileTreeRow), findsNWidgets(10));
+      expect(next, findsNothing);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets('first taste projections wait for scrolling to finish', (
@@ -1276,7 +1407,10 @@ void main() {
         }
         addTearDown(fixture.dispose);
         addTearDown(controller.dispose);
-        tester.view.physicalSize = const Size(960, 1400);
+        tester.view.physicalSize = Size(
+          platform == TargetPlatform.android ? 320 : 960,
+          1400,
+        );
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
@@ -1304,14 +1438,29 @@ void main() {
           find.byKey(const ValueKey('my-interest-local:sleep')),
           findsOneWidget,
         );
-        expect(
-          find.text(fixture.languageProvider.tr('my_add_interest')),
-          findsOneWidget,
+        final addInterest = find.widgetWithText(
+          OutlinedButton,
+          fixture.languageProvider.tr('my_add_interest_action'),
+          skipOffstage: false,
         );
-        expect(
-          find.text(fixture.languageProvider.tr('my_add_voice_interest')),
-          findsNothing,
+        final addExclusion = find.widgetWithText(
+          OutlinedButton,
+          fixture.languageProvider.tr('my_add_exclusion_action'),
+          skipOffstage: false,
         );
+        void expectActionsSideBySide() {
+          expect(addInterest, findsOneWidget);
+          expect(addExclusion, findsOneWidget);
+          final interestBounds = tester.getRect(addInterest);
+          final exclusionBounds = tester.getRect(addExclusion);
+          expect(
+            interestBounds.center.dy,
+            closeTo(exclusionBounds.center.dy, .1),
+          );
+          expect(interestBounds.right, lessThan(exclusionBounds.left));
+        }
+
+        expectActionsSideBySide();
         final tagsTab = find.byKey(const ValueKey('my-interest-tab-tags'));
         final voicesTab = find.byKey(const ValueKey('my-interest-tab-voices'));
         expect(
@@ -1352,23 +1501,9 @@ void main() {
           find.byKey(const ValueKey('my-voice-interest-local:voice 4')),
           findsNothing,
         );
-        expect(
-          find.text(fixture.languageProvider.tr('my_add_interest')),
-          findsNothing,
-        );
-        expect(
-          find.text(fixture.languageProvider.tr('my_excluded_tags')),
-          findsNothing,
-        );
+        expectActionsSideBySide();
         for (final excluded in [false, true]) {
-          final actionLabel = fixture.languageProvider.tr(
-            excluded ? 'my_excluded_voice_actors' : 'my_add_voice_interest',
-          );
-          final entry = find.widgetWithText(
-            OutlinedButton,
-            actionLabel,
-            skipOffstage: false,
-          );
+          final entry = excluded ? addExclusion : addInterest;
           await tester.ensureVisible(entry);
           final ink = find.descendant(
             of: entry,
@@ -1480,10 +1615,7 @@ void main() {
           find.byKey(const ValueKey('my-interest-local:sleep')),
           findsOneWidget,
         );
-        expect(
-          find.text(fixture.languageProvider.tr('my_excluded_tags')),
-          findsOneWidget,
-        );
+        expectActionsSideBySide();
         final circlesTab = find.byKey(
           const ValueKey('my-interest-tab-circles'),
         );
@@ -1518,14 +1650,7 @@ void main() {
           find.byKey(const ValueKey('my-circle-interest-local:circle 4')),
           findsNothing,
         );
-        expect(
-          find.text(fixture.languageProvider.tr('my_add_circle_interest')),
-          findsOneWidget,
-        );
-        expect(
-          find.text(fixture.languageProvider.tr('my_excluded_circles')),
-          findsOneWidget,
-        );
+        expectActionsSideBySide();
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pumpAndSettle();
       },
@@ -1636,7 +1761,7 @@ void main() {
           await pumpAndSettleWithAsync(tester);
           Future<void> openExcluded() async {
             final button = find.text(
-              fixture.languageProvider.tr(type.excludedKey),
+              fixture.languageProvider.tr('my_add_exclusion_action'),
             );
             await tester.ensureVisible(button);
             await tester.pumpAndSettle();
@@ -1940,6 +2065,11 @@ void main() {
           matching: find.byType(CoverArtworkFrame),
         );
         expect(tester.getSize(cover), const Size(48, 36));
+        final rowBounds = tester.getRect(card);
+        final coverBounds = tester.getRect(cover);
+        final leftInset = coverBounds.left - rowBounds.left;
+        expect(coverBounds.top - rowBounds.top, closeTo(leftInset, .1));
+        expect(rowBounds.bottom - coverBounds.bottom, closeTo(leftInset, .1));
         expect(
           tester.getRect(cover).right,
           lessThan(tester.getRect(title).left),
@@ -2086,12 +2216,71 @@ void main() {
       }
       expect(headerHeights.toSet().length, 1);
       expect(find.textContaining('（前'), findsNothing);
+      TextStyle labelStyle(String key) => tester
+          .widget<RichText>(
+            find.descendant(
+              of: find.text(i18n.tr(key)),
+              matching: find.byType(RichText),
+            ),
+          )
+          .text
+          .style!;
+      final titleStyle = labelStyle('my_listening_time');
+      expect(labelStyle('my_history'), titleStyle);
+      expect(labelStyle('my_interests'), titleStyle);
+      final tags = find.byKey(const ValueKey('my-interest-tab-tags'));
       final voices = find.byKey(const ValueKey('my-interest-tab-voices'));
+      final circles = find.byKey(const ValueKey('my-interest-tab-circles'));
+      final mutedTitle = titleStyle.copyWith(
+        color: Theme.of(
+          tester.element(tags),
+        ).colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+      );
+      expect(labelStyle('my_voice_interests'), mutedTitle);
+      expect(labelStyle('my_circle_interests'), mutedTitle);
+      for (final tab in [tags, voices, circles]) {
+        final style = tester.widget<TextButton>(tab).style!;
+        expect(style.backgroundColor!.resolve({}), Colors.transparent);
+        expect(
+          style.overlayColor!.resolve({WidgetState.hovered}),
+          Colors.transparent,
+        );
+      }
+      expect(
+        tester.getTopLeft(find.text(i18n.tr('my_interests'))).dx,
+        tester.getTopLeft(find.text(i18n.tr('my_history'))).dx,
+      );
       await tester.ensureVisible(voices);
-      await tester.tap(voices);
+      final voiceBounds = tester.getRect(voices);
+      final voiceLabel = find.text(i18n.tr('my_voice_interests'));
+      final restingWidth = tester.getRect(voiceLabel).width;
+      final isWindows = platform == TargetPlatform.windows;
+      final pointer = await tester.createGesture(
+        kind: isWindows ? PointerDeviceKind.mouse : PointerDeviceKind.touch,
+      );
+      final accent = Theme.of(tester.element(voices)).colorScheme.primary;
+      if (isWindows) {
+        await pointer.addPointer(location: Offset.zero);
+        await pointer.moveTo(voiceBounds.center);
+        await tester.pumpAndSettle();
+        expect(labelStyle('my_voice_interests').color, accent);
+      }
+      await pointer.down(voiceBounds.center);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(labelStyle('my_voice_interests').color, accent);
+      expect(tester.getRect(voices), voiceBounds);
+      expect(
+        tester.getRect(voiceLabel).width,
+        closeTo(restingWidth * (isWindows ? 1.0 : 0.94), .01),
+      );
+      await pointer.up();
+      if (isWindows) await pointer.removePointer();
       await pumpUntilUiIdle(tester);
       await pumpAndSettleWithAsync(tester);
       expect(find.text(i18n.tr('my_no_voice_interests')), findsOneWidget);
+      expect(labelStyle('my_voice_interests'), titleStyle);
+      expect(labelStyle('my_interests'), mutedTitle);
       final heading = find.text(i18n.tr('my_listening_time'));
       await tester.ensureVisible(heading);
       final headingBounds = tester.getRect(heading);
@@ -2289,15 +2478,44 @@ class _PendingInterestController extends _InterestController {
 }
 
 class _ListeningRepository implements ListeningActivityRepository {
+  _ListeningRepository();
+
+  _ListeningRepository.withHistory(int count)
+    : history = [
+        for (var i = 0; i < count; i++)
+          ListeningHistoryEntry(
+            workKey: 'history-$i',
+            track: MusicTrack(
+              path: 'https://example.com/history-$i.mp3',
+              displayName: 'Track $i',
+              groupKey: 'work-$i',
+              groupTitle: 'Work $i',
+              groupSubtitle: '',
+              isSingle: false,
+              remoteMetadataKind: MusicTrack.remoteMetadataKindAsmrOne,
+              remoteMetadata: {'title': 'Work $i'},
+            ),
+          ),
+      ];
+
   List<ListeningDay> days = const [];
   List<ListeningHistoryEntry> history = const [];
   @override
   Future<List<ListeningDay>> loadDays() async => days;
+
+  @override
+  Future<int> countHistory() async => history.length;
+
   @override
   Future<List<ListeningHistoryEntry>> loadHistory({
     int offset = 0,
     int limit = 40,
   }) async => history.skip(offset).take(limit).toList();
+  @override
+  Future<void> removeHistoryEntry(String workKey) async {
+    history = history.where((entry) => entry.workKey != workKey).toList();
+  }
+
   @override
   Future<MusicTrack?> findTrack(String workKey) async => null;
   @override

@@ -11,9 +11,9 @@ const double _singleFieldPanelHeight = 192;
 Future<T?> showAppInputPanel<T>({
   required BuildContext context,
   required AppEditPanelHeader header,
-  double preferredHeight = _singleFieldPanelHeight,
+  double? preferredHeight = _singleFieldPanelHeight,
   Key? surfaceKey,
-  required Widget Function(BuildContext context, double height) builder,
+  required Widget Function(BuildContext context, double? height) builder,
 }) => showAppDialog<T>(
   context: context,
   // The queue name editor uses the root theme in the overlay route.
@@ -24,9 +24,14 @@ Future<T?> showAppInputPanel<T>({
     explicitChildNodes: true,
     label: header.title,
     child: LayoutBuilder(
-      builder: (context, constraints) => _AppEditPanelSurface(
+      builder: (context, constraints) => AppEditPanelSurface(
         surfaceKey: surfaceKey,
-        child: builder(context, constraints.constrainHeight(preferredHeight)),
+        child: builder(
+          context,
+          preferredHeight == null
+              ? null
+              : constraints.constrainHeight(preferredHeight),
+        ),
       ),
     ),
   ),
@@ -102,7 +107,7 @@ class AppEditPanel extends StatelessWidget {
           padding: EdgeInsets.only(top: top),
           child: Align(
             alignment: Alignment.topCenter,
-            child: _AppEditPanelSurface(
+            child: AppEditPanelSurface(
               surfaceKey: surfaceKey,
               child: builder(context, editHeight, inputHeight),
             ),
@@ -113,8 +118,8 @@ class AppEditPanel extends StatelessWidget {
   }
 }
 
-class _AppEditPanelSurface extends StatelessWidget {
-  const _AppEditPanelSurface({required this.surfaceKey, required this.child});
+class AppEditPanelSurface extends StatelessWidget {
+  const AppEditPanelSurface({super.key, this.surfaceKey, required this.child});
 
   final Key? surfaceKey;
   final Widget child;
@@ -231,7 +236,7 @@ class AppEditInput extends StatefulWidget {
     required this.onSubmit,
   });
 
-  final double height;
+  final double? height;
   final AppEditPanelHeader header;
   final Key? inputKey;
   final String initialValue;
@@ -281,7 +286,7 @@ class _AppEditInputState extends State<AppEditInput> {
 class AppEditPanelForm extends StatelessWidget {
   const AppEditPanelForm({
     super.key,
-    required this.height,
+    this.height,
     required this.header,
     required this.fields,
     required this.cancelLabel,
@@ -290,13 +295,13 @@ class AppEditPanelForm extends StatelessWidget {
     required this.onSubmit,
   });
 
-  final double height;
+  final double? height;
   final AppEditPanelHeader header;
   final Widget fields;
   final String cancelLabel;
   final String submitLabel;
-  final VoidCallback onCancel;
-  final VoidCallback onSubmit;
+  final VoidCallback? onCancel;
+  final VoidCallback? onSubmit;
 
   @override
   Widget build(BuildContext context) {
@@ -313,24 +318,22 @@ class AppEditPanelForm extends StatelessWidget {
             const SizedBox(height: 12),
             fields,
             const SizedBox(height: 4),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextButton(
-                    style: actionStyle,
-                    onPressed: onCancel,
-                    child: Text(cancelLabel),
-                  ),
-                  const SizedBox(width: 8),
-                  TextButton(
-                    style: actionStyle,
-                    onPressed: onSubmit,
-                    child: Text(submitLabel),
-                  ),
-                ],
-              ),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                TextButton(
+                  style: actionStyle,
+                  onPressed: onCancel,
+                  child: Text(cancelLabel),
+                ),
+                TextButton(
+                  style: actionStyle,
+                  onPressed: onSubmit,
+                  child: Text(submitLabel),
+                ),
+              ],
             ),
           ],
         ),

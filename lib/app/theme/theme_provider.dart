@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/widgets/app_buttons.dart';
+import '../../core/widgets/app_edit_panel.dart' show appEditPanelActionStyle;
 import '../../core/widgets/app_tap_highlight.dart';
 
 import '../../core/persistence/persisted_state_reloader.dart';
@@ -1219,6 +1220,20 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
       bodyText,
       scheme,
     ).merge(_tabularTextTheme);
+    final inputBorder = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(tokens.radiusControl),
+      borderSide: BorderSide(color: scheme.outlineVariant),
+    );
+    final focusedInputBorder = inputBorder.copyWith(
+      borderSide: BorderSide(color: scheme.primary, width: 1.4),
+    );
+    final pickerShape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(tokens.radiusOverlay),
+    );
+    final pickerActionStyle = appEditPanelActionStyle();
+    final pickerTitleStyle = textTheme.titleMedium?.copyWith(
+      fontWeight: FontWeight.w800,
+    );
 
     return ThemeData(
       useMaterial3: true,
@@ -1413,17 +1428,32 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
         helperStyle: textTheme.bodySmall,
         constraints: BoxConstraints(minHeight: tokens.minimumTapTarget),
         fillColor: scheme.surfaceContainer,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(tokens.radiusControl),
-          borderSide: BorderSide(color: scheme.outlineVariant),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(tokens.radiusControl),
-          borderSide: BorderSide(color: scheme.outlineVariant),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(tokens.radiusControl),
-          borderSide: BorderSide(color: scheme.primary, width: 1.4),
+        border: inputBorder,
+        enabledBorder: inputBorder,
+        focusedBorder: focusedInputBorder,
+      ),
+      datePickerTheme: DatePickerThemeData(
+        backgroundColor: scheme.surfaceContainerLow,
+        surfaceTintColor: Colors.transparent,
+        shape: pickerShape,
+        headerHelpStyle: pickerTitleStyle,
+        cancelButtonStyle: pickerActionStyle,
+        confirmButtonStyle: pickerActionStyle,
+      ),
+      timePickerTheme: TimePickerThemeData(
+        backgroundColor: scheme.surfaceContainerLow,
+        shape: pickerShape,
+        helpTextStyle: pickerTitleStyle,
+        cancelButtonStyle: pickerActionStyle,
+        confirmButtonStyle: pickerActionStyle,
+        inputDecorationTheme: InputDecorationThemeData(
+          contentPadding: EdgeInsets.zero,
+          filled: true,
+          fillColor: scheme.surfaceContainer,
+          border: inputBorder,
+          enabledBorder: inputBorder,
+          focusedBorder: focusedInputBorder,
+          hintStyle: _tabularDigits.copyWith(color: scheme.onSurfaceVariant),
         ),
       ),
       appBarTheme: AppBarTheme(

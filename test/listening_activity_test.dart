@@ -805,6 +805,7 @@ void main() {
       final first = await service.states.first;
       expect(first.history, hasLength(40));
       expect(first.hasMoreHistory, isTrue);
+      expect(await service.countHistory(), 41);
       await service.loadMoreHistory();
       final expanded = await service.states.first;
       expect(expanded.history, hasLength(41));
@@ -812,6 +813,52 @@ void main() {
       await service.refresh(forceReload: false);
       expect(await service.states.first, same(expanded));
       expect(counted.historyReads, 3);
+    },
+  );
+
+  test(
+    'deleting a history entry preserves listening data and permits new playback',
+    () async {
+      var usage = _batch('before-delete', 5000);
+      final service = ListeningActivityService(
+        repository: repository,
+        readUsage: () async => [usage],
+        acknowledgeUsage: (_) async {},
+        resolveTrack: (_) => _track(),
+        recordInterests: ({required batchId, required contributions}) async {},
+      );
+      addTearDown(service.dispose);
+      await service.seedHistory([
+        ListeningHistoryEntry(workKey: 'other', track: _track()),
+      ]);
+      await service.refresh();
+      final before = await service.states.first;
+      expect(before.history.map((entry) => entry.workKey), ['work', 'other']);
+
+      await service.removeHistoryEntry('work');
+      final updated = await service.states.first;
+      expect(updated.history.single.workKey, 'other');
+      expect(updated.days.single.duration, const Duration(seconds: 5));
+      expect(await repository.findTrack('work'), isNull);
+      expect(
+        (await db.query('listening_work_days')).single['milliseconds'],
+        5000,
+      );
+
+      await service.seedHistory([
+        ListeningHistoryEntry(workKey: 'work', track: _track()),
+      ]);
+      await service.refresh();
+      expect((await repository.loadHistory()).single.workKey, 'other');
+
+      usage = _batch('after-delete', 2000);
+      await service.refresh();
+      final playedAgain = await service.states.first;
+      expect(playedAgain.history.map((entry) => entry.workKey), [
+        'work',
+        'other',
+      ]);
+      expect(playedAgain.days.single.duration, const Duration(seconds: 7));
     },
   );
 
@@ -1145,6 +1192,9 @@ final class _CountingRepository implements ListeningActivityRepository {
   }
 
   @override
+  Future<int> countHistory() => delegate.countHistory();
+
+  @override
   Future<List<ListeningHistoryEntry>> loadHistory({
     int offset = 0,
     int limit = 40,
@@ -1153,6 +1203,10 @@ final class _CountingRepository implements ListeningActivityRepository {
     if (failHistoryRead) throw StateError('history read failed');
     return delegate.loadHistory(offset: offset, limit: limit);
   }
+
+  @override
+  Future<void> removeHistoryEntry(String workKey) =>
+      delegate.removeHistoryEntry(workKey);
 
   @override
   Future<MusicTrack?> findTrack(String workKey) => delegate.findTrack(workKey);

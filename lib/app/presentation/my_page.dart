@@ -13,15 +13,18 @@ import '../../core/media/music_track.dart';
 import '../../core/media/path_display.dart';
 import '../../core/logging/app_log_service.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
+import '../../core/widgets/app_edit_panel.dart';
 import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/async_cover_image.dart';
+import '../../core/widgets/confirm_action_dialog.dart';
 import '../../core/widgets/file_tree_row.dart';
 import '../../core/widgets/mobile_overlay_inset.dart';
 import '../../core/widgets/page_header_inset.dart';
 import '../../core/widgets/scroll_activity_gate.dart';
 import '../../core/widgets/shimmer_loading.dart';
 import '../../core/widgets/top_page_header.dart';
+import '../../core/widgets/unified_popup_menu.dart';
 import '../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../features/asmr/domain/asmr_models.dart';
 import '../../features/asmr/presentation/asmr_providers.dart';
@@ -183,6 +186,8 @@ class _MyPageState extends ConsumerState<MyPage>
     );
     final controller = ref.watch(asmrLibraryControllerProvider);
     final top = AppPageHeaderMetrics.contentTopInset(context);
+    final theme = Theme.of(context);
+    final titleStyle = theme.textTheme.titleMedium;
     Widget section(
       String title,
       Widget child, {
@@ -191,9 +196,7 @@ class _MyPageState extends ConsumerState<MyPage>
       bool skeleton = false,
       double headerSpacing = 4,
     }) {
-      final titleLabel =
-          titleWidget ??
-          Text(title, style: Theme.of(context).textTheme.titleMedium);
+      final titleLabel = titleWidget ?? Text(title, style: titleStyle);
       return Card(
         margin: const EdgeInsets.only(bottom: 16),
         shape: RoundedRectangleBorder(
@@ -245,37 +248,51 @@ class _MyPageState extends ConsumerState<MyPage>
       );
     }
 
-    Widget interestTabs() => Wrap(
-      spacing: 8,
-      children: [
-        for (final type in MyInterestType.values)
-          Semantics(
-            selected: _interestType == type,
-            child: TextButton(
-              key: ValueKey(
-                'my-interest-tab-${type == MyInterestType.voiceActors ? 'voices' : type.name}',
-              ),
-              style: appSelectablePillButtonStyle(
-                style: TextButton.styleFrom(
-                  minimumSize: const Size(0, 32),
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  textStyle: Theme.of(context).textTheme.titleMedium,
-                ),
-                selected: _interestType == type,
-                colorScheme: Theme.of(context).colorScheme,
-              ),
-              onPressed: () {
-                if (_interestType == type) return;
-                AppInteractionFeedback.trigger(
-                  AppInteractionFeedbackType.selection,
-                );
-                setState(() => _interestType = type);
-              },
-              child: Text(i18n.tr(type.titleKey)),
-            ),
+    Widget interestTab(MyInterestType type) {
+      final selected = _interestType == type;
+      final colors = theme.colorScheme;
+      return Semantics(
+        selected: selected,
+        child: TextButton(
+          key: ValueKey(
+            'my-interest-tab-${type == MyInterestType.voiceActors ? 'voices' : type.name}',
           ),
-      ],
+          style: appTextButtonStyle(
+            style:
+                TextButton.styleFrom(
+                  minimumSize: const Size(0, 32),
+                  padding: EdgeInsets.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  foregroundColor: selected
+                      ? titleStyle?.color ?? colors.onSurface
+                      : colors.onSurfaceVariant.withValues(alpha: 0.8),
+                  backgroundColor: Colors.transparent,
+                  overlayColor: Colors.transparent,
+                ).copyWith(
+                  textStyle: WidgetStateProperty.resolveWith(
+                    (states) => states.contains(WidgetState.focused)
+                        ? titleStyle?.copyWith(
+                            decoration: TextDecoration.underline,
+                          )
+                        : titleStyle,
+                  ),
+                ),
+          ),
+          onPressed: () {
+            if (selected) return;
+            AppInteractionFeedback.trigger(
+              AppInteractionFeedbackType.selection,
+            );
+            setState(() => _interestType = type);
+          },
+          child: Text(i18n.tr(type.titleKey)),
+        ),
+      );
+    }
+
+    Widget interestTabs() => Wrap(
+      spacing: AppSpacing.md,
+      children: [for (final type in MyInterestType.values) interestTab(type)],
     );
     final interestType = _interestType;
     final interestKeyPrefix = switch (interestType) {
@@ -283,6 +300,9 @@ class _MyPageState extends ConsumerState<MyPage>
       MyInterestType.voiceActors => 'voice-',
       MyInterestType.circles => 'circle-',
     };
+    final interestActionStyle = OutlinedButton.styleFrom(
+      padding: const EdgeInsets.all(8),
+    );
     Widget interestSection() => section(
       i18n.tr('my_interests'),
       AnimatedSwitcher(
@@ -395,23 +415,28 @@ class _MyPageState extends ConsumerState<MyPage>
                             ],
                           ),
                           const SizedBox(height: 12),
-                          Wrap(
+                          Row(
                             spacing: 8,
-                            runSpacing: 4,
                             children: [
-                              AppLabelledButton(
-                                OutlinedButton.icon,
-                                opensPage: true,
-                                onPressed: () => _openTags(false),
-                                icon: const Icon(Icons.add_rounded),
-                                label: Text(i18n.tr(interestType.addKey)),
+                              Flexible(
+                                child: AppLabelledButton(
+                                  OutlinedButton.icon,
+                                  opensPage: true,
+                                  style: interestActionStyle,
+                                  onPressed: () => _openTags(false),
+                                  icon: const Icon(Icons.add_rounded),
+                                  label: Text(i18n.tr('my_add_interest_action')),
+                                ),
                               ),
-                              AppLabelledButton(
-                                OutlinedButton.icon,
-                                opensPage: true,
-                                onPressed: () => _openTags(true),
-                                icon: const Icon(Icons.block_rounded),
-                                label: Text(i18n.tr(interestType.excludedKey)),
+                              Flexible(
+                                child: AppLabelledButton(
+                                  OutlinedButton.icon,
+                                  opensPage: true,
+                                  style: interestActionStyle,
+                                  onPressed: () => _openTags(true),
+                                  icon: const Icon(Icons.block_rounded),
+                                  label: Text(i18n.tr('my_add_exclusion_action')),
+                                ),
                               ),
                             ],
                           ),
@@ -538,12 +563,15 @@ class _MyPageState extends ConsumerState<MyPage>
             ),
           ),
           const SizedBox(height: 12),
-          const Wrap(
+          const Row(
             spacing: 8,
-            runSpacing: 4,
             children: [
-              ShimmerContainer(width: 160, height: 40, borderRadius: 20),
-              ShimmerContainer(width: 192, height: 40, borderRadius: 20),
+              Flexible(
+                child: ShimmerContainer(width: 104, height: 40, borderRadius: 20),
+              ),
+              Flexible(
+                child: ShimmerContainer(width: 128, height: 40, borderRadius: 20),
+              ),
             ],
           ),
         ],
@@ -553,6 +581,7 @@ class _MyPageState extends ConsumerState<MyPage>
       headerSpacing: 12,
     );
 
+    final historyRowHeight = _HistoryWorkRow.layoutHeight(context);
     final skeleton = Builder(
       builder: (context) => IgnorePointer(
         child: ExcludeSemantics(
@@ -565,9 +594,11 @@ class _MyPageState extends ConsumerState<MyPage>
                 i18n.tr('my_history'),
                 FileTreeSkeleton(
                   key: const ValueKey('my-skeleton-history'),
-                  rowHeight: _HistoryWorkRow.layoutHeight(context),
-                  viewportHeight: _HistoryWorkRow.layoutHeight(context) * 3,
-                  rowPadding: const EdgeInsets.symmetric(horizontal: 6),
+                  rowHeight: historyRowHeight,
+                  viewportHeight: historyRowHeight * 3,
+                  rowPadding: EdgeInsets.symmetric(
+                    horizontal: _HistoryWorkRow.coverInset(historyRowHeight),
+                  ),
                   leadingSize: _HistoryWorkRow.coverHeight,
                   leadingGap: 10,
                 ),
@@ -668,6 +699,7 @@ class _HistoryListState extends ConsumerState<_HistoryList> {
   final _rowsKey = GlobalKey();
   int _page = 0;
   int? _pendingPage;
+  bool _choosingPage = false;
 
   int get _lastLoadedPage => (widget.view.history.length - 1) ~/ _pageSize;
 
@@ -676,13 +708,11 @@ class _HistoryListState extends ConsumerState<_HistoryList> {
     super.didUpdateWidget(oldWidget);
     _page = _page.clamp(0, _lastLoadedPage);
     final pending = _pendingPage;
-    if (pending == null) return;
-    if (pending <= _lastLoadedPage) {
-      _page = pending;
+    if (pending != null &&
+        (pending <= _lastLoadedPage || !widget.view.hasMoreHistory)) {
+      _page = pending.clamp(0, _lastLoadedPage);
       _pendingPage = null;
       _revealFirstRow();
-    } else if (!widget.view.hasMoreHistory) {
-      _pendingPage = null;
     }
   }
 
@@ -710,15 +740,20 @@ class _HistoryListState extends ConsumerState<_HistoryList> {
     // The activity stream publishes the new rows after active scrolling settles.
     setState(() => _pendingPage = page);
     try {
-      await service.loadMoreHistory();
+      await service.loadMoreHistory(minimumEntries: (page + 1) * _pageSize);
     } catch (error, stack) {
-      AppLogService.error(
-        'my_history_load_failed',
-        error: error,
-        stackTrace: stack,
-      );
-      if (!mounted) return;
-      setState(() => _pendingPage = null);
+      _showPageLoadError(error, stack);
+      if (mounted) setState(() => _pendingPage = null);
+    }
+  }
+
+  void _showPageLoadError(Object error, StackTrace stack) {
+    AppLogService.error(
+      'my_history_load_failed',
+      error: error,
+      stackTrace: stack,
+    );
+    if (mounted) {
       showAppSnackBar(
         context,
         ref
@@ -728,10 +763,82 @@ class _HistoryListState extends ConsumerState<_HistoryList> {
     }
   }
 
+  Future<void> _choosePage() async {
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final service = ref.read(listeningActivityServiceProvider);
+    setState(() => _choosingPage = true);
+    try {
+      final count = widget.view.hasMoreHistory
+          ? await service?.countHistory()
+          : widget.view.history.length;
+      if (!mounted || count == null || count <= _pageSize) return;
+      final lastPage = (count - 1) ~/ _pageSize + 1;
+      final form = GlobalKey<FormState>();
+      int? pageNumber;
+      final header = AppEditPanelHeader(
+        title: i18n.tr('my_history_jump_to_page'),
+        icon: Icons.find_in_page_outlined,
+      );
+      final selected = await showAppInputPanel<int>(
+        context: context,
+        header: header,
+        preferredHeight: null,
+        builder: (dialogContext, _) {
+          void submit() {
+            final state = form.currentState;
+            if (state == null || !state.validate()) return;
+            state.save();
+            Navigator.of(dialogContext).pop(pageNumber);
+          }
+
+          return AppEditPanelForm(
+            header: header,
+            fields: Form(
+              key: form,
+              child: TextFormField(
+                autofocus: true,
+                contextMenuBuilder: buildAppEditableTextMenu,
+                keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.go,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: InputDecoration(
+                  labelText: i18n.tr('my_history_page_number', {
+                    'max': lastPage,
+                  }),
+                ),
+                validator: (input) {
+                  final page = int.tryParse(input ?? '');
+                  return page != null && page >= 1 && page <= lastPage
+                      ? null
+                      : i18n.tr('my_history_invalid_page');
+                },
+                onSaved: (input) => pageNumber = int.tryParse(input ?? ''),
+                onFieldSubmitted: (_) => submit(),
+              ),
+            ),
+            cancelLabel: i18n.tr('cancel'),
+            submitLabel: i18n.tr('confirm'),
+            onCancel: () => Navigator.of(dialogContext).pop(),
+            onSubmit: submit,
+          );
+        },
+      );
+      if (mounted && selected != null && selected != _page + 1) {
+        await _goToPage(selected - 1);
+      }
+    } catch (error, stack) {
+      _showPageLoadError(error, stack);
+    } finally {
+      if (mounted) setState(() => _choosingPage = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final i18n = ref.watch(appLanguageProviderInstanceProvider);
     final localizations = MaterialLocalizations.of(context);
     final loading = _pendingPage != null;
+    final canChangePage = !loading && !_choosingPage;
     final hasNext = _page < _lastLoadedPage || widget.view.hasMoreHistory;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -756,19 +863,31 @@ class _HistoryListState extends ConsumerState<_HistoryList> {
               IconButton(
                 tooltip: localizations.previousPageTooltip,
                 style: appIconButtonStyle(),
-                onPressed: _page > 0 && !loading
+                onPressed: _page > 0 && canChangePage
                     ? () => _goToPage(_page - 1)
                     : null,
                 icon: const Icon(Icons.chevron_left_rounded),
               ),
               Semantics(
                 liveRegion: true,
-                child: Text(localizations.formatDecimal(_page + 1)),
+                child: Tooltip(
+                  message: i18n.tr('my_history_jump_to_page'),
+                  child: TextButton(
+                    style: appTextButtonStyle(
+                      style: TextButton.styleFrom(
+                        minimumSize: const Size(44, 44),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                    ),
+                    onPressed: canChangePage ? _choosePage : null,
+                    child: Text(localizations.formatDecimal(_page + 1)),
+                  ),
+                ),
               ),
               IconButton(
                 tooltip: localizations.nextPageTooltip,
                 style: appIconButtonStyle(),
-                onPressed: hasNext && !loading
+                onPressed: hasNext && canChangePage
                     ? () => _goToPage(_page + 1)
                     : null,
                 icon: loading
@@ -821,21 +940,56 @@ class _HistoryWorkRow extends ConsumerWidget {
     minHeight: _minHeight,
     titleMaxLines: 2,
   );
+  static double coverInset(double rowHeight) => (rowHeight - coverHeight) / 2;
 
   final ListeningHistoryEntry entry;
   final Future<void> Function(MusicTrack track) onOpen;
 
+  Future<void> _removeEntry(
+    BuildContext context,
+    WidgetRef ref,
+    String title,
+  ) async {
+    final service = ref.read(listeningActivityServiceProvider);
+    if (service == null) return;
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final confirmed = await showConfirmActionDialog(
+      context: context,
+      title: i18n.tr('my_history_delete_title'),
+      message: i18n.tr('my_history_delete_confirm', {'name': title}),
+      cancelLabel: i18n.tr('cancel'),
+      confirmLabel: i18n.tr('my_history_delete'),
+      icon: Icons.delete_outline_rounded,
+    );
+    if (!confirmed) return;
+
+    try {
+      await service.removeHistoryEntry(entry.workKey);
+    } catch (error, stack) {
+      AppLogService.error(
+        'my_history_delete_failed',
+        error: error,
+        stackTrace: stack,
+      );
+      if (context.mounted) {
+        showAppSnackBar(context, i18n.tr('operation_failed_retry'));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final library = ref.read(libraryFacadeProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final title =
         ref.watch(_historyWorkTitleProvider(entry.track)).value ??
-        ref.read(appLanguageProviderInstanceProvider).tr('my_untitled_work');
-    return FileTreeRow(
+        i18n.tr('my_untitled_work');
+    final row = FileTreeRow(
       key: ValueKey('my-history-card-${entry.workKey}'),
       title: title,
       minHeight: _minHeight,
       titleMaxLines: 2,
+      horizontalPadding: coverInset(layoutHeight(context)),
       navigationEntry: true,
       onTap: () => onOpen(entry.track),
       leading: SizedBox(
@@ -848,9 +1002,7 @@ class _HistoryWorkRow extends ConsumerWidget {
             future: ref
                 .read(libraryCoverUiControllerProvider)
                 .deferredPlaybackCover(entry.track, context: context),
-            initialPath: library.resolvedPlaybackCoverPathForTrack(
-              entry.track,
-            ),
+            initialPath: library.resolvedPlaybackCoverPathForTrack(entry.track),
             fit: BoxFit.cover,
             deferLoadDuringInteraction: true,
             cacheWidth: (_coverWidth * MediaQuery.devicePixelRatioOf(context))
@@ -858,6 +1010,24 @@ class _HistoryWorkRow extends ConsumerWidget {
           ),
         ),
       ),
+    );
+    return UnifiedContextMenuRegion(
+      shape: const RoundedRectangleBorder(
+        borderRadius: FileTreeRow.borderRadius,
+      ),
+      enabled: ref.watch(listeningActivityServiceProvider) != null,
+      skipTraversal: true,
+      openOnAndroidLongPress: true,
+      openOnWindowsLongPress: true,
+      buildEntries: () => [
+        UnifiedMenuEntry.action(
+          value: () => unawaited(_removeEntry(context, ref, title)),
+          label: i18n.tr('my_history_delete'),
+          icon: Icons.delete_outline_rounded,
+          destructive: true,
+        ),
+      ],
+      child: row,
     );
   }
 }

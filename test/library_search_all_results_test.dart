@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:doujin_audio/core/media/search_query_utils.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/app_edit_panel.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/search_highlight.dart';
 import 'package:doujin_audio/features/library/presentation/library_search_all_results.dart';
@@ -775,7 +776,7 @@ void main() {
       await tester.tap(
         find
             .descendant(
-              of: find.byType(AlertDialog),
+              of: find.byType(AppEditPanelForm),
               matching: find.byType(TextButton),
             )
             .last,

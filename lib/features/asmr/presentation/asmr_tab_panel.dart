@@ -2,105 +2,37 @@ part of 'asmr_tab.dart';
 
 class _AsmrPanelCard extends StatelessWidget {
   const _AsmrPanelCard({
-    required this.icon,
-    required this.title,
+    required this.header,
     required this.child,
-    this.actions = const <_AsmrPanelAction>[],
+    required this.actions,
   });
 
-  final IconData icon;
-  final String title;
+  final AppEditPanelHeader header;
   final Widget child;
   final List<_AsmrPanelAction> actions;
 
   @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final maxHeight = (MediaQuery.sizeOf(context).height - 96).clamp(
-      280.0,
-      560.0,
-    );
-
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxHeight: maxHeight),
-      child: DecoratedBox(
-        key: const ValueKey('asmr_panel_surface'),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          color: cs.surfaceContainerLow,
-          boxShadow: [
-            BoxShadow(
-              color: cs.shadow.withValues(alpha: 0.22),
-              blurRadius: 32,
-              offset: const Offset(0, 18),
-            ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _AsmrPanelTitle(icon: icon, title: title),
-              const SizedBox(height: 18),
-              Flexible(
-                child: SingleChildScrollView(
-                  child: child,
-                ).withWindowsSmoothScroll(),
-              ),
-              if (actions.isNotEmpty) ...[
-                const SizedBox(height: 18),
-                Wrap(
-                  alignment: WrapAlignment.end,
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: actions,
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AsmrPanelTitle extends StatelessWidget {
-  const _AsmrPanelTitle({required this.icon, required this.title});
-
-  final IconData icon;
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final tokens = AppDesignTokens.of(context);
-    return Row(
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.all(20),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: cs.primary.withValues(alpha: 0.14),
-            borderRadius: BorderRadius.circular(tokens.radiusSmall),
-          ),
-          child: Icon(icon, color: cs.primary, size: 22),
+        header,
+        const SizedBox(height: 18),
+        Flexible(
+          child: SingleChildScrollView(child: child).withWindowsSmoothScroll(),
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-          ),
+        const SizedBox(height: 18),
+        Wrap(
+          alignment: WrapAlignment.end,
+          spacing: 10,
+          runSpacing: 10,
+          children: actions,
         ),
       ],
-    );
-  }
+    ),
+  );
 }
 
 class _AsmrAccountStatusLine extends StatelessWidget {
@@ -335,11 +267,14 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
           revision: 0,
         );
     final syncing = syncState.phase == AsmrSyncPhase.syncing || _submitting;
+    final header = AppEditPanelHeader(
+      icon: Icons.account_circle_rounded,
+      title: i18n.tr('asmr_account_title'),
+    );
 
     if (authState.isRestoring) {
       return _AsmrPanelCard(
-        icon: Icons.account_circle_rounded,
-        title: i18n.tr('asmr_account_title'),
+        header: header,
         actions: [
           _AsmrPanelAction(
             label: i18n.tr('close'),
@@ -369,23 +304,15 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
           _accountController.text.trim().isNotEmpty &&
           _passwordController.text.isNotEmpty &&
           !syncing;
-      return _AsmrPanelCard(
-        icon: Icons.account_circle_rounded,
-        title: i18n.tr('asmr_account_title'),
-        actions: [
-          _AsmrPanelAction(
-            label: i18n.tr('close'),
-            onPressed: syncing ? null : () => Navigator.of(context).pop(),
-          ),
-          _AsmrPanelAction(
-            label: syncing
-                ? i18n.tr('asmr_account_syncing')
-                : i18n.tr('asmr_login_action'),
-            onPressed: canLogin ? _login : null,
-            filled: true,
-          ),
-        ],
-        child: Column(
+      return AppEditPanelForm(
+        header: header,
+        cancelLabel: i18n.tr('close'),
+        submitLabel: i18n.tr(
+          syncing ? 'asmr_account_syncing' : 'asmr_login_action',
+        ),
+        onCancel: syncing ? null : () => Navigator.of(context).pop(),
+        onSubmit: canLogin ? _login : null,
+        fields: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
@@ -430,8 +357,7 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
 
     final lastSyncAt = syncState.lastSyncAt;
     return _AsmrPanelCard(
-      icon: Icons.account_circle_rounded,
-      title: i18n.tr('asmr_account_title'),
+      header: header,
       actions: [
         _AsmrPanelAction(
           label: i18n.tr('asmr_logout_action'),

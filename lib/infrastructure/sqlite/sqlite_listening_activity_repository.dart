@@ -42,6 +42,9 @@ final class SqliteListeningActivityRepository
   ];
 
   @override
+  Future<int> countHistory() => _database.countListeningHistory();
+
+  @override
   Future<List<ListeningHistoryEntry>> loadHistory({
     int offset = 0,
     int limit = 40,
@@ -60,6 +63,10 @@ final class SqliteListeningActivityRepository
             : null,
       ),
   ];
+
+  @override
+  Future<void> removeHistoryEntry(String workKey) =>
+      _database.removeListeningHistoryEntry(workKey);
 
   @override
   Future<MusicTrack?> findTrack(String workKey) async {

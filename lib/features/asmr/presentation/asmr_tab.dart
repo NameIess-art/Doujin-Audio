@@ -33,6 +33,7 @@ import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_dialog.dart';
+import '../../../core/widgets/app_edit_panel.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_search_page.dart';
 import '../../../core/widgets/async_cover_image.dart';
@@ -871,7 +872,18 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
 
   Future<void> _showAccountDialog() {
     return _showAsmrPanel<void>(
-      builder: (context) => const _AsmrAccountPanel(),
+      builder: (context) => ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: (MediaQuery.sizeOf(context).height - 96).clamp(
+            280.0,
+            560.0,
+          ),
+        ),
+        child: const AppEditPanelSurface(
+          surfaceKey: ValueKey('asmr_panel_surface'),
+          child: _AsmrAccountPanel(),
+        ),
+      ),
     );
   }
 

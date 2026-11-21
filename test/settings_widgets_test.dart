@@ -21,6 +21,7 @@ import 'package:doujin_audio/features/settings/application/settings_command_cont
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_tab.dart';
+import 'package:doujin_audio/features/settings/presentation/subtitle_rgb_controls.dart';
 import 'package:doujin_audio/features/settings/presentation/subtitle_window_settings_sheet.dart';
 import 'package:doujin_audio/features/settings/presentation/asmr_download_folder_name_settings_sheet.dart';
 import 'package:doujin_audio/features/data_support/application/storage_usage_service.dart';
@@ -1491,6 +1492,58 @@ void main() {
       await notifier.flushAppearancePersistence();
       final preferences = await SharedPreferences.getInstance();
       expect(preferences.getString('subtitle_font_family'), 'monospace');
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'subtitle RGB input is compact, uses the field theme and updates preview',
+    (tester) async {
+      final harness = AppRuntimeWidgetTestFixture();
+      addTearDown(harness.dispose);
+      await tester.pumpWidget(
+        harness.build(const SubtitleWindowSettingsSheet()),
+      );
+      await tester.pumpAndSettle();
+
+      final field = find.descendant(
+        of: find.byType(SubtitleRgbControls).first,
+        matching: find.byType(TextField),
+      ).first;
+      await tester.ensureVisible(field);
+      await tester.pumpAndSettle();
+      final fieldContext = tester.element(field);
+      final fieldTheme = Theme.of(fieldContext).inputDecorationTheme;
+      final decoration = tester.widget<InputDecorator>(
+        find.descendant(of: field, matching: find.byType(InputDecorator)),
+      ).decoration;
+      expect(decoration.fillColor, fieldTheme.fillColor);
+      expect(decoration.enabledBorder, fieldTheme.enabledBorder);
+      expect(decoration.focusedBorder, fieldTheme.focusedBorder);
+      expect(tester.getSize(field).width, 46);
+      expect(
+        tester.getSize(field).height,
+        lessThan(fieldTheme.constraints!.minHeight),
+      );
+
+      await tester.tap(field);
+      await tester.enterText(field, '-7');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(field).controller!.text, '0');
+      final preview = tester.widget<Text>(
+        find.text(harness.languageProvider.tr('subtitle_preview_sample')),
+      );
+      expect(preview.style?.color, const Color(0xFF00FFFF));
+      final container = ProviderScope.containerOf(fieldContext, listen: false);
+      await container
+          .read(subtitleSettingsProvider.notifier)
+          .flushAppearancePersistence();
+      final preferences = await SharedPreferences.getInstance();
+      expect(preferences.getString('subtitle_font_color'), 'ff00ffff');
     },
     variant: const TargetPlatformVariant({
       TargetPlatform.android,

@@ -40,6 +40,7 @@ class FileTreeRow extends StatelessWidget {
     this.titleMaxLines = 1,
     this.subtitleMaxLines = 1,
     this.reserveSubtitleSpace = false,
+    this.horizontalPadding = 6,
     this.verticalPadding = 4,
     this.isFolder = false,
     this.emphasized = false,
@@ -66,6 +67,7 @@ class FileTreeRow extends StatelessWidget {
   final int titleMaxLines;
   final int subtitleMaxLines;
   final bool reserveSubtitleSpace;
+  final double horizontalPadding;
   final double verticalPadding;
   final bool isFolder;
   final bool emphasized;
@@ -182,7 +184,7 @@ class FileTreeRow extends StatelessWidget {
             ),
             child: Padding(
               padding: EdgeInsets.symmetric(
-                horizontal: 6,
+                horizontal: horizontalPadding,
                 vertical: verticalPadding,
               ),
               child: Row(
@@ -236,7 +238,10 @@ class FileTreeRow extends StatelessWidget {
                     SizedBox(width: trailingSpacing),
                     ConstrainedBox(
                       constraints: BoxConstraints(
-                        maxWidth: math.max(0.0, (maxWidth - indent - 12) / 2),
+                        maxWidth: math.max(
+                          0.0,
+                          (maxWidth - indent - horizontalPadding * 2) / 2,
+                        ),
                       ),
                       child: trailing!,
                     ),

@@ -593,8 +593,6 @@ void _showTopFeedback(
                                   currentData.actionLabel,
                                 )),
                                 style: appTextButtonStyle(
-                                  showPointerFeedback:
-                                      !currentData.showActionCountdown,
                                   style: TextButton.styleFrom(
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 12,

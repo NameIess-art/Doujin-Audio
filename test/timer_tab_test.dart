@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/media/time_text_formatters.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -60,6 +61,79 @@ void main() {
       );
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'automatic resume time keeps clock and shared keyboard input styles',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      fixture.timerService
+        ..timerMode = TimerMode.manual
+        ..timerDuration = const Duration(minutes: 10)
+        ..timerActive = true
+        ..timerRemaining = const Duration(minutes: 10)
+        ..autoResumeEnabled = true
+        ..autoResumeHour = 9
+        ..autoResumeMinute = 15;
+      fixture.timer.syncPresentationState();
+      await tester.pumpWidget(fixture.build(const TimerTab(showHeader: false)));
+      await tester.pumpAndSettle();
+      final open = find.text(
+        fixture.languageProvider.tr('tap_choose_resume_time'),
+      );
+      await tester.scrollUntilVisible(
+        open,
+        250,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(open);
+      await tester.pumpAndSettle();
+
+      final picker = find.byType(TimePickerDialog);
+      final pickerContext = tester.element(picker);
+      final localizations = MaterialLocalizations.of(pickerContext);
+      final theme = Theme.of(pickerContext);
+      expect(MediaQuery.alwaysUse24HourFormatOf(pickerContext), isTrue);
+      expect(find.byType(TextField), findsNothing);
+      await tester.tap(find.byTooltip(localizations.inputTimeModeButtonLabel));
+      await tester.pumpAndSettle();
+
+      final dialog = tester.widget<Dialog>(find.byType(Dialog));
+      expect(dialog.backgroundColor, theme.colorScheme.surfaceContainerLow);
+      expect(
+        dialog.shape,
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(
+            theme.extension<AppDesignTokens>()!.radiusOverlay,
+          ),
+        ),
+      );
+      final fields = find.descendant(
+        of: picker,
+        matching: find.byType(TextField),
+      );
+      expect(fields, findsNWidgets(2));
+      for (final field in tester.widgetList<TextField>(fields)) {
+        expect(field.decoration?.fillColor, theme.inputDecorationTheme.fillColor);
+        expect(
+          field.decoration?.focusedBorder,
+          theme.inputDecorationTheme.focusedBorder,
+        );
+      }
+      await tester.enterText(fields.first, '23');
+      await tester.enterText(fields.last, '45');
+      await tester.tap(find.text(localizations.okButtonLabel));
+      await tester.pumpAndSettle();
+      expect(picker, findsNothing);
+      expect(fixture.timerService.autoResumeHour, 23);
+      expect(fixture.timerService.autoResumeMinute, 45);
+      expect(tester.takeException(), isNull);
     },
     variant: const TargetPlatformVariant({
       TargetPlatform.android,

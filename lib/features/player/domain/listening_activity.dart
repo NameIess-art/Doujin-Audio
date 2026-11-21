@@ -71,10 +71,12 @@ final class ListeningDayContribution {
 abstract interface class ListeningActivityRepository {
   Future<bool> importBatch(String batchId, List<ListeningDayContribution> days);
   Future<List<ListeningDay>> loadDays();
+  Future<int> countHistory();
   Future<List<ListeningHistoryEntry>> loadHistory({
     int offset = 0,
     int limit = 40,
   });
+  Future<void> removeHistoryEntry(String workKey);
   Future<MusicTrack?> findTrack(String workKey);
   Future<void> seedHistory(List<ListeningHistoryEntry> entries);
 }

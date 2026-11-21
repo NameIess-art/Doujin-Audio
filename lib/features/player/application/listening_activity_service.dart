@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/music_track.dart';
@@ -213,9 +214,18 @@ final class ListeningActivityService {
     if (_needsReload) await _reload();
   });
 
-  Future<void> loadMoreHistory() => _serialize(() async {
-    _historyLimit += 40;
+  Future<int> countHistory() => _repository.countHistory();
+
+  Future<void> loadMoreHistory({int minimumEntries = 0}) =>
+      _serialize(() async {
+        _historyLimit = math.max(_historyLimit + 40, minimumEntries);
+        _needsReload = true;
+        await _reload();
+      });
+
+  Future<void> removeHistoryEntry(String workKey) => _serialize(() async {
     _needsReload = true;
+    await _repository.removeHistoryEntry(workKey);
     await _reload();
   });
 

@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:doujin_audio/core/widgets/app_edit_panel.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'support/asmr_controller_test_fixture.dart';
 import 'package:flutter/gestures.dart';
@@ -10,6 +13,75 @@ import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 import 'support/app_runtime_test_fixture.dart';
 
 void main() {
+  testWidgets(
+    'ASMR login uses the shared editor in its original overlay',
+    (tester) async {
+      final controller = _LoginPanelAsmrLibraryController(
+        createTestAsmrServices(),
+      );
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(() {
+        controller.dispose();
+        fixture.dispose();
+      });
+      await tester.pumpWidget(
+        fixture.build(
+          const AsmrTab(),
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+          ],
+        ),
+      );
+      final i18n = fixture.languageProvider;
+      final accountButton = find.byTooltip(i18n.tr('asmr_account_menu'));
+      await pumpUntilFound(tester, accountButton);
+      await tester.tap(accountButton);
+      final form = find.byType(AppEditPanelForm);
+      await pumpUntilFound(tester, form);
+      expect(
+        find.ancestor(of: form, matching: find.byType(AppEditPanelSurface)),
+        findsOneWidget,
+      );
+      expect(
+        find.ancestor(of: form, matching: find.byType(ScaleTransition)),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('app_overlay_panel_scrim')),
+        findsOneWidget,
+      );
+      final fields = find.descendant(
+        of: form,
+        matching: find.byType(TextField),
+      );
+      expect(fields, findsNWidgets(2));
+      expect(
+        tester.widget<TextField>(fields.first).textInputAction,
+        TextInputAction.next,
+      );
+      expect(tester.widget<TextField>(fields.last).obscureText, isTrue);
+      expect(tester.widget<AppEditPanelForm>(form).onSubmit, isNull);
+
+      await tester.enterText(fields.first, '  alice  ');
+      await tester.enterText(fields.last, 'secret');
+      await tester.pump();
+      expect(tester.widget<AppEditPanelForm>(form).onSubmit, isNotNull);
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+      expect(controller.loginAttempt, ('alice', 'secret'));
+      expect(tester.widget<AppEditPanelForm>(form).onCancel, isNull);
+      expect(tester.widget<AppEditPanelForm>(form).onSubmit, isNull);
+      expect(tester.widget<TextField>(fields.last).enabled, isFalse);
+      controller.login.complete();
+      await tester.pump();
+      expect(tester.widget<AppEditPanelForm>(form).onSubmit, isNotNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets('ASMR logout failure restores the action and shows feedback', (
     tester,
   ) async {
@@ -35,16 +107,13 @@ void main() {
     await pumpUntilFound(tester, accountButton);
     await tester.tap(accountButton);
     await pumpUntilFound(tester, find.text(i18n.tr('asmr_logout_action')));
-    final panelSurface = tester.widget<DecoratedBox>(
-      find.byKey(const ValueKey('asmr_panel_surface')),
-    );
-    final panelDecoration = panelSurface.decoration as BoxDecoration;
-    expect(panelDecoration.color!.a, 1);
+    final panelSurface = find.byKey(const ValueKey('asmr_panel_surface'));
+    final panelMaterial = find
+        .descendant(of: panelSurface, matching: find.byType(Material))
+        .first;
+    expect(tester.widget<Material>(panelMaterial).color!.a, 1);
     expect(
-      find.ancestor(
-        of: find.byKey(const ValueKey('asmr_panel_surface')),
-        matching: find.byType(ScaleTransition),
-      ),
+      find.ancestor(of: panelSurface, matching: find.byType(ScaleTransition)),
       findsOneWidget,
     );
 
@@ -135,6 +204,28 @@ void main() {
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
+}
+
+class _LoginPanelAsmrLibraryController
+    extends LoadedEmptyAsmrLibraryController {
+  _LoginPanelAsmrLibraryController(super.services);
+
+  final login = Completer<void>();
+  (String, String)? loginAttempt;
+
+  @override
+  AsmrAuthViewState get authViewState => const AsmrAuthViewState(
+    isLoggedIn: false,
+    isRestoring: false,
+    userName: '',
+    revision: 0,
+  );
+
+  @override
+  Future<void> loginAsmrAccount(String name, String password) {
+    loginAttempt = (name, password);
+    return login.future;
+  }
 }
 
 class _LogoutFailureAsmrLibraryController

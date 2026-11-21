@@ -183,21 +183,13 @@ class _RgbSliderRowState extends State<_RgbSliderRow> {
             keyboardType: TextInputType.number,
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 11, color: widget.cs.onSurface),
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(
+              // Keep these inline values compact beside the sliders.
+              constraints: BoxConstraints(),
+              contentPadding: EdgeInsets.symmetric(
                 horizontal: 2,
                 vertical: 4,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(6),
-                borderSide: BorderSide(
-                  color: widget.cs.outlineVariant.withValues(alpha: 0.5),
-                ),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(6),
-                borderSide: BorderSide(color: widget.cs.primary, width: 1.5),
               ),
             ),
             onTap: () => _editing = true,

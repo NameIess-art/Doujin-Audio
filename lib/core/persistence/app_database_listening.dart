@@ -49,6 +49,12 @@ extension AppDatabaseListening on AppDatabase {
   Future<List<Map<String, Object?>>> loadListeningDays() =>
       _runDatabaseRead((db) => db.query('listening_days', orderBy: 'date'));
 
+  Future<int> countListeningHistory() => _runDatabaseRead(
+    (db) async => Sqflite.firstIntValue(
+      await db.rawQuery('SELECT COUNT(*) FROM listening_history'),
+    )!,
+  );
+
   Future<List<Map<String, Object?>>> loadListeningHistory({
     int offset = 0,
     int limit = 40,
@@ -60,6 +66,15 @@ extension AppDatabaseListening on AppDatabase {
       limit: limit,
     ),
   );
+
+  Future<void> removeListeningHistoryEntry(String workKey) =>
+      _runDatabaseWrite((db) async {
+        await db.delete(
+          'listening_history',
+          where: 'work_key = ?',
+          whereArgs: [workKey],
+        );
+      });
 
   Future<Map<String, Object?>?> findListeningTrack(String key) =>
       _runDatabaseRead((db) async {

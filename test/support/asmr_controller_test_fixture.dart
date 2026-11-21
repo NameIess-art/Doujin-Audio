@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_account_sync_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_api_service.dart';
@@ -16,6 +17,71 @@ typedef TestAsmrServices = ({
   AsmrRemoteCatalogService remoteCatalogService,
   AsmrAccountSyncService accountSyncService,
 });
+
+class LoadedEmptyAsmrLibraryController extends AsmrLibraryController {
+  LoadedEmptyAsmrLibraryController(TestAsmrServices services)
+    : super(
+        preferencesStore: services.preferencesStore,
+        remoteCatalogService: services.remoteCatalogService,
+        accountSyncService: services.accountSyncService,
+      );
+
+  @override
+  bool get initialized => true;
+
+  @override
+  AsmrLibraryGlobalViewState get globalViewState => AsmrLibraryGlobalViewState(
+    initialized: true,
+    visibleCategories: kDefaultVisibleAsmrCategories,
+    contentLanguage: AsmrContentLanguage.zh,
+    contentLanguagePreference: ContentLanguagePreference.followPage,
+    revision: 0,
+  );
+
+  @override
+  Future<void> initialize({AsmrContentLanguage? defaultLanguage}) async {}
+
+  @override
+  Future<void> restoreAsmrAccountSession({bool force = false}) async {}
+
+  @override
+  bool hasLoadedCategory(AsmrCategoryType category) => true;
+
+  @override
+  Future<void> ensureCategoryLoaded(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+    bool searchSession = false,
+  }) async {}
+
+  @override
+  AsmrCategoryViewState categoryViewState(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+    bool searchSession = false,
+  }) => AsmrCategoryViewState(
+    category: category,
+    works: const [],
+    isLoading: false,
+    isLoadingMore: false,
+    isRefreshing: false,
+    isStale: false,
+    hasAttemptedLoad: true,
+    hasMore: false,
+    needsLoadMoreRetry: false,
+    totalCount: 0,
+    activeQuery: searchQuery,
+    lastError: null,
+    operationError: null,
+    revision: 0,
+  );
+
+  @override
+  Future<List<AsmrTrackFile>> ensureTrackTree(
+    AsmrWork work, {
+    bool forceRefresh = false,
+  }) async => const [];
+}
 
 /// Resolves category reads from the snapshots supplied by widget test doubles.
 mixin TestAsmrCategoryViewOverrides on AsmrLibraryController {

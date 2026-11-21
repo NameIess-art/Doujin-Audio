@@ -325,7 +325,12 @@ void main() {
     );
     addTearDown(fixture.dispose);
     fixture.settings.syncSlice(isInitialized: true);
-    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+    fixture.libraryService.syncSlice(
+      isInitialized: true,
+      detailRevision: 0,
+      treeSnapshotRevision:
+          fixture.library.snapshotCacheService.cardSnapshotRevision,
+    );
     fixture.playbackService.syncSlice(
       activeSessions: [],
       playingSessionCount: 0,

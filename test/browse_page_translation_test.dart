@@ -513,7 +513,7 @@ void main() {
         await _batch(tester);
         await pumpUntilFound(
           tester,
-          find.text('Library title', findRichText: true),
+          find.text('Library title', findRichText: true).hitTestable(),
         );
         _expectHeader(tester, 'library');
         if (platform == TargetPlatform.android) {
@@ -541,11 +541,10 @@ void main() {
           findsNothing,
         );
         await tester.tap(find.byKey(const ValueKey('library_translation')));
-        await _batch(tester);
         for (final text in ['Library title', 'Library tag']) {
-          expect(
+          await pumpUntilFound(
+            tester,
             find.textContaining('zh-CN:$text', findRichText: true),
-            findsWidgets,
           );
         }
         for (final name in ['Library circle', 'Library voice']) {
@@ -700,21 +699,19 @@ void main() {
         );
         await pumpUntilFound(
           tester,
-          find.text('Original directory', findRichText: true),
+          find.text('Original directory', findRichText: true).hitTestable(),
         );
         await tester.tap(find.byKey(const ValueKey('library_translation')));
-        await _batch(tester);
-        expect(
-          find.text('zh-CN:Original directory', findRichText: true),
-          findsOneWidget,
+        final translatedFolder = find.text(
+          'zh-CN:Original directory',
+          findRichText: true,
         );
+        await pumpUntilFound(tester, translatedFolder);
         expect(
           translations.calls.expand((call) => call.texts),
           isNot(contains('Original audio')),
         );
-        await tester.tap(
-          find.text('zh-CN:Original directory', findRichText: true),
-        );
+        await tester.tap(translatedFolder);
         await _batch(tester);
         await pumpUntilFound(
           tester,

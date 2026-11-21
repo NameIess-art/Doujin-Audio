@@ -161,10 +161,14 @@ class _MainScreenState extends ConsumerState<MainScreen>
     MainDestinationType target,
   ) => _menuIconCenters[target.index] - _menuIconCenters[source.index];
 
+  bool _mobilePlaybackRectQueued = false;
+
   void _reportMobilePlaybackCoverRect() {
     final geometry = widget.playbackDockGeometry;
-    if (geometry == null) return;
+    if (geometry == null || _mobilePlaybackRectQueued) return;
+    _mobilePlaybackRectQueued = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _mobilePlaybackRectQueued = false;
       if (!mounted) return;
       final box =
           _mobilePlaybackGeometryKey.currentContext?.findRenderObject()

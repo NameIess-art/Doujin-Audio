@@ -3,7 +3,6 @@ import 'support/asmr_controller_test_fixture.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
@@ -89,7 +88,7 @@ void main() {
       );
       final i18n = fixture.languageProvider;
       final accountButton = find.byTooltip(i18n.tr('asmr_account_menu'));
-      await pumpUntilFound(tester, accountButton);
+      await tester.pumpAndSettle();
       await tester.tap(accountButton);
       final logoutText = find.text(i18n.tr('asmr_logout_action'));
       await pumpUntilFound(tester, logoutText);
@@ -138,30 +137,14 @@ void main() {
   );
 }
 
-class _LogoutFailureAsmrLibraryController extends AsmrLibraryController {
-  _LogoutFailureAsmrLibraryController(TestAsmrServices services)
-    : super(
-        preferencesStore: services.preferencesStore,
-        remoteCatalogService: services.remoteCatalogService,
-        accountSyncService: services.accountSyncService,
-      );
+class _LogoutFailureAsmrLibraryController
+    extends LoadedEmptyAsmrLibraryController {
+  _LogoutFailureAsmrLibraryController(super.services);
 
   int logoutAttempts = 0;
 
   @override
-  bool get initialized => true;
-
-  @override
   bool get isAsmrAccountLoggedIn => true;
-
-  @override
-  AsmrLibraryGlobalViewState get globalViewState => AsmrLibraryGlobalViewState(
-    initialized: true,
-    visibleCategories: kDefaultVisibleAsmrCategories,
-    contentLanguage: AsmrContentLanguage.zh,
-    contentLanguagePreference: ContentLanguagePreference.followPage,
-    revision: 0,
-  );
 
   @override
   AsmrAuthViewState get authViewState => const AsmrAuthViewState(
@@ -172,25 +155,11 @@ class _LogoutFailureAsmrLibraryController extends AsmrLibraryController {
   );
 
   @override
-  Future<void> ensureCategoryLoaded(
-    AsmrCategoryType category, {
-    String searchQuery = '',
-    bool searchSession = false,
-  }) async {}
-  @override
-  Future<void> initialize({AsmrContentLanguage? defaultLanguage}) async {
-    notifyListeners();
-  }
-
-  @override
   Future<void> refreshCategory(
     AsmrCategoryType category, {
     String searchQuery = '',
     bool searchSession = false,
   }) async {}
-
-  @override
-  Future<void> restoreAsmrAccountSession({bool force = false}) async {}
 
   @override
   Future<void> syncAsmrAccount({bool force = false}) async {}

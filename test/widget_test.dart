@@ -3033,14 +3033,21 @@ void main() {
     final mainCard = find.byKey(const ValueKey('mobile_dock_playback'));
     await tester.longPress(mainCard);
     await tester.pumpAndSettle();
+    tester.view.padding = const FakeViewPadding(bottom: 32);
+    tester.view.viewPadding = const FakeViewPadding(bottom: 32);
+    addTearDown(tester.view.resetPadding);
+    addTearDown(tester.view.resetViewPadding);
+    await tester.pumpAndSettle();
     final homeRect = tester.getRect(mainCard);
     final main = find.byType(MainScreen);
-    final navigator = Navigator.of(tester.element(main));
+    final navigation = WorkDetailNavigationScope.maybeOf(tester.element(main))!;
+    final navigator = navigation.navigatorKey.currentState!;
     void openDetail() {
       unawaited(
-        navigator.push<void>(
-          buildAppPageRoute<void>(
-            context: navigator.context,
+        navigation.open(
+          'raised dock work',
+          (context) => buildAppPageRoute<void>(
+            context: context,
             settings: const RouteSettings(name: workDetailRouteName),
             child: const Scaffold(body: SizedBox.expand()),
           ),
@@ -3052,6 +3059,7 @@ void main() {
     openDetail();
     await tester.pump();
     await tester.pump();
+    expect(tester.getRect(routedCard), homeRect);
     await tester.pump(kAppPagePushDuration ~/ 2);
     final midpoint = tester.getRect(routedCard);
     expect(midpoint.height, closeTo(homeRect.height / 2, 0.1));
@@ -3080,14 +3088,22 @@ void main() {
       previous = current;
     }
     await tester.pumpAndSettle();
+    tester.view.physicalSize = const Size(390, 850);
+    await tester.pumpAndSettle();
+    final settledDetailRect = tester.getRect(routedCard);
+    expect(settledDetailRect.bottom, 850 - 32);
+    final returnRect = tester.getRect(mainCard);
+    expect(returnRect.top, 850 - 32 - homeRect.height * 2);
+    expect(returnRect.size, homeRect.size);
     final mobileDock = find.byType(
       MobileDockCapsuleContent,
       skipOffstage: false,
     );
-    var previousTop = tester.getRect(routedCard).top;
-    expect(previousTop, greaterThan(homeRect.top));
+    var previousRect = settledDetailRect;
+    expect(previousRect.top, greaterThan(returnRect.top));
     navigator.pop();
     await tester.pump();
+    expect(tester.getRect(routedCard), settledDetailRect);
     var largestStep = 0.0;
     for (var frame = 0; frame < 45; frame++) {
       await tester.pump(const Duration(milliseconds: 8));
@@ -3096,19 +3112,27 @@ void main() {
         tester.widget<MobileDockCapsuleContent>(mobileDock).isPlaybackHidden,
         inFlight,
       );
-      final top = tester.getRect(inFlight ? routedCard : mainCard).top;
-      final step = previousTop - top;
+      final rect = tester.getRect(inFlight ? routedCard : mainCard);
+      final step = previousRect.top - rect.top;
       expect(step, greaterThanOrEqualTo(-0.01));
-      expect(top, greaterThanOrEqualTo(homeRect.top - 0.01));
+      expect(rect.top, greaterThanOrEqualTo(returnRect.top - 0.01));
       if (!inFlight) {
         expect(step, lessThan(largestStep / 2));
+        expect(
+          (previousRect.topLeft - returnRect.topLeft).distance,
+          lessThan(0.1),
+        );
+        expect(
+          (previousRect.bottomRight - returnRect.bottomRight).distance,
+          lessThan(0.1),
+        );
         break;
       }
       if (step > largestStep) largestStep = step;
-      previousTop = top;
+      previousRect = rect;
     }
     expect(routedCard, findsNothing);
-    expect(tester.getRect(mainCard), homeRect);
+    expect(tester.getRect(mainCard), returnRect);
     await tester.pumpAndSettle();
     UiInteractionCoordinator.instance.finishInteractionsForTest();
     await tester.pump();
@@ -3349,7 +3373,7 @@ void main() {
     await tester.pump();
     await tester.pump(kAppMotionFast ~/ 2);
     expect(opacity(field), closeTo(kAppFadeCurve.transform(0.5), 0.001));
-    await tester.pumpAndSettle();
+    await pumpUntilNotFound(tester, field);
     await pumpUntilUiIdle(tester);
     await tester.pumpWidget(const SizedBox.shrink());
   });
@@ -4055,7 +4079,7 @@ void main() {
       );
     }
     testWidgets(
-      'ASMR restored category waits for its opening animation on $platform',
+      'ASMR restored category keeps its opening skeleton until loaded on $platform',
       (tester) async {
         final fixture = AppRuntimeWidgetTestFixture();
         final initialization = Completer<void>();
@@ -4078,39 +4102,28 @@ void main() {
           'asmr_root:${controller.browseCacheScope}',
           {'category': AsmrCategoryType.recommendation.name},
         );
-        await tester.pumpAndSettle();
-        initialization.complete();
-        await tester.pump();
-        await tester.pump();
+        final placeholder = find.byKey(const ValueKey('deferred_placeholder'));
         final categoryStack = find.byKey(
           const ValueKey<String>('asmr_category_stack'),
         );
-        // Activation now keeps the real category tree unmounted behind the
-        // skeleton until its preferences are ready. Wait only for that first
-        // layout frame, without advancing the opening animation's clock.
-        for (
-          var frame = 0;
-          frame < 4 && categoryStack.evaluate().isEmpty;
-          frame++
-        ) {
-          expect(controller.categoryLoadRequests, isEmpty);
-          await tester.pump();
-        }
-        expect(categoryStack, findsOneWidget);
-        final interaction = UiInteractionCoordinator.instance;
-        expect(controller.categoryLoadRequests, isEmpty);
-        expect(interaction.isInteracting, isTrue);
         await tester.pump(const Duration(milliseconds: 100));
+        expect(placeholder, findsOneWidget);
+        expect(categoryStack, findsNothing);
         expect(controller.categoryLoadRequests, isEmpty);
-        controller.completeRecommendationRefresh();
-        await tester.pumpAndSettle();
-        await tester.pump(interaction.idleDelay);
-        await tester.pump();
+
+        initialization.complete();
+        await pumpUntilUiIdle(tester);
         expect(controller.categoryLoadRequests, [
           AsmrCategoryType.recommendation,
         ]);
         expect(controller.recommendationRefreshCount, 1);
-        await tester.pumpAndSettle();
+        await tester.pump(kPlaceholderContentTransitionDuration);
+        expect(placeholder, findsOneWidget);
+        expect(categoryStack, findsNothing);
+
+        controller.completeRecommendationRefresh();
+        await _waitForAsmrContent(tester);
+        expect(categoryStack, findsOneWidget);
         expect(tester.takeException(), isNull);
       },
       variant: TargetPlatformVariant({platform}),
@@ -7370,7 +7383,7 @@ void main() {
       listen: false,
     ).read(themeProviderInstanceProvider);
     await theme.setAppThemeColor(ThemeAccentPreset.teal);
-    await tester.pumpAndSettle();
+    await pumpAndSettleWithAsync(tester);
     final expectedAccent = Theme.of(appContext).colorScheme.primary;
     unawaited(
       tester

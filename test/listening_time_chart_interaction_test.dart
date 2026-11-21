@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/presentation/listening_time_chart.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
+import 'package:doujin_audio/core/widgets/app_dialog.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
 import 'package:doujin_audio/features/player/domain/listening_activity.dart';
@@ -937,11 +938,13 @@ void main() {
           .data;
       await tester.tap(selector);
       await tester.pumpAndSettle();
+      final scrim = find.byKey(const ValueKey('app_dialog_scrim'));
+      final background = find.ancestor(
+        of: scrim,
+        matching: find.byType(AppModalBackground),
+      );
       expect(
-        find.ancestor(
-          of: find.byKey(const ValueKey('app_dialog_scrim')),
-          matching: find.byType(BackdropFilter),
-        ),
+        find.descendant(of: background, matching: find.byType(BackdropFilter)),
         findsOneWidget,
       );
       final localizations = MaterialLocalizations.of(

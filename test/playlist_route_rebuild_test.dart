@@ -7,6 +7,7 @@ import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
+import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -36,8 +37,13 @@ void main() {
           (_) async => {'ok': true, 'value': null},
         );
         addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
-        final fixture = AppRuntimeWidgetTestFixture();
+        final fixture = AppRuntimeWidgetTestFixture(
+          configureSettingsRepository: (settings) {
+            settings.workNameDisplay = WorkNameDisplay.folderName;
+          },
+        );
         addTearDown(fixture.dispose);
+        fixture.settings.syncSlice(isInitialized: true);
         final index = ValueNotifier(0);
         addTearDown(index.dispose);
         final tracks = List.generate(
@@ -50,6 +56,10 @@ void main() {
           ),
         );
         fixture.library.addTracks(tracks, persist: false);
+        fixture.libraryService.syncSlice(
+          isInitialized: true,
+          detailRevision: 0,
+        );
         final sessions = [
           for (final track in tracks)
             fixture.playback.createTrackSession(track),
@@ -82,7 +92,11 @@ void main() {
           await tester.pumpAndSettle();
         }
         index.value = 1;
-        await tester.pumpAndSettle();
+        await pumpUntilFound(
+          tester,
+          find.byKey(const PageStorageKey<String>('library_list')),
+        );
+        await pumpAndSettleWithAsync(tester);
         index.value = 2;
         await tester.pumpAndSettle();
         final playlist = tester.element(

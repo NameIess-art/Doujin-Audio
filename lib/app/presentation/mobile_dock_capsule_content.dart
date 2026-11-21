@@ -148,9 +148,6 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
       _syncMotionInteraction();
       widget.onReportPlaybackCoverRect();
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) widget.onReportPlaybackCoverRect();
-    });
   }
 
   void _syncMotionInteraction() {
@@ -286,6 +283,8 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
   Widget build(BuildContext context) {
     final dock = LayoutBuilder(
       builder: (context, constraints) {
+        // Safe-area and window changes can move the card without a dock animation.
+        widget.onReportPlaybackCoverRect();
         final availableWidth = constraints.maxWidth;
         const compactWidth = kActiveSessionCarouselDockHeight;
         final playbackChild = _buildPlaybackChild(

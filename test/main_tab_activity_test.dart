@@ -459,6 +459,12 @@ void main() {
         addTearDown(fixture.dispose);
         addTearDown(active.dispose);
         fixture.settingsRepository.syncSlice(isInitialized: true);
+        fixture.libraryService.syncSlice(
+          isInitialized: true,
+          detailRevision: 0,
+          treeSnapshotRevision:
+              fixture.library.snapshotCacheService.cardSnapshotRevision,
+        );
         fixture.playbackService.syncSlice(
           activeSessions: const [],
           playingSessionCount: 0,

@@ -37,6 +37,7 @@ import 'package:doujin_audio/features/player/presentation/playlist_view_models.d
 import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_tab.dart';
 import 'support/app_runtime_test_fixture.dart';
+import 'support/asmr_controller_test_fixture.dart';
 import 'support/runtime_test_models.dart';
 
 final _main = find.byKey(const ValueKey('main_content_region'));
@@ -101,7 +102,16 @@ Future<WorkDetailNavigation> _pumpApp(
   );
   addTearDown(fixture.dispose);
   fixture.settings.syncSlice(isInitialized: true);
-  fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+  fixture.libraryService.syncSlice(
+    isInitialized: true,
+    detailRevision: 0,
+    treeSnapshotRevision:
+        fixture.library.snapshotCacheService.cardSnapshotRevision,
+  );
+  final asmr = showAsmrOne
+      ? LoadedEmptyAsmrLibraryController(createTestAsmrServices())
+      : null;
+  if (asmr != null) addTearDown(asmr.dispose);
   final downloads = withDownloadTasks
       ? (AsmrDownloadManager(persistTasks: false)
           ..debugSetCurrentTaskForTesting(
@@ -207,13 +217,14 @@ Future<WorkDetailNavigation> _pumpApp(
         ),
       ),
       overrides: [
+        if (asmr != null)
+          asmrLibraryControllerProvider.overrideWithValue(asmr),
         if (orientationController != null)
           appOrientationControllerProvider.overrideWithValue(
             orientationController,
           ),
         if (downloads != null) ...[
           asmrDownloadManagerProvider.overrideWithValue(downloads),
-          asmrLibraryControllerProvider.overrideWithValue(null),
           asmrDownloadButtonViewStateProvider.overrideWith(
             (ref) => Stream.value(
               const AsmrDownloadButtonViewState(visible: true, progress: null),
@@ -247,7 +258,7 @@ Future<WorkDetailNavigation> _pumpApp(
       ),
     );
   }
-  await _settle(tester);
+  await _settle(tester, withAsync: true);
   return navigation;
 }
 

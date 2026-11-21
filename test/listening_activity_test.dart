@@ -835,7 +835,8 @@ void main() {
       final before = await service.states.first;
       expect(before.history.map((entry) => entry.workKey), ['work', 'other']);
 
-      await service.removeHistoryEntry('work');
+      final removed = (await service.removeHistoryEntry('work'))!;
+      expect(removed.lastPlayedAt?.millisecondsSinceEpoch, 1000);
       final updated = await service.states.first;
       expect(updated.history.single.workKey, 'other');
       expect(updated.days.single.duration, const Duration(seconds: 5));
@@ -851,16 +852,48 @@ void main() {
       await service.refresh();
       expect((await repository.loadHistory()).single.workKey, 'other');
 
-      usage = _batch('after-delete', 2000);
+      usage = _batch('after-delete', 2000, lastPlayedAtMs: 2000);
       await service.refresh();
+      await service.restoreHistoryEntry(removed);
       final playedAgain = await service.states.first;
       expect(playedAgain.history.map((entry) => entry.workKey), [
         'work',
         'other',
       ]);
+      expect(
+        playedAgain.history.first.lastPlayedAt?.millisecondsSinceEpoch,
+        2000,
+      );
       expect(playedAgain.days.single.duration, const Duration(seconds: 7));
     },
   );
+
+  test('undo restores the original legacy listening history order', () async {
+    const workKeys = ['z-first', 'a-second', 'b-third'];
+    final service = ListeningActivityService(
+      repository: repository,
+      readUsage: () async => [],
+      acknowledgeUsage: (_) async {},
+      resolveTrack: (_) => null,
+      recordInterests: ({required batchId, required contributions}) async {},
+    );
+    addTearDown(service.dispose);
+    await service.seedHistory([
+      for (final key in workKeys)
+        ListeningHistoryEntry(workKey: key, track: _track()),
+    ]);
+    final removed = (await service.removeHistoryEntry('a-second'))!;
+    expect((await repository.loadHistory()).map((entry) => entry.workKey), [
+      'z-first',
+      'b-third',
+    ]);
+
+    await service.restoreHistoryEntry(removed);
+    final view = await service.states.first;
+    expect(view.history.map((entry) => entry.workKey), workKeys);
+    expect(view.history[1].track.path, _track().path);
+    expect(view.history[1].lastPlayedAt, isNull);
+  });
 
   test(
     'real version 13 backup without listening tables validates and migrates',
@@ -1154,7 +1187,11 @@ MusicTrack _track() => MusicTrack(
   tags: ['ASMR'],
 );
 
-PlaybackUsageBatch _batch(String id, int milliseconds) => PlaybackUsageBatch(
+PlaybackUsageBatch _batch(
+  String id,
+  int milliseconds, {
+  int lastPlayedAtMs = 1000,
+}) => PlaybackUsageBatch(
   id: id,
   days: [
     PlaybackUsageDay(
@@ -1164,7 +1201,7 @@ PlaybackUsageBatch _batch(String id, int milliseconds) => PlaybackUsageBatch(
         PlaybackUsageWork(
           key: 'work',
           milliseconds: milliseconds,
-          lastPlayedAtMs: 1000,
+          lastPlayedAtMs: lastPlayedAtMs,
           path: '/work/1.mp3',
         ),
       ],
@@ -1205,8 +1242,12 @@ final class _CountingRepository implements ListeningActivityRepository {
   }
 
   @override
-  Future<void> removeHistoryEntry(String workKey) =>
+  Future<ListeningHistoryEntry?> removeHistoryEntry(String workKey) =>
       delegate.removeHistoryEntry(workKey);
+
+  @override
+  Future<void> restoreHistoryEntry(ListeningHistoryEntry entry) =>
+      delegate.restoreHistoryEntry(entry);
 
   @override
   Future<MusicTrack?> findTrack(String workKey) => delegate.findTrack(workKey);

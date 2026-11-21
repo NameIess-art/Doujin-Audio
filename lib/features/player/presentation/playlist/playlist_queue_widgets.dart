@@ -374,7 +374,7 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
     final currentCoverScope = currentTrack == null
         ? null
         : library.coverArtworkCacheService.coverSearchKeyForTrack(currentTrack);
-    final currentCoverIndex = coverItems.indexWhere(
+    var currentCoverIndex = coverItems.indexWhere(
       (item) =>
           currentTrack != null &&
           (PathMatcher.equalsNormalized(item.track.path, currentTrack.path) ||
@@ -384,6 +384,22 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                       ) ==
                       currentCoverScope)),
     );
+    if (currentCoverIndex == -1 &&
+        currentTrack != null &&
+        coverItems.isNotEmpty) {
+      // A later track can share the first track's artwork even when their
+      // cover lookup keys are different.
+      final currentArtwork = library.resolvedPlaybackCoverPathForTrack(
+        currentTrack,
+      );
+      if (currentArtwork != null) {
+        currentCoverIndex = coverItems.indexWhere((item) {
+          final coverPath = item.coverPath;
+          return coverPath != null &&
+              PathMatcher.equalsNormalized(coverPath, currentArtwork);
+        });
+      }
+    }
     final currentTrackName = !hasTracks
         ? i18n.tr('empty_playback_queue')
         : currentTrack?.displayName ??

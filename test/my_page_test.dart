@@ -262,7 +262,7 @@ void main() {
   );
 
   testWidgets(
-    'history entry menu confirms deletion and closes an emptied page',
+    'history swipe or context menu deletes immediately and supports undo',
     (tester) async {
       final repository = _ListeningRepository.withHistory(11);
       final activity = ListeningActivityService(
@@ -296,35 +296,28 @@ void main() {
 
       final i18n = fixture.languageProvider;
       final delete = i18n.tr('my_history_delete');
-      final dialogTitle = find.text(i18n.tr('my_history_delete_title'));
-      if (Theme.of(tester.element(entry)).platform == TargetPlatform.windows) {
+      final isWindows =
+          Theme.of(tester.element(entry)).platform == TargetPlatform.windows;
+      final deleteAction = isWindows ? find.text(delete) : find.byTooltip(delete);
+      if (isWindows) {
         await tester.tap(
           entry,
           kind: PointerDeviceKind.mouse,
           buttons: kSecondaryMouseButton,
         );
       } else {
-        await tester.longPress(entry);
+        expect(deleteAction, findsNothing);
+        await tester.drag(entry, const Offset(-140, 0));
       }
       await tester.pumpAndSettle();
-      expect(find.text(delete), findsOneWidget);
-      await tester.tap(find.text(delete));
-      await tester.pumpAndSettle();
-      expect(dialogTitle, findsOneWidget);
-      await tester.tap(
-        find.widgetWithText(AppSecondaryButton, i18n.tr('cancel')),
-      );
-      await tester.pumpAndSettle();
-      expect(entry, findsOneWidget);
+      expect(deleteAction, findsOneWidget);
       expect(repository.history, hasLength(11));
 
-      await tester.longPress(entry);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(delete));
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(AppPrimaryButton, delete));
-      await pumpAndSettleWithAsync(tester);
-      expect(dialogTitle, findsNothing);
+      await tester.tap(deleteAction);
+      await pumpUntilUiIdle(tester);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byKey(const ValueKey('app_dialog_surface')), findsNothing);
+      expect(find.text(i18n.tr('my_history_deleted')), findsOneWidget);
       expect(entry, findsNothing);
       expect(
         repository.history.map((entry) => entry.workKey),
@@ -333,6 +326,15 @@ void main() {
       expect(find.text('Work 0'), findsOneWidget);
       expect(find.byType(FileTreeRow), findsNWidgets(10));
       expect(next, findsNothing);
+
+      await tester.tap(find.textContaining(i18n.tr('undo')));
+      await pumpAndSettleWithAsync(tester);
+      expect(repository.history.last.workKey, 'history-10');
+      await tester.ensureVisible(next);
+      await tester.pump();
+      await tester.tap(next);
+      await pumpAndSettleWithAsync(tester);
+      expect(entry, findsOneWidget);
     },
     variant: const TargetPlatformVariant({
       TargetPlatform.android,
@@ -2485,6 +2487,7 @@ class _ListeningRepository implements ListeningActivityRepository {
         for (var i = 0; i < count; i++)
           ListeningHistoryEntry(
             workKey: 'history-$i',
+            legacyOrder: i,
             track: MusicTrack(
               path: 'https://example.com/history-$i.mp3',
               displayName: 'Track $i',
@@ -2512,8 +2515,18 @@ class _ListeningRepository implements ListeningActivityRepository {
     int limit = 40,
   }) async => history.skip(offset).take(limit).toList();
   @override
-  Future<void> removeHistoryEntry(String workKey) async {
+  Future<ListeningHistoryEntry?> removeHistoryEntry(String workKey) async {
+    final removed = history
+        .where((entry) => entry.workKey == workKey)
+        .firstOrNull;
     history = history.where((entry) => entry.workKey != workKey).toList();
+    return removed;
+  }
+
+  @override
+  Future<void> restoreHistoryEntry(ListeningHistoryEntry entry) async {
+    history = [...history, entry]
+      ..sort((a, b) => a.legacyOrder.compareTo(b.legacyOrder));
   }
 
   @override

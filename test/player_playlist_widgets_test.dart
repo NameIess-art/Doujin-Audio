@@ -45,6 +45,7 @@ import 'package:doujin_audio/features/player/presentation/playlist/session_detai
 import 'package:doujin_audio/features/player/presentation/playlist/session_track_switcher_sheet.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_subtitle_panel.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playback_queue_cover.dart';
+import 'package:doujin_audio/features/player/presentation/playlist/session_cover_transition.dart';
 import 'package:doujin_audio/features/player/presentation/active_session_carousel.dart';
 import 'package:doujin_audio/features/player/presentation/session_video_viewport.dart';
 import 'package:doujin_audio/features/player/presentation/session_video_surface.dart';
@@ -172,10 +173,13 @@ class _PagedQueueRepository extends TestPersistenceRepository
 }
 
 class _RecordingPlaybackCoverCacheService extends CoverArtworkCacheService {
-  _RecordingPlaybackCoverCacheService({this.fixedCoverPath})
-    : super(libraryService: LibraryService());
+  _RecordingPlaybackCoverCacheService({
+    this.fixedCoverPath,
+    this.playbackCoverPaths = const {},
+  }) : super(libraryService: LibraryService());
 
   final String? fixedCoverPath;
+  final Map<String, String> playbackCoverPaths;
   final List<String> requestedPaths = <String>[];
   final List<String> resolvedPlaybackPaths = <String>[];
 
@@ -183,16 +187,20 @@ class _RecordingPlaybackCoverCacheService extends CoverArtworkCacheService {
   String? resolvedForPlaybackTrack(MusicTrack? track, {String? trackPath}) {
     final resolvedPath = track?.path ?? trackPath;
     if (resolvedPath != null) resolvedPlaybackPaths.add(resolvedPath);
-    return fixedCoverPath;
+    return playbackCoverPaths[resolvedPath] ?? fixedCoverPath;
   }
 
   @override
   Future<String?>? cachedFutureForPlaybackTrack(
     MusicTrack? track, {
     String? trackPath,
-  }) => fixedCoverPath == null
-      ? super.cachedFutureForPlaybackTrack(track, trackPath: trackPath)
-      : SynchronousFuture<String?>(fixedCoverPath);
+  }) {
+    final coverPath =
+        playbackCoverPaths[track?.path ?? trackPath] ?? fixedCoverPath;
+    return coverPath == null
+        ? super.cachedFutureForPlaybackTrack(track, trackPath: trackPath)
+        : SynchronousFuture<String?>(coverPath);
+  }
 
   @override
   Future<String?> futureForPlaybackTrack(
@@ -203,7 +211,9 @@ class _RecordingPlaybackCoverCacheService extends CoverArtworkCacheService {
     if (path != null) {
       requestedPaths.add(path);
     }
-    return SynchronousFuture<String?>(fixedCoverPath);
+    return SynchronousFuture<String?>(
+      playbackCoverPaths[path] ?? fixedCoverPath,
+    );
   }
 
   @override
@@ -6692,6 +6702,193 @@ void main() {
       }),
     );
   }
+
+  testWidgets(
+    'queue cover flies in both directions after replaying a completed round',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = defaultTargetPlatform == TargetPlatform.android
+          ? const Size(500, 1000)
+          : const Size(1280, 800);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final artworkPaths = (await tester.runAsync(() async {
+        final folder = await Directory.systemTemp.createTemp('queue-replay-');
+        addTearDown(() async {
+          releaseRetainedCoverImages();
+          PaintingBinding.instance.imageCache.clear();
+          PaintingBinding.instance.imageCache.clearLiveImages();
+          await tester.runAsync(() => folder.delete(recursive: true));
+        });
+        final png = base64Decode(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        );
+        return [
+          for (final name in ['first', 'last'])
+            (await File('${folder.path}/$name.png').writeAsBytes(png)).path,
+        ];
+      }))!;
+      final tracks = [
+        for (final (work, audio) in [('first', 1), ('last', 1), ('last', 2)])
+          testMusicTrack(
+            name: '$work audio $audio',
+            path: '/library/$work/$audio.mp3',
+            groupKey: '/library/$work',
+            groupTitle: work,
+          ),
+      ];
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: _RecordingPlaybackCoverCacheService(
+          playbackCoverPaths: {
+            tracks[0].path: artworkPaths[0],
+            tracks[1].path: artworkPaths[1],
+            tracks[2].path: artworkPaths[1],
+          },
+        ),
+      );
+      addTearDown(fixture.dispose);
+      fixture.library.addTracks(tracks, persist: false);
+      final playback = fixture.playback;
+      final session = playback.createPlaybackQueue('Replay queue')
+        ..loopMode = SessionLoopMode.crossOnce
+        ..currentTrackPath = tracks.first.path
+        ..playbackQueue = PlaybackQueueDefinition(
+          name: 'Replay queue',
+          entries: [
+            PlaybackQueueEntry(
+              id: 'first-work',
+              kind: PlaybackQueueEntryKind.work,
+              title: 'First work',
+              tracks: [tracks.first],
+            ),
+            PlaybackQueueEntry(
+              id: 'last-work',
+              kind: PlaybackQueueEntryKind.work,
+              title: 'Last work',
+              tracks: tracks.skip(1).toList(),
+            ),
+          ],
+        );
+      fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      void publishTrack(int index, {bool completed = false}) {
+        expect(
+          playback
+              .applyNativeSnapshot(
+                NativePlaybackSnapshot(
+                  sessionId: session.id,
+                  path: tracks[index].path,
+                  queueIndex: index,
+                  playing: !completed,
+                  playWhenReady: !completed,
+                  processingState: completed ? 'completed' : 'ready',
+                  position: completed
+                      ? const Duration(seconds: 10)
+                      : Duration.zero,
+                  bufferedPosition: const Duration(seconds: 10),
+                  duration: const Duration(seconds: 10),
+                  volume: 1,
+                  boostGain: 1,
+                  channelSwapEnabled: false,
+                ),
+                hasLibraryTrack: (_) => true,
+              )
+              .applied,
+          isTrue,
+        );
+      }
+
+      playback.detachCommandPort();
+      playback.attachPlaybackCommands(
+        prepareSession:
+            (
+              _, {
+              required nextPath,
+              autoPlay = true,
+              forceStartAtZero = false,
+              showLoading = true,
+              targetQueueIndex,
+            }) async {
+              expect(nextPath, tracks.last.path);
+              expect(forceStartAtZero, isTrue);
+              publishTrack(2);
+              return true;
+            },
+        pauseSession: (_) async {},
+        startSession: (_, {required shouldStartTriggerCountdown}) async =>
+            false,
+        resolveAdvance: (_, {required forward}) => null,
+        hasAdjacent: (_, {required forward}) => false,
+      );
+      await tester.pumpWidget(fixture.build(const PlaylistTab()));
+      await tester.pumpAndSettle();
+      final queueCover = find.byWidgetPredicate(
+        (widget) =>
+            widget is SessionCoverAnchor &&
+            widget.location == SessionCoverLocation.playlist,
+      );
+      final anchor = tester.state<SessionCoverAnchorState>(queueCover);
+      publishTrack(0);
+      await tester.pump();
+      publishTrack(1);
+      await pumpUntilFound(
+        tester,
+        find.byElementPredicate(
+          (element) =>
+              element is StatefulElement &&
+              identical(element.state, anchor) &&
+              anchor.decodedImage != null,
+          description: 'decoded artwork of the last work',
+        ),
+      );
+      final lastWorkImage = anchor.decodedImage!;
+      publishTrack(2);
+      await tester.pump();
+      publishTrack(2, completed: true);
+      await pumpFiniteTransitions(tester);
+      await tester.tap(find.byTooltip(fixture.languageProvider.tr('play')));
+      await pumpFiniteTransitions(tester);
+      expect(session.effectivePlaying, isTrue);
+      expect(session.position, Duration.zero);
+
+      final sourceBounds = anchor.bounds();
+      expect(sourceBounds, isNotNull);
+      await tester.tap(find.text('Replay queue'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      final flight = find.byKey(const ValueKey('session_detail_cover_flight'));
+      expect(flight, findsOneWidget);
+      final entering =
+          tester.widget<CustomPaint>(flight).painter! as SessionCoverFlight;
+      expect(entering.from, sourceBounds);
+      expect(entering.image.isCloneOf(lastWorkImage), isTrue);
+      await pumpFiniteTransitions(tester);
+      await tester.tap(
+        find.byKey(const ValueKey('session_detail_close_button')),
+      );
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(flight, findsOneWidget);
+      final leaving =
+          tester.widget<CustomPaint>(flight).painter! as SessionCoverFlight;
+      expect(leaving.reverse, isTrue);
+      expect(leaving.to, sourceBounds);
+      await pumpUntilNotFound(tester, find.byType(SessionDetailPage));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 6));
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   for (final count in [1, 2, 3, 4]) {
     testWidgets('$count queue covers fill equal sectors at their centroids', (

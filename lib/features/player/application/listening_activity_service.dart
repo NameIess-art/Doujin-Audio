@@ -223,11 +223,35 @@ final class ListeningActivityService {
         await _reload();
       });
 
-  Future<void> removeHistoryEntry(String workKey) => _serialize(() async {
+  Future<ListeningHistoryEntry?> removeHistoryEntry(String workKey) async {
+    ListeningHistoryEntry? removed;
+    await _serialize(() async {
+      removed = await _repository.removeHistoryEntry(workKey);
+      if (removed != null) await _reloadAfterHistoryEdit();
+    });
+    return removed;
+  }
+
+  Future<void> restoreHistoryEntry(ListeningHistoryEntry entry) =>
+      _serialize(() async {
+        await _repository.restoreHistoryEntry(entry);
+        await _reloadAfterHistoryEdit();
+      });
+
+  Future<void> _reloadAfterHistoryEdit() async {
     _needsReload = true;
-    await _repository.removeHistoryEntry(workKey);
-    await _reload();
-  });
+    try {
+      await _reload();
+    } catch (error, stack) {
+      // A failed refresh must not invalidate a successful edit or its undo.
+      AppLogService.error(
+        'listening_history_reload_failed',
+        error: error,
+        stackTrace: stack,
+      );
+      _refreshInBackground();
+    }
+  }
 
   Future<void> seedHistory(List<ListeningHistoryEntry> entries) =>
       _serialize(() async {

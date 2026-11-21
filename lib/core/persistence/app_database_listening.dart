@@ -67,24 +67,35 @@ extension AppDatabaseListening on AppDatabase {
     ),
   );
 
-  Future<void> removeListeningHistoryEntry(String workKey) =>
-      _runDatabaseWrite((db) async {
-        await db.delete(
-          'listening_history',
-          where: 'work_key = ?',
-          whereArgs: [workKey],
-        );
-      });
+  Future<Map<String, Object?>?> removeListeningHistoryEntry(String workKey) =>
+      _runDatabaseRead(
+        (db) => db.transaction((txn) async {
+          final entry = await _findListeningHistoryEntry(txn, workKey);
+          if (entry == null) return null;
+          await txn.delete(
+            'listening_history',
+            where: 'work_key = ?',
+            whereArgs: [workKey],
+          );
+          return entry;
+        }),
+      );
+
+  Future<void> restoreListeningHistoryEntry(
+    ListeningWorkRecord work, {
+    required int legacyOrder,
+  }) => _runDatabaseWrite(
+    // Playback can recreate the entry while its Undo prompt is still open.
+    (db) => _insertListeningHistory(
+      db,
+      work,
+      legacyOrder,
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    ),
+  );
 
   Future<Map<String, Object?>?> findListeningTrack(String key) =>
-      _runDatabaseRead((db) async {
-        final rows = await db.query(
-          'listening_history',
-          where: 'work_key = ?',
-          whereArgs: [key],
-        );
-        return rows.isEmpty ? null : rows.first;
-      });
+      _runDatabaseRead((db) => _findListeningHistoryEntry(db, key));
 
   Future<void> seedListeningHistory(
     List<ListeningWorkRecord> works,
@@ -104,6 +115,32 @@ extension AppDatabaseListening on AppDatabase {
   );
 }
 
+Future<Map<String, Object?>?> _findListeningHistoryEntry(
+  DatabaseExecutor db,
+  String workKey,
+) async {
+  final rows = await db.query(
+    'listening_history',
+    where: 'work_key = ?',
+    whereArgs: [workKey],
+  );
+  return rows.firstOrNull;
+}
+
+Future<void> _insertListeningHistory(
+  DatabaseExecutor db,
+  ListeningWorkRecord work,
+  int legacyOrder, {
+  ConflictAlgorithm? conflictAlgorithm,
+}) async {
+  await db.insert('listening_history', {
+    'work_key': work.workKey,
+    'track_json': jsonEncode(work.track.toJson()),
+    'last_played_at_ms': work.lastPlayedAtMs,
+    'legacy_order': legacyOrder,
+  }, conflictAlgorithm: conflictAlgorithm);
+}
+
 Future<void> _upsertListeningHistory(
   DatabaseExecutor db,
   ListeningWorkRecord work, {
@@ -119,12 +156,7 @@ Future<void> _upsertListeningHistory(
     limit: 1,
   );
   if (existing.isEmpty) {
-    await db.insert('listening_history', {
-      'work_key': work.workKey,
-      'track_json': jsonEncode(work.track.toJson()),
-      'last_played_at_ms': work.lastPlayedAtMs,
-      'legacy_order': legacyOrder,
-    });
+    await _insertListeningHistory(db, work, legacyOrder);
     return;
   }
   final currentLastPlayed = (existing.single['last_played_at_ms'] as int?) ?? 0;

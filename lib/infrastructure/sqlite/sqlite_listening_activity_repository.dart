@@ -53,20 +53,21 @@ final class SqliteListeningActivityRepository
       offset: offset,
       limit: limit,
     ))
-      ListeningHistoryEntry(
-        workKey: row['work_key'] as String,
-        track: _track(row),
-        lastPlayedAt: (row['last_played_at_ms'] as int) > 0
-            ? DateTime.fromMillisecondsSinceEpoch(
-                row['last_played_at_ms'] as int,
-              )
-            : null,
-      ),
+      _historyEntry(row),
   ];
 
   @override
-  Future<void> removeHistoryEntry(String workKey) =>
-      _database.removeListeningHistoryEntry(workKey);
+  Future<ListeningHistoryEntry?> removeHistoryEntry(String workKey) async {
+    final row = await _database.removeListeningHistoryEntry(workKey);
+    return row == null ? null : _historyEntry(row);
+  }
+
+  @override
+  Future<void> restoreHistoryEntry(ListeningHistoryEntry entry) =>
+      _database.restoreListeningHistoryEntry(
+        _historyRecord(entry),
+        legacyOrder: entry.legacyOrder,
+      );
 
   @override
   Future<MusicTrack?> findTrack(String workKey) async {
@@ -76,16 +77,28 @@ final class SqliteListeningActivityRepository
 
   @override
   Future<void> seedHistory(List<ListeningHistoryEntry> entries) =>
-      _database.seedListeningHistory([
-        for (final entry in entries)
-          ListeningWorkRecord(
-            workKey: entry.workKey,
-            track: entry.track,
-            milliseconds: 0,
-            lastPlayedAtMs: entry.lastPlayedAt?.millisecondsSinceEpoch ?? 0,
-          ),
-      ]);
+      _database.seedListeningHistory(entries.map(_historyRecord).toList());
 }
+
+ListeningHistoryEntry _historyEntry(Map<String, Object?> row) {
+  final playedAtMs = row['last_played_at_ms'] as int;
+  return ListeningHistoryEntry(
+    workKey: row['work_key'] as String,
+    track: _track(row),
+    lastPlayedAt: playedAtMs == 0
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(playedAtMs),
+    legacyOrder: row['legacy_order'] as int,
+  );
+}
+
+ListeningWorkRecord _historyRecord(ListeningHistoryEntry entry) =>
+    ListeningWorkRecord(
+      workKey: entry.workKey,
+      track: entry.track,
+      milliseconds: 0,
+      lastPlayedAtMs: entry.lastPlayedAt?.millisecondsSinceEpoch ?? 0,
+    );
 
 MusicTrack _track(Map<String, Object?> row) => MusicTrack.fromJson(
   Map<String, dynamic>.from(jsonDecode(row['track_json'] as String) as Map),

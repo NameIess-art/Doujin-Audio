@@ -27,10 +27,12 @@ final class ListeningHistoryEntry {
     required this.workKey,
     required this.track,
     this.lastPlayedAt,
+    this.legacyOrder = 0,
   });
   final String workKey;
   final MusicTrack track;
   final DateTime? lastPlayedAt;
+  final int legacyOrder;
 }
 
 final class ListeningActivityView {
@@ -76,7 +78,8 @@ abstract interface class ListeningActivityRepository {
     int offset = 0,
     int limit = 40,
   });
-  Future<void> removeHistoryEntry(String workKey);
+  Future<ListeningHistoryEntry?> removeHistoryEntry(String workKey);
+  Future<void> restoreHistoryEntry(ListeningHistoryEntry entry);
   Future<MusicTrack?> findTrack(String workKey);
   Future<void> seedHistory(List<ListeningHistoryEntry> entries);
 }

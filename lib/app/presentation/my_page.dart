@@ -13,16 +13,17 @@ import '../../core/media/music_track.dart';
 import '../../core/media/path_display.dart';
 import '../../core/logging/app_log_service.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
+import '../../core/ui/undoable_removal_service.dart';
 import '../../core/widgets/app_edit_panel.dart';
 import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/async_cover_image.dart';
-import '../../core/widgets/confirm_action_dialog.dart';
 import '../../core/widgets/file_tree_row.dart';
 import '../../core/widgets/mobile_overlay_inset.dart';
 import '../../core/widgets/page_header_inset.dart';
 import '../../core/widgets/scroll_activity_gate.dart';
 import '../../core/widgets/shimmer_loading.dart';
+import '../../core/widgets/swipe_reveal_card.dart';
 import '../../core/widgets/top_page_header.dart';
 import '../../core/widgets/unified_popup_menu.dart';
 import '../../core/widgets/windows_smooth_scroll_controller.dart';
@@ -158,6 +159,56 @@ class _MyPageState extends ConsumerState<MyPage>
         ref.read(appLanguageProviderInstanceProvider).tr('my_work_unavailable'),
       );
     }
+  }
+
+  Future<void> _removeHistory(String workKey) async {
+    final activity = ref.read(listeningActivityServiceProvider);
+    if (activity == null) return;
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    late final ListeningHistoryEntry removed;
+    await showUndoableRemovalFeedback(
+      context,
+      service: ref.read(undoableRemovalServiceProvider),
+      action: UndoableRemovalAction(
+        key: UndoableRemovalKey('listening-history', workKey),
+        prepare: () async {
+          try {
+            final entry = await activity.removeHistoryEntry(workKey);
+            if (entry == null) return false;
+            removed = entry;
+            return true;
+          } catch (error, stack) {
+            AppLogService.error(
+              'my_history_delete_failed',
+              error: error,
+              stackTrace: stack,
+            );
+            return false;
+          }
+        },
+        // The deletion is durable already. Keep the original entry for Undo.
+        commit: () {},
+        undo: () async {
+          try {
+            await activity.restoreHistoryEntry(removed);
+          } catch (error, stack) {
+            AppLogService.error(
+              'my_history_restore_failed',
+              error: error,
+              stackTrace: stack,
+            );
+            if (mounted) {
+              showAppSnackBar(context, i18n.tr('operation_failed_retry'));
+            }
+            rethrow;
+          }
+        },
+      ),
+      message: i18n.tr('my_history_deleted'),
+      batchMessage: (count) => i18n.tr('items_removed_count', {'count': count}),
+      undoLabel: i18n.tr('undo'),
+      failureMessage: i18n.tr('removal_failed'),
+    );
   }
 
   Future<void> _copyInterest(String name) async {
@@ -634,6 +685,7 @@ class _MyPageState extends ConsumerState<MyPage>
                                   : _HistoryList(
                                       view: view,
                                       onOpen: _openHistory,
+                                      onRemove: _removeHistory,
                                     ),
                               loading: () => const SizedBox.shrink(),
                               error: (error, stack) => TextButton(
@@ -685,10 +737,15 @@ class _RetainedMySectionState extends State<_RetainedMySection>
 }
 
 class _HistoryList extends ConsumerStatefulWidget {
-  const _HistoryList({required this.view, required this.onOpen});
+  const _HistoryList({
+    required this.view,
+    required this.onOpen,
+    required this.onRemove,
+  });
 
   final ListeningActivityView view;
   final Future<void> Function(MusicTrack track) onOpen;
+  final Future<void> Function(String workKey) onRemove;
 
   @override
   ConsumerState<_HistoryList> createState() => _HistoryListState();
@@ -853,6 +910,7 @@ class _HistoryListState extends ConsumerState<_HistoryList> {
                 key: ValueKey(entry.workKey),
                 entry: entry,
                 onOpen: widget.onOpen,
+                onRemove: widget.onRemove,
               ),
           ],
         ),
@@ -929,7 +987,12 @@ final _historyWorkTitleProvider = FutureProvider.autoDispose
     });
 
 class _HistoryWorkRow extends ConsumerWidget {
-  const _HistoryWorkRow({super.key, required this.entry, required this.onOpen});
+  const _HistoryWorkRow({
+    super.key,
+    required this.entry,
+    required this.onOpen,
+    required this.onRemove,
+  });
 
   static const double _minHeight = 52;
   static const double _coverWidth = 48;
@@ -944,38 +1007,7 @@ class _HistoryWorkRow extends ConsumerWidget {
 
   final ListeningHistoryEntry entry;
   final Future<void> Function(MusicTrack track) onOpen;
-
-  Future<void> _removeEntry(
-    BuildContext context,
-    WidgetRef ref,
-    String title,
-  ) async {
-    final service = ref.read(listeningActivityServiceProvider);
-    if (service == null) return;
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final confirmed = await showConfirmActionDialog(
-      context: context,
-      title: i18n.tr('my_history_delete_title'),
-      message: i18n.tr('my_history_delete_confirm', {'name': title}),
-      cancelLabel: i18n.tr('cancel'),
-      confirmLabel: i18n.tr('my_history_delete'),
-      icon: Icons.delete_outline_rounded,
-    );
-    if (!confirmed) return;
-
-    try {
-      await service.removeHistoryEntry(entry.workKey);
-    } catch (error, stack) {
-      AppLogService.error(
-        'my_history_delete_failed',
-        error: error,
-        stackTrace: stack,
-      );
-      if (context.mounted) {
-        showAppSnackBar(context, i18n.tr('operation_failed_retry'));
-      }
-    }
-  }
+  final Future<void> Function(String workKey) onRemove;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1011,18 +1043,31 @@ class _HistoryWorkRow extends ConsumerWidget {
         ),
       ),
     );
+    if (ref.watch(listeningActivityServiceProvider) == null) return row;
+    const shape = RoundedRectangleBorder(borderRadius: FileTreeRow.borderRadius);
+    final label = i18n.tr('my_history_delete');
+    final theme = Theme.of(context);
+    void remove() => unawaited(onRemove(entry.workKey));
+
+    if (theme.platform == TargetPlatform.android) {
+      return SwipeRevealCard(
+        shape: shape,
+        closedColor:
+            theme.cardTheme.color ?? theme.colorScheme.surfaceContainerLow,
+        onRemove: remove,
+        actionLabel: label,
+        removeTooltip: label,
+        child: row,
+      );
+    }
     return UnifiedContextMenuRegion(
-      shape: const RoundedRectangleBorder(
-        borderRadius: FileTreeRow.borderRadius,
-      ),
-      enabled: ref.watch(listeningActivityServiceProvider) != null,
+      shape: shape,
       skipTraversal: true,
-      openOnAndroidLongPress: true,
       openOnWindowsLongPress: true,
       buildEntries: () => [
         UnifiedMenuEntry.action(
-          value: () => unawaited(_removeEntry(context, ref, title)),
-          label: i18n.tr('my_history_delete'),
+          value: remove,
+          label: label,
           icon: Icons.delete_outline_rounded,
           destructive: true,
         ),

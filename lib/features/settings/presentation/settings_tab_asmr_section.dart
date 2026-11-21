@@ -22,43 +22,46 @@ List<Widget> _buildSettingsAsmrSection({
                 UiOperationScope.settingsAsmrDownloadPath,
               ),
             );
-            return ListTile(
-              enabled: !asmrDownloadPathOperation.isBusy,
-              onTap: asmrDownloadPathOperation.isBusy
-                  ? null
-                  : onChooseAsmrDownloadDestination,
-              title: _SettingsTitleBlock(
-                title: i18n.tr('asmr_download_path_setting'),
-                subtitle: Text(
-                  destinationRoot == null || destinationRoot.trim().isEmpty
-                      ? i18n.tr('asmr_download_path_not_set')
-                      : PathDisplay.displayPathFor(destinationRoot),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              leading: _settingsIcon(Icons.folder_rounded, cs.primary),
-              trailing: IconButton(
-                onPressed: asmrDownloadPathOperation.isBusy
+            return Theme(
+              data: AppEntryInkWell.entryTheme(context),
+              child: ListTile(
+                enabled: !asmrDownloadPathOperation.isBusy,
+                onTap: asmrDownloadPathOperation.isBusy
                     ? null
                     : onChooseAsmrDownloadDestination,
-                tooltip: i18n.tr('asmr_download_choose_path'),
-                color: cs.onSurfaceVariant,
-                icon: AnimatedSwitcher(
-                  duration: kAppPlaybackIconDuration,
-                  switchInCurve: kAppFadeCurve,
-                  switchOutCurve: kAppFadeCurve,
-                  child: asmrDownloadPathOperation.isBusy
-                      ? const SizedBox.square(
-                          key: ValueKey('busy'),
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2.2),
-                        )
-                      : const Icon(
-                          Icons.folder_open_rounded,
-                          key: ValueKey('idle'),
-                          size: 20,
-                        ),
+                title: _SettingsTitleBlock(
+                  title: i18n.tr('asmr_download_path_setting'),
+                  subtitle: Text(
+                    destinationRoot == null || destinationRoot.trim().isEmpty
+                        ? i18n.tr('asmr_download_path_not_set')
+                        : PathDisplay.displayPathFor(destinationRoot),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                leading: _settingsIcon(Icons.folder_rounded, cs.primary),
+                trailing: IconButton(
+                  onPressed: asmrDownloadPathOperation.isBusy
+                      ? null
+                      : onChooseAsmrDownloadDestination,
+                  tooltip: i18n.tr('asmr_download_choose_path'),
+                  color: cs.onSurfaceVariant,
+                  icon: AnimatedSwitcher(
+                    duration: kAppPlaybackIconDuration,
+                    switchInCurve: kAppFadeCurve,
+                    switchOutCurve: kAppFadeCurve,
+                    child: asmrDownloadPathOperation.isBusy
+                        ? const SizedBox.square(
+                            key: ValueKey('busy'),
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2.2),
+                          )
+                        : const Icon(
+                            Icons.folder_open_rounded,
+                            key: ValueKey('idle'),
+                            size: 20,
+                          ),
+                  ),
                 ),
               ),
             );
@@ -259,32 +262,35 @@ List<Widget> _buildSettingsAsmrSection({
                     kDefaultAsmrDownloadFolderNameFields,
               ),
             );
-            return ListTile(
-              onTap: () => AppBottomSheet.show<void>(
-                context: context,
-                builder: (_) => const AsmrDownloadFolderNameSettingsSheet(),
-              ),
-              title: _SettingsTitleBlock(
-                title: i18n.tr('asmr_download_folder_name_setting'),
-                subtitle: Text(
-                  fields
-                      .map(
-                        (field) =>
-                            asmrDownloadFolderNameFieldLabel(i18n, field),
-                      )
-                      .join(' - '),
-                  softWrap: true,
+            return Theme(
+              data: AppEntryInkWell.entryTheme(context),
+              child: ListTile(
+                onTap: () => AppBottomSheet.show<void>(
+                  context: context,
+                  builder: (_) => const AsmrDownloadFolderNameSettingsSheet(),
                 ),
+                title: _SettingsTitleBlock(
+                  title: i18n.tr('asmr_download_folder_name_setting'),
+                  subtitle: Text(
+                    fields
+                        .map(
+                          (field) =>
+                              asmrDownloadFolderNameFieldLabel(i18n, field),
+                        )
+                        .join(' - '),
+                    softWrap: true,
+                  ),
+                ),
+                leading: _settingsIcon(
+                  Icons.drive_file_rename_outline,
+                  cs.primary,
+                ),
+                trailing: Icon(
+                  Icons.chevron_right_rounded,
+                  color: cs.onSurfaceVariant,
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               ),
-              leading: _settingsIcon(
-                Icons.drive_file_rename_outline,
-                cs.primary,
-              ),
-              trailing: Icon(
-                Icons.chevron_right_rounded,
-                color: cs.onSurfaceVariant,
-              ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },
         ),

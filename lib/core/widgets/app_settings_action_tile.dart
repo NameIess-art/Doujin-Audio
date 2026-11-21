@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/theme/app_design_tokens.dart';
 import 'app_entry_ink_well.dart';
 
 class AppSettingsActionTile extends StatelessWidget {
@@ -21,7 +22,9 @@ class AppSettingsActionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final radius = BorderRadius.circular(AppDesignTokens.of(context).radiusCard);
     return AppEntryInkWell(
+      borderRadius: radius,
       onTap: onTap,
       child: ListTile(
         leading: SizedBox(

@@ -271,8 +271,10 @@ class _PermissionStatusButton extends StatelessWidget {
         ? disabledLabel
         : enabledLabel;
     final isEnabled = enabled == true;
-    final cs = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     final color = isEnabled ? AppDesignTokens.of(context).success : cs.error;
+    final backgroundColor = color.withValues(alpha: 0.12);
     final label = isEnabled ? enabledLabel : disabledLabel;
     return PlaceholderContentTransition(
       showPlaceholder: enabled == null,
@@ -285,17 +287,23 @@ class _PermissionStatusButton extends StatelessWidget {
         label: label,
         child: TextButton(
           onPressed: onPressed,
-          style: appButtonStyle(
-            TextButton.styleFrom(
+          style: appSurfaceButtonStyle(
+            style: TextButton.styleFrom(
               foregroundColor: color,
-              backgroundColor: color.withValues(alpha: 0.12),
+              backgroundColor: backgroundColor,
               minimumSize: const Size(0, 36),
               padding: const EdgeInsets.symmetric(horizontal: 10),
               shape: const StadiumBorder(),
-              textStyle: Theme.of(
-                context,
-              ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w800),
+              textStyle: theme.textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
             ),
+            colorScheme: cs,
+            platform: theme.platform,
+            defaultBackgroundColor: backgroundColor,
+            animationDuration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : const Duration(milliseconds: 130),
           ),
           child: Text(label),
         ),

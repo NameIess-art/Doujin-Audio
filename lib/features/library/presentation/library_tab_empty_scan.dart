@@ -292,12 +292,7 @@ class LibraryScanProgressCard extends StatelessWidget {
       label: stageLabel,
       child: Card(
         key: const ValueKey('library_scan_progress_card'),
-        elevation: 4,
-        shadowColor: cs.shadow,
         color: cs.surfaceContainerHigh,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(tokens.radiusControl),
-        ),
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(
@@ -336,7 +331,10 @@ class LibraryScanProgressCard extends StatelessWidget {
                     icon: Icon(Icons.close_rounded, size: 16, color: cs.error),
                     label: Text(
                       i18n.tr('scan_cancel'),
-                      style: TextStyle(color: cs.error, fontSize: 12),
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: cs.error,
+                        fontSize: 12,
+                      ),
                     ),
                   ),
                 ],
@@ -368,9 +366,7 @@ class LibraryScanProgressCard extends StatelessWidget {
               LinearProgressIndicator(
                 value: progress,
                 minHeight: 3,
-                borderRadius: BorderRadius.circular(
-                  AppDesignTokens.of(context).radiusCapsule,
-                ),
+                borderRadius: BorderRadius.circular(tokens.radiusCapsule),
               ),
               const SizedBox(height: 6),
               Align(

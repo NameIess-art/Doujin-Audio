@@ -16,6 +16,7 @@ import '../../../app/presentation/screen_view_models.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/ui/visual_settings_providers.dart';
+import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/animated_reorder.dart';
@@ -571,10 +572,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                         icon: const Icon(
                                           Icons.delete_outline_rounded,
                                         ),
-                                        style: IconButton.styleFrom(
-                                          foregroundColor: Theme.of(
-                                            context,
-                                          ).colorScheme.error,
+                                        style: appIconButtonStyle(
+                                          IconButton.styleFrom(
+                                            foregroundColor: Theme.of(
+                                              context,
+                                            ).colorScheme.error,
+                                          ),
                                         ),
                                         tooltip: i18n.tr('remove'),
                                         iconSize: 20,

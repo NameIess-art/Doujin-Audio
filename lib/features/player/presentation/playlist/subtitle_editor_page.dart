@@ -8,6 +8,7 @@ import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/subtitle_parser.dart';
 import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/widgets/app_edit_panel.dart';
+import '../../../../core/widgets/app_entry_ink_well.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/mobile_overlay_inset.dart';
@@ -376,26 +377,41 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
       final i18n = ref.read(appLanguageProviderInstanceProvider);
       final save = await showAppDialog<bool>(
         context: context,
-        builder: (dialogContext) => AppAlertDialog(
-          title: Text(i18n.tr('subtitle_unsaved_title')),
-          content: Text(i18n.tr('subtitle_unsaved_message')),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: Text(i18n.tr('cancel')),
+        builder: (dialogContext) {
+          final theme = Theme.of(dialogContext);
+          final cs = theme.colorScheme;
+          return AppDialog(
+            title: i18n.tr('subtitle_unsaved_title'),
+            icon: Icons.warning_amber_rounded,
+            scrollable: true,
+            content: Text(
+              i18n.tr('subtitle_unsaved_message'),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: cs.onSurfaceVariant,
+                height: 1.25,
+              ),
             ),
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: Text(i18n.tr('discard_changes')),
+            actions: AppDialogActions(
+              children: [
+                AppSecondaryButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  label: i18n.tr('cancel'),
+                ),
+                AppSecondaryButton(
+                  isDestructive: true,
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  label: i18n.tr('discard_changes'),
+                ),
+                AppPrimaryButton(
+                  onPressed: _canSave
+                      ? () => Navigator.pop(dialogContext, true)
+                      : null,
+                  label: i18n.tr('save'),
+                ),
+              ],
             ),
-            AppPillButton(
-              onPressed: _canSave
-                  ? () => Navigator.pop(dialogContext, true)
-                  : null,
-              child: Text(i18n.tr('save')),
-            ),
-          ],
-        ),
+          );
+        },
       );
       if (!mounted || save == null) return;
       if (save && !await _save()) return;
@@ -454,31 +470,33 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
         child: Stack(
           children: [
             Positioned.fill(
-              child: AnimatedSwitcher(
-                duration: MediaQuery.disableAnimationsOf(context)
-                    ? Duration.zero
-                    : kPlaceholderContentTransitionDuration,
-                switchInCurve: kAppFadeCurve,
-                switchOutCurve: kAppFadeCurve,
-                layoutBuilder: (current, previous) => Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    for (final child in previous)
-                      transitionChild(child, interactive: false),
-                    if (current != null)
-                      transitionChild(current, interactive: true),
-                  ],
-                ),
-                child: _errorKey != null
-                    ? Center(
-                        key: ValueKey('error_$_errorKey'),
-                        child: Text(i18n.tr(_errorKey!)),
-                      )
-                    : cues == null
-                    ? const Center(
-                        key: ValueKey('cues_loading'),
-                        child: CircularProgressIndicator.adaptive(),
-                      )
+              child: AppPageContentTransition(
+                backgroundColor: cs.surface,
+                child: AnimatedSwitcher(
+                  duration: MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : kPlaceholderContentTransitionDuration,
+                  switchInCurve: kAppFadeCurve,
+                  switchOutCurve: kAppFadeCurve,
+                  layoutBuilder: (current, previous) => Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      for (final child in previous)
+                        transitionChild(child, interactive: false),
+                      if (current != null)
+                        transitionChild(current, interactive: true),
+                    ],
+                  ),
+                  child: _errorKey != null
+                      ? Center(
+                          key: ValueKey('error_$_errorKey'),
+                          child: Text(i18n.tr(_errorKey!)),
+                        )
+                      : cues == null
+                      ? const Center(
+                          key: ValueKey('cues_loading'),
+                          child: CircularProgressIndicator(),
+                        )
                     : cues.isEmpty
                     ? Center(
                         key: ValueKey('cues_empty_$_dirty'),
@@ -529,73 +547,75 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: InkWell(
-                                            mouseCursor: WidgetStateMouseCursor
-                                                .clickable,
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: AppEntryInkWell(
+                                              key: ValueKey(
+                                                'subtitle_text_$index',
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              onTap: _saving
+                                                  ? null
+                                                  : () => _editText(cue),
+                                              child: Padding(
+                                                padding: const EdgeInsets.all(
+                                                  14,
+                                                ),
+                                                child: Text(
+                                                  needsText
+                                                      ? i18n.tr(
+                                                          'subtitle_new_text',
+                                                        )
+                                                      : cue.text,
+                                                  style: needsText
+                                                      ? TextStyle(
+                                                          color: cs
+                                                              .onSurfaceVariant,
+                                                        )
+                                                      : null,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          AppEntryInkWell(
                                             key: ValueKey(
-                                              'subtitle_text_$index',
+                                              'subtitle_time_$index',
                                             ),
                                             borderRadius: BorderRadius.circular(
                                               12,
                                             ),
                                             onTap: _saving
                                                 ? null
-                                                : () => _editText(cue),
+                                                : () => _editTime(cue),
                                             child: Padding(
-                                              padding: const EdgeInsets.all(14),
-                                              child: Text(
-                                                needsText
-                                                    ? i18n.tr(
-                                                        'subtitle_new_text',
-                                                      )
-                                                    : cue.text,
-                                                style: needsText
-                                                    ? TextStyle(
-                                                        color:
-                                                            cs.onSurfaceVariant,
-                                                      )
-                                                    : null,
-                                              ),
+                                              padding: const EdgeInsets.all(12),
+                                              child: needsTime
+                                                  ? Text(
+                                                      i18n.tr(
+                                                        'subtitle_new_time',
+                                                      ),
+                                                    )
+                                                  : Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .end,
+                                                      children: [
+                                                        Text(
+                                                          _formatTime(
+                                                            cue.start,
+                                                          ),
+                                                        ),
+                                                        Text(
+                                                          _formatTime(cue.end),
+                                                        ),
+                                                      ],
+                                                    ),
                                             ),
                                           ),
-                                        ),
-                                        InkWell(
-                                          mouseCursor:
-                                              WidgetStateMouseCursor.clickable,
-                                          key: ValueKey('subtitle_time_$index'),
-                                          borderRadius: BorderRadius.circular(
-                                            12,
-                                          ),
-                                          onTap: _saving
-                                              ? null
-                                              : () => _editTime(cue),
-                                          child: Padding(
-                                            padding: const EdgeInsets.all(12),
-                                            child: needsTime
-                                                ? Text(
-                                                    i18n.tr(
-                                                      'subtitle_new_time',
-                                                    ),
-                                                  )
-                                                : Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment.end,
-                                                    children: [
-                                                      Text(
-                                                        _formatTime(cue.start),
-                                                      ),
-                                                      Text(
-                                                        _formatTime(cue.end),
-                                                      ),
-                                                    ],
-                                                  ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
+                                        ],
+                                      ),
                                     if (needsText || needsTime)
                                       Padding(
                                         padding: const EdgeInsets.fromLTRB(
@@ -621,6 +641,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                           },
                         ).withWindowsSmoothScroll(),
                       ),
+                ),
               ),
             ),
             Positioned(

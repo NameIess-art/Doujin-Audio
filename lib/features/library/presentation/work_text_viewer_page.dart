@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -13,6 +14,7 @@ import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
+import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
@@ -311,8 +313,12 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
                 ),
               ),
               const SizedBox(height: 16),
-              FilledButton.tonal(
+              AppPillButton(
                 onPressed: _loadFile,
+                style: FilledButton.styleFrom(
+                  backgroundColor: cs.secondaryContainer,
+                  foregroundColor: cs.onSecondaryContainer,
+                ),
                 child: Text(i18n.tr('retry')),
               ),
             ],
@@ -434,22 +440,26 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
         borderRadius: BorderRadius.circular(8),
       ),
     );
+    final maxWidth = AppDesignTokens.of(context).readableContentMaxWidth;
     return SelectionArea(
       contextMenuBuilder: buildAppSelectableTextMenu,
       child: _buildFadeInContent(
         context: context,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 960),
-            child: CustomScrollView(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final horizontalPadding = math.max(
+              20.0,
+              (constraints.maxWidth - maxWidth) / 2,
+            );
+            return CustomScrollView(
               controller: _scrollController,
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
                 SliverPadding(
                   padding: EdgeInsets.fromLTRB(
-                    20,
+                    horizontalPadding,
                     contentTopInset,
-                    20,
+                    horizontalPadding,
                     bottomPadding + 76,
                   ),
                   sliver: SliverList.builder(
@@ -478,8 +488,8 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
                   ),
                 ),
               ],
-            ),
-          ),
+            );
+          },
         ),
       ),
     );

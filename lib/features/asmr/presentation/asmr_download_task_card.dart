@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/theme/app_design_tokens.dart';
+import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
 import '../application/asmr_download_models.dart';
@@ -39,9 +40,18 @@ class AsmrDownloadTaskCard extends StatelessWidget {
         : null;
 
     final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(tokens.radiusSection),
+      borderRadius: BorderRadius.circular(tokens.radiusCard),
       side: BorderSide(
         color: cs.outlineVariant.withValues(alpha: tokens.standardBorderAlpha),
+      ),
+    );
+    ButtonStyle actionStyle(Color foregroundColor) => appIconButtonStyle(
+      IconButton.styleFrom(
+        foregroundColor: foregroundColor,
+        fixedSize: const Size.square(36),
+        minimumSize: const Size.square(36),
+        padding: EdgeInsets.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
     );
     final card = Card(
@@ -73,43 +83,33 @@ class AsmrDownloadTaskCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   if (task.status != AsmrDownloadTaskStatus.completed)
-                    SizedBox(
-                      width: 32,
-                      height: 32,
-                      child: IconButton(
-                        padding: EdgeInsets.zero,
-                        icon: Icon(
-                          task.status == AsmrDownloadTaskStatus.failed
-                              ? Icons.refresh_rounded
-                              : task.status == AsmrDownloadTaskStatus.paused
-                              ? Icons.play_arrow_rounded
-                              : Icons.pause_rounded,
-                        ),
-                        iconSize: 22,
-                        color: cs.onSurfaceVariant.withValues(alpha: 0.8),
-                        tooltip: task.status == AsmrDownloadTaskStatus.failed
-                            ? i18n.tr('retry')
+                    IconButton(
+                      style: actionStyle(cs.onSurfaceVariant),
+                      icon: Icon(
+                        task.status == AsmrDownloadTaskStatus.failed
+                            ? Icons.refresh_rounded
                             : task.status == AsmrDownloadTaskStatus.paused
-                            ? i18n.tr('resume')
-                            : i18n.tr('pause'),
-                        onPressed: onTogglePause,
+                            ? Icons.play_arrow_rounded
+                            : Icons.pause_rounded,
                       ),
+                      iconSize: 22,
+                      tooltip: task.status == AsmrDownloadTaskStatus.failed
+                          ? i18n.tr('retry')
+                          : task.status == AsmrDownloadTaskStatus.paused
+                          ? i18n.tr('resume')
+                          : i18n.tr('pause'),
+                      onPressed: onTogglePause,
                     ),
                   const SizedBox(width: 4),
-                  SizedBox(
-                    width: 32,
-                    height: 32,
-                    child: IconButton(
-                      key: ValueKey<String>(
-                        'asmr_download_remove_task_${task.work.workKey}',
-                      ),
-                      padding: EdgeInsets.zero,
-                      icon: const Icon(Icons.delete_outline_rounded),
-                      iconSize: 22,
-                      color: cs.error.withValues(alpha: 0.8),
-                      tooltip: i18n.tr('asmr_download_remove_task'),
-                      onPressed: onRemove,
+                  IconButton(
+                    key: ValueKey<String>(
+                      'asmr_download_remove_task_${task.work.workKey}',
                     ),
+                    style: actionStyle(cs.error),
+                    icon: const Icon(Icons.delete_outline_rounded),
+                    iconSize: 22,
+                    tooltip: i18n.tr('asmr_download_remove_task'),
+                    onPressed: onRemove,
                   ),
                 ],
               ),

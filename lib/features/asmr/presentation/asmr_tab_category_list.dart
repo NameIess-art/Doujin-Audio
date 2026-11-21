@@ -942,29 +942,15 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         ),
       ),
     );
-    final page = Theme(
-      data: theme.copyWith(
-        scrollbarTheme: theme.scrollbarTheme.copyWith(
-          // Value equality avoids invalidating every card's Theme on paging.
-          thumbColor: WidgetStateProperty.fromMap({
-            WidgetState.dragged: primaryColor,
-            WidgetState.hovered: primaryColor.withValues(alpha: 0.7),
-            WidgetState.any: theme.colorScheme.outlineVariant.withValues(
-              alpha: 0.5,
-            ),
-          }),
-        ),
-      ),
-      child: widget.searchSession
-          ? content
-          : BrowsePageScroll(
-              pageKey:
-                  'asmr_list:${ref.read(asmrLibraryControllerProvider)?.browseCacheScope ?? ''}:${widget.category.name}',
-              controller: widget.scrollController,
-              anchorIndices: workIndexById,
-              child: content,
-            ),
-    );
+    final page = widget.searchSession
+        ? content
+        : BrowsePageScroll(
+            pageKey:
+                'asmr_list:${ref.read(asmrLibraryControllerProvider)?.browseCacheScope ?? ''}:${widget.category.name}',
+            controller: widget.scrollController,
+            anchorIndices: workIndexById,
+            child: content,
+          );
     return Builder(
       builder: (context) {
         _route = ModalRoute.of(context);

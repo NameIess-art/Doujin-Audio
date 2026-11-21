@@ -984,7 +984,9 @@ class AppFeedbackSurface extends StatelessWidget {
         child: Row(
           children: [
             AnimatedContainer(
-              duration: tokens.motionFast,
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : tokens.motionFast,
               curve: Curves.easeOutCubic,
               width: _iconChipSize,
               height: _iconChipSize,
@@ -996,7 +998,7 @@ class AppFeedbackSurface extends StatelessWidget {
                 child: AnimatedSwitcher(
                   duration: MediaQuery.disableAnimationsOf(context)
                       ? Duration.zero
-                      : kAppMotionFast,
+                      : tokens.motionFast,
                   switchInCurve: kAppSpringCurve,
                   switchOutCurve: Curves.easeInCubic,
                   transitionBuilder: (child, animation) =>
@@ -1029,13 +1031,15 @@ class AppFeedbackSurface extends StatelessWidget {
             const SizedBox(width: 10),
             Expanded(
               child: AnimatedSize(
-                duration: tokens.motionFast,
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : tokens.motionFast,
                 curve: kAppSpringCurve,
                 alignment: Alignment.centerLeft,
                 child: AnimatedSwitcher(
                   duration: MediaQuery.disableAnimationsOf(context)
                       ? Duration.zero
-                      : kAppMotionFast,
+                      : tokens.motionFast,
                   switchInCurve: kAppSpringCurve,
                   switchOutCurve: Curves.easeInCubic,
                   layoutBuilder: _feedbackContentLayout,

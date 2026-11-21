@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import '../../core/widgets/drag_only_scrollbar.dart';
 import '../application/app_bootstrap_controller.dart';
 import '../localization/app_language_provider.dart';
 import '../theme/theme_provider.dart';
@@ -51,6 +52,7 @@ class AppBootstrapHost extends StatelessWidget {
             : lightTheme.colorScheme.surface;
         Widget shell(Widget home) => MaterialApp(
           debugShowCheckedModeBanner: false,
+          scrollBehavior: const AppScrollBehavior(),
           color: windowSurface,
           theme: lightTheme,
           darkTheme: darkTheme,

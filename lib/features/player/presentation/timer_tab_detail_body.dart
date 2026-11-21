@@ -80,64 +80,87 @@ extension _TimerTabDetailBody on _TimerTabState {
                       const SizedBox.shrink(),
                     if (!showAutoResumeCountdown) ...[
                       const SizedBox(height: 8),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: cs.surfaceContainerLow,
-                          borderRadius: BorderRadius.circular(tokens.radiusCard),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 10,
+                      Material(
+                        color: cs.surfaceContainerLow,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(
+                            tokens.radiusCard,
                           ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 36,
-                                height: 36,
-                                decoration: BoxDecoration(
-                                  color: cs.primary.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(
-                                    AppDesignTokens.of(context).radiusSmall,
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: AppEntryInkWell(
+                          onTap: () {
+                            final nextValue = !timerState.autoResumeEnabled;
+                            AppInteractionFeedback.trigger(
+                              AppInteractionFeedbackType.selection,
+                            );
+                            unawaited(
+                              _setAutoResumeWithCapabilityCheck(
+                                timer,
+                                enabled: nextValue,
+                                hour: timerState.autoResumeHour,
+                                minute: timerState.autoResumeMinute,
+                                promptForCapability:
+                                    nextValue && !timerState.autoResumeEnabled,
+                              ),
+                            );
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 36,
+                                  height: 36,
+                                  decoration: BoxDecoration(
+                                    color: cs.primary.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(
+                                      tokens.radiusSmall,
+                                    ),
+                                  ),
+                                  child: Icon(
+                                    Icons.restore_rounded,
+                                    size: 20,
+                                    color: cs.primary,
                                   ),
                                 ),
-                                child: Icon(
-                                  Icons.restore_rounded,
-                                  size: 20,
-                                  color: cs.primary,
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    i18n.tr('auto_resume_after_timer'),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 14,
+                                        ),
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  i18n.tr('auto_resume_after_timer'),
-                                  style: Theme.of(context).textTheme.bodyMedium
-                                      ?.copyWith(
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 14,
+                                Switch.adaptive(
+                                  value: timerState.autoResumeEnabled,
+                                  onChanged: (value) {
+                                    AppInteractionFeedback.trigger(
+                                      AppInteractionFeedbackType.selection,
+                                    );
+                                    unawaited(
+                                      _setAutoResumeWithCapabilityCheck(
+                                        timer,
+                                        enabled: value,
+                                        hour: timerState.autoResumeHour,
+                                        minute: timerState.autoResumeMinute,
+                                        promptForCapability:
+                                            value &&
+                                            !timerState.autoResumeEnabled,
                                       ),
+                                    );
+                                  },
                                 ),
-                              ),
-                              Switch.adaptive(
-                                value: timerState.autoResumeEnabled,
-                                onChanged: (value) {
-                                  AppInteractionFeedback.trigger(
-                                    AppInteractionFeedbackType.selection,
-                                  );
-                                  unawaited(
-                                    _setAutoResumeWithCapabilityCheck(
-                                      timer,
-                                      enabled: value,
-                                      hour: timerState.autoResumeHour,
-                                      minute: timerState.autoResumeMinute,
-                                      promptForCapability:
-                                          value &&
-                                          !timerState.autoResumeEnabled,
-                                    ),
-                                  );
-                                },
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -146,11 +169,12 @@ extension _TimerTabDetailBody on _TimerTabState {
                         Material(
                           color: cs.surfaceContainerLow,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(tokens.radiusCard),
+                            borderRadius: BorderRadius.circular(
+                              tokens.radiusCard,
+                            ),
                           ),
                           clipBehavior: Clip.antiAlias,
-                          child: InkWell(
-                            mouseCursor: WidgetStateMouseCursor.clickable,
+                          child: AppEntryInkWell(
                             onTap: pickAutoResumeTime,
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
@@ -165,7 +189,7 @@ extension _TimerTabDetailBody on _TimerTabState {
                                     decoration: BoxDecoration(
                                       color: cs.primary.withValues(alpha: 0.12),
                                       borderRadius: BorderRadius.circular(
-                                        AppDesignTokens.of(context).radiusSmall,
+                                        tokens.radiusSmall,
                                       ),
                                     ),
                                     child: Icon(
@@ -208,54 +232,66 @@ extension _TimerTabDetailBody on _TimerTabState {
                         Material(
                           color: cs.surfaceContainerLow,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(tokens.radiusCard),
+                            borderRadius: BorderRadius.circular(
+                              tokens.radiusCard,
+                            ),
                           ),
                           clipBehavior: Clip.antiAlias,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 36,
-                                  height: 36,
-                                  decoration: BoxDecoration(
-                                    color: cs.primary.withValues(alpha: 0.12),
-                                    borderRadius: BorderRadius.circular(
-                                      AppDesignTokens.of(context).radiusSmall,
+                          child: AppEntryInkWell(
+                            onTap: () {
+                              AppInteractionFeedback.trigger(
+                                AppInteractionFeedbackType.selection,
+                              );
+                              timer.setStopAfterCurrentTrack(
+                                !timerState.stopAfterCurrentTrack,
+                              );
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 36,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                      color: cs.primary.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(
+                                        tokens.radiusSmall,
+                                      ),
+                                    ),
+                                    child: Icon(
+                                      Icons.music_note_rounded,
+                                      size: 20,
+                                      color: cs.primary,
                                     ),
                                   ),
-                                  child: Icon(
-                                    Icons.music_note_rounded,
-                                    size: 20,
-                                    color: cs.primary,
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      i18n.tr('stop_after_current_track'),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 14,
+                                          ),
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    i18n.tr('stop_after_current_track'),
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyMedium
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 14,
-                                        ),
+                                  Switch.adaptive(
+                                    value: timerState.stopAfterCurrentTrack,
+                                    onChanged: (value) {
+                                      AppInteractionFeedback.trigger(
+                                        AppInteractionFeedbackType.selection,
+                                      );
+                                      timer.setStopAfterCurrentTrack(value);
+                                    },
                                   ),
-                                ),
-                                Switch.adaptive(
-                                  value: timerState.stopAfterCurrentTrack,
-                                  onChanged: (value) {
-                                    AppInteractionFeedback.trigger(
-                                      AppInteractionFeedbackType.selection,
-                                    );
-                                    timer.setStopAfterCurrentTrack(value);
-                                  },
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -267,8 +303,8 @@ extension _TimerTabDetailBody on _TimerTabState {
             ),
             const SizedBox(height: 12),
             if (timerConfigured)
-              AppLabelledButton(
-                OutlinedButton.icon,
+              AppSecondaryButton(
+                isDestructive: true,
                 onPressed: () {
                   AppInteractionFeedback.trigger(
                     AppInteractionFeedbackType.destructive,
@@ -276,16 +312,8 @@ extension _TimerTabDetailBody on _TimerTabState {
                   timer.cancelTimer();
                   _setLocalState(() => _showCompactDetail = false);
                 },
-                icon: const Icon(Icons.stop_circle_outlined),
-                label: Text(i18n.tr('cancel_timer')),
-                style: OutlinedButton.styleFrom(
-                  elevation: 0,
-                  shadowColor: Colors.transparent,
-                  minimumSize: const Size.fromHeight(48),
-                  foregroundColor: cs.error,
-                  side: BorderSide(color: cs.error),
-                  shape: const StadiumBorder(),
-                ),
+                icon: Icons.stop_circle_outlined,
+                label: i18n.tr('cancel_timer'),
               ),
           ],
         ),

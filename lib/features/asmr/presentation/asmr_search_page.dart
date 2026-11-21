@@ -466,91 +466,76 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
                 : localizedAsmrCatalogErrorText(i18n, error);
             return PageHeaderInset(
               topInset: topInset,
-              child: ScrollConfiguration(
-                behavior: ScrollConfiguration.of(
-                  context,
-                ).copyWith(scrollbars: false),
-                child: DragOnlyScrollbar(
-                  controller: _suggestionsScrollController,
-                  thumbVisibility:
-                      defaultTargetPlatform == TargetPlatform.windows,
-                  child: CustomScrollView(
-                    key: const ValueKey('asmr_search_suggestions'),
-                    controller: _suggestionsScrollController,
-                    slivers: [
-                      SliverToBoxAdapter(child: SizedBox(height: topInset)),
-                      SliverToBoxAdapter(
-                        child: AppSearchElementTabs(
-                          draft: _inputQuery.value,
-                          matchAll: _matchAll,
-                          onSelected: (value) =>
-                              setState(() => _matchAll = value),
-                          translate: i18n.tr,
-                          filters: _filters,
-                          onFiltersChanged: (value) =>
-                              setState(() => _filters = value),
-                        ),
-                      ),
-                      AppSearchSuggestionSection(
-                        key: const ValueKey('asmr_search_history'),
-                        title: i18n.tr('search_history'),
-                        items: history,
-                        onClear: () => unawaited(
-                          clearSearchHistoryWithFeedback(context, online: true),
-                        ),
-                        clearLabel: i18n.tr('clear'),
-                        isSelected: (item) =>
-                            item == canonicalElementQuery(_inputQuery.value),
-                        onToggle: (item) => unawaited(_onSubmitted(item)),
-                        buildItemMenu: (item) =>
-                            buildSearchHistoryMenu(context, item, online: true),
-                        emptyText: i18n.tr('search_history_empty'),
-                        expandLabel: i18n.tr('expand'),
-                        collapseLabel: i18n.tr('collapse'),
-                        accentColor: accent,
-                      ),
-                      AppSearchSuggestionSection(
-                        key: const ValueKey('asmr_search_voice_actors'),
-                        title: i18n.tr('search_hot_voice_actors'),
-                        items: suggestions?.voiceActors ?? const [],
-                        maxExpandedItems: AsmrSearchSuggestions.displayLimit,
-                        isSelected: _isSuggestionSelected,
-                        onToggle: _toggleSuggestion,
-                        emptyText: i18n.tr('no_search_results'),
-                        expandLabel: i18n.tr('expand'),
-                        collapseLabel: i18n.tr('collapse'),
-                        accentColor: accent,
-                        errorText: errorText,
-                        retryLabel: i18n.tr('retry'),
-                        onRetry: () => unawaited(
-                          _searchController?.ensureSearchSuggestions(
-                            force: true,
-                          ),
-                        ),
-                      ),
-                      AppSearchSuggestionSection(
-                        key: const ValueKey('asmr_search_tags'),
-                        title: i18n.tr('search_hot_tags'),
-                        items: suggestions?.tags ?? const [],
-                        maxExpandedItems: AsmrSearchSuggestions.displayLimit,
-                        isSelected: _isSuggestionSelected,
-                        onToggle: _toggleSuggestion,
-                        emptyText: i18n.tr('no_search_results'),
-                        expandLabel: i18n.tr('expand'),
-                        collapseLabel: i18n.tr('collapse'),
-                        accentColor: accent,
-                        errorText: errorText,
-                        retryLabel: i18n.tr('retry'),
-                        onRetry: () => unawaited(
-                          _searchController?.ensureSearchSuggestions(
-                            force: true,
-                          ),
-                        ),
-                      ),
-                      SliverToBoxAdapter(child: SizedBox(height: bottomInset)),
-                    ],
+              child: CustomScrollView(
+                key: const ValueKey('asmr_search_suggestions'),
+                controller: _suggestionsScrollController,
+                slivers: [
+                  SliverToBoxAdapter(child: SizedBox(height: topInset)),
+                  SliverToBoxAdapter(
+                    child: AppSearchElementTabs(
+                      draft: _inputQuery.value,
+                      matchAll: _matchAll,
+                      onSelected: (value) => setState(() => _matchAll = value),
+                      translate: i18n.tr,
+                      filters: _filters,
+                      onFiltersChanged: (value) =>
+                          setState(() => _filters = value),
+                    ),
                   ),
-                ),
+                  AppSearchSuggestionSection(
+                    key: const ValueKey('asmr_search_history'),
+                    title: i18n.tr('search_history'),
+                    items: history,
+                    onClear: () => unawaited(
+                      clearSearchHistoryWithFeedback(context, online: true),
+                    ),
+                    clearLabel: i18n.tr('clear'),
+                    isSelected: (item) =>
+                        item == canonicalElementQuery(_inputQuery.value),
+                    onToggle: (item) => unawaited(_onSubmitted(item)),
+                    buildItemMenu: (item) =>
+                        buildSearchHistoryMenu(context, item, online: true),
+                    emptyText: i18n.tr('search_history_empty'),
+                    expandLabel: i18n.tr('expand'),
+                    collapseLabel: i18n.tr('collapse'),
+                    accentColor: accent,
+                  ),
+                  AppSearchSuggestionSection(
+                    key: const ValueKey('asmr_search_voice_actors'),
+                    title: i18n.tr('search_hot_voice_actors'),
+                    items: suggestions?.voiceActors ?? const [],
+                    maxExpandedItems: AsmrSearchSuggestions.displayLimit,
+                    isSelected: _isSuggestionSelected,
+                    onToggle: _toggleSuggestion,
+                    emptyText: i18n.tr('no_search_results'),
+                    expandLabel: i18n.tr('expand'),
+                    collapseLabel: i18n.tr('collapse'),
+                    accentColor: accent,
+                    errorText: errorText,
+                    retryLabel: i18n.tr('retry'),
+                    onRetry: () => unawaited(
+                      _searchController?.ensureSearchSuggestions(force: true),
+                    ),
+                  ),
+                  AppSearchSuggestionSection(
+                    key: const ValueKey('asmr_search_tags'),
+                    title: i18n.tr('search_hot_tags'),
+                    items: suggestions?.tags ?? const [],
+                    maxExpandedItems: AsmrSearchSuggestions.displayLimit,
+                    isSelected: _isSuggestionSelected,
+                    onToggle: _toggleSuggestion,
+                    emptyText: i18n.tr('no_search_results'),
+                    expandLabel: i18n.tr('expand'),
+                    collapseLabel: i18n.tr('collapse'),
+                    accentColor: accent,
+                    errorText: errorText,
+                    retryLabel: i18n.tr('retry'),
+                    onRetry: () => unawaited(
+                      _searchController?.ensureSearchSuggestions(force: true),
+                    ),
+                  ),
+                  SliverToBoxAdapter(child: SizedBox(height: bottomInset)),
+                ],
               ),
             );
           },

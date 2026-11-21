@@ -14,9 +14,13 @@ import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/core/widgets/app_bottom_sheet.dart';
+import 'package:doujin_audio/core/widgets/app_buttons.dart';
+import 'package:doujin_audio/core/widgets/app_dialog.dart';
+import 'package:doujin_audio/core/widgets/app_entry_ink_well.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
@@ -621,10 +625,10 @@ void main() {
       );
       final cancelButton = find.ancestor(
         of: find.text(language.tr('subtitle_pause_task')),
-        matching: find.byType(TextButton),
+        matching: find.byType(AppSecondaryButton),
       );
       expect(
-        tester.widget<TextButton>(cancelButton).onPressed != null,
+        tester.widget<AppSecondaryButton>(cancelButton).onPressed != null,
         kind == SubtitleDraftKind.translation,
       );
     });
@@ -707,7 +711,7 @@ void main() {
       await _waitForImportAction(
         tester,
         () => hasExisting
-            ? find.bySubtype<AlertDialog>().evaluate().isNotEmpty
+            ? find.byType(AppDialog).evaluate().isNotEmpty
             : service.trackSync(audioFile.path)?.sourcePath == destination.path,
       );
       if (hasExisting) {
@@ -738,7 +742,7 @@ void main() {
           expect(service.trackSync(audioFile.path)?.sourcePath, existing.path);
         }
       } else {
-        expect(find.bySubtype<AlertDialog>(), findsNothing);
+        expect(find.byType(AppDialog), findsNothing);
       }
       if (confirm) {
         expect(selected.existsSync(), isFalse);
@@ -1079,7 +1083,8 @@ void main() {
     await tester.ensureVisible(translation);
     await tester.tap(translation);
     await tester.pumpAndSettle();
-    expect(find.bySubtype<SimpleDialog>(), findsOneWidget);
+    expect(find.byType(AppDialog), findsOneWidget);
+    expect(find.text(language.tr('subtitle_choose_language')), findsOneWidget);
   });
 
   testWidgets(
@@ -1117,7 +1122,8 @@ void main() {
       await tester.ensureVisible(translation);
       await tester.tap(translation);
       await tester.pumpAndSettle();
-      expect(find.bySubtype<SimpleDialog>(), findsOneWidget);
+      expect(find.byType(AppDialog), findsOneWidget);
+      expect(find.text(language.tr('subtitle_choose_language')), findsOneWidget);
       await tester.tap(find.text(language.tr('subtitle_language_zh')));
       await tester.pump(const Duration(milliseconds: 300));
       expect(models.checks, 0);
@@ -1302,10 +1308,10 @@ void main() {
       find.byKey(const ValueKey('subtitle_script_selection')),
       findsOneWidget,
     );
-    expect(find.bySubtype<SimpleDialog>(), findsNothing);
+    expect(find.byType(AppDialog), findsNothing);
     await tester.tap(find.text('script.md'));
     await tester.pumpAndSettle();
-    expect(find.bySubtype<AlertDialog>(), findsOneWidget);
+    expect(find.byType(AppDialog), findsOneWidget);
     expect(
       find.text(language.tr('subtitle_script_existing_title')),
       findsOneWidget,
@@ -1318,7 +1324,7 @@ void main() {
 
     await tester.tap(find.text(language.tr('cancel')));
     await tester.pumpAndSettle();
-    expect(find.bySubtype<AlertDialog>(), findsNothing);
+    expect(find.byType(AppDialog), findsNothing);
     expect(find.byType(SubtitleMenuSheet), findsOneWidget);
   });
 
@@ -1363,16 +1369,21 @@ void main() {
     await tester.ensureVisible(translation);
     await tester.tap(translation);
     await tester.pumpAndSettle();
-    expect(find.bySubtype<AlertDialog>(), findsOneWidget);
-    expect(find.bySubtype<SimpleDialog>(), findsNothing);
+    expect(find.byType(AppDialog), findsOneWidget);
+    expect(
+      find.text(language.tr('subtitle_source_confirm_japanese')),
+      findsOneWidget,
+    );
+    expect(find.text(language.tr('subtitle_choose_language')), findsNothing);
     await tester.tap(
       find.descendant(
-        of: find.bySubtype<AlertDialog>(),
+        of: find.byType(AppDialog),
         matching: find.byType(FilledButton),
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.bySubtype<SimpleDialog>(), findsOneWidget);
+    expect(find.byType(AppDialog), findsOneWidget);
+    expect(find.text(language.tr('subtitle_choose_language')), findsOneWidget);
     expect(find.text(language.tr('subtitle_language_zh')), findsOneWidget);
     expect(find.text(language.tr('subtitle_language_en')), findsOneWidget);
   });
@@ -1722,7 +1733,7 @@ void main() {
       await tester.tap(translateTile);
       await tester.pumpAndSettle();
 
-      final dialogFinder = find.bySubtype<SimpleDialog>();
+      final dialogFinder = find.byType(AppDialog);
       expect(dialogFinder, findsOneWidget);
       expect(
         find.descendant(of: dialogFinder, matching: find.byType(BackdropFilter)),
@@ -1736,16 +1747,19 @@ void main() {
       expect(find.text(language.tr('subtitle_language_zh')), findsOneWidget);
       expect(find.text(language.tr('subtitle_language_en')), findsOneWidget);
 
+      final expectedRadius = BorderRadius.circular(
+        AppDesignTokens.of(tester.element(dialogFinder)).radiusCard,
+      );
       // Verify item highlight indicators are rounded rectangles conforming to items
-      final langInkWells = tester.widgetList<InkWell>(
+      final langInkWells = tester.widgetList<AppEntryInkWell>(
         find.descendant(
           of: dialogFinder,
-          matching: find.byType(InkWell),
+          matching: find.byType(AppEntryInkWell),
         ),
       ).where((i) => i.borderRadius != null).toList();
       expect(langInkWells, hasLength(2));
       for (final inkWell in langInkWells) {
-        expect(inkWell.borderRadius, BorderRadius.circular(14));
+        expect(inkWell.borderRadius, expectedRadius);
       }
 
       final langMaterials = tester.widgetList<Material>(
@@ -1753,18 +1767,18 @@ void main() {
           of: dialogFinder,
           matching: find.byType(Material),
         ),
-      ).where((m) => m.shape is RoundedRectangleBorder && (m.shape as RoundedRectangleBorder).borderRadius == BorderRadius.circular(14));
+      ).where((m) => m.shape is RoundedRectangleBorder && (m.shape as RoundedRectangleBorder).borderRadius == expectedRadius);
       expect(langMaterials, hasLength(2));
 
-      // Verify close button dismisses dialog
-      final closeButton = find.descendant(
+      // Verify cancel button dismisses dialog
+      final cancelButton = find.descendant(
         of: dialogFinder,
-        matching: find.byIcon(Icons.close_rounded),
+        matching: find.text(language.tr('cancel')),
       );
-      expect(closeButton, findsOneWidget);
-      await tester.tap(closeButton);
+      expect(cancelButton, findsOneWidget);
+      await tester.tap(cancelButton);
       await tester.pumpAndSettle();
-      expect(find.bySubtype<SimpleDialog>(), findsNothing);
+      expect(find.byType(AppDialog), findsNothing);
     },
   );
 

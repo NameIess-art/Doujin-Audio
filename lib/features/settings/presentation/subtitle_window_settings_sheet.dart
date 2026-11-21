@@ -110,9 +110,6 @@ class _SubtitleWindowSettingsSheetState
                               expandWidth: true,
                               decoration: InputDecoration(
                                 labelText: i18n.tr('font_setting'),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 12,
                                   vertical: 10,

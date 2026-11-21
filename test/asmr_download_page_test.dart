@@ -219,7 +219,16 @@ void main() {
           tester.element(find.byType(AsmrDownloadPage)),
         ).read(appLanguageProviderInstanceProvider);
         final changePath = find.text(i18n.tr('asmr_download_change_path'));
-        await tester.tap(changePath);
+        final changePathSurface = find
+            .ancestor(
+              of: changePath,
+              matching: find.byType(HeaderFloatingSurface),
+            )
+            .first;
+        // Tap inside the left 12px horizontal padding to verify there is no dead zone.
+        final edgeTapPoint =
+            tester.getRect(changePathSurface).centerLeft + const Offset(4, 0);
+        await tester.tapAt(edgeTapPoint);
         await tester.tap(changePath);
         await tester.pump();
         expect(manager.pickerCalls, 1);
@@ -253,7 +262,16 @@ void main() {
           batchTotal: 2,
           onResult: (value) => result = value,
         );
-        await tester.tap(find.byKey(const ValueKey('asmr_download_skip_work')));
+        final skipButton = find.byKey(
+          const ValueKey('asmr_download_skip_work'),
+        );
+        expect(
+          tester.getRect(skipButton).right,
+          lessThanOrEqualTo(
+            tester.getRect(find.byType(AsmrDownloadPage)).right - 16,
+          ),
+        );
+        await tester.tap(skipButton);
         await tester.pumpAndSettle();
         expect(result, AsmrDownloadPageResult.skipped);
         firstManager.holdDestinationCheck = false;

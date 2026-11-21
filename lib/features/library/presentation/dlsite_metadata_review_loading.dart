@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/widgets/app_buttons.dart';
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/shimmer_loading.dart';
 
@@ -69,7 +70,9 @@ class MetadataReviewSkeleton extends StatelessWidget {
                 alignment: Alignment.centerLeft,
                 decoration: BoxDecoration(
                   color: cs.surfaceContainerHighest.withValues(alpha: 0.25),
-                  borderRadius: BorderRadius.circular(index == 1 ? 8 : 4),
+                  borderRadius: BorderRadius.circular(
+                    AppDesignTokens.of(context).radiusControl,
+                  ),
                   border: Border.all(color: cs.outlineVariant),
                 ),
                 child: ShimmerContainer(

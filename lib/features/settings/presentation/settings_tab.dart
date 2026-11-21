@@ -1,5 +1,6 @@
 import 'subtitle_window_settings_sheet.dart';
 import '../../../core/widgets/app_entry_ink_well.dart';
+import '../../../core/widgets/app_settings_action_tile.dart';
 import 'dart:convert';
 import '../application/network_service_probe.dart';
 import '../../../core/network/network_route_settings.dart';
@@ -566,39 +567,48 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
               ),
             );
           }
-          return Center(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: tokens.readableContentMaxWidth,
-              ),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  NotificationListener<SizeChangedLayoutNotification>(
-                    onNotification: (_) {
-                      _sectionTitleLayerKey.currentContext
-                          ?.findRenderObject()
-                          ?.markNeedsPaint();
-                      return false;
-                    },
-                    child: ListView(
-                      controller: _scrollController,
-                      padding: EdgeInsets.fromLTRB(
-                        16,
-                        contentTopInset,
-                        16,
-                        bottomInset + 24,
-                      ),
-                      children: [
-                        SettingsTileTheme(child: Column(children: sections)),
-                      ],
-                    ),
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              NotificationListener<SizeChangedLayoutNotification>(
+                onNotification: (_) {
+                  _sectionTitleLayerKey.currentContext
+                      ?.findRenderObject()
+                      ?.markNeedsPaint();
+                  return false;
+                },
+                child: ListView(
+                  controller: _scrollController,
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    contentTopInset,
+                    16,
+                    bottomInset + 24,
                   ),
-                  Positioned(
-                    top: contentTopInset,
-                    bottom: 0,
-                    left: 16,
-                    right: 16,
+                  children: [
+                    Center(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: tokens.readableContentMaxWidth,
+                        ),
+                        child: SettingsTileTheme(
+                          child: Column(children: sections),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Positioned(
+                top: contentTopInset,
+                bottom: 0,
+                left: 16,
+                right: 16,
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: tokens.readableContentMaxWidth,
+                    ),
                     child: IgnorePointer(
                       child: ExcludeSemantics(
                         child: Flow(
@@ -613,9 +623,9 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
                       ),
                     ),
                   ),
-                ],
+                ),
               ),
-            ),
+            ],
           );
         }
 

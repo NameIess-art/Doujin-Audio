@@ -341,7 +341,11 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
                               labelPadding: const EdgeInsets.symmetric(
                                 horizontal: 6,
                               ),
-                              backgroundColor: cs.surface,
+                              color: appChipColor(
+                                colorScheme: cs,
+                                platform: Theme.of(context).platform,
+                                background: cs.surface,
+                              ),
                               side: BorderSide(color: cs.outlineVariant),
                               labelStyle: Theme.of(context).textTheme.labelSmall
                                   ?.copyWith(
@@ -390,7 +394,11 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
                             labelPadding: const EdgeInsets.symmetric(
                               horizontal: 6,
                             ),
-                            backgroundColor: cs.surface,
+                            color: appChipColor(
+                              colorScheme: cs,
+                              platform: Theme.of(context).platform,
+                              background: cs.surface,
+                            ),
                             side: BorderSide(color: cs.outlineVariant),
                             labelStyle: Theme.of(context).textTheme.labelSmall
                                 ?.copyWith(

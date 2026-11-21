@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../core/media/subtitle_parser.dart';
 import '../../../../core/media/time_text_formatters.dart';
+import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/scroll_to_top_list.dart';
 import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
@@ -783,7 +784,7 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withValues(
+                                  color: cs.shadow.withValues(
                                     alpha: isDark ? 0.35 : 0.08,
                                   ),
                                   blurRadius: 8,
@@ -834,6 +835,22 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
                                         'subtitle_timeline_seek_button',
                                       ),
                                       padding: EdgeInsets.zero,
+                                      constraints:
+                                          const BoxConstraints.tightFor(
+                                            width: 26,
+                                            height: 26,
+                                          ),
+                                      style: appIconButtonStyle(
+                                        IconButton.styleFrom(
+                                          fixedSize: const Size.square(26),
+                                          minimumSize: const Size.square(26),
+                                          maximumSize: const Size.square(26),
+                                          padding: EdgeInsets.zero,
+                                          tapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                          shape: const CircleBorder(),
+                                        ),
+                                      ),
                                       tooltip: i18n.tr('seek_to_subtitle'),
                                       onPressed: _seekToFocusedSubtitle,
                                       icon: Icon(

@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../app/theme/app_styles.dart';
 import 'mobile_overlay_inset.dart';
 import 'page_header_inset.dart';
 import 'windows_smooth_scroll_controller.dart';
@@ -89,7 +90,7 @@ class _DragOnlyScrollbarState extends RawScrollbarState<DragOnlyScrollbar> {
           theme.thumbColor?.resolve(_states) ??
           Theme.of(context).colorScheme.outline
       ..thickness = theme.thickness?.resolve(_states) ?? 8
-      ..radius = theme.radius ?? const Radius.circular(8)
+      ..radius = theme.radius ?? const Radius.circular(AppRadius.small)
       ..crossAxisMargin = theme.crossAxisMargin ?? 0
       ..mainAxisMargin = theme.mainAxisMargin ?? 0
       ..minLength = theme.minThumbLength ?? 48

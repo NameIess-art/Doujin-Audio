@@ -9,10 +9,9 @@ import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../app/theme/app_design_tokens.dart';
+import '../../../core/media/path_matcher.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
-import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_feedback.dart';
-import '../../../core/widgets/app_glass_surface.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
@@ -24,11 +23,13 @@ class WorkImageItem {
     required this.name,
     required this.path,
     this.relativePath = '',
+    this.sourcePath,
   });
 
   final String name;
   final String path;
   final String relativePath;
+  final String? sourcePath;
 
   @override
   bool operator ==(Object other) =>
@@ -36,10 +37,11 @@ class WorkImageItem {
       other is WorkImageItem &&
           name == other.name &&
           path == other.path &&
-          relativePath == other.relativePath;
+          relativePath == other.relativePath &&
+          sourcePath == other.sourcePath;
 
   @override
-  int get hashCode => Object.hash(name, path, relativePath);
+  int get hashCode => Object.hash(name, path, relativePath, sourcePath);
 }
 
 class WorkImageViewerPage extends ConsumerStatefulWidget {
@@ -47,11 +49,13 @@ class WorkImageViewerPage extends ConsumerStatefulWidget {
     super.key,
     required this.images,
     this.initialIndex = 0,
+    this.currentCoverPath,
     this.onSetAsCover,
   });
 
   final List<WorkImageItem> images;
   final int initialIndex;
+  final String? currentCoverPath;
   final Future<void> Function(WorkImageItem image)? onSetAsCover;
 
   @override
@@ -77,6 +81,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
   late int _currentIndex;
   late final PageController _pageController;
   int? _targetVirtualPage;
+  String? _selectedCoverPath;
   bool _isSettingCover = false;
   bool _isCurrentZoomed = false;
   late final AnimationController _fullscreenFade;
@@ -332,6 +337,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
     try {
       await onSetAsCover(currentImage);
       if (!mounted) return;
+      _selectedCoverPath = currentImage.sourcePath ?? currentImage.path;
       final i18n = ref.read(appLanguageProviderInstanceProvider);
       showAppSnackBar(
         context,
@@ -537,35 +543,46 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
       return Scaffold(
         key: _viewerKey,
         backgroundColor: cs.surface,
-        appBar: PreferredSize(
-          preferredSize: const Size.fromHeight(kToolbarHeight),
-          child: AppPageHeaderTransition(
-            child: AppGlassSurface(
-              backgroundColor: cs.surface,
-              child: AppBar(
-                backgroundColor: Colors.transparent,
-                foregroundColor: cs.onSurface,
-                elevation: 0,
-                scrolledUnderElevation: 0,
-                surfaceTintColor: Colors.transparent,
-                shadowColor: Colors.transparent,
-                forceMaterialTransparency: true,
+        body: Stack(
+          children: [
+            Positioned.fill(
+              child: AppPageContentTransition(
+                child: Center(
+                  child: Text(
+                    i18n.tr('no_images'),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
-        body: AppPageContentTransition(
-          child: Center(
-            child: Text(
-              i18n.tr('no_images'),
-              style: TextStyle(color: cs.onSurfaceVariant),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: TopPageHeader(
+                key: const ValueKey<String>('work_image_header'),
+                icon: AppDesignTokens.imageFileIcon,
+                iconColor: AppDesignTokens.of(context).imageFileColor,
+                title: i18n.tr('no_images'),
+                leading: const AppHeaderBackButton(),
+              ),
             ),
-          ),
+          ],
         ),
       );
     }
 
     final currentImage = widget.images[_currentIndex];
+    final coverPath = _selectedCoverPath ?? widget.currentCoverPath;
+    final isCurrentCover =
+        coverPath != null &&
+        (PathMatcher.equalsNormalized(
+              currentImage.sourcePath ?? currentImage.path,
+              coverPath,
+            ) ||
+            PathMatcher.equalsNormalized(currentImage.path, coverPath));
     _scheduleLayoutMeasurement();
     final imageTop =
         (_headerHeight > 0
@@ -729,47 +746,58 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
                   title: currentImage.name,
                   leading: const AppHeaderBackButton(),
                   trailing: widget.onSetAsCover != null
-                      ? HeaderFloatingSurface(
-                          padding: EdgeInsets.zero,
-                          child: TextButton.icon(
-                            key: const ValueKey<String>(
-                              'viewer_set_as_cover_button',
-                            ),
-                            onPressed: _isSettingCover
-                                ? null
-                                : _handleSetAsCover,
-                            style: appTextButtonStyle(
-                              style: TextButton.styleFrom(
-                                foregroundColor: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface,
-                                disabledForegroundColor: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface,
-                                minimumSize: Size.zero,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                ),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                textStyle: Theme.of(context)
-                                    .textTheme
-                                    .labelMedium
-                                    ?.copyWith(fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                            icon: _isSettingCover
-                                ? const SizedBox.square(
-                                    dimension: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(
-                                    Icons.photo_size_select_actual_outlined,
-                                    size: 18,
-                                  ),
-                            label: Text(i18n.tr('audio_detail_set_cover')),
+                      ? IconButton(
+                          key: const ValueKey<String>(
+                            'viewer_set_as_cover_button',
                           ),
+                          tooltip: i18n.tr(
+                            isCurrentCover
+                                ? 'audio_detail_current_cover'
+                                : 'audio_detail_set_cover',
+                          ),
+                          onPressed: _isSettingCover || isCurrentCover
+                              ? null
+                              : _handleSetAsCover,
+                          style: IconButton.styleFrom(
+                            disabledForegroundColor: cs.onSurface,
+                          ),
+                          icon: isCurrentCover
+                              ? SizedBox.square(
+                                  dimension: 20,
+                                  child: Stack(
+                                    children: [
+                                      const Icon(
+                                        Icons.photo_size_select_actual_outlined,
+                                      ),
+                                      Positioned(
+                                        right: 0,
+                                        bottom: 0,
+                                        child: DecoratedBox(
+                                          decoration: BoxDecoration(
+                                            color: cs.surface,
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: Icon(
+                                            Icons.check_circle_rounded,
+                                            size: 11,
+                                            color: cs.primary,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : _isSettingCover
+                              ? SizedBox.square(
+                                  dimension: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: cs.primary,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.photo_size_select_actual_outlined,
+                                ),
                         )
                       : null,
                 ),

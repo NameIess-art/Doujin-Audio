@@ -190,13 +190,7 @@ class AboutPage extends ConsumerWidget {
                                       Icons.favorite_border_rounded,
                                       size: 24,
                                     ),
-                                    label: Text(
-                                      i18n.tr('about_reward'),
-                                      style: const TextStyle(
-                                        fontSize:
-                                            SettingsTileTheme.titleFontSize,
-                                      ),
-                                    ),
+                                    label: Text(i18n.tr('about_reward')),
                                   ),
                                 ),
                               ],
@@ -233,16 +227,12 @@ class _AboutCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final tokens = AppDesignTokens.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(tokens.radiusCard),
-      ),
+    return Card(
       clipBehavior: Clip.antiAlias,
-      padding: const EdgeInsets.all(AppSpacing.sm),
-      child: SettingsTileTheme(child: Column(children: children)),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        child: SettingsTileTheme(child: Column(children: children)),
+      ),
     );
   }
 }
@@ -297,9 +287,7 @@ class _AboutLinkTile extends StatelessWidget {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final tokens = AppDesignTokens.of(context);
-    final rowRadius = BorderRadius.circular(
-      (tokens.radiusCard - AppSpacing.sm).clamp(10.0, tokens.radiusCard),
-    );
+    final rowRadius = BorderRadius.circular(tokens.radiusCard);
 
     return Material(
       color: Colors.transparent,

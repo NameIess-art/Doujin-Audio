@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../app/localization/app_language_provider.dart';
+import '../../../app/theme/app_design_tokens.dart';
+import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/windows_horizontal_wheel_scroll.dart';
 import '../../../core/widgets/page_translation_scope.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
@@ -50,7 +52,10 @@ class _WorkDetailBreadcrumbsState extends State<WorkDetailBreadcrumbs> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final tokens = AppDesignTokens.of(context);
+    final itemRadius = BorderRadius.circular(tokens.radiusSmall);
     return Row(
       children: [
         Expanded(
@@ -67,11 +72,10 @@ class _WorkDetailBreadcrumbsState extends State<WorkDetailBreadcrumbs> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    InkWell(
-                      mouseCursor: WidgetStateMouseCursor.clickable,
-                      borderRadius: BorderRadius.circular(8),
+                    AppEntryInkWell(
+                      borderRadius: itemRadius,
                       onTap: () => widget.onNavigate(-1),
-                      child: Container(
+                      child: Ink(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,
                           vertical: 4,
@@ -80,7 +84,7 @@ class _WorkDetailBreadcrumbsState extends State<WorkDetailBreadcrumbs> {
                           color: cs.surfaceContainerHighest.withValues(
                             alpha: 0.5,
                           ),
-                          borderRadius: BorderRadius.circular(6),
+                          borderRadius: itemRadius,
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -89,7 +93,7 @@ class _WorkDetailBreadcrumbsState extends State<WorkDetailBreadcrumbs> {
                             const SizedBox(width: 4),
                             Text(
                               widget.i18n.tr('root_directory'),
-                              style: TextStyle(
+                              style: theme.textTheme.labelMedium?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 color: cs.primary,
                                 fontSize: 13,
@@ -108,9 +112,8 @@ class _WorkDetailBreadcrumbsState extends State<WorkDetailBreadcrumbs> {
                           color: cs.onSurfaceVariant.withValues(alpha: 0.5),
                         ),
                       ),
-                      InkWell(
-                        mouseCursor: WidgetStateMouseCursor.clickable,
-                        borderRadius: BorderRadius.circular(8),
+                      AppEntryInkWell(
+                        borderRadius: itemRadius,
                         onTap: () => widget.onNavigate(i),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
@@ -119,7 +122,7 @@ class _WorkDetailBreadcrumbsState extends State<WorkDetailBreadcrumbs> {
                           ),
                           child: WorkPageTranslationText(
                             widget.segments[i],
-                            style: TextStyle(
+                            style: theme.textTheme.labelMedium?.copyWith(
                               fontWeight: i == widget.segments.length - 1
                                   ? FontWeight.bold
                                   : FontWeight.normal,
@@ -141,9 +144,9 @@ class _WorkDetailBreadcrumbsState extends State<WorkDetailBreadcrumbs> {
         const SizedBox(width: 8),
         Text(
           widget.i18n.tr('items_count', {'count': widget.entryCount}),
-          style: Theme.of(
-            context,
-          ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: cs.onSurfaceVariant,
+          ),
         ),
       ],
     );

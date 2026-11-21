@@ -9,6 +9,7 @@ import '../ui/ui_interaction_coordinator.dart';
 import '../media/search_query_utils.dart';
 import 'app_buttons.dart';
 import 'app_edge_fade_mask.dart';
+import 'app_entry_ink_well.dart';
 import 'app_glass_surface.dart';
 import 'app_transitions.dart';
 import 'mobile_overlay_inset.dart';
@@ -591,7 +592,7 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                                       Icons.close_rounded,
                                       size: 20,
                                     ),
-                                    color: cs.onSurfaceVariant,
+                                    color: cs.onSurface,
                                     padding: EdgeInsets.zero,
                                     visualDensity: VisualDensity.compact,
                                     style: appIconButtonStyle(
@@ -667,8 +668,7 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
     }
 
     final tr = widget.translate!;
-    return InkWell(
-      mouseCursor: WidgetStateMouseCursor.clickable,
+    return AppEntryInkWell(
       key: const ValueKey('app_search_element_summary'),
       onTap: edit,
       borderRadius: BorderRadius.circular(19),
@@ -759,9 +759,7 @@ class _SearchFloatingCapsule extends StatelessWidget {
     );
     return AppGlassSurface(
       enabled: glassEnabled,
-      backgroundColor: glassEnabled
-          ? background.withValues(alpha: background.a * 0.9)
-          : background,
+      backgroundColor: background,
       borderRadius: borderRadius,
       child: capsuleSurface,
     );

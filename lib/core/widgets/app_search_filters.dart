@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../app/theme/app_design_tokens.dart';
 import '../media/search_query_utils.dart';
 import 'app_edit_panel.dart';
+import 'app_entry_ink_well.dart';
 import 'app_fixed_extent_wheel.dart';
 import 'unified_popup_menu.dart';
 
@@ -201,45 +203,51 @@ class AppSearchFiltersPanel extends StatelessWidget {
       required String? value,
       required VoidCallback pick,
       required VoidCallback clear,
-    }) => DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: theme.colorScheme.outlineVariant),
+    }) {
+      final radius = BorderRadius.circular(
+        AppDesignTokens.of(context).radiusControl,
+      );
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: theme.colorScheme.outlineVariant),
+          ),
         ),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Tooltip(
-              message: value == null ? label : '$label · $value',
-              child: InkWell(
-                key: ValueKey(key),
-                onTap: pick,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Text(
-                    value ?? label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium,
+        child: Row(
+          children: [
+            Expanded(
+              child: Tooltip(
+                message: value == null ? label : '$label · $value',
+                child: AppEntryInkWell(
+                  key: ValueKey(key),
+                  borderRadius: radius,
+                  onTap: pick,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Text(
+                      value ?? label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium,
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          if (value != null)
-            IconButton(
-              onPressed: clear,
-              tooltip: translate('clear'),
-              icon: const Icon(Icons.close_rounded, size: 16),
-              padding: EdgeInsets.zero,
-              visualDensity: VisualDensity.compact,
-              constraints: const BoxConstraints.tightFor(width: 26),
-            ),
-        ],
-      ),
-    );
+            if (value != null)
+              IconButton(
+                onPressed: clear,
+                tooltip: translate('clear'),
+                icon: const Icon(Icons.close_rounded, size: 16),
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints.tightFor(width: 26),
+              ),
+          ],
+        ),
+      );
+    }
 
     Widget range(String key, Widget start, Widget end) => Row(
       children: [

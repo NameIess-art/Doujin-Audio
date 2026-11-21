@@ -426,22 +426,16 @@ extension _TimerTabBody on _TimerTabState {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            AppLabelledButton(
-                              OutlinedButton.icon,
+                            AppSecondaryButton(
+                              isDestructive: true,
                               onPressed: () {
                                 AppInteractionFeedback.trigger(
                                   AppInteractionFeedbackType.destructive,
                                 );
                                 timer.cancelTimer();
                               },
-                              icon: const Icon(Icons.stop_circle_outlined),
-                              label: Text(i18n.tr('cancel_timer')),
-                              style: OutlinedButton.styleFrom(
-                                elevation: 0,
-                                shadowColor: Colors.transparent,
-                                foregroundColor: cs.error,
-                                side: BorderSide(color: cs.error),
-                              ),
+                              icon: Icons.stop_circle_outlined,
+                              label: i18n.tr('cancel_timer'),
                             ),
                             const SizedBox(height: 14),
                           ],
@@ -450,11 +444,13 @@ extension _TimerTabBody on _TimerTabState {
                       AppDeferredFade(
                         visible: !showCompactOnly && timerConfigured,
                         child: _TimerPanelCard(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
+                          child: Theme(
+                            data: AppEntryInkWell.entryTheme(context),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
                                 SwitchListTile(
                                   title: Text(
                                     i18n.tr('auto_resume_after_timer'),
@@ -567,8 +563,9 @@ extension _TimerTabBody on _TimerTabState {
                                       ),
                                     ],
                                   ),
-                                ),
-                              ],
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),

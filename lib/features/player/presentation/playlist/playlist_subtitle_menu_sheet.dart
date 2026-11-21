@@ -8,6 +8,7 @@ import 'package:path/path.dart' as path;
 
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/state/subtitle_settings_provider.dart';
+import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/path_matcher.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
@@ -15,6 +16,7 @@ import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_entry_ink_well.dart';
 import '../../../../core/widgets/app_transitions.dart';
+import '../../../../core/widgets/confirm_action_dialog.dart';
 import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../../library/application/work_text_service.dart';
 import '../../../library/presentation/library_providers.dart';
@@ -378,24 +380,15 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
       }
       if (!mounted) return;
       if (subtitles.hasKnownSubtitle(widget.session.currentTrackPath)) {
-        final confirmed = await showAppDialog<bool>(
+        final confirmed = await showConfirmActionDialog(
           context: context,
-          builder: (dialogContext) => AppAlertDialog(
-            title: Text(i18n.tr('subtitle_script_existing_title')),
-            content: Text(i18n.tr('subtitle_script_existing_hint')),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: Text(i18n.tr('cancel')),
-              ),
-              AppPillButton(
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: Text(i18n.tr('subtitle_script_continue')),
-              ),
-            ],
-          ),
+          title: i18n.tr('subtitle_script_existing_title'),
+          message: i18n.tr('subtitle_script_existing_hint'),
+          cancelLabel: i18n.tr('cancel'),
+          confirmLabel: i18n.tr('subtitle_script_continue'),
+          isDestructive: false,
         );
-        if (!mounted || confirmed != true) return;
+        if (!mounted || !confirmed) return;
       }
       if (!mounted) return;
       if (!await _confirmModelDownload(SubtitleModelStore.japaneseCtc)) return;
@@ -469,295 +462,165 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
     if (!mounted) return null;
     if (!exists) return false;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final confirmed = await showAppDialog<bool>(
+    final confirmed = await showConfirmActionDialog(
       context: context,
-      builder: (dialogContext) => AppAlertDialog(
-        title: Text(i18n.tr('subtitle_import_overwrite_title')),
-        content: Text(i18n.tr('subtitle_import_overwrite_hint')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(i18n.tr('cancel')),
-          ),
-          AppPillButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(i18n.tr('subtitle_import_overwrite')),
-          ),
-        ],
-      ),
+      title: i18n.tr('subtitle_import_overwrite_title'),
+      message: i18n.tr('subtitle_import_overwrite_hint'),
+      cancelLabel: i18n.tr('cancel'),
+      confirmLabel: i18n.tr('subtitle_import_overwrite'),
+      isDestructive: false,
     );
-    return confirmed == true ? true : null;
+    return confirmed ? true : null;
   }
 
   Future<void> _translateSubtitle(SubtitleLanguage language) async {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     if (language == SubtitleLanguage.unknown) {
-      final confirmed = await showAppDialog<bool>(
+      final confirmed = await showConfirmActionDialog(
         context: context,
-        builder: (dialogContext) => AppAlertDialog(
-          title: Text(i18n.tr('subtitle_source_confirm_japanese')),
-          content: Text(i18n.tr('subtitle_source_confirm_japanese_hint')),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: Text(i18n.tr('cancel')),
-            ),
-            AppPillButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: Text(i18n.tr('confirm')),
-            ),
-          ],
-        ),
+        title: i18n.tr('subtitle_source_confirm_japanese'),
+        message: i18n.tr('subtitle_source_confirm_japanese_hint'),
+        cancelLabel: i18n.tr('cancel'),
+        confirmLabel: i18n.tr('confirm'),
+        icon: Icons.translate_rounded,
+        isDestructive: false,
       );
-      if (!mounted || confirmed != true) return;
+      if (!mounted || !confirmed) return;
     }
     final targetLanguage = await showAppDialog<String>(
       context: context,
       builder: (dialogContext) {
         final theme = Theme.of(dialogContext);
         final cs = theme.colorScheme;
-        return AppSimpleDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.dialog),
-            side: BorderSide(
-              color: cs.outlineVariant.withValues(alpha: 0.35),
-              width: 0.5,
+        final tokens = AppDesignTokens.of(dialogContext);
+        final cardRadius = BorderRadius.circular(tokens.radiusCard);
+        final isZh = i18n.locale.languageCode == 'zh';
+        final isEn = i18n.locale.languageCode == 'en';
+        final zhSubtitle = isZh ? 'Chinese (Simplified)' : '中文（简体）';
+        final enSubtitle = isEn ? '英语' : 'English';
+
+        Widget buildLanguageOption({
+          required String code,
+          required String badge,
+          required Color badgeColor,
+          required String title,
+          required String subtitle,
+        }) {
+          return Material(
+            color: cs.surfaceContainerHighest.withValues(alpha: 0.4),
+            shape: RoundedRectangleBorder(
+              borderRadius: cardRadius,
+              side: BorderSide(
+                color: cs.outlineVariant.withValues(alpha: 0.3),
+                width: 0.5,
+              ),
             ),
-          ),
-          backgroundColor: cs.surfaceContainerHigh,
-          surfaceTintColor: Colors.transparent,
-          titlePadding: const EdgeInsets.fromLTRB(20, 20, 16, 12),
-          contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          title: Column(
+            clipBehavior: Clip.antiAlias,
+            child: AppEntryInkWell(
+              borderRadius: cardRadius,
+              onTap: () => Navigator.pop(dialogContext, code),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: badgeColor.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(
+                          tokens.radiusControl,
+                        ),
+                      ),
+                      child: Center(
+                        child: Text(
+                          badge,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: badgeColor,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: cs.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 1),
+                          Text(
+                            subtitle,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      size: 20,
+                      color: cs.onSurfaceVariant.withValues(alpha: 0.6),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        return AppDialog(
+          title: i18n.tr('subtitle_choose_language'),
+          icon: Icons.translate_rounded,
+          scrollable: true,
+          content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: cs.primaryContainer.withValues(alpha: 0.6),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      Icons.translate_rounded,
-                      color: cs.primary,
-                      size: 22,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          i18n.tr('subtitle_choose_language'),
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          i18n.tr('subtitle_translate_hint'),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: cs.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded, size: 20),
-                    visualDensity: VisualDensity.compact,
-                    color: cs.onSurfaceVariant,
-                    tooltip: i18n.tr('cancel'),
-                    onPressed: () => Navigator.pop(dialogContext),
-                  ),
-                ],
+              Text(
+                i18n.tr('subtitle_translate_hint'),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
               ),
-              const SizedBox(height: 12),
-              Divider(
-                height: 1,
-                thickness: 0.5,
-                color: cs.outlineVariant.withValues(alpha: 0.35),
+              const SizedBox(height: AppSpacing.md),
+              buildLanguageOption(
+                code: 'zh',
+                badge: 'ZH',
+                badgeColor: cs.primary,
+                title: i18n.tr('subtitle_language_zh'),
+                subtitle: zhSubtitle,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              buildLanguageOption(
+                code: 'en',
+                badge: 'EN',
+                badgeColor: cs.secondary,
+                title: i18n.tr('subtitle_language_en'),
+                subtitle: enSubtitle,
               ),
             ],
           ),
-          children: [
-            () {
-              final isZh = i18n.locale.languageCode == 'zh';
-              final isEn = i18n.locale.languageCode == 'en';
-              final zhSubtitle = isZh ? 'Chinese (Simplified)' : '中文（简体）';
-              final enSubtitle = isEn ? '英语' : 'English';
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Material(
-                      color: cs.surfaceContainerHighest.withValues(alpha: 0.4),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        side: BorderSide(
-                          color: cs.outlineVariant.withValues(alpha: 0.3),
-                          width: 0.5,
-                        ),
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: InkWell(
-                        mouseCursor: WidgetStateMouseCursor.clickable,
-                        borderRadius: BorderRadius.circular(14),
-                        onTap: () => Navigator.pop(dialogContext, 'zh'),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 12,
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 36,
-                                height: 36,
-                                decoration: BoxDecoration(
-                                  color: cs.primary.withValues(alpha: 0.14),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    'ZH',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w700,
-                                      color: cs.primary,
-                                      letterSpacing: 0.5,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      i18n.tr('subtitle_language_zh'),
-                                      style: theme.textTheme.bodyLarge
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w600,
-                                            color: cs.onSurface,
-                                          ),
-                                    ),
-                                    const SizedBox(height: 1),
-                                    Text(
-                                      zhSubtitle,
-                                      style: theme.textTheme.bodySmall
-                                          ?.copyWith(
-                                            color: cs.onSurfaceVariant,
-                                          ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Icon(
-                                Icons.chevron_right_rounded,
-                                size: 20,
-                                color: cs.onSurfaceVariant.withValues(
-                                  alpha: 0.6,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Material(
-                      color: cs.surfaceContainerHighest.withValues(alpha: 0.4),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        side: BorderSide(
-                          color: cs.outlineVariant.withValues(alpha: 0.3),
-                          width: 0.5,
-                        ),
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: InkWell(
-                        mouseCursor: WidgetStateMouseCursor.clickable,
-                        borderRadius: BorderRadius.circular(14),
-                        onTap: () => Navigator.pop(dialogContext, 'en'),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 12,
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 36,
-                                height: 36,
-                                decoration: BoxDecoration(
-                                  color: cs.secondary.withValues(alpha: 0.14),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    'EN',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w700,
-                                      color: cs.secondary,
-                                      letterSpacing: 0.5,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      i18n.tr('subtitle_language_en'),
-                                      style: theme.textTheme.bodyLarge
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w600,
-                                            color: cs.onSurface,
-                                          ),
-                                    ),
-                                    const SizedBox(height: 1),
-                                    Text(
-                                      enSubtitle,
-                                      style: theme.textTheme.bodySmall
-                                          ?.copyWith(
-                                            color: cs.onSurfaceVariant,
-                                          ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Icon(
-                                Icons.chevron_right_rounded,
-                                size: 20,
-                                color: cs.onSurfaceVariant.withValues(
-                                  alpha: 0.6,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            }(),
-          ],
+          actions: AppDialogActions(
+            children: [
+              AppSecondaryButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                label: i18n.tr('cancel'),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -972,18 +835,20 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                                   ? 'subtitle_files'
                                   : 'subtitle_script_files',
                             ),
-                            child: Container(
-                              decoration: cardDecoration,
-                              clipBehavior: Clip.antiAlias,
-                              child: Column(
-                                children: [
-                                  for (
-                                    var index = 0;
-                                    index < selectionFiles.length;
-                                    index++
-                                  ) ...[
-                                    if (index > 0)
-                                      Divider(
+                            child: Theme(
+                              data: AppEntryInkWell.entryTheme(context),
+                              child: Container(
+                                decoration: cardDecoration,
+                                clipBehavior: Clip.antiAlias,
+                                child: Column(
+                                  children: [
+                                    for (
+                                      var index = 0;
+                                      index < selectionFiles.length;
+                                      index++
+                                    ) ...[
+                                      if (index > 0)
+                                        Divider(
                                           height: 1,
                                           thickness: 0.5,
                                           indent: 16,
@@ -1041,7 +906,8 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                                               ),
                                       ),
                                     ],
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                           ).withWindowsSmoothScroll(),
@@ -1064,9 +930,15 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                   const SizedBox(height: 16),
 
                   // Switches Card
-                  Container(
-                    decoration: cardDecoration,
+                  Theme(
+                    data: AppEntryInkWell.entryTheme(context),
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Container(
+                          decoration: cardDecoration,
+                          child: Column(
                       children: [
                         SwitchListTile(
                           shape: const RoundedRectangleBorder(
@@ -1369,33 +1241,33 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                   ),
                   const SizedBox(height: 12),
 
-                  Theme(
-                    data: AppEntryInkWell.entryTheme(context),
-                    child: ListTile(
-                      key: const ValueKey('subtitle_edit_tile'),
-                      enabled: canEditSubtitle,
-                      tileColor: cs.surfaceContainerHighest.withValues(
-                        alpha: 0.45,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      leading: Icon(
-                        Icons.edit_note_rounded,
-                        color: canEditSubtitle
-                            ? cs.primary
-                            : cs.onSurface.withValues(alpha: 0.38),
-                      ),
-                      title: Text(i18n.tr('subtitle_edit')),
-                      trailing: const Icon(Icons.chevron_right_rounded),
-                      onTap: !canEditSubtitle
-                          ? null
-                          : () => Navigator.of(context).push(
-                              buildAppPageRoute<void>(
-                                context: context,
-                                child: SubtitleEditorPage(trackPath: trackPath),
-                              ),
+                  ListTile(
+                    key: const ValueKey('subtitle_edit_tile'),
+                    enabled: canEditSubtitle,
+                    tileColor: cs.surfaceContainerHighest.withValues(
+                      alpha: 0.45,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    leading: Icon(
+                      Icons.edit_note_rounded,
+                      color: canEditSubtitle
+                          ? cs.primary
+                          : cs.onSurface.withValues(alpha: 0.38),
+                    ),
+                    title: Text(i18n.tr('subtitle_edit')),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: !canEditSubtitle
+                        ? null
+                        : () => Navigator.of(context).push(
+                            buildAppPageRoute<void>(
+                              context: context,
+                              child: SubtitleEditorPage(trackPath: trackPath),
                             ),
+                          ),
+                  ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -1574,10 +1446,10 @@ class _SyncControlButton extends StatelessWidget {
     final isWindows = theme.platform == TargetPlatform.windows;
     final style = OutlinedButton.styleFrom(
       // Match the visible surface to the existing 48 px desktop tap target.
-      minimumSize: Size(0, isWindows ? 48 : 38),
+      minimumSize: Size(0, isWindows ? 48 : 42),
       padding: const EdgeInsets.symmetric(horizontal: 4),
       tapTargetSize: isWindows ? MaterialTapTargetSize.shrinkWrap : null,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      shape: const StadiumBorder(),
       side: BorderSide(
         color: enabled
             ? (isReset
@@ -1594,19 +1466,18 @@ class _SyncControlButton extends StatelessWidget {
           : cs.onSurface.withValues(alpha: 0.38),
     );
 
-    return OutlinedButton(
-      style: appSurfaceButtonStyle(
-        style: style,
-        colorScheme: cs,
-        platform: theme.platform,
-      ),
+    return AppPillButton.outlined(
+      style: style,
       onPressed: onPressed,
-      child: Text(
-        label,
-        maxLines: 1,
-        style: TextStyle(
-          fontSize: isReset ? 12 : 11,
-          fontWeight: isReset ? FontWeight.bold : FontWeight.w600,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          label,
+          maxLines: 1,
+          style: TextStyle(
+            fontSize: isReset ? 12 : 11,
+            fontWeight: isReset ? FontWeight.bold : FontWeight.w600,
+          ),
         ),
       ),
     );

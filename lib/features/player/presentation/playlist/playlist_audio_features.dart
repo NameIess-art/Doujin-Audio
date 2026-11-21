@@ -9,9 +9,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/localization/app_language_provider.dart';
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/ui/undoable_removal_service.dart';
+import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_edit_panel.dart';
+import '../../../../core/widgets/app_entry_ink_well.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/unified_dropdown.dart';
 import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
@@ -161,8 +164,7 @@ class FeatureSwitchTile extends StatelessWidget {
           side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.35)),
         ),
         clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          mouseCursor: WidgetStateMouseCursor.clickable,
+        child: AppEntryInkWell(
           onTap: () => onChanged(!value),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -364,7 +366,9 @@ class _VolumeBalancePageState extends ConsumerState<VolumeBalancePage> {
                       color: colors.surfaceContainerHighest.withValues(
                         alpha: 0.4,
                       ),
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(
+                        AppDesignTokens.of(context).radiusCard,
+                      ),
                       border: Border.all(
                         color: _padFocus.hasFocus ? colors.primary : axisColor,
                       ),
@@ -488,19 +492,22 @@ class _VolumeBalancePageState extends ConsumerState<VolumeBalancePage> {
               ),
               Center(child: direction(rear, LogicalKeyboardKey.arrowDown)),
               const SizedBox(height: 8),
-              FilledButton.tonal(
-                key: const ValueKey<String>('restore_volume_balance'),
-                style: sessionDetailResetButtonStyle(context),
-                onPressed: current == Offset.zero
-                    ? null
-                    : () {
-                        _cancelDrag();
-                        AppInteractionFeedback.trigger(
-                          AppInteractionFeedbackType.selection,
-                        );
-                        _commit(Offset.zero);
-                      },
-                child: Text(i18n.tr('restore_default')),
+              AppSurfaceButtonShell(
+                enabled: current != Offset.zero,
+                builder: (context, _) => FilledButton.tonal(
+                  key: const ValueKey<String>('restore_volume_balance'),
+                  style: sessionDetailResetButtonStyle(context),
+                  onPressed: current == Offset.zero
+                      ? null
+                      : () {
+                          _cancelDrag();
+                          AppInteractionFeedback.trigger(
+                            AppInteractionFeedbackType.selection,
+                          );
+                          _commit(Offset.zero);
+                        },
+                  child: Text(i18n.tr('restore_default')),
+                ),
               ),
             ],
           ),
@@ -600,7 +607,6 @@ class EqualizerPage extends ConsumerWidget {
           expandWidth: true,
           decoration: InputDecoration(
             labelText: i18n.tr('eq_preset'),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 12,
               vertical: 10,
@@ -691,61 +697,69 @@ class EqualizerPage extends ConsumerWidget {
                 return bandLevels.values.any((gainDb) => gainDb.abs() >= 0.001);
               }),
             );
+            final presetAction =
+                isCustomPresetSelected && selectedPresetId != null
+                ? () {
+                    final selectedPreset = customPresets
+                        .where((preset) => preset.id == selectedPresetId)
+                        .firstOrNull;
+                    if (selectedPreset != null) {
+                      unawaited(
+                        _stageEqualizerPresetRemoval(
+                          context,
+                          ref,
+                          selectedPreset,
+                        ),
+                      );
+                    }
+                  }
+                : (hasAdjustedEqBands
+                      ? () => _showSavePresetDialog(
+                          context,
+                          commands: ref.read(
+                            settingsCommandControllerProvider,
+                          ),
+                          session: session,
+                        )
+                      : null);
             return Row(
               children: [
                 Expanded(
-                  child: FilledButton.tonal(
-                    key: const ValueKey<String>('reset_equalizer'),
-                    style: sessionDetailResetButtonStyle(context),
-                    onPressed: hasAdjustedEqBands
-                        ? () {
-                            final flat = builtInEqPresets.first;
-                            unawaited(
-                              playback.applySessionEqPreset(session.id, flat),
-                            );
-                          }
-                        : null,
-                    child: Text(i18n.tr('eq_reset')),
+                  child: AppSurfaceButtonShell(
+                    enabled: hasAdjustedEqBands,
+                    builder: (context, _) => FilledButton.tonal(
+                      key: const ValueKey<String>('reset_equalizer'),
+                      style: sessionDetailResetButtonStyle(context),
+                      onPressed: hasAdjustedEqBands
+                          ? () {
+                              final flat = builtInEqPresets.first;
+                              unawaited(
+                                playback.applySessionEqPreset(session.id, flat),
+                              );
+                            }
+                          : null,
+                      child: Text(i18n.tr('eq_reset')),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: FilledButton.tonal(
-                    key: ValueKey<String>(
-                      isCustomPresetSelected
-                          ? 'delete_equalizer_preset'
-                          : 'save_equalizer_preset',
-                    ),
-                    style: sessionDetailResetButtonStyle(context),
-                    onPressed: isCustomPresetSelected && selectedPresetId != null
-                        ? () {
-                            final selectedPreset = customPresets
-                                .where((preset) => preset.id == selectedPresetId)
-                                .firstOrNull;
-                            if (selectedPreset != null) {
-                              unawaited(
-                                _stageEqualizerPresetRemoval(
-                                  context,
-                                  ref,
-                                  selectedPreset,
-                                ),
-                              );
-                            }
-                          }
-                        : (hasAdjustedEqBands
-                              ? () => _showSavePresetDialog(
-                                  context,
-                                  commands: ref.read(
-                                    settingsCommandControllerProvider,
-                                  ),
-                                  session: session,
-                                )
-                              : null),
-                    child: Text(
-                      i18n.tr(
+                  child: AppSurfaceButtonShell(
+                    enabled: presetAction != null,
+                    builder: (context, _) => FilledButton.tonal(
+                      key: ValueKey<String>(
                         isCustomPresetSelected
-                            ? 'eq_delete_preset'
-                            : 'eq_save_preset',
+                            ? 'delete_equalizer_preset'
+                            : 'save_equalizer_preset',
+                      ),
+                      style: sessionDetailResetButtonStyle(context),
+                      onPressed: presetAction,
+                      child: Text(
+                        i18n.tr(
+                          isCustomPresetSelected
+                              ? 'eq_delete_preset'
+                              : 'eq_save_preset',
+                        ),
                       ),
                     ),
                   ),

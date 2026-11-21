@@ -1194,7 +1194,7 @@ class _SessionVideoFullscreenPageState
                                     ),
                                   );
                                 },
-                                style: appIconButtonStyle(
+                                style: appTransportIconButtonStyle(
                                   IconButton.styleFrom(
                                     fixedSize: const Size(48, 48),
                                     minimumSize: const Size(48, 48),

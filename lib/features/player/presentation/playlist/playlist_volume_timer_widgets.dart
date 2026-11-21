@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/media/time_text_formatters.dart';
+import '../../../../core/widgets/app_entry_ink_well.dart';
 import '../../../../core/widgets/target_countdown_builder.dart';
 import '../../../../core/widgets/top_page_header.dart';
 import 'playlist_shared_helpers.dart';
@@ -41,9 +42,7 @@ class TimerCountdownCapsule extends StatelessWidget {
               ? cs.primary.withValues(alpha: 0.14)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(19),
-          child: InkWell(
-            mouseCursor: WidgetStateMouseCursor.clickable,
-            enableFeedback: false,
+          child: AppEntryInkWell(
             borderRadius: BorderRadius.circular(19),
             onTap: onTap,
             child: Padding(

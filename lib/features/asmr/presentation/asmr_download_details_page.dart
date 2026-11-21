@@ -16,6 +16,7 @@ import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/file_tree_expansion_motion.dart';
 import '../../../core/widgets/file_tree_row.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
+import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
@@ -151,6 +152,7 @@ class _AsmrDownloadDetailsPageState
     final downloadManager = ref.read(asmrDownloadManagerProvider);
     final coreReady = ref.watch(coreRuntimeReadyProvider);
     final cs = Theme.of(context).colorScheme;
+    final tokens = AppDesignTokens.of(context);
 
     if (structure == null) {
       _motion.finish();
@@ -158,26 +160,42 @@ class _AsmrDownloadDetailsPageState
       _rows = const [];
       _rowIndices = const {};
       _collapsedPaths.clear();
+      final contentTopInset = AppPageHeaderMetrics.contentTopInset(context);
       return Scaffold(
-        body: Stack(
-          children: [
-            AppPageContentTransition(
-              child: Center(
-                child: Text(i18n.tr('asmr_download_task_not_found')),
+        backgroundColor: cs.surface,
+        body: PageHeaderInset(
+          topInset: contentTopInset,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    top: contentTopInset,
+                    bottom:
+                        MediaQuery.paddingOf(context).bottom +
+                        MobileOverlayInset.of(context),
+                  ),
+                  child: AppPageContentTransition(
+                    child: AppEmptyState(
+                      icon: Icons.info_outline_rounded,
+                      title: i18n.tr('asmr_download_task_not_found'),
+                    ),
+                  ),
+                ),
               ),
-            ),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: TopPageHeader(
-                icon: Icons.info_outline_rounded,
-                iconColor: Theme.of(context).colorScheme.primary,
-                leading: const AppHeaderBackButton(),
-                title: i18n.tr('asmr_download_details_title'),
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: TopPageHeader(
+                  icon: Icons.info_outline_rounded,
+                  iconColor: cs.primary,
+                  leading: const AppHeaderBackButton(),
+                  title: i18n.tr('asmr_download_details_title'),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       );
     }
@@ -233,9 +251,16 @@ class _AsmrDownloadDetailsPageState
                       if (tracks.isEmpty)
                         SliverFillRemaining(
                           hasScrollBody: false,
-                          child: Center(
-                            child: Text(
-                              i18n.tr('asmr_download_no_files_selected'),
+                          child: Padding(
+                            padding: EdgeInsets.only(
+                              top: listTopPadding,
+                              bottom:
+                                  MediaQuery.paddingOf(context).bottom +
+                                  MobileOverlayInset.of(context),
+                            ),
+                            child: AppEmptyState(
+                              icon: Icons.folder_open_rounded,
+                              title: i18n.tr('asmr_download_no_files_selected'),
                             ),
                           ),
                         )
@@ -335,13 +360,14 @@ class _AsmrDownloadDetailsPageState
                 leading: const AppHeaderBackButton(),
                 title: i18n.tr('asmr_download_details_title'),
                 additionalChild: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
                   child: HeaderFloatingSurface(
                     key: const ValueKey<String>('asmr_download_work_title'),
                     height: null,
+                    radius: tokens.radiusSection,
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 9,
+                      horizontal: 16,
+                      vertical: 12,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

@@ -260,6 +260,7 @@ void main() {
     expect(find.text('1.0 KB'), findsNWidgets(2));
     expect(find.byIcon(Icons.chevron_right_rounded), findsNothing);
     expect(find.byType(Checkbox), findsNWidgets(3));
+    expect(tester.getSize(find.byType(Checkbox).first), const Size.square(36));
     expect(tester.getSize(find.byType(FileTreeRow).first).height, 44);
     final rows = find.byType(FileTreeRow);
     for (var index = 0; index < 3; index++) {

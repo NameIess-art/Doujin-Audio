@@ -2,6 +2,7 @@ import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/widgets/app_entry_ink_well.dart';
 import 'package:doujin_audio/core/widgets/file_tree_row.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
@@ -432,7 +433,7 @@ void main() {
       expect(find.text('Track 2'), findsNWidgets(2));
       expect(
         find.byWidgetPredicate(
-          (widget) => widget is InkWell && widget.onTap == null,
+          (widget) => widget is AppEntryInkWell && widget.onTap == null,
         ),
         findsOneWidget,
       );

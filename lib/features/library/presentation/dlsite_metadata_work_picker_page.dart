@@ -197,11 +197,17 @@ class _DlsiteMetadataWorkPickerPageState
                           suffixIcon: _searchQuery.isEmpty
                               ? null
                               : IconButton(
+                                  tooltip: i18n.tr('clear'),
                                   icon: const Icon(
                                     Icons.clear_rounded,
                                     size: 18,
                                   ),
                                   color: cs.onSurfaceVariant,
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints.tightFor(
+                                    width: 38,
+                                    height: 38,
+                                  ),
                                   onPressed: () {
                                     _searchController.clear();
                                     setState(() {

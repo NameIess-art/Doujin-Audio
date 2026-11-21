@@ -600,7 +600,7 @@ void main() {
         await tester.tap(find.byType(AppElementChip));
         await tester.pumpAndSettle();
         expect(controller.saveCalls, 0);
-        await tester.tap(find.byType(BackButton));
+        await tester.tap(find.byType(AppHeaderBackButton));
         await tester.pumpAndSettle();
         await open();
         expect(

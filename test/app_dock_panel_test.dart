@@ -1,5 +1,6 @@
 import 'package:doujin_audio/app/presentation/app_dock_panel.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
+import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/core/widgets/app_edge_fade_mask.dart';
 import 'package:doujin_audio/core/widgets/app_glass_surface.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
@@ -175,7 +176,7 @@ void main() {
           1e-6,
         ),
       );
-      expect(glass.borderRadius, BorderRadius.circular(100));
+      expect(glass.borderRadius, BorderRadius.circular(AppRadius.pill));
       final backgrounds = tester.widgetList<DecoratedBox>(
         find.descendant(
           of: find.byType(AppDockPanel),

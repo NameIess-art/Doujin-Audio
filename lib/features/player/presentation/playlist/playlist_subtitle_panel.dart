@@ -330,7 +330,7 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Colors.redAccent,
+              color: Theme.of(context).colorScheme.error,
               fontWeight: FontWeight.w600,
               fontSize: 14,
               height: 1.3,

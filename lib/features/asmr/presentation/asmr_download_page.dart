@@ -573,88 +573,88 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                           icon: Icon(destinationIcon, size: 18),
                         ),
                       )
-                    : AppButtonPointerRegion(
+                    : AppSurfaceButtonShell(
                         enabled: chooseDestination != null,
-                        cursor: SystemMouseCursors.click,
-                        builder: (context, states) =>
-                            ValueListenableBuilder<Set<WidgetState>>(
-                              valueListenable: states,
-                              builder: (context, value, _) {
-                                final isWindows =
-                                    Theme.of(context).platform ==
-                                    TargetPlatform.windows;
-                                final hovered =
-                                    isWindows &&
-                                    value.contains(WidgetState.hovered);
-                                final pressed = value.contains(
-                                  WidgetState.pressed,
-                                );
-                                return HeaderFloatingSurface(
-                                  hovered: hovered,
-                                  pressed: pressed,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                  ),
-                                  child: InkWell(
-                                    mouseCursor: WidgetStateMouseCursor.clickable,
-                                    borderRadius: BorderRadius.circular(19),
-                                    hoverColor: Colors.transparent,
-                                    highlightColor: Colors.transparent,
-                                    splashFactory: NoSplash.splashFactory,
-                                    onTap: chooseDestination,
-                                    child: Center(
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          IconTheme.merge(
-                                            data: IconThemeData(
-                                              color: primaryColor,
-                                            ),
-                                            child: AppButtonIcon(
-                                              states: states,
-                                              child: Icon(
-                                                destinationIcon,
-                                                size: 18,
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          AppButtonText(
-                                            states: states,
-                                            label: destinationLabel,
-                                            accentColor: primaryColor,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .labelMedium
-                                                ?.copyWith(
-                                                  color: primaryColor,
-                                                  fontWeight: FontWeight.w700,
-                                                ),
-                                          ),
-                                        ],
+                        builder: (context, feedback) {
+                          final cs = Theme.of(context).colorScheme;
+                          final isDark =
+                              Theme.of(context).brightness == Brightness.dark;
+                          final surfaceColor = appSurfaceHighlight(
+                            cs,
+                            isDark ? cs.surfaceBright : cs.surfaceContainerHigh,
+                            pressed: feedback.pressed,
+                            hovered: feedback.hovered,
+                          );
+                          final contentColor =
+                              feedback.pressed || feedback.hovered
+                              ? appLabelledButtonHighlight(
+                                  cs,
+                                  foreground: primaryColor,
+                                  background: surfaceColor,
+                                )
+                              : primaryColor;
+                          return HeaderFloatingSurface(
+                            hovered: feedback.hovered,
+                            pressed: feedback.pressed,
+                            padding: EdgeInsets.zero,
+                            child: InkWell(
+                              mouseCursor: WidgetStateMouseCursor.clickable,
+                              borderRadius: BorderRadius.circular(19),
+                              hoverColor: Colors.transparent,
+                              highlightColor: Colors.transparent,
+                              splashFactory: NoSplash.splashFactory,
+                              onTap: chooseDestination,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                ),
+                                child: Center(
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        destinationIcon,
+                                        size: 18,
+                                        color: contentColor,
                                       ),
-                                    ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        destinationLabel,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelMedium
+                                            ?.copyWith(
+                                              color: contentColor,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                      ),
+                                    ],
                                   ),
-                                );
-                              },
+                                ),
+                              ),
                             ),
+                          );
+                        },
                       ),
                 additionalChild: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if ((widget.batchTotal ?? 0) > 1)
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: AppLabelledButton(
-                          TextButton.icon,
-                          key: const ValueKey('asmr_download_skip_work'),
-                          onPressed: _starting || _choosingDestination
-                              ? null
-                              : () => Navigator.of(
-                                  context,
-                                ).pop(AsmrDownloadPageResult.skipped),
-                          icon: const Icon(Icons.skip_next_rounded),
-                          label: Text(i18n.tr('batch_download_skip')),
+                      Padding(
+                        padding: const EdgeInsets.only(right: 16),
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: AppLabelledButton(
+                            TextButton.icon,
+                            key: const ValueKey('asmr_download_skip_work'),
+                            onPressed: _starting || _choosingDestination
+                                ? null
+                                : () => Navigator.of(
+                                    context,
+                                  ).pop(AsmrDownloadPageResult.skipped),
+                            icon: const Icon(Icons.skip_next_rounded),
+                            label: Text(i18n.tr('batch_download_skip')),
+                          ),
                         ),
                       ),
                     Padding(

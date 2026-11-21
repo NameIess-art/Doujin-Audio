@@ -8,8 +8,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/ui/visual_settings_providers.dart';
+import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/async_cover_image.dart';
@@ -226,27 +228,28 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
     required VoidCallback onPressed,
     bool transparent = false,
   }) {
+    final button = AppOverlayIconButton(
+      buttonKey: key,
+      icon: Icon(icon, size: 22),
+      tooltip: enabled ? tooltip : '',
+      onPressed: enabled ? onPressed : null,
+      buttonSize: 40,
+    );
     return AnimatedOpacity(
       duration: MediaQuery.disableAnimationsOf(context)
           ? Duration.zero
           : kAppFadeDuration,
       curve: kAppFadeCurve,
       opacity: enabled ? 1 : 0.35,
-      child: Material(
-        color: transparent
-            ? Colors.transparent
-            : Colors.black.withValues(alpha: enabled ? 0.58 : 0.28),
-        shape: const CircleBorder(),
-        child: IconButton(
-          key: key,
-          tooltip: enabled ? tooltip : null,
-          onPressed: enabled ? onPressed : null,
-          color: Colors.white,
-          visualDensity: VisualDensity.compact,
-          iconSize: 22,
-          icon: Icon(icon),
-        ),
-      ),
+      child: transparent
+          ? button
+          : DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: enabled ? 0.58 : 0.28),
+                shape: BoxShape.circle,
+              ),
+              child: button,
+            ),
     );
   }
 
@@ -277,11 +280,12 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
   }
 
   Widget _buildCompactNavigation(AppLanguageProvider i18n) {
+    final tokens = AppDesignTokens.of(context);
     return DecoratedBox(
       key: const ValueKey<String>('audio_detail_cover_navigation_capsule'),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.62),
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(tokens.radiusCapsule),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -297,7 +301,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
           Text(
             '${_currentIndex + 1}/${_images.length}',
             key: const ValueKey<String>('audio_detail_cover_position'),
-            style: const TextStyle(
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
               color: Colors.white,
               fontSize: 12,
               fontWeight: FontWeight.w700,
@@ -317,54 +321,63 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
   }
 
   Widget _buildCompactCoverAction(AppLanguageProvider i18n) {
+    final tokens = AppDesignTokens.of(context);
     final isCurrent = _currentCoverPath == _images[_currentIndex];
-    final foregroundColor = isCurrent ? Colors.grey.shade400 : Colors.white;
-    return Material(
-      key: const ValueKey<String>('audio_detail_cover_action_capsule'),
-      color: Colors.black.withValues(alpha: isCurrent ? 0.42 : 0.62),
-      borderRadius: BorderRadius.circular(999),
-      child: InkWell(
-        mouseCursor: WidgetStateMouseCursor.clickable,
-        borderRadius: BorderRadius.circular(999),
-        onTap: isCurrent || _saving ? null : _commitSelection,
-        child: SizedBox(
-          height: 40,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_saving)
-                  const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
+    final enabled = !isCurrent && !_saving;
+    final foregroundColor = isCurrent
+        ? Colors.white.withValues(alpha: 0.65)
+        : Colors.white;
+    final borderRadius = BorderRadius.circular(tokens.radiusCapsule);
+    return AppSurfaceButtonShell(
+      enabled: enabled,
+      builder: (context, _) => Material(
+        key: const ValueKey<String>('audio_detail_cover_action_capsule'),
+        color: Colors.black.withValues(alpha: isCurrent ? 0.42 : 0.62),
+        borderRadius: borderRadius,
+        child: AppEntryInkWell(
+          borderRadius: borderRadius,
+          hoverColor: Colors.white.withValues(alpha: 0.14),
+          splashColor: Colors.white.withValues(alpha: 0.22),
+          onTap: enabled ? _commitSelection : null,
+          child: SizedBox(
+            height: 40,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_saving)
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  else
+                    Icon(
+                      isCurrent
+                          ? Icons.check_circle_rounded
+                          : Icons.image_rounded,
+                      size: 18,
+                      color: foregroundColor,
                     ),
-                  )
-                else
-                  Icon(
-                    isCurrent
-                        ? Icons.check_circle_rounded
-                        : Icons.image_rounded,
-                    size: 18,
-                    color: foregroundColor,
+                  const SizedBox(width: 6),
+                  Text(
+                    i18n.tr(
+                      isCurrent
+                          ? 'audio_detail_current_cover'
+                          : 'audio_detail_set_cover',
+                    ),
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: foregroundColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                const SizedBox(width: 6),
-                Text(
-                  i18n.tr(
-                    isCurrent
-                        ? 'audio_detail_current_cover'
-                        : 'audio_detail_set_cover',
-                  ),
-                  style: TextStyle(
-                    color: foregroundColor,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -625,7 +638,7 @@ class _CoverCaption extends StatelessWidget {
           text,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
             color: Colors.white,
             fontSize: 12,
             fontWeight: FontWeight.w700,

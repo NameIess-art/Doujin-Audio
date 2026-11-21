@@ -143,7 +143,7 @@ class _AsmrDownloadSelectionListState extends State<AsmrDownloadSelectionList>
                     title: i18n.tr('asmr_download_empty_folder'),
                     depth: row.depth,
                     minHeight: 28,
-                    leading: const SizedBox(width: 62),
+                    leading: const SizedBox(width: 56),
                     titleColor: Theme.of(context).colorScheme.onSurfaceVariant,
                   );
                 },
@@ -198,6 +198,8 @@ class AsmrDownloadNodeTile extends ConsumerWidget {
       title: node.track.title,
       titleMaxLines: 2,
       depth: depth,
+      horizontalPadding: 2,
+      trailingSpacing: 4,
       isFolder: isFolder,
       selectionControl: _CompactNodeCheckbox(
         value: value,
@@ -247,9 +249,8 @@ class _CompactNodeCheckbox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).colorScheme.primary;
-    return SizedBox(
-      width: 28,
-      height: 28,
+    return SizedBox.square(
+      dimension: 36,
       child: Checkbox(
         tristate: true,
         value: value,

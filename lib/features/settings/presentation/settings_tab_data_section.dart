@@ -80,25 +80,28 @@ List<Widget> _buildSettingsDataSection({
               final cacheOperation = ref.watch(
                 uiOperationForScopeProvider(UiOperationScope.settingsCache),
               );
-              return ListTile(
-                onTap: cacheOperation.isBusy ? null : onClearApplicationCache,
-                title: _settingsTitle(i18n.tr('clear_app_cache')),
-                leading: _settingsIcon(
-                  Icons.cleaning_services_rounded,
-                  cs.primary,
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                trailing: AnimatedSwitcher(
-                  duration: kAppPlaybackIconDuration,
-                  switchInCurve: kAppFadeCurve,
-                  switchOutCurve: kAppFadeCurve,
-                  child: cacheOperation.isBusy
-                      ? const SizedBox.square(
-                          key: ValueKey('busy'),
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2.2),
-                        )
-                      : const SizedBox.shrink(key: ValueKey('idle')),
+              return Theme(
+                data: AppEntryInkWell.entryTheme(context),
+                child: ListTile(
+                  onTap: cacheOperation.isBusy ? null : onClearApplicationCache,
+                  title: _settingsTitle(i18n.tr('clear_app_cache')),
+                  leading: _settingsIcon(
+                    Icons.cleaning_services_rounded,
+                    cs.primary,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                  trailing: AnimatedSwitcher(
+                    duration: kAppPlaybackIconDuration,
+                    switchInCurve: kAppFadeCurve,
+                    switchOutCurve: kAppFadeCurve,
+                    child: cacheOperation.isBusy
+                        ? const SizedBox.square(
+                            key: ValueKey('busy'),
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2.2),
+                          )
+                        : const SizedBox.shrink(key: ValueKey('idle')),
+                  ),
                 ),
               );
             },

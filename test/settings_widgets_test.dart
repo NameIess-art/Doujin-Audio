@@ -10,6 +10,7 @@ import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/widgets/app_bottom_sheet.dart';
+import 'package:doujin_audio/core/widgets/app_buttons.dart';
 import 'package:doujin_audio/core/widgets/app_dialog.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/unified_dropdown.dart';
@@ -560,23 +561,18 @@ void main() {
     final aboutHeaderRect = tester.getRect(find.byType(TopPageHeader));
     expect(aboutHeaderRect.height, greaterThan(0));
     final aboutTitle = find.text(i18n.tr('app_title'));
-    final firstAboutCard = tester
-        .widgetList<Container>(
-          find.ancestor(of: aboutTitle, matching: find.byType(Container)),
-        )
-        .firstWhere(
-          (container) =>
-              container.decoration is BoxDecoration &&
-              (container.decoration! as BoxDecoration).borderRadius != null,
-        );
-    final aboutDecoration = firstAboutCard.decoration! as BoxDecoration;
+    final firstAboutCardFinder = find
+        .ancestor(of: aboutTitle, matching: find.byType(Card))
+        .first;
+    final firstAboutCard = tester.widget<Card>(firstAboutCardFinder);
+    expect(firstAboutCard.color, isNull);
+    expect(firstAboutCard.shape, isNull);
     expect(
-      aboutDecoration.color,
+      CardTheme.of(tester.element(aboutTitle)).color,
       Theme.of(tester.element(aboutTitle)).colorScheme.surfaceContainerLow,
     );
-    expect(aboutDecoration.border, isNull);
     expect(
-      tester.getTopLeft(find.byWidget(firstAboutCard)).dy,
+      tester.getTopLeft(firstAboutCardFinder).dy,
       greaterThan(aboutHeaderRect.bottom),
     );
   });
@@ -1223,14 +1219,12 @@ void main() {
           );
           final card = tester.widget<Card>(cardFinder);
           final context = tester.element(cardFinder);
+          expect(card.color, isNull);
+          expect(card.shape, isNull);
           expect(
-            card.color,
+            CardTheme.of(context).color,
             Theme.of(context).colorScheme.surfaceContainerLow,
           );
-          final shape =
-              (card.shape ?? CardTheme.of(context).shape)!
-                  as RoundedRectangleBorder;
-          expect(shape.side, BorderSide.none);
         }
         await tester.tap(find.byIcon(Icons.arrow_back_rounded));
         await tester.pumpAndSettle();
@@ -1460,9 +1454,11 @@ void main() {
         dropdown.decoration.labelText,
         harness.languageProvider.tr('font_setting'),
       );
+      expect(dropdown.decoration.border, isNull);
+      final fieldTheme = Theme.of(tester.element(field)).inputDecorationTheme;
       expect(
-        (dropdown.decoration.border! as OutlineInputBorder).borderRadius,
-        BorderRadius.circular(16),
+        (fieldTheme.border! as OutlineInputBorder).borderRadius,
+        BorderRadius.circular(AppDesignTokens.of(tester.element(field)).radiusControl),
       );
       expect(
         dropdown.decoration.contentPadding,
@@ -2384,12 +2380,12 @@ void main() {
       final confirm = find.byKey(
         const ValueKey('asmr_download_folder_name_confirm'),
       );
-      final save = tester.widget<TextButton>(confirm).onPressed!;
+      final save = tester.widget<AppPillButton>(confirm).onPressed!;
       save();
       save();
       await tester.pump();
       expect(repository.folderNameFieldUpdates, hasLength(1));
-      expect(tester.widget<TextButton>(confirm).onPressed, isNull);
+      expect(tester.widget<AppPillButton>(confirm).onPressed, isNull);
       expect(
         tester
             .widget<TextButton>(

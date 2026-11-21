@@ -49,6 +49,12 @@ class BatchMetadataSetupView extends StatelessWidget {
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final tokens = AppDesignTokens.of(context);
+    final optionTextStyle = theme.textTheme.titleMedium?.copyWith(
+      fontWeight: FontWeight.w600,
+    );
     return ListView(
       padding: EdgeInsets.fromLTRB(
         16,
@@ -62,79 +68,84 @@ class BatchMetadataSetupView extends StatelessWidget {
         Center(
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              maxWidth: AppDesignTokens.of(context).readableContentMaxWidth,
+              maxWidth: tokens.readableContentMaxWidth,
             ),
             child: Card(
-          elevation: 0,
-          margin: EdgeInsets.zero,
-          color: Theme.of(context).colorScheme.surfaceContainerHigh,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: RadioGroup<DlsiteMetadataBatchScope>(
-            key: const ValueKey('batch_metadata_scope_group'),
-            groupValue: scope,
-            onChanged: (value) {
-              if (value != null && value != scope) {
-                unawaited(
-                  AppInteractionFeedback.trigger(
-                    AppInteractionFeedbackType.selection,
-                  ),
-                );
-                onScopeChanged(value);
-              }
-            },
-            child: Column(
-              children: [
-                RadioListTile<DlsiteMetadataBatchScope>(
-                  value: DlsiteMetadataBatchScope.anyMissing,
-                  title: Text(
-                    '${i18n.tr('batch_metadata_any_missing')} ($anyMissingCount)',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+              elevation: 0,
+              margin: EdgeInsets.zero,
+              color: cs.surfaceContainerHigh,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(tokens.radiusSection),
+                side: BorderSide(
+                  color: cs.outlineVariant.withValues(
+                    alpha: tokens.standardBorderAlpha,
                   ),
                 ),
-                RadioListTile<DlsiteMetadataBatchScope>(
-                  value: DlsiteMetadataBatchScope.noMetadata,
-                  title: Text(
-                    '${i18n.tr('batch_metadata_no_metadata')} ($noMetadataCount)',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-                RadioListTile<DlsiteMetadataBatchScope>(
-                  value: DlsiteMetadataBatchScope.hasRjCode,
-                  title: Text(
-                    '${i18n.tr('batch_metadata_has_rj_code')} ($hasRjCodeCount)',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-                Theme(
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: RadioGroup<DlsiteMetadataBatchScope>(
+                key: const ValueKey('batch_metadata_scope_group'),
+                groupValue: scope,
+                onChanged: (value) {
+                  if (value != null && value != scope) {
+                    unawaited(
+                      AppInteractionFeedback.trigger(
+                        AppInteractionFeedbackType.selection,
+                      ),
+                    );
+                    onScopeChanged(value);
+                  }
+                },
+                child: Theme(
                   data: AppEntryInkWell.entryTheme(context),
-                  child: RadioListTile<DlsiteMetadataBatchScope>(
-                    value: DlsiteMetadataBatchScope.specific,
-                    title: Text(
-                      '${i18n.tr('batch_metadata_specific')} ($specificCount)',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    secondary: scope == DlsiteMetadataBatchScope.specific
-                        ? IconButton(
-                            icon: const Icon(Icons.edit_rounded),
-                            onPressed: onPickSpecific,
-                          )
-                        : null,
+                  child: Column(
+                    children: [
+                      RadioListTile<DlsiteMetadataBatchScope>(
+                        value: DlsiteMetadataBatchScope.anyMissing,
+                        title: Text(
+                          '${i18n.tr('batch_metadata_any_missing')} ($anyMissingCount)',
+                          style: optionTextStyle,
+                        ),
+                      ),
+                      RadioListTile<DlsiteMetadataBatchScope>(
+                        value: DlsiteMetadataBatchScope.noMetadata,
+                        title: Text(
+                          '${i18n.tr('batch_metadata_no_metadata')} ($noMetadataCount)',
+                          style: optionTextStyle,
+                        ),
+                      ),
+                      RadioListTile<DlsiteMetadataBatchScope>(
+                        value: DlsiteMetadataBatchScope.hasRjCode,
+                        title: Text(
+                          '${i18n.tr('batch_metadata_has_rj_code')} ($hasRjCodeCount)',
+                          style: optionTextStyle,
+                        ),
+                      ),
+                      RadioListTile<DlsiteMetadataBatchScope>(
+                        value: DlsiteMetadataBatchScope.specific,
+                        title: Text(
+                          '${i18n.tr('batch_metadata_specific')} ($specificCount)',
+                          style: optionTextStyle,
+                        ),
+                        secondary: scope == DlsiteMetadataBatchScope.specific
+                            ? IconButton(
+                                icon: const Icon(Icons.edit_rounded),
+                                onPressed: onPickSpecific,
+                              )
+                            : null,
+                      ),
+                      RadioListTile<DlsiteMetadataBatchScope>(
+                        value: DlsiteMetadataBatchScope.all,
+                        title: Text(
+                          '${i18n.tr('batch_metadata_all')} ($allCount)',
+                          style: optionTextStyle,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                RadioListTile<DlsiteMetadataBatchScope>(
-                  value: DlsiteMetadataBatchScope.all,
-                  title: Text(
-                    '${i18n.tr('batch_metadata_all')} ($allCount)',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-          ),
           ),
         ),
       ],

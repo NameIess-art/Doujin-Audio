@@ -26,6 +26,7 @@ class _AsmrPanelCard extends StatelessWidget {
         const SizedBox(height: 18),
         Wrap(
           alignment: WrapAlignment.end,
+          crossAxisAlignment: WrapCrossAlignment.center,
           spacing: 10,
           runSpacing: 10,
           children: actions,
@@ -47,8 +48,11 @@ class _AsmrAccountStatusLine extends StatelessWidget {
     final tokens = AppDesignTokens.of(context);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: cs.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(14),
+        color: cs.surfaceContainer,
+        borderRadius: BorderRadius.circular(tokens.radiusCard),
+        border: Border.all(
+          color: cs.outlineVariant.withValues(alpha: tokens.subtleBorderAlpha),
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -103,9 +107,19 @@ class _AsmrPanelAction extends StatelessWidget {
       style: const TextStyle(fontWeight: FontWeight.w600),
     );
     if (filled) {
-      return AppPillButton(onPressed: onPressed, child: child);
+      return AppPillButton(
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
+        child: child,
+      );
     }
-    return TextButton(onPressed: onPressed, child: child);
+    return TextButton(
+      onPressed: onPressed,
+      style: const ButtonStyle(
+        minimumSize: WidgetStatePropertyAll(Size(48, 48)),
+      ),
+      child: child,
+    );
   }
 }
 

@@ -56,45 +56,57 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
     ),
   );
 
-  Widget _buildTitle(BuildContext context) => ElementActionMenu(
-    value: title,
-    onCopy: () => onCopyMetadata(title),
-    child: TextButton(
-      key: const ValueKey<String>('work_detail_title_copy'),
-      onPressed: title.isEmpty ? null : () => onCopyMetadata(title),
-      clipBehavior: Clip.none,
-      style: appTextButtonStyle(
-        style: ButtonStyle(
-          foregroundColor: WidgetStateProperty.resolveWith(
-            (states) => states.contains(WidgetState.focused)
-                ? accentColor
-                : Colors.white,
+  Widget _buildTitle(BuildContext context) {
+    final baseTitleStyle = Theme.of(context).textTheme.titleSmall;
+    return ElementActionMenu(
+      value: title,
+      onCopy: () => onCopyMetadata(title),
+      child: TextButton(
+        key: const ValueKey<String>('work_detail_title_copy'),
+        onPressed: title.isEmpty ? null : () => onCopyMetadata(title),
+        clipBehavior: Clip.none,
+        style: appTextButtonStyle(
+          style: ButtonStyle(
+            foregroundColor: WidgetStateProperty.resolveWith(
+              (states) => states.contains(WidgetState.focused)
+                  ? accentColor
+                  : Colors.white,
+            ),
+            backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
+            overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+            shape: const WidgetStatePropertyAll(RoundedRectangleBorder()),
+            textStyle: WidgetStatePropertyAll(
+              DefaultTextStyle.of(context).style,
+            ),
+            padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+            minimumSize: const WidgetStatePropertyAll(Size.zero),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            alignment: Alignment.centerLeft,
           ),
-          backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
-          overlayColor: const WidgetStatePropertyAll(Colors.transparent),
-          shape: const WidgetStatePropertyAll(RoundedRectangleBorder()),
-          textStyle: WidgetStatePropertyAll(DefaultTextStyle.of(context).style),
-          padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-          minimumSize: const WidgetStatePropertyAll(Size.zero),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          alignment: Alignment.centerLeft,
+        ),
+        child: WorkPageTranslationText(
+          title,
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontFamily: baseTitleStyle?.fontFamily,
+            fontFamilyFallback: baseTitleStyle?.fontFamilyFallback,
+            fontFeatures: baseTitleStyle?.fontFeatures,
+            fontSize: 15,
+            fontWeight: FontWeight.bold,
+            height: 1.25,
+            shadows: const [
+              Shadow(
+                color: Colors.black87,
+                blurRadius: 4,
+                offset: Offset(0, 1),
+              ),
+            ],
+          ),
         ),
       ),
-      child: WorkPageTranslationText(
-        title,
-        maxLines: 3,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.bold,
-          height: 1.25,
-          shadows: [
-            Shadow(color: Colors.black87, blurRadius: 4, offset: Offset(0, 1)),
-          ],
-        ),
-      ),
-    ),
-  );
+    );
+  }
 
   Widget _buildRjBar(BuildContext context) => Container(
     key: const ValueKey('work_detail_metadata_bar'),
@@ -117,7 +129,7 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
                   onTap: () => onCopyMetadata(rjCode),
                   label: rjCode,
                   padding: const EdgeInsets.symmetric(vertical: 2),
-                  style: TextStyle(
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                     fontSize: 13,
                     color: accentColor,
@@ -128,7 +140,7 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
             const SizedBox(width: 8),
             Text(
               '|',
-              style: TextStyle(
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 fontSize: 13,
                 color: Theme.of(
                   context,

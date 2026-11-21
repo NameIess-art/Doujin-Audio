@@ -671,10 +671,7 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
     // so they only need the wrapper that keeps long press and selection taps.
     final result = isRootFolder
         ? card
-        : InkWell(
-          mouseCursor: WidgetStateMouseCursor.clickable,
-          enableFeedback: false,
-            highlightColor: Colors.transparent,
+        : AppEntryInkWell(
             canRequestFocus: widget.isSelectionMode,
             onLongPress: widget.onLongPress,
             onTap: widget.isSelectionMode ? widget.onToggleSelect : null,

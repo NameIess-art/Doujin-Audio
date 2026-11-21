@@ -16,6 +16,7 @@ import '../domain/audio_library_category.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/page_header_inset.dart';
+import '../../../core/widgets/swipe_reveal_card.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
@@ -35,7 +36,6 @@ class DlsiteMetadataBatchResultsPage extends ConsumerStatefulWidget {
 class _DlsiteMetadataBatchResultsPageState
     extends ConsumerState<DlsiteMetadataBatchResultsPage> {
   bool _savingAll = false;
-  final List<Timer> _pendingTimers = <Timer>[];
 
   @override
   void initState() {
@@ -45,10 +45,6 @@ class _DlsiteMetadataBatchResultsPageState
 
   @override
   void dispose() {
-    for (final timer in _pendingTimers) {
-      timer.cancel();
-    }
-    _pendingTimers.clear();
     widget.session.dispose();
     super.dispose();
   }
@@ -179,7 +175,6 @@ class _DlsiteMetadataBatchResultsPageState
                           child: Opacity(
                             opacity: isExcluded ? 0.38 : 1.0,
                             child: FileTreeRow(
-                              navigationEntry: item.isReviewable,
                               key: ValueKey<String>(
                                 'batch_metadata_result_$index',
                               ),
@@ -267,68 +262,27 @@ class _DlsiteMetadataBatchResultsPageState
                             child: row,
                           );
                         }
-                        return Dismissible(
+                        final actionLabel = i18n.tr(
+                          isExcluded
+                              ? 'batch_metadata_action_restore'
+                              : 'batch_metadata_action_exclude',
+                        );
+                        return SwipeRevealCard(
                           key: ValueKey<String>(
-                            'batch_metadata_dismissible_${AudioLibraryCategorySnapshot.targetKey(entry.target)}',
+                            'batch_metadata_swipe_${AudioLibraryCategorySnapshot.targetKey(entry.target)}',
                           ),
-                          direction: _savingAll
-                              ? DismissDirection.none
-                              : DismissDirection.endToStart,
-                          confirmDismiss: (direction) async {
-                            if (direction == DismissDirection.endToStart) {
-                              late final Timer timer;
-                              timer = Timer(
-                                const Duration(milliseconds: 220),
-                                () {
-                                  _pendingTimers.remove(timer);
-                                  if (mounted) toggleExcluded();
-                                },
-                              );
-                              _pendingTimers.add(timer);
-                            }
-                            return false;
-                          },
-                          background: const SizedBox.shrink(),
-                          secondaryBackground: Container(
-                            alignment: Alignment.centerRight,
-                            padding: const EdgeInsets.only(right: 20),
-                            margin: const EdgeInsets.symmetric(vertical: 2),
-                            decoration: BoxDecoration(
-                              color: isExcluded
-                                  ? cs.surfaceContainerHighest
-                                  : cs.errorContainer.withValues(alpha: 0.6),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  isExcluded
-                                      ? Icons.undo_rounded
-                                      : Icons.block_rounded,
-                                  color: isExcluded
-                                      ? cs.onSurface
-                                      : cs.onErrorContainer,
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  isExcluded
-                                      ? i18n.tr('batch_metadata_action_restore')
-                                      : i18n.tr(
-                                          'batch_metadata_action_exclude',
-                                        ),
-                                  style: TextStyle(
-                                    color: isExcluded
-                                        ? cs.onSurface
-                                        : cs.onErrorContainer,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ],
-                            ),
+                          enabled: !_savingAll,
+                          shape: const RoundedRectangleBorder(
+                            borderRadius: FileTreeRow.borderRadius,
                           ),
+                          closedColor: cs.surface,
+                          destructive: !isExcluded,
+                          primaryActionIcon: isExcluded
+                              ? Icons.undo_rounded
+                              : Icons.block_rounded,
+                          actionLabel: actionLabel,
+                          removeTooltip: actionLabel,
+                          onRemove: toggleExcluded,
                           child: row,
                         );
                       },

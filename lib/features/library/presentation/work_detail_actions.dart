@@ -53,12 +53,14 @@ class WorkDetailActions extends StatelessWidget {
     bool isPrimary = false,
     bool favorite = false,
   }) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final onAccentColor =
-        ThemeData.estimateBrightnessForColor(accentColor) == Brightness.dark
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final onAccentColor = accentColor == cs.primary
+        ? cs.onPrimary
+        : ThemeData.estimateBrightnessForColor(accentColor) == Brightness.dark
         ? Colors.white
-        : const Color(0xFF0F172A);
+        : Colors.black;
 
     final Color backgroundColor;
     final Color foregroundColor;
@@ -84,16 +86,17 @@ class WorkDetailActions extends StatelessWidget {
     }
 
     final buttonStyle = FilledButton.styleFrom(
-      minimumSize: const Size.fromHeight(46),
+      minimumSize: const Size.fromHeight(48),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       shape: const StadiumBorder(),
       side: borderSide,
-      elevation: isPrimary ? 1.5 : 0,
-      shadowColor: isPrimary
-          ? accentColor.withValues(alpha: isDark ? 0.35 : 0.25)
-          : Colors.transparent,
+      elevation: 0,
+      shadowColor: Colors.transparent,
       visualDensity: VisualDensity.standard,
-      textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+      textStyle: theme.textTheme.labelMedium?.copyWith(
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+      ),
       backgroundColor: backgroundColor,
       foregroundColor: foregroundColor,
     );

@@ -1126,18 +1126,15 @@ class _PlaybackQueueAudioEditPageState
                         ),
                       ],
                     );
-                    final addedToQueuePane = PageHeaderInset(
-                      topInset: 0,
-                      child: Listener(
-                        onPointerMove: _updateQueueDrag,
-                        onPointerUp: _finishQueueDrag,
-                        onPointerCancel: _finishQueueDrag,
-                        child: ScrollActivityGate(
-                          onMetricsChanged: ref
-                              .read(libraryCoverUiControllerProvider)
-                              .viewportChanged,
-                          child: addedToQueueSection,
-                        ),
+                    final addedToQueuePane = Listener(
+                      onPointerMove: _updateQueueDrag,
+                      onPointerUp: _finishQueueDrag,
+                      onPointerCancel: _finishQueueDrag,
+                      child: ScrollActivityGate(
+                        onMetricsChanged: ref
+                            .read(libraryCoverUiControllerProvider)
+                            .viewportChanged,
+                        child: addedToQueueSection,
                       ),
                     );
 
@@ -1183,7 +1180,12 @@ class _PlaybackQueueAudioEditPageState
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Expanded(child: addedToQueuePane),
-                          Expanded(child: sourceSection),
+                          Expanded(
+                            child: PageHeaderInset(
+                              topInset: 0,
+                              child: sourceSection,
+                            ),
+                          ),
                         ],
                       );
                     }
@@ -1197,11 +1199,7 @@ class _PlaybackQueueAudioEditPageState
               right: 0,
               child: TopPageHeader(
                 icon: Icons.edit_note_rounded,
-                leading: IconButton(
-                  tooltip: i18n.tr('close'),
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  icon: const Icon(Icons.arrow_back_rounded),
-                ),
+                leading: const AppHeaderBackButton(),
                 title: i18n.tr('edit_queue_audio'),
               ),
             ),
@@ -1988,12 +1986,14 @@ class _QueueAudioSourceSectionState
               )
             : TextButton(
                 onPressed: () => setState(() => _showLocalLibrary = local),
-                style: TextButton.styleFrom(
-                  foregroundColor: cs.onSurfaceVariant,
-                  minimumSize: const Size(0, 32),
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  textStyle: _queueSectionTitleStyle(context),
+                style: appTextButtonStyle(
+                  style: TextButton.styleFrom(
+                    foregroundColor: cs.onSurfaceVariant,
+                    minimumSize: const Size(0, 32),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    textStyle: _queueSectionTitleStyle(context),
+                  ),
                 ),
                 child: Text(label, overflow: TextOverflow.ellipsis),
               ),

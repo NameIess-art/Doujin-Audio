@@ -11,6 +11,7 @@ import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../core/ui/undoable_removal_service.dart';
 import '../application/asmr_download_models.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
+import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
@@ -191,55 +192,58 @@ Future<_TaskRemovalAction?> _showTaskRemovalMenu(
         top: false,
         child: Padding(
           padding: AppBottomSheet.contentPadding,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: AppBottomSheetHeader(
-                  icon: Icons.delete_outline_rounded,
-                  title: title,
+          child: Theme(
+            data: AppEntryInkWell.entryTheme(sheetContext),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: AppBottomSheetHeader(
+                    icon: Icons.delete_outline_rounded,
+                    title: title,
+                  ),
                 ),
-              ),
-              ListTile(
-                key: const ValueKey<String>(
-                  'asmr_download_remove_entry_option',
+                ListTile(
+                  key: const ValueKey<String>(
+                    'asmr_download_remove_entry_option',
+                  ),
+                  leading: const Icon(Icons.remove_circle_outline_rounded),
+                  title: Text(removeEntryLabel),
+                  onTap: () {
+                    unawaited(
+                      AppInteractionFeedback.trigger(
+                        AppInteractionFeedbackType.destructive,
+                      ),
+                    );
+                    Navigator.of(
+                      sheetContext,
+                    ).pop(_TaskRemovalAction.removeEntry);
+                  },
                 ),
-                leading: const Icon(Icons.remove_circle_outline_rounded),
-                title: Text(removeEntryLabel),
-                onTap: () {
-                  unawaited(
-                    AppInteractionFeedback.trigger(
-                      AppInteractionFeedbackType.destructive,
-                    ),
-                  );
-                  Navigator.of(
-                    sheetContext,
-                  ).pop(_TaskRemovalAction.removeEntry);
-                },
-              ),
-              ListTile(
-                key: const ValueKey<String>(
-                  'asmr_download_delete_downloaded_option',
+                ListTile(
+                  key: const ValueKey<String>(
+                    'asmr_download_delete_downloaded_option',
+                  ),
+                  leading: Icon(Icons.delete_forever_rounded, color: cs.error),
+                  title: Text(
+                    deleteDownloadedLabel,
+                    style: TextStyle(color: cs.error),
+                  ),
+                  onTap: () {
+                    unawaited(
+                      AppInteractionFeedback.trigger(
+                        AppInteractionFeedbackType.destructive,
+                      ),
+                    );
+                    Navigator.of(
+                      sheetContext,
+                    ).pop(_TaskRemovalAction.deleteDownloaded);
+                  },
                 ),
-                leading: Icon(Icons.delete_forever_rounded, color: cs.error),
-                title: Text(
-                  deleteDownloadedLabel,
-                  style: TextStyle(color: cs.error),
-                ),
-                onTap: () {
-                  unawaited(
-                    AppInteractionFeedback.trigger(
-                      AppInteractionFeedbackType.destructive,
-                    ),
-                  );
-                  Navigator.of(
-                    sheetContext,
-                  ).pop(_TaskRemovalAction.deleteDownloaded);
-                },
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       );

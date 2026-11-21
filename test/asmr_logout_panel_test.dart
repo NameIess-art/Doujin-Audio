@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/widgets/app_edit_panel.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'support/asmr_controller_test_fixture.dart';
@@ -115,6 +116,38 @@ void main() {
     expect(
       find.ancestor(of: panelSurface, matching: find.byType(ScaleTransition)),
       findsOneWidget,
+    );
+    final logoutFinder = find
+        .ancestor(
+          of: find.text(i18n.tr('asmr_logout_action')),
+          matching: find.byType(TextButton),
+        )
+        .first;
+    final syncFinder = find
+        .ancestor(
+          of: find.text(i18n.tr('asmr_account_sync_now')),
+          matching: find.byType(FilledButton),
+        )
+        .first;
+    expect(tester.getSize(logoutFinder).height, 48);
+    expect(tester.getSize(syncFinder).height, 48);
+    final statusBox = tester.widget<DecoratedBox>(
+      find
+          .ancestor(
+            of: find.text(i18n.tr('asmr_logged_in_as', {'name': 'alice'})),
+            matching: find.byType(DecoratedBox),
+          )
+          .first,
+    );
+    final statusDecoration = statusBox.decoration as BoxDecoration;
+    final panelContext = tester.element(panelSurface);
+    expect(
+      statusDecoration.color,
+      Theme.of(panelContext).colorScheme.surfaceContainer,
+    );
+    expect(
+      statusDecoration.borderRadius,
+      BorderRadius.circular(AppDesignTokens.of(panelContext).radiusCard),
     );
 
     await tester.tap(find.text(i18n.tr('asmr_logout_action')));

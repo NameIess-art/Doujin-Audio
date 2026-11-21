@@ -142,7 +142,9 @@ class _TimerPanelCard extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(
+          AppDesignTokens.of(context).radiusOverlay,
+        ),
         color: cs.surfaceContainerLow,
         border: accentColor == null
             ? null

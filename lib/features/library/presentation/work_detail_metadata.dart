@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../app/presentation/element_action_menu.dart';
 import '../../../app/theme/app_design_tokens.dart';
+import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/horizontal_edge_fade_scroll.dart';
 import '../../../core/widgets/page_translation_scope.dart';
 
@@ -76,8 +77,7 @@ class WorkDetailMetadata extends StatelessWidget {
           value: voiceActor,
           onCopy: () => onCopy(voiceActor),
           shape: const StadiumBorder(),
-          child: InkWell(
-            mouseCursor: WidgetStateMouseCursor.clickable,
+          child: AppEntryInkWell(
             key: ValueKey<String>('work_detail_voice_actor_$voiceActor'),
             onTap: () => onCopy(voiceActor),
             borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
@@ -133,8 +133,7 @@ class WorkDetailMetadata extends StatelessWidget {
         value: value,
         onCopy: () => onCopy(value),
         shape: const StadiumBorder(),
-        child: InkWell(
-          mouseCursor: WidgetStateMouseCursor.clickable,
+        child: AppEntryInkWell(
           key: ValueKey<String>('work_detail_tag_$displayLabel'),
           onTap: () => onCopy(value),
           borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
@@ -155,7 +154,7 @@ class WorkDetailMetadata extends StatelessWidget {
             child: WorkPageTranslationText(
               value,
               prefix: '#',
-              style: TextStyle(
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
                 color: cs.onSurfaceVariant,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/widgets/app_glass_surface.dart';
 import '../theme/app_design_tokens.dart';
+import '../theme/app_styles.dart';
 
 class AppDockPanel extends StatelessWidget {
   const AppDockPanel({
@@ -9,7 +10,7 @@ class AppDockPanel extends StatelessWidget {
     required this.child,
     this.showTopHighlight = true,
     this.tinyMode = false,
-    this.radius = 100,
+    this.radius = AppRadius.pill,
   });
 
   final Widget child;

@@ -199,46 +199,49 @@ class _UpdateSettingsTile extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final busy = checking || downloading;
 
-    return ListTile(
-      onTap: busy ? null : onCheck,
-      leading: _settingsIcon(Icons.system_update_alt_rounded, cs.primary),
-      title: _SettingsTitleBlock(
-        title: i18n.tr('check_updates'),
-        subtitle: _UpdateSubtitle(
-          checking: checking,
-          downloading: downloading,
-          progress: progress,
-          updateInfo: updateInfo,
-          currentVersion: currentVersion,
-          textStyle: textStyle,
+    return Theme(
+      data: AppEntryInkWell.entryTheme(context),
+      child: ListTile(
+        onTap: busy ? null : onCheck,
+        leading: _settingsIcon(Icons.system_update_alt_rounded, cs.primary),
+        title: _SettingsTitleBlock(
+          title: i18n.tr('check_updates'),
+          subtitle: _UpdateSubtitle(
+            checking: checking,
+            downloading: downloading,
+            progress: progress,
+            updateInfo: updateInfo,
+            currentVersion: currentVersion,
+            textStyle: textStyle,
+          ),
         ),
-      ),
-      trailing: SizedBox(
-        width: 48,
-        height: 48,
-        child: AnimatedSwitcher(
-          duration: MediaQuery.disableAnimationsOf(context)
-              ? Duration.zero
-              : kAppFadeDuration,
-          switchInCurve: kAppFadeCurve,
-          switchOutCurve: kAppFadeCurve,
-          child: busy
-              ? const Center(
-                  child: SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2.4),
+        trailing: SizedBox(
+          width: 48,
+          height: 48,
+          child: AnimatedSwitcher(
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : kAppFadeDuration,
+            switchInCurve: kAppFadeCurve,
+            switchOutCurve: kAppFadeCurve,
+            child: busy
+                ? const Center(
+                    child: SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2.4),
+                    ),
+                  )
+                : IconButton(
+                    onPressed: onCheck,
+                    tooltip: i18n.tr('check'),
+                    color: cs.onSurfaceVariant,
+                    icon: const Icon(Icons.refresh_rounded, size: 20),
                   ),
-                )
-              : IconButton(
-                  onPressed: onCheck,
-                  tooltip: i18n.tr('check'),
-                  color: cs.onSurfaceVariant,
-                  icon: const Icon(Icons.refresh_rounded, size: 20),
-                ),
+          ),
         ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/theme/app_design_tokens.dart';
 import 'app_transitions.dart';
 
 class SelectionCheckmark extends StatelessWidget {
@@ -14,6 +15,7 @@ class SelectionCheckmark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = AppDesignTokens.of(context);
     return IgnorePointer(
       child: ExcludeSemantics(
         child: AppDeferredFade(
@@ -26,16 +28,16 @@ class SelectionCheckmark extends StatelessWidget {
             height: 22,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: const Color(0xFF4CAF50),
+              color: tokens.success,
               border: Border.all(
                 color: Theme.of(context).colorScheme.surface,
                 width: 2,
               ),
             ),
-            child: const Icon(
+            child: Icon(
               Icons.check_rounded,
               size: 14,
-              color: Colors.white,
+              color: tokens.onSuccess,
             ),
           ),
         ),

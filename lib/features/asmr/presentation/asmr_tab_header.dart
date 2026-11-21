@@ -34,9 +34,6 @@ class _AsmrDownloadProgressInlineButton extends ConsumerWidget {
             ],
           ),
           tooltip: i18n.tr('downloads'),
-          iconSize: 20,
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints.tightFor(width: 38, height: 38),
           onPressed: () {
             Navigator.of(context).push(
               buildAppPageRoute<void>(
@@ -64,9 +61,6 @@ class _AsmrAccountButton extends ConsumerWidget {
       onPressed: onPressed,
       icon: const Icon(Icons.account_circle_rounded),
       tooltip: i18n.tr('asmr_account_menu'),
-      iconSize: 20,
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints.tightFor(width: 38, height: 38),
     );
   }
 }

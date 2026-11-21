@@ -122,7 +122,6 @@ class OnboardingPage extends ConsumerWidget {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 return SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
@@ -179,9 +178,10 @@ class OnboardingPage extends ConsumerWidget {
                           ),
                           const Spacer(flex: 2),
                           const SizedBox(height: 16),
-                          AppPillButton(
+                          AppPrimaryButton(
                             onPressed: isCompleting ? null : onComplete,
-                            child: Text(i18n.tr('onboarding_start')),
+                            isLoading: isCompleting,
+                            label: i18n.tr('onboarding_start'),
                           ),
                           const SizedBox(height: 8),
                           TextButton(
@@ -255,6 +255,7 @@ class PrivacySummaryPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final tokens = AppDesignTokens.of(context);
     final topInset = AppPageHeaderMetrics.contentTopInset(context);
     return Scaffold(
       body: PageHeaderInset(
@@ -263,22 +264,39 @@ class PrivacySummaryPage extends ConsumerWidget {
           children: [
             AppPageContentTransition(
               child: ListView(
-                padding: EdgeInsets.fromLTRB(16, topInset, 16, 32),
+                padding: EdgeInsets.fromLTRB(
+                  tokens.pageHorizontalPadding,
+                  topInset,
+                  tokens.pageHorizontalPadding,
+                  32,
+                ),
                 children: [
-                  _PrivacySection(
-                    icon: Icons.storage_rounded,
-                    title: i18n.tr('privacy_summary_local_title'),
-                    body: i18n.tr('privacy_summary_local_body'),
-                  ),
-                  _PrivacySection(
-                    icon: Icons.public_rounded,
-                    title: i18n.tr('privacy_summary_network_title'),
-                    body: i18n.tr('privacy_summary_network_body'),
-                  ),
-                  _PrivacySection(
-                    icon: Icons.bug_report_outlined,
-                    title: i18n.tr('privacy_summary_diagnostics_title'),
-                    body: i18n.tr('privacy_summary_diagnostics_body'),
+                  Center(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: tokens.readableContentMaxWidth,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _PrivacySection(
+                            icon: Icons.storage_rounded,
+                            title: i18n.tr('privacy_summary_local_title'),
+                            body: i18n.tr('privacy_summary_local_body'),
+                          ),
+                          _PrivacySection(
+                            icon: Icons.public_rounded,
+                            title: i18n.tr('privacy_summary_network_title'),
+                            body: i18n.tr('privacy_summary_network_body'),
+                          ),
+                          _PrivacySection(
+                            icon: Icons.bug_report_outlined,
+                            title: i18n.tr('privacy_summary_diagnostics_title'),
+                            body: i18n.tr('privacy_summary_diagnostics_body'),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ],
               ).withWindowsSmoothScroll(),
@@ -290,15 +308,7 @@ class PrivacySummaryPage extends ConsumerWidget {
               child: TopPageHeader(
                 icon: Icons.privacy_tip_rounded,
                 title: i18n.tr('privacy_summary_title'),
-                leading: HeaderFloatingButton(
-                  child: IconButton(
-                    icon: const Icon(Icons.arrow_back_rounded),
-                    tooltip: MaterialLocalizations.of(
-                      context,
-                    ).backButtonTooltip,
-                    onPressed: () => Navigator.of(context).maybePop(),
-                  ),
-                ),
+                leading: const AppHeaderBackButton(),
               ),
             ),
           ],

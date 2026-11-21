@@ -2,7 +2,6 @@ import 'asmr_providers.dart';
 import '../../library/presentation/library_providers.dart';
 import '../../library/presentation/library_cover_ui_controller.dart';
 import '../../settings/presentation/settings_providers.dart';
-import '../../../core/widgets/drag_only_scrollbar.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -1136,13 +1135,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                                             : null,
                                         icon: const Icon(Icons.refresh_rounded),
                                         tooltip: i18n.tr('refresh'),
-                                        iconSize: 20,
-                                        padding: EdgeInsets.zero,
-                                        constraints:
-                                            const BoxConstraints.tightFor(
-                                              width: 38,
-                                              height: 38,
-                                            ),
                                       ),
                                     ),
                                     const SizedBox(width: 8),
@@ -1155,13 +1147,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                                       onPressed: _openSearchPage,
                                       icon: const Icon(Icons.search_rounded),
                                       tooltip: i18n.tr('search'),
-                                      iconSize: 20,
-                                      padding: EdgeInsets.zero,
-                                      constraints:
-                                          const BoxConstraints.tightFor(
-                                            width: 38,
-                                            height: 38,
-                                          ),
                                     ),
                                   ),
                                   const SizedBox(width: 8),

@@ -1,3 +1,4 @@
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/widgets/app_edit_panel.dart';
 import 'package:doujin_audio/core/widgets/app_entry_ink_well.dart';
 import 'package:doujin_audio/core/widgets/app_dialog.dart';
@@ -253,10 +254,7 @@ void _expectThemeSessionResetButtonStyle(WidgetTester tester, Finder finder) {
   );
   expect(style.minimumSize!.resolve(enabled), const Size.fromHeight(48));
   expect(tester.getSize(finder).height, 48);
-  expect(
-    style.shape!.resolve(enabled),
-    RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-  );
+  expect(style.shape!.resolve(enabled), const StadiumBorder());
   expect(style.visualDensity, VisualDensity.standard);
   expect(style.elevation!.resolve(enabled), 0);
   expect(
@@ -7795,7 +7793,7 @@ void main() {
       of: colorPanelFinder,
       matching: find.byWidgetPredicate(
         (w) =>
-            w is InkWell &&
+            w is AppEntryInkWell &&
             w.customBorder is CircleBorder &&
             w.child is AnimatedContainer,
       ),
@@ -8382,9 +8380,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 250));
         await drop.up();
         if (closeAfterDrop) {
-          await tester.tap(
-            find.byTooltip(fixture.languageProvider.tr('close')),
-          );
+          await tester.tap(find.byType(AppHeaderBackButton));
           await tester.pump();
           expect(queue.playbackQueue!.entries, entries);
         }
@@ -8511,7 +8507,7 @@ void main() {
       expect(rowHeight, greaterThan(0));
 
       coverCache.resolvedPlaybackPaths.clear();
-      await tester.tap(find.byTooltip(i18n.tr('close')));
+      await tester.tap(find.byType(AppHeaderBackButton));
       await tester.pump();
       expect(interaction.isVisualUpdateDeferred, isTrue);
       await tester.pump(const Duration(milliseconds: 160));
@@ -13939,7 +13935,10 @@ void main() {
       final indicatorContainer = tester.widget<Container>(trackIndicator);
       final indicatorDecoration =
           indicatorContainer.decoration as BoxDecoration;
-      expect(indicatorDecoration.color, const Color(0xFF4CAF50));
+      expect(
+        indicatorDecoration.color,
+        AppDesignTokens.of(tester.element(trackIndicator)).success,
+      );
       expect(indicatorDecoration.shape, BoxShape.circle);
       final trackCard = tester.widget<Material>(
         find.ancestor(of: trackContent, matching: find.byType(Material)).first,

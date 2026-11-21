@@ -154,7 +154,6 @@ class _NetworkSettingsControlsState
         labelText: i18n.tr(label),
         hintText: hint,
         errorText: invalid ? i18n.tr('network_invalid_value') : null,
-        border: const OutlineInputBorder(),
       ),
     );
     Widget inset(Widget child) => ColoredBox(
@@ -180,7 +179,7 @@ class _NetworkSettingsControlsState
             Uri.parse('https://www.dlsite.com/'),
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             child: Row(
               children: [
                 Expanded(
@@ -386,7 +385,6 @@ class _NetworkSettingsControlsState
     Uri uri,
   ) => ListTile(
     minTileHeight: SettingsTileTheme.minTileHeight,
-    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
     title: Text(title, style: Theme.of(context).textTheme.titleMedium),
     trailing: _probeAction(i18n, key, uri),
   );
@@ -400,16 +398,19 @@ class _NetworkSettingsControlsState
       NetworkProbeStatus.success => '${result.milliseconds} ms',
       NetworkProbeStatus.failed => i18n.tr('network_failed'),
     };
-    final cs = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final tokens = AppDesignTokens.of(context);
     final color = switch (result.status) {
       NetworkProbeStatus.failed => cs.error,
       NetworkProbeStatus.success when result.milliseconds! < 300 =>
-        Colors.green,
+        tokens.success,
       NetworkProbeStatus.success when result.milliseconds! < 800 =>
-        Colors.orange,
+        tokens.warning,
       NetworkProbeStatus.success => cs.error,
       _ => cs.onSurfaceVariant,
     };
+    final enabled = !testing && !_saving;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -421,18 +422,27 @@ class _NetworkSettingsControlsState
         if (testing) const SizedBox(width: 6),
         Text(
           text,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: color),
+          style: theme.textTheme.bodyMedium?.copyWith(color: color),
         ),
         const SizedBox(width: 8),
-        FilledButton.tonal(
-          style: appButtonStyle(
-            FilledButton.styleFrom(
-              minimumSize: const Size(64, 40),
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+        AppSurfaceButtonShell(
+          enabled: enabled,
+          builder: (context, _) => FilledButton.tonal(
+            style: appSurfaceButtonStyle(
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(64, 40),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+              ),
+              colorScheme: cs,
+              platform: theme.platform,
+              defaultBackgroundColor: cs.secondaryContainer,
+              animationDuration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : const Duration(milliseconds: 130),
             ),
+            onPressed: enabled ? () => _probe.test(key, uri) : null,
+            child: Text(i18n.tr('network_test')),
           ),
-          onPressed: testing || _saving ? null : () => _probe.test(key, uri),
-          child: Text(i18n.tr('network_test')),
         ),
       ],
     );

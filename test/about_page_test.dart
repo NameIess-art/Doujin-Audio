@@ -190,7 +190,6 @@ void main() {
         i18n.tr('about_wiki'),
         i18n.tr('about_feedback'),
         i18n.tr('about_author'),
-        i18n.tr('about_reward'),
         '1.2.3',
         'NameIess-art',
       ]) {
@@ -203,6 +202,8 @@ void main() {
           16,
         );
       }
+      final rewardText = find.text(i18n.tr('about_reward'));
+      expect(tester.widget<Text>(rewardText).style, isNull);
       for (final tile in tester.widgetList<ListTile>(find.byType(ListTile))) {
         final icon = find.descendant(
           of: find.byWidget(tile.leading!),
@@ -231,24 +232,17 @@ void main() {
       );
       final appTitle = find.text(i18n.tr('app_title'));
       final appTitleContext = tester.element(appTitle);
-      final aboutSurface = tester
-          .widgetList<Container>(
-            find.ancestor(of: appTitle, matching: find.byType(Container)),
-          )
-          .firstWhere(
-            (container) =>
-                container.decoration is BoxDecoration &&
-                (container.decoration! as BoxDecoration).color ==
-                    Theme.of(appTitleContext).colorScheme.surfaceContainerLow,
-          );
+      final aboutCardFinder = find
+          .ancestor(of: appTitle, matching: find.byType(Card))
+          .first;
+      final aboutCard = tester.widget<Card>(aboutCardFinder);
+      expect(aboutCard.color, isNull);
+      expect(aboutCard.shape, isNull);
       expect(
-        (aboutSurface.decoration! as BoxDecoration).border,
-        isNull,
-        reason: 'About-page item groups should not paint a card outline.',
+        CardTheme.of(appTitleContext).color,
+        Theme.of(appTitleContext).colorScheme.surfaceContainerLow,
       );
-      final aboutSurfaceRect = tester.getRect(
-        find.ancestor(of: appTitle, matching: find.byWidget(aboutSurface)),
-      );
+      final aboutSurfaceRect = tester.getRect(aboutCardFinder);
       expect(
         aboutSurfaceRect.top - headerRect.bottom,
         closeTo(AppSpacing.xs, 2.0),

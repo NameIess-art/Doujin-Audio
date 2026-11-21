@@ -393,9 +393,11 @@ void main() {
         expect(taskCard.onRemove, isNull);
         expect(taskCard.onOpen, isNotNull);
         final card = tester.element(find.byType(AsmrDownloadTaskCard));
+        // Sample inside the card's left margin below the details page's
+        // fading header summary so pop transition header fade does not overlap.
         final point =
             tester.getTopLeft(find.byType(AsmrDownloadTaskCard)) +
-            const Offset(8, 60);
+            const Offset(8, 80);
         Future<Color> sample() async => (await tester.runAsync(() async {
           final boundary = tester.renderObject<RenderRepaintBoundary>(
             find.byKey(surface),

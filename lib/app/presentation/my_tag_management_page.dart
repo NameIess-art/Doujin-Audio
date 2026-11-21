@@ -492,7 +492,7 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                               Icons.record_voice_over_rounded,
                             MyInterestType.circles => Icons.storefront_outlined,
                           },
-                    leading: const BackButton(),
+                    leading: const AppHeaderBackButton(),
                     additionalChild: Padding(
                       padding: searchPadding,
                       child: HeaderFloatingSurface(

@@ -936,7 +936,7 @@ class CoverArtworkCacheService {
         : storedCoverPath ?? normalizedCover;
     if (hasDurableSource &&
         !PathMatcher.equalsNormalized(
-          _persistedFolderCoverPath(normalizedCover),
+          sourcePathForFolderImage(normalizedCover),
           normalizedCover,
         )) {
       effectiveCoverPath = await _sourceResolver.persistBridgeCover(
@@ -947,11 +947,11 @@ class CoverArtworkCacheService {
       );
       _sourceResolver.rememberFolderImageSource(
         effectiveCoverPath,
-        _persistedFolderCoverPath(normalizedCover),
+        sourcePathForFolderImage(normalizedCover),
       );
     }
     _folderCoverSelections[normalizedFolder] = hasDurableSource
-        ? _persistedFolderCoverPath(normalizedCover)
+        ? sourcePathForFolderImage(normalizedCover)
         : effectiveCoverPath;
     await preserveCoverReference(effectiveCoverPath);
     await _saveFolderCoverSelections();
@@ -1550,7 +1550,7 @@ class CoverArtworkCacheService {
           if (selectedCover != null) {
             selectedCoverPath = selectedCover;
             _folderCoverSelections[normalizedFolderScope] =
-                _persistedFolderCoverPath(selectedCover);
+                sourcePathForFolderImage(selectedCover);
             await _saveFolderCoverSelections();
             if (!isCurrent()) {
               return resolvedForTrack(track, trackPath: trackPath);
@@ -1644,7 +1644,7 @@ class CoverArtworkCacheService {
         }
         if (persistedCover.selected) {
           _folderCoverSelections[normalizedFolderPath] =
-              _persistedFolderCoverPath(indexedCoverPath);
+              sourcePathForFolderImage(indexedCoverPath);
           selectionChanged = true;
         }
         if (selectionChanged) {
@@ -1835,7 +1835,7 @@ class CoverArtworkCacheService {
     final target = _cardCoverTargetForFolder(folderPath);
     final persistedCoverPath = coverPath == null
         ? null
-        : _persistedFolderCoverPath(coverPath);
+        : sourcePathForFolderImage(coverPath);
     return target == null
         ? Future<String?>.value()
         : _saveCardCoverPath(
@@ -1846,7 +1846,7 @@ class CoverArtworkCacheService {
           );
   }
 
-  String _persistedFolderCoverPath(String displayPath) {
+  String sourcePathForFolderImage(String displayPath) {
     return _sourceResolver.sourcePathForDisplay(displayPath) ?? displayPath;
   }
 

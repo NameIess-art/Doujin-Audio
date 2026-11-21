@@ -1682,7 +1682,10 @@ void main() {
       final currentCoverLabel = tester.widget<Text>(
         find.text(fixture.languageProvider.tr('audio_detail_current_cover')),
       );
-      expect(currentCoverLabel.style?.color, Colors.grey.shade400);
+      expect(
+        currentCoverLabel.style?.color,
+        Colors.white.withValues(alpha: 0.65),
+      );
       expect(
         find.text('封面单独立即保存，不受此页确认或放弃影响。'),
         findsNothing,

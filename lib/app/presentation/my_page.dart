@@ -250,11 +250,6 @@ class _MyPageState extends ConsumerState<MyPage>
       final titleLabel = titleWidget ?? Text(title, style: titleStyle);
       return Card(
         margin: const EdgeInsets.only(bottom: 16),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(
-            AppDesignTokens.of(context).radiusCard,
-          ),
-        ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Column(
@@ -1022,7 +1017,6 @@ class _HistoryWorkRow extends ConsumerWidget {
       minHeight: _minHeight,
       titleMaxLines: 2,
       horizontalPadding: coverInset(layoutHeight(context)),
-      navigationEntry: true,
       onTap: () => onOpen(entry.track),
       leading: SizedBox(
         width: _coverWidth,

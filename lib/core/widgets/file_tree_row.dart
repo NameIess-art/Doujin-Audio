@@ -34,7 +34,6 @@ class FileTreeRow extends StatelessWidget {
     this.trailing,
     this.trailingSpacing = 8,
     this.onTap,
-    this.navigationEntry = false,
     this.depth = 0,
     this.minHeight = 44,
     this.titleMaxLines = 1,
@@ -61,7 +60,6 @@ class FileTreeRow extends StatelessWidget {
   final Widget? trailing;
   final double trailingSpacing;
   final VoidCallback? onTap;
-  final bool navigationEntry;
   final int depth;
   final double minHeight;
   final int titleMaxLines;
@@ -158,7 +156,6 @@ class FileTreeRow extends StatelessWidget {
       depth * indentWidth,
       math.max(0.0, maxWidth - 240),
     );
-    final inkWell = navigationEntry ? AppEntryInkWell.new : InkWell.new;
     return Padding(
       padding: EdgeInsetsDirectional.only(start: indent),
       child: Material(
@@ -166,8 +163,7 @@ class FileTreeRow extends StatelessWidget {
         color: backgroundColor ?? Colors.transparent,
         borderRadius: borderRadius,
         clipBehavior: Clip.antiAlias,
-        child: inkWell(
-          mouseCursor: WidgetStateMouseCursor.clickable,
+        child: AppEntryInkWell(
           borderRadius: borderRadius,
           onTap: onTap,
           child: SizedBox(

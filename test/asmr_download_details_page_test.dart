@@ -16,6 +16,9 @@ import 'dart:async';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/file_tree_row.dart';
+import 'package:doujin_audio/core/widgets/operation_feedback.dart';
+import 'package:doujin_audio/core/widgets/page_header_inset.dart';
+import 'package:doujin_audio/core/widgets/top_page_header.dart';
 
 void main() {
   final interaction = UiInteractionCoordinator.instance;
@@ -287,6 +290,8 @@ void main() {
 
     expect(find.text('Download details'), findsOneWidget);
     expect(find.text('Download not found'), findsOneWidget);
+    expect(find.byType(AppEmptyState), findsOneWidget);
+    expect(find.byType(PageHeaderInset), findsOneWidget);
 
     await languageProvider.setLanguage(AppLanguage.ja);
     await tester.pump();
@@ -634,11 +639,15 @@ void main() {
     await tester.pumpWidget(_downloadDetailsApp(languageProvider, task));
     await tester.pump();
 
+    final titleSurface = find.byKey(
+      const ValueKey<String>('asmr_download_work_title'),
+    );
+    expect(
+      tester.widget<HeaderFloatingSurface>(titleSurface).radius,
+      AppDesignTokens.of(tester.element(titleSurface)).radiusSection,
+    );
     final titleText = tester.widget<Text>(
-      find.descendant(
-        of: find.byKey(const ValueKey<String>('asmr_download_work_title')),
-        matching: find.text(title),
-      ),
+      find.descendant(of: titleSurface, matching: find.text(title)),
     );
     expect(titleText.maxLines, 3);
     expect(titleText.overflow, TextOverflow.ellipsis);

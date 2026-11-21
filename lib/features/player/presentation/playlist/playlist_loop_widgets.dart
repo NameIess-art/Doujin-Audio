@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
+import '../../../../core/widgets/app_buttons.dart';
+import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../application/playback_facade.dart';
@@ -231,20 +233,18 @@ class _LoopModeSheetState extends ConsumerState<LoopModeSheet> {
                       ),
                     ).withWindowsSmoothScroll(),
                   ),
+                  const SizedBox(height: 8),
                   SizedBox(
                     key: const ValueKey('loop_mode_actions'),
                     width: double.infinity,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      mainAxisSize: MainAxisSize.min,
+                    child: AppDialogActions(
                       children: [
-                        TextButton(
+                        AppSecondaryButton(
                           key: const ValueKey('loop_mode_cancel'),
                           onPressed: () => Navigator.of(context).pop(),
-                          child: Text(i18n.tr('cancel')),
+                          label: i18n.tr('cancel'),
                         ),
-                        const SizedBox(width: 8),
-                        TextButton(
+                        AppPrimaryButton(
                           key: const ValueKey('loop_mode_confirm'),
                           onPressed: () async {
                             final targetNonSingleMode = _crossFolder
@@ -283,7 +283,7 @@ class _LoopModeSheetState extends ConsumerState<LoopModeSheet> {
                               Navigator.of(context).pop();
                             }
                           },
-                          child: Text(i18n.tr('confirm')),
+                          label: i18n.tr('confirm'),
                         ),
                       ],
                     ),

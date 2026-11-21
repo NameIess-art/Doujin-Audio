@@ -3813,23 +3813,26 @@ void main() {
 
   group('WorkImageViewerPage', () {
     _detailTestWidgets(
-      'local image cover persistence failure never reports success',
+      'local image viewer marks the current cover and keeps it on save failure',
       (tester) async {
         final root = (await tester.runAsync(
           () => Directory.systemTemp.createTemp('cover_failure_'),
         ))!;
         addTearDown(() => root.delete(recursive: true));
         final image = File('${root.path}/cover.png');
-        await tester.runAsync(
-          () => image.writeAsBytes(
+        final otherImage = File('${root.path}/other.png');
+        await tester.runAsync(() async {
+          await image.writeAsBytes(
             base64Decode(
               'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC',
             ),
-          ),
-        );
+          );
+          await image.copy(otherImage.path);
+        });
         final covers = _FailingWorkDetailCoverService()
-          ..images.complete([image.path])
-          ..cover.complete(null);
+          ..cachedCover = image.path
+          ..images.complete([image.path, otherImage.path])
+          ..cover.complete(image.path);
         final fixture = AppRuntimeWidgetTestFixture(
           coverArtworkCacheService: covers,
         );
@@ -3850,11 +3853,12 @@ void main() {
         await _settleDetail(tester);
         // Decode real file I/O before opening the viewer: its image fallback
         // intentionally keeps animating and is unrelated to cover persistence.
+        final detailContext = tester.element(find.byType(WorkDetailPage));
         await tester.runAsync(
-          () => precacheImage(
-            FileImage(image),
-            tester.element(find.byType(WorkDetailPage)),
-          ),
+          () => Future.wait([
+            precacheImage(FileImage(image), detailContext),
+            precacheImage(FileImage(otherImage), detailContext),
+          ]),
         );
         final imageRow = find.byKey(
           const ValueKey('work_entry_more_cover.png'),
@@ -3866,10 +3870,23 @@ void main() {
         );
         await tester.tap(tile);
         await _settleDetail(tester);
-        await tester.tap(
-          find.byKey(const ValueKey('viewer_set_as_cover_button')),
+        final coverButton = find.byKey(
+          const ValueKey('viewer_set_as_cover_button'),
         );
-        await tester.pumpAndSettle();
+        final coverCheck = find.descendant(
+          of: coverButton,
+          matching: find.byIcon(Icons.check_circle_rounded),
+        );
+        expect(coverCheck, findsOneWidget);
+
+        await tester.tap(
+          find.byKey(const ValueKey('image_viewer_next_button')),
+        );
+        await _settleDetail(tester);
+        expect(coverCheck, findsNothing);
+        await tester.tap(coverButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
         expect(
           find.text(fixture.languageProvider.tr('audio_detail_save_failed')),
           findsOneWidget,
@@ -3878,6 +3895,12 @@ void main() {
           find.text(fixture.languageProvider.tr('audio_detail_cover_saved')),
           findsNothing,
         );
+        expect(coverCheck, findsNothing);
+        await tester.tap(
+          find.byKey(const ValueKey('image_viewer_prev_button')),
+        );
+        await _settleDetail(tester);
+        expect(coverCheck, findsOneWidget);
         expect(tester.takeException(), isNull);
       },
     );
@@ -4463,7 +4486,7 @@ void main() {
     );
 
     _detailTestWidgets(
-      'Windows set as cover highlights its icon and label at a fixed size',
+      'Windows set as cover highlights its icon at a fixed size',
       (tester) async {
         final fixture = AppRuntimeWidgetTestFixture();
         addTearDown(fixture.dispose);
@@ -4484,22 +4507,16 @@ void main() {
         await tester.pump(const Duration(milliseconds: 400));
 
         final button = find.byKey(const ValueKey('viewer_set_as_cover_button'));
-        final label = find.descendant(
-          of: button,
-          matching: find.text(
-            fixture.languageProvider.tr('audio_detail_set_cover'),
-          ),
-        );
+        final tooltip = fixture.languageProvider.tr('audio_detail_set_cover');
+        expect(find.byTooltip(tooltip), findsOneWidget);
+        expect(find.text(tooltip), findsNothing);
         final icon = find.descendant(
           of: button,
           matching: find.byIcon(Icons.photo_size_select_actual_outlined),
         );
-        Color? glyphColor(Finder glyph) => glyph == icon
-            ? IconTheme.of(tester.element(glyph)).color
-            : DefaultTextStyle.of(tester.element(glyph)).style.color;
-        final restColor = glyphColor(label);
+        Color? iconColor() => IconTheme.of(tester.element(icon)).color;
+        final restColor = iconColor();
         final bounds = tester.getRect(button);
-        final labelBounds = tester.getRect(label);
         final iconBounds = tester.getRect(icon);
         final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
         await mouse.addPointer(location: bounds.center);
@@ -4507,10 +4524,8 @@ void main() {
         await tester.pump(const Duration(milliseconds: 100));
 
         void expectFeedback() {
-          expect(tester.getRect(label), labelBounds);
           expect(tester.getRect(icon), iconBounds);
-          expect(glyphColor(label), isNot(restColor));
-          expect(glyphColor(icon), glyphColor(label));
+          expect(iconColor(), isNot(restColor));
           expect(tester.getRect(button), bounds);
         }
 
@@ -4523,8 +4538,7 @@ void main() {
         await mouse.removePointer();
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 150));
-        expect(tester.getRect(label), labelBounds);
-        expect(glyphColor(label), restColor);
+        expect(tester.getRect(button), bounds);
         expect(coverSelections, 1);
       },
       variant: TargetPlatformVariant.only(TargetPlatform.windows),
@@ -4557,6 +4571,7 @@ void main() {
           fixture.build(
             WorkImageViewerPage(
               images: images,
+              currentCoverPath: 'path/to/./01.jpg',
               onSetAsCover: (img) async {
                 coverSelected = img.path;
               },
@@ -4580,6 +4595,24 @@ void main() {
         );
         expect(prevBtn, findsOneWidget);
         expect(nextBtn, findsOneWidget);
+
+        final setCoverBtn = find.byKey(
+          const ValueKey<String>('viewer_set_as_cover_button'),
+        );
+        final coverCheck = find.descendant(
+          of: setCoverBtn,
+          matching: find.byIcon(Icons.check_circle_rounded),
+        );
+        final coverIcon = find.descendant(
+          of: setCoverBtn,
+          matching: find.byIcon(Icons.photo_size_select_actual_outlined),
+        );
+        expect(coverCheck, findsOneWidget);
+        expect(tester.widget<IconButton>(setCoverBtn).onPressed, isNull);
+        final badgeCenter = tester.getCenter(coverCheck);
+        final imageIconCenter = tester.getCenter(coverIcon);
+        expect(badgeCenter.dx, greaterThan(imageIconCenter.dx));
+        expect(badgeCenter.dy, greaterThan(imageIconCenter.dy));
 
         final prevSurface = find.ancestor(
           of: prevBtn,
@@ -4703,17 +4736,25 @@ void main() {
         // Next button is still enabled at last image
         expect(tester.widget<IconButton>(nextBtn).onPressed, isNotNull);
 
-        // Set as cover button
-        final setCoverBtn = find.byKey(
-          const ValueKey<String>('viewer_set_as_cover_button'),
-        );
-        expect(setCoverBtn, findsOneWidget);
+        expect(coverCheck, findsNothing);
         await tester.tap(setCoverBtn);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
 
         expect(coverSelected, 'path/to/02.jpg');
+        expect(coverCheck, findsOneWidget);
+        expect(tester.widget<IconButton>(setCoverBtn).onPressed, isNull);
+
+        await tester.tap(prevBtn);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(coverCheck, findsNothing);
+        expect(tester.widget<IconButton>(setCoverBtn).onPressed, isNotNull);
       },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
     );
 
     _detailTestWidgets('double-tap toggles zoom and blocks swiping when zoomed', (

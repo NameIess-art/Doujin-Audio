@@ -321,6 +321,7 @@ WorkDirectorySnapshot buildWorkDirectorySnapshot(WorkDirectoryInput input) {
       name: name,
       path: reference.displayPath,
       relativePath: relative.startsWith('..') ? name : relative,
+      sourcePath: reference.sourcePath,
     );
     images.add(image);
     fileParent(image.relativePath).add(

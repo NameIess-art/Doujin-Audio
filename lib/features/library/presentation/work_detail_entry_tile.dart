@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../../../app/theme/app_design_tokens.dart';
@@ -8,7 +6,6 @@ import '../../../core/media/path_matcher.dart';
 import '../../../core/media/time_text_formatters.dart';
 import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_entry_ink_well.dart';
-import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/page_translation_scope.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
@@ -42,7 +39,6 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
     borderRadius: BorderRadius.all(Radius.circular(8)),
   );
   bool _isMenuOpen = false;
-  Offset? _lastPointerPosition;
   ValueNotifier<bool>? _menuDismissal;
   final _highlightOpacity = ValueNotifier(0.0);
 
@@ -62,22 +58,13 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
     super.dispose();
   }
 
-  Future<void> _showMenu(BuildContext context, {Offset? globalPosition}) async {
+  Future<void> _showMenu(BuildContext context) async {
     if (!mounted || _isMenuOpen) return;
     setState(() => _isMenuOpen = true);
     _highlightOpacity.value = 1;
     try {
       final dismissal = _menuDismissal ??= ValueNotifier(false);
-      final menu = globalPosition == null
-          ? _showAnchoredMenu(context, dismissal)
-          : showUnifiedContextMenu<WorkEntryAction>(
-              context: context,
-              globalPosition: globalPosition,
-              entries: widget.menuEntries,
-              dismissOn: dismissal,
-              highlightedItem: _highlightedItem,
-            );
-      final result = await menu;
+      final result = await _showAnchoredMenu(context, dismissal);
       if (context.mounted && result != null) {
         widget.onAction(result);
       }
@@ -109,6 +96,24 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
       highlightedItem: _highlightedItem,
     );
   }
+
+  List<UnifiedMenuEntry<VoidCallback>> _buildContextMenuEntries() => [
+    for (final entry in widget.menuEntries)
+      if (entry.divider)
+        const UnifiedMenuEntry<VoidCallback>.divider()
+      else
+        UnifiedMenuEntry<VoidCallback>.action(
+          value: entry.value == null
+              ? () {}
+              : () => widget.onAction(entry.value!),
+          icon: entry.icon,
+          iconWidget: entry.iconWidget,
+          label: entry.label,
+          trailing: entry.trailing,
+          destructive: entry.destructive,
+          enabled: entry.enabled && entry.value != null,
+        ),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -151,21 +156,7 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
       WorkEntryType.text => tokens.textFileColor,
       WorkEntryType.image => tokens.imageFileColor,
     };
-    final isWindows = Theme.of(context).platform == TargetPlatform.windows;
     final isHighlighted = _isMenuOpen;
-
-    final opensPage =
-        item.type == WorkEntryType.text || item.type == WorkEntryType.image;
-    final onLongPress = isWindows
-        ? null
-        : () {
-            unawaited(
-              AppInteractionFeedback.trigger(
-                AppInteractionFeedbackType.selection,
-              ),
-            );
-            unawaited(_showMenu(context, globalPosition: _lastPointerPosition));
-          };
 
     void onTap() {
       widget.onAction(
@@ -231,8 +222,6 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
             ),
           ),
         ),
-        onLongPress: opensPage ? null : onLongPress,
-        onTap: opensPage ? null : onTap,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -258,30 +247,23 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
       ),
     );
 
-    return Listener(
-      // Long press callbacks carry no position; keep the touch point so the
-      // menu opens where the user pressed.
-      onPointerDown: (event) => _lastPointerPosition = event.position,
-      child: GestureDetector(
-        onSecondaryTapDown: isWindows
-            ? (details) {
-                unawaited(
-                  _showMenu(context, globalPosition: details.globalPosition),
-                );
-              }
-            : null,
+    return UnifiedContextMenuRegion(
+      enabled: widget.menuEntries.isNotEmpty,
+      shape: _shape,
+      skipTraversal: true,
+      openOnAndroidLongPress: true,
+      buildEntries: _buildContextMenuEntries,
+      child: Theme(
+        data: AppEntryInkWell.entryTheme(context),
         child: Material(
           color: Colors.transparent,
           shape: _shape,
           clipBehavior: Clip.antiAlias,
-          child: opensPage
-              ? AppEntryInkWell(
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: onTap,
-                  onLongPress: onLongPress,
-                  child: tile,
-                )
-              : tile,
+          child: AppEntryInkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: onTap,
+            child: tile,
+          ),
         ),
       ),
     );

@@ -14,6 +14,7 @@ import '../../../core/media/audio_detail.dart';
 import '../domain/audio_library_category.dart';
 import '../domain/library_node.dart';
 import '../../../core/media/path_matcher.dart';
+import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/playlist_icon.dart';
@@ -306,8 +307,10 @@ class LibraryBatchSelectionHeader extends StatelessWidget {
             key: ValueKey<String>('${keyPrefix}_batch_remove_button'),
             onPressed: onRemove,
             icon: const Icon(Icons.delete_outline_rounded),
-            style: IconButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.error,
+            style: appIconButtonStyle(
+              IconButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error,
+              ),
             ),
             tooltip: i18n.tr('remove'),
             iconSize: 20,

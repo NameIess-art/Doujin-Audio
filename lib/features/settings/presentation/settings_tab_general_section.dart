@@ -276,6 +276,7 @@ List<Widget> _buildSettingsPageDisplaySection({
   return <Widget>[
     _SettingsSectionCard(
       title: i18n.tr('settings_group_page_display'),
+      childrenUseOwnCards: true,
       children: [
         Consumer(
           builder: (context, ref, _) {
@@ -289,8 +290,7 @@ List<Widget> _buildSettingsPageDisplaySection({
                 ),
               ),
             );
-            return Column(
-              mainAxisSize: MainAxisSize.min,
+            return AppSettingsGroupCard(
               children: [
                 SwitchListTile(
                   key: const ValueKey<String>('settings_show_asmr_one_switch'),

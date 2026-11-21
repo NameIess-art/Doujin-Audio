@@ -11,6 +11,7 @@ import '../../features/player/presentation/playlist/session_detail_route.dart';
 import '../localization/app_language_en.dart';
 import '../localization/app_language_ja.dart';
 import '../localization/app_language_zh.dart';
+import '../theme/app_design_tokens.dart';
 import 'work_detail_navigation.dart';
 
 enum _ElementAction {
@@ -29,15 +30,13 @@ class ElementActionMenu extends StatelessWidget {
     required this.value,
     required this.onCopy,
     required this.child,
-    this.shape = const RoundedRectangleBorder(
-      borderRadius: BorderRadius.all(Radius.circular(8)),
-    ),
+    this.shape,
   });
 
   final String value;
   final VoidCallback onCopy;
   final Widget child;
-  final ShapeBorder shape;
+  final ShapeBorder? shape;
 
   Future<void> _runAction(BuildContext context, _ElementAction action) async {
     final searchPage = switch (action) {
@@ -88,9 +87,16 @@ class ElementActionMenu extends StatelessWidget {
       'ja' => appLanguageJa,
       _ => appLanguageEn,
     };
+    final resolvedShape =
+        shape ??
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(
+            AppDesignTokens.of(context).radiusSmall,
+          ),
+        );
     return UnifiedContextMenuRegion(
       key: ValueKey(value),
-      shape: shape,
+      shape: resolvedShape,
       skipTraversal: true,
       openOnAndroidLongPress: true,
       buildEntries: () => [

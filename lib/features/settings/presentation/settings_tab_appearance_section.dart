@@ -220,15 +220,9 @@ List<Widget> _buildSettingsAppearanceSection({
     _SettingsSectionCard(
       title: i18n.tr('settings_group_playback_detail'),
       children: [
-        ListTile(
-          title: _settingsTitle(i18n.tr('subtitle_window_settings')),
-          leading: _settingsIcon(Icons.subtitles_rounded, cs.primary),
-          trailing: Icon(
-            Icons.chevron_right_rounded,
-            size: 20,
-            color: cs.onSurfaceVariant,
-          ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+        AppSettingsActionTile(
+          title: i18n.tr('subtitle_window_settings'),
+          icon: Icons.subtitles_rounded,
           onTap: onShowSubtitleWindowSettings,
         ),
       ],
@@ -326,28 +320,31 @@ class _ThemeColorTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return ListTile(
-      title: _settingsTitle(title),
-      leading: _settingsIcon(Icons.color_lens_rounded, iconColor),
-      trailing: SizedBox.square(
-        dimension: 48,
-        child: Center(
-          child: Container(
-            key: indicatorKey,
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: cs.outlineVariant.withValues(alpha: 0.8),
+    return Theme(
+      data: AppEntryInkWell.entryTheme(context),
+      child: ListTile(
+        title: _settingsTitle(title),
+        leading: _settingsIcon(Icons.color_lens_rounded, iconColor),
+        trailing: SizedBox.square(
+          dimension: 48,
+          child: Center(
+            child: Container(
+              key: indicatorKey,
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: cs.outlineVariant.withValues(alpha: 0.8),
+                ),
               ),
             ),
           ),
         ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+        onTap: onTap,
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-      onTap: onTap,
     );
   }
 }
@@ -439,15 +436,14 @@ class _ThemeColorPickerMenuState extends State<_ThemeColorPickerMenu> {
               final foreground =
                   ThemeData.estimateBrightnessForColor(color) == Brightness.dark
                   ? Colors.white
-                  : const Color(0xFF242126);
+                  : const Color(0xFF1B1B1F);
               return Semantics(
                 button: true,
                 selected: isSelected,
                 label: label,
                 child: Tooltip(
                   message: label,
-                  child: InkWell(
-                    mouseCursor: WidgetStateMouseCursor.clickable,
+                  child: AppEntryInkWell(
                     key: ValueKey<String>('theme_color_${preset.name}'),
                     customBorder: const CircleBorder(),
                     onTap: () => widget.onSelected(preset),
@@ -549,17 +545,33 @@ class _ThemeColorPickerMenuState extends State<_ThemeColorPickerMenu> {
                         ),
                       ),
                       const Spacer(),
-                      FilledButton(
-                        key: const ValueKey<String>('theme_color_custom_apply'),
-                        onPressed: () =>
-                            widget.onCustomColorSelected(draftColor),
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size(72, 36),
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          backgroundColor: draftScheme.primary,
-                          foregroundColor: draftScheme.onPrimary,
+                      AppSurfaceButtonShell(
+                        enabled: true,
+                        builder: (context, _) => FilledButton(
+                          key: const ValueKey<String>(
+                            'theme_color_custom_apply',
+                          ),
+                          onPressed: () =>
+                              widget.onCustomColorSelected(draftColor),
+                          style: appSurfaceButtonStyle(
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size(72, 36),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                              ),
+                              backgroundColor: draftScheme.primary,
+                              foregroundColor: draftScheme.onPrimary,
+                            ),
+                            colorScheme: draftScheme,
+                            platform: theme.platform,
+                            defaultBackgroundColor: draftScheme.primary,
+                            animationDuration:
+                                MediaQuery.disableAnimationsOf(context)
+                                ? Duration.zero
+                                : const Duration(milliseconds: 130),
+                          ),
+                          child: Text(widget.i18n.tr('confirm')),
                         ),
-                        child: Text(widget.i18n.tr('confirm')),
                       ),
                     ],
                   ),
@@ -624,12 +636,13 @@ class _ThemeColorOptionRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
+    final rowRadius = BorderRadius.circular(tokens.radiusControl);
     return Material(
       color: Colors.transparent,
-      borderRadius: BorderRadius.circular(tokens.radiusControl),
+      borderRadius: rowRadius,
       clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        mouseCursor: WidgetStateMouseCursor.clickable,
+      child: AppEntryInkWell(
+        borderRadius: rowRadius,
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),

@@ -101,7 +101,6 @@ class _LibraryManagementPageState extends ConsumerState<LibraryManagementPage> {
                         itemBuilder: (context, index) {
                           final libraryPath = visibleLibraries[index];
                           return FileTreeRow(
-                            navigationEntry: true,
                             surfaceKey: ValueKey(
                               'library-management-surface:$libraryPath',
                             ),
@@ -153,56 +152,70 @@ class _LibraryManagementPageState extends ConsumerState<LibraryManagementPage> {
                     padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
                     child: HeaderFloatingSurface(
                       key: const ValueKey('library-management-search'),
-                      child: TextField(
-                        contextMenuBuilder: buildAppEditableTextMenu,
-                        controller: _searchController,
-                        textInputAction: TextInputAction.search,
-                        textAlignVertical: TextAlignVertical.center,
-                        style: Theme.of(
-                          context,
-                        ).textTheme.bodyMedium?.copyWith(fontSize: 13.5),
-                        decoration: InputDecoration(
-                          filled: false,
-                          fillColor: Colors.transparent,
-                          prefixIcon: Icon(
-                            Icons.search_rounded,
-                            color: cs.onSurfaceVariant,
-                            size: 18,
-                          ),
-                          prefixIconConstraints: const BoxConstraints.tightFor(
-                            width: 36,
-                            height: 38,
-                          ),
-                          suffixIcon: _searchController.text.isEmpty
-                              ? null
-                              : IconButton(
-                                  tooltip: i18n.tr('clear'),
-                                  icon: const Icon(
-                                    Icons.clear_rounded,
-                                    size: 18,
-                                  ),
-                                  color: cs.onSurfaceVariant,
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints.tightFor(
-                                    width: 36,
-                                    height: 38,
-                                  ),
-                                  onPressed: () =>
-                                      setState(_searchController.clear),
-                                ),
-                          hintText: i18n.tr('search_library_placeholder'),
-                          hintStyle: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                color: cs.onSurfaceVariant,
-                                fontSize: 13.5,
-                              ),
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          contentPadding: const EdgeInsets.only(right: 12),
-                          isDense: true,
+                      child: TextSelectionTheme(
+                        data: TextSelectionThemeData(
+                          cursorColor: cs.primary,
+                          selectionColor: cs.primary.withValues(alpha: 0.24),
+                          selectionHandleColor: cs.primary,
                         ),
-                        onChanged: (_) => setState(() {}),
+                        child: TextField(
+                          contextMenuBuilder: buildAppEditableTextMenu,
+                          controller: _searchController,
+                          cursorColor: cs.primary,
+                          textInputAction: TextInputAction.search,
+                          textAlignVertical: TextAlignVertical.center,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodyMedium?.copyWith(fontSize: 14),
+                          decoration: InputDecoration(
+                            filled: false,
+                            fillColor: Colors.transparent,
+                            prefixIcon: Icon(
+                              Icons.search_rounded,
+                              color: cs.onSurfaceVariant,
+                              size: 20,
+                            ),
+                            prefixIconConstraints:
+                                const BoxConstraints.tightFor(
+                                  width: 38,
+                                  height: 38,
+                                ),
+                            suffixIcon: _searchController.text.isEmpty
+                                ? null
+                                : IconButton(
+                                    tooltip: i18n.tr('clear'),
+                                    icon: const Icon(
+                                      Icons.clear_rounded,
+                                      size: 18,
+                                    ),
+                                    color: cs.onSurfaceVariant,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints.tightFor(
+                                      width: 38,
+                                      height: 38,
+                                    ),
+                                    onPressed: () =>
+                                        setState(_searchController.clear),
+                                  ),
+                            suffixIconConstraints:
+                                const BoxConstraints.tightFor(
+                                  width: 38,
+                                  height: 38,
+                                ),
+                            hintText: i18n.tr('search_library_placeholder'),
+                            hintStyle: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: cs.onSurfaceVariant,
+                                  fontSize: 14,
+                                ),
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            contentPadding: const EdgeInsets.only(right: 10),
+                            isDense: true,
+                          ),
+                          onChanged: (_) => setState(() {}),
+                        ),
                       ),
                     ),
                   ),

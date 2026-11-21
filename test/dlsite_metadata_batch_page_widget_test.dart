@@ -718,14 +718,15 @@ void main() {
       findsOneWidget,
     );
 
-    // Swipe left to exclude
-    await tester.drag(item0, const Offset(-500, 0));
-    // While the swipe and rebound animation are underway, item is not yet excluded
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
+    // Swipe left to reveal exclude action
+    await tester.drag(item0, const Offset(-200, 0));
+    await tester.pumpAndSettle();
     expect(session.items[0].isExcluded, isFalse);
 
-    // After rebound completely finishes, state changes
+    // Tap revealed exclude action
+    await tester.tap(
+      find.byTooltip(languageProvider.tr('batch_metadata_action_exclude')),
+    );
     await tester.pumpAndSettle();
     expect(session.items[0].isExcluded, isTrue);
     expect(
@@ -742,8 +743,12 @@ void main() {
     );
     expect(opacityWidget.opacity, closeTo(0.38, 0.01));
 
-    // Swipe left again to restore
-    await tester.drag(item0, const Offset(-500, 0));
+    // Swipe left again to reveal restore action and tap it
+    await tester.drag(item0, const Offset(-200, 0));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byTooltip(languageProvider.tr('batch_metadata_action_restore')),
+    );
     await tester.pumpAndSettle();
 
     expect(session.items[0].isExcluded, isFalse);
@@ -809,9 +814,14 @@ void main() {
       isNull,
     );
 
-    // Swipe left to exclude item 1 (searching item)
+    // Swipe left to reveal exclude action on item 1 (searching item) and tap it
     final item1 = find.byKey(const ValueKey<String>('batch_metadata_result_1'));
-    await tester.drag(item1, const Offset(-500, 0));
+    await tester.drag(item1, const Offset(-200, 0));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.tap(
+      find.byTooltip(languageProvider.tr('batch_metadata_action_exclude')),
+    );
     await tester.pumpAndSettle();
 
     expect(session.items[1].isExcluded, isTrue);

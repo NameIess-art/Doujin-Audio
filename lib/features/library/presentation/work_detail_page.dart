@@ -790,10 +790,18 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   }
 
   // Set local image as cover
-  Future<void> _setLocalImageAsCover(String imagePath) async {
+  Future<void> _setLocalImageAsCover(
+    String imagePath, {
+    String? sourcePath,
+  }) async {
     final folderPath = _localTarget!.targetPath;
     final library = ref.read(libraryFacadeProvider);
-    await library.setFolderManualCover(folderPath, imagePath);
+    final savedCover = await library.setFolderManualCover(
+      folderPath,
+      imagePath,
+      sourcePath: sourcePath,
+    );
+    if (savedCover == null) throw StateError('Folder cover was not saved');
     if (!mounted) return;
     setState(() => _localManualCover = imagePath);
   }
@@ -1141,18 +1149,43 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       if (idx >= 0) initialIndex = idx;
     }
 
-    await Navigator.of(context).push<void>(
-      buildAppPageRoute(
-        context: context,
-        child: WorkImageViewerPage(
+    WorkImageViewerPage viewer([String? currentCoverPath]) =>
+        WorkImageViewerPage(
           images: allImages,
           initialIndex: initialIndex,
+          currentCoverPath: currentCoverPath,
           onSetAsCover: widget.isLocal
-              ? (img) => _setLocalImageAsCover(img.path)
+              ? (img) =>
+                    _setLocalImageAsCover(img.path, sourcePath: img.sourcePath)
               : null,
-        ),
-      ),
-    );
+        );
+
+    final folderPath = _localTarget?.targetPath;
+    final Widget page;
+    if (folderPath == null) {
+      page = viewer();
+    } else {
+      final library = ref.read(libraryFacadeProvider);
+      final coverPath =
+          library.resolvedCoverPathForFolder(folderPath) ?? _localManualCover;
+      final covers = library.coverArtworkCacheService;
+      page = FutureBuilder<String?>(
+        initialData: coverPath,
+        future: coverPath == null
+            ? library.coverPathFutureForFolder(folderPath)
+            : null,
+        builder: (context, snapshot) {
+          final path = snapshot.data;
+          return viewer(
+            path == null ? null : covers.sourcePathForFolderImage(path),
+          );
+        },
+      );
+    }
+
+    await Navigator.of(
+      context,
+    ).push<void>(buildAppPageRoute(context: context, child: page));
   }
 
   // Local actions: Fetch info, Download, Pin

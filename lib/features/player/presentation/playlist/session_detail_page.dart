@@ -11,6 +11,7 @@ import '../../../../core/media/music_track.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/marquee_text.dart';
+import '../../../../core/widgets/top_page_header.dart';
 import '../../application/playback_session_snapshot.dart';
 
 import 'session_detail_scaffold.dart';
@@ -185,13 +186,17 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     );
     if (structure == null) {
       return Scaffold(
-        appBar: AppBar(
-          automaticallyImplyLeading: false,
-          leading: IconButton(
-            key: const ValueKey('session_detail_close_button'),
-            onPressed: _close,
-            tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-            icon: const Icon(Icons.keyboard_arrow_down_rounded),
+        body: Align(
+          alignment: Alignment.topCenter,
+          child: TopPageHeader(
+            titleWidget: const SizedBox.shrink(),
+            showFadeMask: false,
+            leading: IconButton(
+              key: const ValueKey('session_detail_close_button'),
+              onPressed: _close,
+              tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+              icon: const Icon(Icons.keyboard_arrow_down_rounded),
+            ),
           ),
         ),
       );

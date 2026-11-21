@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_design_tokens.dart';
+import '../theme/app_styles.dart';
 
 class AppSettingsGroupCard extends StatelessWidget {
   const AppSettingsGroupCard({
@@ -46,7 +47,7 @@ class AppSettingsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final tokens = AppDesignTokens.of(context);
     final outerRadius = tokens.radiusCard;
-    const innerRadius = 6.0;
+    const innerRadius = AppRadius.small;
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.only(
         topLeft: Radius.circular(isFirst ? outerRadius : innerRadius),

@@ -510,23 +510,6 @@ class AppAlertDialog extends AlertDialog {
   }
 }
 
-class AppSimpleDialog extends SimpleDialog {
-  const AppSimpleDialog({
-    super.key,
-    super.title,
-    super.titlePadding,
-    super.contentPadding,
-    super.children,
-    super.backgroundColor,
-    super.surfaceTintColor,
-    RoundedRectangleBorder? shape,
-  }) : super(shape: shape);
-
-  @override
-  Widget build(BuildContext context) =>
-      _glassMaterialDialog(context, super.build(context) as Dialog);
-}
-
 Widget _glassMaterialDialog(BuildContext context, Dialog dialog) {
   final theme = Theme.of(context);
   final dialogTheme = DialogTheme.of(context);
@@ -535,7 +518,7 @@ Widget _glassMaterialDialog(BuildContext context, Dialog dialog) {
               dialogTheme.shape ??
               RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(
-                  theme.useMaterial3 ? 28 : 4,
+                  theme.useMaterial3 ? AppRadius.dialog : 4,
                 ),
               ))
           as RoundedRectangleBorder;

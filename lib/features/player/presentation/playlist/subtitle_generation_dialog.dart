@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
 
 import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_dialog.dart';
 import '../../application/playback_subtitle_service.dart';
 import '../../application/subtitle_generation.dart';
@@ -48,14 +49,16 @@ class SubtitleGenerationDialog extends ConsumerWidget {
           SubtitleGenerationStatus.failed => 'subtitle_task_failed',
           _ => 'subtitle_generation_ready',
         };
-        return AppAlertDialog(
-          title: Text(
-            i18n.tr(
-              job.kind == SubtitleDraftKind.script
-                  ? 'subtitle_script_generate'
-                  : 'subtitle_translate',
-            ),
+        return AppDialog(
+          title: i18n.tr(
+            job.kind == SubtitleDraftKind.script
+                ? 'subtitle_script_generate'
+                : 'subtitle_translate',
           ),
+          icon: job.kind == SubtitleDraftKind.script
+              ? Icons.auto_awesome_rounded
+              : Icons.translate_rounded,
+          scrollable: true,
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -64,6 +67,9 @@ class SubtitleGenerationDialog extends ConsumerWidget {
                 path.basename(job.trackPath),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 14),
               Text(i18n.tr(running ? stageKey : resultKey)),
@@ -76,7 +82,9 @@ class SubtitleGenerationDialog extends ConsumerWidget {
                   job.errorMessageKey != null
                       ? i18n.tr(job.errorMessageKey!)
                       : job.errorMessage!,
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.error,
+                  ),
                 ),
               ],
               if (running) ...[
@@ -107,31 +115,33 @@ class SubtitleGenerationDialog extends ConsumerWidget {
               ],
             ],
           ),
-          actions: [
-            if (running) ...[
-              TextButton(
-                onPressed:
-                    job.cancellationRequested ||
-                        (progress?.stage == 'saving' &&
-                            job.kind != SubtitleDraftKind.translation)
-                    ? null
-                    : _service.cancelGeneration,
-                child: Text(i18n.tr('subtitle_pause_task')),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text(i18n.tr('subtitle_run_in_background')),
-              ),
-            ] else ...[
-              TextButton(
-                onPressed: () {
-                  _service.clearGenerationJob();
-                  Navigator.pop(context);
-                },
-                child: Text(i18n.tr('close')),
-              ),
+          actions: AppDialogActions(
+            children: [
+              if (running) ...[
+                AppSecondaryButton(
+                  isDestructive: true,
+                  onPressed:
+                      job.cancellationRequested ||
+                          (progress?.stage == 'saving' &&
+                              job.kind != SubtitleDraftKind.translation)
+                      ? null
+                      : _service.cancelGeneration,
+                  label: i18n.tr('subtitle_pause_task'),
+                ),
+                AppPrimaryButton(
+                  onPressed: () => Navigator.pop(context),
+                  label: i18n.tr('subtitle_run_in_background'),
+                ),
+              ] else
+                AppPrimaryButton(
+                  onPressed: () {
+                    _service.clearGenerationJob();
+                    Navigator.pop(context);
+                  },
+                  label: i18n.tr('close'),
+                ),
             ],
-          ],
+          ),
         );
       },
     );

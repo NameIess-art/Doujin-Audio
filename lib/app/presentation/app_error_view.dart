@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/logging/app_log_service.dart';
 import '../../core/widgets/app_buttons.dart';
+import '../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../features/data_support/application/diagnostic_report_exporter.dart';
 import '../localization/app_language_en.dart';
 import '../localization/app_language_ja.dart';
@@ -142,7 +143,7 @@ class _AppErrorViewState extends State<AppErrorView> {
                   ],
                 ],
               ),
-            ),
+            ).withWindowsSmoothScroll(),
           ),
         ),
       ),

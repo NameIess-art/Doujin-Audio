@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/media/dlsite_metadata.dart';
 import '../../../core/media/time_text_formatters.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
@@ -183,12 +184,13 @@ class _ReviewInfoLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final tokens = AppDesignTokens.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: cs.surfaceContainerHighest.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(tokens.radiusControl),
         border: Border.all(color: cs.outlineVariant),
       ),
       child: Row(
@@ -250,7 +252,6 @@ class _ReviewTextField extends StatelessWidget {
           labelText: label,
           hintText: hint,
           errorText: errorText,
-          border: const OutlineInputBorder(),
         ),
       ),
     );

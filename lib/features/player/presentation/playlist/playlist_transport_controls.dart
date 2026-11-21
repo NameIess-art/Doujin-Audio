@@ -11,6 +11,7 @@ import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_edit_panel.dart';
+import '../../../../core/widgets/app_entry_ink_well.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_glass_surface.dart';
 import '../../../../core/widgets/app_transitions.dart';
@@ -843,9 +844,11 @@ class _SessionVolumeControlsState extends ConsumerState<SessionVolumeControls> {
                   ),
                 ),
               ),
-              InkWell(
-                mouseCursor: WidgetStateMouseCursor.clickable,
+              AppEntryInkWell(
                 key: const ValueKey('session_volume_percent_text'),
+                borderRadius: BorderRadius.circular(
+                  AppDesignTokens.of(context).radiusSmall,
+                ),
                 onTap: _showVolumeInput,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 6),

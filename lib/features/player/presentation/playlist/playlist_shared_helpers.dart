@@ -254,7 +254,7 @@ ButtonStyle sessionDetailResetButtonStyle(
       minimumSize: const Size.fromHeight(48),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       visualDensity: VisualDensity.standard,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: const StadiumBorder(),
       textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
     ),
   );

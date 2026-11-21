@@ -35,10 +35,7 @@ class SubtitleWindowPreviewCard extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              isDark ? const Color(0xFF131A29) : const Color(0xFFF6F8FC),
-              isDark ? const Color(0xFF0B0F18) : const Color(0xFFE9EEF7),
-            ],
+            colors: [cs.surfaceContainerLow, cs.surfaceContainer],
           ),
           border: Border.all(
             color: cs.outlineVariant.withValues(alpha: isDark ? 0.28 : 0.5),

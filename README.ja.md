@@ -236,7 +236,7 @@ git tag $tag
 git push origin $tag
 ```
 
-Tag のワークフローは正式な署名キーで Android ファイルをビルドし、署名、ABI、チェックサムを検証して Windows インストーラーを生成します。すべてのビルドが成功した後に Draft Release を作成し、ファイルが揃っていることを確認して公開します。全バージョンの履歴は[変更履歴](release_notes.md)を参照してください。
+Tag のワークフローは正式な署名キーで Android ファイルをビルドし、署名、ABI、チェックサムを検証して Windows インストーラーを生成します。必須チェックとビルドがすべて成功すると、ワークフローが Draft Release を作成し、ファイルが揃っていることを確認して公開します。[現行版の変更内容](release_notes.md)と[過去のリリース](https://github.com/NameIess-art/Doujin-Audio/releases)を参照してください。
 
 ## プロジェクトを支援
 

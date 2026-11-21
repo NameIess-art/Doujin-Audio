@@ -236,7 +236,7 @@ git tag $tag
 git push origin $tag
 ```
 
-The tag workflow builds Android assets with official signing keys, verifies signatures, ABIs, and checksums, and generates the Windows installer. After every build succeeds, it creates a draft Release; publish after confirming the assets are complete. See the [Changelog](release_notes.md) for the full version history.
+The tag workflow builds Android assets with official signing keys, verifies signatures, ABIs, and checksums, and generates the Windows installer. Once all required checks and builds pass, the workflow creates a draft Release, verifies the complete set of assets, and publishes it. See the [current release notes](release_notes.md) and [past releases](https://github.com/NameIess-art/Doujin-Audio/releases).
 
 ## Support the project
 

@@ -270,6 +270,7 @@ internal class NativeSessionAudioEffectsRuntime(
             dynamicsProcessing
         } else {
             releaseDynamicsProcessing()
+            var created: DynamicsProcessing? = null
             try {
                 // Conservative volume balance: light compression plus limiter, no fixed pre-gain.
                 val config = DynamicsProcessing.Config.Builder(
@@ -284,37 +285,43 @@ internal class NativeSessionAudioEffectsRuntime(
                     true // limiterInUse
                 ).build()
 
-                DynamicsProcessing(0, audioSessionId, config).also {
-                    it.setMbcAllChannelsTo(DynamicsProcessing.Mbc(true, true, 1))
-                    it.setMbcBandAllChannelsTo(0, DynamicsProcessing.MbcBand(
-                        true,
-                        20000f,
-                        8f,
-                        160f,
-                        VOLUME_NORMALIZATION_MBC_RATIO,
-                        VOLUME_NORMALIZATION_MBC_THRESHOLD_DB,
-                        2f,
-                        -90f,
-                        1f,
-                        0f,
-                        VOLUME_NORMALIZATION_OUTPUT_GAIN_DB
-                    ))
+                created = DynamicsProcessing(0, audioSessionId, config)
+                created.setMbcAllChannelsTo(DynamicsProcessing.Mbc(true, true, 1))
+                created.setMbcBandAllChannelsTo(0, DynamicsProcessing.MbcBand(
+                    true,
+                    20000f,
+                    8f,
+                    160f,
+                    VOLUME_NORMALIZATION_MBC_RATIO,
+                    VOLUME_NORMALIZATION_MBC_THRESHOLD_DB,
+                    2f,
+                    -90f,
+                    1f,
+                    0f,
+                    VOLUME_NORMALIZATION_OUTPUT_GAIN_DB
+                ))
 
-                    it.setLimiterAllChannelsTo(DynamicsProcessing.Limiter(
-                        true,
-                        true,
-                        0,
-                        8f,
-                        120f,
-                        6f,
-                        VOLUME_NORMALIZATION_LIMITER_THRESHOLD_DB,
-                        VOLUME_NORMALIZATION_OUTPUT_GAIN_DB
-                    ))
+                created.setLimiterAllChannelsTo(DynamicsProcessing.Limiter(
+                    true,
+                    true,
+                    0,
+                    8f,
+                    120f,
+                    6f,
+                    VOLUME_NORMALIZATION_LIMITER_THRESHOLD_DB,
+                    VOLUME_NORMALIZATION_OUTPUT_GAIN_DB
+                ))
 
-                    dynamicsProcessing = it
-                    dynamicsProcessingSessionId = audioSessionId
-                }
+                dynamicsProcessing = created
+                dynamicsProcessingSessionId = audioSessionId
+                created
             } catch (e: RuntimeException) {
+                if (created != null) {
+                    try {
+                        created.release()
+                    } catch (_: RuntimeException) {
+                    }
+                }
                 logWarn("dynamics_processing_create_failed audioSessionId=$audioSessionId", e)
                 null
             }

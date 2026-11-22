@@ -13,24 +13,26 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/presentation/app_orientation_controller.dart';
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../app/state/subtitle_settings_provider.dart';
 import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/media/path_matcher.dart';
+import '../../../../core/media/subtitle_parser.dart';
 import '../../../../core/media/time_text_formatters.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/async_cover_image.dart';
-import '../../../settings/application/settings_state.dart';
 import '../../application/playback_facade.dart';
 import '../../application/playback_session_snapshot.dart';
+import '../../application/playback_subtitle_service.dart';
+import '../playback_error_text.dart';
 import '../playback_position_ui_gate.dart';
 import '../session_video_surface.dart';
 import '../session_video_viewport.dart';
 import 'playlist_shared_helpers.dart';
 import 'playlist_progress_widgets.dart';
 import 'playlist_transport_controls.dart';
-import 'playlist_volume_timer_widgets.dart';
 import 'session_detail_theme.dart';
 
 bool isSessionVideoReady(PlaybackSessionSnapshot session, MusicTrack? track) {
@@ -122,16 +124,15 @@ class _SessionVideoFullscreenPageState
   bool _exitRunning = false;
   bool _allowPop = false;
   bool _sliderInteracting = false;
+  bool _controlsHovered = false;
   final _pageFocus = FocusNode();
-  final _sliderPositionMs = ValueNotifier<double?>(null);
+  final _pastRestartThreshold = ValueNotifier<bool>(false);
   double _brightness = 0.5;
   final _volumePreview = ValueNotifier<double?>(null);
   final _feedback = ValueNotifier<({IconData icon, String text})?>(null);
-  late final Listenable _controlValues;
 
   Offset _panDelta = Offset.zero;
   _FullscreenVideoPanMode? _panMode;
-  SessionVideoGestureZone? _panZone;
   SessionVideoVerticalGestureSide? _panVerticalSide;
   Duration _panStartPosition = Duration.zero;
   Duration? _panSeekTarget;
@@ -147,6 +148,7 @@ class _SessionVideoFullscreenPageState
 
   bool get _controlsInteracting =>
       _sliderInteracting ||
+      _controlsHovered ||
       (_pageFocus.hasFocus && !_pageFocus.hasPrimaryFocus);
 
   bool _temporarySpeedRequested = false;
@@ -163,13 +165,21 @@ class _SessionVideoFullscreenPageState
       _positionGate = PlaybackPositionUiGate(
         session: session,
         deferDuringInteraction: false,
-      );
+      )..addListener(_handlePositionGateChanged);
+      _pastRestartThreshold.value =
+          _positionGate!.value.position.inSeconds > 3;
     }
-    _controlValues = Listenable.merge([?_positionGate, _sliderPositionMs]);
     _brightness = widget.fullscreenLease.initialBrightness ?? 0.5;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _scheduleControlsHide();
     });
+  }
+
+  void _handlePositionGateChanged() {
+    final past = (_positionGate?.value.position.inSeconds ?? 0) > 3;
+    if (_pastRestartThreshold.value != past) {
+      _pastRestartThreshold.value = past;
+    }
   }
 
   @override
@@ -194,8 +204,9 @@ class _SessionVideoFullscreenPageState
       unawaited(_playback.setSessionVolume(widget.sessionId, pendingVolume));
     }
     unawaited(_restoreTemporarySpeed(showFailure: false));
+    _positionGate?.removeListener(_handlePositionGateChanged);
     _positionGate?.dispose();
-    _sliderPositionMs.dispose();
+    _pastRestartThreshold.dispose();
     _volumePreview.dispose();
     _feedback.dispose();
     super.dispose();
@@ -272,6 +283,16 @@ class _SessionVideoFullscreenPageState
     _scheduleControlsHide();
   }
 
+  void _setControlsHovered(bool hovered) {
+    if (_controlsHovered == hovered) return;
+    _controlsHovered = hovered;
+    if (hovered) {
+      _controlsTimer?.cancel();
+    } else {
+      _scheduleControlsHide();
+    }
+  }
+
   void _handleMouseHover(PointerHoverEvent event) {
     _lastPointerPosition = event.localPosition;
     if (!_controlsVisible) {
@@ -282,6 +303,128 @@ class _SessionVideoFullscreenPageState
       }
     }
     _showControls();
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.escape) {
+      if (event is KeyDownEvent) {
+        unawaited(_requestExit());
+      }
+      return KeyEventResult.handled;
+    }
+    final focusContext = FocusManager.instance.primaryFocus?.context;
+    if (focusContext?.findAncestorStateOfType<EditableTextState>() != null) {
+      return KeyEventResult.ignored;
+    }
+    final keyboard = HardwareKeyboard.instance;
+    if (keyboard.isControlPressed ||
+        keyboard.isAltPressed ||
+        keyboard.isMetaPressed) {
+      return KeyEventResult.ignored;
+    }
+    if (key == LogicalKeyboardKey.keyF) {
+      if (event is KeyDownEvent) {
+        unawaited(_requestExit());
+      }
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.space) {
+      if (event is! KeyDownEvent) return KeyEventResult.handled;
+      final playing =
+          _playback.sessionSnapshotById(widget.sessionId)?.playbackRequested ==
+          true;
+      _setFeedback(
+        playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+        ref
+            .read(appLanguageProviderInstanceProvider)
+            .tr(playing ? 'pause' : 'play'),
+      );
+      unawaited(_playback.toggleSessionPlayPause(widget.sessionId));
+      _scheduleControlsHide();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowLeft ||
+        key == LogicalKeyboardKey.arrowRight) {
+      final forward = key == LogicalKeyboardKey.arrowRight;
+      final gate = _positionGate;
+      if (gate != null &&
+          (gate.value.duration ?? Duration.zero) > Duration.zero) {
+        final target = sessionVideoSkipTarget(
+          position: gate.value.position,
+          duration: gate.value.duration ?? Duration.zero,
+          delta: Duration(seconds: forward ? 5 : -5),
+        );
+        unawaited(_playback.seekSession(widget.sessionId, target));
+      } else {
+        unawaited(
+          _playback.seekSessionByOffset(
+            widget.sessionId,
+            Duration(seconds: forward ? 5 : -5),
+          ),
+        );
+      }
+      _setFeedback(
+        forward ? Icons.forward_5_rounded : Icons.replay_5_rounded,
+        ref
+            .read(appLanguageProviderInstanceProvider)
+            .tr(
+              forward
+                  ? 'seek_forward_five_seconds'
+                  : 'seek_backward_five_seconds',
+            ),
+      );
+      _scheduleControlsHide();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowUp ||
+        key == LogicalKeyboardKey.arrowDown) {
+      final currentGain =
+          _playback.sessionById(widget.sessionId)?.volume ??
+          _initialSession?.volume ??
+          1.0;
+      final currentDisplay = sessionVolumeDisplayValueFromGain(currentGain);
+      final delta = key == LogicalKeyboardKey.arrowUp ? 0.05 : -0.05;
+      final nextDisplay = (currentDisplay + delta).clamp(
+        0.0,
+        sessionVolumeDisplayMaximum,
+      );
+      final nextGain = sessionVolumeGainFromDisplayValue(nextDisplay);
+      _setFeedback(
+        sessionVolumeIcon(nextGain),
+        '${ref.read(appLanguageProviderInstanceProvider).tr('volume')} '
+        '${(nextDisplay * 100).round()}%',
+      );
+      unawaited(_playback.setSessionVolume(widget.sessionId, nextGain));
+      _scheduleControlsHide();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.keyM) {
+      if (event is! KeyDownEvent) return KeyEventResult.handled;
+      final wasMuted =
+          (_playback.sessionById(widget.sessionId)?.volume ?? 1.0) <= 0;
+      unawaited(
+        _playback.toggleSessionMute(widget.sessionId).then((_) {
+          if (!mounted) return;
+          final nextGain =
+              _playback.sessionById(widget.sessionId)?.volume ??
+              (wasMuted ? 1.0 : 0.0);
+          final displayPct =
+              (sessionVolumeDisplayValueFromGain(nextGain) * 100).round();
+          _setFeedback(
+            sessionVolumeIcon(nextGain),
+            '${ref.read(appLanguageProviderInstanceProvider).tr('volume')} '
+            '$displayPct%',
+          );
+        }),
+      );
+      _scheduleControlsHide();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   void _toggleControls() {
@@ -317,10 +460,6 @@ class _SessionVideoFullscreenPageState
     _controlsTimer?.cancel();
     _panDelta = Offset.zero;
     _panMode = null;
-    _panZone = sessionVideoGestureZone(
-      details.localPosition.dx,
-      viewportSize.width,
-    );
     _panVerticalSide = sessionVideoVerticalGestureSide(
       details.localPosition.dx,
       viewportSize.width,
@@ -345,9 +484,7 @@ class _SessionVideoFullscreenPageState
     if (_panMode == null) {
       if (_panDelta.distance < _gestureThreshold) return;
       if (_panDelta.dx.abs() >= _panDelta.dy.abs()) {
-        _panMode = _panZone == SessionVideoGestureZone.center
-            ? _FullscreenVideoPanMode.ignored
-            : _FullscreenVideoPanMode.horizontalSeek;
+        _panMode = _FullscreenVideoPanMode.horizontalSeek;
       } else {
         _panMode = _panVerticalSide == SessionVideoVerticalGestureSide.left
             ? widget.fullscreenLease.initialBrightness == null
@@ -583,17 +720,6 @@ class _SessionVideoFullscreenPageState
     _setControlsVisible(true);
   }
 
-  void _endProgressInteraction(double value) {
-    final target = Duration(milliseconds: value.round());
-    unawaited(_playback.seekSession(widget.sessionId, target));
-    final committedPosition = _playback.sessionById(widget.sessionId)?.position;
-    if (committedPosition != null) {
-      _positionGate?.syncPosition(committedPosition);
-    }
-    _sliderPositionMs.value = null;
-    _endControlInteraction();
-  }
-
   void _endControlInteraction() {
     _sliderInteracting = false;
     _scheduleControlsHide();
@@ -623,7 +749,7 @@ class _SessionVideoFullscreenPageState
     final textHeight = MediaQuery.textScalerOf(context).scale(13) * 1.1;
     final timelineHeight = inlineTimecodes
         ? max(20.0, textHeight)
-        : 32 + max(24.0, textHeight);
+        : 20.0 + max(20.0, textHeight);
     return timelineHeight +
         _controlRowSpacing +
         _bottomControlsHeight(stackVolumeControls) +
@@ -638,12 +764,24 @@ class _SessionVideoFullscreenPageState
         (state) => (
           playing: state?.isPlaying == true,
           loading: state?.isPlaybackLoading == true,
+          playbackError: state?.playbackError,
         ),
+      ),
+    );
+    final subtitleEnabled = ref.watch(
+      subtitleSettingsProvider.select(
+        (state) => state.isShowEnabled(widget.sessionId),
       ),
     );
     ref.watch(
       playbackSessionProvider(widget.sessionId).select(
-        (session) => (session?.queueVersion, session?.currentQueueIndex),
+        (session) => (
+          session?.queueVersion,
+          session?.currentQueueIndex,
+          session?.currentTrackPath,
+          session?.loadedPath,
+          session?.loopMode,
+        ),
       ),
     );
     ref.watch(
@@ -668,6 +806,15 @@ class _SessionVideoFullscreenPageState
         )) {
       _exitAfterBuild();
       return const ColoredBox(color: Colors.black);
+    }
+    if (_positionGate == null) {
+      _positionGate = PlaybackPositionUiGate(
+        session: activeSession,
+        deferDuringInteraction: false,
+      )..addListener(_handlePositionGateChanged);
+      _positionGate!.tickerModeEnabled = _controlsVisible;
+    } else {
+      _positionGate!.updateSession(activeSession);
     }
     final library = ref.read(libraryFacadeProvider);
     final coverCache = library.coverArtworkCacheService;
@@ -694,15 +841,6 @@ class _SessionVideoFullscreenPageState
       _activeCoverRevision = coverRevision;
       _coverFuture = library.playbackCoverPathFutureForTrack(track);
     }
-    final coverCacheWidth = coverCacheWidthForResolution(
-      ref.watch(
-        settingsStateProvider.select(
-          (state) =>
-              state.value?.coverImageResolution ??
-              CoverImageResolution.balanced,
-        ),
-      ),
-    );
     final baseControlTheme = ref.read(themeProviderInstanceProvider).darkTheme;
     final controlsLabel = ref
         .read(appLanguageProviderInstanceProvider)
@@ -725,17 +863,12 @@ class _SessionVideoFullscreenPageState
           onPopInvokedWithResult: (didPop, _) {
             if (!didPop) unawaited(_requestExit());
           },
-          child: CallbackShortcuts(
-            bindings: <ShortcutActivator, VoidCallback>{
-              const SingleActivator(LogicalKeyboardKey.escape): () {
-                unawaited(_requestExit());
-              },
-            },
-            child: Focus(
-              focusNode: _pageFocus,
-              autofocus: true,
-              onFocusChange: (_) => _scheduleControlsHide(),
-              child: Scaffold(
+          child: Focus(
+            focusNode: _pageFocus,
+            autofocus: true,
+            onKeyEvent: _handleKeyEvent,
+            onFocusChange: (_) => _scheduleControlsHide(),
+            child: Scaffold(
                 backgroundColor: Colors.black,
                 body: AppPageContentTransition(
                   child: MouseRegion(
@@ -780,8 +913,8 @@ class _SessionVideoFullscreenPageState
                                     .resolvedPlaybackCoverPathForTrack(track),
                                 retryFutureBuilder: () => library
                                     .playbackCoverPathFutureForTrack(track),
-                                cacheWidth: coverCacheWidth,
-                                useDefaultCacheWidth: coverCacheWidth != null,
+                                cacheWidth: 200,
+                                useDefaultCacheWidth: false,
                                 fit: BoxFit.cover,
                               ),
                             ),
@@ -838,7 +971,26 @@ class _SessionVideoFullscreenPageState
                                 ),
                               ),
                             ),
+                            if (subtitleEnabled)
+                              Positioned(
+                                left: 24,
+                                right: 24,
+                                bottom: _controlsVisible
+                                    ? controlBarHeight + 12
+                                    : 24 + MediaQuery.viewPaddingOf(context).bottom,
+                                child: IgnorePointer(
+                                  child: _FullscreenVideoSubtitleOverlay(
+                                    session: activeSession,
+                                  ),
+                                ),
+                              ),
                             _buildFeedback(),
+                            if (transport.playbackError != null)
+                              _buildErrorBanner(
+                                context,
+                                playbackError: transport.playbackError!,
+                                useAsmrOneText: track?.isRemoteAsmr ?? false,
+                              ),
                             Builder(
                               builder: (context) => _buildControls(
                                 context,
@@ -856,6 +1008,66 @@ class _SessionVideoFullscreenPageState
                     ),
                   ),
                 ),
+              ),
+            ),
+          ),
+        ),
+      );
+  }
+
+  Widget _buildErrorBanner(
+    BuildContext context, {
+    required String playbackError,
+    required bool useAsmrOneText,
+  }) {
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final cs = Theme.of(context).colorScheme;
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Material(
+            key: const ValueKey<String>('fullscreen_video_error_banner'),
+            color: Colors.black.withValues(alpha: 0.82),
+            borderRadius: BorderRadius.circular(18),
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: cs.error.withValues(alpha: 0.45)),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.error_outline_rounded, color: cs.error, size: 28),
+                  const SizedBox(height: 8),
+                  Text(
+                    localizedPlaybackErrorText(
+                      i18n,
+                      playbackError,
+                      useAsmrOneText: useAsmrOneText,
+                    ),
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    key: const ValueKey<String>('fullscreen_video_retry_button'),
+                    onPressed: () {
+                      _showControls();
+                      unawaited(
+                        _playback.toggleSessionPlayPause(widget.sessionId),
+                      );
+                    },
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    label: Text(i18n.tr('retry')),
+                  ),
+                ],
               ),
             ),
           ),
@@ -955,45 +1167,51 @@ class _SessionVideoFullscreenPageState
               top: 0,
               left: 0,
               right: 0,
-              child: AppPageHeaderTransition(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withValues(alpha: 0.6 * 0.9),
-                        Colors.transparent,
-                      ],
+              child: MouseRegion(
+                onEnter: (_) => _setControlsHovered(true),
+                onExit: (_) => _setControlsHovered(false),
+                child: AppPageHeaderTransition(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withValues(alpha: 0.6 * 0.9),
+                          Colors.transparent,
+                        ],
+                      ),
                     ),
-                  ),
-                  // The app retains system-bar insets while immersive mode is
-                  // active, so use the same top origin as other page headers.
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      right:
-                          MediaQuery.paddingOf(context).right +
-                          AppPageHeaderMetrics.padding.right +
-                          exitButtonOffset,
-                      top:
-                          MediaQuery.paddingOf(context).top +
-                          AppPageHeaderMetrics.padding.top +
-                          exitButtonOffset,
-                      bottom: 8,
-                    ),
-                    child: Align(
-                      alignment: Alignment.topRight,
-                      child: Semantics(
-                        container: true,
-                        label: TooltipVisibility.of(context)
-                            ? null
-                            : exitTooltip,
-                        child: AppOverlayIconButton(
-                          key: const ValueKey<String>('fullscreen_video_exit'),
-                          tooltip: exitTooltip,
-                          onPressed: _requestExit,
-                          buttonSize: exitButtonSize,
-                          icon: const Icon(Icons.fullscreen_exit_rounded),
+                    // The app retains system-bar insets while immersive mode is
+                    // active, so use the same top origin as other page headers.
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        right:
+                            MediaQuery.paddingOf(context).right +
+                            AppPageHeaderMetrics.padding.right +
+                            exitButtonOffset,
+                        top:
+                            MediaQuery.paddingOf(context).top +
+                            AppPageHeaderMetrics.padding.top +
+                            exitButtonOffset,
+                        bottom: 8,
+                      ),
+                      child: Align(
+                        alignment: Alignment.topRight,
+                        child: Semantics(
+                          container: true,
+                          label: TooltipVisibility.of(context)
+                              ? null
+                              : exitTooltip,
+                          child: AppOverlayIconButton(
+                            key: const ValueKey<String>(
+                              'fullscreen_video_exit',
+                            ),
+                            tooltip: exitTooltip,
+                            onPressed: _requestExit,
+                            buttonSize: exitButtonSize,
+                            icon: const Icon(Icons.fullscreen_exit_rounded),
+                          ),
                         ),
                       ),
                     ),
@@ -1006,59 +1224,26 @@ class _SessionVideoFullscreenPageState
               right: 0,
               bottom: 0,
               height: height,
-              child: DecoratedBox(
-                key: const ValueKey<String>('fullscreen_video_control_bar'),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.92),
-                    ],
-                  ),
-                ),
-                child: Padding(
-                  padding: padding,
-                  child: AnimatedBuilder(
-                    animation: _controlValues,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(
-                        maxWidth: playbackSecondaryControlsWidth -
-                            playbackSecondaryControlButtonWidth,
-                      ),
-                      child: PlaybackSecondaryControlSurface(
-                        child: SessionVolumeControls(
-                          session: session,
-                          playback: _playback,
-                          volumePreview: _volumePreview,
-                          onInteractionStart: _beginControlInteraction,
-                          onInteractionEnd: _endControlInteraction,
-                          onOperationFailure: _showOperationFailure,
-                        ),
-                      ),
+              child: MouseRegion(
+                onEnter: (_) => _setControlsHovered(true),
+                onExit: (_) => _setControlsHovered(false),
+                child: DecoratedBox(
+                  key: const ValueKey<String>('fullscreen_video_control_bar'),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        Colors.black.withValues(alpha: 0.92),
+                      ],
                     ),
-                    builder: (context, volumeControls) {
-                      final snapshot = _positionGate?.value;
-                      final duration = snapshot?.duration ?? Duration.zero;
-                      final maxMs = max(1, duration.inMilliseconds).toDouble();
-                      final positionMs =
-                          (_sliderPositionMs.value ??
-                                  snapshot?.position.inMilliseconds
-                                      .toDouble() ??
-                                  0)
-                              .clamp(0, maxMs)
-                              .toDouble();
-                      final canPrevious =
-                          (snapshot != null &&
-                              snapshot.position.inSeconds > 3) ||
-                          hasPrevious;
-                      final canNext = hasNext;
-
-                      final Widget timeline;
-                      if (MediaQuery.orientationOf(context) ==
-                          Orientation.landscape) {
-                        timeline = SliderTheme(
+                  ),
+                  child: Padding(
+                    padding: padding,
+                    child: Column(
+                      children: [
+                        SliderTheme(
                           data: sessionDetailProgressSliderTheme(
                             context,
                             primaryColor,
@@ -1069,252 +1254,208 @@ class _SessionVideoFullscreenPageState
                               key: const ValueKey('fullscreen_video_progress'),
                               session: session,
                               playback: _playback,
-                              inlineTimecodes: true,
+                              inlineTimecodes:
+                                  MediaQuery.orientationOf(context) ==
+                                  Orientation.landscape,
                               onSeekStart: _beginControlInteraction,
                               onManualSeek: (_) => _endControlInteraction(),
                             ),
                           ),
-                        );
-                      } else {
-                        timeline = SliderTheme(
-                          data:
-                              sessionDetailProgressSliderTheme(
-                                context,
-                                primaryColor,
-                              ).copyWith(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                ),
-                              ),
-                          child: Column(
-                            key: const ValueKey('fullscreen_video_progress'),
-                            children: [
-                              SizedBox(
-                                height: 32,
-                                child: Slider(
-                                  semanticFormatterCallback: (value) =>
-                                      formatDurationCompact(
-                                        Duration(milliseconds: value.round()),
-                                      ),
-                                  max: maxMs,
-                                  value: positionMs,
-                                  onChangeStart: duration > Duration.zero
-                                      ? (_) => _beginControlInteraction()
-                                      : null,
-                                  onChanged: duration > Duration.zero
-                                      ? (value) =>
-                                            _sliderPositionMs.value = value
-                                      : null,
-                                  onChangeEnd: duration > Duration.zero
-                                      ? _endProgressInteraction
-                                      : null,
-                                ),
-                              ),
-                              SizedBox(
-                                height: max(
-                                  24.0,
-                                  MediaQuery.textScalerOf(context).scale(13) *
-                                      1.1,
+                        ),
+                        const SizedBox(height: _controlRowSpacing),
+                      SizedBox(
+                        height: _bottomControlsHeight(stackVolumeControls),
+                        child: Flex(
+                          direction: stackVolumeControls
+                              ? Axis.vertical
+                              : Axis.horizontal,
+                          children: [
+                            SizedBox(
+                              height: _controlRowHeight,
+                              child: IconButtonTheme(
+                                data: IconButtonThemeData(
+                                  style: appIconButtonStyle(
+                                    IconButton.styleFrom(
+                                      fixedSize: const Size(44, 44),
+                                      minimumSize: const Size(44, 44),
+                                      padding: EdgeInsets.zero,
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                  ),
                                 ),
                                 child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
+                                  mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Flexible(
-                                      child: FittedBox(
-                                        fit: BoxFit.scaleDown,
-                                        alignment: Alignment.centerLeft,
-                                        child: TimecodeLabel(
-                                          key: const ValueKey<String>(
-                                            'fullscreen_video_current_time',
+                                    ValueListenableBuilder<bool>(
+                                      valueListenable: _pastRestartThreshold,
+                                      builder:
+                                          (context, pastRestartThreshold, _) =>
+                                              PrimaryTransportButton(
+                                                key: const ValueKey<String>(
+                                                  'fullscreen_video_previous',
+                                                ),
+                                                tooltip: i18n.tr(
+                                                  'previous_track',
+                                                ),
+                                                enabled:
+                                                    hasPrevious ||
+                                                    pastRestartThreshold,
+                                                onPressed: () {
+                                                  _showControls();
+                                                  unawaited(
+                                                    AppInteractionFeedback.trigger(
+                                                      AppInteractionFeedbackType
+                                                          .selection,
+                                                    ),
+                                                  );
+                                                  unawaited(
+                                                    _playback.seekSessionToPrev(
+                                                      widget.sessionId,
+                                                    ),
+                                                  );
+                                                },
+                                                iconSize: 26,
+                                                constraints:
+                                                    const BoxConstraints.tightFor(
+                                                      width: 44,
+                                                      height: 44,
+                                                    ),
+                                                icon:
+                                                    Icons.skip_previous_rounded,
+                                              ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Container(
+                                      decoration:
+                                          sessionDetailPlayButtonDecoration(
+                                            context,
+                                            primaryColor,
+                                            enabled: true,
                                           ),
-                                          text: formatDurationCompact(
-                                            Duration(
-                                              milliseconds: positionMs.round(),
+                                      child: IconButton(
+                                        key: const ValueKey<String>(
+                                          'fullscreen_video_play_pause',
+                                        ),
+                                        tooltip: playing
+                                            ? i18n.tr('pause')
+                                            : i18n.tr('play'),
+                                        onPressed: () {
+                                          _showControls();
+                                          unawaited(
+                                            AppInteractionFeedback.trigger(
+                                              AppInteractionFeedbackType
+                                                  .confirmation,
                                             ),
+                                          );
+                                          unawaited(
+                                            _playback.toggleSessionPlayPause(
+                                              widget.sessionId,
+                                            ),
+                                          );
+                                        },
+                                        style: appTransportIconButtonStyle(
+                                          IconButton.styleFrom(
+                                            fixedSize: const Size(48, 48),
+                                            minimumSize: const Size(48, 48),
+                                            foregroundColor: onPrimaryColor,
+                                            shape: const CircleBorder(),
+                                            padding: EdgeInsets.zero,
                                           ),
                                         ),
+                                        iconSize: 30,
+                                        constraints:
+                                            const BoxConstraints.tightFor(
+                                              width: 48,
+                                              height: 48,
+                                            ),
+                                        icon: loading && playing
+                                            ? SizedBox(
+                                                width: 20,
+                                                height: 20,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 3,
+                                                      color: onPrimaryColor,
+                                                    ),
+                                              )
+                                            : Icon(
+                                                playing
+                                                    ? Icons.pause_rounded
+                                                    : Icons.play_arrow_rounded,
+                                              ),
                                       ),
                                     ),
-                                    const SizedBox(width: 12),
-                                    Flexible(
-                                      child: FittedBox(
-                                        fit: BoxFit.scaleDown,
-                                        alignment: Alignment.centerRight,
-                                        child: TimecodeLabel(
-                                          key: const ValueKey<String>(
-                                            'fullscreen_video_duration',
-                                          ),
-                                          text: formatDurationCompact(duration),
-                                          alignEnd: true,
-                                        ),
+                                    const SizedBox(width: 4),
+                                    PrimaryTransportButton(
+                                      key: const ValueKey<String>(
+                                        'fullscreen_video_next',
                                       ),
+                                      tooltip: i18n.tr('next_track'),
+                                      enabled: hasNext,
+                                      onPressed: () {
+                                        _showControls();
+                                        unawaited(
+                                          AppInteractionFeedback.trigger(
+                                            AppInteractionFeedbackType
+                                                .selection,
+                                          ),
+                                        );
+                                        unawaited(
+                                          _playback.seekSessionToNext(
+                                            widget.sessionId,
+                                          ),
+                                        );
+                                      },
+                                      iconSize: 26,
+                                      constraints:
+                                          const BoxConstraints.tightFor(
+                                            width: 44,
+                                            height: 44,
+                                          ),
+                                      icon: Icons.skip_next_rounded,
                                     ),
                                   ],
                                 ),
                               ),
-                            ],
-                          ),
-                        );
-                      }
-                      final transport = IconButtonTheme(
-                        data: IconButtonThemeData(
-                          style: appIconButtonStyle(
-                            IconButton.styleFrom(
-                              fixedSize: const Size(44, 44),
-                              minimumSize: const Size(44, 44),
-                              padding: EdgeInsets.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             ),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            PrimaryTransportButton(
-                              key: const ValueKey<String>(
-                                'fullscreen_video_previous',
-                              ),
-                              tooltip: i18n.tr('previous_track'),
-                              enabled: canPrevious,
-                              onPressed: () {
-                                _showControls();
-                                unawaited(
-                                  AppInteractionFeedback.trigger(
-                                    AppInteractionFeedbackType.selection,
+                            const SizedBox(
+                              width: 12,
+                              height: _controlRowSpacing,
+                            ),
+                            Expanded(
+                              child: Align(
+                                alignment: stackVolumeControls
+                                    ? Alignment.center
+                                    : Alignment.centerRight,
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth:
+                                        playbackSecondaryControlsWidth -
+                                        playbackSecondaryControlButtonWidth,
                                   ),
-                                );
-                                unawaited(
-                                  _playback.seekSessionToPrev(widget.sessionId),
-                                );
-                              },
-                              iconSize: 26,
-                              constraints: const BoxConstraints.tightFor(
-                                width: 44,
-                                height: 44,
-                              ),
-                              icon: Icons.skip_previous_rounded,
-                            ),
-                            const SizedBox(width: 4),
-                            Container(
-                              decoration: sessionDetailPlayButtonDecoration(
-                                context,
-                                primaryColor,
-                                enabled: true,
-                              ),
-                              child: IconButton(
-                                key: const ValueKey<String>(
-                                  'fullscreen_video_play_pause',
-                                ),
-                                tooltip: playing
-                                    ? i18n.tr('pause')
-                                    : i18n.tr('play'),
-                                onPressed: () {
-                                  _showControls();
-                                  unawaited(
-                                    AppInteractionFeedback.trigger(
-                                      AppInteractionFeedbackType.confirmation,
+                                  child: PlaybackSecondaryControlSurface(
+                                    blurEnabled: false,
+                                    child: SessionVolumeControls(
+                                      session: session,
+                                      playback: _playback,
+                                      volumePreview: _volumePreview,
+                                      onInteractionStart:
+                                          _beginControlInteraction,
+                                      onInteractionEnd: _endControlInteraction,
+                                      onOperationFailure: _showOperationFailure,
                                     ),
-                                  );
-                                  unawaited(
-                                    _playback.toggleSessionPlayPause(
-                                      widget.sessionId,
-                                    ),
-                                  );
-                                },
-                                style: appTransportIconButtonStyle(
-                                  IconButton.styleFrom(
-                                    fixedSize: const Size(48, 48),
-                                    minimumSize: const Size(48, 48),
-                                    foregroundColor: onPrimaryColor,
-                                    shape: const CircleBorder(),
-                                    padding: EdgeInsets.zero,
                                   ),
                                 ),
-                                iconSize: 30,
-                                constraints: const BoxConstraints.tightFor(
-                                  width: 48,
-                                  height: 48,
-                                ),
-                                icon: loading && playing
-                                    ? SizedBox(
-                                        width: 20,
-                                        height: 20,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 3,
-                                          color: onPrimaryColor,
-                                        ),
-                                      )
-                                    : Icon(
-                                        playing
-                                            ? Icons.pause_rounded
-                                            : Icons.play_arrow_rounded,
-                                      ),
                               ),
-                            ),
-                            const SizedBox(width: 4),
-                            PrimaryTransportButton(
-                              key: const ValueKey<String>(
-                                'fullscreen_video_next',
-                              ),
-                              tooltip: i18n.tr('next_track'),
-                              enabled: canNext,
-                              onPressed: () {
-                                _showControls();
-                                unawaited(
-                                  AppInteractionFeedback.trigger(
-                                    AppInteractionFeedbackType.selection,
-                                  ),
-                                );
-                                unawaited(
-                                  _playback.seekSessionToNext(widget.sessionId),
-                                );
-                              },
-                              iconSize: 26,
-                              constraints: const BoxConstraints.tightFor(
-                                width: 44,
-                                height: 44,
-                              ),
-                              icon: Icons.skip_next_rounded,
                             ),
                           ],
                         ),
-                      );
-                      return Column(
-                        children: [
-                          timeline,
-                          const SizedBox(height: _controlRowSpacing),
-                          SizedBox(
-                            height: _bottomControlsHeight(stackVolumeControls),
-                            child: Flex(
-                              direction: stackVolumeControls
-                                  ? Axis.vertical
-                                  : Axis.horizontal,
-                              children: [
-                                SizedBox(
-                                  height: _controlRowHeight,
-                                  child: transport,
-                                ),
-                                const SizedBox(
-                                  width: 12,
-                                  height: _controlRowSpacing,
-                                ),
-                                Expanded(
-                                  child: Align(
-                                    alignment: stackVolumeControls
-                                        ? Alignment.center
-                                        : Alignment.centerRight,
-                                    child: volumeControls,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      );
-                    },
+                      ),
+                    ],
                   ),
                 ),
+              ),
               ),
             ),
           ],
@@ -1324,6 +1465,168 @@ class _SessionVideoFullscreenPageState
     return ExcludeFocus(
       excluding: !_controlsVisible,
       child: ExcludeSemantics(excluding: !_controlsVisible, child: controls),
+    );
+  }
+}
+
+class _FullscreenVideoSubtitleOverlay extends ConsumerStatefulWidget {
+  const _FullscreenVideoSubtitleOverlay({required this.session});
+
+  final PlaybackSessionSnapshot session;
+
+  @override
+  ConsumerState<_FullscreenVideoSubtitleOverlay> createState() =>
+      _FullscreenVideoSubtitleOverlayState();
+}
+
+class _FullscreenVideoSubtitleOverlayState
+    extends ConsumerState<_FullscreenVideoSubtitleOverlay> {
+  late final PlaybackPositionUiGate _positionGate;
+  late final PlaybackSubtitleService _subtitleService;
+  SubtitleTrack? _subtitleTrack;
+  String? _loadedPath;
+  String? _activeText;
+  int _loadGeneration = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _positionGate = PlaybackPositionUiGate(
+      session: widget.session,
+      includeBufferedPosition: false,
+      deferDuringInteraction: false,
+    )..addListener(_handlePositionTick);
+    _subtitleService = ref.read(playbackSubtitleServiceProvider)
+      ..addListener(_handleSubtitleServiceChanged);
+    _loadSubtitles();
+  }
+
+  @override
+  void didUpdateWidget(covariant _FullscreenVideoSubtitleOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.session != widget.session) {
+      _positionGate.updateSession(widget.session);
+    }
+    if (oldWidget.session.id != widget.session.id ||
+        _loadedPath != widget.session.currentTrackPath) {
+      _loadSubtitles();
+    }
+  }
+
+  @override
+  void dispose() {
+    _loadGeneration++;
+    _subtitleService.removeListener(_handleSubtitleServiceChanged);
+    _positionGate
+      ..removeListener(_handlePositionTick)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _loadSubtitles() {
+    final generation = ++_loadGeneration;
+    final trackPath = widget.session.currentTrackPath;
+    _loadedPath = trackPath;
+    if (trackPath.isEmpty) {
+      if (_subtitleTrack != null || _activeText != null) {
+        setState(() {
+          _subtitleTrack = null;
+          _activeText = null;
+        });
+      }
+      return;
+    }
+    if (_subtitleService.hasResult(trackPath)) {
+      _applyTrack(trackPath, _subtitleService.trackSync(trackPath));
+      return;
+    }
+    unawaited(
+      _subtitleService.load(trackPath).then((track) {
+        if (!mounted || generation != _loadGeneration) return;
+        _applyTrack(trackPath, track);
+      }),
+    );
+  }
+
+  void _handleSubtitleServiceChanged() {
+    if (!mounted) return;
+    final trackPath = widget.session.currentTrackPath;
+    if (trackPath.isEmpty) return;
+    if (_subtitleService.hasResult(trackPath)) {
+      final updated = _subtitleService.trackSync(trackPath);
+      if (!identical(_subtitleTrack, updated) ||
+          _subtitleTrack?.offset != updated?.offset) {
+        _applyTrack(trackPath, updated);
+      }
+    } else if (!_subtitleService.isLoading(trackPath)) {
+      _loadSubtitles();
+    }
+  }
+
+  void _applyTrack(String trackPath, SubtitleTrack? track) {
+    if (!mounted || _loadedPath != trackPath) return;
+    final nextText = _cueTextAt(track, _positionGate.value.position);
+    if (identical(_subtitleTrack, track) && _activeText == nextText) return;
+    setState(() {
+      _subtitleTrack = track;
+      _activeText = nextText;
+    });
+  }
+
+  void _handlePositionTick() {
+    final nextText = _cueTextAt(_subtitleTrack, _positionGate.value.position);
+    if (_activeText == nextText) return;
+    setState(() => _activeText = nextText);
+  }
+
+  String? _cueTextAt(SubtitleTrack? track, Duration position) {
+    final raw = track?.cueAt(position)?.text.trim();
+    return (raw == null || raw.isEmpty) ? null : raw;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = _activeText;
+    if (text == null) return const SizedBox.shrink();
+    final fontSize = ref.watch(
+      subtitleSettingsProvider.select((state) => state.fontSize),
+    );
+    final fontFamily = ref.watch(
+      subtitleSettingsProvider.select((state) => state.fontFamily),
+    );
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: DecoratedBox(
+          key: const ValueKey<String>('fullscreen_video_subtitle_overlay'),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.68),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            child: Text(
+              text,
+              textAlign: TextAlign.center,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: fontSize.clamp(13.0, 28.0),
+                fontFamily: fontFamily.isEmpty ? null : fontFamily,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+                shadows: const [
+                  Shadow(
+                    blurRadius: 4,
+                    offset: Offset(0, 1),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -129,7 +129,13 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
           identical(_coverSelection, selection) &&
           _coverActivityEnabled,
       commit: () {
-        if (selection.scan()) setState(() {});
+        if (selection.scan()) {
+          selection.generation = _coverRevisionForSelection(
+            selection.library,
+            selection,
+          );
+          setState(() {});
+        }
         _scheduleCoverScan(selection);
       },
     );
@@ -153,6 +159,34 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
         final folderRev = cache.revisionForScope(folderScope);
         hash = Object.hash(hash, folderRev.epoch, folderRev.revision);
       }
+    }
+    return hash;
+  }
+
+  static int _coverRevisionForSelection(
+    LibraryFacade library,
+    _QueueCoverSelection selection,
+  ) {
+    final cache = library.coverArtworkCacheService;
+    var hash = cache.revisionForScope('').epoch;
+    final seen = <int>{};
+    void include(int index, MusicTrack track) {
+      if (!seen.add(index)) return;
+      final scope = cache.coverSearchKeyForTrack(track) ?? track.path;
+      final scopeRev = cache.revisionForScope(scope);
+      hash = Object.hash(hash, scopeRev.epoch, scopeRev.revision);
+      final folderScope = cache.coverScopeFolderForTrack(track);
+      if (folderScope != null) {
+        final folderRev = cache.revisionForScope(folderScope);
+        hash = Object.hash(hash, folderRev.epoch, folderRev.revision);
+      }
+    }
+
+    for (final entry in selection.probes) {
+      include(entry.index, entry.track);
+    }
+    for (final entry in selection.selected) {
+      include(entry.index, entry.track);
     }
     return hash;
   }
@@ -241,21 +275,22 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
     var selection = _coverSelections[coverKey];
     final coverGeneration = ref.watch(
       coverGenerationProvider.select((_) {
+        final current = _coverSelections[coverKey];
         if (queueState.requiresLoad) {
-          return selection == null
+          return current == null
               ? library.coverArtworkCacheService.revisionForScope('').epoch
               : _coverRevisionForTracks(
                   library,
-                  selection.entryCount,
-                  selection.trackAt,
+                  current.entryCount,
+                  current.trackAt,
                 );
         }
-        final limit = selection != null && selection.selected.length == 4
-            ? math.min(selection.selected.last.index + 1, queue.entries.length)
-            : queue.entries.length;
+        if (current != null && identical(current.library, library)) {
+          return _coverRevisionForSelection(library, current);
+        }
         return _coverRevisionForTracks(
           library,
-          limit,
+          math.min(4, queue.entries.length),
           (index) => queue.entries[index].tracks.firstOrNull,
         );
       }),
@@ -284,6 +319,7 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
           coverGeneration,
         );
         selection.scan();
+        selection.generation = _coverRevisionForSelection(library, selection);
         _coverSelections[coverKey] = selection;
       } else if (selection != null) {
         selection = _QueueCoverSelection(
@@ -360,12 +396,26 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                       }
                     }
                     _pendingDiscoveredPaths.clear();
-                    if (changed) setState(() {});
+                    if (changed) {
+                      if (!queueState.requiresLoad) {
+                        coverSelection.generation = _coverRevisionForSelection(
+                          coverSelection.library,
+                          coverSelection,
+                        );
+                      }
+                      setState(() {});
+                    }
                   },
                 );
                 return;
               }
               if (coverSelection.addDiscoveredTrack(track.path)) {
+                if (!queueState.requiresLoad) {
+                  coverSelection.generation = _coverRevisionForSelection(
+                    coverSelection.library,
+                    coverSelection,
+                  );
+                }
                 setState(() {});
               }
             }
@@ -758,7 +808,7 @@ class _QueueCoverSelection {
   final int entryCount;
   final MusicTrack? Function(int) trackAt;
   final LibraryFacade library;
-  final int generation;
+  int generation;
   final probes = <({int index, MusicTrack track})>[];
   final selected = <({int index, MusicTrack track})>[];
   int _nextEntry = 0;

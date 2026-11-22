@@ -12,6 +12,13 @@ class LibraryOrganizer {
   const LibraryOrganizer();
 
   static const String singleFilesGroupKey = '__single_files__';
+  static final RegExp _leadingSlashPattern = RegExp(r'^/+');
+  static final RegExp _trailingSlashPattern = RegExp(r'/+$');
+  static final RegExp _pathSeparatorPattern = RegExp(r'[\\/]+');
+  static final RegExp _documentPrefixPattern = RegExp(
+    r'^document[\\/]+',
+    caseSensitive: false,
+  );
 
   List<LibraryEntry> buildLibraryEntries(
     String libraryPath,
@@ -157,8 +164,8 @@ class LibraryOrganizer {
         final relative = normalizedFolderPath
             .substring(markerIndex + 2)
             .replaceAll('\\', '/')
-            .replaceFirst(RegExp(r'^/+'), '')
-            .replaceFirst(RegExp(r'/+$'), '');
+            .replaceFirst(_leadingSlashPattern, '')
+            .replaceFirst(_trailingSlashPattern, '');
         final parentRelative = path.posix.dirname(relative);
         if (parentRelative == '.' || parentRelative.isEmpty) return base;
         return '$base::$parentRelative';
@@ -267,7 +274,7 @@ class LibraryOrganizer {
     if (relativePath == null || relativePath.isEmpty) return null;
 
     final firstSegment = relativePath
-        .split(RegExp(r'[\\/]+'))
+        .split(_pathSeparatorPattern)
         .firstWhere((segment) => segment.isNotEmpty, orElse: () => '');
     if (firstSegment.isEmpty) return null;
 
@@ -442,8 +449,8 @@ class LibraryOrganizer {
       if (relativeDir != null && relativeDir.isNotEmpty) {
         final relDir = relativeDir
             .replaceAll('\\', '/')
-            .replaceFirst(RegExp(r'^/+'), '');
-        final parts = relDir.split(RegExp(r'[\\/]+'));
+            .replaceFirst(_leadingSlashPattern, '');
+        final parts = relDir.split(_pathSeparatorPattern);
         final currentParts = <String>[];
 
         for (final rawPart in parts) {
@@ -557,10 +564,7 @@ class LibraryOrganizer {
     var part = _normalizeDisplaySegment(rawPart);
     if (part.isEmpty) return part;
 
-    part = part.replaceFirst(
-      RegExp(r'^document[\\/]+', caseSensitive: false),
-      '',
-    );
+    part = part.replaceFirst(_documentPrefixPattern, '');
     if (part.isEmpty) return part;
 
     if (part.contains('::')) {

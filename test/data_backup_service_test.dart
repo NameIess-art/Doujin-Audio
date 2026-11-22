@@ -1236,6 +1236,64 @@ void main() {
       },
     );
   }
+
+  test(
+    'committed startup restore still succeeds when restore directory cleanup fails',
+    () async {
+      final restoreDir = Directory('${temporaryDirectory.path}/backup_restore');
+      await restoreDir.create(recursive: true);
+      await File('${restoreDir.path}/pending.dabackup').writeAsBytes([1, 2, 3]);
+      await File('${restoreDir.path}/journal.json').writeAsString(
+        jsonEncode(<String, Object?>{
+          'phase': 'committed',
+          'createdAt': DateTime.utc(2026, 8, 8).toIso8601String(),
+        }),
+      );
+
+      final outerZone = Zone.current;
+      final outcome = await IOOverrides.runZoned(
+        () => DataBackupService(
+          database: appDatabase,
+          accountStore: accountStore,
+          supportDirectoryProvider: () async => temporaryDirectory,
+          databasesPathProvider: () async => databaseDirectory.path,
+          platformName: 'test-platform',
+        ).applyAtStartup(),
+        createDirectory: (dirPath) {
+          final realDir = outerZone.run(() => Directory(dirPath));
+          return dirPath.endsWith('backup_restore')
+              ? _FailingDeleteDirectory(realDir)
+              : realDir;
+        },
+      );
+
+      expect(outcome?.succeeded, isTrue);
+      expect(await AppPreferences.getString('themeMode'), 'dark');
+    },
+  );
+}
+
+class _FailingDeleteDirectory implements Directory {
+  _FailingDeleteDirectory(this._inner);
+
+  final Directory _inner;
+
+  @override
+  Future<FileSystemEntity> delete({bool recursive = false}) => Future.error(
+    FileSystemException('directory locked', _inner.path),
+  );
+
+  @override
+  String get path => _inner.path;
+
+  @override
+  Future<bool> exists() => _inner.exists();
+
+  @override
+  bool existsSync() => _inner.existsSync();
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _FakeAppUpdateService extends AppUpdateService {

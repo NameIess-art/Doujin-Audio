@@ -115,13 +115,6 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
     );
   }
 
-  bool _isSuggestionSelected(String value) {
-    final elements = parseSearchElements(_inputQuery.value);
-    final selected = _matchAll ? elements?.all : elements?.any;
-    return selected?.any((item) => item.toLowerCase() == value.toLowerCase()) ??
-        false;
-  }
-
   void _resetScroll() {
     final controller = _scrollControllers[_category]!;
     if (controller.hasClients) controller.jumpTo(0);
@@ -222,6 +215,18 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
         tone: AppFeedbackTone.destructive,
       );
     }
+  }
+
+  void _clearFilters() {
+    if (_filters == emptySearchFilters) return;
+    setState(() {
+      _filters = emptySearchFilters;
+      if (_query.isEmpty) {
+        _submittedQuery = null;
+        _showSearchPlaceholder = false;
+      }
+      _clearSelection();
+    });
   }
 
   void _closeOrClear() {
@@ -464,6 +469,16 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
             final errorText = error == null
                 ? null
                 : localizedAsmrCatalogErrorText(i18n, error);
+            final draftQuery = _inputQuery.value;
+            final canonicalDraft = canonicalElementQuery(draftQuery);
+            final parsedDraft = parseSearchElements(draftQuery);
+            final selectedDraftElements =
+                (_matchAll ? parsedDraft?.all : parsedDraft?.any)
+                    ?.map((item) => item.toLowerCase())
+                    .toSet() ??
+                const <String>{};
+            bool isSuggestionSelected(String value) =>
+                selectedDraftElements.contains(value.toLowerCase());
             return PageHeaderInset(
               topInset: topInset,
               child: CustomScrollView(
@@ -473,7 +488,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
                   SliverToBoxAdapter(child: SizedBox(height: topInset)),
                   SliverToBoxAdapter(
                     child: AppSearchElementTabs(
-                      draft: _inputQuery.value,
+                      draft: draftQuery,
                       matchAll: _matchAll,
                       onSelected: (value) => setState(() => _matchAll = value),
                       translate: i18n.tr,
@@ -490,8 +505,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
                       clearSearchHistoryWithFeedback(context, online: true),
                     ),
                     clearLabel: i18n.tr('clear'),
-                    isSelected: (item) =>
-                        item == canonicalElementQuery(_inputQuery.value),
+                    isSelected: (item) => item == canonicalDraft,
                     onToggle: (item) => unawaited(_onSubmitted(item)),
                     buildItemMenu: (item) =>
                         buildSearchHistoryMenu(context, item, online: true),
@@ -505,7 +519,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
                     title: i18n.tr('search_hot_voice_actors'),
                     items: suggestions?.voiceActors ?? const [],
                     maxExpandedItems: AsmrSearchSuggestions.displayLimit,
-                    isSelected: _isSuggestionSelected,
+                    isSelected: isSuggestionSelected,
                     onToggle: _toggleSuggestion,
                     emptyText: i18n.tr('no_search_results'),
                     expandLabel: i18n.tr('expand'),
@@ -522,7 +536,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
                     title: i18n.tr('search_hot_tags'),
                     items: suggestions?.tags ?? const [],
                     maxExpandedItems: AsmrSearchSuggestions.displayLimit,
-                    isSelected: _isSuggestionSelected,
+                    isSelected: isSuggestionSelected,
                     onToggle: _toggleSuggestion,
                     emptyText: i18n.tr('no_search_results'),
                     expandLabel: i18n.tr('expand'),
@@ -617,6 +631,9 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
                   topInset: topInset,
                   bottomInset: bottomInset,
                   onRefresh: () => _refresh(force: true),
+                  onClearFilters: _filters == emptySearchFilters
+                      ? null
+                      : _clearFilters,
                   selectionListenable: _selectionListenable,
                   onEnterSelectionMode: _enterSelectionMode,
                   onToggleSelection: _toggleWorkSelection,

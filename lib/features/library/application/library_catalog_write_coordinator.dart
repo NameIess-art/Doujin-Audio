@@ -368,12 +368,18 @@ final class LibraryCatalogWriteCoordinator {
     );
     final activeTracksMap = LibraryService.createPathIndex<MusicTrack>();
     for (final track in tracks) {
-      if (!currentExclusions.isExcluded(track.path)) {
+      if (!currentExclusions.isTrackPathExcluded(
+        track.path,
+        parentPath: track.groupKey,
+      )) {
         activeTracksMap[track.path] = track;
       }
     }
     for (final track in entryTracks) {
-      if (!currentExclusions.isExcluded(track.path) &&
+      if (!currentExclusions.isTrackPathExcluded(
+            track.path,
+            parentPath: track.groupKey,
+          ) &&
           !_service.libraryByPath.containsKey(track.path)) {
         activeTracksMap[track.path] = track;
       }
@@ -729,6 +735,12 @@ final class LibraryCatalogWriteCoordinator {
       }
     }
     return (affected: affected, removedPaths: removedPaths);
+  }
+
+  void resetPersistedState() {
+    _batchBefore = null;
+    _service.libraryBatchDepth = 0;
+    _clearBatch();
   }
 
   void _clearBatch() {

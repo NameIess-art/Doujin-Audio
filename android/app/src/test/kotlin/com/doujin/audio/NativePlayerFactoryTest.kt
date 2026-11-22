@@ -5,8 +5,10 @@ package com.doujin.audio
 import com.doujin.audio.player.common.*
 
 import androidx.media3.common.C
+import androidx.media3.common.FlagSet
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.common.TrackGroup
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
@@ -280,6 +282,35 @@ class NativePlayerFactoryTest {
                 hasActiveAudioEffects = true
             )
         )
+    }
+
+    @Test
+    fun `player event filter passes session state events and drops noisy non-state events`() {
+        fun events(vararg flags: Int): Player.Events =
+            Player.Events(FlagSet.Builder().addAll(*flags).build())
+
+        for (relevant in NATIVE_PLAYER_RELEVANT_EVENTS) {
+            assertTrue("Expected event $relevant to pass", isRelevantPlayerEvents(events(relevant)))
+        }
+        assertFalse(isRelevantPlayerEvents(events(Player.EVENT_VOLUME_CHANGED)))
+        assertFalse(isRelevantPlayerEvents(events(Player.EVENT_IS_LOADING_CHANGED)))
+        assertFalse(isRelevantPlayerEvents(events(Player.EVENT_CUES)))
+        assertFalse(isRelevantPlayerEvents(events(Player.EVENT_SURFACE_SIZE_CHANGED)))
+        assertTrue(
+            isRelevantPlayerEvents(
+                events(Player.EVENT_VOLUME_CHANGED, Player.EVENT_POSITION_DISCONTINUITY)
+            )
+        )
+    }
+
+    @Test
+    fun `bootstrap placeholder player builds and releases cleanly on main looper`() {
+        val placeholder = com.doujin.audio.player.session.BootstrapPlaceholderPlayer(
+            android.os.Looper.getMainLooper()
+        )
+        assertEquals(Player.STATE_IDLE, placeholder.playbackState)
+        assertFalse(placeholder.playWhenReady)
+        placeholder.release()
     }
 
     private fun loadingParameters(uri: String, bufferedUs: Long, rebuffering: Boolean = false): LoadControl.Parameters {

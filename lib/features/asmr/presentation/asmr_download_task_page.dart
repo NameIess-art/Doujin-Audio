@@ -4,14 +4,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../core/ui/undoable_removal_service.dart';
 import '../application/asmr_download_models.dart';
-import '../../../core/widgets/app_bottom_sheet.dart';
-import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
@@ -166,6 +165,7 @@ class _AsmrDownloadTaskPageState extends ConsumerState<AsmrDownloadTaskPage> {
                 iconColor: Theme.of(context).colorScheme.primary,
                 leading: const AppHeaderBackButton(),
                 title: i18n.tr('asmr_download_task_title'),
+                trailing: _AsmrDownloadQueueActions(i18n: i18n),
               ),
             ),
           ],
@@ -175,80 +175,100 @@ class _AsmrDownloadTaskPageState extends ConsumerState<AsmrDownloadTaskPage> {
   }
 }
 
-enum _TaskRemovalAction { removeEntry, deleteDownloaded }
+class _AsmrDownloadQueueActions extends ConsumerWidget {
+  const _AsmrDownloadQueueActions({required this.i18n});
 
-Future<_TaskRemovalAction?> _showTaskRemovalMenu(
-  BuildContext context, {
-  required String title,
-  required String removeEntryLabel,
-  required String deleteDownloadedLabel,
-}) {
-  return AppBottomSheet.show<_TaskRemovalAction>(
-    context: context,
-    isScrollControlled: false,
-    builder: (sheetContext) {
-      final cs = Theme.of(sheetContext).colorScheme;
-      return SafeArea(
-        top: false,
-        child: Padding(
-          padding: AppBottomSheet.contentPadding,
-          child: Theme(
-            data: AppEntryInkWell.entryTheme(sheetContext),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: AppBottomSheetHeader(
-                    icon: Icons.delete_outline_rounded,
-                    title: title,
-                  ),
-                ),
-                ListTile(
-                  key: const ValueKey<String>(
-                    'asmr_download_remove_entry_option',
-                  ),
-                  leading: const Icon(Icons.remove_circle_outline_rounded),
-                  title: Text(removeEntryLabel),
-                  onTap: () {
-                    unawaited(
-                      AppInteractionFeedback.trigger(
-                        AppInteractionFeedbackType.destructive,
-                      ),
-                    );
-                    Navigator.of(
-                      sheetContext,
-                    ).pop(_TaskRemovalAction.removeEntry);
-                  },
-                ),
-                ListTile(
-                  key: const ValueKey<String>(
-                    'asmr_download_delete_downloaded_option',
-                  ),
-                  leading: Icon(Icons.delete_forever_rounded, color: cs.error),
-                  title: Text(
-                    deleteDownloadedLabel,
-                    style: TextStyle(color: cs.error),
-                  ),
-                  onTap: () {
-                    unawaited(
-                      AppInteractionFeedback.trigger(
-                        AppInteractionFeedbackType.destructive,
-                      ),
-                    );
-                    Navigator.of(
-                      sheetContext,
-                    ).pop(_TaskRemovalAction.deleteDownloaded);
-                  },
-                ),
-              ],
-            ),
-          ),
-        ),
+  final AppLanguageProvider i18n;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final manager = ref.read(asmrDownloadManagerProvider);
+    final ready = ref.watch(coreRuntimeReadyProvider);
+    if (manager == null) return const SizedBox.shrink();
+    final taskIds =
+        ref.watch(asmrDownloadTaskIdsProvider).value ??
+        manager.taskIds;
+    if (taskIds.isEmpty) return const SizedBox.shrink();
+
+    var hasActive = false;
+    var hasResumable = false;
+    var hasCompleted = false;
+    for (final workId in taskIds) {
+      final status = ref.watch(
+        asmrDownloadTaskProvider(workId).select((task) => task?.status),
       );
-    },
-  );
+      if (status == null) continue;
+      if (status == AsmrDownloadTaskStatus.preparing ||
+          status == AsmrDownloadTaskStatus.downloading ||
+          status == AsmrDownloadTaskStatus.idle) {
+        hasActive = true;
+      } else if (status == AsmrDownloadTaskStatus.paused ||
+          status == AsmrDownloadTaskStatus.failed) {
+        hasResumable = true;
+      } else if (status == AsmrDownloadTaskStatus.completed) {
+        hasCompleted = true;
+      }
+    }
+    if (!hasActive && !hasResumable && !hasCompleted) {
+      return const SizedBox.shrink();
+    }
+
+    return HeaderActionPill(
+      children: [
+        if (hasActive)
+          IconButton(
+            key: const ValueKey<String>('asmr_download_pause_all'),
+            onPressed: ready ? () => unawaited(manager.pauseAllTasks()) : null,
+            icon: const Icon(Icons.pause_rounded),
+            tooltip: i18n.tr('asmr_download_pause_all'),
+            iconSize: 20,
+            padding: EdgeInsets.zero,
+            constraints: HeaderActionPill.buttonConstraints,
+          ),
+        if (hasResumable)
+          IconButton(
+            key: const ValueKey<String>('asmr_download_resume_all'),
+            onPressed: ready
+                ? () {
+                    for (final workId in List<String>.of(manager.taskIds)) {
+                      final status = manager.getTask(workId)?.status;
+                      if (status == AsmrDownloadTaskStatus.paused ||
+                          status == AsmrDownloadTaskStatus.failed) {
+                        unawaited(manager.resumeTask(workId));
+                      }
+                    }
+                  }
+                : null,
+            icon: const Icon(Icons.play_arrow_rounded),
+            tooltip: i18n.tr('asmr_download_resume_all'),
+            iconSize: 20,
+            padding: EdgeInsets.zero,
+            constraints: HeaderActionPill.buttonConstraints,
+          ),
+        if (hasCompleted)
+          IconButton(
+            key: const ValueKey<String>('asmr_download_clear_completed'),
+            onPressed: ready
+                ? () {
+                    for (final workId in List<String>.of(manager.taskIds)) {
+                      if (manager.getTask(workId)?.status ==
+                          AsmrDownloadTaskStatus.completed) {
+                        unawaited(
+                          manager.cancelTask(workId, deleteDownloaded: false),
+                        );
+                      }
+                    }
+                  }
+                : null,
+            icon: const Icon(Icons.clear_all_rounded),
+            tooltip: i18n.tr('asmr_download_clear_completed'),
+            iconSize: 20,
+            padding: EdgeInsets.zero,
+            constraints: HeaderActionPill.buttonConstraints,
+          ),
+      ],
+    );
+  }
 }
 
 class _DownloadTaskItem extends ConsumerWidget {
@@ -302,7 +322,7 @@ class _DownloadTaskItem extends ConsumerWidget {
         onRemove: !ready
             ? null
             : () async {
-                final action = await _showTaskRemovalMenu(
+                final action = await showAsmrDownloadTaskRemovalMenu(
                   context,
                   title: language.tr('asmr_download_remove_task'),
                   removeEntryLabel: language.tr('asmr_download_remove_entry'),
@@ -327,7 +347,7 @@ class _DownloadTaskItem extends ConsumerWidget {
                     key: removalKey,
                     commit: () async {
                       await pausing;
-                      if (action == _TaskRemovalAction.removeEntry) {
+                      if (action == AsmrDownloadTaskRemovalAction.removeEntry) {
                         await manager.cancelTask(
                           workId,
                           deleteDownloaded: false,
@@ -346,7 +366,7 @@ class _DownloadTaskItem extends ConsumerWidget {
                     },
                   ),
                   message: language.tr(
-                    action == _TaskRemovalAction.removeEntry
+                    action == AsmrDownloadTaskRemovalAction.removeEntry
                         ? 'asmr_download_task_removed'
                         : 'asmr_download_task_removed_and_deleted',
                   ),
@@ -354,7 +374,7 @@ class _DownloadTaskItem extends ConsumerWidget {
                       language.tr('items_removed_count', {'count': count}),
                   undoLabel: language.tr('undo'),
                   failureMessage: language.tr('removal_failed'),
-                  icon: action == _TaskRemovalAction.removeEntry
+                  icon: action == AsmrDownloadTaskRemovalAction.removeEntry
                       ? Icons.remove_circle_outline_rounded
                       : Icons.delete_sweep_rounded,
                 );
@@ -386,6 +406,8 @@ class _DownloadTaskProgressView extends ConsumerWidget {
                 estimatedTotalBytes: task.estimatedTotalBytes,
                 retryAttempt: AsmrDownloadTaskCard.highestRetryAttempt(task),
                 automaticFileRetryCount: task.automaticFileRetryCount,
+                failedFiles: task.failedFiles,
+                error: task.error,
               ),
       ),
     );
@@ -399,6 +421,8 @@ class _DownloadTaskProgressView extends ConsumerWidget {
       estimatedTotalBytes: state.estimatedTotalBytes,
       retryAttempt: state.retryAttempt,
       automaticFileRetryCount: state.automaticFileRetryCount,
+      failedFiles: state.failedFiles,
+      errorMessage: state.error,
       i18n: i18n,
     );
   }

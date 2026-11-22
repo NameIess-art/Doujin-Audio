@@ -31,9 +31,11 @@ internal object MediaNameMetadata {
         var text = raw.trim()
         if (text.isEmpty()) return text
         text = decodePercent(text)
-        val maybeFixed = latin1ToUtf8(text)
-        if (looksLikeMojibake(text) && !looksLikeMojibake(maybeFixed)) {
-            text = maybeFixed
+        if (looksLikeMojibake(text)) {
+            val maybeFixed = latin1ToUtf8(text)
+            if (!looksLikeMojibake(maybeFixed)) {
+                text = maybeFixed
+            }
         }
         return text.trim()
     }

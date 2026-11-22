@@ -14,7 +14,8 @@ import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/media_file_support.dart';
 import '../domain/library_persistence_repository.dart';
 import 'audio_detail_cache_service.dart';
-import 'audio_detail_repository.dart' show AudioDetailOperationCancelled;
+import 'audio_detail_repository.dart'
+    show AudioDetailLoadResult, AudioDetailOperationCancelled;
 import 'cover_artwork_store.dart';
 import 'remote_cover_cache.dart';
 export 'remote_cover_cache.dart'
@@ -705,20 +706,32 @@ class CoverArtworkCacheService {
       ..._folderCoverSelections.keys,
       ..._libraryService.watchedFolders,
       ..._libraryService.watchedLibraries,
-    };
-    for (final folder in folders) {
-      final target = AudioDetailTarget.libraryRootFolder(folder);
-      final stored = await _audioDetailCacheService?.loadCardCoverSelection(
-        target,
-      );
+    }.toList(growable: false);
+    final singleTracks = _libraryService.library
+        .where((track) => track.isSingle)
+        .toList(growable: false);
+    final detailService = _audioDetailCacheService;
+    final allTargets = <AudioDetailTarget>[
+      for (final folder in folders) AudioDetailTarget.libraryRootFolder(folder),
+      for (final track in singleTracks)
+        AudioDetailTarget.singleAudioFile(track.path),
+    ];
+    final loadedDetails = detailService != null && allTargets.isNotEmpty
+        ? await detailService.loadMany(allTargets)
+        : const <AudioDetailLoadResult>[];
+
+    for (var i = 0; i < folders.length; i++) {
+      final folder = folders[i];
+      final target = allTargets[i];
+      final detail = i < loadedDetails.length ? loadedDetails[i].detail : null;
       final source =
           _folderCoverSelections[folder] ??
-          (stored?.selected == true ? stored?.path : null);
+          (detail?.cardCoverSelected == true ? detail?.cardCoverPath : null);
       if (source == null) continue;
       final saved = await preserve(target, source);
       if (saved == source) continue;
       // Persist authored data before any reconstructible directory is removed.
-      await _audioDetailCacheService?.saveCardCoverPath(
+      await detailService?.saveCardCoverPath(
         target,
         saved,
         selected: true,
@@ -727,17 +740,17 @@ class CoverArtworkCacheService {
       _folderCoverSelections[folder] = saved;
     }
     final tracks = <({MusicTrack original, String savedPath})>[];
-    for (final track in _libraryService.library.where(
-      (track) => track.isSingle,
-    )) {
-      final target = AudioDetailTarget.singleAudioFile(track.path);
-      final stored = await _audioDetailCacheService?.loadCardCoverSelection(
-        target,
-      );
-      if (stored?.selected == true && stored?.path != null) {
-        final saved = await preserve(target, stored!.path!);
-        if (saved != stored.path) {
-          await _audioDetailCacheService?.saveCardCoverPath(
+    for (var i = 0; i < singleTracks.length; i++) {
+      final track = singleTracks[i];
+      final targetIndex = folders.length + i;
+      final target = allTargets[targetIndex];
+      final detail = targetIndex < loadedDetails.length
+          ? loadedDetails[targetIndex].detail
+          : null;
+      if (detail?.cardCoverSelected == true && detail?.cardCoverPath != null) {
+        final saved = await preserve(target, detail!.cardCoverPath!);
+        if (saved != detail.cardCoverPath) {
+          await detailService?.saveCardCoverPath(
             target,
             saved,
             selected: true,
@@ -991,8 +1004,15 @@ class CoverArtworkCacheService {
       final nextFolder = PathMatcher.isWithinOrEqual(entry.key, oldFolder)
           ? PathMatcher.replaceWithinOrEqual(entry.key, oldFolder, newFolder)
           : entry.key;
+      final resolvedCoverSource = sourcePathForFolderImage(entry.value);
       final nextCover = PathMatcher.isWithinOrEqual(entry.value, oldFolder)
           ? PathMatcher.replaceWithinOrEqual(entry.value, oldFolder, newFolder)
+          : PathMatcher.isWithinOrEqual(resolvedCoverSource, oldFolder)
+          ? PathMatcher.replaceWithinOrEqual(
+              resolvedCoverSource,
+              oldFolder,
+              newFolder,
+            )
           : entry.value;
       if (nextFolder != entry.key || nextCover != entry.value) {
         changed = true;
@@ -1765,11 +1785,30 @@ class CoverArtworkCacheService {
 
   AudioDetailTarget? _cardCoverTargetForFolder(String folderPath) {
     final normalizedFolder = PathMatcher.normalize(folderPath);
-    final rootFolder = const LibraryOrganizer().rootFolderPath(
+    final libraryRoot = _libraryService.mostSpecificWatchedLibrary(
       normalizedFolder,
-      _libraryService.watchedFolders,
-      watchedLibraries: _libraryService.watchedLibraries,
     );
+    final String rootFolder;
+    if (libraryRoot != null) {
+      rootFolder =
+          const LibraryOrganizer().workScopeFolderPath(
+            libraryRoot,
+            normalizedFolder,
+          ) ??
+          PathMatcher.normalize(libraryRoot);
+    } else {
+      final exactFolder = _libraryService.watchedFolderByPath[normalizedFolder];
+      if (exactFolder != null) {
+        rootFolder = exactFolder;
+      } else {
+        final watchedFolder = _libraryService.mostSpecificWatchedFolder(
+          normalizedFolder,
+        );
+        rootFolder = watchedFolder != null
+            ? PathMatcher.normalize(watchedFolder)
+            : normalizedFolder;
+      }
+    }
     if (!PathMatcher.equalsNormalized(normalizedFolder, rootFolder)) {
       return null;
     }

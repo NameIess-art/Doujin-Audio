@@ -39,6 +39,8 @@ internal class AndroidNativePlaybackProgressHeartbeatEnvironment(
     private val powerManager by lazy {
         context.getSystemService(Context.POWER_SERVICE) as? PowerManager
     }
+    @Volatile
+    private var cachedInteractive: Boolean? = null
     private var screenOnListener: (() -> Unit)? = null
     private var screenOffListener: (() -> Unit)? = null
     private var deviceIdleListener: ((Boolean) -> Unit)? = null
@@ -46,8 +48,14 @@ internal class AndroidNativePlaybackProgressHeartbeatEnvironment(
     private val powerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
-                Intent.ACTION_SCREEN_ON -> screenOnListener?.invoke()
-                Intent.ACTION_SCREEN_OFF -> screenOffListener?.invoke()
+                Intent.ACTION_SCREEN_ON -> {
+                    cachedInteractive = true
+                    screenOnListener?.invoke()
+                }
+                Intent.ACTION_SCREEN_OFF -> {
+                    cachedInteractive = false
+                    screenOffListener?.invoke()
+                }
                 PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED ->
                     deviceIdleListener?.invoke(isDeviceIdleMode())
             }
@@ -68,7 +76,16 @@ internal class AndroidNativePlaybackProgressHeartbeatEnvironment(
 
     override fun elapsedRealtimeMs(): Long = SystemClock.elapsedRealtime()
 
-    override fun isScreenInteractive(): Boolean = powerManager?.isInteractive ?: true
+    override fun isScreenInteractive(): Boolean {
+        if (receiverRegistered) {
+            cachedInteractive?.let { return it }
+        }
+        val interactive = powerManager?.isInteractive ?: true
+        if (receiverRegistered) {
+            cachedInteractive = interactive
+        }
+        return interactive
+    }
 
     override fun isDeviceIdleMode(): Boolean =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -100,12 +117,14 @@ internal class AndroidNativePlaybackProgressHeartbeatEnvironment(
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
         receiverRegistered = true
+        cachedInteractive = powerManager?.isInteractive ?: true
     }
 
     override fun unregisterPowerEvents() {
         screenOnListener = null
         screenOffListener = null
         deviceIdleListener = null
+        cachedInteractive = null
         if (!receiverRegistered) return
         context.unregisterReceiver(powerReceiver)
         receiverRegistered = false

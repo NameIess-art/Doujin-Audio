@@ -1081,6 +1081,7 @@ class _PlaybackQueueAudioEditPageState
                                         title: entry.title,
                                         folder: isFolder,
                                         removing: true,
+                                        dragIndex: dragIndex,
                                         language: language,
                                         coverCacheWidth: coverCacheWidth,
                                         workNameDisplay: workNameDisplay,
@@ -2091,7 +2092,7 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
   final _trees = <String, _QueueEditorTree>{};
   late final _QueueExpansionMotion _treeMotion;
   final _loading = <String, Object>{};
-  final _sourcePaths = <String, String>{};
+  final _sourceWorks = <String, ({String path, String groupKey})>{};
   List<LibraryNode>? _indexedWorks;
   List<PlaybackDirectoryEntry>? _indexedSessions;
   bool? _indexedShowLibrary;
@@ -2144,10 +2145,13 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
   String _idAt(int index) =>
       widget.showLibrary ? widget.works[index].path : widget.sessions[index].id;
 
-  Future<List<MusicTrack>> _loadTracks(MusicTrack track) async {
+  Future<List<MusicTrack>> _loadTracks(
+    String sourceId,
+    MusicTrack track,
+  ) async {
     final tracks = await ref
         .read(audioPathCoordinatorProvider)
-        .tracksInSameWorkAsync(track);
+        .tracksForQueueSource(sourceId, track);
     return tracks.isEmpty ? [track] : tracks;
   }
 
@@ -2158,7 +2162,7 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
           id,
           _trees,
           !MediaQuery.disableAnimationsOf(context),
-          onClosed: () => _sourcePaths.remove(id),
+          onClosed: () => _sourceWorks.remove(id),
         );
         _loading.remove(id);
       });
@@ -2226,7 +2230,7 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
       }
       final paths = ref.read(audioPathCoordinatorProvider);
       final root = paths.workRootForTrack(track.path, knownTrack: track);
-      final tracks = await _loadTracks(track);
+      final tracks = await _loadTracks(id, track);
       if (!mounted || !isCurrent()) return;
       final existingExpanded = _trees[id]?.expanded;
       final _QueueEditorTree tree;
@@ -2252,7 +2256,10 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
         if (source == null) return;
         final current = paths.sessionTrackForPath(id, source.currentTrackPath);
         if (current?.groupKey != track.groupKey) return;
-        _sourcePaths[id] = source.currentTrackPath;
+        _sourceWorks[id] = (
+          path: source.currentTrackPath,
+          groupKey: track.groupKey,
+        );
       }
       setState(() {
         final opening = !_trees.containsKey(id);
@@ -2271,6 +2278,7 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
   }
 
   Future<void> _add(
+    String sourceId,
     MusicTrack track, {
     FolderNode? work,
     _QueueEditorTree? tree,
@@ -2300,7 +2308,7 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
         await queue.addWork(
           sessionId,
           track,
-          selectedTracks: await _loadTracks(track),
+          selectedTracks: await _loadTracks(sourceId, track),
         );
       }
     } catch (error, stackTrace) {
@@ -2359,7 +2367,7 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
               source.id,
               source.currentTrackPath,
             );
-            if (track != null && !track.isSingle) {
+            if (track != null && !track.isSingle && !track.isRemoteAsmr) {
               unawaited(_loadTree(source.id, track, null));
             }
           }
@@ -2415,21 +2423,23 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
         final root = _rootIndices[id];
         if (root == null) {
           _trees.remove(id);
-          _sourcePaths.remove(id);
+          _sourceWorks.remove(id);
           _loading.remove(id);
           continue;
         }
         final source = widget.sessions[root];
-        if (_sourcePaths[id] != source.currentTrackPath) {
+        final opened = _sourceWorks[id];
+        if (opened?.path != source.currentTrackPath) {
           final track = sessionTrack(source);
-          final opened = _trees[id]!;
-          if (track == null ||
-              track.groupKey != opened.tracks.firstOrNull?.groupKey) {
+          if (track == null || track.groupKey != opened?.groupKey) {
             _trees.remove(id);
-            _sourcePaths.remove(id);
+            _sourceWorks.remove(id);
             _loading.remove(id);
           } else {
-            _sourcePaths[id] = source.currentTrackPath;
+            _sourceWorks[id] = (
+              path: source.currentTrackPath,
+              groupKey: track.groupKey,
+            );
           }
         }
       }
@@ -2511,7 +2521,7 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
             toggle: track.isSingle
                 ? null
                 : () => unawaited(_toggle(id, track, work)),
-            action: () => unawaited(_add(track, work: work, tree: tree)),
+            action: () => unawaited(_add(id, track, work: work, tree: tree)),
           );
         }
         final node = child.node;
@@ -2539,7 +2549,7 @@ class _QueueAudioSourceListState extends ConsumerState<_QueueAudioSourceList>
                   )
                 : null,
             action: () =>
-                unawaited(_add(track, work: work, tree: tree, child: node)),
+                unawaited(_add(id, track, work: work, tree: tree, child: node)),
           ),
           key: ValueKey((id, node.key)),
         );
@@ -2581,6 +2591,7 @@ class _QueueAudioRow extends ConsumerStatefulWidget {
     this.folderCoverPath,
     this.depth = 0,
     this.removing = false,
+    this.dragIndex,
     this.expanded = false,
     this.loading = false,
     this.subtitle,
@@ -2600,6 +2611,7 @@ class _QueueAudioRow extends ConsumerStatefulWidget {
   final String? folderCoverPath;
   final int depth;
   final bool removing;
+  final int? dragIndex;
   final bool expanded;
   final bool loading;
   final String? subtitle;
@@ -2637,6 +2649,7 @@ class _QueueAudioRowState extends ConsumerState<_QueueAudioRow> {
         oldWidget.folderCoverPath != widget.folderCoverPath ||
         oldWidget.depth != widget.depth ||
         oldWidget.removing != widget.removing ||
+        oldWidget.dragIndex != widget.dragIndex ||
         oldWidget.expanded != widget.expanded ||
         oldWidget.loading != widget.loading ||
         oldWidget.subtitle != widget.subtitle ||
@@ -2717,6 +2730,25 @@ class _QueueAudioRowState extends ConsumerState<_QueueAudioRow> {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (widget.dragIndex != null)
+            ReorderableDragStartListener(
+              index: widget.dragIndex!,
+              child: MouseRegion(
+                cursor: SystemMouseCursors.grab,
+                child: SizedBox(
+                  key: ValueKey<String>('queue_drag_handle_${widget.dragIndex}'),
+                  width: 32,
+                  height: 44,
+                  child: Center(
+                    child: Icon(
+                      Icons.drag_handle_rounded,
+                      size: 20,
+                      color: cs.onSurfaceVariant.withValues(alpha: 0.72),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           Flexible(
             child: IconButton(
               tooltip: i18n.tr(widget.removing ? 'remove' : addHint),
@@ -2857,12 +2889,12 @@ class _AnimatedQueueEntryState extends State<_AnimatedQueueEntry> {
     final contentChanged =
         !identical(oldWidget.content.$2, widget.content.$2) ||
         oldWidget.content != widget.content ||
-        oldWidget.display != widget.display;
+        oldWidget.display != widget.display ||
+        oldWidget.dragIndex != widget.dragIndex;
     if (contentChanged) {
       _row = widget.builder(_triggerRemove);
     }
     if (contentChanged ||
-        oldWidget.dragIndex != widget.dragIndex ||
         (oldWidget.onStartDrag == null) != (widget.onStartDrag == null)) {
       _entry = _wrapDrag(_row);
     }

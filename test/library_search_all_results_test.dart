@@ -965,4 +965,59 @@ void main() {
     expect(requests, 1);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'empty search results show clear filters and edit search recovery CTAs',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final scrollController = ScrollController();
+      addTearDown(scrollController.dispose);
+      await tester.runAsync(fixture.library.audioLibraryCategorySnapshot);
+      await fixture.library.loadLibraryTree();
+
+      var clearedFilters = 0;
+      var editedSearch = 0;
+
+      await tester.pumpWidget(
+        fixture.build(
+          LibrarySearchAllResults(
+            query: 'no-such-work',
+            filters: const (
+              hasSubtitle: null,
+              minimumRating: 4.5,
+              minimumDuration: null,
+              maximumDuration: null,
+              firstReleaseDate: null,
+              lastReleaseDate: null,
+            ),
+            structureRevision: fixture.library.structureRevision,
+            detailRevision: fixture.library.detailCacheService.revision,
+            scrollController: scrollController,
+            topPadding: 0,
+            isSelectionMode: false,
+            selectedPaths: const {},
+            onEnterSelectionMode: (_) {},
+            onToggleSelection: (_) {},
+            onTreeChanged: (_) {},
+            onClearFilters: () => clearedFilters++,
+            onEditSearch: () => editedSearch++,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey('library_search_clear_filters_button')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('library_search_edit_search_button')),
+      );
+      await tester.pump();
+
+      expect(clearedFilters, 1);
+      expect(editedSearch, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

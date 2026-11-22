@@ -58,14 +58,31 @@ String? get subtitleGenerationUnavailableReason =>
       pointerBytes: sizeOf<IntPtr>(),
     );
 
+final RegExp _japaneseKanaPattern = RegExp(r'[\u3040-\u30ff]');
+final RegExp _hanCharacterPattern = RegExp(r'[\u3400-\u9fff]');
+final RegExp _latinLetterPattern = RegExp(r'[A-Za-z]');
+final RegExp _scriptLineBreakPattern = RegExp(r'\r?\n');
+final RegExp _scriptCommentPrefixPattern = RegExp(r'^(?:#|//|※|▼|▽|■|◆)');
+final RegExp _scriptListMarkerPattern = RegExp(
+  r'^(?:[-*・]\s+|\d{1,3}[.．、)]\s*)',
+);
+final RegExp _scriptSpeakerPrefixPattern = RegExp(r'^[^：:]{1,16}[：:]\s*');
+final RegExp _scriptBracketedNotePattern = RegExp(
+  r'[\[【（(〈<][^\]】）)〉>]{1,80}[\]】）)〉>]',
+);
+final RegExp _scriptLeadingBracketPattern = RegExp(r'^[\[【（(〈<＊*]');
+final RegExp _scriptJapaneseOrHanPattern = RegExp(
+  r'[\u3040-\u30ff\u3400-\u9fff]',
+);
+
 SubtitleLanguage classifySubtitleLanguage(List<SubtitleCue> cues) {
   final sample = cues
       .take(40)
       .map((cue) => cue.originalText ?? cue.text)
       .join();
-  final japanese = RegExp(r'[\u3040-\u30ff]').allMatches(sample).length;
-  final han = RegExp(r'[\u3400-\u9fff]').allMatches(sample).length;
-  final latin = RegExp(r'[A-Za-z]').allMatches(sample).length;
+  final japanese = _japaneseKanaPattern.allMatches(sample).length;
+  final han = _hanCharacterPattern.allMatches(sample).length;
+  final latin = _latinLetterPattern.allMatches(sample).length;
   final meaningful = japanese + han + latin;
   if (meaningful < 12) return SubtitleLanguage.unknown;
   if (japanese >= 6 && japanese / meaningful >= 0.08) {
@@ -79,21 +96,19 @@ SubtitleLanguage classifySubtitleLanguage(List<SubtitleCue> cues) {
 
 List<String> scriptDialogueLines(String raw) {
   final lines = <String>[];
-  for (final line in raw.split(RegExp(r'\r?\n'))) {
+  for (final line in raw.split(_scriptLineBreakPattern)) {
     var text = line.trim();
-    if (text.isEmpty || RegExp(r'^(?:#|//|※|▼|▽|■|◆)').hasMatch(text)) {
+    if (text.isEmpty || _scriptCommentPrefixPattern.hasMatch(text)) {
       continue;
     }
     if (lines.isEmpty && text.startsWith('【') && text.length > 50) {
       continue;
     }
-    text = text.replaceFirst(RegExp(r'^(?:[-*・]\s+|\d{1,3}[.．、)]\s*)'), '');
-    text = text.replaceFirst(RegExp(r'^[^：:]{1,16}[：:]\s*'), '').trim();
-    text = text
-        .replaceAll(RegExp(r'[\[【（(〈<][^\]】）)〉>]{1,80}[\]】）)〉>]'), '')
-        .trim();
-    if (text.isEmpty || RegExp(r'^[\[【（(〈<＊*]').hasMatch(text)) continue;
-    if (!RegExp(r'[\u3040-\u30ff\u3400-\u9fff]').hasMatch(text)) continue;
+    text = text.replaceFirst(_scriptListMarkerPattern, '');
+    text = text.replaceFirst(_scriptSpeakerPrefixPattern, '').trim();
+    text = text.replaceAll(_scriptBracketedNotePattern, '').trim();
+    if (text.isEmpty || _scriptLeadingBracketPattern.hasMatch(text)) continue;
+    if (!_scriptJapaneseOrHanPattern.hasMatch(text)) continue;
     lines.add(text);
   }
   return lines;

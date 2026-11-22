@@ -32,6 +32,7 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<DesktopIntegration> desktop_;
   bool pending_activation_ = false;
   bool pending_activation_show_ = false;
+  bool pending_exit_ = false;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

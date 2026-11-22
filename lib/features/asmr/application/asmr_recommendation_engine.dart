@@ -25,37 +25,18 @@ class AsmrRecommendationEngine {
     Map<String, double>? voiceActorWeights,
     Map<String, double>? circleWeights,
   }) {
-    final useExternalWeightsOnly =
-        tagWeights != null &&
-        voiceActorWeights != null &&
-        circleWeights != null;
-    final request = useExternalWeightsOnly
-        ? AsmrRecommendationRankRequest(
-            candidates: candidates,
-            localTracks: const <MusicTrack>[],
-            favoriteWorks: const <AsmrWork>[],
-            historyWorks: const <AsmrWork>[],
-            seenTrackSummaries: _summarizeSeenTracks(localTracks),
-            seenWorkSummaries: _summarizeSeenWorks(favoriteWorks, historyWorks),
-            refreshSeed: refreshSeed,
-            limit: limit,
-            explorationWorkIds: explorationWorkIds,
-            tagWeights: tagWeights,
-            voiceActorWeights: voiceActorWeights,
-            circleWeights: circleWeights,
-          )
-        : AsmrRecommendationRankRequest(
-            candidates: candidates,
-            localTracks: localTracks,
-            favoriteWorks: favoriteWorks,
-            historyWorks: historyWorks,
-            refreshSeed: refreshSeed,
-            limit: limit,
-            explorationWorkIds: explorationWorkIds,
-            tagWeights: tagWeights,
-            voiceActorWeights: voiceActorWeights,
-            circleWeights: circleWeights,
-          );
+    final request = AsmrRecommendationRankRequest(
+      candidates: candidates,
+      localTracks: localTracks,
+      favoriteWorks: favoriteWorks,
+      historyWorks: historyWorks,
+      refreshSeed: refreshSeed,
+      limit: limit,
+      explorationWorkIds: explorationWorkIds,
+      tagWeights: tagWeights,
+      voiceActorWeights: voiceActorWeights,
+      circleWeights: circleWeights,
+    );
     return compute(rankAsmrRecommendations, request);
   }
 
@@ -449,6 +430,36 @@ class AsmrRecommendationRankRequest {
 }
 
 List<AsmrWork> rankAsmrRecommendations(AsmrRecommendationRankRequest request) {
+  final useExternalWeightsOnly =
+      request.tagWeights != null &&
+      request.voiceActorWeights != null &&
+      request.circleWeights != null &&
+      request.seenTrackSummaries.isEmpty &&
+      request.seenWorkSummaries.isEmpty &&
+      (request.localTracks.isNotEmpty ||
+          request.favoriteWorks.isNotEmpty ||
+          request.historyWorks.isNotEmpty);
+  if (useExternalWeightsOnly) {
+    return const AsmrRecommendationEngine()._rankInternal(
+      candidates: request.candidates,
+      localTracks: const <MusicTrack>[],
+      favoriteWorks: const <AsmrWork>[],
+      historyWorks: const <AsmrWork>[],
+      seenTrackSummaries: AsmrRecommendationEngine._summarizeSeenTracks(
+        request.localTracks,
+      ),
+      seenWorkSummaries: AsmrRecommendationEngine._summarizeSeenWorks(
+        request.favoriteWorks,
+        request.historyWorks,
+      ),
+      refreshSeed: request.refreshSeed,
+      limit: request.limit,
+      explorationWorkIds: request.explorationWorkIds,
+      tagWeights: request.tagWeights,
+      voiceActorWeights: request.voiceActorWeights,
+      circleWeights: request.circleWeights,
+    );
+  }
   return const AsmrRecommendationEngine()._rankInternal(
     candidates: request.candidates,
     localTracks: request.localTracks,

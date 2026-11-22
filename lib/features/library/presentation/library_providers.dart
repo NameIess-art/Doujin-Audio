@@ -48,9 +48,19 @@ final libraryDetailTargetRevisionProvider = StreamProvider.autoDispose
 final workTextServiceProvider = Provider<WorkTextService>((ref) {
   final library = ref.watch(libraryFacadeProvider);
   final service = WorkTextService(
-    discoverImages: (folder) =>
-        library.discoverCoverImageReferencesInFolder(folder, refresh: true),
+    discoverImagesWithRefresh: (folder, {required refresh}) =>
+        library.discoverCoverImageReferencesInFolder(folder, refresh: refresh),
   );
-  ref.onDispose(() => unawaited(service.dispose()));
+  var lastStructureRevision = library.structureRevision;
+  final subscription = library.states.listen((state) {
+    if (state.structureRevision != lastStructureRevision) {
+      lastStructureRevision = state.structureRevision;
+      unawaited(service.clearDirectoryCache());
+    }
+  });
+  ref.onDispose(() {
+    unawaited(subscription.cancel());
+    unawaited(service.dispose());
+  });
   return service;
 });

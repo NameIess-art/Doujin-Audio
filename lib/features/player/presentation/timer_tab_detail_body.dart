@@ -39,6 +39,7 @@ extension _TimerTabDetailBody on _TimerTabState {
           children: [
             Expanded(
               child: SingleChildScrollView(
+                primary: false,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -78,7 +79,7 @@ extension _TimerTabDetailBody on _TimerTabState {
                       )
                     else
                       const SizedBox.shrink(),
-                    if (!showAutoResumeCountdown) ...[
+                    if (timerConfigured) ...[
                       const SizedBox(height: 8),
                       Material(
                         color: cs.surfaceContainerLow,

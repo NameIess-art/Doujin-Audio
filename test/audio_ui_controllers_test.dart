@@ -20,6 +20,23 @@ void main() {
     expect(values, <int?>[2, null, 2, null]);
   });
 
+  test(
+    'main screen controller ignores pending microtasks and calls after dispose',
+    () async {
+      final controller = MainScreenController();
+      controller.requestScrollToTop(1);
+      controller.requestStopScroll(2);
+      controller.dispose();
+
+      // Flush both scheduled microtasks; neither may touch disposed notifiers.
+      await Future<void>.delayed(Duration.zero);
+
+      expect(() => controller.requestScrollToTop(3), returnsNormally);
+      expect(() => controller.requestStopScroll(4), returnsNormally);
+      expect(() => controller.dispose(), returnsNormally);
+    },
+  );
+
   test('playlist controller follows playback activation events', () async {
     final activations = StreamController<String>.broadcast();
     final controller = PlaylistUiController(activations.stream);

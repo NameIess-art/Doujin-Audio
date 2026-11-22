@@ -89,6 +89,20 @@ class SettingsRepository {
     SettingsState(),
   );
 
+  bool loadPersistedPresentationStateSync() {
+    if (!AppPreferences.isInitialized) return false;
+    _resetValues();
+    final playback = AppPreferences.readJsonSync<Map<String, dynamic>>(
+      _playbackSettingsKey,
+      (value) => (value as Map<Object?, Object?>).map(
+        (key, value) => MapEntry(key.toString(), value),
+      ),
+    );
+    _applyPlaybackSettings(playback);
+    syncSlice(isInitialized: true);
+    return true;
+  }
+
   Future<void> loadPersistedState({bool enforceCacheLimit = true}) =>
       _enqueue(() => _loadPersistedState(enforceCacheLimit: enforceCacheLimit));
 
@@ -100,6 +114,19 @@ class SettingsRepository {
         (key, value) => MapEntry(key.toString(), value),
       ),
     );
+    _applyPlaybackSettings(playback);
+
+    await Future.wait<void>([
+      AppCacheService.setMaxCacheBytes(
+        maxCacheBytes,
+        enforceImmediately: enforceCacheLimit,
+      ),
+      _applyNetworkRoute(),
+    ]);
+    syncSlice(isInitialized: true);
+  }
+
+  void _applyPlaybackSettings(Map<String, dynamic>? playback) {
     if (playback != null) {
       networkRouteSettings = NetworkRouteSettings.fromJson(
         playback['networkRouteSettings'],
@@ -241,15 +268,6 @@ class SettingsRepository {
           (playback['maxCacheBytes'] as num?)?.toInt() ??
           AppCacheService.defaultMaxCacheBytes;
     }
-
-    await Future.wait<void>([
-      AppCacheService.setMaxCacheBytes(
-        maxCacheBytes,
-        enforceImmediately: enforceCacheLimit,
-      ),
-      _applyNetworkRoute(),
-    ]);
-    syncSlice(isInitialized: true);
   }
 
   Future<void> resetPersistedState() => _enqueue(_resetPersistedState);

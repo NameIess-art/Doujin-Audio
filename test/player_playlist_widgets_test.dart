@@ -31,6 +31,8 @@ import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/cover_image_retention.dart';
 import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
+import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/application/playback_queue_resolver.dart';
@@ -71,8 +73,24 @@ import 'package:doujin_audio/app/presentation/windows_window_title_bar.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'support/app_runtime_test_fixture.dart';
+import 'support/asmr_controller_test_fixture.dart';
 import 'support/test_persistence_repository.dart';
 import 'support/test_playback_commands.dart';
+
+class _QueueEditorAsmrController extends LoadedEmptyAsmrLibraryController {
+  _QueueEditorAsmrController(this.tracks) : super(createTestAsmrServices());
+
+  final List<MusicTrack> tracks;
+  AsmrWork? requestedWork;
+  bool isOffline = false;
+
+  @override
+  Future<List<MusicTrack>> loadPlayableTracks(AsmrWork work) async {
+    if (isOffline) throw StateError('Catalog is offline');
+    requestedWork = work;
+    return tracks;
+  }
+}
 
 class _PagedQueueRepository extends TestPersistenceRepository
     implements PlaybackQueueStorage {
@@ -666,8 +684,15 @@ void main() {
         final credits = find.byKey(
           const ValueKey('session_detail_credits_Test'),
         );
-        expect(artwork.contains(tester.getRect(filename).topLeft), isTrue);
-        expect(artwork.contains(tester.getRect(credits).bottomRight), isTrue);
+        if (isVideo) {
+          expect(
+            tester.getRect(filename).top,
+            greaterThanOrEqualTo(artwork.bottom),
+          );
+        } else {
+          expect(artwork.contains(tester.getRect(filename).topLeft), isTrue);
+          expect(artwork.contains(tester.getRect(credits).bottomRight), isTrue);
+        }
         expect(
           tester.getRect(credits).top,
           greaterThan(tester.getRect(filename).bottom),
@@ -6326,6 +6351,12 @@ void main() {
         final editRect = tester.getRect(editPanel);
         await tester.tap(find.text(i18n.tr('edit_queue_color')));
         await tester.pumpAndSettle();
+        final editPanelOpacity = tester.widget<Opacity>(
+          find
+              .ancestor(of: editPanel, matching: find.byType(Opacity))
+              .first,
+        );
+        expect(editPanelOpacity.opacity, 0);
         final colorRect = tester.getRect(
           find.byKey(const ValueKey('playback_queue_color_panel')),
         );
@@ -8682,6 +8713,99 @@ void main() {
   );
 
   testWidgets(
+    'queue editor loads the online work tree for a single-track session',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final work = AsmrWork.fromJson(const {
+        'id': 123,
+        'title': 'Online work',
+        'sourceId': 'RJ000123',
+        'resources': [
+          {'source': 'japaneseAsmr', 'id': 123, 'code': 'RJ000123'},
+        ],
+      });
+      MusicTrack remote(String name, String relativePath) => MusicTrack(
+        path: 'https://example.test/$name.mp3',
+        displayName: name,
+        groupKey: 'asmr-work-${work.workKey}',
+        groupTitle: work.title,
+        groupSubtitle: work.sourceId,
+        isSingle: false,
+        remoteMetadataKind: MusicTrack.remoteMetadataKindJapaneseAsmr,
+        remoteMetadata: {...work.toJson(), 'trackRelativePath': relativePath},
+      );
+      final current = remote('Current track', 'Current track.mp3');
+      final sibling = remote('Nested track', 'Disc 2/Nested track.mp3');
+      final controller = _QueueEditorAsmrController([current, sibling]);
+      addTearDown(controller.dispose);
+      final source = fixture.playback.createTrackSession(
+        current,
+        customQueueTracks: [current],
+      );
+      final queue = fixture.playback.createPlaybackQueue('Target queue');
+      fixture.playbackService.syncSlice(
+        activeSessions: [source, queue],
+        playingSessionCount: 0,
+        focusedSessionId: source.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      await tester.pumpWidget(
+        fixture.build(
+          PlaybackQueueAudioEditPage(sessionId: queue.id),
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final root = find.descendant(
+        of: find.byKey(ValueKey(source.id)),
+        matching: find.text(work.title, findRichText: true),
+      );
+      await tester.tap(root);
+      await tester.pumpAndSettle();
+      final folder = find.text('Disc 2', findRichText: true);
+      expect(folder, findsOneWidget);
+      await tester.tap(folder);
+      await tester.pumpAndSettle();
+      expect(find.text('Nested track', findRichText: true), findsOneWidget);
+      expect(controller.requestedWork?.workKey, work.workKey);
+      expect(
+        controller.requestedWork?.preferredResource.source,
+        AsmrCatalogSource.japaneseAsmr,
+      );
+
+      await tester.tap(root);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byTooltip(fixture.languageProvider.tr('add_work_to_queue')),
+      );
+      await tester.pumpAndSettle();
+      expect(queue.playbackQueue!.entries.single.tracks, [current, sibling]);
+      expect(source.customQueueTracks, [current]);
+
+      controller.isOffline = true;
+      await tester.tap(root);
+      await tester.pumpAndSettle();
+      expect(folder, findsNothing);
+      expect(
+        find.byTooltip(fixture.languageProvider.tr('add_audio_to_queue')),
+        findsOneWidget,
+      );
+
+      await tester.pump(const Duration(milliseconds: 700));
+      await tester.pumpAndSettle();
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
     'queue editor reveals a newly added remote audio entry',
     (tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
@@ -9093,7 +9217,7 @@ void main() {
         find.descendant(of: drag, matching: row('Track', added)),
         findsNothing,
       );
-      expect(find.byIcon(Icons.drag_handle_rounded), findsNothing);
+      expect(find.byIcon(Icons.drag_handle_rounded), findsOneWidget);
 
       await tester.tap(action(row('Track', added), 'remove'));
       await tester.pumpAndSettle();
@@ -10235,7 +10359,7 @@ void main() {
     await tester.tap(subtitleMenuButton);
     await tester.pumpAndSettle();
     expect(
-      find.text(fixture.languageProvider.tr('turn_off_subtitle')),
+      find.text(fixture.languageProvider.tr('turn_on_subtitle')),
       findsOneWidget,
     );
     expect(
@@ -10251,7 +10375,7 @@ void main() {
     await tester.pump();
     expect(subtitleService.trackSync(track.path), isNull);
     expect(
-      find.text(fixture.languageProvider.tr('turn_off_subtitle')),
+      find.text(fixture.languageProvider.tr('turn_on_subtitle')),
       findsOneWidget,
     );
     expect(
@@ -10259,7 +10383,7 @@ void main() {
       findsOneWidget,
     );
     await tester.tap(
-      find.text(fixture.languageProvider.tr('turn_off_subtitle')),
+      find.text(fixture.languageProvider.tr('turn_on_subtitle')),
     );
     await tester.pump();
     expect(
@@ -13584,12 +13708,12 @@ void main() {
         );
         await tester.longPress(firstTitle, kind: PointerDeviceKind.mouse);
         await tester.pumpAndSettle();
-        expect(indicator(first.id), findsOneWidget);
-        expect(indicator(second.id), findsNothing);
-        expect(indicator(temporary.id), findsNothing);
+        expect(indicator(first.id), findsNothing);
+        expect(indicator(second.id), findsOneWidget);
+        expect(indicator(temporary.id), findsOneWidget);
         expect(
           find.bySemanticsLabel(
-            fixture.languageProvider.tr('selected_count', {'count': '1'}),
+            fixture.languageProvider.tr('selected_count', {'count': '2'}),
           ),
           findsOneWidget,
         );
@@ -14021,17 +14145,13 @@ void main() {
       );
       expect(queueSurface.color, Colors.transparent);
 
+      // Long-pressing while in multi-select mode toggles selection without wiping.
       await tester.longPress(trackTitle);
-      await pumpFiniteTransitions(tester);
-      expect(trackIndicator, findsOneWidget);
-      expect(queueIndicator, findsNothing);
-
-      await tester.longPress(queueTitle);
       await pumpFiniteTransitions(tester);
       expect(trackIndicator, findsNothing);
       expect(queueIndicator, findsOneWidget);
 
-      await tester.tap(trackTitle);
+      await tester.longPress(trackTitle);
       await pumpFiniteTransitions(tester);
       expect(trackIndicator, findsOneWidget);
       expect(queueIndicator, findsOneWidget);
@@ -15663,7 +15783,7 @@ void main() {
           0.5,
         ),
       );
-      expect(closeButton, findsNothing);
+      expect(closeButton, findsOneWidget);
       final headerRect = tester.getRect(find.byType(SegmentPanelPageHeader));
       final surface = find.byKey(
         const ValueKey<String>('playback_expanded_control_panel_surface'),

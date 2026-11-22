@@ -105,6 +105,15 @@ String listeningDurationText(AppLanguageProvider i18n, Duration duration) =>
       'seconds': duration.inSeconds.remainder(60),
     });
 
+String _compactAxisDuration(Duration duration) {
+  final hours = duration.inHours;
+  final minutes = duration.inMinutes.remainder(60);
+  final seconds = duration.inSeconds.remainder(60);
+  if (hours > 0) return minutes > 0 ? '${hours}h ${minutes}m' : '${hours}h';
+  if (minutes > 0) return '${minutes}m';
+  return '${seconds}s';
+}
+
 class ListeningTimeChart extends StatefulWidget {
   const ListeningTimeChart({
     super.key,
@@ -247,7 +256,6 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
               )
             : periods.first.start,
         lastDate: DateTime(latest.end.year, latest.end.month, latest.end.day - 1),
-        initialEntryMode: DatePickerEntryMode.input,
       ),
     );
     if (!mounted || date == null) return;
@@ -369,32 +377,178 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
       );
     }
 
-    Widget heatmapColumn(int reversedColumn, double cellSize) {
+    String heatmapColumnLabel(int reversedColumn) {
+      final oldestIndex =
+          periods.length -
+          1 -
+          (reversedColumn * _heatmapRows + _heatmapRows - 1);
+      final newestIndex = periods.length - 1 - (reversedColumn * _heatmapRows);
+      DateTime periodStartAt(int idx) => idx >= 0
+          ? periods[idx].start
+          : _moveListeningPeriod(periods.first.start, interval, idx);
+      final newest = periodStartAt(newestIndex);
+      final oldest = periodStartAt(oldestIndex);
+      final prevNewest = periodStartAt(
+        periods.length - 1 - ((reversedColumn + 1) * _heatmapRows),
+      );
+      if (interval == ListeningInterval.year) {
+        return newest.year != prevNewest.year
+            ? (newest.year % 100).toString().padLeft(2, '0')
+            : '';
+      }
+      if (interval == ListeningInterval.month ||
+          interval == ListeningInterval.quarter) {
+        if (newest.year != prevNewest.year) {
+          return (newest.year % 100).toString().padLeft(2, '0');
+        }
+        return '';
+      }
+      if (newest.month != prevNewest.month || oldest.month != newest.month) {
+        if (newest.month == 1 || newest.year != prevNewest.year) {
+          return '${(newest.year % 100).toString().padLeft(2, '0')}/${newest.month}';
+        }
+        return '${newest.month}';
+      }
+      return '';
+    }
+
+    Widget heatmapColumn(
+      int reversedColumn,
+      double cellSize,
+      double monthHeaderHeight,
+    ) {
+      final header = skeleton ? '' : heatmapColumnLabel(reversedColumn);
       return Align(
         alignment: Alignment.centerRight,
         child: SizedBox(
           width: cellSize,
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              for (var row = 0; row < _heatmapRows; row++)
-                SizedBox(
-                  width: cellSize,
-                  height: cellSize,
-                  child: heatmapCell(
-                    periods.length -
-                        1 -
-                        (reversedColumn * _heatmapRows +
-                            _heatmapRows -
-                            1 -
-                            row),
-                  ),
+              SizedBox(
+                height: monthHeaderHeight,
+                child: header.isEmpty
+                    ? null
+                    : Align(
+                        alignment: Alignment.bottomLeft,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            header,
+                            maxLines: 1,
+                            style: labelStyle.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ),
+              ),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    for (var row = 0; row < _heatmapRows; row++)
+                      SizedBox(
+                        width: cellSize,
+                        height: cellSize,
+                        child: heatmapCell(
+                          periods.length -
+                              1 -
+                              (reversedColumn * _heatmapRows +
+                                  _heatmapRows -
+                                  1 -
+                                  row),
+                        ),
+                      ),
+                  ],
                 ),
+              ),
             ],
           ),
         ),
       );
     }
+
+    Widget heatmapWeekdayAxis(double cellSize, double monthHeaderHeight) {
+      final latestDay = periods.last.start;
+      final narrowWeekdays = localizations.narrowWeekdays;
+      return Padding(
+        padding: const EdgeInsets.only(right: 4),
+        child: SizedBox(
+          width: 16,
+          child: Column(
+            children: [
+              SizedBox(height: monthHeaderHeight),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    for (var row = 0; row < _heatmapRows; row++)
+                      SizedBox(
+                        width: 16,
+                        height: cellSize,
+                        child: row.isEven
+                            ? Center(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    narrowWeekdays[DateTime(
+                                          latestDay.year,
+                                          latestDay.month,
+                                          latestDay.day -
+                                              (_heatmapRows - 1 - row),
+                                        ).weekday %
+                                        7],
+                                    maxLines: 1,
+                                    style: labelStyle.copyWith(
+                                      color: colors.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : const SizedBox.shrink(),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    Widget heatmapLegend() => Padding(
+      key: const ValueKey('listening-heatmap-legend'),
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Text(
+            i18n.tr('my_heatmap_less'),
+            style: labelStyle.copyWith(color: colors.onSurfaceVariant),
+          ),
+          const SizedBox(width: 6),
+          for (var level = 0; level <= 4; level++)
+            Container(
+              width: 10,
+              height: 10,
+              margin: EdgeInsets.only(left: level == 0 ? 0 : 3),
+              decoration: BoxDecoration(
+                color: Color.lerp(
+                  colors.surfaceContainerHighest,
+                  colors.primary,
+                  level / 4,
+                ),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          const SizedBox(width: 6),
+          Text(
+            i18n.tr('my_heatmap_more'),
+            style: labelStyle.copyWith(color: colors.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
 
     final duration = placeholderFor(
       Text(
@@ -455,8 +609,8 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
                         : () => widget.onStyleChanged!(style),
                     style: appIconButtonStyle(
                       IconButton.styleFrom(
-                        minimumSize: const Size(28, 28),
-                        maximumSize: const Size(28, 28),
+                        minimumSize: const Size(40, 40),
+                        maximumSize: const Size(40, 40),
                         padding: EdgeInsets.zero,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         backgroundColor: widget.style == style
@@ -475,8 +629,8 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
                     ),
                   ),
                 ),
-                width: 24,
-                height: 20,
+                width: 40,
+                height: 40,
                 alignment: Alignment.center,
               ),
           ],
@@ -484,7 +638,7 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
         const SizedBox(height: 2),
         SizedBox(
           key: const ValueKey('listening-chart-bars'),
-          height: 146 + labelHeight.ceilToDouble(),
+          height: 152 + labelHeight.ceilToDouble(),
           child: AnimatedSwitcher(
             duration: MediaQuery.disableAnimationsOf(context)
                 ? Duration.zero
@@ -516,9 +670,17 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
                   ),
                   child: LayoutBuilder(
                     builder: (_, constraints) {
+                      final monthHeaderHeight = labelHeight.ceilToDouble() + 2;
+                      final showWeekdayAxis =
+                          heatmap && !skeleton && interval == ListeningInterval.day;
+                      final listWidth = showWeekdayAxis
+                          ? math.max(1.0, constraints.maxWidth - 20)
+                          : constraints.maxWidth;
                       final cellSize = math.min(
-                        constraints.maxWidth,
-                        (constraints.maxHeight - 3 * (_heatmapRows - 1)) /
+                        listWidth,
+                        (constraints.maxHeight -
+                                monthHeaderHeight -
+                                3 * (_heatmapRows - 1)) /
                             _heatmapRows,
                       );
                       var itemExtent = _barExtent(constraints.maxWidth);
@@ -526,9 +688,9 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
                       if (heatmap) {
                         final visibleColumns = math.max(
                           1,
-                          ((constraints.maxWidth + 3) / (cellSize + 3)).floor(),
+                          ((listWidth + 3) / (cellSize + 3)).floor(),
                         );
-                        itemExtent = constraints.maxWidth / visibleColumns;
+                        itemExtent = listWidth / visibleColumns;
                         itemCount = math.max(
                           visibleColumns,
                           (periods.length + _heatmapRows - 1) ~/ _heatmapRows,
@@ -537,75 +699,174 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
                           _heatmapExtent = itemExtent;
                           _heatmapColumnCount = itemCount;
                         }
+                        final heatmapList = ListView.builder(
+                          key: ValueKey('listening-chart-${chartStyle.name}'),
+                          controller: controller,
+                          reverse: true,
+                          scrollDirection: Axis.horizontal,
+                          padding: EdgeInsets.zero,
+                          itemExtent: itemExtent,
+                          itemCount: itemCount,
+                          itemBuilder: (context, index) => heatmapColumn(
+                            index,
+                            cellSize,
+                            monthHeaderHeight,
+                          ),
+                        );
+                        if (!showWeekdayAxis) return heatmapList;
+                        return Row(
+                          children: [
+                            heatmapWeekdayAxis(cellSize, monthHeaderHeight),
+                            Expanded(child: heatmapList),
+                          ],
+                        );
                       }
-                      return ListView.builder(
-                        key: ValueKey('listening-chart-${chartStyle.name}'),
-                        controller: controller,
-                        reverse: true,
-                        scrollDirection: Axis.horizontal,
-                        padding: EdgeInsets.zero,
-                        itemExtent: itemExtent,
-                        itemCount: itemCount,
-                        itemBuilder: (context, index) {
-                          if (heatmap) return heatmapColumn(index, cellSize);
-                          final period = periods[periods.length - index - 1];
-                          final active = selected.start == period.start;
-                          final color = Theme.of(context).colorScheme;
-                          return selectablePeriod(
-                            period,
-                            Column(
-                              children: [
-                                SizedBox(
-                                  height: 138,
-                                  child: Align(
-                                    alignment: Alignment.bottomCenter,
-                                    child: skeleton
-                                        ? ShimmerContainer(
-                                            width: 18,
-                                            height: 28.0 + (index % 4) * 30,
-                                            borderRadius: 5,
-                                          )
-                                        : Container(
-                                            width: 18,
-                                            height: math.max(
-                                              2,
-                                              132 *
-                                                  period
-                                                      .duration
-                                                      .inMilliseconds /
-                                                  maximum,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: active
-                                                  ? color.primary
-                                                  : color.primaryContainer,
-                                              borderRadius:
-                                                  const BorderRadius.vertical(
-                                                    top: Radius.circular(5),
-                                                  ),
-                                            ),
+
+                      int visibleWindowMaximum() {
+                        final offset = controller.hasClients
+                            ? controller.offset
+                            : 0.0;
+                        final firstReversed = (offset / itemExtent)
+                            .floor()
+                            .clamp(0, periods.length - 1);
+                        final lastReversed =
+                            ((offset + constraints.maxWidth) / itemExtent)
+                                .ceil()
+                                .clamp(0, periods.length - 1);
+                        final startIdx = (periods.length - 1 - lastReversed)
+                            .clamp(0, periods.length - 1);
+                        final endIdx = (periods.length - 1 - firstReversed)
+                            .clamp(0, periods.length - 1);
+                        var windowMax = 0;
+                        for (var i = startIdx; i <= endIdx; i++) {
+                          final ms = periods[i].duration.inMilliseconds;
+                          if (ms > windowMax) windowMax = ms;
+                        }
+                        return windowMax;
+                      }
+
+                      return ListenableBuilder(
+                        listenable: controller,
+                        builder: (context, _) {
+                          final windowMaxMs = skeleton
+                              ? maximum
+                              : visibleWindowMaximum();
+                          final scaleDenom = math.max(1, windowMaxMs);
+                          const barPlotHeight = 144.0;
+                          return Stack(
+                            children: [
+                              if (!skeleton && windowMaxMs > 0)
+                                Positioned(
+                                  top: 0,
+                                  left: 0,
+                                  right: 0,
+                                  child: IgnorePointer(
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Container(
+                                            height: 1,
+                                            color: colors.outlineVariant
+                                                .withValues(alpha: 0.35),
                                           ),
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                SizedBox(
-                                  height: labelHeight.ceilToDouble() + 2,
-                                  child: placeholderFor(
-                                    FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      child: Text(
-                                        label(period),
-                                        maxLines: 1,
-                                        style: labelStyle,
-                                      ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          key: const ValueKey(
+                                            'listening-chart-window-max',
+                                          ),
+                                          _compactAxisDuration(
+                                            Duration(milliseconds: windowMaxMs),
+                                          ),
+                                          style: labelStyle.copyWith(
+                                            color: colors.onSurfaceVariant,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    width: 30,
-                                    height: 12,
-                                    alignment: Alignment.center,
                                   ),
                                 ),
-                              ],
-                            ),
+                              ListView.builder(
+                                key: ValueKey(
+                                  'listening-chart-${chartStyle.name}',
+                                ),
+                                controller: controller,
+                                reverse: true,
+                                scrollDirection: Axis.horizontal,
+                                padding: EdgeInsets.zero,
+                                itemExtent: itemExtent,
+                                itemCount: itemCount,
+                                itemBuilder: (context, index) {
+                                  final period =
+                                      periods[periods.length - index - 1];
+                                  final active = selected.start == period.start;
+                                  final color = Theme.of(context).colorScheme;
+                                  return selectablePeriod(
+                                    period,
+                                    Column(
+                                      children: [
+                                        SizedBox(
+                                          height: barPlotHeight,
+                                          child: Align(
+                                            alignment: Alignment.bottomCenter,
+                                            child: skeleton
+                                                ? ShimmerContainer(
+                                                    width: 18,
+                                                    height:
+                                                        28.0 +
+                                                        (index % 4) * 30,
+                                                    borderRadius: 5,
+                                                  )
+                                                : Container(
+                                                    width: 18,
+                                                    height: math.max(
+                                                      2,
+                                                      132 *
+                                                          period
+                                                              .duration
+                                                              .inMilliseconds /
+                                                          scaleDenom,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: active
+                                                          ? color.primary
+                                                          : color
+                                                                .primaryContainer,
+                                                      borderRadius:
+                                                          const BorderRadius.vertical(
+                                                            top:
+                                                                Radius.circular(
+                                                                  5,
+                                                                ),
+                                                          ),
+                                                    ),
+                                                  ),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        SizedBox(
+                                          height:
+                                              labelHeight.ceilToDouble() + 2,
+                                          child: placeholderFor(
+                                            FittedBox(
+                                              fit: BoxFit.scaleDown,
+                                              child: Text(
+                                                label(period),
+                                                maxLines: 1,
+                                                style: labelStyle,
+                                              ),
+                                            ),
+                                            width: 30,
+                                            height: 12,
+                                            alignment: Alignment.center,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
                           );
                         },
                       );
@@ -660,6 +921,13 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
             ),
           ),
         ),
+        if (heatmap)
+          placeholderFor(
+            heatmapLegend(),
+            width: 120,
+            height: 12,
+            alignment: Alignment.centerRight,
+          ),
       ],
     );
     return widget.builder(duration, chart);

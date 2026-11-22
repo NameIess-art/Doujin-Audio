@@ -206,8 +206,8 @@ class SwipeRevealActionPane extends StatelessWidget {
             alignment: fromStart ? Alignment.centerLeft : Alignment.centerRight,
             child: Padding(
               padding: EdgeInsets.only(
-                top: showVertical ? 10 : 0,
-                bottom: showVertical ? 10 : 0,
+                top: showVertical ? 6 : 0,
+                bottom: showVertical ? 6 : 0,
                 left: fromStart ? (showVertical ? 10 : 14) : 0,
                 right: fromStart ? 0 : (showVertical ? 10 : 14),
               ),
@@ -226,12 +226,12 @@ class SwipeRevealActionPane extends StatelessWidget {
                         width: width - 20,
                         child: LayoutBuilder(
                           builder: (context, constraints) {
-                            const gap = 6.0;
-                            final size =
-                                ((constraints.maxHeight -
-                                            gap * (actions.length - 1)) /
-                                        actions.length)
-                                    .clamp(34.0, 48.0);
+                            const gap = 4.0;
+                            final available =
+                                (constraints.maxHeight -
+                                        gap * (actions.length - 1)) /
+                                    actions.length;
+                            final size = available.clamp(38.0, 48.0);
                             return Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
@@ -251,7 +251,7 @@ class SwipeRevealActionPane extends StatelessWidget {
                     : LayoutBuilder(
                         builder: (context, constraints) {
                           final size = constraints.maxHeight.isFinite
-                              ? (constraints.maxHeight - 20).clamp(34.0, 54.0)
+                              ? (constraints.maxHeight - 12).clamp(40.0, 54.0)
                               : 54.0;
                           return Row(
                             mainAxisSize: MainAxisSize.min,

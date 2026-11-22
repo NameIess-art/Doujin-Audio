@@ -136,6 +136,109 @@ class _CountdownCard extends ConsumerWidget {
                 },
               ),
             ),
+            if (!timerExpired &&
+                !waitingTrigger &&
+                !showAutoResumeCountdown) ...[
+              SizedBox(height: compact ? 10 : 14),
+              Center(
+                child: Consumer(
+                  builder: (context, ref, _) {
+                    final (canSub15, canSub5) = ref.watch(
+                      timerStateProvider.select((state) {
+                        final rem = state.value?.remaining ?? Duration.zero;
+                        return (
+                          rem > const Duration(minutes: 15),
+                          rem > const Duration(minutes: 5),
+                        );
+                      }),
+                    );
+                    final radius = BorderRadius.circular(999);
+                    const adjustments = [-15, -5, 5, 15];
+                    final chipSpacing = compact ? 6.0 : 8.0;
+                    return FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (var i = 0; i < adjustments.length; i++) ...[
+                            if (i > 0) SizedBox(width: chipSpacing),
+                            Builder(
+                              builder: (context) {
+                                final minutes = adjustments[i];
+                                final enabled = switch (minutes) {
+                                  -15 => canSub15,
+                                  -5 => canSub5,
+                                  _ => true,
+                                };
+                                final sign = minutes > 0 ? '+' : '-';
+                                final absMinutes = minutes.abs();
+                                final label =
+                                    '$sign${i18n.tr('minutes_duration', {'count': absMinutes})}';
+                                final alpha = enabled ? 1.0 : 0.4;
+                                return Tooltip(
+                                  message: label,
+                                  child: Material(
+                                    color: cs.surfaceContainerHighest
+                                        .withValues(alpha: alpha),
+                                    shape: StadiumBorder(
+                                      side: BorderSide(
+                                        color: cs.outlineVariant.withValues(
+                                          alpha: alpha,
+                                        ),
+                                      ),
+                                    ),
+                                    clipBehavior: Clip.antiAlias,
+                                    child: AppEntryInkWell(
+                                      key: ValueKey('timer_extend_${minutes}m'),
+                                      borderRadius: radius,
+                                      onTap: enabled
+                                          ? () {
+                                              AppInteractionFeedback.trigger(
+                                                AppInteractionFeedbackType
+                                                    .selection,
+                                              );
+                                              ref
+                                                  .read(timerFacadeProvider)
+                                                  .extendCountdown(
+                                                    Duration(minutes: minutes),
+                                                  );
+                                            }
+                                          : null,
+                                      child: Padding(
+                                        padding: EdgeInsets.symmetric(
+                                          horizontal: compact ? 10 : 12,
+                                          vertical: compact ? 5 : 6,
+                                        ),
+                                        child: Text(
+                                          label,
+                                          maxLines: 1,
+                                          softWrap: false,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .labelMedium
+                                              ?.copyWith(
+                                                color: cs.onSurfaceVariant
+                                                    .withValues(alpha: alpha),
+                                                fontWeight: FontWeight.w700,
+                                                fontFeatures: const [
+                                                  FontFeature.tabularFigures(),
+                                                ],
+                                              ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
             if (timerExpired &&
                 !showAutoResumeCountdown &&
                 !timerState.stopAfterCurrentTrack) ...[
@@ -271,7 +374,7 @@ class _DurationPicker extends ConsumerWidget {
             picker(
               i18n.tr('hour'),
               hours,
-              5,
+              12,
               (v) => onChanged(v, minutes, seconds),
             ),
             separator(),

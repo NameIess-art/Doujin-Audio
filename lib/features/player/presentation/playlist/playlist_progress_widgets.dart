@@ -151,6 +151,7 @@ class _ProgressSliderAndTimecodesState
   double? _hoverValueMs;
   bool _tickerModeEnabled = true;
   final _sliderKey = GlobalKey();
+  final _frameKey = GlobalKey<_ProgressSliderFrameState>();
 
   @override
   void initState() {
@@ -166,6 +167,18 @@ class _ProgressSliderAndTimecodesState
     _tooltipValue = ValueNotifier<_ProgressTooltipState?>(null);
   }
 
+  void _cancelActiveDrag() {
+    final wasDragging = _isDragging || _dragValueMs != null;
+    _isDragging = false;
+    _dragValueMs = null;
+    _hoverValueMs = null;
+    _clearTooltip();
+    _frameKey.currentState?.cancelDrag();
+    if (wasDragging) {
+      _positionGate.tickerModeEnabled = _tickerModeEnabled;
+    }
+  }
+
   @override
   void didUpdateWidget(covariant _ProgressSliderAndTimecodes oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -173,11 +186,13 @@ class _ProgressSliderAndTimecodesState
       final sessionChanged =
           oldWidget.session.id != widget.session.id ||
           oldWidget.session.currentTrackPath != widget.session.currentTrackPath;
-      if (sessionChanged) {
-        _hoverValueMs = null;
-      }
       _positionGate.updateSession(widget.session);
-      _publishProgressValue(force: sessionChanged);
+      final nextCanSeek = _buildSliderValue(_positionGate.value).canSeek;
+      final shouldCancelDrag = sessionChanged || (_isDragging && !nextCanSeek);
+      if (shouldCancelDrag) {
+        _cancelActiveDrag();
+      }
+      _publishProgressValue(force: sessionChanged || shouldCancelDrag);
     } else if (oldWidget.timeSegmentLabels != widget.timeSegmentLabels ||
         oldWidget.selectedSegmentId != widget.selectedSegmentId) {
       _clearTooltip();
@@ -215,6 +230,7 @@ class _ProgressSliderAndTimecodesState
   Widget build(BuildContext context) {
     return RepaintBoundary(
       child: _ProgressSliderFrame(
+        key: _frameKey,
         sliderValue: _sliderValue,
         timecodeValue: _timecodeValue,
         tooltipValue: _tooltipValue,
@@ -429,6 +445,7 @@ class _ProgressSliderAndTimecodesState
 
 class _ProgressSliderFrame extends StatefulWidget {
   const _ProgressSliderFrame({
+    super.key,
     required this.sliderValue,
     required this.timecodeValue,
     required this.tooltipValue,
@@ -475,7 +492,7 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
   bool _pointerDown = false;
   double _scrubScale = 1.0;
   bool _usedFineScrub = false;
-  double? _lastRawValueMs;
+  double? _lastPointerLocalX;
   double? _fineValueMs;
 
   void _setSliderHovered(bool hovered) {
@@ -488,6 +505,25 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
     setState(() => _sliderDragging = dragging);
   }
 
+  void cancelDrag() {
+    final wasDragging = _sliderDragging;
+    _resetFineScrub();
+    _pointerDown = false;
+    if (wasDragging && mounted) {
+      _setSliderDragging(false);
+    } else {
+      _sliderDragging = false;
+    }
+  }
+
+  double? _currentTrackWidth() {
+    final box =
+        widget.sliderKey.currentContext?.findRenderObject() as RenderBox?;
+    final width = box?.size.width ?? 0;
+    if (width <= 0) return null;
+    return _progressTrackWidth(width);
+  }
+
   double _scrubScaleForOffset(Offset localPosition) {
     final verticalDistance = (localPosition.dy - 10.0).abs();
     if (verticalDistance >= 96.0) return 0.25;
@@ -495,23 +531,76 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
     return 1.0;
   }
 
-  void _handlePointerMoveScrub(Offset localPosition) {
-    if (!_sliderDragging) return;
+  void _handlePointerMoveScrub(PointerMoveEvent event) {
+    final localPosition = event.localPosition;
+    final prevX = _lastPointerLocalX;
+    _lastPointerLocalX = localPosition.dx;
+    if (!_sliderDragging) {
+      _scrubScale = _scrubScaleForOffset(localPosition);
+      return;
+    }
     final nextScale = _scrubScaleForOffset(localPosition);
-    if (nextScale == _scrubScale) return;
-    setState(() {
-      _scrubScale = nextScale;
-      if (nextScale < 1.0) {
-        _usedFineScrub = true;
+    if (nextScale != _scrubScale) {
+      setState(() {
+        _scrubScale = nextScale;
+        if (nextScale < 1.0) {
+          _usedFineScrub = true;
+        }
+      });
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    }
+    if (!_usedFineScrub) return;
+    final value = widget.sliderValue.value;
+    if (!value.canSeek || value.maxMillis <= 0) return;
+    final trackWidth = _currentTrackWidth();
+    if (trackWidth == null || trackWidth <= 0) return;
+    final dx = prevX == null ? event.delta.dx : (localPosition.dx - prevX);
+    if (dx == 0) return;
+    final currentMs = _fineValueMs ?? value.sliderValue;
+    final rawDeltaMs = (dx / trackWidth) * value.maxMillis;
+    double nextFine;
+    if (_scrubScale < 1.0) {
+      nextFine = (currentMs + rawDeltaMs * _scrubScale).clamp(
+        0.0,
+        value.maxMillis,
+      );
+    } else {
+      final prevFingerMs = prevX == null
+          ? ((localPosition.dx - dx - sessionDetailProgressTrackInset) /
+                    trackWidth) *
+                value.maxMillis
+          : ((prevX - sessionDetailProgressTrackInset) / trackWidth) *
+                value.maxMillis;
+      final nextFingerMs =
+          ((localPosition.dx - sessionDetailProgressTrackInset) / trackWidth) *
+          value.maxMillis;
+      var scale = 1.0;
+      if (dx > 0 && prevFingerMs >= 0 && prevFingerMs < value.maxMillis - 1.0) {
+        final remFinger = value.maxMillis - prevFingerMs;
+        final remThumb = value.maxMillis - currentMs;
+        scale = (remThumb / remFinger).clamp(0.25, 3.0);
+      } else if (dx < 0 &&
+          prevFingerMs > 1.0 &&
+          prevFingerMs <= value.maxMillis) {
+        final remFinger = prevFingerMs;
+        final remThumb = currentMs;
+        scale = (remThumb / remFinger).clamp(0.25, 3.0);
       }
-    });
-    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+      nextFine = (currentMs + rawDeltaMs * scale).clamp(0.0, value.maxMillis);
+      final clampedFingerMs = nextFingerMs.clamp(0.0, value.maxMillis);
+      if ((nextFine - clampedFingerMs).abs() <= 1.0) {
+        nextFine = clampedFingerMs;
+        _usedFineScrub = false;
+      }
+    }
+    _fineValueMs = nextFine;
+    widget.onChanged(nextFine);
   }
 
   void _resetFineScrub() {
     _scrubScale = 1.0;
     _usedFineScrub = false;
-    _lastRawValueMs = null;
+    _lastPointerLocalX = null;
     _fineValueMs = null;
   }
 
@@ -673,9 +762,9 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
                                 event.localPosition,
                               );
                             }
+                            _lastPointerLocalX = event.localPosition.dx;
                           },
-                          onPointerMove: (event) =>
-                              _handlePointerMoveScrub(event.localPosition),
+                          onPointerMove: _handlePointerMoveScrub,
                           onPointerUp: (_) => _pointerDown = false,
                           onPointerCancel: (_) => _pointerDown = false,
                           child: Slider(
@@ -685,7 +774,6 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
                             onChangeStart: value.canSeek
                                 ? (v) {
                                     _setSliderDragging(true);
-                                    _lastRawValueMs = v;
                                     _fineValueMs = v;
                                     _usedFineScrub = _scrubScale < 1.0;
                                     widget.onChangeStart(v);
@@ -693,21 +781,11 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
                                 : null,
                             onChanged: value.canSeek
                                 ? (v) {
-                                    if (!_usedFineScrub) {
-                                      _lastRawValueMs = v;
-                                      _fineValueMs = v;
-                                      widget.onChanged(v);
+                                    if (_usedFineScrub) {
                                       return;
                                     }
-                                    final deltaMs =
-                                        v - (_lastRawValueMs ?? v);
-                                    _lastRawValueMs = v;
-                                    final nextFine =
-                                        ((_fineValueMs ?? v) +
-                                                deltaMs * _scrubScale)
-                                            .clamp(0.0, value.maxMillis);
-                                    _fineValueMs = nextFine;
-                                    widget.onChanged(nextFine);
+                                    _fineValueMs = v;
+                                    widget.onChanged(v);
                                   }
                                 : null,
                             onChangeEnd: value.canSeek

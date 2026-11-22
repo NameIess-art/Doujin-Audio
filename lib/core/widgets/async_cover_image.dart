@@ -939,6 +939,10 @@ class _RetryingImageState extends State<RetryingImage> {
   Timer? _retryTimer;
   late bool _loadEnabled;
   Object? _cacheCheckKey;
+  ImageProvider<Object>? _requestedProvider;
+  Object? _requestedProviderKey;
+  ImageProvider<Object>? _resolvedProvider;
+  ImageProvider<Object>? _retainedProvider;
   ImageProvider<Object>? _previewProvider;
   bool _hasDisplayedFrame = false;
   ValueListenable<bool>? _fastScrolling;
@@ -1010,15 +1014,34 @@ class _RetryingImageState extends State<RetryingImage> {
       _retryAttempt = 0;
       _loadEnabled = _canLoadImmediately;
       _cacheCheckKey = null;
+      _requestedProvider = null;
+      _requestedProviderKey = null;
+      _resolvedProvider = null;
+      _retainedProvider = null;
       _stopWatchingDecodeViewport();
       _previewProvider = null;
       _hasDisplayedFrame = false;
       _decodeToken = Object();
       _decodeQueued = false;
       _decodeError = null;
+    } else if (oldWidget.retainInImageCache != widget.retainInImageCache) {
+      _resolvedProvider = null;
+      _retainedProvider = null;
     }
     if (_canLoadImmediately) _loadEnabled = true;
     if (!_loadEnabled) _scheduleLoadWhenAllowed();
+  }
+
+  ImageProvider<Object> _resolveRequestedProvider() {
+    final key = (widget.retryKey, _retryAttempt);
+    final cached = _requestedProvider;
+    if (cached != null && _requestedProviderKey == key) {
+      return cached;
+    }
+    final built = widget.imageProviderBuilder();
+    _requestedProvider = built;
+    _requestedProviderKey = key;
+    return built;
   }
 
   @override
@@ -1116,7 +1139,7 @@ class _RetryingImageState extends State<RetryingImage> {
     if (priority == null) return;
     _stopWatchingDecodeViewport();
     final token = _decodeToken;
-    final provider = widget.imageProviderBuilder();
+    final provider = _resolveRequestedProvider();
     _decodeQueued = true;
     unawaited(
       warmBrowseThumbnail(
@@ -1206,6 +1229,10 @@ class _RetryingImageState extends State<RetryingImage> {
         setState(() {
           _retryAttempt = nextAttempt;
           _hasDisplayedFrame = false;
+          _requestedProvider = null;
+          _requestedProviderKey = null;
+          _resolvedProvider = null;
+          _retainedProvider = null;
           if (_previewProvider != null || widget.browseThumbnail) {
             _loadEnabled = false;
           }
@@ -1246,7 +1273,7 @@ class _RetryingImageState extends State<RetryingImage> {
 
   @override
   Widget build(BuildContext context) {
-    final requested = widget.imageProviderBuilder();
+    final requested = _resolveRequestedProvider();
     final resolvedFrameBuilder = widget.resolvedFrameBuilder;
     if (_decodeError != null) {
       if (_retryAttempt == 0 && _retryTimer?.isActive != true) {
@@ -1264,22 +1291,26 @@ class _RetryingImageState extends State<RetryingImage> {
           ? _browseTransition(content, loading: false)
           : content;
     }
-    ImageProvider<Object>? provider;
-    if (!_loadEnabled) {
-      provider = _cachedProviderForBuild(context, requested);
-    }
-    final retained = widget.retainInImageCache && _retryAttempt == 0
-        ? retainedCoverImageFor(requested)
+    ImageProvider<Object>? provider = _loadEnabled && _hasDisplayedFrame
+        ? _resolvedProvider
         : null;
-    if (retained != null) {
-      if (retained.isAdequate) {
-        provider = retained.provider;
-        if (provider != requested) _previewProvider ??= provider;
-        _loadEnabled = true;
-      } else if (_previewProvider == null && !_hasDisplayedFrame) {
-        _previewProvider = retained.provider;
-        _loadEnabled = false;
-        _scheduleLoadWhenAllowed();
+    if (provider == null) {
+      if (!_loadEnabled) {
+        provider = _cachedProviderForBuild(context, requested);
+      }
+      final retained = widget.retainInImageCache && _retryAttempt == 0
+          ? retainedCoverImageFor(requested)
+          : null;
+      if (retained != null) {
+        if (retained.isAdequate) {
+          provider = retained.provider;
+          if (provider != requested) _previewProvider ??= provider;
+          _loadEnabled = true;
+        } else if (_previewProvider == null && !_hasDisplayedFrame) {
+          _previewProvider = retained.provider;
+          _loadEnabled = false;
+          _scheduleLoadWhenAllowed();
+        }
       }
     }
     if (_loadEnabled) {
@@ -1294,13 +1325,18 @@ class _RetryingImageState extends State<RetryingImage> {
     }
     final imageProvider = provider ?? requested;
     final isResolvedProvider = _loadEnabled;
-    if (widget.retainInImageCache) restoreRetainedCoverImage(imageProvider);
+    if (isResolvedProvider) _resolvedProvider = imageProvider;
+    if (widget.retainInImageCache && !identical(_retainedProvider, imageProvider)) {
+      restoreRetainedCoverImage(imageProvider);
+    }
     final image = _image(
       imageProvider,
       frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
         if (wasSynchronouslyLoaded || frame != null) {
           _hasDisplayedFrame = true;
-          if (widget.retainInImageCache) {
+          if (widget.retainInImageCache &&
+              !identical(_retainedProvider, imageProvider)) {
+            _retainedProvider = imageProvider;
             retainCoverImage(
               imageProvider,
               createLocalImageConfiguration(context),

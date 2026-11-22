@@ -47,7 +47,7 @@ class LibrarySortRequest {
     }
     final normalizedPinned = <String>{};
     for (final path in pinnedPaths) {
-      normalizedPinned.add(PathMatcher.normalize(path));
+      normalizedPinned.add(PathMatcher.equivalenceKey(path));
       if (stopwatch.elapsedMicroseconds >= 1000) {
         await Future<void>.delayed(Duration.zero);
         stopwatch.reset();
@@ -60,7 +60,7 @@ class LibrarySortRequest {
         index: index,
         path: node.path,
         value: _librarySortValue(node, this, byTarget),
-        pinned: normalizedPinned.contains(PathMatcher.normalize(node.path)),
+        pinned: normalizedPinned.contains(PathMatcher.equivalenceKey(node.path)),
       ));
       // Summaries preserve node identity, but preparing a large catalog must
       // still give input and playback callbacks a turn before sorting starts.

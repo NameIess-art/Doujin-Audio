@@ -33,15 +33,48 @@ class NetworkSocket {
   }
 
   Future<String> readHeader() async {
-    final bytes = <int>[];
-    while (bytes.length < 65536) {
-      bytes.add((await readBytes(1)).single);
-      if (bytes.length >= 4 &&
-          bytes[bytes.length - 4] == 13 &&
-          bytes[bytes.length - 3] == 10 &&
-          bytes[bytes.length - 2] == 13 &&
-          bytes.last == 10) {
-        return latin1.decode(bytes);
+    const maxBytes = 65536;
+    final builder = BytesBuilder(copy: false);
+    var matched = 0;
+    while (builder.length < maxBytes) {
+      if (_offset == _pending.length) {
+        if (!await _input.moveNext()) {
+          throw const SocketException('Connection closed during handshake');
+        }
+        _pending = _input.current;
+        _offset = 0;
+        if (_pending.isEmpty) continue;
+      }
+      final remainingBudget = maxBytes - builder.length;
+      final available = _pending.length - _offset;
+      final limit =
+          _offset + (remainingBudget < available ? remainingBudget : available);
+      var index = _offset;
+      while (index < limit) {
+        final byte = _pending[index++];
+        if (matched == 0) {
+          if (byte == 13) matched = 1;
+        } else if (matched == 1) {
+          matched = byte == 10 ? 2 : (byte == 13 ? 1 : 0);
+        } else if (matched == 2) {
+          matched = byte == 13 ? 3 : 0;
+        } else {
+          if (byte == 10) {
+            matched = 4;
+            break;
+          }
+          matched = byte == 13 ? 1 : 0;
+        }
+      }
+      final start = _offset;
+      _offset = index;
+      if (start == 0 && index == _pending.length) {
+        builder.add(_pending);
+      } else {
+        builder.add(Uint8List.sublistView(_pending, start, index));
+      }
+      if (matched == 4) {
+        return latin1.decode(builder.takeBytes());
       }
     }
     throw const HttpException('HTTP header exceeds 64 KiB');

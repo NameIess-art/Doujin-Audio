@@ -57,9 +57,51 @@ class _AsmrAccountButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final isLoggedIn = ref.watch(
+      asmrAuthStateProvider.select((state) => state.value?.isLoggedIn ?? false),
+    );
+    final syncFailed = ref.watch(
+      asmrSyncStateProvider.select(
+        (state) => state.value?.phase == AsmrSyncPhase.failed,
+      ),
+    );
+    final cs = Theme.of(context).colorScheme;
+    final tokens = AppDesignTokens.of(context);
+    final badgeColor = !isLoggedIn
+        ? null
+        : syncFailed
+        ? cs.error
+        : tokens.success;
     return IconButton(
       onPressed: onPressed,
-      icon: const Icon(Icons.account_circle_rounded),
+      icon: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Icon(
+            Icons.account_circle_rounded,
+            color: syncFailed && isLoggedIn ? cs.error : null,
+          ),
+          if (badgeColor != null)
+            Positioned(
+              right: -1,
+              top: -1,
+              child: Container(
+                key: ValueKey<String>(
+                  syncFailed
+                      ? 'asmr_account_status_error'
+                      : 'asmr_account_status_logged_in',
+                ),
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: badgeColor,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: cs.surface, width: 1.5),
+                ),
+              ),
+            ),
+        ],
+      ),
       tooltip: i18n.tr('asmr_account_menu'),
     );
   }

@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../app/state/subtitle_settings_provider.dart';
 import '../../../../core/media/subtitle_parser.dart';
 import '../../../../core/logging/app_log_service.dart';
 import '../../../../core/widgets/app_transitions.dart';
@@ -238,26 +239,8 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
     });
   }
 
-  int? _timelineSubtitleIndexAt(SubtitleTrack? track, Duration position) {
-    final cues = track?.cues;
-    if (cues == null || cues.isEmpty) return null;
-    final effectivePosition = position - (track?.offset ?? Duration.zero);
-    if (effectivePosition < cues.first.start) return 0;
-
-    var low = 0;
-    var high = cues.length - 1;
-    var result = 0;
-    while (low <= high) {
-      final mid = low + ((high - low) >> 1);
-      if (cues[mid].start <= effectivePosition) {
-        result = mid;
-        low = mid + 1;
-      } else {
-        high = mid - 1;
-      }
-    }
-    return result;
-  }
+  int? _timelineSubtitleIndexAt(SubtitleTrack? track, Duration position) =>
+      track?.timelineCueIndexAt(position);
 
   @override
   Widget build(BuildContext context) {
@@ -291,7 +274,9 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
             (subtitleTrack == null && subtitles.isLoading(trackPath)));
     final playbackSubtitleIndex =
         _playbackSubtitleIndex ??
-        (subtitleTrack != null && subtitleTrack.cues.isNotEmpty ? 0 : null);
+        (subtitleTrack != null && subtitleTrack.timelineCues.isNotEmpty
+            ? 0
+            : null);
     Widget emptySubtitle() {
       return Align(
         key: const ValueKey('subtitle_empty'),
@@ -317,15 +302,20 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
       );
     }
 
-    if (!widget.subtitleEnabled) {
-      content = emptySubtitle();
-    } else if (playbackError != null) {
+    final currentTrack = hasTrack
+        ? ref.read(audioPathCoordinatorProvider).trackByPath(trackPath)
+        : null;
+    if (playbackError != null) {
       content = Center(
         key: const ValueKey('subtitle_error'),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Text(
-            localizedPlaybackErrorText(i18n, playbackError),
+            localizedPlaybackErrorText(
+              i18n,
+              playbackError,
+              useAsmrOneText: currentTrack?.isRemoteAsmr ?? false,
+            ),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
@@ -338,14 +328,66 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
           ),
         ),
       );
+    } else if (!widget.subtitleEnabled) {
+      final mutedColor = sessionDetailForeground(
+        Theme.of(context).colorScheme,
+        SessionDetailForegroundLevel.muted,
+        darkFallback: Theme.of(
+          context,
+        ).colorScheme.onSurface.withValues(alpha: 0.6),
+      );
+      content = Align(
+        key: const ValueKey('subtitle_hidden'),
+        alignment: widget.isLandscape ? Alignment.centerLeft : Alignment.center,
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: widget.isLandscape ? landscapeDetailTextInset : 0,
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => ref
+                  .read(subtitleSettingsProvider.notifier)
+                  .ensureSubtitlesEnabled(widget.session.id),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.subtitles_off_outlined,
+                      size: 16,
+                      color: mutedColor,
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        i18n.tr('subtitle_hidden_for_track'),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: mutedColor,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
     } else if (subtitleTrack != null &&
-        subtitleTrack.cues.isNotEmpty &&
+        subtitleTrack.timelineCues.isNotEmpty &&
         playbackSubtitleIndex != null) {
       // Resuming the same audio can prepare its source again while subtitles
       // are already available.
       content = TimelineSubtitleView(
         key: ValueKey<Object>((widget.session.id, subtitleTrack)),
-        cues: subtitleTrack.cues,
+        cues: subtitleTrack.timelineCues,
         isLandscape: widget.isLandscape,
         playbackSubtitleIndex: playbackSubtitleIndex,
         onSeek: (position) {

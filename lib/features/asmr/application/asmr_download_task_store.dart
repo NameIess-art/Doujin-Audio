@@ -109,6 +109,12 @@ final class AsmrDownloadTaskStore {
     _committedFileMetadata[workId] = _fileMetadata(task);
   }
 
+  String? durableFileEntityTag(String workId, String relativePath) {
+    if (!_persistTasks) return null;
+    return _writingFileMetadata?[workId]?.entityTags[relativePath] ??
+        _committedFileMetadata[workId]?.entityTags[relativePath];
+  }
+
   bool isFileEntityTagDurable(String workId, String relativePath, String? tag) {
     if (!_persistTasks) return true;
     final committed = _committedFileMetadata[workId];

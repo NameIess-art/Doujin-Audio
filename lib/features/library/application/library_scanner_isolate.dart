@@ -225,13 +225,10 @@ ScanMergeIsolateResult processScannedTracksInIsolate(
     if (trackNeedsRefresh(converted)) {
       if (libraryRoot == null ||
           payload.exclusionMatcher == null ||
-          (!payload.exclusionMatcher!.isExcluded(converted.path) &&
-              !(PathMatcher.hasSameContentTree(converted.path, libraryRoot) &&
-                  PathMatcher.isWithinOrEqual(
-                    converted.groupKey,
-                    libraryRoot,
-                  ) &&
-                  payload.exclusionMatcher!.isExcluded(converted.groupKey)))) {
+          !payload.exclusionMatcher!.isTrackPathExcluded(
+            converted.path,
+            parentPath: converted.groupKey,
+          )) {
         trackBatch.add(converted);
       }
     } else {

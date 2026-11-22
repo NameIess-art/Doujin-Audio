@@ -5,8 +5,10 @@ package com.doujin.audio.player.session
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.os.Looper
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.Player
+import androidx.media3.common.SimpleBasePlayer
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import com.doujin.audio.MainActivity
@@ -29,7 +31,7 @@ internal class NativeMediaSessionHost(
         onPlayerCommand = onPlayerCommand,
         logSecurityEvent = logSecurityEvent
     )
-    private val resources = NativeMediaSessionResourceLease<MediaSession, ExoPlayer>()
+    private val resources = NativeMediaSessionResourceLease<MediaSession, Player>()
 
     fun current(): MediaSession? = resources.currentSession
 
@@ -40,9 +42,9 @@ internal class NativeMediaSessionHost(
         if (resources.currentSession != null) return
         try {
             resources.installBootstrap(
-                createPlayer = { ExoPlayer.Builder(context).build() },
+                createPlayer = { BootstrapPlaceholderPlayer(Looper.getMainLooper()) },
                 createSession = ::buildMediaSession,
-                releasePlayer = ExoPlayer::release
+                releasePlayer = Player::release
             )
             resources.currentSession?.let(onSessionCreated)
         } catch (error: Exception) {
@@ -114,7 +116,7 @@ internal class NativeMediaSessionHost(
         if (!resources.hasResources) return
         logInfo("media_session_release reason=$reason", null)
         resources.currentSession?.let(onSessionReleased)
-        resources.release(MediaSession::release, ExoPlayer::release)
+        resources.release(MediaSession::release, Player::release)
     }
 
     private fun attachPlayer(
@@ -125,7 +127,7 @@ internal class NativeMediaSessionHost(
         if (isAttachedTo(player)) return
         logInfo("media_session_switch_player", session)
         target.player = sessionPlayer(player, session)
-        resources.onPlayerAttached(ExoPlayer::release)
+        resources.onPlayerAttached(Player::release)
     }
 
     private fun sessionPlayer(player: ExoPlayer, session: NativePlaybackSession): MediaSessionPlayer =
@@ -153,4 +155,10 @@ internal class MediaSessionPlayer(
         super.setPlayWhenReady(playWhenReady)
         if (wasPlaying && !playWhenReady && !delegate.playWhenReady) onPaused()
     }
+}
+
+internal class BootstrapPlaceholderPlayer(
+    looper: Looper
+) : SimpleBasePlayer(looper) {
+    override fun getState(): State = State.Builder().build()
 }

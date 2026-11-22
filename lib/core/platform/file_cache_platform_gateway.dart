@@ -1156,17 +1156,25 @@ class FileCachePlatformGateway {
         arguments: <String, Object?>{'folder': folderPath},
         decode: (value) => value as List<dynamic>?,
       );
-      final data = result.valueOrNull;
-      if (data == null) {
-        return NativeScanResult.failed(
-          code: 'scan_empty_response',
-          message: 'Native scan returned null data.',
-        );
+      switch (result) {
+        case NativeFailure<List<dynamic>?>(:final code, :final message):
+          if (code == NativeErrorCode.serviceUnavailable ||
+              code == 'notImplemented') {
+            return NativeScanResult.notSupported();
+          }
+          return NativeScanResult.failed(code: code, message: message);
+        case NativeSuccess<List<dynamic>?>(:final value):
+          if (value == null) {
+            return NativeScanResult.failed(
+              code: 'scan_empty_response',
+              message: 'Native scan returned null data.',
+            );
+          }
+          final payload = await Isolate.run(
+            () => parseNativeScanPayload(value),
+          );
+          return NativeScanResult.success(payload.tracks, payload.paths);
       }
-      final payload = await Isolate.run(() => parseNativeScanPayload(data));
-      return NativeScanResult.success(payload.tracks, payload.paths);
-    } on PlatformException catch (error) {
-      return NativeScanResult.failed(code: error.code, message: error.message);
     } catch (error, stackTrace) {
       AppLogService.error(
         'legacy_library_scan_failed',

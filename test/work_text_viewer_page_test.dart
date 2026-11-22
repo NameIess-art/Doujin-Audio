@@ -1244,4 +1244,86 @@ void main() {
         .value;
     expect(finalOpacity, equals(1.0));
   });
+
+  testWidgets(
+    'WorkTextViewerPage reading options adjust font size, encoding, copy all, and file list',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final language = AppLanguageProvider();
+      addTearDown(language.dispose);
+      await language.setLanguage(AppLanguage.zh);
+
+      final recordedEncodings = <WorkTextEncoding?>[];
+      final gateway = _FakeFileCacheGateway({
+        file1.path: Uint8List.fromList(utf8.encode('Line 1 content')),
+        file2.path: Uint8List.fromList(utf8.encode('Line 2 content')),
+        file3.path: Uint8List.fromList(utf8.encode('Line 3 content')),
+      });
+      final service = _EncodingRecordingTextService(
+        gateway,
+        recordedEncodings: recordedEncodings,
+      );
+      addTearDown(service.dispose);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+            workTextServiceProvider.overrideWithValue(service),
+          ],
+          child: MaterialApp(
+            theme: ThemeData(extensions: const [AppDesignTokens.light]),
+            home: const WorkTextViewerPage(files: [file1, file2, file3]),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Line 1 content'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('work_text_options_button')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('work_text_font_increase')));
+      await tester.pumpAndSettle();
+      expect(find.text('115%'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey('work_text_encoding_shiftJis')),
+      );
+      await tester.pumpAndSettle();
+      expect(recordedEncodings.last, WorkTextEncoding.shiftJis);
+
+      await tester.tap(find.byKey(const ValueKey('work_text_options_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('work_text_file_list_action')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('work_text_file_list_item_2')));
+      await tester.pumpAndSettle();
+      expect(find.text('Line 3 content'), findsOneWidget);
+      expect(find.text('3/3'), findsOneWidget);
+    },
+  );
+}
+
+class _EncodingRecordingTextService extends WorkTextService {
+  _EncodingRecordingTextService(
+    FileCachePlatformGateway gateway, {
+    required this.recordedEncodings,
+  }) : super(platformGateway: gateway);
+
+  final List<WorkTextEncoding?> recordedEncodings;
+
+  @override
+  Future<PreparedWorkText> readPreparedDocument(
+    WorkTextFile file, {
+    WorkTextEncoding? encodingOverride,
+    WorkTextReadRequest? request,
+  }) {
+    recordedEncodings.add(encodingOverride);
+    return super.readPreparedDocument(
+      file,
+      encodingOverride: encodingOverride,
+      request: request,
+    );
+  }
 }

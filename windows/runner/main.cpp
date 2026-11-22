@@ -33,8 +33,14 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
       if (ownership == WAIT_OBJECT_0 || ownership == WAIT_ABANDONED) break;
       if (ownership == WAIT_FAILED) { CloseHandle(singleton); return EXIT_FAILURE; }
       if (auto existing = FindWindowW(window_class,nullptr)) {
-        if (PostMessage(existing,DesktopIntegration::kActivate,
-            std::wstring(command_line).find(L"--background") != std::wstring::npos ? 1 : 0,0)) {
+        const WPARAM background =
+            std::wstring(command_line).find(L"--background") != std::wstring::npos ? 1 : 0;
+        if (background == 0) {
+          DWORD pid = 0;
+          GetWindowThreadProcessId(existing, &pid);
+          if (pid != 0) AllowSetForegroundWindow(pid);
+        }
+        if (PostMessage(existing,DesktopIntegration::kActivate,background,0)) {
           CloseHandle(singleton); return EXIT_SUCCESS;
         }
       }

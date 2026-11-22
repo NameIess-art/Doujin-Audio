@@ -142,12 +142,14 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
   double _stablePortraitTopPadding = 0;
   double _stableLandscapeTopPadding = 0;
   late final AppOrientationController _orientationController;
+  late final AppLanguageProvider _languageProvider;
 
   @override
   void initState() {
     super.initState();
+    _languageProvider = ref.read(appLanguageProviderInstanceProvider);
     if (defaultTargetPlatform == TargetPlatform.windows) {
-      final language = ref.read(appLanguageProviderInstanceProvider);
+      final language = _languageProvider;
       ref.listenManual(
         appLanguageStateProvider.select(
           (state) => state.value?.language ?? language.language,
@@ -206,7 +208,14 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
     UiInteractionCoordinator.instance.addListener(
       _scheduleSecondaryInitialization,
     );
+    final presentationReadySynchronously =
+        widget.presentationInitializer == null &&
+        ref.read(appLanguageProviderInstanceProvider).isSynchronouslyInitialized &&
+        ref.read(appPersistenceCoordinatorProvider).initializePresentationSync();
     _presentationBootstrapController = AppBootstrapController(
+      initialState: presentationReadySynchronously
+          ? const AppBootstrapState.ready()
+          : const AppBootstrapState.initializing(),
       initializer: () async {
         final initializer = widget.presentationInitializer;
         if (initializer != null) {
@@ -381,9 +390,8 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
       }
     });
     final themeProvider = ref.watch(themeProviderInstanceProvider);
-    final coreRuntimeReady = ref.watch(coreRuntimeReadyProvider);
     final fallbackSettings = ref.read(settingsRepositoryProvider).slice.state;
-    final languageProvider = ref.read(appLanguageProviderInstanceProvider);
+    final languageProvider = _languageProvider;
     _scheduleRestoreOutcomeFeedback(languageProvider);
     final languageState =
         ref.watch(appLanguageStateProvider).value ??
@@ -508,54 +516,62 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
                     );
                   },
                 );
+                final lockedContent =
+                    defaultTargetPlatform == TargetPlatform.windows
+                    ? navigatorContent
+                    : AppNavigationInputLock(
+                        navigationAllowed: UiInteractionCoordinator
+                            .instance
+                            .navigationInputAllowed,
+                        child: navigatorContent,
+                      );
                 final content = ListenableBuilder(
                   listenable: _runtimeBootstrapController,
-                  child: navigatorContent,
-                  builder: (context, child) => GlobalShortcuts(
-                    enabled:
-                        coreRuntimeReady &&
-                        _runtimeBootstrapController.state.phase ==
-                            AppBootstrapPhase.ready,
-                    navigatorKey: _navigatorKey,
-                    navigationAllowed:
-                        UiInteractionCoordinator.instance.navigationAllowed,
-                    child: defaultTargetPlatform == TargetPlatform.windows
-                        ? child!
-                        : AppNavigationInputLock(
-                            navigationAllowed: UiInteractionCoordinator
-                                .instance
-                                .navigationInputAllowed,
-                            child: child!,
-                          ),
+                  child: lockedContent,
+                  builder: (context, child) => Consumer(
+                    child: child,
+                    builder: (context, ref, shortcutsChild) {
+                      final coreRuntimeReady = ref.watch(
+                        coreRuntimeReadyProvider,
+                      );
+                      return GlobalShortcuts(
+                        enabled:
+                            coreRuntimeReady &&
+                            _runtimeBootstrapController.state.phase ==
+                                AppBootstrapPhase.ready,
+                        navigatorKey: _navigatorKey,
+                        navigationAllowed:
+                            UiInteractionCoordinator.instance.navigationAllowed,
+                        child: shortcutsChild!,
+                      );
+                    },
                   ),
                 );
                 if (defaultTargetPlatform == TargetPlatform.windows) {
-                  return TooltipVisibility(
-                    visible: false,
-                    child: !widget.showWindowsTitleBar
-                        ? content
-                        : AppRootPageFrame(
-                            navigatorKey: _navigatorKey,
-                            builder: (context, page) => Column(
-                              children: [
-                                WindowsWindowTitleBar(
-                                  language: languageProvider,
-                                ),
-                                Expanded(
-                                  child: LayoutBuilder(
-                                    builder: (context, constraints) =>
-                                        MediaQuery(
-                                          data: MediaQuery.of(
-                                            context,
-                                          ).copyWith(size: constraints.biggest),
-                                          child: page,
-                                        ),
+                  final windowsContent = !widget.showWindowsTitleBar
+                      ? content
+                      : AppRootPageFrame(
+                          navigatorKey: _navigatorKey,
+                          builder: (context, page) => Column(
+                            children: [
+                              WindowsWindowTitleBar(language: languageProvider),
+                              Expanded(
+                                child: LayoutBuilder(
+                                  builder: (context, constraints) => MediaQuery(
+                                    data: MediaQuery.of(
+                                      context,
+                                    ).copyWith(size: constraints.biggest),
+                                    child: page,
                                   ),
                                 ),
-                              ],
-                            ),
-                            child: content,
+                              ),
+                            ],
                           ),
+                          child: content,
+                        );
+                  return TooltipVisibility(
+                    visible: false,
+                    child: windowsContent,
                   );
                 }
                 return content;

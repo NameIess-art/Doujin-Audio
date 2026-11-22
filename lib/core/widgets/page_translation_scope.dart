@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/localization/app_language_provider.dart';
@@ -40,6 +41,7 @@ class _WorkPageTranslationHostState
   bool _failed = false;
   bool _routeVisible = true;
   bool _foreground = true;
+  bool _statusUpdateScheduled = false;
 
   bool get _active =>
       _enabled.value &&
@@ -70,12 +72,12 @@ class _WorkPageTranslationHostState
     super.didChangeDependencies();
     final notifier = TickerMode.getValuesNotifier(context);
     if (!identical(notifier, _tickerModeNotifier)) {
-      _tickerModeNotifier?.removeListener(_updateActivity);
+      _tickerModeNotifier?.removeListener(_handleActivityChanged);
       _tickerModeNotifier = notifier;
-      notifier.addListener(_updateActivity);
+      notifier.addListener(_handleActivityChanged);
     }
     _routeVisible = ModalRoute.isCurrentOf(context) ?? true;
-    _updateActivity();
+    _updateActivity(deferStatusNotification: true);
   }
 
   @override
@@ -104,7 +106,9 @@ class _WorkPageTranslationHostState
     _updateActivity();
   }
 
-  void _updateActivity() {
+  void _handleActivityChanged() => _updateActivity();
+
+  void _updateActivity({bool deferStatusNotification = false}) {
     if (_active && !_failed) {
       _request ??= ref.read(textTranslationServiceProvider).newRequest();
       _schedule();
@@ -112,7 +116,22 @@ class _WorkPageTranslationHostState
       _stop();
     }
     _scheduleTextNotification();
-    _status.value++;
+    _publishStatus(defer: deferStatusNotification);
+  }
+
+  void _publishStatus({bool defer = false}) {
+    if (!defer &&
+        SchedulerBinding.instance.schedulerPhase !=
+            SchedulerPhase.persistentCallbacks) {
+      _status.value++;
+      return;
+    }
+    if (_statusUpdateScheduled) return;
+    _statusUpdateScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _statusUpdateScheduled = false;
+      if (mounted) _status.value++;
+    });
   }
 
   void _stop() {
@@ -188,9 +207,7 @@ class _WorkPageTranslationHostState
       unawaited(_translate());
     });
     // Texts register during build; publish button progress after that frame.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _status.value++;
-    });
+    _publishStatus(defer: true);
   }
 
   Future<void> _translate() async {
@@ -253,7 +270,7 @@ class _WorkPageTranslationHostState
   @override
   void dispose() {
     _stop();
-    _tickerModeNotifier?.removeListener(_updateActivity);
+    _tickerModeNotifier?.removeListener(_handleActivityChanged);
     WidgetsBinding.instance.removeObserver(this);
     _i18n.removeListener(_languageChanged);
     _status.dispose();

@@ -12,6 +12,7 @@ import java.util.TimeZone
 import java.util.UUID
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 internal class NativePlaybackUsageCheckpoint(
     private val ledger: NativePlaybackUsageLedger,
@@ -82,7 +83,9 @@ internal class NativePlaybackUsageLedger(
     private val preferences by lazy {
         appContext.getSharedPreferences("playback_usage", Context.MODE_PRIVATE)
     }
+    @Volatile
     private var loaded = false
+    private val preloadSubmitted = AtomicBoolean(false)
     private var epoch = "android:${UUID.randomUUID()}"
     private var sequence = 0L
     private fun newBatchId() = "$epoch:${++sequence}"
@@ -100,6 +103,15 @@ internal class NativePlaybackUsageLedger(
     private var cachedDayStartMs = Long.MIN_VALUE
     private var cachedDayEndMs = Long.MIN_VALUE
     private var cachedDate = ""
+
+    fun preloadAsync() {
+        if (loaded || !preloadSubmitted.compareAndSet(false, true)) return
+        writer.execute {
+            synchronized(this) {
+                ensureLoaded()
+            }
+        }
+    }
 
     private fun ensureLoaded() {
         if (loaded) return
@@ -316,7 +328,10 @@ internal class NativePlaybackUsageLedger(
         private val workId = Regex("RJ\\d+", RegexOption.IGNORE_CASE)
         @Volatile private var instance: NativePlaybackUsageLedger? = null
         fun get(context: Context): NativePlaybackUsageLedger = instance ?: synchronized(this) {
-            instance ?: NativePlaybackUsageLedger(context.applicationContext).also { instance = it }
+            instance ?: NativePlaybackUsageLedger(context.applicationContext).also {
+                instance = it
+                it.preloadAsync()
+            }
         }
 
         private fun workKey(item: Map<String, Any?>): String {

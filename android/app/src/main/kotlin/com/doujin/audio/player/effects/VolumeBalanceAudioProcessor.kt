@@ -66,37 +66,132 @@ internal class VolumeBalanceAudioProcessor : BaseAudioProcessor() {
         val leftMultiplier = 1f - maxOf(pan, 0f)
         val rightMultiplier = 1f + minOf(pan, 0f)
         val isPcm16 = inputAudioFormat.encoding == C.ENCODING_PCM_16BIT
-        val fullScale = if (isPcm16) 32768f else 1f
         val sampleRate = inputAudioFormat.sampleRate
         val renderer = state.spatialResponses?.takeIf { spatialActive }?.let { responses ->
             spatialRenderer?.takeIf { it.responses === responses && it.sampleRate == sampleRate }
                 ?: StereoSpatialRenderer(responses, sampleRate).also { spatialRenderer = it }
         }
 
-        val bytesPerFrame = inputAudioFormat.bytesPerFrame
-        while (inputBuffer.remaining() >= bytesPerFrame) {
-            val first = if (isPcm16) inputBuffer.short.toFloat() else inputBuffer.float
-            val second = if (isPcm16) inputBuffer.short.toFloat() else inputBuffer.float
-            var left = if (state.channelSwapEnabled) second else first
-            var right = if (state.channelSwapEnabled) first else second
-            if (renderer != null) {
-                renderer.process(left, right, targetFrontBack, fullScale)
-                left = renderer.left
-                right = renderer.right
-            }
-            if (isPcm16) {
-                outputBuffer.putShort(toPcm16(left * leftMultiplier))
-                outputBuffer.putShort(toPcm16(right * rightMultiplier))
-            } else {
-                outputBuffer.putFloat(left * leftMultiplier)
-                outputBuffer.putFloat(right * rightMultiplier)
-            }
+        val frameCount = inputBuffer.remaining() / inputAudioFormat.bytesPerFrame
+        val swap = state.channelSwapEnabled
+        if (isPcm16) {
+            processPcm16(
+                inputBuffer = inputBuffer,
+                outputBuffer = outputBuffer,
+                frameCount = frameCount,
+                swap = swap,
+                leftMultiplier = leftMultiplier,
+                rightMultiplier = rightMultiplier,
+                renderer = renderer,
+                targetFrontBack = targetFrontBack
+            )
+        } else {
+            processPcmFloat(
+                inputBuffer = inputBuffer,
+                outputBuffer = outputBuffer,
+                frameCount = frameCount,
+                swap = swap,
+                leftMultiplier = leftMultiplier,
+                rightMultiplier = rightMultiplier,
+                renderer = renderer,
+                targetFrontBack = targetFrontBack
+            )
         }
 
         inputBuffer.position(inputBuffer.limit())
         // Finish the wet-to-dry ramp before bypassing convolution and history.
         if (targetFrontBack == 0f && renderer?.isNeutral == true) renderer.clear()
         outputBuffer.flip()
+    }
+
+    private fun processPcm16(
+        inputBuffer: ByteBuffer,
+        outputBuffer: ByteBuffer,
+        frameCount: Int,
+        swap: Boolean,
+        leftMultiplier: Float,
+        rightMultiplier: Float,
+        renderer: StereoSpatialRenderer?,
+        targetFrontBack: Float
+    ) {
+        if (renderer != null) {
+            if (swap) {
+                for (i in 0 until frameCount) {
+                    val rightIn = inputBuffer.short.toFloat()
+                    val leftIn = inputBuffer.short.toFloat()
+                    renderer.process(leftIn, rightIn, targetFrontBack, 32768f)
+                    outputBuffer.putShort(toPcm16(renderer.left * leftMultiplier))
+                    outputBuffer.putShort(toPcm16(renderer.right * rightMultiplier))
+                }
+            } else {
+                for (i in 0 until frameCount) {
+                    val leftIn = inputBuffer.short.toFloat()
+                    val rightIn = inputBuffer.short.toFloat()
+                    renderer.process(leftIn, rightIn, targetFrontBack, 32768f)
+                    outputBuffer.putShort(toPcm16(renderer.left * leftMultiplier))
+                    outputBuffer.putShort(toPcm16(renderer.right * rightMultiplier))
+                }
+            }
+        } else if (swap) {
+            for (i in 0 until frameCount) {
+                val rightIn = inputBuffer.short.toFloat()
+                val leftIn = inputBuffer.short.toFloat()
+                outputBuffer.putShort(toPcm16(leftIn * leftMultiplier))
+                outputBuffer.putShort(toPcm16(rightIn * rightMultiplier))
+            }
+        } else {
+            for (i in 0 until frameCount) {
+                val leftIn = inputBuffer.short.toFloat()
+                val rightIn = inputBuffer.short.toFloat()
+                outputBuffer.putShort(toPcm16(leftIn * leftMultiplier))
+                outputBuffer.putShort(toPcm16(rightIn * rightMultiplier))
+            }
+        }
+    }
+
+    private fun processPcmFloat(
+        inputBuffer: ByteBuffer,
+        outputBuffer: ByteBuffer,
+        frameCount: Int,
+        swap: Boolean,
+        leftMultiplier: Float,
+        rightMultiplier: Float,
+        renderer: StereoSpatialRenderer?,
+        targetFrontBack: Float
+    ) {
+        if (renderer != null) {
+            if (swap) {
+                for (i in 0 until frameCount) {
+                    val rightIn = inputBuffer.float
+                    val leftIn = inputBuffer.float
+                    renderer.process(leftIn, rightIn, targetFrontBack, 1f)
+                    outputBuffer.putFloat(renderer.left * leftMultiplier)
+                    outputBuffer.putFloat(renderer.right * rightMultiplier)
+                }
+            } else {
+                for (i in 0 until frameCount) {
+                    val leftIn = inputBuffer.float
+                    val rightIn = inputBuffer.float
+                    renderer.process(leftIn, rightIn, targetFrontBack, 1f)
+                    outputBuffer.putFloat(renderer.left * leftMultiplier)
+                    outputBuffer.putFloat(renderer.right * rightMultiplier)
+                }
+            }
+        } else if (swap) {
+            for (i in 0 until frameCount) {
+                val rightIn = inputBuffer.float
+                val leftIn = inputBuffer.float
+                outputBuffer.putFloat(leftIn * leftMultiplier)
+                outputBuffer.putFloat(rightIn * rightMultiplier)
+            }
+        } else {
+            for (i in 0 until frameCount) {
+                val leftIn = inputBuffer.float
+                val rightIn = inputBuffer.float
+                outputBuffer.putFloat(leftIn * leftMultiplier)
+                outputBuffer.putFloat(rightIn * rightMultiplier)
+            }
+        }
     }
 
     private fun toPcm16(value: Float): Short {

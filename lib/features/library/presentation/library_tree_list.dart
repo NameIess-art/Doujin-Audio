@@ -198,6 +198,8 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
   _pendingFolderResults = {};
   int _prunedFolderTreeRevision = -1;
   final Map<String, GlobalKey> _itemKeys = {};
+  bool _itemKeyPruneScheduled = false;
+  static const int _itemKeyPruneThreshold = 96;
   final Set<String> _removingItemIds = {};
   final Set<UndoableRemovalKey> _removalKeys = {};
   bool _removalMotionActive = false;
@@ -670,6 +672,17 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
     );
   }
 
+  void _pruneOffscreenItemKeys() {
+    if (_itemKeys.length <= _itemKeyPruneThreshold) return;
+    _itemKeys.removeWhere((id, key) {
+      if (key.currentContext != null || _removingItemIds.contains(id)) {
+        return false;
+      }
+      _itemKeyIndices.remove(key);
+      return true;
+    });
+  }
+
   void _pruneFolderTreeCaches(List<LibraryNode> tree, int structureRevision) {
     if (_prunedFolderTreeRevision == structureRevision) return;
     _prunedFolderTreeRevision = structureRevision;
@@ -889,6 +902,15 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
       // (including its undo size animation) when it moves between those slivers.
       final itemKey = _itemKeys.putIfAbsent(id, GlobalKey.new);
       _itemKeyIndices[itemKey] = index;
+      if (_itemKeys.length > _itemKeyPruneThreshold &&
+          !_itemKeyPruneScheduled) {
+        _itemKeyPruneScheduled = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _itemKeyPruneScheduled = false;
+          if (!mounted) return;
+          _pruneOffscreenItemKeys();
+        });
+      }
       return AnimatedReorderItem(
         key: itemKey,
         id: id,

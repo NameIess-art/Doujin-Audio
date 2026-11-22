@@ -22,9 +22,26 @@ class AppPreferences {
     return preferences;
   }
 
+  static bool get isInitialized => _instance != null;
+
   static String? getStringSync(String key) => _instance?.getString(key);
+  static List<String>? getStringListSync(String key) =>
+      _instance?.getStringList(key);
   static bool? getBoolSync(String key) => _instance?.getBool(key);
   static int? getIntSync(String key) => _instance?.getInt(key);
+
+  static T? readJsonSync<T>(String key, JsonValueReader<T> reader) {
+    final raw = getStringSync(key);
+    if (raw == null || raw.isEmpty) {
+      return null;
+    }
+    try {
+      return reader(json.decode(raw));
+    } catch (error, stackTrace) {
+      _logFailure('decode_json', key, error, stackTrace);
+      return null;
+    }
+  }
 
   static bool shouldShowOnboardingSync() {
     final prefs = _instance;
@@ -126,8 +143,8 @@ class AppPreferences {
       final value = preferences.get(key);
       if (value is String || value is bool || value is int || value is double) {
         result[key] = value!;
-      } else if (value is List<String>) {
-        result[key] = List<String>.of(value);
+      } else if (value is List && value.every((item) => item is String)) {
+        result[key] = value.cast<String>().toList();
       }
     }
     return result;

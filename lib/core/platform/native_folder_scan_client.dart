@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
+import '../errors/native_result.dart';
 import '../logging/app_log_service.dart';
 import 'library_scan_wire_models.dart';
 import 'platform_channels.dart';
@@ -219,8 +220,21 @@ final class NativeFolderScanClient {
         },
         decode: (value) => value as bool,
       );
-      final started = startResult.valueOrNull;
-      if (started != true) return NativeScanResult.notSupported();
+      switch (startResult) {
+        case NativeFailure<bool>(:final code, :final message):
+          if (code == NativeErrorCode.serviceUnavailable ||
+              code == 'notImplemented') {
+            return NativeScanResult.notSupported();
+          }
+          return NativeScanResult.failed(code: code, message: message);
+        case NativeSuccess<bool>(:final value):
+          if (value != true) {
+            return NativeScanResult.failed(
+              code: 'scan_start_rejected',
+              message: 'Native scan did not start.',
+            );
+          }
+      }
       return await completer.future;
     } on MissingPluginException {
       return NativeScanResult.notSupported();

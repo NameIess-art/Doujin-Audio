@@ -493,4 +493,65 @@ void main() {
     await AppCacheService.clearTemporaryCaches();
     expect(await original.exists(), isTrue);
   });
+
+  test(
+    'background isolate clear rechecks leases acquired mid-scan before deleting',
+    () async {
+      final active = await file(
+        temporary,
+        'asmr_playback_cache/active.flac',
+        10,
+      );
+      final orphan = await file(temporary, 'exports/orphan.bin', 6);
+      CachePathLease? lease;
+      AppCacheService.resetForTest(
+        temporaryDirectories: () async {
+          // Acquire the lease on the next event-loop turn, after _cacheRoots()
+          // has returned and the background isolate scan has started.
+          Timer.run(() {
+            lease ??= AppCacheService.protectPaths([active.path]);
+          });
+          return [temporary];
+        },
+      );
+      try {
+        final deleted = await AppCacheService.clearTemporaryCaches();
+        expect(deleted, 6);
+        expect(await active.exists(), isTrue);
+        expect(await orphan.exists(), isFalse);
+      } finally {
+        lease?.release();
+      }
+    },
+  );
+
+  test(
+    'background isolate enforceLimit rechecks leases acquired mid-scan before deleting',
+    () async {
+      final active = await file(
+        temporary,
+        'asmr_playback_cache/active.flac',
+        12,
+      );
+      final orphan = await file(temporary, 'exports/orphan.bin', 6);
+      await active.setLastModified(DateTime(2020));
+      await orphan.setLastModified(DateTime(2021));
+      CachePathLease? lease;
+      AppCacheService.resetForTest(
+        temporaryDirectories: () async {
+          Timer.run(() {
+            lease ??= AppCacheService.protectPaths([active.path]);
+          });
+          return [temporary];
+        },
+      );
+      try {
+        await AppCacheService.setMaxCacheBytes(5);
+        expect(await active.exists(), isTrue);
+        expect(await orphan.exists(), isFalse);
+      } finally {
+        lease?.release();
+      }
+    },
+  );
 }

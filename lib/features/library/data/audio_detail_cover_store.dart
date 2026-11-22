@@ -17,6 +17,7 @@ final class AudioDetailCoverStore {
 
   static const String relativePathKey = 'cardCoverRelativePath';
   static const String embeddedKey = 'cardCoverEmbedded';
+  static final RegExp _sha256HexPattern = RegExp(r'^[0-9a-f]{64}$');
 
   final Future<Directory> Function() _portableDirectory;
 
@@ -114,7 +115,7 @@ final class AudioDetailCoverStore {
     if (mimeType is! String ||
         !supportedCoverMimeTypes.contains(mimeType.toLowerCase()) ||
         expectedDigest is! String ||
-        !RegExp(r'^[0-9a-f]{64}$').hasMatch(expectedDigest) ||
+        !_sha256HexPattern.hasMatch(expectedDigest) ||
         expectedLength == null ||
         expectedLength <= 0 ||
         expectedLength > maxCoverFileBytes ||

@@ -1,13 +1,29 @@
 package com.doujin.audio.storage
 
 import android.content.Context
-import java.io.File
-import java.util.Locale
 import android.net.Uri
 import android.provider.DocumentsContract
+import androidx.documentfile.provider.DocumentFile
+import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.IOException
+import java.io.InputStream
+import java.util.Locale
 
 private val supportedWorkDocExtensions = setOf("txt", "md", "pdf", "vtt", "webvtt", "lrc", "srt", "ass", "ssa")
+
+internal const val MAX_INLINE_DOCUMENT_BYTES = 32L * 1024L * 1024L
+
+internal class DocumentTooLargeException(
+    val maxBytes: Long,
+    val actualBytes: Long? = null
+) : IOException(
+    if (actualBytes != null) {
+        "Document size ($actualBytes bytes) exceeds the $maxBytes byte limit."
+    } else {
+        "Document exceeds the $maxBytes byte limit."
+    }
+)
 
 internal class WorkTextDocumentReader(
     private val context: Context,
@@ -57,19 +73,60 @@ internal class WorkTextDocumentReader(
         return discoverLocalWorkTexts(trimmed)
     }
 
-    fun readDocumentBytes(path: String): ByteArray? {
+    fun readDocumentBytes(
+        path: String,
+        maxBytes: Long = MAX_INLINE_DOCUMENT_BYTES
+    ): ByteArray? {
         val trimmed = path.trim()
         return try {
             if (trimmed.startsWith("content://")) {
-                contentResolver.openInputStream(Uri.parse(trimmed))?.use { it.readBytes() }
+                val uri = Uri.parse(trimmed)
+                val declaredSize = DocumentFile.fromSingleUri(context, uri)?.length() ?: -1L
+                if (declaredSize > maxBytes) {
+                    throw DocumentTooLargeException(maxBytes, declaredSize)
+                }
+                contentResolver.openInputStream(uri)?.use { readBoundedDocumentBytes(it, maxBytes) }
             } else {
-                val file = File(trimmed)
-                if (file.exists() && file.isFile) file.readBytes() else null
+                readLocalDocumentBytes(File(trimmed), maxBytes)
             }
+        } catch (error: DocumentTooLargeException) {
+            throw error
         } catch (_: Exception) {
             null
         }
     }
+}
+
+internal fun readLocalDocumentBytes(
+    file: File,
+    maxBytes: Long = MAX_INLINE_DOCUMENT_BYTES
+): ByteArray? {
+    if (!file.exists() || !file.isFile) return null
+    val declaredSize = file.length()
+    if (declaredSize > maxBytes) {
+        throw DocumentTooLargeException(maxBytes, declaredSize)
+    }
+    return file.inputStream().use { readBoundedDocumentBytes(it, maxBytes) }
+}
+
+internal fun readBoundedDocumentBytes(
+    input: InputStream,
+    maxBytes: Long = MAX_INLINE_DOCUMENT_BYTES
+): ByteArray {
+    require(maxBytes >= 0L) { "maxBytes must be non-negative." }
+    val output = ByteArrayOutputStream()
+    val buffer = ByteArray(16 * 1024)
+    var total = 0L
+    while (true) {
+        val read = input.read(buffer)
+        if (read < 0) break
+        total += read
+        if (total > maxBytes) {
+            throw DocumentTooLargeException(maxBytes)
+        }
+        output.write(buffer, 0, read)
+    }
+    return output.toByteArray()
 }
 
 internal fun discoverLocalWorkTexts(folderPath: String): List<Map<String, String>> {

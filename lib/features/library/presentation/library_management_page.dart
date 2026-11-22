@@ -8,6 +8,7 @@ import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/media/path_display.dart';
+import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/file_tree_row.dart';
 import '../../../core/widgets/library_edit_icon.dart';
@@ -74,18 +75,38 @@ class _LibraryManagementPageState extends ConsumerState<LibraryManagementPage> {
               AppPageContentTransition(
                 child: visibleLibraries.isEmpty
                     ? Center(
-                        child: AppEmptyState(
-                          icon: query.isEmpty
-                              ? Icons.folder_open_rounded
-                              : Icons.search_off_rounded,
-                          title: i18n.tr(
-                            query.isEmpty
-                                ? 'library_manage_empty'
-                                : 'no_search_results',
-                          ),
-                          message: query.isEmpty
-                              ? null
-                              : i18n.tr('search_no_match'),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            AppEmptyState(
+                              icon: query.isEmpty
+                                  ? Icons.folder_open_rounded
+                                  : Icons.search_off_rounded,
+                              title: i18n.tr(
+                                query.isEmpty
+                                    ? 'library_manage_empty'
+                                    : 'no_search_results',
+                              ),
+                              message: query.isEmpty
+                                  ? null
+                                  : i18n.tr('search_no_match'),
+                            ),
+                            if (query.isNotEmpty) ...[
+                              const SizedBox(height: 16),
+                              AppPillButton(
+                                key: const ValueKey<String>(
+                                  'library_management_clear_search',
+                                ),
+                                onPressed: () =>
+                                    setState(_searchController.clear),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: cs.secondaryContainer,
+                                  foregroundColor: cs.onSecondaryContainer,
+                                ),
+                                child: Text(i18n.tr('clear_search')),
+                              ),
+                            ],
+                          ],
                         ),
                       )
                     : ListView.builder(

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/widgets.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
+import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 // ignore: depend_on_referenced_packages
 import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
@@ -156,6 +157,7 @@ void main() {
     tester,
   ) async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
+    await AppPreferences.init();
     tester.binding.platformDispatcher.localesTestValue = const <Locale>[
       Locale('ja'),
     ];
@@ -163,6 +165,7 @@ void main() {
 
     final provider = AppLanguageProvider();
     addTearDown(provider.dispose);
+    expect(provider.isSynchronouslyInitialized, isTrue);
     await tester.pump();
 
     expect(provider.preference, AppLanguagePreference.system);
@@ -183,6 +186,7 @@ void main() {
 
   testWidgets('follow system reacts to locale changes', (tester) async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
+    await AppPreferences.init();
     tester.binding.platformDispatcher.localesTestValue = const <Locale>[
       Locale('en'),
     ];
@@ -206,6 +210,7 @@ void main() {
     SharedPreferences.setMockInitialValues(const <String, Object>{
       'app_language': 'en',
     });
+    await AppPreferences.init();
     tester.binding.platformDispatcher.localesTestValue = const <Locale>[
       Locale('ja'),
     ];
@@ -213,6 +218,9 @@ void main() {
 
     final provider = AppLanguageProvider();
     addTearDown(provider.dispose);
+    expect(provider.isSynchronouslyInitialized, isTrue);
+    expect(provider.preference, AppLanguagePreference.en);
+    expect(provider.language, AppLanguage.en);
     await tester.pump();
 
     expect(provider.preference, AppLanguagePreference.en);

@@ -95,6 +95,10 @@ class NetworkRouteSettings {
 
   factory NetworkRouteSettings.fromJson(Object? value) {
     if (value is! Map) return const NetworkRouteSettings();
+    final rawCustomDns = value['customDnsServer'] as String? ?? '';
+    final normalizedCustomDns = rawCustomDns.isEmpty
+        ? ''
+        : (normalizeDns(rawCustomDns) ?? rawCustomDns);
     return NetworkRouteSettings(
       proxyMode:
           AppProxyMode.values
@@ -108,7 +112,7 @@ class NetworkRouteSettings {
       proxyUsername: value['proxyUsername'] as String? ?? '',
       proxyPasswordConfigured:
           value['proxyPasswordConfigured'] as bool? ?? false,
-      customDnsServer: value['customDnsServer'] as String? ?? '',
+      customDnsServer: normalizedCustomDns,
     );
   }
 

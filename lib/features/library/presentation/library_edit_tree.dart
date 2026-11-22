@@ -290,24 +290,53 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
                   padding: listPadding,
                   leading: snapshotError
                       ? Padding(
-                          padding: const EdgeInsets.only(top: 96),
-                          child: Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
+                          key: const ValueKey<String>(
+                            'library_edit_snapshot_error',
+                          ),
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: cs.error.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: cs.error.withValues(alpha: 0.22),
+                              ),
+                            ),
+                            child: Row(
                               children: [
-                                Text(
-                                  i18n.tr('scan_failed_next_step'),
-                                  textAlign: TextAlign.center,
-                                  style: Theme.of(context).textTheme.bodyLarge
-                                      ?.copyWith(
-                                        color: cs.onSurfaceVariant,
-                                        fontWeight: FontWeight.w700,
-                                      ),
+                                Icon(
+                                  Icons.error_outline_rounded,
+                                  color: cs.error,
+                                  size: 20,
                                 ),
-                                const SizedBox(height: 12),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    i18n.tr('scan_failed_next_step'),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(
+                                          color: cs.error,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
                                 AppPillButton(
                                   onPressed: _requestDiskSnapshotRefresh,
                                   style: FilledButton.styleFrom(
+                                    minimumSize: const Size(0, 36),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                    ),
                                     backgroundColor: cs.secondaryContainer,
                                     foregroundColor: cs.onSecondaryContainer,
                                   ),
@@ -321,16 +350,39 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
                   empty: Padding(
                     padding: const EdgeInsets.only(top: 80),
                     child: Center(
-                      child: AppEmptyState(
-                        icon: _searchQuery.isEmpty
-                            ? Icons.folder_open_rounded
-                            : Icons.search_off_rounded,
-                        title: _searchQuery.isEmpty
-                            ? i18n.tr('library_edit_empty')
-                            : i18n.tr('no_search_results'),
-                        message: _searchQuery.isEmpty
-                            ? null
-                            : i18n.tr('search_no_match'),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          AppEmptyState(
+                            icon: _searchQuery.isEmpty
+                                ? Icons.folder_open_rounded
+                                : Icons.search_off_rounded,
+                            title: _searchQuery.isEmpty
+                                ? i18n.tr('library_edit_empty')
+                                : i18n.tr('no_search_results'),
+                            message: _searchQuery.isEmpty
+                                ? null
+                                : i18n.tr('search_no_match'),
+                          ),
+                          if (_searchQuery.isNotEmpty) ...[
+                            const SizedBox(height: 16),
+                            AppPillButton(
+                              key: const ValueKey<String>(
+                                'library_edit_clear_search',
+                              ),
+                              onPressed: () {
+                                _searchController.clear();
+                                _searchDebounceTimer?.cancel();
+                                setState(() => _searchQuery = '');
+                              },
+                              style: FilledButton.styleFrom(
+                                backgroundColor: cs.secondaryContainer,
+                                foregroundColor: cs.onSecondaryContainer,
+                              ),
+                              child: Text(i18n.tr('clear_search')),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                   ),

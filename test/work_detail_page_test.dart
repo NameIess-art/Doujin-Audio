@@ -2239,10 +2239,12 @@ void main() {
               'path': '$folderPath/notes.txt',
             },
           ];
+          var currentTime = DateTime.utc(2026);
           final textService = WorkTextService(
             discoverImages:
                 fixture.library.discoverCoverImageReferencesInFolder,
             platformGateway: _NestedWorkDetailFileGateway(textEntries),
+            clock: () => currentTime,
           );
           addTearDown(textService.dispose);
           Widget buildPage(Key key) => fixture.build(
@@ -2304,6 +2306,25 @@ void main() {
               'relativePath': 'updated.txt',
               'path': '$folderPath/updated.txt',
             });
+          interaction.cancelNavigation(source);
+          await _settleDetail(tester);
+          expect(find.text('notes'), findsOneWidget);
+          expect(find.text('updated'), findsNothing);
+          expect(
+            covers.imageRequests,
+            1,
+            reason: 'Reopening within cache TTL reuses fresh file snapshots.',
+          );
+
+          currentTime = currentTime.add(
+            WorkTextService.defaultDirectoryCacheTtl,
+          );
+          interaction.beginNavigation(source);
+          await tester.pumpWidget(
+            buildPage(const ValueKey('reopened_after_ttl')),
+          );
+          expect(find.text('notes'), findsOneWidget);
+          expect(find.text('cover'), findsOneWidget);
           interaction.cancelNavigation(source);
           await _settleDetail(tester);
           expect(find.text('notes'), findsNothing);
@@ -2814,7 +2835,14 @@ void main() {
           );
           await tester.tap(more);
           await _settleDetail(tester);
-          expect(find.text(fixture.languageProvider.tr('play')), findsOneWidget);
+          expect(
+            find.byKey(const ValueKey<String>('work_detail_play')),
+            findsNothing,
+          );
+          expect(
+            find.text(fixture.languageProvider.tr('play')),
+            findsOneWidget,
+          );
           expect(find.text(removalLabel), findsOneWidget);
           final removalIcon = tester.element(
             find.byIcon(Icons.remove_circle_outline_rounded),
@@ -5005,7 +5033,12 @@ void main() {
               () => Future<void>.delayed(const Duration(milliseconds: 10)),
             );
             if (find.byType(RetryingFileImage).evaluate().isNotEmpty &&
-                find.byType(CircularProgressIndicator).evaluate().isEmpty) {
+                find.byType(Image).evaluate().isNotEmpty &&
+                find.byType(CircularProgressIndicator).evaluate().isEmpty &&
+                find
+                    .byKey(const ValueKey<String>('work_image_load_error'))
+                    .evaluate()
+                    .isEmpty) {
               return;
             }
           }

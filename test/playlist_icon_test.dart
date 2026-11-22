@@ -117,7 +117,8 @@ void main() {
     final solidCalls = await paintInvocations(true);
 
     expect(hollowCalls.any((c) => c.memberName == #saveLayer), isFalse);
-    expect(solidCalls.any((c) => c.memberName == #saveLayer), isTrue);
+    expect(solidCalls.any((c) => c.memberName == #saveLayer), isFalse);
+    expect(solidCalls.any((c) => c.memberName == #drawPath), isTrue);
   });
 
   test('opticalIconSize normalizes navigation icon glyphs uniformly', () {

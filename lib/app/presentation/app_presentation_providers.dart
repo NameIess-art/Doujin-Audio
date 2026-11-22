@@ -478,13 +478,30 @@ final playlistResumeBatchProvider = StreamProvider<int>(
   (ref) => ref.watch(playbackFacadeProvider).resumeBatchChanges,
 );
 
+final playlistTimerRemainingUiProvider = Provider<Duration?>((ref) {
+  final fallback = ref.watch(timerFacadeProvider).state.remaining;
+  return ref.watch(
+    timerStateProvider.select(
+      (state) => state.hasValue ? state.value?.remaining : fallback,
+    ),
+  );
+});
+
 final playlistHeaderUiProvider = Provider<PlaylistHeaderState>((ref) {
   final playback = ref.watch(playbackFacadeProvider);
   final playbackState =
       ref.watch(playbackStateProvider).value ?? playback.aggregateState;
-  final timerState =
-      ref.watch(timerStateProvider).value ??
-      ref.watch(timerFacadeProvider).state;
+  final fallbackTimer = ref.watch(timerFacadeProvider).state;
+  final timerMeta = ref.watch(
+    timerStateProvider.select((state) {
+      final value = state.value ?? fallbackTimer;
+      return (
+        duration: value.duration,
+        active: value.active,
+        autoResumeAt: value.autoResumeAt,
+      );
+    }),
+  );
   ref.watch(playlistResumeBatchProvider);
   return PlaylistHeaderState(
     hasActivePlayback: playback.hasActivePlayback,
@@ -492,10 +509,10 @@ final playlistHeaderUiProvider = Provider<PlaylistHeaderState>((ref) {
     sessionCount: playbackState.sessionCount,
     playingCount: playbackState.playingSessionCount,
     hasPlayingAudioSession: playbackState.hasPlayingAudioSession,
-    timerDuration: timerState.duration,
-    timerRemaining: timerState.remaining,
-    timerActive: timerState.active,
-    autoResumeAt: timerState.autoResumeAt,
+    timerDuration: timerMeta.duration,
+    timerRemaining: null,
+    timerActive: timerMeta.active,
+    autoResumeAt: timerMeta.autoResumeAt,
   );
 });
 

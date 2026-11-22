@@ -14,4 +14,30 @@ void main() {
     expect(isVideoMediaFile('/library/movie.webm'), isTrue);
     expect(isVideoMediaFile('/library/voice.m4a'), isFalse);
   });
+
+  test('HTTP(S) URLs strip query and fragment before media format checks', () {
+    expect(
+      isVideoMediaFile('https://cdn.example.com/media/clip.mp4?token=abc#t=10'),
+      isTrue,
+    );
+    expect(
+      isSupportedMediaFile(
+        'https://cdn.example.com/media/clip.mp4?token=abc#t=10',
+      ),
+      isTrue,
+    );
+    expect(
+      isSupportedMediaFile('http://cdn.example.com/audio/track.MP3?sig=1'),
+      isTrue,
+    );
+    expect(
+      isVideoMediaFile('http://cdn.example.com/audio/track.MP3?sig=1'),
+      isFalse,
+    );
+    expect(
+      isSupportedMediaFile('https://cdn.example.com/cover.jpg?v=2#top'),
+      isFalse,
+    );
+    expect(isVideoMediaFile('/library/clip#1.mp4'), isTrue);
+  });
 }

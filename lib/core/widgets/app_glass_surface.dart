@@ -2,6 +2,29 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+/// Marks subtrees whose backdrop is already blurred by an outer modal layer
+/// so inner glass cards keep their frosted tint without nesting [BackdropFilter].
+class AppGlassBackdropScope extends InheritedWidget {
+  const AppGlassBackdropScope({
+    super.key,
+    required this.backdropBlurred,
+    required super.child,
+  });
+
+  final bool backdropBlurred;
+
+  static bool isBackdropBlurredOf(BuildContext context) {
+    return context
+            .dependOnInheritedWidgetOfExactType<AppGlassBackdropScope>()
+            ?.backdropBlurred ??
+        false;
+  }
+
+  @override
+  bool updateShouldNotify(AppGlassBackdropScope oldWidget) =>
+      backdropBlurred != oldWidget.backdropBlurred;
+}
+
 /// Blurs only this surface's backdrop; foreground animation stays isolated.
 class AppGlassSurface extends StatelessWidget {
   const AppGlassSurface({
@@ -18,12 +41,41 @@ class AppGlassSurface extends StatelessWidget {
 
   static const double darkGlassOpacity = 0.68;
   static const double lightGlassOpacity = 0.66;
+  static const int _fadeSteps = 16;
 
   static final Map<double, ui.ImageFilter> _blurFilters =
       <double, ui.ImageFilter>{};
+  static final Map<double, List<ui.ImageFilter>> _fadeFilters =
+      <double, List<ui.ImageFilter>>{};
 
-  static ui.ImageFilter _blurFilterFor(double sigma) => _blurFilters
-      .putIfAbsent(sigma, () => ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma));
+  static ui.ImageFilter _blurFilterFor(double sigma, double progress) {
+    final base = _blurFilters.putIfAbsent(
+      sigma,
+      () => ui.ImageFilter.blur(
+        sigmaX: sigma,
+        sigmaY: sigma,
+        tileMode: ui.TileMode.clamp,
+      ),
+    );
+    if (progress >= 1) return base;
+    final step = (_fadeSteps * progress).round().clamp(1, _fadeSteps);
+    if (step >= _fadeSteps) return base;
+    final steps = _fadeFilters.putIfAbsent(sigma, () {
+      return List<ui.ImageFilter>.generate(_fadeSteps - 1, (index) {
+        final alpha = (index + 1) / _fadeSteps;
+        return ui.ImageFilter.compose(
+          outer: ui.ColorFilter.matrix(<double>[
+            1, 0, 0, 0, 0,
+            0, 1, 0, 0, 0,
+            0, 0, 1, 0, 0,
+            0, 0, 0, alpha, 0,
+          ]),
+          inner: base,
+        );
+      }, growable: false);
+    });
+    return steps[step - 1];
+  }
 
   final Widget child;
   final Color backgroundColor;
@@ -38,7 +90,8 @@ class AppGlassSurface extends StatelessWidget {
     final opacity = Theme.of(context).brightness == Brightness.dark
         ? darkGlassOpacity
         : lightGlassOpacity;
-    final sigma = blurSigma * blurProgress;
+    final applyBlur =
+        enabled && !AppGlassBackdropScope.isBackdropBlurredOf(context);
     final content = ColoredBox(
       color: backgroundColor.withValues(
         alpha: backgroundColor.a * (enabled ? opacity : 1),
@@ -47,20 +100,20 @@ class AppGlassSurface extends StatelessWidget {
     );
     final surface = ClipRRect(
       borderRadius: borderRadius,
-      child: enabled
+      child: applyBlur
           ? BackdropFilter.grouped(
-              enabled: backgroundColor.a > 0 && sigma > 0,
+              enabled:
+                  backgroundColor.a > 0 && blurSigma > 0 && blurProgress > 0,
               blendMode: blendMode,
-              // Keep transient animation frames out of the filter cache.
-              filter: blurProgress == 1
-                  ? _blurFilterFor(blurSigma)
-                  : ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+              // Reuse the static blur kernel with cached alpha steps instead of
+              // allocating a new ImageFilter.blur on every animation frame.
+              filter: _blurFilterFor(blurSigma, blurProgress),
               child: content,
             )
           : content,
     );
     // Keep the clip and filter in the layer tree when a scrolling backdrop
     // repaints. The engine still samples the current pixels behind the glass.
-    return enabled ? RepaintBoundary(child: surface) : surface;
+    return applyBlur ? RepaintBoundary(child: surface) : surface;
   }
 }

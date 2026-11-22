@@ -320,6 +320,74 @@ void main() {
     expect(results.where((result) => result.committed), hasLength(1));
     expect(gateway.maxConcurrentWrites, 1);
   });
+
+  test(
+    'case-sensitive read skips parent directory listing when exact target exists',
+    () async {
+      final file = File(
+        '${directory.path}${Platform.pathSeparator}doujin-audio.json',
+      );
+      await file.writeAsString('{"version": 1}', flush: true);
+      var listCalls = 0;
+      await IOOverrides.runWithIOOverrides(() async {
+        final caseSensitiveStore = DefaultJsonDocumentStore(
+          caseSensitiveFileSystem: true,
+        );
+        final read = await caseSensitiveStore.read(location);
+        expect(read.status, JsonDocumentReadStatus.found);
+        expect(read.snapshot?.text, '{"version": 1}');
+      }, _ListingCountingIO(() => listCalls++));
+      expect(listCalls, 0);
+    },
+  );
+
+  test(
+    'case-sensitive read enumerates parent when exact target is missing',
+    () async {
+      var listCalls = 0;
+      await IOOverrides.runWithIOOverrides(() async {
+        final caseSensitiveStore = DefaultJsonDocumentStore(
+          caseSensitiveFileSystem: true,
+        );
+        final read = await caseSensitiveStore.read(location);
+        expect(read.status, JsonDocumentReadStatus.missing);
+      }, _ListingCountingIO(() => listCalls++));
+      expect(listCalls, 1);
+    },
+  );
+}
+
+final class _ListingCountingIO extends IOOverrides {
+  _ListingCountingIO(this.onList);
+  final void Function() onList;
+
+  @override
+  Directory createDirectory(String path) =>
+      _CountingDirectory(super.createDirectory(path), onList);
+}
+
+final class _CountingDirectory implements Directory {
+  _CountingDirectory(this._delegate, this._onList);
+  final Directory _delegate;
+  final void Function() _onList;
+
+  @override
+  String get path => _delegate.path;
+
+  @override
+  Future<bool> exists() => _delegate.exists();
+
+  @override
+  Stream<FileSystemEntity> list({
+    bool recursive = false,
+    bool followLinks = true,
+  }) {
+    _onList();
+    return _delegate.list(recursive: recursive, followLinks: followLinks);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 Future<void> _withWindowsFileLock(

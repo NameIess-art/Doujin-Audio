@@ -1,6 +1,7 @@
 package com.doujin.audio.player.common
 
 import com.doujin.audio.channel.*
+import com.doujin.audio.player.notification.PlaybackTimerAlarmScheduler
 import com.doujin.audio.player.service.*
 import com.doujin.audio.player.session.*
 
@@ -92,16 +93,13 @@ class NativePlaybackBridge(
         if (disposed || eventSink == null) return
         listening = true
         events = eventSink
-        NativePlaybackService.addControllerListener(
-            listenerId,
-            ::handleControllerChanged
-        )
+        syncControllerListenerRegistration()
         attachEventListenerIfNeeded(NativePlaybackService.controller())
     }
 
     override fun onCancel(arguments: Any?) {
         listening = false
-        NativePlaybackService.removeControllerListener(listenerId)
+        syncControllerListenerRegistration()
         attachedService?.removeStateListener(listenerId)
         attachedService = null
         events = null
@@ -118,6 +116,22 @@ class NativePlaybackBridge(
         attachedService?.removeStateListener(listenerId)
         attachedService = null
         events = null
+    }
+
+    private fun syncControllerListenerRegistration() {
+        if (!disposed && (listening || pendingCalls.isNotEmpty())) {
+            NativePlaybackService.addControllerListener(listenerId, ::handleControllerChanged)
+        } else {
+            NativePlaybackService.removeControllerListener(listenerId)
+        }
+    }
+
+    private fun flushPendingCalls() {
+        if (disposed || pendingCalls.isEmpty()) return
+        pendingCalls.toList().forEach { call ->
+            mainHandler.removeCallbacks(call)
+            call.run()
+        }
     }
 
     private fun ensureService(
@@ -141,13 +155,20 @@ class NativePlaybackBridge(
     }
 
     private fun handleControllerChanged(service: NativePlaybackService?) {
-        if (disposed || !listening) return
+        if (disposed) return
         if (service == null) {
-            attachedService?.removeStateListener(listenerId)
-            attachedService = null
+            if (listening) {
+                attachedService?.removeStateListener(listenerId)
+                attachedService = null
+            }
             return
         }
-        attachEventListenerIfNeeded(service)
+        if (listening) {
+            attachEventListenerIfNeeded(service)
+        }
+        if (pendingCalls.isNotEmpty()) {
+            mainHandler.post(::flushPendingCalls)
+        }
     }
 
     private inner class PendingServiceCall(
@@ -173,28 +194,33 @@ class NativePlaybackBridge(
                 cancel()
                 return
             }
-            val service = if (serviceStartRequested) {
-                NativePlaybackService.controller()
-            } else {
-                serviceStartRequested = true
-                if (canStartService) ensureService(requireForegroundBootstrap)
-                else NativePlaybackService.controller()
+            val service = try {
+                if (serviceStartRequested) {
+                    NativePlaybackService.controller()
+                } else {
+                    serviceStartRequested = true
+                    if (canStartService) ensureService(requireForegroundBootstrap)
+                    else NativePlaybackService.controller()
+                }
+            } catch (error: Exception) {
+                complete(commandFailure(error))
+                return
             }
             if (service != null) {
                 commandService = service
                 attachEventListenerIfNeeded(service)
                 if (dispatchAsync != null) {
-                    dispatchAsync.invoke(service, ::complete)
+                    try {
+                        dispatchAsync.invoke(service, ::complete)
+                    } catch (error: Exception) {
+                        complete(commandFailure(error))
+                    }
                     return
                 }
                 val response = try {
                     dispatch(service)
-                } catch (error: IllegalArgumentException) {
-                    channelFailure(
-                        code = ChannelErrorCodes.INVALID_ARGUMENT,
-                        message = error.message ?: "Invalid arguments.",
-                        details = mapOf("method" to method)
-                    )
+                } catch (error: Exception) {
+                    commandFailure(error)
                 }
                 complete(response)
                 return
@@ -208,6 +234,7 @@ class NativePlaybackBridge(
                 complete(serviceUnavailable(method))
                 return
             }
+            syncControllerListenerRegistration()
             mainHandler.postDelayed(this, SERVICE_READY_RETRY_DELAY_MS)
         }
 
@@ -221,11 +248,28 @@ class NativePlaybackBridge(
 
         fun isPlaybackStart(): Boolean = sessionId != null && isPlaybackStartFor(sessionId)
 
+        private fun commandFailure(error: Exception): Map<String, Any?> = when (error) {
+            is IllegalArgumentException -> channelFailure(
+                code = ChannelErrorCodes.INVALID_ARGUMENT,
+                message = error.message ?: "Invalid arguments.",
+                details = mapOf("method" to method)
+            )
+            else -> {
+                Log.w("NativePlaybackBridge", "Native playback command failed: $method", error)
+                channelFailure(
+                    code = ChannelErrorCodes.PLAYER_ERROR,
+                    message = error.message ?: "Native playback command failed.",
+                    details = mapOf("method" to method)
+                )
+            }
+        }
+
         private fun complete(response: Map<String, Any?>) {
             if (completed) return
             completed = true
             mainHandler.removeCallbacks(this)
             pendingCalls.remove(this)
+            syncControllerListenerRegistration()
             try {
                 result.success(response)
             } finally {
@@ -418,7 +462,11 @@ internal fun parsePlaybackCommand(call: MethodCall): ParsedPlaybackCommand {
         NativePlaybackMethods.REMOVE_SESSION -> {
             val sessionId = arguments.requiredString("sessionId")
             ParsedPlaybackCommand(cancelPendingStartForSession = sessionId, dispatchInactive = { context ->
+                val hadTimerRuntime = NativePlaybackStateStore.loadTimerRuntimeState(context) != null
                 NativePlaybackStateStore.removeSession(context, sessionId)
+                if (hadTimerRuntime) {
+                    PlaybackTimerAlarmScheduler.rescheduleFromStoredState(context)
+                }
                 channelSuccess(null)
             }) { service -> service.removeSession(sessionId) }
         }

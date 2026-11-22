@@ -151,12 +151,24 @@ bool Flag(const flutter::EncodableMap& map, const char* key) {
   auto v = Find(map,key); auto b = v ? std::get_if<bool>(v) : nullptr; return b && *b;
 }
 }
-MediaControls::MediaControls(HWND window) : window_(window) {
+MediaControls::MediaControls(HWND window) : window_(window) {}
+void MediaControls::EnsureHotkeysRegistered() {
+  if (hotkeys_registered_) return;
+  hotkeys_registered_ = true;
+  for (int i = 0; i < 4; ++i) {
+    hotkeys_[i] = RegisterHotKey(window_, kControlId + i,
+        MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, kHotkeyKeys[i]) != FALSE;
+  }
+}
+void MediaControls::Initialize() {
+  if (initialized_) return;
+  initialized_ = true;
   try {
     auto interop = winrt::get_activation_factory<SystemMediaTransportControls, ISystemMediaTransportControlsInterop>();
-    winrt::check_hresult(interop->GetForWindow(window, winrt::guid_of<SystemMediaTransportControls>(), winrt::put_abi(controls_)));
+    winrt::check_hresult(interop->GetForWindow(window_, winrt::guid_of<SystemMediaTransportControls>(), winrt::put_abi(controls_)));
     controls_.IsEnabled(false);
     controls_.IsPlayEnabled(true); controls_.IsPauseEnabled(true);
+    const HWND window = window_;
     button_token_ = controls_.ButtonPressed([window](auto const&, auto const& args) {
       PostMessage(window, DesktopIntegration::kMediaAction, static_cast<WPARAM>(args.Button()), 0);
     });
@@ -174,7 +186,7 @@ MediaControls::MediaControls(HWND window) : window_(window) {
       LPWSTR text = nullptr;
       if (SUCCEEDED(device->GetId(&text))) { id = text; CoTaskMemFree(text); }
     }
-    auto listener = Microsoft::WRL::Make<EndpointNotifications>(window,id);
+    auto listener = Microsoft::WRL::Make<EndpointNotifications>(window_,id);
     winrt::check_hresult(endpoints_->RegisterEndpointNotificationCallback(listener.Get()));
     endpoint_listener_ = std::move(listener);
   } catch (const winrt::hresult_error& e) {
@@ -184,9 +196,11 @@ MediaControls::MediaControls(HWND window) : window_(window) {
     OutputDebugStringA(message.c_str());
     std::cerr << message;
   }
-  for (int i = 0; i < 4; ++i) {
-    hotkeys_[i] = RegisterHotKey(window_, kControlId + i,
-        MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, kHotkeyKeys[i]) != FALSE;
+  EnsureHotkeysRegistered();
+  if (pending_update_) {
+    auto payload = std::move(*pending_update_);
+    pending_update_.reset();
+    Update(payload);
   }
 }
 MediaControls::~MediaControls() {
@@ -202,6 +216,10 @@ MediaControls::~MediaControls() {
   }
 }
 void MediaControls::Clear() {
+  if (!initialized_) {
+    pending_update_.reset();
+    return;
+  }
   SetThumbnailCover(nullptr);
   if (!active_ && !metadata_ready_ && (!controls_ || !smtc_enabled_)) return;
   active_ = false;
@@ -226,7 +244,8 @@ void MediaControls::Clear() {
   thumbnail_playing_ = false;
   UpdateThumbnailButtons();
 }
-flutter::EncodableMap MediaControls::HotkeyStatus() const {
+flutter::EncodableMap MediaControls::HotkeyStatus() {
+  EnsureHotkeysRegistered();
   flutter::EncodableMap status;
   for (int i = 0; i < 4; ++i) {
     status.emplace(flutter::EncodableValue(kHotkeyActions[i]), flutter::EncodableValue(hotkeys_[i]));
@@ -374,6 +393,10 @@ void MediaControls::SupplyThumbnail(int max_width, int max_height) {
 }
 
 void MediaControls::Update(const flutter::EncodableMap& payload) {
+  if (!initialized_) {
+    pending_update_ = payload;
+    return;
+  }
   auto raw = Find(payload,"items");
   auto items = raw ? std::get_if<flutter::EncodableList>(raw) : nullptr;
   if (!items || items->empty()) { Clear(); return; }

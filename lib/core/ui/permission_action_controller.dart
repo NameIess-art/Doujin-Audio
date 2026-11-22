@@ -21,14 +21,19 @@ class PermissionActionController {
     required PermissionCheckCallback isGranted,
     required PermissionOpenSettingsCallback openSettings,
     required PermissionGrantedCallback onGranted,
+    VoidCallback? onCancelled,
     String? confirmLabel,
     String? cancelLabel,
   }) async {
-    if (_disposed || !context.mounted) return false;
+    if (_disposed || !context.mounted) {
+      onCancelled?.call();
+      return false;
+    }
     clear();
     final generation = _generation;
     final granted = await isGranted();
     if (_disposed || generation != _generation || !context.mounted) {
+      onCancelled?.call();
       return false;
     }
     if (granted) {
@@ -50,15 +55,28 @@ class PermissionActionController {
         generation != _generation ||
         !context.mounted ||
         !shouldOpenSettings) {
+      onCancelled?.call();
       return false;
+    }
+
+    final grantedAfterDialog = await isGranted();
+    if (_disposed || generation != _generation || !context.mounted) {
+      onCancelled?.call();
+      return false;
+    }
+    if (grantedAfterDialog) {
+      await onGranted();
+      return true;
     }
 
     final opened = await openSettings();
     if (_disposed || generation != _generation || !context.mounted) {
+      onCancelled?.call();
       return false;
     }
     if (!opened) {
       _pendingAction = null;
+      onCancelled?.call();
       return false;
     }
 
@@ -66,6 +84,7 @@ class PermissionActionController {
       context: context,
       isGranted: isGranted,
       onGranted: onGranted,
+      onCancelled: onCancelled,
     );
     return false;
   }
@@ -79,16 +98,28 @@ class PermissionActionController {
     bool isCurrent() =>
         !_disposed &&
         generation == _generation &&
-        identical(_pendingAction, pendingAction) &&
-        pendingAction.context.mounted;
+        identical(_pendingAction, pendingAction);
     _resumeCheckGeneration = generation;
     try {
       await Future<void>.delayed(const Duration(milliseconds: 450));
       if (!isCurrent()) return;
+      if (!pendingAction.context.mounted) {
+        _pendingAction = null;
+        pendingAction.onCancelled?.call();
+        return;
+      }
       final granted = await pendingAction.isGranted();
       if (!isCurrent()) return;
       _pendingAction = null;
-      if (granted) await pendingAction.onGranted();
+      if (!pendingAction.context.mounted) {
+        pendingAction.onCancelled?.call();
+        return;
+      }
+      if (granted) {
+        await pendingAction.onGranted();
+      } else {
+        pendingAction.onCancelled?.call();
+      }
     } finally {
       if (_resumeCheckGeneration == generation) _resumeCheckGeneration = null;
     }
@@ -96,8 +127,10 @@ class PermissionActionController {
 
   void clear() {
     _generation++;
+    final pendingAction = _pendingAction;
     _pendingAction = null;
     _resumeCheckGeneration = null;
+    pendingAction?.onCancelled?.call();
   }
 
   void dispose() {
@@ -111,9 +144,11 @@ class _PendingPermissionAction {
     required this.context,
     required this.isGranted,
     required this.onGranted,
+    this.onCancelled,
   });
 
   final BuildContext context;
   final PermissionCheckCallback isGranted;
   final PermissionGrantedCallback onGranted;
+  final VoidCallback? onCancelled;
 }

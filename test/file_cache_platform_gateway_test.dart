@@ -1294,6 +1294,96 @@ void main() {
       );
     },
   );
+
+  test(
+    'chunked scan preserves native failure codes instead of treating them as notSupported',
+    () async {
+      messenger.setMockStreamHandler(
+        scanEvents,
+        MockStreamHandler.inline(onListen: (_, _) {}),
+      );
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        if (call.method == FileCacheMethod.startFolderScan) {
+          return <String, Object?>{
+            'ok': false,
+            'errorCode': 'permission_denied',
+            'error': 'SAF grant missing',
+          };
+        }
+        return success(null);
+      });
+
+      final result = await gateway.scanFolder('/music');
+
+      expect(result.ok, isFalse);
+      expect(result.notSupported, isFalse);
+      expect(result.errorCode, 'permission_denied');
+      expect(result.errorMessage, 'SAF grant missing');
+      expect(
+        calls.where((call) => call.method == FileCacheMethod.scanFolder),
+        isEmpty,
+      );
+    },
+  );
+
+  test(
+    'chunked scan reports scan_start_rejected when startFolderScan returns false',
+    () async {
+      messenger.setMockStreamHandler(
+        scanEvents,
+        MockStreamHandler.inline(onListen: (_, _) {}),
+      );
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        if (call.method == FileCacheMethod.startFolderScan) {
+          return success(false);
+        }
+        return success(null);
+      });
+
+      final result = await gateway.scanFolder('/music');
+
+      expect(result.ok, isFalse);
+      expect(result.notSupported, isFalse);
+      expect(result.errorCode, 'scan_start_rejected');
+    },
+  );
+
+  test(
+    'legacy scan preserves native failure code after chunked notSupported fallback',
+    () async {
+      messenger.setMockStreamHandler(
+        scanEvents,
+        MockStreamHandler.inline(onListen: (_, _) {}),
+      );
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        if (call.method == FileCacheMethod.startFolderScan) {
+          return <String, Object?>{
+            'ok': false,
+            'errorCode': 'notImplemented',
+            'error': 'Chunked scan unavailable',
+          };
+        }
+        if (call.method == FileCacheMethod.scanFolder) {
+          return <String, Object?>{
+            'ok': false,
+            'errorCode': 'scan_io_error',
+            'error': 'Storage unmounted',
+          };
+        }
+        return success(null);
+      });
+
+      final result = await gateway.scanFolder('/music');
+
+      expect(result.ok, isFalse);
+      expect(result.notSupported, isFalse);
+      expect(result.errorCode, 'scan_io_error');
+      expect(result.errorMessage, 'Storage unmounted');
+    },
+  );
 }
 
 class _FailingDiscoveryDirectory extends Fake implements Directory {

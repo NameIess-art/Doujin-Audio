@@ -26,84 +26,96 @@ class SubtitleWindowPreviewCard extends StatelessWidget {
       AppDesignTokens.of(context).radiusOverlay,
     );
 
+    final contentMinHeight = (height - 46).clamp(40.0, double.infinity);
+
     return RepaintBoundary(
-      child: SizedBox(
+      child: ConstrainedBox(
         key: const ValueKey<String>('subtitle_window_preview_card'),
-        height: height,
+        constraints: BoxConstraints(minHeight: height),
         child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: cardRadius,
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [cs.surfaceContainerLow, cs.surfaceContainer],
-          ),
-          border: Border.all(
-            color: cs.outlineVariant.withValues(alpha: isDark ? 0.28 : 0.5),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: cs.shadow.withValues(alpha: isDark ? 0.26 : 0.12),
-              blurRadius: 26,
-              spreadRadius: -10,
-              offset: const Offset(0, 16),
+          decoration: BoxDecoration(
+            borderRadius: cardRadius,
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [cs.surfaceContainerLow, cs.surfaceContainer],
             ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: cardRadius,
-          child: Stack(
-            children: [
-              Positioned(
-                left: -18,
-                top: -24,
-                child: _PreviewOrb(
-                  size: 132,
-                  color: cs.primary.withValues(alpha: isDark ? 0.24 : 0.14),
-                ),
-              ),
-              Positioned(
-                right: -22,
-                bottom: -34,
-                child: _PreviewOrb(
-                  size: 148,
-                  color: cs.secondary.withValues(alpha: isDark ? 0.18 : 0.12),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(18, 10, 18, 10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: cs.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Expanded(
-                      child: Center(
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: SubtitleWindowVisual(
-                            settings: settings,
-                            text: sampleText,
-                            maxTextWidth: 260,
-                            fallbackBackgroundColor: Colors.black,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+            border: Border.all(
+              color: cs.outlineVariant.withValues(alpha: isDark ? 0.28 : 0.5),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: cs.shadow.withValues(alpha: isDark ? 0.26 : 0.12),
+                blurRadius: 26,
+                spreadRadius: -10,
+                offset: const Offset(0, 16),
               ),
             ],
           ),
+          child: ClipRRect(
+            borderRadius: cardRadius,
+            child: Stack(
+              children: [
+                Positioned(
+                  left: -18,
+                  top: -24,
+                  child: _PreviewOrb(
+                    size: 132,
+                    color: cs.primary.withValues(alpha: isDark ? 0.24 : 0.14),
+                  ),
+                ),
+                Positioned(
+                  right: -22,
+                  bottom: -34,
+                  child: _PreviewOrb(
+                    size: 148,
+                    color: cs.secondary.withValues(alpha: isDark ? 0.18 : 0.12),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 10, 18, 10),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w900,
+                          color: cs.onSurface,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight: contentMinHeight,
+                        ),
+                        child: Center(
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final availableTextWidth =
+                                  (constraints.maxWidth - 40).clamp(
+                                    160.0,
+                                    480.0,
+                                  );
+                              return SubtitleWindowVisual(
+                                settings: settings,
+                                text: sampleText,
+                                maxTextWidth: availableTextWidth,
+                                fallbackBackgroundColor: Colors.black,
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
-    ),
     );
   }
 }

@@ -87,6 +87,7 @@ void main() {
     expect(horizontal.offset, horizontal.position.maxScrollExtent);
     expect(vertical.offset, 0);
 
+    // Non-overflowing horizontal strips let vertical wheel events pass through.
     await tester.sendEventToBinding(
       PointerScrollEvent(
         position: tester.getCenter(
@@ -95,7 +96,18 @@ void main() {
         scrollDelta: const Offset(0, 120),
       ),
     );
+    await tester.pumpAndSettle();
+    expect(vertical.offset, greaterThan(0));
+    vertical.jumpTo(0);
     await tester.pump();
+
+    // Native horizontal wheel delta (dx) scrolls the horizontal strip directly.
+    horizontal.jumpTo(0);
+    await tester.sendEventToBinding(
+      PointerScrollEvent(position: position, scrollDelta: const Offset(90, 0)),
+    );
+    await tester.pumpAndSettle();
+    expect(horizontal.offset, 90);
     expect(vertical.offset, 0);
 
     await tester.sendEventToBinding(

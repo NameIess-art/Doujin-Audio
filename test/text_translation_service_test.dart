@@ -28,6 +28,7 @@ void main() {
 
   TextTranslationService createService({
     Duration interval = Duration.zero,
+    Duration diskWriteDebounce = Duration.zero,
     int memoryCapacity = 1000,
     int diskCapacity = 3000,
     Future<Directory> Function()? directory,
@@ -42,6 +43,7 @@ void main() {
     clientFactory: clientFactory,
     requestTimeout: requestTimeout,
     requestInterval: interval,
+    diskWriteDebounce: diskWriteDebounce,
     memoryCapacity: memoryCapacity,
     diskCapacity: diskCapacity,
   );
@@ -819,6 +821,106 @@ void main() {
       release.complete();
       await clearing;
       expect((await afterClear).translations, {'title': 'translated title'});
+      expect(requests, 2);
+    },
+  );
+
+  test(
+    'reuses one HttpClient across batches and aborts only cancelled requests',
+    () async {
+      service.dispose();
+      var factoryCalls = 0;
+      service = createService(
+        clientFactory: () {
+          factoryCalls++;
+          return HttpClient();
+        },
+      );
+      expect((await translate(['first'])).translations, {
+        'first': 'translated first',
+      });
+      expect((await translate(['second'])).translations, {
+        'second': 'translated second',
+      });
+      expect(factoryCalls, 1);
+
+      final received = Completer<void>();
+      final release = Completer<void>();
+      handler = (request) async {
+        await sources(request);
+        if (!received.isCompleted) received.complete();
+        await release.future;
+        await respond(request, ['late']);
+      };
+      final cancelledRequest = service.newRequest();
+      final pending = translate(['third'], request: cancelledRequest);
+      await received.future;
+      cancelledRequest.cancel();
+      expect((await pending).translations, isEmpty);
+      release.complete();
+
+      handler = (request) async {
+        final texts = await sources(request);
+        await respond(request, texts.map((text) => 'translated $text').toList());
+      };
+      expect((await translate(['fourth'])).translations, {
+        'fourth': 'translated fourth',
+      });
+      expect(factoryCalls, 1);
+    },
+  );
+
+  test(
+    'debounced disk writes coalesce rapid batches and flush on dispose',
+    () async {
+      service.dispose();
+      service = createService(
+        diskWriteDebounce: const Duration(milliseconds: 60),
+      );
+      await translate(['one']);
+      await translate(['two']);
+      expect(documents.writes, 0);
+      await documents.waitForWrites(1);
+      expect(documents.writes, 1);
+      final saved = jsonDecode(utf8.decode(documents.bytes!)) as Map;
+      expect(
+        (saved['entries'] as List).map((row) => (row as List)[2]),
+        containsAll(['one', 'two']),
+      );
+
+      await translate(['three']);
+      expect(documents.writes, 1);
+      service.dispose();
+      await documents.waitForWrites(2);
+      final flushed = jsonDecode(utf8.decode(documents.bytes!)) as Map;
+      expect(
+        (flushed['entries'] as List).map((row) => (row as List)[2]),
+        containsAll(['one', 'two', 'three']),
+      );
+    },
+  );
+
+  test(
+    'peer writes merge incrementally without clearing peer memory cache',
+    () async {
+      final other = createService();
+      addTearDown(other.dispose);
+      await translate(['first']);
+      await documents.waitForWrites(1);
+      await other.translate(
+        ['second'],
+        target: 'zh-CN',
+        request: other.newRequest(),
+      );
+      await documents.waitForWrites(2);
+      final readsAfterPeerWrite = documents.reads;
+      // Existing memory entry on service is preserved without invalidation.
+      expect(service.cached('first', 'zh-CN'), 'translated first');
+      // Peer addition is merged into disk index without re-reading disk.
+      expect((await translate(['second'])).translations, {
+        'second': 'translated second',
+      });
+      expect(documents.reads, readsAfterPeerWrite);
       expect(requests, 2);
     },
   );

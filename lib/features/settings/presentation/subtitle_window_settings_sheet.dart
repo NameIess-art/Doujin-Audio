@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_settings_group_card.dart';
 import '../../../core/widgets/unified_dropdown.dart';
@@ -47,15 +49,45 @@ class _SubtitleWindowSettingsSheetState
     super.dispose();
   }
 
-  static const _fontFamilies = <String>[
-    '',
-    'monospace',
-    'serif',
-    'sans-serif',
-    'SimSun',
-    'KaiTi',
-    'SimHei',
-  ];
+  static List<String> _fontFamiliesFor(TargetPlatform platform) {
+    if (platform == TargetPlatform.windows) {
+      return const <String>[
+        '',
+        'sans-serif',
+        'serif',
+        'monospace',
+        'SimSun',
+        'KaiTi',
+        'SimHei',
+      ];
+    }
+    return const <String>['', 'sans-serif', 'serif', 'monospace'];
+  }
+
+  static String _fontFamilyLabel(AppLanguageProvider i18n, String family) {
+    return switch (family) {
+      '' => i18n.tr('system_default'),
+      'sans-serif' => i18n.tr('subtitle_font_sans_serif'),
+      'serif' => i18n.tr('subtitle_font_serif'),
+      'monospace' => i18n.tr('subtitle_font_monospace'),
+      'SimSun' => i18n.tr('subtitle_font_simsun'),
+      'KaiTi' => i18n.tr('subtitle_font_kaiti'),
+      'SimHei' => i18n.tr('subtitle_font_simhei'),
+      _ => family,
+    };
+  }
+
+  void _resetAllAppearance() {
+    _notifier.beginAppearanceEdit();
+    _notifier.setFontFamily('');
+    _notifier.setFontSize(16);
+    _notifier.setFontColor(null);
+    _notifier.setBackgroundOpacity(0.2);
+    _notifier.setBackgroundColor(null);
+    _notifier.setBorderDepth(0.5);
+    _endAppearanceEdit();
+  }
+
   static const double _previewHeight = 136;
   static const double _previewTopInset = 8;
   static const double _previewSideInset = 24;
@@ -106,11 +138,16 @@ class _SubtitleWindowSettingsSheetState
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Consumer(
               builder: (context, ref, _) {
+                final fontFamilies = _fontFamiliesFor(defaultTargetPlatform);
                 final fontFamily = ref.watch(
                   subtitleSettingsProvider.select((s) => s.fontFamily),
                 );
+                final selectedFamily = fontFamilies.contains(fontFamily)
+                    ? fontFamily
+                    : '';
                 return UnifiedDropdownButtonFormField<String>(
-                  initialValue: fontFamily,
+                  key: ValueKey(selectedFamily),
+                  initialValue: selectedFamily,
                   expandWidth: true,
                   decoration: InputDecoration(
                     labelText: i18n.tr('font_setting'),
@@ -120,13 +157,11 @@ class _SubtitleWindowSettingsSheetState
                     ),
                   ),
                   items: [
-                    for (final family in _fontFamilies)
+                    for (final family in fontFamilies)
                       DropdownMenuItem(
                         value: family,
                         child: Text(
-                          family.isEmpty
-                              ? i18n.tr('system_default')
-                              : family,
+                          _fontFamilyLabel(i18n, family),
                           style: TextStyle(
                             fontFamily: family.isEmpty ? null : family,
                           ),
@@ -161,7 +196,7 @@ class _SubtitleWindowSettingsSheetState
                           ),
                         ),
                         Text(
-                          fontSize.toStringAsFixed(0),
+                          '${fontSize.toStringAsFixed(0)} px',
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
                                 color: cs.onSurfaceVariant,
@@ -293,7 +328,7 @@ class _SubtitleWindowSettingsSheetState
                           ),
                         ),
                         Text(
-                          (borderDepth * 100).toStringAsFixed(0),
+                          '${(borderDepth * 100).toStringAsFixed(0)}%',
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
                                 color: cs.onSurfaceVariant,
@@ -371,6 +406,27 @@ class _SubtitleWindowSettingsSheetState
             child: AppBottomSheetHeader(
               icon: Icons.subtitles_rounded,
               title: i18n.tr('subtitle_window_settings'),
+              trailing: Consumer(
+                builder: (context, ref, _) {
+                  final hasCustomStyle = ref.watch(
+                    subtitleSettingsProvider.select(
+                      (s) =>
+                          s.fontFamily.isNotEmpty ||
+                          s.fontSize != 16 ||
+                          s.fontColor != null ||
+                          (s.backgroundOpacity - 0.2).abs() > 0.001 ||
+                          s.backgroundColor != null ||
+                          (s.borderDepth - 0.5).abs() > 0.001,
+                    ),
+                  );
+                  return TextButton.icon(
+                    key: const ValueKey('subtitle_reset_all_button'),
+                    onPressed: hasCustomStyle ? _resetAllAppearance : null,
+                    icon: const Icon(Icons.restart_alt_rounded, size: 18),
+                    label: Text(i18n.tr('subtitle_reset_all')),
+                  );
+                },
+              ),
             ),
           ),
           Flexible(child: panel),

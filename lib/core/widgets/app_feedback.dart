@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -100,6 +101,47 @@ Object? _activeFeedbackReplacementGroup;
 Object? _activeFeedbackReplacementOwner;
 Object? _activeFeedbackDismissKey;
 ValueNotifier<_FeedbackData>? _activeDataNotifier;
+_QueuedFeedback? _queuedFeedback;
+
+class _QueuedFeedback {
+  const _QueuedFeedback({
+    required this.overlay,
+    required this.context,
+    required this.message,
+    required this.tone,
+    this.title,
+    this.icon,
+    this.iconWidget,
+    this.iconColor,
+    required this.duration,
+    this.actionLabel,
+    this.onAction,
+    this.replacementGroup,
+    this.replacementOwner,
+    this.onDismissed,
+    required this.provideHapticFeedback,
+    required this.showCountdown,
+    required this.showActionCountdown,
+  });
+
+  final OverlayState overlay;
+  final BuildContext context;
+  final String message;
+  final AppFeedbackTone tone;
+  final String? title;
+  final IconData? icon;
+  final Widget? iconWidget;
+  final Color? iconColor;
+  final Duration? duration;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+  final Object? replacementGroup;
+  final Object? replacementOwner;
+  final ValueChanged<AppFeedbackDismissReason>? onDismissed;
+  final bool provideHapticFeedback;
+  final bool showCountdown;
+  final bool showActionCountdown;
+}
 
 void Function(String message)? get _activeFeedbackUpdateMessage {
   if (_activeDataNotifier == null) return null;
@@ -233,6 +275,10 @@ VoidCallback showAppProgressFeedback(
     provideHapticFeedback: false,
   );
   return () {
+    if (identical(_queuedFeedback?.replacementOwner, owner)) {
+      _queuedFeedback = null;
+      return;
+    }
     if (identical(_activeFeedbackReplacementOwner, owner)) {
       _activeFeedbackRemove?.call(AppFeedbackDismissReason.replaced);
     }
@@ -249,6 +295,10 @@ Future<bool> showUndoableRemovalFeedback(
   required String failureMessage,
   IconData icon = Icons.delete_outline_rounded,
 }) async {
+  final fallbackOverlay =
+      Overlay.maybeOf(context, rootOverlay: true) ??
+      MobileOverlayInset.menuOverlayOf(context) ??
+      Overlay.maybeOf(context);
   final staged = await service.stage(action);
   if (!staged) {
     if (context.mounted) {
@@ -258,22 +308,46 @@ Future<bool> showUndoableRemovalFeedback(
         tone: AppFeedbackTone.destructive,
         icon: Icons.error_outline_rounded,
       );
+    } else if (fallbackOverlay != null && fallbackOverlay.mounted) {
+      _showTopFeedback(
+        fallbackOverlay.context,
+        failureMessage,
+        tone: AppFeedbackTone.destructive,
+        icon: Icons.error_outline_rounded,
+        duration: const Duration(seconds: 5),
+        provideHapticFeedback: true,
+        showCountdown: true,
+        explicitOverlay: fallbackOverlay,
+      );
     }
     return false;
   }
-  if (!context.mounted) {
-    await service.commitPending();
+  if (context.mounted) {
+    showPendingUndoableRemovalFeedback(
+      context,
+      service: service,
+      message: message,
+      batchMessage: batchMessage,
+      undoLabel: undoLabel,
+      failureMessage: failureMessage,
+      icon: icon,
+    );
     return true;
   }
-  showPendingUndoableRemovalFeedback(
-    context,
-    service: service,
-    message: message,
-    batchMessage: batchMessage,
-    undoLabel: undoLabel,
-    failureMessage: failureMessage,
-    icon: icon,
-  );
+  if (fallbackOverlay != null && fallbackOverlay.mounted) {
+    _showPendingUndoableRemovalOnOverlay(
+      fallbackOverlay.context,
+      explicitOverlay: fallbackOverlay,
+      service: service,
+      message: message,
+      batchMessage: batchMessage,
+      undoLabel: undoLabel,
+      failureMessage: failureMessage,
+      icon: icon,
+    );
+    return true;
+  }
+  await service.commitPending();
   return true;
 }
 
@@ -286,28 +360,89 @@ void showPendingUndoableRemovalFeedback(
   required String failureMessage,
   IconData icon = Icons.delete_outline_rounded,
 }) {
+  _showPendingUndoableRemovalOnOverlay(
+    context,
+    service: service,
+    message: message,
+    batchMessage: batchMessage,
+    undoLabel: undoLabel,
+    failureMessage: failureMessage,
+    icon: icon,
+  );
+}
+
+void _showPendingUndoableRemovalOnOverlay(
+  BuildContext context, {
+  OverlayState? explicitOverlay,
+  required UndoableRemovalService service,
+  required String message,
+  required String Function(int count) batchMessage,
+  required String undoLabel,
+  required String failureMessage,
+  IconData icon = Icons.delete_outline_rounded,
+}) {
   final count = service.state.pendingCount;
   if (count == 0) return;
+  final fallbackOverlay =
+      explicitOverlay ??
+      Overlay.maybeOf(context, rootOverlay: true) ??
+      MobileOverlayInset.menuOverlayOf(context) ??
+      Overlay.maybeOf(context);
+  void showFailure() {
+    if (context.mounted && explicitOverlay == null) {
+      showAppSnackBar(
+        context,
+        failureMessage,
+        tone: AppFeedbackTone.destructive,
+        icon: Icons.error_outline_rounded,
+      );
+      return;
+    }
+    if (fallbackOverlay != null && fallbackOverlay.mounted) {
+      _showTopFeedback(
+        fallbackOverlay.context,
+        failureMessage,
+        tone: AppFeedbackTone.destructive,
+        icon: Icons.error_outline_rounded,
+        duration: const Duration(seconds: 5),
+        provideHapticFeedback: true,
+        showCountdown: true,
+        explicitOverlay: fallbackOverlay,
+      );
+    }
+  }
+
+  final targetOverlay =
+      explicitOverlay ??
+      MobileOverlayInset.menuOverlayOf(context) ??
+      Overlay.of(context);
   final nextMessage = count == 1 ? message : batchMessage(count);
   if (_activeFeedbackReplacementGroup == _undoableRemovalFeedbackGroup &&
       identical(_activeFeedbackReplacementOwner, service) &&
-      _activeFeedbackOverlay ==
-          (MobileOverlayInset.menuOverlayOf(context) ?? Overlay.of(context)) &&
+      _activeFeedbackOverlay == targetOverlay &&
       _activeFeedbackUpdateMessage != null) {
     _activeFeedbackUpdateMessage!(nextMessage);
     _activeFeedbackResetDuration?.call(kUndoableRemovalFeedbackDuration, true);
     return;
   }
-  showAppSnackBar(
+  _showTopFeedback(
     context,
     nextMessage,
     tone: AppFeedbackTone.destructive,
     icon: icon,
-    isUndoAction: true,
+    duration: kUndoableRemovalFeedbackDuration,
     actionLabel: undoLabel,
-    onAction: () => unawaited(service.undoPending()),
+    onAction: () => unawaited(
+      service.undoPending().then((failures) {
+        if (failures > 0) showFailure();
+      }),
+    ),
     replacementGroup: _undoableRemovalFeedbackGroup,
     replacementOwner: service,
+    provideHapticFeedback: false,
+    showCountdown: true,
+    showActionCountdown: true,
+    explicitOverlay: targetOverlay,
     onDismissed: (reason) {
       if (reason == AppFeedbackDismissReason.action ||
           reason == AppFeedbackDismissReason.updated) {
@@ -315,13 +450,7 @@ void showPendingUndoableRemovalFeedback(
       }
       unawaited(
         service.commitPending().then((failures) {
-          if (failures == 0 || !context.mounted) return;
-          showAppSnackBar(
-            context,
-            failureMessage,
-            tone: AppFeedbackTone.destructive,
-            icon: Icons.error_outline_rounded,
-          );
+          if (failures > 0) showFailure();
         }),
       );
     },
@@ -345,9 +474,45 @@ void _showTopFeedback(
   required bool provideHapticFeedback,
   bool showCountdown = false,
   bool showActionCountdown = false,
+  OverlayState? explicitOverlay,
 }) {
   final overlay =
-      MobileOverlayInset.menuOverlayOf(context) ?? Overlay.of(context);
+      explicitOverlay ??
+      MobileOverlayInset.menuOverlayOf(context) ??
+      Overlay.of(context);
+  final activeUndoService =
+      _activeFeedbackReplacementOwner is UndoableRemovalService
+      ? _activeFeedbackReplacementOwner as UndoableRemovalService
+      : null;
+  final undoBannerActive =
+      _activeFeedbackEntry != null &&
+      _activeFeedbackEntry!.mounted &&
+      _activeFeedbackReplacementGroup == _undoableRemovalFeedbackGroup &&
+      (activeUndoService == null || activeUndoService.state.pendingCount > 0);
+  if (undoBannerActive && replacementGroup != _undoableRemovalFeedbackGroup) {
+    final previousQueued = _queuedFeedback;
+    _queuedFeedback = _QueuedFeedback(
+      overlay: overlay,
+      context: context,
+      message: message,
+      tone: tone,
+      title: title,
+      icon: icon,
+      iconWidget: iconWidget,
+      iconColor: iconColor,
+      duration: duration,
+      actionLabel: actionLabel,
+      onAction: onAction,
+      replacementGroup: replacementGroup,
+      replacementOwner: replacementOwner,
+      onDismissed: onDismissed,
+      provideHapticFeedback: provideHapticFeedback,
+      showCountdown: showCountdown,
+      showActionCountdown: showActionCountdown,
+    );
+    previousQueued?.onDismissed?.call(AppFeedbackDismissReason.replaced);
+    return;
+  }
   final resolvedIcon = icon ?? _defaultIconForTone(tone);
   if (provideHapticFeedback) {
     unawaited(
@@ -429,6 +594,9 @@ void _showTopFeedback(
   void finishDismissal(AppFeedbackDismissReason reason) {
     if (dismissed) return;
     dismissed = true;
+    final wasUndoBanner =
+        _activeFeedbackEntry == entry &&
+        _activeFeedbackReplacementGroup == _undoableRemovalFeedbackGroup;
     if (_activeFeedbackEntry == entry) {
       _activeFeedbackEntry = null;
       _activeFeedbackOverlay = null;
@@ -442,6 +610,38 @@ void _showTopFeedback(
       _activeDataNotifier = null;
     }
     dismissCallback?.call(reason);
+    if (wasUndoBanner &&
+        _activeFeedbackEntry == null &&
+        _queuedFeedback != null) {
+      final queued = _queuedFeedback!;
+      _queuedFeedback = null;
+      if (queued.overlay.mounted) {
+        final nextContext = queued.context.mounted
+            ? queued.context
+            : queued.overlay.context;
+        _showTopFeedback(
+          nextContext,
+          queued.message,
+          tone: queued.tone,
+          title: queued.title,
+          icon: queued.icon,
+          iconWidget: queued.iconWidget,
+          iconColor: queued.iconColor,
+          duration: queued.duration,
+          actionLabel: queued.actionLabel,
+          onAction: queued.onAction,
+          replacementGroup: queued.replacementGroup,
+          replacementOwner: queued.replacementOwner,
+          onDismissed: queued.onDismissed,
+          provideHapticFeedback: queued.provideHapticFeedback,
+          showCountdown: queued.showCountdown,
+          showActionCountdown: queued.showActionCountdown,
+          explicitOverlay: queued.overlay,
+        );
+      } else {
+        queued.onDismissed?.call(AppFeedbackDismissReason.replaced);
+      }
+    }
   }
 
   void removeEntry(AppFeedbackDismissReason reason) {
@@ -550,88 +750,104 @@ void _showTopFeedback(
                 AppPageHeaderMetrics.secondRowOffset,
             left: leftInset,
             right: rightInset,
-            child: _FeedbackAnimationWrapper(
-              key: animationKey,
-              duration: currentData.duration,
-              transitionDuration: MediaQuery.disableAnimationsOf(context)
-                  ? Duration.zero
-                  : kAppMotionStandard,
-              showCountdown: currentData.showCountdown,
-              onRemove: () => dismissEntry(AppFeedbackDismissReason.timeout),
-              builder: (remainingSeconds, appearance) {
-                final isRemovalAction =
-                    hasAction &&
-                    currentData.showActionCountdown &&
-                    remainingSeconds != null;
-                final resolvedActionLabel = hasAction
-                    ? (isRemovalAction
-                          ? '${currentData.actionLabel!} (${remainingSeconds}s)'
-                          : currentData.actionLabel!)
-                    : null;
-                return Dismissible(
-                  key: ValueKey<Object>(currentData.dismissKey),
-                  onDismissed: (_) =>
-                      removeEntry(AppFeedbackDismissReason.swipe),
-                  child: _VerticalSwipeDismissWrapper(
-                    onDismissed: () =>
-                        dismissEntry(AppFeedbackDismissReason.swipe),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: AppFeedbackSurface(
-                        tone: currentData.tone,
-                        icon: currentData.icon,
-                        iconWidget: currentData.iconWidget,
-                        iconColor: currentData.iconColor,
-                        title: currentData.title,
-                        message: currentData.message,
-                        appearance: appearance,
-                        remainingSeconds: hasAction ? null : remainingSeconds,
-                        trailing: hasAction
-                            ? TextButton(
-                                key: ValueKey((
-                                  currentData.message,
-                                  currentData.actionLabel,
-                                )),
-                                style: appTextButtonStyle(
-                                  style: TextButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                    ),
-                                    minimumSize: const Size(
-                                      0,
-                                      AppFeedbackSurface._iconChipSize,
-                                    ),
-                                    tapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                    shape: const StadiumBorder(),
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 500),
+                child: _FeedbackAnimationWrapper(
+                  key: animationKey,
+                  duration: currentData.duration,
+                  transitionDuration: MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : kAppMotionStandard,
+                  showCountdown: currentData.showCountdown,
+                  onRemove: () =>
+                      dismissEntry(AppFeedbackDismissReason.timeout),
+                  builder: (remainingSeconds, appearance) {
+                    final isRemovalAction =
+                        hasAction &&
+                        currentData.showActionCountdown &&
+                        remainingSeconds != null;
+                    final resolvedActionLabel = hasAction
+                        ? (isRemovalAction
+                              ? '${currentData.actionLabel!} (${remainingSeconds}s)'
+                              : currentData.actionLabel!)
+                        : null;
+                    return Dismissible(
+                      key: ValueKey<Object>(currentData.dismissKey),
+                      onDismissed: (_) =>
+                          removeEntry(AppFeedbackDismissReason.swipe),
+                      child: _VerticalSwipeDismissWrapper(
+                        onDismissed: () =>
+                            dismissEntry(AppFeedbackDismissReason.swipe),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: AppFeedbackSurface(
+                            tone: currentData.tone,
+                            icon: currentData.icon,
+                            iconWidget: currentData.iconWidget,
+                            iconColor: currentData.iconColor,
+                            title: currentData.title,
+                            message: currentData.message,
+                            appearance: appearance,
+                            remainingSeconds: hasAction
+                                ? null
+                                : remainingSeconds,
+                            padding: hasAction
+                                ? const EdgeInsets.fromLTRB(10, 1, 10, 1)
+                                : const EdgeInsets.fromLTRB(
+                                    10,
+                                    AppFeedbackSurface._verticalPadding,
+                                    14,
+                                    AppFeedbackSurface._verticalPadding,
                                   ),
-                                ),
-                                onPressed: () {
-                                  if (dismissed ||
-                                      !identical(
-                                        dataNotifier.value,
-                                        currentData,
-                                      )) {
-                                    return;
-                                  }
-                                  dismissEntry(AppFeedbackDismissReason.action);
-                                  currentData.onAction!();
-                                },
-                                child: Text(resolvedActionLabel!),
-                              )
-                            : currentData.duration == null
-                            ? const SizedBox.square(
-                                dimension: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : null,
+                            trailing: hasAction
+                                ? TextButton(
+                                    key: ValueKey((
+                                      currentData.message,
+                                      currentData.actionLabel,
+                                    )),
+                                    style: appTextButtonStyle(
+                                      style: TextButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                        ),
+                                        minimumSize: const Size(0, 36),
+                                        tapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                        shape: const StadiumBorder(),
+                                      ),
+                                    ),
+                                    onPressed: () {
+                                      if (dismissed ||
+                                          !identical(
+                                            dataNotifier.value,
+                                            currentData,
+                                          )) {
+                                        return;
+                                      }
+                                      dismissEntry(
+                                        AppFeedbackDismissReason.action,
+                                      );
+                                      currentData.onAction!();
+                                    },
+                                    child: Text(resolvedActionLabel!),
+                                  )
+                                : currentData.duration == null
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : null,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                );
-              },
+                    );
+                  },
+                ),
+              ),
             ),
           );
         },
@@ -849,7 +1065,12 @@ class _VerticalSwipeDismissWrapperState
     with SingleTickerProviderStateMixin {
   late final AnimationController _resetController;
   Animation<double>? _resetAnimation;
-  double _offsetY = 0;
+  final ValueNotifier<double> _offsetY = ValueNotifier<double>(0);
+  late final Animation<double> _dragOpacity = Animation<double>.fromValueListenable(
+    _offsetY,
+    transformer: (value) => (1.0 + value / 100.0).clamp(0.0, 1.0),
+  );
+  bool _isOffsetActive = false;
 
   @override
   void initState() {
@@ -859,39 +1080,48 @@ class _VerticalSwipeDismissWrapperState
           ..addListener(() {
             final animation = _resetAnimation;
             if (animation != null && mounted) {
-              setState(() => _offsetY = animation.value);
+              _setOffset(animation.value);
             }
           });
+  }
+
+  void _setOffset(double next) {
+    if (_offsetY.value == next) return;
+    _offsetY.value = next;
+    final active = next != 0;
+    if (active != _isOffsetActive && mounted) {
+      setState(() => _isOffsetActive = active);
+    }
   }
 
   @override
   void dispose() {
     _resetController.dispose();
+    _offsetY.dispose();
     super.dispose();
   }
 
   void _handleDragUpdate(DragUpdateDetails details) {
     _resetController.stop();
-    final next = (_offsetY + details.delta.dy).clamp(-120.0, 0.0);
-    if (next != _offsetY) {
-      setState(() => _offsetY = next);
-    }
+    final next = (_offsetY.value + details.delta.dy).clamp(-120.0, 0.0);
+    _setOffset(next);
   }
 
   void _handleDragEnd(DragEndDetails details) {
     final velocity = details.velocity.pixelsPerSecond.dy;
-    if (_offsetY <= -28 || (_offsetY < 0 && velocity <= -350)) {
+    final currentOffset = _offsetY.value;
+    if (currentOffset <= -28 || (currentOffset < 0 && velocity <= -350)) {
       widget.onDismissed();
       return;
     }
-    if (_offsetY == 0) return;
+    if (currentOffset == 0) return;
     if (MediaQuery.disableAnimationsOf(context) ||
         !TickerMode.valuesOf(context).enabled) {
-      setState(() => _offsetY = 0);
+      _setOffset(0);
       return;
     }
     _resetAnimation = Tween<double>(
-      begin: _offsetY,
+      begin: currentOffset,
       end: 0,
     ).chain(CurveTween(curve: kAppSpringCurve)).animate(_resetController);
     _resetController.forward(from: 0);
@@ -899,13 +1129,17 @@ class _VerticalSwipeDismissWrapperState
 
   @override
   Widget build(BuildContext context) {
-    final child = _offsetY == 0
+    final child = !_isOffsetActive
         ? widget.child
-        : Opacity(
-            opacity: (1.0 + _offsetY / 100.0).clamp(0.0, 1.0),
-            child: Transform.translate(
-              offset: Offset(0, _offsetY),
+        : FadeTransition(
+            opacity: _dragOpacity,
+            child: ValueListenableBuilder<double>(
+              valueListenable: _offsetY,
               child: widget.child,
+              builder: (context, offsetY, innerChild) => Transform.translate(
+                offset: Offset(0, offsetY),
+                child: innerChild,
+              ),
             ),
           );
     return GestureDetector(
@@ -1030,55 +1264,63 @@ class AppFeedbackSurface extends StatelessWidget {
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: AnimatedSize(
-                duration: MediaQuery.disableAnimationsOf(context)
-                    ? Duration.zero
-                    : tokens.motionFast,
-                curve: kAppSpringCurve,
-                alignment: Alignment.centerLeft,
-                child: AnimatedSwitcher(
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  vertical: math.max(
+                    0.0,
+                    _verticalPadding - padding.vertical / 2,
+                  ),
+                ),
+                child: AnimatedSize(
                   duration: MediaQuery.disableAnimationsOf(context)
                       ? Duration.zero
                       : tokens.motionFast,
-                  switchInCurve: kAppSpringCurve,
-                  switchOutCurve: Curves.easeInCubic,
-                  layoutBuilder: _feedbackContentLayout,
-                  child: Column(
-                    key: ValueKey((message, title)),
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (title != null) ...[
-                        Text(
-                          title!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.labelMedium?.copyWith(
-                            color: cs.onSurface,
-                            fontWeight: FontWeight.w800,
+                  curve: kAppSpringCurve,
+                  alignment: Alignment.centerLeft,
+                  child: AnimatedSwitcher(
+                    duration: MediaQuery.disableAnimationsOf(context)
+                        ? Duration.zero
+                        : tokens.motionFast,
+                    switchInCurve: kAppSpringCurve,
+                    switchOutCurve: Curves.easeInCubic,
+                    layoutBuilder: _feedbackContentLayout,
+                    child: Column(
+                      key: ValueKey((message, title)),
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (title != null) ...[
+                          Text(
+                            title!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: cs.onSurface,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
+                          const SizedBox(height: 1),
+                        ],
+                        Text(
+                          displayMessage,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              (title != null
+                                      ? theme.textTheme.bodySmall
+                                      : theme.textTheme.labelLarge)
+                                  ?.copyWith(
+                                    color: title != null
+                                        ? cs.onSurfaceVariant
+                                        : cs.onSurface,
+                                    fontWeight: title != null
+                                        ? FontWeight.w600
+                                        : FontWeight.w700,
+                                    height: 1.25,
+                                  ),
                         ),
-                        const SizedBox(height: 1),
                       ],
-                      Text(
-                        displayMessage,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style:
-                            (title != null
-                                    ? theme.textTheme.bodySmall
-                                    : theme.textTheme.labelLarge)
-                                ?.copyWith(
-                                  color: title != null
-                                      ? cs.onSurfaceVariant
-                                      : cs.onSurface,
-                                  fontWeight: title != null
-                                      ? FontWeight.w600
-                                      : FontWeight.w700,
-                                  height: 1.25,
-                                ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -1127,14 +1369,23 @@ class AppFeedbackSurface extends StatelessWidget {
     );
 
     final animation = appearance;
-    if (animation == null) return buildSurface(1, surface);
-
-    // A fade around the backdrop can isolate it from the page behind it.
-    return AnimatedBuilder(
-      animation: animation,
-      child: FadeTransition(opacity: animation, child: surface),
-      builder: (_, child) => buildSurface(animation.value, child!),
-    );
+    final Widget result;
+    if (animation == null) {
+      result = buildSurface(1, surface);
+    } else if (!tokens.barGlassEnabled) {
+      result = FadeTransition(
+        opacity: animation,
+        child: buildSurface(1, surface),
+      );
+    } else {
+      // A fade around the backdrop can isolate it from the page behind it.
+      result = AnimatedBuilder(
+        animation: animation,
+        child: FadeTransition(opacity: animation, child: surface),
+        builder: (_, child) => buildSurface(animation.value, child!),
+      );
+    }
+    return Semantics(liveRegion: true, child: result);
   }
 }
 

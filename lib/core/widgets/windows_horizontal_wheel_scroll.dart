@@ -40,9 +40,18 @@ class _WindowsHorizontalWheelScrollState
       behavior: HitTestBehavior.translucent,
       onPointerSignal: (signal) {
         if (signal is! PointerScrollEvent) return;
+        if (controller.positions.length != 1 ||
+            controller.position.maxScrollExtent <= 0) {
+          return;
+        }
+        final delta = signal.scrollDelta.dx != 0
+            ? signal.scrollDelta.dx
+            : signal.scrollDelta.dy;
+        if (delta == 0) return;
         GestureBinding.instance.pointerSignalResolver.register(signal, (_) {
-          final delta = signal.scrollDelta.dy;
-          if (!mounted || delta == 0 || controller.positions.length != 1) {
+          if (!mounted ||
+              controller.positions.length != 1 ||
+              controller.position.maxScrollExtent <= 0) {
             return;
           }
           controller.position.pointerScroll(delta);

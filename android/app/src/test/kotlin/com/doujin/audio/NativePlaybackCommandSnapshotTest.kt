@@ -360,6 +360,41 @@ class NativePlaybackCommandSnapshotTest {
     }
 
     @Test
+    fun `notification play pause command emits resumePauseBatch after retiring paused audio session`() {
+        val service = Robolectric.buildService(NativePlaybackService::class.java).get()
+        val sessions = ReflectionHelpers.callInstanceMethod<NativePlaybackSessionManager>(service, "getSessionManager")
+        val session = sessions.getOrCreate("audio-notif")
+        val track = NativeMediaItemDescriptor("/notif.mp3", "file:///notif.mp3", "Notif", null, null)
+        session.configure(
+            descriptor = track, queue = listOf(track), queueStartIndex = 0,
+            startPositionMs = 4_000L, volume = 1f, speed = 1f,
+            repeatOne = false, repeatAll = false, shuffleModeEnabled = false, autoPlay = true
+        )
+        val events = mutableListOf<Map<String, Any?>>()
+        service.addStateListener("ui", events::add)
+        try {
+            ReflectionHelpers.callInstanceMethod<Unit>(
+                service,
+                "handleNotificationTransportCommand",
+                ReflectionHelpers.ClassParameter.from(String::class.java, "play_pause")
+            )
+            assertNull(sessions.get("audio-notif"))
+            val batch = events.lastOrNull { it["eventType"] == "resumePauseBatch" }
+            assertTrue(batch != null)
+            @Suppress("UNCHECKED_CAST")
+            val snapshots = batch!!["sessions"] as List<Map<String, Any?>>
+            assertEquals(1, snapshots.size)
+            assertEquals("audio-notif", snapshots.single()["sessionId"])
+            assertEquals(false, snapshots.single()["playing"])
+        } finally {
+            service.removeStateListener("ui")
+            session.release()
+            shutdownPersistence(service)
+            NativePlaybackStateStore.clearSessions(service)
+        }
+    }
+
+    @Test
     fun `loaded video remains retained without an output during fullscreen handoff`() {
         val videoTrack = Tracks.Group(
             TrackGroup(Format.Builder().setSampleMimeType("video/avc").build()),

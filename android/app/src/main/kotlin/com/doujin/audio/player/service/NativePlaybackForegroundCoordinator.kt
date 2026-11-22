@@ -8,6 +8,7 @@ internal interface NativePlaybackForegroundEnvironment {
 internal interface NativePlaybackForegroundHost {
     val hasPlaybackToKeepAlive: Boolean
     val playbackSuspended: Boolean
+    val hasActiveUiListeners: Boolean get() = false
 
     fun playbackSignature(): String?
     fun onActiveSync()
@@ -41,13 +42,15 @@ internal enum class NativePlaybackForegroundStartResult {
 internal class NativePlaybackForegroundCoordinator(
     private val host: NativePlaybackForegroundHost,
     private val environment: NativePlaybackForegroundEnvironment,
-    private val watchdogIntervalMs: Long
+    private val watchdogIntervalMs: Long,
+    private val idleGracePeriodMs: Long = 0L
 ) {
     var isStarted: Boolean = false
         private set
 
     private var signature: String? = null
     private var idleStopScheduled = false
+    private var idleStopDelayMs = -1L
     private var watchdogScheduled = false
     private val pendingPlaybackStarts = linkedMapOf<String, Runnable>()
     val hasPendingPlaybackStarts: Boolean get() = pendingPlaybackStarts.isNotEmpty()
@@ -72,6 +75,7 @@ internal class NativePlaybackForegroundCoordinator(
 
     private val idleStop = Runnable {
         idleStopScheduled = false
+        idleStopDelayMs = -1L
         if (!host.hasPlaybackToKeepAlive) host.onIdleStop()
     }
 
@@ -103,10 +107,16 @@ internal class NativePlaybackForegroundCoordinator(
             } else {
                 stopWatchdog()
             }
-        } else if (!idleStopScheduled) {
-            // Let the current player callback finish before releasing its session.
-            idleStopScheduled = true
-            environment.postDelayed(idleStop, 0L)
+        } else {
+            val targetDelayMs = if (host.hasActiveUiListeners) idleGracePeriodMs else 0L
+            if (!idleStopScheduled || targetDelayMs < idleStopDelayMs) {
+                if (idleStopScheduled) environment.remove(idleStop)
+                // Let the current player callback finish before releasing its session,
+                // or keep a short grace window while the foreground UI is still attached.
+                idleStopScheduled = true
+                idleStopDelayMs = targetDelayMs
+                environment.postDelayed(idleStop, targetDelayMs)
+            }
         }
     }
 
@@ -159,6 +169,7 @@ internal class NativePlaybackForegroundCoordinator(
         if (!idleStopScheduled) return
         environment.remove(idleStop)
         idleStopScheduled = false
+        idleStopDelayMs = -1L
     }
 
     private fun ensureWatchdog() {

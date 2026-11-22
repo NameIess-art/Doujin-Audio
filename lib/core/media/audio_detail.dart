@@ -216,8 +216,10 @@ class AudioDetail {
     return List<String>.unmodifiable(result);
   }
 
+  static final RegExp _rjCodePattern = RegExp(r'RJ\d{6,}', caseSensitive: false);
+
   static String? findRjCodeInText(String text) {
-    final match = RegExp(r'RJ\d{6,}', caseSensitive: false).firstMatch(text);
+    final match = _rjCodePattern.firstMatch(text);
     return match?.group(0)?.toUpperCase();
   }
 }

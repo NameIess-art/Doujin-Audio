@@ -611,15 +611,15 @@ void main() {
     expect(audioLibrarySegment, findsOneWidget);
     expect(availableSegment, findsOneWidget);
     expect(
-      tester.getCenter(otherSegment).dx,
-      lessThan(tester.getCenter(audioLibrarySegment).dx),
-    );
-    expect(
       tester.getCenter(audioLibrarySegment).dx,
       lessThan(tester.getCenter(appCacheSegment).dx),
     );
     expect(
       tester.getCenter(appCacheSegment).dx,
+      lessThan(tester.getCenter(otherSegment).dx),
+    );
+    expect(
+      tester.getCenter(otherSegment).dx,
       lessThan(tester.getCenter(availableSegment).dx),
     );
     expect(
@@ -633,6 +633,10 @@ void main() {
             .getTopLeft(find.text(languageProvider.tr('storage_usage_other')))
             .dy,
       ),
+    );
+    expect(
+      find.byKey(const ValueKey('data-support-storage-refresh')),
+      findsOneWidget,
     );
   });
 

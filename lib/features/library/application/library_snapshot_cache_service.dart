@@ -118,7 +118,9 @@ LibraryCategoryFilterResult filterLibraryCategoryEntries(
   final selected = request.selectedTerms
       .map((term) => term.toLowerCase())
       .toSet();
-  final pinnedPaths = request.pinnedPaths.map(PathMatcher.normalize).toSet();
+  final pinnedPaths = request.pinnedPaths
+      .map(PathMatcher.equivalenceKey)
+      .toSet();
   final pinned = <AudioLibraryCategoryEntry>[];
   final unpinned = <AudioLibraryCategoryEntry>[];
   for (final entry in request.snapshot.entries) {
@@ -138,7 +140,7 @@ LibraryCategoryFilterResult filterLibraryCategoryEntries(
     // Stable partition preserves catalog order within both groups and normalizes
     // each matched path once instead of in every sort comparison.
     if (pinnedPaths.isNotEmpty &&
-        pinnedPaths.contains(PathMatcher.normalize(entry.path))) {
+        pinnedPaths.contains(PathMatcher.equivalenceKey(entry.path))) {
       pinned.add(entry);
     } else {
       unpinned.add(entry);

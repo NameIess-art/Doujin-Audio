@@ -30,15 +30,16 @@ void main() {
         ),
       );
       double opacity() => tester
-          .widget<Opacity>(
+          .widget<FadeTransition>(
             find
                 .ancestor(
                   of: find.byType(BottomSheet),
-                  matching: find.byType(Opacity),
+                  matching: find.byType(FadeTransition),
                 )
                 .first,
           )
-          .opacity;
+          .opacity
+          .value;
       await tester.pump();
       expect(opacity(), 0);
       await tester.pump(const Duration(milliseconds: 140));
@@ -91,10 +92,11 @@ void main() {
       await tester.pumpAndSettle();
       final sheet = find.byType(BottomSheet);
       double opacity() => tester
-          .widget<Opacity>(
-            find.ancestor(of: sheet, matching: find.byType(Opacity)).first,
+          .widget<FadeTransition>(
+            find.ancestor(of: sheet, matching: find.byType(FadeTransition)).first,
           )
-          .opacity;
+          .opacity
+          .value;
       final settledTop = tester.getTopLeft(sheet).dy;
       final gesture = await tester.startGesture(tester.getCenter(sheet));
       await gesture.moveBy(const Offset(0, 20));
@@ -145,10 +147,11 @@ void main() {
     );
     final sheet = find.byType(BottomSheet);
     double opacity() => tester
-        .widget<Opacity>(
-          find.ancestor(of: sheet, matching: find.byType(Opacity)).first,
+        .widget<FadeTransition>(
+          find.ancestor(of: sheet, matching: find.byType(FadeTransition)).first,
         )
-        .opacity;
+        .opacity
+        .value;
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 150));
     final reachedOpacity = opacity();
@@ -197,7 +200,7 @@ void main() {
 
   for (final platform in [TargetPlatform.windows, TargetPlatform.android]) {
     testWidgets(
-      '$platform bottom sheet hides scrollbar and remains scrollable',
+      '$platform bottom sheet ${platform == TargetPlatform.windows ? 'keeps' : 'hides'} scrollbar and remains scrollable',
       (tester) async {
         final sheetController = ScrollController();
         addTearDown(sheetController.dispose);
@@ -238,11 +241,19 @@ void main() {
         await tester.pumpAndSettle();
 
         final sheet = find.byType(BottomSheet);
-        expect(
-          find.descendant(of: sheet, matching: find.byType(DragOnlyScrollbar)),
-          findsNothing,
-        );
-        expect(find.byType(DragOnlyScrollbar), findsOneWidget);
+        if (platform == TargetPlatform.windows) {
+          expect(
+            find.descendant(of: sheet, matching: find.byType(DragOnlyScrollbar)),
+            findsOneWidget,
+          );
+          expect(find.byType(DragOnlyScrollbar), findsNWidgets(2));
+        } else {
+          expect(
+            find.descendant(of: sheet, matching: find.byType(DragOnlyScrollbar)),
+            findsNothing,
+          );
+          expect(find.byType(DragOnlyScrollbar), findsOneWidget);
+        }
 
         await tester.drag(
           find.descendant(of: sheet, matching: find.byType(ListView)),
@@ -289,7 +300,7 @@ void main() {
             matching: find.byType(Material),
           );
           final rect = tester.getRect(material.first);
-          final expectedWidth = windowWidth * 0.5;
+          final expectedWidth = (windowWidth * 0.5).clamp(420.0, 600.0);
           expect(rect.width, expectedWidth);
           expect(rect.center.dx, windowWidth / 2);
           expect(rect.bottom, 800);
@@ -300,7 +311,10 @@ void main() {
               tester.view.physicalSize = Size(resizedWidth, 800);
               await tester.pumpAndSettle();
               final resizedRect = tester.getRect(material.first);
-              expect(resizedRect.width, resizedWidth / 2);
+              expect(
+                resizedRect.width,
+                (resizedWidth * 0.5).clamp(420.0, 600.0),
+              );
               expect(resizedRect.center.dx, resizedWidth / 2);
               expect(resizedRect.bottom, 800);
               expect(tester.takeException(), isNull);
@@ -314,6 +328,58 @@ void main() {
       );
     }
   }
+
+  testWidgets(
+    'Windows sheet hides drag handle by default and header offers close button',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => AppBottomSheet.show<void>(
+                  context: context,
+                  builder: (_) => const Padding(
+                    padding: AppBottomSheet.contentPadding,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AppBottomSheetHeader(
+                          icon: Icons.tune_rounded,
+                          title: 'Options',
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                child: const Text('Open'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+
+      final sheetWidget = tester.widget<BottomSheet>(find.byType(BottomSheet));
+      expect(sheetWidget.showDragHandle, isFalse);
+      final closeBtn = find.byKey(
+        const ValueKey<String>('app_bottom_sheet_close_button'),
+      );
+      expect(closeBtn, findsOneWidget);
+      expect(
+        find.descendant(
+          of: closeBtn,
+          matching: find.byIcon(Icons.keyboard_arrow_down_rounded),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(closeBtn);
+      await tester.pumpAndSettle();
+      expect(find.byType(BottomSheet), findsNothing);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
 
   testWidgets(
     'Android portrait sheet keeps the full page width',

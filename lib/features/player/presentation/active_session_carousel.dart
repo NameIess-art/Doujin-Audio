@@ -108,6 +108,8 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   String? _lastVisibleSessionId;
   final List<PageController> _pendingDisposedControllers = <PageController>[];
   bool _visibleSessionSyncScheduled = false;
+  int? _wheelTargetPage;
+  int _wheelAnimationGen = 0;
 
   @override
   void initState() {
@@ -306,7 +308,15 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     return currentPage + delta;
   }
 
-  Future<void> _moveToPage(int page, {required Duration duration}) async {
+  Future<void> _moveToPage(
+    int page, {
+    required Duration duration,
+    bool fromWheel = false,
+  }) async {
+    if (!fromWheel) {
+      _wheelTargetPage = null;
+      _wheelAnimationGen++;
+    }
     if (!_pageController.hasClients) {
       _pageNotifier.value = page.toDouble();
       _notifyVisibleSessionChanged();
@@ -485,23 +495,43 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       );
     });
     Widget buildPages({required bool canPage}) => Listener(
+      onPointerDown: (_) {
+        _wheelTargetPage = null;
+        _wheelAnimationGen++;
+      },
       onPointerSignal: (signal) {
-        if (canPage &&
-            signal is PointerScrollEvent &&
-            visibleSessions.length > 1) {
-          final currentPage = _pageNotifier.value.round();
-          final delta = signal.scrollDelta.dy > 0
-              ? 1
-              : signal.scrollDelta.dy < 0
-              ? -1
-              : 0;
-          if (delta != 0) {
-            _moveToPage(
-              currentPage + delta,
-              duration: const Duration(milliseconds: 320),
-            );
-          }
+        if (!canPage ||
+            signal is! PointerScrollEvent ||
+            visibleSessions.length <= 1) {
+          return;
         }
+        final scrollDelta = signal.scrollDelta.dy != 0
+            ? signal.scrollDelta.dy
+            : signal.scrollDelta.dx;
+        final delta = scrollDelta > 0
+            ? 1
+            : scrollDelta < 0
+            ? -1
+            : 0;
+        if (delta == 0) return;
+        GestureBinding.instance.pointerSignalResolver.register(signal, (_) {
+          if (!mounted) return;
+          final basePage = _wheelTargetPage ?? _pageNotifier.value.round();
+          final nextPage = basePage + delta;
+          _wheelTargetPage = nextPage;
+          final gen = ++_wheelAnimationGen;
+          unawaited(
+            _moveToPage(
+              nextPage,
+              duration: const Duration(milliseconds: 320),
+              fromWheel: true,
+            ).whenComplete(() {
+              if (_wheelAnimationGen == gen) {
+                _wheelTargetPage = null;
+              }
+            }),
+          );
+        });
       },
       child: ScrollActivityGate(
         child: PageView.custom(

@@ -5,6 +5,8 @@
 #include <shlwapi.h>
 #include <winrt/base.h>
 #include <algorithm>
+#include <condition_variable>
+#include <cstdint>
 #include <cwctype>
 #include <deque>
 #include <mutex>
@@ -75,96 +77,128 @@ bool Bypasses(const std::wstring& bypass, const std::wstring& host,
   return false;
 }
 
+bool IsPacKeyword(const std::wstring& token) {
+  return token == L"proxy" || token == L"http" || token == L"https" ||
+         token == L"socks" || token == L"socks4" || token == L"socks5";
+}
+
 std::string ProxyList(const std::wstring& proxies, const std::wstring& scheme) {
-  std::string common, selected, socks;
-  auto append = [](std::string& target, const std::string& item) {
-    if (!target.empty()) target += "; ";
-    target += item;
+  enum class Kind { kSelected, kCommon, kSocks, kDirect };
+  struct Entry {
+    Kind kind;
+    std::string value;
   };
-  for (auto entry : SplitEntries(proxies, L";")) {
-    if (Lower(entry) == L"direct") {
-      append(common, "DIRECT");
-      continue;
-    }
-    const auto ws = entry.find_first_of(L" \t\r\n");
-    if (ws != std::wstring::npos) {
-      const auto keyword = Lower(entry.substr(0, ws));
-      auto rest = Trim(entry.substr(ws + 1));
-      if (!rest.empty() &&
-          (keyword == L"proxy" || keyword == L"http" || keyword == L"https" ||
-           keyword == L"socks" || keyword == L"socks5")) {
+  std::vector<Entry> entries;
+  bool has_selected = false;
+  bool has_common = false;
+  bool has_socks = false;
+  auto push = [&](Kind kind, std::string value) {
+    if (kind == Kind::kSelected) has_selected = true;
+    else if (kind == Kind::kCommon) has_common = true;
+    else if (kind == Kind::kSocks) has_socks = true;
+    entries.push_back({kind, std::move(value)});
+  };
+
+  for (const auto& segment : SplitEntries(proxies, L";")) {
+    const auto tokens = SplitEntries(segment, L" \t\r\n");
+    for (size_t i = 0; i < tokens.size(); ++i) {
+      std::wstring entry = tokens[i];
+      if (i + 1 < tokens.size() && tokens[i + 1] == L"=") {
+        if (i + 2 < tokens.size() &&
+            tokens[i + 2].find(L'=') == std::wstring::npos &&
+            Lower(tokens[i + 2]) != L"direct") {
+          entry += L"=";
+          entry += tokens[i + 2];
+          i += 2;
+        } else {
+          ++i;
+          continue;
+        }
+      } else if (i + 1 < tokens.size() && !tokens[i + 1].empty() &&
+                 tokens[i + 1].front() == L'=') {
+        entry += tokens[++i];
+      } else if (!entry.empty() && entry.back() == L'=' &&
+                 i + 1 < tokens.size() &&
+                 tokens[i + 1].find(L'=') == std::wstring::npos &&
+                 Lower(tokens[i + 1]) != L"direct") {
+        entry += tokens[++i];
+      }
+
+      const auto lower = Lower(entry);
+      if (lower == L"direct") {
+        push(Kind::kDirect, "DIRECT");
+        continue;
+      }
+      if (IsPacKeyword(lower) && i + 1 < tokens.size() &&
+          tokens[i + 1].find(L'=') == std::wstring::npos &&
+          Lower(tokens[i + 1]) != L"direct") {
+        auto rest = tokens[++i];
         const auto protocol = rest.find(L"://");
         if (protocol != std::wstring::npos) rest = rest.substr(protocol + 3);
         if (rest.empty()) continue;
-        const std::string prefix = keyword == L"proxy" ? "PROXY " : ProtocolPrefix(keyword);
-        append(common, prefix + winrt::to_string(rest));
+        const std::string prefix =
+            lower == L"proxy" ? "PROXY " : ProtocolPrefix(lower);
+        push(Kind::kCommon, prefix + winrt::to_string(rest));
         continue;
       }
-    }
-    const auto equals = entry.find(L'=');
-    std::wstring type;
-    if (equals != std::wstring::npos) {
-      type = Lower(Trim(entry.substr(0, equals)));
-      entry = Trim(entry.substr(equals + 1));
-    }
-    if (entry.empty()) continue;
-    const bool is_socks = type == L"socks" || type == L"socks5" || type == L"socks4";
-    if (!type.empty() && type != scheme && !is_socks) continue;
-    std::string prefix = type == L"socks5" ? "SOCKS5 " : is_socks ? "SOCKS " : "PROXY ";
-    const auto protocol = entry.find(L"://");
-    if (protocol != std::wstring::npos) {
-      const auto name = Lower(entry.substr(0, protocol));
-      prefix = ProtocolPrefix(name);
-      entry = entry.substr(protocol + 3);
+
+      const auto equals = entry.find(L'=');
+      std::wstring type;
+      if (equals != std::wstring::npos) {
+        type = Lower(Trim(entry.substr(0, equals)));
+        entry = Trim(entry.substr(equals + 1));
+      }
       if (entry.empty()) continue;
+      const bool is_socks =
+          type == L"socks" || type == L"socks5" || type == L"socks4";
+      if (!type.empty() && type != scheme && !is_socks) continue;
+      std::string prefix =
+          type == L"socks5" ? "SOCKS5 " : is_socks ? "SOCKS " : "PROXY ";
+      const auto protocol = entry.find(L"://");
+      if (protocol != std::wstring::npos) {
+        const auto name = Lower(entry.substr(0, protocol));
+        prefix = ProtocolPrefix(name);
+        entry = entry.substr(protocol + 3);
+        if (entry.empty()) continue;
+      }
+      const Kind kind = type.empty() ? Kind::kCommon
+          : type == scheme ? Kind::kSelected : Kind::kSocks;
+      push(kind, prefix + winrt::to_string(entry));
     }
-    auto& target = type.empty() ? common : type == scheme ? selected : socks;
-    append(target, prefix + winrt::to_string(entry));
   }
-  return !selected.empty() ? selected : !common.empty() ? common :
-      !socks.empty() ? socks : "DIRECT";
+
+  if (!has_selected && !has_common && !has_socks) return "DIRECT";
+  const Kind active = has_selected ? Kind::kSelected
+      : has_common ? Kind::kCommon : Kind::kSocks;
+  std::string result;
+  for (const auto& item : entries) {
+    if (item.kind != active && item.kind != Kind::kDirect) continue;
+    if (!result.empty()) result += "; ";
+    result += item.value;
+  }
+  return result.empty() ? "DIRECT" : result;
 }
 
-std::string Resolve(HINTERNET session, const std::wstring& url, const std::wstring& host,
-                    const std::wstring& scheme, INTERNET_PORT port) {
-  WINHTTP_CURRENT_USER_IE_PROXY_CONFIG config{};
-  if (!WinHttpGetIEProxyConfigForCurrentUser(&config)) winrt::throw_last_error();
-  const std::unique_ptr<void, decltype(&GlobalFree)> pac(config.lpszAutoConfigUrl, GlobalFree);
-  const std::unique_ptr<void, decltype(&GlobalFree)> proxy(config.lpszProxy, GlobalFree);
-  const std::unique_ptr<void, decltype(&GlobalFree)> bypass(config.lpszProxyBypass, GlobalFree);
-  if (config.fAutoDetect || config.lpszAutoConfigUrl) {
-    WINHTTP_AUTOPROXY_OPTIONS options{};
-    if (config.lpszAutoConfigUrl) {
-      options.dwFlags |= WINHTTP_AUTOPROXY_CONFIG_URL;
-      options.lpszAutoConfigUrl = config.lpszAutoConfigUrl;
-    }
-    if (config.fAutoDetect) {
-      options.dwFlags |= WINHTTP_AUTOPROXY_AUTO_DETECT;
-      options.dwAutoDetectFlags = WINHTTP_AUTO_DETECT_TYPE_DHCP |
-          WINHTTP_AUTO_DETECT_TYPE_DNS_A;
-    }
-    options.fAutoLogonIfChallenged = FALSE;
-    WINHTTP_PROXY_INFO resolved{};
-    if (WinHttpGetProxyForUrl(session, url.c_str(), &options, &resolved)) {
-      const std::unique_ptr<void, decltype(&GlobalFree)> resolved_proxy(resolved.lpszProxy, GlobalFree);
-      const std::unique_ptr<void, decltype(&GlobalFree)> resolved_bypass(resolved.lpszProxyBypass, GlobalFree);
-      if (resolved.dwAccessType == WINHTTP_ACCESS_TYPE_NO_PROXY ||
-          !resolved.lpszProxy || (resolved.lpszProxyBypass &&
-              Bypasses(resolved.lpszProxyBypass, host, scheme, port))) return "DIRECT";
-      return ProxyList(resolved.lpszProxy, scheme);
-    }
-    // Windows falls back to the user's manual proxy when PAC discovery fails.
-    // An explicit PAC error without a manual proxy must remain observable.
-    if (config.lpszAutoConfigUrl && !config.lpszProxy) winrt::throw_last_error();
+struct ProxyConfigFingerprint {
+  bool auto_detect = false;
+  std::wstring auto_config_url;
+  std::wstring proxy;
+  std::wstring bypass;
+  bool operator==(const ProxyConfigFingerprint& other) const {
+    return auto_detect == other.auto_detect &&
+           auto_config_url == other.auto_config_url &&
+           proxy == other.proxy &&
+           bypass == other.bypass;
   }
-  if (!config.lpszProxy || (config.lpszProxyBypass &&
-      Bypasses(config.lpszProxyBypass, host, scheme, port))) return "DIRECT";
-  return ProxyList(config.lpszProxy, scheme);
-}
-}
+  bool operator!=(const ProxyConfigFingerprint& other) const {
+    return !(*this == other);
+  }
+};
+}  // namespace
 
 struct NetworkProxy::State {
   static constexpr int kMaxWorkers = 4;
+  static constexpr ULONGLONG kWpadNegativeCooldownMs = 20000;
 
   struct Request {
     std::unique_ptr<Result> result;
@@ -174,6 +208,15 @@ struct NetworkProxy::State {
     bool completed = false;
   };
   std::mutex mutex;
+  std::mutex wpad_mutex;
+  std::condition_variable wpad_cv;
+  bool wpad_shutting_down = false;
+  bool wpad_probe_in_flight = false;
+  bool wpad_failed_cached = false;
+  bool wpad_last_probe_succeeded = false;
+  uint64_t wpad_probe_generation = 0;
+  ULONGLONG wpad_failed_until_ms = 0;
+  ProxyConfigFingerprint wpad_config;
   std::once_flag session_once;
   // WinHTTP caches PAC discovery per session. Reuse it across media requests.
   std::unique_ptr<void, decltype(&WinHttpCloseHandle)> session{nullptr, WinHttpCloseHandle};
@@ -182,6 +225,126 @@ struct NetworkProxy::State {
   bool reply_posted = false;
   std::deque<std::shared_ptr<Request>> queued;
   std::vector<std::shared_ptr<Request>> pending;
+
+  std::string Resolve(const std::wstring& url, const std::wstring& host,
+                      const std::wstring& scheme, INTERNET_PORT port) {
+    WINHTTP_CURRENT_USER_IE_PROXY_CONFIG config{};
+    if (!WinHttpGetIEProxyConfigForCurrentUser(&config)) winrt::throw_last_error();
+    const std::unique_ptr<void, decltype(&GlobalFree)> pac(config.lpszAutoConfigUrl, GlobalFree);
+    const std::unique_ptr<void, decltype(&GlobalFree)> proxy(config.lpszProxy, GlobalFree);
+    const std::unique_ptr<void, decltype(&GlobalFree)> bypass(config.lpszProxyBypass, GlobalFree);
+
+    const ProxyConfigFingerprint fingerprint{
+        config.fAutoDetect != FALSE,
+        config.lpszAutoConfigUrl ? config.lpszAutoConfigUrl : L"",
+        config.lpszProxy ? config.lpszProxy : L"",
+        config.lpszProxyBypass ? config.lpszProxyBypass : L"",
+    };
+
+    const bool wpad_only = config.fAutoDetect && !config.lpszAutoConfigUrl;
+    bool run_autoproxy = config.fAutoDetect || config.lpszAutoConfigUrl;
+    bool is_wpad_leader = false;
+
+    struct WpadLeaderGuard {
+      State& state;
+      bool active = false;
+      ~WpadLeaderGuard() {
+        if (!active) return;
+        {
+          std::lock_guard<std::mutex> lock(state.wpad_mutex);
+          state.wpad_probe_in_flight = false;
+          state.wpad_last_probe_succeeded = false;
+          ++state.wpad_probe_generation;
+        }
+        state.wpad_cv.notify_all();
+      }
+    } wpad_guard{*this, false};
+
+    {
+      std::unique_lock<std::mutex> lock(wpad_mutex);
+      if (fingerprint != wpad_config) {
+        // Invalidate cached negative WPAD state immediately on proxy config change.
+        wpad_config = fingerprint;
+        wpad_failed_cached = false;
+        wpad_failed_until_ms = 0;
+      }
+      if (wpad_only) {
+        const ULONGLONG now = GetTickCount64();
+        if (wpad_failed_cached && now < wpad_failed_until_ms) {
+          run_autoproxy = false;
+        } else if (wpad_probe_in_flight) {
+          // Single-flight: coalesce concurrent WPAD probes behind the active leader.
+          const uint64_t generation = wpad_probe_generation;
+          wpad_cv.wait(lock, [&] { return !wpad_probe_in_flight || wpad_shutting_down; });
+          if (wpad_shutting_down) {
+            run_autoproxy = false;
+          } else if (fingerprint == wpad_config && wpad_failed_cached &&
+                     GetTickCount64() < wpad_failed_until_ms) {
+            run_autoproxy = false;
+          } else if (wpad_probe_generation != generation && !wpad_last_probe_succeeded) {
+            run_autoproxy = false;
+          }
+        } else {
+          wpad_probe_in_flight = true;
+          is_wpad_leader = true;
+          wpad_guard.active = true;
+        }
+      }
+    }
+
+    if (run_autoproxy) {
+      WINHTTP_AUTOPROXY_OPTIONS options{};
+      if (config.lpszAutoConfigUrl) {
+        options.dwFlags |= WINHTTP_AUTOPROXY_CONFIG_URL;
+        options.lpszAutoConfigUrl = config.lpszAutoConfigUrl;
+      }
+      if (config.fAutoDetect) {
+        options.dwFlags |= WINHTTP_AUTOPROXY_AUTO_DETECT;
+        options.dwAutoDetectFlags = WINHTTP_AUTO_DETECT_TYPE_DHCP |
+            WINHTTP_AUTO_DETECT_TYPE_DNS_A;
+      }
+      options.fAutoLogonIfChallenged = FALSE;
+      WINHTTP_PROXY_INFO resolved{};
+      const BOOL ok = WinHttpGetProxyForUrl(session.get(), url.c_str(), &options, &resolved);
+      const DWORD last_error = ok ? ERROR_SUCCESS : GetLastError();
+
+      if (is_wpad_leader) {
+        {
+          std::lock_guard<std::mutex> lock(wpad_mutex);
+          wpad_probe_in_flight = false;
+          wpad_last_probe_succeeded = (ok != FALSE);
+          ++wpad_probe_generation;
+          if (ok) {
+            wpad_failed_cached = false;
+            wpad_failed_until_ms = 0;
+          } else if (last_error == ERROR_WINHTTP_AUTODETECTION_FAILED &&
+                     fingerprint == wpad_config) {
+            wpad_failed_cached = true;
+            wpad_failed_until_ms = GetTickCount64() + kWpadNegativeCooldownMs;
+          }
+        }
+        wpad_guard.active = false;
+        wpad_cv.notify_all();
+      }
+
+      if (ok) {
+        const std::unique_ptr<void, decltype(&GlobalFree)> resolved_proxy(resolved.lpszProxy, GlobalFree);
+        const std::unique_ptr<void, decltype(&GlobalFree)> resolved_bypass(resolved.lpszProxyBypass, GlobalFree);
+        if (resolved.dwAccessType == WINHTTP_ACCESS_TYPE_NO_PROXY ||
+            !resolved.lpszProxy || (resolved.lpszProxyBypass &&
+                Bypasses(resolved.lpszProxyBypass, host, scheme, port))) return "DIRECT";
+        return ProxyList(resolved.lpszProxy, scheme);
+      }
+      // Windows falls back to the user's manual proxy when PAC discovery fails.
+      // An explicit PAC error without a manual proxy must remain observable.
+      if (config.lpszAutoConfigUrl && !config.lpszProxy) {
+        winrt::throw_hresult(HRESULT_FROM_WIN32(last_error));
+      }
+    }
+    if (!config.lpszProxy || (config.lpszProxyBypass &&
+        Bypasses(config.lpszProxyBypass, host, scheme, port))) return "DIRECT";
+    return ProxyList(config.lpszProxy, scheme);
+  }
 
   static void CALLBACK RunWorker(PTP_CALLBACK_INSTANCE instance, void* context) {
     CallbackMayRunLong(instance);
@@ -209,10 +372,9 @@ struct NetworkProxy::State {
               WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
           if (!handle) winrt::throw_last_error();
           session.reset(handle);
-          WinHttpSetTimeouts(handle, 10000, 10000, 10000, 10000);
+          WinHttpSetTimeouts(handle, 3500, 3500, 3500, 3500);
         });
-        value = Resolve(session.get(), request->url, request->host,
-                        request->scheme, request->port);
+        value = Resolve(request->url, request->host, request->scheme, request->port);
       }
       catch (const winrt::hresult_error& e) { error = winrt::to_string(e.message()); }
       catch (const std::exception& e) { error = e.what(); }
@@ -299,6 +461,11 @@ NetworkProxy::~NetworkProxy() {
     state_->queued.clear();
     pending.swap(state_->pending);
   }
+  {
+    std::lock_guard<std::mutex> lock(state_->wpad_mutex);
+    state_->wpad_shutting_down = true;
+  }
+  state_->wpad_cv.notify_all();
   // PAC/WPAD can block in Windows; do not stall engine teardown waiting for it.
   for (const auto& request : pending) {
     Failure(*request->result, "windows_error", "Window closed before proxy resolution completed");

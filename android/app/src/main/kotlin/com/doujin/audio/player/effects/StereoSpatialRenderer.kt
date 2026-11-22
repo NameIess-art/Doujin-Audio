@@ -109,13 +109,19 @@ internal class StereoSpatialRenderer(
         right = inputRight
         if (amount != 0f) {
             val kernels = if (amount > 0f) front else back
+            val midKernel = kernels.mid
+            val sideKernel = kernels.side
+            val midHist = midHistory
+            val sideHist = sideHistory
+            val stride = tapStride
+            val tapCount = midKernel.size
             var wetMid = 0f
             var wetSide = 0f
             var frame = cursor
-            for (tap in kernels.mid.indices) {
-                wetMid += midHistory[frame] * kernels.mid[tap]
-                wetSide += sideHistory[frame] * kernels.side[tap]
-                frame += tapStride
+            for (tap in 0 until tapCount) {
+                wetMid += midHist[frame] * midKernel[tap]
+                wetSide += sideHist[frame] * sideKernel[tap]
+                frame += stride
             }
             val wet = abs(amount)
             left += wet * (wetMid + wetSide - left)

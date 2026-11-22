@@ -90,9 +90,22 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       'session_detail_${identityHashCode(this)}_cover';
   late final ActiveSessionDetailIdsNotifier _activeSessionDetailIdsNotifier;
 
+  SessionDetailRoute? _boundDetailRoute;
+
   SessionDetailRoute? get _detailRoute {
     final route = readAppRoute(context);
     return route is SessionDetailRoute ? route : null;
+  }
+
+  void _bindDetailRoute() {
+    final route = _detailRoute;
+    if (identical(_boundDetailRoute, route)) return;
+    if (_boundDetailRoute?.segmentPanelExpandedNotifier ==
+        _segmentPanelExpandedNotifier) {
+      _boundDetailRoute?.segmentPanelExpandedNotifier = null;
+    }
+    _boundDetailRoute = route;
+    route?.segmentPanelExpandedNotifier = _segmentPanelExpandedNotifier;
   }
 
   @override
@@ -115,6 +128,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _bindDetailRoute();
     _syncRouteAnimation();
   }
 
@@ -147,6 +161,11 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
 
   @override
   void dispose() {
+    if (_boundDetailRoute?.segmentPanelExpandedNotifier ==
+        _segmentPanelExpandedNotifier) {
+      _boundDetailRoute?.segmentPanelExpandedNotifier = null;
+    }
+    _boundDetailRoute = null;
     UiInteractionCoordinator.instance.cancelCommit(_coverCommitKey);
     WidgetsBinding.instance.removeObserver(this);
     _segmentPanelExpandedNotifier.dispose();
@@ -248,7 +267,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     }
     final coverPathFuture = _cachedCoverFuture!;
 
-    return SessionDetailTheme(
+    final detailContent = SessionDetailTheme(
       coverPathFuture: coverPathFuture,
       initialCoverPath: _initialCoverPath,
       requestKey: (session.id, trackPath),
@@ -283,6 +302,22 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
             onClose: _close,
           ),
         ),
+      ),
+    );
+    if (_detailRoute != null) {
+      return detailContent;
+    }
+    return ValueListenableBuilder<bool>(
+      valueListenable: _segmentPanelExpandedNotifier,
+      child: detailContent,
+      builder: (context, expanded, child) => PopScope<void>(
+        canPop: !expanded,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop && _segmentPanelExpandedNotifier.value) {
+            _segmentPanelExpandedNotifier.value = false;
+          }
+        },
+        child: child!,
       ),
     );
   }

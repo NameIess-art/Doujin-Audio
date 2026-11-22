@@ -224,11 +224,13 @@ class AudioLibraryCategorySnapshot {
     return '${target.targetType.dbValue}|${target.targetPath}';
   }
 
+  static final RegExp _termSeparatorPattern = RegExp(r'[，,]');
+
   static List<String> splitTerms(Iterable<String> values) {
     final seen = <String>{};
     final result = <String>[];
     for (final value in values) {
-      for (final part in value.split(RegExp(r'[，,]'))) {
+      for (final part in value.split(_termSeparatorPattern)) {
         final term = part.trim();
         if (term.isEmpty || !seen.add(term)) continue;
         result.add(term);

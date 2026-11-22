@@ -186,9 +186,14 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
     }
 
     return PopScope(
-      canPop: !_editingName,
+      canPop: !_editingName && !_editingColor,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && _editingName) _finishEditingName();
+        if (didPop) return;
+        if (_editingName) {
+          _finishEditingName();
+        } else if (_editingColor) {
+          setState(() => _editingColor = false);
+        }
       },
       child: AppEditPanel(
         surfaceKey: const ValueKey('playback_queue_panel_surface'),
@@ -236,7 +241,7 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
             // Run this tween outside the transition's inactive page,
             // where tickers stop as soon as the name editor opens.
             child: TweenAnimationBuilder<double>(
-              tween: Tween(end: _editingName ? 0 : 1),
+              tween: Tween(end: (_editingName || _editingColor) ? 0 : 1),
               duration: duration,
               curve: kAppFadeCurve,
               child: OverflowBox(

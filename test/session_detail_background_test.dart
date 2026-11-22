@@ -7,6 +7,7 @@ import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/cover_image_resolution.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/core/platform/notifications_platform_service.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
@@ -22,6 +23,7 @@ import 'package:doujin_audio/features/player/presentation/playlist/session_cover
 import 'package:doujin_audio/features/player/presentation/playlist/session_detail_scaffold.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_detail_theme.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_subtitle_menu_sheet.dart';
+import 'package:doujin_audio/features/player/presentation/playlist/timeline_subtitle_view.dart';
 import 'package:doujin_audio/features/player/domain/playback_queue.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:flutter/foundation.dart';
@@ -1194,8 +1196,231 @@ void main() {
           tileMode: ui.TileMode.clamp,
         ),
       );
+      final blurBoundary = find.byKey(
+        const ValueKey('session_detail_blurred_cover_layer'),
+      );
+      expect(blurBoundary, findsOneWidget);
+      expect(tester.widget(blurBoundary), isA<RepaintBoundary>());
+      expect(
+        find.descendant(of: blurBoundary, matching: find.byType(ImageFiltered)),
+        findsOneWidget,
+      );
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 6));
     },
   );
+
+  testWidgets(
+    'TimelineSubtitleView reuses cue layout metrics across theme color changes',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final cues = [
+        for (var i = 0; i < 40; i++)
+          SubtitleCue(
+            start: Duration(seconds: i * 2),
+            end: Duration(seconds: i * 2 + 2),
+            text: 'Subtitle line $i with enough words to measure layout height',
+          ),
+      ];
+      final primaryColor = ValueNotifier<Color>(Colors.blue);
+      addTearDown(primaryColor.dispose);
+
+      await tester.pumpWidget(
+        fixture.build(
+          ValueListenableBuilder<Color>(
+            valueListenable: primaryColor,
+            builder: (context, color, _) => Theme(
+              data: ThemeData(
+                colorScheme: ColorScheme.fromSeed(seedColor: color),
+              ),
+              child: SizedBox(
+                width: 320,
+                height: 300,
+                child: TimelineSubtitleView(
+                  cues: cues,
+                  playbackSubtitleIndex: 5,
+                  onSeek: (_) async {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final state = tester.state(find.byType(TimelineSubtitleView)) as dynamic;
+      final initialCount = state.debugMeasuredCueCount as int;
+      expect(initialCount, greaterThan(0));
+
+      for (final color in [Colors.red, Colors.green, Colors.purple]) {
+        primaryColor.value = color;
+        await tester.pump();
+      }
+      expect(state.debugMeasuredCueCount, initialCount);
+    },
+  );
+
+  testWidgets(
+    'fullscreen video controls disable BackdropFilter and cap blurred cover cacheWidth',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 720);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final track = testMusicTrack(
+        name: 'Video',
+        path: '/video/clip.mp4',
+        groupKey: '/video',
+        groupTitle: 'Video',
+      ).copyWith(isVideo: true);
+      fixture.library.addTracks([track], persist: false);
+      final session = fixture.playback.createTrackSession(track)
+        ..loadedPath = track.path;
+      addTearDown(session.shutdown);
+      fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      final orientation = AppOrientationController(
+        setPreferredOrientations: (_) async {},
+        setSystemUiMode: (_) async {},
+      );
+      final lease = await orientation.enterVideoFullscreen();
+      addTearDown(lease.release);
+
+      await tester.pumpWidget(
+        fixture.build(
+          SessionVideoFullscreenPage(
+            sessionId: session.id,
+            trackPath: track.path,
+            fullscreenLease: lease,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.descendant(
+          of: find.byType(SessionVideoFullscreenPage),
+          matching: find.byType(BackdropFilter),
+        ),
+        findsNothing,
+      );
+      final surface = tester.widget<PlaybackSecondaryControlSurface>(
+        find.byType(PlaybackSecondaryControlSurface),
+      );
+      expect(surface.blurEnabled, isFalse);
+      final backdropImage = tester.widget<AsyncLocalCoverImage>(
+        find.descendant(
+          of: find.byKey(const ValueKey('session_video_blurred_backdrop')),
+          matching: find.byType(AsyncLocalCoverImage),
+        ),
+      );
+      expect(backdropImage.cacheWidth, 200);
+      expect(backdropImage.useDefaultCacheWidth, isFalse);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 6));
+    },
+  );
+
+  testWidgets(
+    'PlaybackQueueCard bounds coverGeneration checks for large coverless queues',
+    (tester) async {
+      final cache = _CountingCoverCache();
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: cache,
+      );
+      addTearDown(fixture.dispose);
+      final tracks = List.generate(
+        200,
+        (index) => testMusicTrack(
+          name: 'Track $index',
+          path: '/coverless/$index.mp3',
+          groupKey: '/coverless',
+          groupTitle: 'Coverless',
+          isSingle: true,
+        ),
+      );
+      final session = fixture.playback.createPlaybackQueue('Coverless')
+        ..currentTrackPath = tracks.first.path
+        ..playbackQueue = PlaybackQueueDefinition(
+          name: 'Coverless',
+          entries: [
+            for (final track in tracks)
+              PlaybackQueueEntry(
+                id: track.path,
+                kind: PlaybackQueueEntryKind.track,
+                title: track.displayName,
+                tracks: [track],
+              ),
+          ],
+        );
+      addTearDown(session.shutdown);
+      fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: cache.generation,
+        isInitialized: true,
+      );
+
+      await tester.pumpWidget(
+        fixture.build(
+          Center(
+            child: SizedBox(
+              width: 400,
+              child: PlaybackQueueCard(
+                sessionId: session.id,
+                library: fixture.library,
+                playback: fixture.playback,
+                coverCacheWidth: 96,
+                onOpen: (_) {},
+                onEdit: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      cache.revisionLookups = 0;
+      cache.invalidateFolder('/unrelated/folder/audio.mp3');
+      fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: cache.generation,
+        isInitialized: true,
+      );
+      await tester.pump();
+      // Only probed/selected entries (<= 8 tracks -> <= 17 scope lookups), not all 200 entries.
+      expect(cache.revisionLookups, lessThan(20));
+    },
+  );
+}
+
+class _CountingCoverCache extends CoverArtworkCacheService {
+  _CountingCoverCache() : super(libraryService: LibraryService());
+
+  int revisionLookups = 0;
+
+  @override
+  ({int epoch, int revision}) revisionForScope(String scope) {
+    revisionLookups++;
+    return super.revisionForScope(scope);
+  }
+
+  @override
+  String? resolvedForPlaybackTrack(MusicTrack? track, {String? trackPath}) =>
+      null;
+
+  @override
+  Future<String?> futureForPlaybackTrack(
+    MusicTrack? track, {
+    String? trackPath,
+  }) => SynchronousFuture<String?>(null);
 }

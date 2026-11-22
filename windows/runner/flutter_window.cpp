@@ -33,6 +33,10 @@ bool FlutterWindow::OnCreate() {
     pending_activation_ = false;
     pending_activation_show_ = false;
   }
+  if (pending_exit_) {
+    pending_exit_ = false;
+    desktop_->HandleMessage(DesktopIntegration::kExit, 0, 0);
+  }
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     if (std::wstring(GetCommandLineW()).find(L"--background") == std::wstring::npos) {
@@ -68,6 +72,9 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   } else if (message == DesktopIntegration::kActivate) {
     pending_activation_ = true;
     if (wparam == 0) pending_activation_show_ = true;
+    return 0;
+  } else if (message == DesktopIntegration::kExit) {
+    pending_exit_ = true;
     return 0;
   }
   // Give Flutter, including plugins, an opportunity to handle window messages.

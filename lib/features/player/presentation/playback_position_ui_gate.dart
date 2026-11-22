@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../../../core/media/subtitle_parser.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
@@ -39,6 +40,8 @@ class PlaybackPositionUiGate extends ChangeNotifier {
   bool _disposed = false;
   bool _dirty = false;
   bool _tickerModeEnabled = true;
+  bool _postFramePublishScheduled = false;
+  bool _postFramePublishForce = false;
   int _lastNotifyMs = 0;
   int _sessionGeneration = 0;
 
@@ -141,6 +144,23 @@ class PlaybackPositionUiGate extends ChangeNotifier {
     if (!_tickerModeEnabled ||
         (deferDuringInteraction && _interactionCoordinator.isInteracting)) {
       _dirty = true;
+      return;
+    }
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      _dirty = true;
+      _postFramePublishForce = _postFramePublishForce || force;
+      if (!_postFramePublishScheduled) {
+        _postFramePublishScheduled = true;
+        SchedulerBinding.instance.addPostFrameCallback((_) {
+          _postFramePublishScheduled = false;
+          final shouldForce = _postFramePublishForce;
+          _postFramePublishForce = false;
+          if (!_disposed && _dirty) {
+            _publish(force: shouldForce);
+          }
+        });
+      }
       return;
     }
     final now = DateTime.now().millisecondsSinceEpoch;

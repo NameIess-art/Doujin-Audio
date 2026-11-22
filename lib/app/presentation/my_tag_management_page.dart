@@ -6,9 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../state/app_runtime_providers.dart';
 import '../theme/app_styles.dart';
+import '../../core/logging/app_log_service.dart';
 import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/app_search_suggestions.dart';
 import '../../core/widgets/app_transitions.dart';
+import '../../core/widgets/confirm_action_dialog.dart';
 import '../../core/widgets/mobile_overlay_inset.dart';
 import '../../core/widgets/operation_feedback.dart';
 import '../../core/widgets/page_header_inset.dart';
@@ -102,6 +104,8 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
   final _changes = <String, bool>{};
   final _draftRevision = ValueNotifier(0);
   bool _saving = false;
+  bool _confirmingDiscard = false;
+  bool _discardConfirmed = false;
   AsmrLibraryController? _catalogController;
   _InterestCatalogInputs? _catalogInputs;
   _InterestCatalogView? _catalogView;
@@ -172,9 +176,31 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
     super.dispose();
   }
 
+  Future<void> _confirmDiscardAndPop() async {
+    if (_confirmingDiscard || _saving || _changes.isEmpty) return;
+    _confirmingDiscard = true;
+    try {
+      final i18n = ref.read(appLanguageProviderInstanceProvider);
+      final discard = await showConfirmActionDialog(
+        context: context,
+        title: i18n.tr('my_unsaved_title'),
+        message: i18n.tr('my_unsaved_message', {'count': _changes.length}),
+        cancelLabel: i18n.tr('cancel'),
+        confirmLabel: i18n.tr('confirm'),
+        icon: Icons.warning_amber_rounded,
+      );
+      if (discard && mounted) {
+        setState(() => _discardConfirmed = true);
+        Navigator.of(context).pop();
+      }
+    } finally {
+      _confirmingDiscard = false;
+    }
+  }
+
   Future<void> _confirm() async {
     final controller = ref.read(asmrLibraryControllerProvider);
-    if (controller == null || _saving) return;
+    if (controller == null || _saving || _changes.isEmpty) return;
     setState(() => _saving = true);
     try {
       await switch (widget.type) {
@@ -191,14 +217,30 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
           changes: _changes,
         ),
       };
-      if (mounted) Navigator.of(context).pop();
-    } catch (error) {
+      if (mounted) {
+        setState(() => _discardConfirmed = true);
+        Navigator.of(context).pop();
+      }
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'my_tag_selections_save_failed type=${widget.type.name} excluded=${widget.excluded}',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
+      final i18n = ref.read(appLanguageProviderInstanceProvider);
       setState(() {
         _saving = false;
         _refreshCatalog();
       });
-      showAppSnackBar(context, error.toString());
+      showAppSnackBar(
+        context,
+        i18n.tr('operation_failed_retry'),
+        tone: AppFeedbackTone.destructive,
+        icon: Icons.error_outline_rounded,
+        actionLabel: i18n.tr('retry'),
+        onAction: () => unawaited(_confirm()),
+      );
     }
   }
 
@@ -418,8 +460,18 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
               ).withWindowsSmoothScroll();
             },
           );
-    return PopScope(
-      canPop: !_saving,
+    return ListenableBuilder(
+      listenable: _draftRevision,
+      builder: (context, child) => PopScope(
+        canPop: !_saving && (_changes.isEmpty || _discardConfirmed),
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop || _saving || _changes.isEmpty || _discardConfirmed) {
+            return;
+          }
+          unawaited(_confirmDiscardAndPop());
+        },
+        child: child!,
+      ),
       child: Scaffold(
         body: ScrollActivityGate(
           child: PageHeaderInset(
@@ -465,12 +517,25 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                       MediaQuery.paddingOf(context).bottom +
                       MobileOverlayInset.of(context),
                   child: AppPageContentTransition(
-                    child: HeaderFloatingActionPill(
-                      pillKey: const ValueKey('my_tags_confirm'),
-                      icon: Icons.check_rounded,
-                      label: i18n.tr('confirm'),
-                      loading: _saving,
-                      onTap: controller == null || _saving ? null : _confirm,
+                    child: ListenableBuilder(
+                      listenable: _draftRevision,
+                      builder: (context, _) {
+                        final hasChanges = _changes.isNotEmpty;
+                        final canConfirm =
+                            controller != null && !_saving && hasChanges;
+                        final label = hasChanges
+                            ? i18n.tr('my_confirm_count', {
+                                'count': _changes.length,
+                              })
+                            : i18n.tr('confirm');
+                        return HeaderFloatingActionPill(
+                          pillKey: const ValueKey('my_tags_confirm'),
+                          icon: Icons.check_rounded,
+                          label: label,
+                          loading: _saving,
+                          onTap: canConfirm ? _confirm : null,
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -492,7 +557,16 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                               Icons.record_voice_over_rounded,
                             MyInterestType.circles => Icons.storefront_outlined,
                           },
-                    leading: const AppHeaderBackButton(),
+                    leading: AppHeaderBackButton(
+                      onPressed: () {
+                        if (_saving) return;
+                        if (_changes.isNotEmpty && !_discardConfirmed) {
+                          unawaited(_confirmDiscardAndPop());
+                          return;
+                        }
+                        Navigator.of(context).maybePop();
+                      },
+                    ),
                     additionalChild: Padding(
                       padding: searchPadding,
                       child: HeaderFloatingSurface(

@@ -28,11 +28,14 @@ class AppBootstrapState {
 }
 
 class AppBootstrapController extends ChangeNotifier {
-  AppBootstrapController({required Future<void> Function() initializer})
-    : _initializer = initializer;
+  AppBootstrapController({
+    required Future<void> Function() initializer,
+    AppBootstrapState initialState = const AppBootstrapState.initializing(),
+  }) : _initializer = initializer,
+       _state = initialState;
 
   final Future<void> Function() _initializer;
-  AppBootstrapState _state = const AppBootstrapState.initializing();
+  AppBootstrapState _state;
   Future<void>? _activeAttempt;
   bool _disposed = false;
 

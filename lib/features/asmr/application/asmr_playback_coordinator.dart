@@ -14,6 +14,8 @@ abstract interface class AsmrPlaybackSource {
   Future<void> recordHistory(AsmrWork work);
 }
 
+enum AsmrDirectPlayResult { started, empty, superseded }
+
 class AsmrPlaybackCoordinator {
   AsmrPlaybackCoordinator({
     required AsmrPlaybackSource source,
@@ -27,14 +29,28 @@ class AsmrPlaybackCoordinator {
 
   int get directPlayEpoch => _directPlayEpoch;
 
-  Future<bool> playDirectWork(AsmrWork work) async {
-    _directPlayEpoch++;
-    final started = await _launcher.playDirect(
-      _source.loadPlayableTracks(work),
-    );
-    if (started) await _source.recordHistory(work);
-    return started;
+  Future<AsmrDirectPlayResult> playDirectWorkWithStatus(AsmrWork work) async {
+    final epoch = ++_directPlayEpoch;
+    var loadedTracks = false;
+    var tracksEmpty = false;
+    final pendingTracks = _source.loadPlayableTracks(work).then((tracks) {
+      loadedTracks = true;
+      tracksEmpty = tracks.isEmpty;
+      return tracks;
+    });
+    final started = await _launcher.playDirect(pendingTracks);
+    if (started) {
+      await _source.recordHistory(work);
+      return AsmrDirectPlayResult.started;
+    }
+    if (loadedTracks && tracksEmpty && epoch == _directPlayEpoch) {
+      return AsmrDirectPlayResult.empty;
+    }
+    return AsmrDirectPlayResult.superseded;
   }
+
+  Future<bool> playDirectWork(AsmrWork work) async =>
+      await playDirectWorkWithStatus(work) == AsmrDirectPlayResult.started;
 
   Future<bool> playDirectTrack(AsmrWork work, AsmrTrackFile target) async {
     _directPlayEpoch++;

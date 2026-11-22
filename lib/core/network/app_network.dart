@@ -90,24 +90,33 @@ class AppNetwork extends HttpOverrides {
     // Keep that route blocked until credentials are supplied, without making
     // the settings page itself inaccessible during startup.
     settings.validate(requireCredentials: false);
+    final normalizedDns = settings.customDnsServer.isEmpty
+        ? ''
+        : NetworkRouteSettings.normalizeDns(settings.customDnsServer)!;
+    final normalizedSettings = normalizedDns == settings.customDnsServer
+        ? settings
+        : settings.copyWith(customDnsServer: normalizedDns);
     final generation = _lifecycleGeneration;
     final operation = _configureTail.then((_) async {
       if (generation != _lifecycleGeneration) return;
       await ensureStarted();
       if (generation != _lifecycleGeneration) return;
       // A native failure must not publish a route used only by Flutter.
-      await _applyNativeRoute(settings, password);
+      await _applyNativeRoute(normalizedSettings, password);
       if (generation != _lifecycleGeneration) return;
-      if (_settings != settings ||
+      if (_settings != normalizedSettings ||
           _password != password ||
-          (_dnsResolver == null && settings.customDnsServer.isNotEmpty)) {
+          (_dnsResolver == null &&
+              normalizedSettings.customDnsServer.isNotEmpty)) {
         // Retire the previous resolver without closing it mid-lookup; active
         // connections release their lease as soon as _connect finishes.
         final previous = _dnsResolver;
-        _dnsResolver = settings.customDnsServer.isEmpty
+        _dnsResolver = normalizedSettings.customDnsServer.isEmpty
             ? null
             : _ManagedDnsResolver(
-                _createDnsResolver(InternetAddress(settings.customDnsServer)),
+                _createDnsResolver(
+                  InternetAddress(normalizedSettings.customDnsServer),
+                ),
                 onRetiredClosed: _retiredDnsResolvers.remove,
               );
         if (previous != null) {
@@ -116,7 +125,7 @@ class AppNetwork extends HttpOverrides {
         }
       }
       _clearSystemProxyRoutes();
-      _settings = settings;
+      _settings = normalizedSettings;
       _password = password;
     });
     _configureTail = operation.then<void>(

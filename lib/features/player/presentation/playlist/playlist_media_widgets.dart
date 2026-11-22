@@ -99,7 +99,10 @@ class SessionHeroArtwork extends ConsumerWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final displayWidth = constraints.maxWidth;
-        final coverCacheWidth = coverCacheWidthForResolution(coverResolution);
+        final isVideoBackdrop = allowVideoPlayback && track?.isVideo == true;
+        final coverCacheWidth = isVideoBackdrop
+            ? 200
+            : coverCacheWidthForResolution(coverResolution);
         final coverPoster = Stack(
           fit: StackFit.expand,
           children: [
@@ -181,7 +184,7 @@ class SessionHeroArtwork extends ConsumerWidget {
                     ),
                     fullscreenTooltip: i18n.tr('fullscreen'),
                     controlsLabel: i18n.tr('video_controls'),
-                    poster: allowVideoPlayback && track?.isVideo == true
+                    poster: isVideoBackdrop
                         ? SessionVideoBlurredBackdrop(child: coverPoster)
                         : coverPoster,
                   ),

@@ -66,7 +66,6 @@ internal class UpdateMethodHandler(
 
     private fun installDownloadedApk(apkPath: String): Map<String, Any?> {
         if (!canInstallUnknownApps()) {
-            openInstallPermissionSettings()
             return installResult(false, true, "Install permission is required.")
         }
         val apkFile = File(apkPath)

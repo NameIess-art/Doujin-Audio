@@ -23,6 +23,7 @@ import 'asmr_download_task_store.dart';
 import 'asmr_download_planner.dart';
 import 'asmr_download_transfer_executor.dart';
 import 'asmr_download_cleanup.dart';
+import 'asmr_download_io.dart';
 import 'asmr_download_serialization.dart';
 import 'asmr_download_internal_models.dart';
 
@@ -257,7 +258,7 @@ class AsmrDownloadManager {
         return false;
       }
     }
-    return Directory(normalized).exists();
+    return localDownloadDirectory(normalized).exists();
   }
 
   Future<void> _runTaskRemoval(
@@ -295,6 +296,9 @@ class AsmrDownloadManager {
 
     if (_queue.contains(workId)) {
       _queue.remove(workId);
+      if (deleteDownloaded) {
+        await _outputs.cleanupCancelledTask(workId);
+      }
       await _discardTaskStaging(task);
 
       _removeTask(workId);

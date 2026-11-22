@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -808,12 +810,13 @@ void main() {
     expect(service.state.hasPending, isFalse);
   });
 
-  testWidgets('ordinary feedback replacement commits pending removals', (
+  testWidgets('ordinary feedback queues behind active undoable removal', (
     tester,
   ) async {
     final service = UndoableRemovalService();
     addTearDown(service.dispose);
     var commits = 0;
+    var undos = 0;
     await tester.pumpWidget(
       _feedbackApp(
         home: Scaffold(
@@ -828,7 +831,7 @@ void main() {
                     action: UndoableRemovalAction(
                       key: const UndoableRemovalKey('test', 'replace'),
                       commit: () => commits++,
-                      undo: () {},
+                      undo: () => undos++,
                     ),
                     message: 'Removed',
                     batchMessage: (count) => 'Removed $count',
@@ -849,14 +852,85 @@ void main() {
     );
 
     await tester.tap(find.text('Remove'));
-    await tester.pump();
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Replace'));
     await tester.pump();
     await tester.runAsync(() => Future<void>.delayed(Duration.zero));
 
-    expect(commits, 1);
+    // Routine toast must NOT evict or prematurely commit the undo banner.
+    expect(commits, 0);
+    expect(find.text('Removed'), findsOneWidget);
+    expect(find.text('Ordinary'), findsNothing);
+
+    // Clicking Undo restores the item, then shows the queued routine toast.
+    await tester.tap(find.textContaining('Undo'));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    expect(undos, 1);
+    expect(commits, 0);
     expect(find.text('Ordinary'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
   });
+
+  testWidgets(
+    'undoable commit error still displays via root overlay after page pops',
+    (tester) async {
+      final service = UndoableRemovalService();
+      addTearDown(service.dispose);
+      final navigatorKey = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navigatorKey,
+          theme: ThemeData.dark(useMaterial3: true).copyWith(
+            extensions: [AppDesignTokens.dark.copyWith(barGlassEnabled: false)],
+          ),
+          home: const Scaffold(body: Text('Home')),
+        ),
+      );
+      unawaited(
+        navigatorKey.currentState!.push<void>(
+          MaterialPageRoute<void>(
+            builder: (pageContext) => Scaffold(
+              body: Center(
+                child: TextButton(
+                  onPressed: () => showUndoableRemovalFeedback(
+                    pageContext,
+                    service: service,
+                    action: UndoableRemovalAction(
+                      key: const UndoableRemovalKey('popped', 'item'),
+                      commit: () => throw StateError('disk error'),
+                      undo: () {},
+                    ),
+                    message: 'Deleted item',
+                    batchMessage: (c) => 'Deleted $c',
+                    undoLabel: 'Undo',
+                    failureMessage: 'Delete failed',
+                  ),
+                  child: const Text('Delete'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+      // Pop the originating page before the 5s undo window expires.
+      navigatorKey.currentState!.pop();
+      await tester.pumpAndSettle();
+      expect(find.text('Home'), findsOneWidget);
+
+      await tester.pump(kUndoableRemovalFeedbackDuration);
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Delete failed'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pumpAndSettle();
+    },
+  );
 
   testWidgets('top feedback can be dismissed by swiping horizontally', (
     tester,
@@ -1079,9 +1153,14 @@ void main() {
         of: find.text('Actions'),
         matching: find.byType(HeaderFloatingSurface),
       );
+      final feedbackRect = tester.getRect(find.byType(AppFeedbackSurface));
+      final secondRowRect = tester.getRect(secondRow);
+      expect(feedbackRect.top, secondRowRect.top);
+      expect(feedbackRect.bottom, secondRowRect.bottom);
+      expect(feedbackRect.center.dx, closeTo(secondRowRect.center.dx, 0.5));
       expect(
-        tester.getRect(find.byType(AppFeedbackSurface)),
-        tester.getRect(secondRow),
+        feedbackRect.width,
+        closeTo(secondRowRect.width.clamp(0.0, 500.0), 0.5),
       );
     });
   }
@@ -1127,8 +1206,15 @@ void main() {
       await tester.tap(find.text('Menu trigger'));
       await tester.pumpAndSettle();
       final surface = find.byType(AppFeedbackSurface);
-      expect(tester.getTopLeft(surface).dx, 196);
-      expect(tester.getTopRight(surface).dx, size.width - 56);
+      final surfaceRect = tester.getRect(surface);
+      final canvas = tester.getRect(
+        find.byKey(const ValueKey<String>('main_page_canvas')),
+      );
+      final availableWidth = canvas.width - 32;
+      expect(surfaceRect.left, greaterThanOrEqualTo(canvas.left + 16));
+      expect(surfaceRect.right, lessThanOrEqualTo(canvas.right - 16));
+      expect(surfaceRect.width, closeTo(availableWidth.clamp(0.0, 500.0), 0.5));
+      expect(surfaceRect.center.dx, closeTo(canvas.center.dx, 0.5));
       expect(tester.takeException(), isNull);
       await tester.pump(const Duration(seconds: 3));
       await tester.pumpAndSettle();
@@ -1211,8 +1297,12 @@ void main() {
         final surface = find.byType(AppFeedbackSurface);
         void expectPageBounds(String key) {
           final page = tester.getRect(find.byKey(ValueKey(key)));
-          expect(tester.getTopLeft(surface).dx, page.left + 16);
-          expect(tester.getTopRight(surface).dx, page.right - 16);
+          final rect = tester.getRect(surface);
+          final availableWidth = page.width - 32;
+          expect(rect.left, greaterThanOrEqualTo(page.left + 16));
+          expect(rect.right, lessThanOrEqualTo(page.right - 16));
+          expect(rect.width, closeTo(availableWidth.clamp(0.0, 500.0), 0.5));
+          expect(rect.center.dx, closeTo(page.center.dx, 0.5));
         }
 
         await tester.tap(find.text('Main'));
@@ -1250,7 +1340,7 @@ void main() {
       const Size(800, 400),
       const Size(400, 800),
     ]) {
-      testWidgets('top feedback fills standalone page on $platform at $size', (
+      testWidgets('top feedback stays bounded and centered on $platform at $size', (
         tester,
       ) async {
         debugDefaultTargetPlatformOverride = platform;
@@ -1281,8 +1371,9 @@ void main() {
         await tester.pumpAndSettle();
 
         final surface = find.byType(AppFeedbackSurface);
-        expect(tester.getTopLeft(surface).dx, 16);
-        expect(tester.getTopRight(surface).dx, size.width - 16);
+        final rect = tester.getRect(surface);
+        expect(rect.width, closeTo((size.width - 32).clamp(0.0, 500.0), 0.5));
+        expect(rect.center.dx, closeTo(size.width / 2, 0.5));
         expect(tester.takeException(), isNull);
         await tester.pump(const Duration(seconds: 3));
         await tester.pumpAndSettle();

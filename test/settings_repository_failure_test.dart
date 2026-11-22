@@ -343,4 +343,53 @@ void main() {
       expect(settings.slice.state.customEqPresets, [preset]);
     },
   );
+
+  test(
+    'loadPersistedPresentationStateSync hydrates slice synchronously without reading secure storage',
+    () async {
+      await AppPreferences.writeJson('playback_settings_v1', {
+        'startupPage': 'settings',
+        'showLocalLibrary': false,
+        'showAsmrOne': true,
+        'showMyPage': false,
+        'reduceAnimations': true,
+        'workNameDisplay': 'folderName',
+        'networkRouteSettings': {
+          'proxyMode': 'http',
+          'proxyHost': '127.0.0.1',
+          'proxyPort': 8080,
+          'proxyAuthenticationEnabled': true,
+          'proxyUsername': 'alice',
+          'proxyPasswordConfigured': true,
+        },
+      });
+      await AppPreferences.init();
+      var proxyPasswordReads = 0;
+      var routeNotifications = 0;
+      final repo = SettingsRepository(
+        readProxyPassword: () async {
+          proxyPasswordReads++;
+          return 'secret';
+        },
+        onNetworkRouteChanged: (_, _) async {
+          routeNotifications++;
+        },
+      );
+      addTearDown(repo.dispose);
+
+      expect(repo.loadPersistedPresentationStateSync(), isTrue);
+      expect(repo.slice.state.isInitialized, isTrue);
+      expect(repo.slice.state.startupPage, StartupPage.settings);
+      expect(repo.slice.state.showLocalLibrary, isFalse);
+      expect(repo.slice.state.showMyPage, isFalse);
+      expect(repo.slice.state.reduceAnimations, isTrue);
+      expect(repo.slice.state.workNameDisplay, WorkNameDisplay.folderName);
+      expect(proxyPasswordReads, 0);
+      expect(routeNotifications, 0);
+
+      await repo.loadPersistedState(enforceCacheLimit: false);
+      expect(proxyPasswordReads, 1);
+      expect(routeNotifications, 1);
+    },
+  );
 }

@@ -72,6 +72,28 @@ class _DlsiteMetadataWorkPickerPageState
     });
   }
 
+  bool get _allFilteredSelected =>
+      _filteredEntries.isNotEmpty &&
+      _filteredEntries.every(
+        (entry) => _selectedIds.contains(
+          AudioLibraryCategorySnapshot.targetKey(entry.target),
+        ),
+      );
+
+  void _toggleSelectAllFiltered() {
+    if (_filteredEntries.isEmpty) return;
+    setState(() {
+      final filteredKeys = _filteredEntries.map(
+        (entry) => AudioLibraryCategorySnapshot.targetKey(entry.target),
+      );
+      if (_allFilteredSelected) {
+        _selectedIds.removeAll(filteredKeys);
+      } else {
+        _selectedIds.addAll(filteredKeys);
+      }
+    });
+  }
+
   void _updateFilteredEntries() {
     final query = _searchQuery.trim().toLowerCase();
     final filtered = query.isEmpty
@@ -185,6 +207,30 @@ class _DlsiteMetadataWorkPickerPageState
                 child: TopPageHeader(
                   key: const ValueKey<String>('batch_metadata_picker_header'),
                   leading: const AppHeaderBackButton(),
+                  trailing: filtered.isEmpty
+                      ? null
+                      : HeaderActionPill(
+                          children: [
+                            IconButton(
+                              key: const ValueKey<String>(
+                                'batch_metadata_picker_select_all',
+                              ),
+                              tooltip: i18n.tr(
+                                _allFilteredSelected
+                                    ? 'deselect_all'
+                                    : 'select_all',
+                              ),
+                              icon: Icon(
+                                _allFilteredSelected
+                                    ? Icons.deselect_rounded
+                                    : Icons.select_all_rounded,
+                                size: 20,
+                              ),
+                              visualDensity: VisualDensity.compact,
+                              onPressed: _toggleSelectAllFiltered,
+                            ),
+                          ],
+                        ),
                   titleWidget: HeaderFloatingSurface(
                     key: const ValueKey<String>('batch_metadata_picker_search'),
                     child: TextSelectionTheme(

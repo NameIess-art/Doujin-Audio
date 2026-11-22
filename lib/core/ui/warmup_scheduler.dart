@@ -110,8 +110,12 @@ class WarmupScheduler {
     _cooldownTimer?.cancel();
     _cooldownTimer = null;
     _isCoolingDown = false;
+    final discarded = List<_QueuedWarmupTask>.of(_pending);
     _pending.clear();
     _queuedKeys.clear();
+    for (final task in discarded) {
+      task.onDiscard?.call();
+    }
     _completeCapacityIfAvailable();
     _completeIdleIfNeeded();
   }
@@ -123,13 +127,18 @@ class WarmupScheduler {
   }
 
   void _dropStalePending() {
+    final discarded = <_QueuedWarmupTask>[];
     _pending.removeWhere((task) {
       if (task.generation == _currentGeneration) {
         return false;
       }
       _queuedKeys.remove(task.key);
+      discarded.add(task);
       return true;
     });
+    for (final task in discarded) {
+      task.onDiscard?.call();
+    }
     _completeCapacityIfAvailable();
   }
 
@@ -149,6 +158,7 @@ class WarmupScheduler {
       _queuedKeys.remove(nextTask.key);
       _completeCapacityIfAvailable();
       if (nextTask.generation != _currentGeneration) {
+        nextTask.onDiscard?.call();
         continue;
       }
       _activeKeys.add(nextTask.key);

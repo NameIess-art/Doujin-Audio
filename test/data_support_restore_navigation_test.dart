@@ -9,6 +9,7 @@ import 'package:doujin_audio/features/data_support/application/data_backup_servi
 import 'package:doujin_audio/features/data_support/application/data_support_file_service.dart';
 import 'package:doujin_audio/features/data_support/presentation/data_support_settings_controls.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -60,17 +61,43 @@ void main() {
         );
         await tester.pumpAndSettle();
         await tester.tap(find.text(i18n.tr('select_backup')));
-        // The pending picker/staging operation intentionally keeps animating.
-        for (var i = 0; i < 15 && files.calls == 0; i++) {
+        for (var i = 0; i < 15 && files.pickCalls == 0; i++) {
           await tester.pump(const Duration(milliseconds: 100));
         }
-        expect(files.calls, 1);
+        expect(files.pickCalls, 1);
         await tester.pump();
-        await tester.pump(const Duration(milliseconds: 400));
         final progress = find.widgetWithText(
           AppFeedbackSurface,
           i18n.tr('loading_dot'),
         );
+        // Progress feedback must not appear while the native file picker is open.
+        expect(progress, findsNothing);
+        if (outcome == 'cancel') {
+          files.pendingPick.complete(null);
+          await tester.pumpAndSettle();
+          expect(files.stageCalls, 0);
+          expect(progress, findsNothing);
+          expect(find.text(i18n.tr('backup_ready_to_restore')), findsNothing);
+          expect(playback.clearCalls, 0);
+          final navigator = Navigator.of(
+            tester.element(find.byType(DataSupportSettingsControls)),
+          );
+          await navigator.maybePop();
+          await tester.pumpAndSettle();
+          expect(find.text('Open data settings'), findsOneWidget);
+          expect(tester.takeException(), isNull);
+          await tester.pumpWidget(const SizedBox.shrink());
+          return;
+        }
+        files.pendingPick.complete(
+          PlatformFile(name: 'backup.dabackup', size: 128, path: '/backup.dabackup'),
+        );
+        for (var i = 0; i < 15 && files.stageCalls == 0; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(files.stageCalls, 1);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
         expect(progress, findsOneWidget);
         expect(
           find.descendant(
@@ -85,7 +112,7 @@ void main() {
         );
         await navigator.maybePop();
         await tester.pump(const Duration(seconds: 6));
-        expect(files.calls, 1);
+        expect(files.stageCalls, 1);
         expect(progress, findsOneWidget);
         expect(find.byType(DataSupportSettingsControls), findsOneWidget);
 
@@ -95,8 +122,6 @@ void main() {
           files.pending.completeError(
             const FormatException('incompatible_backup'),
           );
-        } else if (outcome == 'cancel') {
-          files.pending.complete(null);
         } else {
           files.pending.complete(
             BackupValidationResult(
@@ -164,14 +189,20 @@ void main() {
 }
 
 class _DeferredRestoreFileService extends DataSupportFileService {
+  final pendingPick = Completer<PlatformFile?>();
   final pending = Completer<BackupValidationResult?>();
-  var calls = 0;
+  var pickCalls = 0;
+  var stageCalls = 0;
 
   @override
-  Future<BackupValidationResult?> pickAndStageBackup({
-    required String dialogTitle,
-  }) {
-    calls++;
+  Future<PlatformFile?> pickBackupFile({required String dialogTitle}) {
+    pickCalls++;
+    return pendingPick.future;
+  }
+
+  @override
+  Future<BackupValidationResult?> stageBackupFile(PlatformFile selected) {
+    stageCalls++;
     return pending.future;
   }
 }

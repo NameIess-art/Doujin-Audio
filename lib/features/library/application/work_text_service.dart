@@ -287,21 +287,39 @@ String _decodeUtf16(
 }
 
 class WorkTextService {
+  static const Duration defaultDirectoryCacheTtl = Duration(seconds: 60);
+
   WorkTextService({
     FileCachePlatformGateway? platformGateway,
     HttpClient Function()? httpClientFactory,
     Future<List<CoverImageReference>> Function(String)? discoverImages,
+    Future<List<CoverImageReference>> Function(String, {required bool refresh})?
+    discoverImagesWithRefresh,
+    Duration directoryCacheTtl = defaultDirectoryCacheTtl,
+    DateTime Function()? clock,
   }) : _platformGateway = platformGateway ?? FileCachePlatformGateway.instance,
        _httpClientFactory = httpClientFactory ?? HttpClient.new,
-       _discoverImages = discoverImages;
+       _discoverImages = discoverImages,
+       _discoverImagesWithRefresh = discoverImagesWithRefresh,
+       _directoryCacheTtl = directoryCacheTtl,
+       _clock = clock ?? DateTime.now;
 
   final FileCachePlatformGateway _platformGateway;
   final HttpClient Function() _httpClientFactory;
   final Future<List<CoverImageReference>> Function(String)? _discoverImages;
+  final Future<List<CoverImageReference>> Function(
+    String, {
+    required bool refresh,
+  })?
+  _discoverImagesWithRefresh;
+  final Duration _directoryCacheTtl;
+  final DateTime Function() _clock;
   final _directoryFiles = <String, Future<List<WorkTextFile>>>{};
   final _textSnapshots = <String, List<WorkTextFile>>{};
+  final _textSnapshotTimes = <String, DateTime>{};
   final _imageRequests = <String, Future<List<CoverImageReference>>>{};
   final _imageSnapshots = <String, List<CoverImageReference>>{};
+  final _imageSnapshotTimes = <String, DateTime>{};
   int _cacheGeneration = 0;
   bool _disposed = false;
   final _activeReads = <WorkTextReadRequest>{};
@@ -343,36 +361,50 @@ class WorkTextService {
     folderPath: folderPath,
     requests: _directoryFiles,
     snapshots: _textSnapshots,
+    snapshotTimes: _textSnapshotTimes,
     discover: _discoverWorkTextFiles,
     refresh: refresh,
   );
 
+  Future<List<CoverImageReference>> findWorkImageFiles(String folderPath) =>
+      _findWorkImages(folderPath);
+
   Future<List<CoverImageReference>> refreshWorkImageFiles(String folderPath) =>
-      _findDirectoryFiles(
-        folderPath: folderPath,
-        requests: _imageRequests,
-        snapshots: _imageSnapshots,
-        discover: (folder) =>
-            _discoverImages?.call(folder) ??
-            _platformGateway.discoverRootImages(
-              path: folder,
-              rootFolder: folder,
-            ),
-        refresh: true,
-      );
+      _findWorkImages(folderPath, refresh: true);
+
+  Future<List<CoverImageReference>> _findWorkImages(
+    String folderPath, {
+    bool refresh = false,
+  }) => _findDirectoryFiles(
+    folderPath: folderPath,
+    requests: _imageRequests,
+    snapshots: _imageSnapshots,
+    snapshotTimes: _imageSnapshotTimes,
+    discover: (folder) =>
+        _discoverImagesWithRefresh?.call(folder, refresh: refresh) ??
+        _discoverImages?.call(folder) ??
+        _platformGateway.discoverRootImages(
+          path: folder,
+          rootFolder: folder,
+        ),
+    refresh: refresh,
+  );
 
   Future<void> clearDirectoryCache() async {
     _cacheGeneration++;
     _directoryFiles.clear();
     _imageRequests.clear();
     _textSnapshots.clear();
+    _textSnapshotTimes.clear();
     _imageSnapshots.clear();
+    _imageSnapshotTimes.clear();
   }
 
   Future<List<T>> _findDirectoryFiles<T>({
     required String folderPath,
     required Map<String, Future<List<T>>> requests,
     required Map<String, List<T>> snapshots,
+    required Map<String, DateTime> snapshotTimes,
     required Future<List<T>> Function(String) discover,
     bool refresh = false,
   }) {
@@ -382,7 +414,12 @@ class WorkTextService {
     if (folderPath.trim().isEmpty) return Future.value(const []);
     final key = PathMatcher.equivalenceKey(folderPath);
     final cached = snapshots[key];
-    if (!refresh && cached != null) return Future.value(cached);
+    final cachedAt = snapshotTimes[key];
+    final isFresh =
+        cached != null &&
+        cachedAt != null &&
+        _clock().difference(cachedAt) < _directoryCacheTtl;
+    if (!refresh && isFresh) return Future.value(cached);
     final pending = requests[key];
     if (pending != null) return pending;
     final generation = _cacheGeneration;
@@ -399,6 +436,7 @@ class WorkTextService {
             if (generation == _cacheGeneration &&
                 identical(requests[key], request)) {
               snapshots[key] = files;
+              snapshotTimes[key] = _clock();
             }
             return files;
           } catch (error, stackTrace) {
@@ -413,7 +451,11 @@ class WorkTextService {
         })().whenComplete(() {
           if (!identical(requests[key], request)) return;
           requests.remove(key);
-          if (snapshots.length > 32) snapshots.remove(snapshots.keys.first);
+          if (snapshots.length > 32) {
+            final evictedKey = snapshots.keys.first;
+            snapshots.remove(evictedKey);
+            snapshotTimes.remove(evictedKey);
+          }
         });
     requests[key] = request;
     return request;

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/localization/app_language_provider.dart';
@@ -18,6 +19,7 @@ import '../../settings/presentation/settings_providers.dart';
 import '../application/library_facade.dart';
 import '../domain/audio_library_category.dart';
 import '../domain/library_node.dart';
+import 'audio_detail_sheet.dart' show showAudioDetailEditor;
 import 'library_providers.dart';
 import 'library_search_all_results.dart';
 import 'library_tab_ui_helpers.dart';
@@ -55,10 +57,23 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   @override
   void initState() {
     super.initState();
+    HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     if (widget.initialQuery.isEmpty) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _onSubmitted(legacySearchElements(widget.initialQuery));
     });
+  }
+
+  bool _handleHardwareKey(KeyEvent event) {
+    if (!mounted ||
+        !_isSelectionMode ||
+        ModalRoute.of(context)?.isCurrent == false ||
+        event is! KeyDownEvent ||
+        event.logicalKey != LogicalKeyboardKey.escape) {
+      return false;
+    }
+    _exitSelectionMode();
+    return true;
   }
 
   void _onChanged(String value) {
@@ -166,6 +181,49 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     });
   }
 
+  void _toggleSelectAllSearchResults() {
+    final selectableKeys = <String>[
+      for (final node in _searchSelectionTree)
+        if (isSelectableLibraryNode(node)) selectionKeyForLibraryNode(node),
+    ];
+    if (selectableKeys.isEmpty) return;
+    final allSelected = selectableKeys.every(_selectedLibraryPaths.contains);
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    setState(() {
+      _selectedLibraryPaths = allSelected
+          ? const <String>{}
+          : selectableKeys.toSet();
+    });
+  }
+
+  void _updateSubmittedFilters(SearchFilters nextFilters) {
+    final currentQuery = _submittedQuery ?? '';
+    setState(() {
+      _filters = nextFilters;
+      _queryRevision++;
+      _clearSelection();
+      if (currentQuery.isEmpty && nextFilters == emptySearchFilters) {
+        _submittedQuery = null;
+        _searchSelectionTree = const [];
+      }
+    });
+  }
+
+  void _clearFilters() {
+    _updateSubmittedFilters(emptySearchFilters);
+  }
+
+  void _editSearch() {
+    setState(() {
+      _submittedQuery = null;
+      _searchSelectionTree = const [];
+      _clearSelection();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNode.requestFocus();
+    });
+  }
+
   Future<List<LibraryBatchSelection>> _currentSelections() async =>
       selectedLibraryNodeSelections(
         _searchSelectionTree,
@@ -228,6 +286,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     _focusNode.dispose();
     _draftQuery.dispose();
     _resultsScrollController.dispose();
+    HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     _suggestionsScrollController.dispose();
     super.dispose();
   }
@@ -249,7 +308,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
           )
         : AppSearchPageScaffold.controlsTopInset(context, hasCategories: false);
     final query = _submittedQuery;
-    return AppSearchPageScaffold<AudioLibraryCategoryType>(
+    Widget scaffold = AppSearchPageScaffold<AudioLibraryCategoryType>(
       controller: _controller,
       focusNode: _focusNode,
       requestInitialFocus: widget.initialQuery.isEmpty,
@@ -306,9 +365,21 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                   onEnterSelectionMode: _enterSelectionMode,
                   onToggleSelection: _toggleLibrarySelection,
                   onTreeChanged: (tree) => _searchSelectionTree = tree,
+                  onFiltersChanged: _updateSubmittedFilters,
+                  onClearFilters: _clearFilters,
+                  onEditSearch: _editSearch,
                 ),
               ),
             ),
+    );
+    return PopScope<void>(
+      canPop: !_isSelectionMode,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _isSelectionMode) {
+          _exitSelectionMode();
+        }
+      },
+      child: scaffold,
     );
   }
 
@@ -353,11 +424,13 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
             builder: (context, draft, _) {
               final elements = parseSearchElements(draft);
               final selected = _matchAll ? elements?.all : elements?.any;
+              final selectedLowerSet = selected == null
+                  ? const <String>{}
+                  : <String>{for (final term in selected) term.toLowerCase()};
+              final canonicalDraft = canonicalElementQuery(draft);
               bool isSelected(String element) =>
-                  selected?.any(
-                    (term) => term.toLowerCase() == element.toLowerCase(),
-                  ) ??
-                  false;
+                  selectedLowerSet.isNotEmpty &&
+                  selectedLowerSet.contains(element.toLowerCase());
 
               AppSearchSuggestionSection section(
                 String key,
@@ -372,7 +445,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                 title: title,
                 items: items,
                 isSelected: isHistory
-                    ? (item) => item == canonicalElementQuery(draft)
+                    ? (item) => item == canonicalDraft
                     : isSelected,
                 onToggle: isHistory ? _onSubmitted : _toggleTerm,
                 buildItemMenu: isHistory
@@ -470,6 +543,16 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
           ),
         )
         .toSet();
+    final selectableNodes = _searchSelectionTree
+        .where(isSelectableLibraryNode)
+        .toList(growable: false);
+    final selectedSelections = selectedLibraryNodeSelections(
+      _searchSelectionTree,
+      _selectedLibraryPaths,
+    );
+    final allSelected =
+        selectableNodes.isNotEmpty &&
+        selectedSelections.length >= selectableNodes.length;
     final isAllPinned =
         _selectedLibraryPaths.isNotEmpty &&
         _selectedLibraryPaths.every(
@@ -479,6 +562,17 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
       keyPrefix: 'library_search',
       i18n: i18n,
       selectedCount: _selectedLibraryPaths.length,
+      allSelected: allSelected,
+      onToggleSelectAll: selectableNodes.isEmpty
+          ? null
+          : _toggleSelectAllSearchResults,
+      onEditInfo: selectedSelections.length == 1
+          ? () {
+              final target = selectedSelections.single.target;
+              _exitSelectionMode();
+              unawaited(showAudioDetailEditor(context, ref, target));
+            }
+          : null,
       isPinned: isAllPinned,
       onAddToPlaylist: !coreReady || _selectedLibraryPaths.isEmpty
           ? null

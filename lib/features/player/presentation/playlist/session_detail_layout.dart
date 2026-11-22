@@ -52,7 +52,7 @@ class SessionDetailLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final titleOverArtwork = !isLandscape && !segmentPanelExpanded;
+    final titleOverArtwork = !isLandscape && !segmentPanelExpanded && !isVideo;
     final heading = IgnorePointer(
       ignoring: !showCoverOverlays,
       child: AnimatedOpacity(
@@ -232,17 +232,18 @@ class SessionDetailLayout extends StatelessWidget {
                           fit: StackFit.expand,
                           children: [
                             artwork,
-                            Positioned(
-                              left: 0,
-                              right: 0,
-                              bottom: 0,
-                              child: heading,
-                            ),
+                            if (!isVideo)
+                              Positioned(
+                                left: 0,
+                                right: 0,
+                                bottom: 0,
+                                child: heading,
+                              ),
                           ],
                         ),
                 ),
               ),
-              if (segmentPanelExpanded) heading,
+              if (segmentPanelExpanded || isVideo) heading,
               Expanded(child: RepaintBoundary(child: subtitle)),
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: padding.left),

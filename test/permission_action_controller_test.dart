@@ -94,7 +94,7 @@ void main() {
             confirmLabel: 'Grant',
             isGranted: () {
               checks++;
-              return resumed && checks == 1
+              return resumed && checks <= 2
                   ? Future.value(false)
                   : pending.future;
             },
@@ -109,10 +109,10 @@ void main() {
             await initial;
             resume = controller.handleAppResumed();
             await tester.pump(const Duration(milliseconds: 450));
-            expect(checks, 2);
+            expect(checks, 3);
             // Another resume event must not start a concurrent permission check.
             await controller.handleAppResumed();
-            expect(checks, 2);
+            expect(checks, 3);
           }
           switch (action) {
             case 'dispose':
@@ -169,7 +169,7 @@ void main() {
           title: 'Permission',
           message: 'Grant permission',
           confirmLabel: 'Grant',
-          isGranted: () async => ++checks > 1,
+          isGranted: () async => ++checks > 2,
           openSettings: () async => true,
           onGranted: () async => callbacks++,
         );
@@ -183,8 +183,106 @@ void main() {
         await resume;
         await controller.handleAppResumed();
         expect(callbacks, disposeDuringDelay ? 0 : 1);
-        expect(checks, disposeDuringDelay ? 1 : 2);
+        expect(checks, disposeDuringDelay ? 2 : 3);
         controller.dispose();
+      }
+    },
+  );
+
+  testWidgets(
+    're-checks permission after dialog confirmation and runs directly if granted',
+    (tester) async {
+      final controller = PermissionActionController();
+      addTearDown(controller.dispose);
+      var granted = false;
+      var opens = 0;
+      var callbacks = 0;
+      var cancelled = 0;
+      late BuildContext context;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (value) {
+              context = value;
+              return const Scaffold();
+            },
+          ),
+        ),
+      );
+
+      final ensure = controller.ensureGrantedAndRun(
+        context: context,
+        title: 'Permission',
+        message: 'Grant permission',
+        confirmLabel: 'Grant',
+        isGranted: () async => granted,
+        openSettings: () async {
+          opens++;
+          return true;
+        },
+        onGranted: () async => callbacks++,
+        onCancelled: () => cancelled++,
+      );
+      await tester.pumpAndSettle();
+      // Permission becomes granted before the user confirms the dialog.
+      granted = true;
+      await tester.tap(find.text('Grant'));
+      await tester.pumpAndSettle();
+
+      expect(await ensure, isTrue);
+      expect(opens, 0);
+      expect(callbacks, 1);
+      expect(cancelled, 0);
+    },
+  );
+
+  testWidgets(
+    'invokes onCancelled when dialog is cancelled, settings fail, or resume remains denied',
+    (tester) async {
+      for (final mode in ['cancel_dialog', 'open_failed', 'resume_denied']) {
+        final controller = PermissionActionController();
+        var cancelled = 0;
+        var callbacks = 0;
+        late BuildContext context;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Builder(
+              builder: (value) {
+                context = value;
+                return const Scaffold();
+              },
+            ),
+          ),
+        );
+
+        final ensure = controller.ensureGrantedAndRun(
+          context: context,
+          title: 'Permission',
+          message: 'Grant permission',
+          cancelLabel: 'Dismiss',
+          confirmLabel: 'Grant',
+          isGranted: () async => false,
+          openSettings: () async => mode != 'open_failed',
+          onGranted: () async => callbacks++,
+          onCancelled: () => cancelled++,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.text(mode == 'cancel_dialog' ? 'Dismiss' : 'Grant'),
+        );
+        await tester.pumpAndSettle();
+        expect(await ensure, isFalse);
+
+        if (mode == 'resume_denied') {
+          expect(cancelled, 0);
+          final resume = controller.handleAppResumed();
+          await tester.pump(const Duration(milliseconds: 450));
+          await resume;
+        }
+        expect(callbacks, 0);
+        expect(cancelled, 1);
+        controller.dispose();
+        expect(cancelled, 1);
       }
     },
   );

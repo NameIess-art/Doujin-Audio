@@ -2,11 +2,14 @@ package com.doujin.audio
 
 import com.doujin.audio.metadata.embeddedCoverCacheFileName
 import com.doujin.audio.metadata.parseId3TagPicture
+import com.doujin.audio.metadata.shouldAttemptWavEmbeddedPictureFallback
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class EmbeddedCoverCacheKeyTest {
@@ -58,5 +61,29 @@ class EmbeddedCoverCacheKeyTest {
             byteArrayOf(0x00, 0x00) +
             byteArrayOf(0x00, 0x61, 0x62) // no null terminator after MIME
         assertNull(parseId3TagPicture(truncatedApic, majorVersion = 3, extHeader = false))
+    }
+
+    @Test
+    fun `wav embedded cover fallback runs only for wav or extensionless sources`() {
+        assertTrue(shouldAttemptWavEmbeddedPictureFallback("/storage/emulated/0/voice.wav"))
+        assertTrue(shouldAttemptWavEmbeddedPictureFallback("/storage/emulated/0/VOICE.WAV"))
+        assertTrue(shouldAttemptWavEmbeddedPictureFallback("/storage/emulated/0/dir.v1/track"))
+        assertTrue(shouldAttemptWavEmbeddedPictureFallback("content://media/external/audio/media/42"))
+        assertTrue(
+            shouldAttemptWavEmbeddedPictureFallback(
+                "content://com.android.externalstorage.documents/document/primary%3AMusic%2Ftrack.wav"
+            )
+        )
+
+        assertFalse(shouldAttemptWavEmbeddedPictureFallback("/storage/emulated/0/track.mp3"))
+        assertFalse(shouldAttemptWavEmbeddedPictureFallback("/storage/emulated/0/track.flac"))
+        assertFalse(shouldAttemptWavEmbeddedPictureFallback("/storage/emulated/0/track.m4a"))
+        assertFalse(shouldAttemptWavEmbeddedPictureFallback("/storage/emulated/0/track.ogg"))
+        assertFalse(shouldAttemptWavEmbeddedPictureFallback("/storage/emulated/0/track.opus"))
+        assertFalse(
+            shouldAttemptWavEmbeddedPictureFallback(
+                "content://com.android.externalstorage.documents/document/primary%3AMusic%2Ftrack.flac"
+            )
+        )
     }
 }

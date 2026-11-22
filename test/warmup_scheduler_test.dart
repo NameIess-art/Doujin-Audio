@@ -534,4 +534,72 @@ void main() {
     expect(queuedRan, isFalse);
     expect(scheduler.isIdle, isTrue);
   });
+
+  test('clear invokes onDiscard for every pending task', () async {
+    final scheduler = WarmupScheduler(maxQueueSize: 4);
+    scheduler.beginGeneration(11);
+    final activeStarted = Completer<void>();
+    final releaseActive = Completer<void>();
+    final discarded = <String>[];
+
+    scheduler.schedule(
+      key: 'active',
+      priority: 0,
+      generation: 11,
+      onDiscard: () => discarded.add('active'),
+      task: () async {
+        activeStarted.complete();
+        await releaseActive.future;
+      },
+    );
+    scheduler.schedule(
+      key: 'pending-a',
+      priority: 1,
+      generation: 11,
+      onDiscard: () => discarded.add('pending-a'),
+      task: () async {},
+    );
+    scheduler.schedule(
+      key: 'pending-b',
+      priority: 2,
+      generation: 11,
+      onDiscard: () => discarded.add('pending-b'),
+      task: () async {},
+    );
+
+    await activeStarted.future;
+    scheduler.clear();
+    expect(discarded, <String>['pending-a', 'pending-b']);
+    expect(scheduler.pendingCount, 0);
+
+    releaseActive.complete();
+    await scheduler.idle;
+    expect(discarded, <String>['pending-a', 'pending-b']);
+  });
+
+  test('beginGeneration invokes onDiscard for dropped stale pending tasks', () async {
+    final scheduler = WarmupScheduler(maxQueueSize: 4);
+    scheduler.setPaused(true);
+    scheduler.beginGeneration(12);
+    final discarded = <String>[];
+
+    scheduler.schedule(
+      key: 'stale-a',
+      priority: 0,
+      generation: 12,
+      onDiscard: () => discarded.add('stale-a'),
+      task: () async {},
+    );
+    scheduler.schedule(
+      key: 'stale-b',
+      priority: 1,
+      generation: 12,
+      onDiscard: () => discarded.add('stale-b'),
+      task: () async {},
+    );
+
+    scheduler.beginGeneration(13);
+    expect(discarded, <String>['stale-a', 'stale-b']);
+    expect(scheduler.pendingCount, 0);
+  });
 }

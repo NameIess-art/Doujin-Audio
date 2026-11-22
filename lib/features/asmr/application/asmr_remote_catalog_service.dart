@@ -1,5 +1,6 @@
 import '../domain/asmr_tag_interest.dart';
 import 'dart:async';
+import 'dart:collection';
 import 'dart:io';
 
 import '../domain/asmr_models.dart';
@@ -21,10 +22,12 @@ class AsmrRemoteCatalogService {
     JapaneseAsmrApiService? japaneseApiService,
     AsmrRecommendationEngine recommendationEngine =
         const AsmrRecommendationEngine(),
+    DateTime Function()? now,
   }) : _apiService = apiService,
        _persistenceRepository = persistenceRepository,
        _japaneseApiService = japaneseApiService,
-       _recommendationEngine = recommendationEngine;
+       _recommendationEngine = recommendationEngine,
+       _now = now ?? DateTime.now;
 
   static const Map<AsmrCategoryType, int> _pageSizes = <AsmrCategoryType, int>{
     AsmrCategoryType.collected: 40,
@@ -47,11 +50,16 @@ class AsmrRemoteCatalogService {
     Duration(milliseconds: 350),
     Duration(milliseconds: 900),
   ];
+  static const Duration _mediaHostHealthTtl = Duration(seconds: 60);
+  static const int _recommendationMaxConcurrency = 4;
 
   final AsmrApiService _apiService;
   final JapaneseAsmrApiService? _japaneseApiService;
   final AsmrPersistenceRepository _persistenceRepository;
   final AsmrRecommendationEngine _recommendationEngine;
+  final DateTime Function() _now;
+  final Map<String, ({bool healthy, DateTime expiresAt, Object? error})>
+  _mediaHostHealth = {};
   Future<List<MusicTrack>>? _localTracksRead;
 
   bool Function(AsmrWork) isWorkAllowed = (_) => true;
@@ -89,6 +97,7 @@ class AsmrRemoteCatalogService {
   }
 
   void invalidateLocalTracksRead() => _localTracksRead = null;
+  void clearMediaHostHealthCache() => _mediaHostHealth.clear();
 
   Future<AsmrWorkPage> loadPage(
     AsmrCategoryType category, {
@@ -192,6 +201,7 @@ class AsmrRemoteCatalogService {
       return tracks ?? const <MusicTrack>[];
     })();
     final searchBranches = searchElementBranches(searchQuery);
+    final semaphore = _AsyncSemaphore(_recommendationMaxConcurrency);
     final groups = await Future.wait([
       _loadRecommendationRequests(
         [
@@ -202,6 +212,7 @@ class AsmrRemoteCatalogService {
         token: token,
         refreshSeed: refreshSeed,
         japanesePages: japanesePages,
+        semaphore: semaphore,
         cancellationToken: cancellationToken,
       ),
       (() async {
@@ -245,6 +256,7 @@ class AsmrRemoteCatalogService {
           token: token,
           refreshSeed: refreshSeed,
           japanesePages: japanesePages,
+          semaphore: semaphore,
           firstPageOnly: true,
           cancellationToken: cancellationToken,
         );
@@ -405,6 +417,25 @@ class AsmrRemoteCatalogService {
     return const [];
   }
 
+  bool _isHostLevelMediaError(Object error) {
+    if (error is AsmrApiException) {
+      return error.statusCode != HttpStatus.notFound &&
+          error.statusCode != HttpStatus.gone;
+    }
+    return true;
+  }
+
+  void _recordMediaHostHealth(String url, {required bool healthy, Object? error}) {
+    final host = Uri.tryParse(url)?.host.toLowerCase() ?? '';
+    if (host.isEmpty) return;
+    if (!healthy && error != null && !_isHostLevelMediaError(error)) return;
+    _mediaHostHealth[host] = (
+      healthy: healthy,
+      expiresAt: _now().add(_mediaHostHealthTtl),
+      error: healthy ? null : error,
+    );
+  }
+
   Future<void> _verifyOneMedia(
     List<AsmrTrackFile> tree,
     AsmrRequestCancellationToken? cancellationToken,
@@ -425,22 +456,107 @@ class AsmrRemoteCatalogService {
       if (node.downloadUrl?.isNotEmpty == true) node.downloadUrl!,
       if (AsmrApiService.isOfficialMediaUrl(node.streamUrl))
         ...AsmrApiService.mediaStreamUrlsForHash(node.hash),
-    }.take(3);
-    Object? firstError;
+    }.take(3).toList(growable: false);
+    if (candidates.isEmpty) return;
+
+    final now = _now();
+    Object? cachedError;
+    final toProbe = <String>[];
     for (final url in candidates) {
+      final host = Uri.tryParse(url)?.host.toLowerCase() ?? '';
+      final cached = host.isEmpty ? null : _mediaHostHealth[host];
+      if (cached != null) {
+        if (now.isBefore(cached.expiresAt)) {
+          if (cached.healthy) return;
+          cachedError ??= cached.error;
+          continue;
+        }
+        _mediaHostHealth.remove(host);
+      }
+      toProbe.add(url);
+    }
+    if (toProbe.isEmpty) {
+      if (cachedError != null) throw cachedError;
+      return;
+    }
+    if (toProbe.length == 1) {
+      final url = toProbe.single;
       try {
         await _apiService.verifyMediaStream(
           url,
           cancellationToken: cancellationToken,
         );
+        _recordMediaHostHealth(url, healthy: true);
         return;
       } on AsmrRequestCancelled {
         rethrow;
       } catch (error) {
-        firstError ??= error;
+        _recordMediaHostHealth(url, healthy: false, error: error);
+        rethrow;
       }
     }
-    if (firstError != null) throw firstError;
+
+    // Race all candidate hosts concurrently and cancel slower probes once
+    // any candidate confirms media reachability.
+    final childTokens = List<AsmrRequestCancellationToken>.generate(
+      toProbe.length,
+      (_) => AsmrRequestCancellationToken(),
+      growable: false,
+    );
+    void cancelAllChildren() {
+      for (final child in childTokens) {
+        child.cancel();
+      }
+    }
+
+    final removeParentListener = cancellationToken?.addListener(
+      cancelAllChildren,
+    );
+    final winner = Completer<void>();
+    Object? firstError = cachedError;
+    var remaining = toProbe.length;
+    try {
+      for (var index = 0; index < toProbe.length; index++) {
+        final url = toProbe[index];
+        final childToken = childTokens[index];
+        unawaited(() async {
+          try {
+            await _apiService.verifyMediaStream(
+              url,
+              cancellationToken: childToken,
+            );
+            _recordMediaHostHealth(url, healthy: true);
+            if (!winner.isCompleted) {
+              winner.complete();
+              cancelAllChildren();
+            }
+          } on AsmrRequestCancelled {
+            if (cancellationToken?.isCancelled == true && !winner.isCompleted) {
+              cancelAllChildren();
+              winner.completeError(const AsmrRequestCancelled());
+            }
+          } catch (error) {
+            _recordMediaHostHealth(url, healthy: false, error: error);
+            firstError ??= error;
+          } finally {
+            remaining--;
+            if (remaining == 0 && !winner.isCompleted) {
+              if (cancellationToken?.isCancelled == true) {
+                winner.completeError(const AsmrRequestCancelled());
+              } else if (firstError != null) {
+                winner.completeError(firstError!);
+              } else {
+                winner.complete();
+              }
+            }
+          }
+        }());
+      }
+      await winner.future;
+    } finally {
+      removeParentListener?.call();
+      cancelAllChildren();
+    }
   }
 
   Future<List<_RecommendationPagesResult>> _loadRecommendationRequests(
@@ -449,34 +565,29 @@ class AsmrRemoteCatalogService {
     required String? token,
     required int refreshSeed,
     required Map<(String, int, int), Future<AsmrWorkPage>> japanesePages,
+    required _AsyncSemaphore semaphore,
     bool firstPageOnly = false,
     AsmrRequestCancellationToken? cancellationToken,
-  }) async {
-    final results = <_RecommendationPagesResult>[];
-    // Bound interest searches so large preference lists do not flood either site.
-    for (var start = 0; start < requests.length; start += 4) {
-      cancellationToken?.throwIfCancelled();
-      results.addAll(
-        await Future.wait(
-          requests
-              .skip(start)
-              .take(4)
-              .map(
-                (request) => _loadRecommendationPagesSafely(
-                  request.$1,
-                  searchQuery: request.$2,
-                  language: language,
-                  token: token,
-                  refreshSeed: refreshSeed,
-                  japanesePages: japanesePages,
-                  firstPageOnly: firstPageOnly,
-                  cancellationToken: cancellationToken,
-                ),
-              ),
+  }) {
+    // Share one concurrency bound across base sources and interest recall so
+    // recommendation refreshes do not create a connection storm.
+    return Future.wait(
+      requests.map(
+        (request) => semaphore.run(
+          () => _loadRecommendationPagesSafely(
+            request.$1,
+            searchQuery: request.$2,
+            language: language,
+            token: token,
+            refreshSeed: refreshSeed,
+            japanesePages: japanesePages,
+            firstPageOnly: firstPageOnly,
+            cancellationToken: cancellationToken,
+          ),
+          cancellationToken: cancellationToken,
         ),
-      );
-    }
-    return results;
+      ),
+    );
   }
 
   Future<_RecommendationPagesResult> _loadRecommendationPagesSafely(
@@ -617,4 +728,50 @@ class _RecommendationPagesResult {
 
   final List<AsmrWorkPage> pages;
   final Object? error;
+}
+
+class _AsyncSemaphore {
+  _AsyncSemaphore(this._maxConcurrent);
+
+  final int _maxConcurrent;
+  int _active = 0;
+  final Queue<Completer<void>> _waiters = Queue<Completer<void>>();
+
+  Future<T> run<T>(
+    Future<T> Function() action, {
+    AsmrRequestCancellationToken? cancellationToken,
+  }) async {
+    cancellationToken?.throwIfCancelled();
+    if (_active >= _maxConcurrent) {
+      final waiter = Completer<void>();
+      _waiters.addLast(waiter);
+      try {
+        await (cancellationToken?.waitFor(waiter.future) ?? waiter.future);
+      } catch (_) {
+        if (!_waiters.remove(waiter)) {
+          _release();
+        }
+        rethrow;
+      }
+    } else {
+      _active++;
+    }
+    try {
+      cancellationToken?.throwIfCancelled();
+      return await action();
+    } finally {
+      _release();
+    }
+  }
+
+  void _release() {
+    while (_waiters.isNotEmpty) {
+      final next = _waiters.removeFirst();
+      if (!next.isCompleted) {
+        next.complete();
+        return;
+      }
+    }
+    _active--;
+  }
 }

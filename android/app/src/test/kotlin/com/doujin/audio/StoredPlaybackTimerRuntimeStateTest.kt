@@ -61,4 +61,34 @@ class StoredPlaybackTimerRuntimeStateTest {
             shouldRecalculateAutoResumeAfterSystemEvent(Intent.ACTION_TIMEZONE_CHANGED)
         )
     }
+
+    @Test
+    fun `withoutSession clears autoResumeAtMs when the last paused session is removed`() {
+        val state = StoredPlaybackTimerRuntimeState(
+            timerModeIndex = null,
+            durationMs = null,
+            waitingForPlayback = false,
+            timerEndsAtWallClockMs = null,
+            timerEndsElapsedRealtimeMs = null,
+            autoResumeEnabled = true,
+            autoResumeHour = 7,
+            autoResumeMinute = 30,
+            autoResumeAtMs = 1_700_000_000_000L,
+            pausedSessionIds = listOf("session-1", "session-2"),
+            generation = 9
+        )
+
+        val unchanged = state.withoutSession("unrelated")
+        org.junit.Assert.assertEquals(state, unchanged)
+
+        val afterFirst = state.withoutSession("session-1")
+        org.junit.Assert.assertEquals(listOf("session-2"), afterFirst.pausedSessionIds)
+        org.junit.Assert.assertEquals(1_700_000_000_000L, afterFirst.autoResumeAtMs)
+        assertTrue(afterFirst.hasRuntime)
+
+        val afterLast = afterFirst.withoutSession("session-2")
+        assertTrue(afterLast.pausedSessionIds.isEmpty())
+        org.junit.Assert.assertNull(afterLast.autoResumeAtMs)
+        assertFalse(afterLast.hasRuntime)
+    }
 }

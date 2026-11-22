@@ -991,12 +991,20 @@ void main() {
             await tester.binding.handlePopRoute();
           }
           await _settle(tester);
-          // Back closes the right detail before the left content stack.
+          // Back pops the focused left content stack before the unfocused detail pane.
           if (split) {
-            expect(navigation.isOpen, isFalse);
-            expect(find.text('Secondary child'), findsOneWidget);
-            content.pop();
+            expect(navigation.isOpen, isTrue);
+            expect(find.text('Secondary child'), findsNothing);
+            expect(find.text('Work A'), findsOneWidget);
+            Focus.of(tester.element(find.text('Open child'))).requestFocus();
             await _settle(tester);
+            if (platform == TargetPlatform.windows) {
+              await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+            } else {
+              await tester.binding.handlePopRoute();
+            }
+            await _settle(tester);
+            expect(navigation.isOpen, isFalse);
           }
           expect(find.text('Secondary child'), findsNothing);
           await tester.tap(find.text('Open content child'));
@@ -1480,7 +1488,7 @@ void main() {
             .getSize(find.byType(DesktopMainNavigation))
             .width;
         final detailState = tester.state(find.byType(_Detail));
-        void expectRouteMetrics() {
+        void expectRouteMetrics({double? expectedSidebarWidth}) {
           expect(
             MediaQuery.sizeOf(
               navigation.contentNavigatorKey.currentState!.overlay!.context,
@@ -1493,7 +1501,7 @@ void main() {
           );
           expect(
             tester.getSize(find.byType(DesktopMainNavigation)).width,
-            sidebarWidth,
+            expectedSidebarWidth ?? sidebarWidth,
           );
         }
 
@@ -1513,11 +1521,18 @@ void main() {
         for (final size in [const Size(960, 600), const Size(1440, 900)]) {
           tester.view.physicalSize = size;
           await _settle(tester);
-          final available = size.width - sidebarWidth - 1;
-          expect(tester.getSize(_main).width, closeTo(available * 5 / 8, 0.01));
-          expect(tester.getSize(_pane).width, closeTo(available * 3 / 8, 0.01));
+          final effectiveSidebar = size.width < 1120 ? 80.0 : sidebarWidth;
+          final contentWidth = size.width - effectiveSidebar;
+          expect(
+            tester.getSize(_main).width,
+            closeTo(WorkDetailPane.mainPaneWidthFor(contentWidth), 0.01),
+          );
+          expect(
+            tester.getSize(_pane).width,
+            closeTo(WorkDetailPane.detailPaneWidthFor(contentWidth), 0.01),
+          );
           expect(tester.state(find.byType(_Detail)), same(detailState));
-          expectRouteMetrics();
+          expectRouteMetrics(expectedSidebarWidth: effectiveSidebar);
         }
         tester.view.physicalSize = const Size(1280, 800);
         await _settle(tester);
@@ -1529,8 +1544,23 @@ void main() {
           tester.view.physicalSize = const Size(960, 600);
           await _settle(tester);
           await _open(tester, navigation, 'A');
-          expect(tester.getSize(_main).width, closeTo(699 * 5 / 8, 0.01));
-          expect(tester.getSize(_pane).width, closeTo(699 * 3 / 8, 0.01));
+          expect(
+            tester
+                .widget<DesktopMainNavigation>(
+                  find.byType(DesktopMainNavigation),
+                )
+                .isMenuCollapsed,
+            isTrue,
+          );
+          expect(
+            tester.getSize(_main).width,
+            closeTo(WorkDetailPane.mainPaneWidthFor(960 - 80), 0.01),
+          );
+          expect(
+            tester.getSize(_pane).width,
+            closeTo(WorkDetailPane.detailPaneWidthFor(960 - 80), 0.01),
+          );
+          expect(tester.getSize(_pane).width, greaterThanOrEqualTo(340));
         }
       },
       variant: TargetPlatformVariant({platform}),
@@ -1835,8 +1865,14 @@ void main() {
             .isMenuCollapsed,
         isTrue,
       );
-      expect(tester.getSize(_main).width, closeTo(769 * 5 / 8, 0.01));
-      expect(tester.getSize(_pane).width, closeTo(769 * 3 / 8, 0.01));
+      expect(
+        tester.getSize(_main).width,
+        closeTo(WorkDetailPane.mainPaneWidthFor(850 - 80), 0.01),
+      );
+      expect(
+        tester.getSize(_pane).width,
+        closeTo(WorkDetailPane.detailPaneWidthFor(850 - 80), 0.01),
+      );
       expect(
         (await SharedPreferences.getInstance()).getBool(
           'desktop_menu_collapsed',
@@ -1857,18 +1893,18 @@ void main() {
   );
 
   testWidgets(
-    'automatic sidebar collapse keeps 5:3 panes while opening and closing',
+    'automatic sidebar collapse keeps usable panes while opening and closing',
     (tester) async {
       final navigation = await _pumpApp(tester, size: const Size(850, 480));
-      Future<void> expectProportionalFrames() async {
+      Future<void> expectUsableFrames() async {
         for (final elapsed in [
           Duration.zero,
           const Duration(milliseconds: 100),
         ]) {
           await tester.pump(elapsed);
           expect(
-            tester.getSize(_main).width,
-            closeTo(tester.getSize(_pane).width * 5 / 3, 0.01),
+            tester.getSize(_main).width + tester.getSize(_pane).width + 1,
+            closeTo(850 - 80, 0.01),
           );
           expect(
             tester.getRect(_pane).left - tester.getRect(_main).right,
@@ -1886,11 +1922,14 @@ void main() {
           ),
         ),
       );
-      await expectProportionalFrames();
+      await expectUsableFrames();
       await _settle(tester);
-      expect(tester.getSize(_main).width, closeTo(769 * 5 / 8, 0.01));
+      expect(
+        tester.getSize(_main).width,
+        closeTo(WorkDetailPane.mainPaneWidthFor(850 - 80), 0.01),
+      );
       navigation.navigatorKey.currentState!.pop();
-      await expectProportionalFrames();
+      await expectUsableFrames();
       await _settle(tester);
       expect(navigation.isOpen, isFalse);
       expect(tester.getSize(_main).width, 590);
@@ -1918,10 +1957,10 @@ void main() {
       }
       await _settle(tester);
       expect(
-        frames.map((frame) => [frame.$1 - frame.$2 * 5 / 3, frame.$3]),
+        frames.map((frame) => [frame.$1 + frame.$2 + frame.$3, frame.$3]),
         [
-          [closeTo(0, 0.01), closeTo(1, 0.01)],
-          [closeTo(0, 0.01), closeTo(1, 0.01)],
+          [closeTo(820 - 80, 0.01), closeTo(1, 0.01)],
+          [closeTo(820 - 80, 0.01), closeTo(1, 0.01)],
         ],
         reason: 'Frames (main width, detail width, divider gap): $frames',
       );
@@ -2033,8 +2072,14 @@ void main() {
       await _settle(tester);
       expect(tester.state(find.byType(EditableText)), same(state));
       expect(find.text('rotation edit'), findsOneWidget);
-      expect(tester.getSize(_main).width, closeTo(739 * 5 / 8, 0.01));
-      expect(tester.getSize(_pane).width, closeTo(739 * 3 / 8, 0.01));
+      expect(
+        tester.getSize(_main).width,
+        closeTo(WorkDetailPane.mainPaneWidthFor(820 - 80), 0.01),
+      );
+      expect(
+        tester.getSize(_pane).width,
+        closeTo(WorkDetailPane.detailPaneWidthFor(820 - 80), 0.01),
+      );
       expect(find.byKey(const ValueKey('routed_playback_dock')), findsNothing);
       expect(find.byType(ActiveSessionCarousel), findsOneWidget);
       tester.view.physicalSize = const Size(390, 820);
@@ -2043,5 +2088,43 @@ void main() {
       expect(find.text('rotation edit'), findsOneWidget);
     },
     variant: const TargetPlatformVariant({TargetPlatform.android}),
+  );
+
+  testWidgets(
+    'Windows Esc pops the focused content pane before the detail pane in split mode',
+    (tester) async {
+      final navigation = await _pumpApp(tester);
+      await _open(tester, navigation, 'A');
+      final content = navigation.contentNavigatorKey.currentState!;
+      unawaited(
+        content.push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => Scaffold(
+              body: TextButton(
+                key: const ValueKey('content_focus_button'),
+                autofocus: true,
+                onPressed: () {},
+                child: const Text('Content action'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await _settle(tester);
+      expect(navigation.isOpen, isTrue);
+      expect(navigation.isContentOpen, isTrue);
+
+      Focus.of(tester.element(find.text('Content action'))).requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await _settle(tester);
+      expect(navigation.isContentOpen, isFalse);
+      expect(navigation.isOpen, isTrue);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await _settle(tester);
+      expect(navigation.isOpen, isFalse);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
 }

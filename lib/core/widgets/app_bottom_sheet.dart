@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -17,7 +19,7 @@ class AppBottomSheet {
     required WidgetBuilder builder,
     bool isScrollControlled = true,
     bool useRootNavigator = true,
-    bool showDragHandle = true,
+    bool? showDragHandle,
     bool enableDrag = true,
     bool isDismissible = true,
     Color? backgroundColor,
@@ -26,6 +28,8 @@ class AppBottomSheet {
     Clip? clipBehavior,
     AnimationStyle? sheetAnimationStyle,
   }) {
+    final isWindows = defaultTargetPlatform == TargetPlatform.windows;
+    final effectiveShowDragHandle = showDragHandle ?? !isWindows;
     final effectiveAnimationStyle = MediaQuery.disableAnimationsOf(context)
         ? AnimationStyle.noAnimation
         : sheetAnimationStyle ??
@@ -50,7 +54,7 @@ class AppBottomSheet {
         ),
         modalBarrierColor: Theme.of(context).bottomSheetTheme.modalBarrierColor,
         isScrollControlled: isScrollControlled,
-        showDragHandle: showDragHandle,
+        showDragHandle: effectiveShowDragHandle,
         enableDrag: enableDrag,
         isDismissible: isDismissible,
         sheetAnimationStyle: effectiveAnimationStyle,
@@ -67,7 +71,9 @@ class AppBottomSheet {
         clipBehavior: clipBehavior,
         constraints: const BoxConstraints(minWidth: double.infinity),
         builder: (ctx) => ScrollConfiguration(
-          behavior: ScrollConfiguration.of(ctx).copyWith(scrollbars: false),
+          behavior: ScrollConfiguration.of(
+            ctx,
+          ).copyWith(scrollbars: isWindows),
           child: RepaintBoundary(child: builder(ctx)),
         ),
       ),
@@ -82,16 +88,23 @@ class AppBottomSheetHeader extends StatelessWidget {
     required this.title,
     this.trailing,
     this.iconKey,
+    this.showCloseButton,
   });
 
   final IconData icon;
   final String title;
   final Widget? trailing;
   final Key? iconKey;
+  final bool? showCloseButton;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final effectiveShowClose =
+        showCloseButton ??
+        (defaultTargetPlatform == TargetPlatform.windows &&
+            trailing == null &&
+            ModalRoute.of(context) is ModalBottomSheetRoute<dynamic>);
     return Row(
       children: [
         Icon(icon, key: iconKey, size: 24, color: theme.colorScheme.primary),
@@ -108,6 +121,18 @@ class AppBottomSheetHeader extends StatelessWidget {
           ),
         ),
         if (trailing != null) ...[const SizedBox(width: 12), trailing!],
+        if (effectiveShowClose) ...[
+          const SizedBox(width: 8),
+          IconButton(
+            key: const ValueKey<String>('app_bottom_sheet_close_button'),
+            tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+            onPressed: () => Navigator.of(context).maybePop(),
+            icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 24),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+            visualDensity: VisualDensity.compact,
+          ),
+        ],
       ],
     );
   }
@@ -181,6 +206,8 @@ class _AppBottomSheetRoute<T> extends ModalBottomSheetRoute<T> {
   });
 
   final ValueNotifier<double> _visibleOpacity = ValueNotifier<double>(0);
+  late final Animation<double> _visibleOpacityAnimation =
+      Animation<double>.fromValueListenable(_visibleOpacity);
   Animation<double>? _trackedAnimation;
 
   @override
@@ -221,7 +248,7 @@ class _AppBottomSheetRoute<T> extends ModalBottomSheetRoute<T> {
   ) {
     final size = MediaQuery.sizeOf(context);
     final isWindows = defaultTargetPlatform == TargetPlatform.windows;
-    final halfWidth = isWindows || size.width > size.height;
+    final constrainWidth = isWindows || size.width > size.height;
     final rawPage = super.buildPage(context, animation, secondaryAnimation);
     final page = isScrollControlled
         ? ConstrainedBox(
@@ -229,19 +256,19 @@ class _AppBottomSheetRoute<T> extends ModalBottomSheetRoute<T> {
             child: rawPage,
           )
         : rawPage;
+    final targetWidth = constrainWidth
+        ? (size.width * 0.5)
+              .clamp(math.min(420.0, size.width), math.min(600.0, size.width))
+              .toDouble()
+        : size.width;
     final constrainedPage = Align(
       alignment: Alignment.bottomCenter,
-      child: FractionallySizedBox(
-        widthFactor: halfWidth ? 0.5 : 1.0,
-        child: page,
-      ),
+      child: SizedBox(width: targetWidth, child: page),
     );
     _attachAnimation(animation);
-    return ValueListenableBuilder<double>(
-      valueListenable: _visibleOpacity,
+    return FadeTransition(
+      opacity: _visibleOpacityAnimation,
       child: constrainedPage,
-      builder: (context, opacity, child) =>
-          Opacity(opacity: opacity, child: child),
     );
   }
 }

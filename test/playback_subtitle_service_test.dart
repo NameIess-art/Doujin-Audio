@@ -851,6 +851,23 @@ void main() {
     expect(service.hasResult('/audio/1.mp3'), isFalse);
     expect(service.hasResult('/audio/20.mp3'), isTrue);
   });
+
+  test('setTrackOffset debounces persistence and flushes on dispose', () async {
+    const audioPath = '/path/to/debounce.mp3';
+    final service = PlaybackSubtitleService(trackResolver: (_) => null);
+    await service.setTrackOffset(audioPath, const Duration(milliseconds: 100));
+    await service.setTrackOffset(audioPath, const Duration(milliseconds: 200));
+    await service.setTrackOffset(audioPath, const Duration(milliseconds: 300));
+    final prefsBeforeFlush = await SharedPreferences.getInstance();
+    expect(prefsBeforeFlush.getStringList('subtitle_track_offsets'), isNull);
+
+    service.dispose();
+    await Future<void>.delayed(Duration.zero);
+    final prefsAfterDispose = await SharedPreferences.getInstance();
+    expect(prefsAfterDispose.getStringList('subtitle_track_offsets'), [
+      '$audioPath|300',
+    ]);
+  });
 }
 
 MusicTrack _remoteTrack(String path) => MusicTrack(

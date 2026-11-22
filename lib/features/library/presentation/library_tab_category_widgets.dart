@@ -30,6 +30,7 @@ import '../../../core/widgets/search_highlight.dart';
 import '../../../core/widgets/swipe_reveal_card.dart';
 import '../../../app/theme/app_styles.dart';
 
+import 'audio_detail_sheet.dart';
 import 'library_tab_tree_widgets.dart';
 import 'library_card_artwork.dart';
 import 'library_tab_ui_helpers.dart';
@@ -705,7 +706,31 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
           child: AppEntryInkWell(
             canRequestFocus: isSelectionMode,
             onLongPress: onLongPress,
-            onTap: isSelectionMode ? onToggleSelect : null,
+            onTap: isSelectionMode
+                ? onToggleSelect
+                : () {
+                    if (entry.isFolder) {
+                      unawaited(
+                        showAudioDetailSheet(
+                          context,
+                          entry.target,
+                          initialDetail: entry.detail,
+                          initialCoverPath: library.resolvedCoverPathForFolder(
+                            entry.path,
+                          ),
+                        ),
+                      );
+                    } else if (firstTrack != null) {
+                      unawaited(
+                        runLibraryCardAction(
+                          context: context,
+                          ref: ref,
+                          selection: selection,
+                          temporary: true,
+                        ),
+                      );
+                    }
+                  },
             child: _buildEntryContent(
               context,
               library,

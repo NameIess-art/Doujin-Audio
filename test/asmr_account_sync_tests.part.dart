@@ -1687,6 +1687,80 @@ void registerAsmrAccountSyncTests({
       },
     );
   }
+
+  test(
+    'background sync debounces consecutive interactions and pushes without full 5-list pull',
+    () async {
+      await resetPrefs();
+      var clock = DateTime.utc(2026, 11, 22, 12);
+      final api = _FakeAsmrApiService();
+      final auth = AsmrAuthService(
+        apiService: api,
+        tokenStore: _MemoryAsmrTokenStore(),
+      );
+      final syncService = AsmrAccountSyncService(
+        authService: auth,
+        apiService: api,
+        preferencesStore: preferences,
+        now: () => clock,
+      );
+      final services = createTestAsmrServices(
+        preferencesStore: preferences,
+        persistenceRepository: _FakeTestPersistenceRepository(const []),
+        apiService: api,
+        authService: auth,
+      );
+      final controller = AsmrLibraryController(
+        preferencesStore: preferences,
+        remoteCatalogService: services.remoteCatalogService,
+        accountSyncService: syncService,
+        backgroundSyncDebounce: const Duration(milliseconds: 60),
+      );
+      addTearDown(controller.dispose);
+      await controller.initialize();
+      await controller.loginAsmrAccount('alice', 'password');
+      api.calls.clear();
+      api.reviewPuts.clear();
+
+      // Rapid favorite mutations coalesce into one debounced uplink-only sync.
+      await controller.toggleFavorite(_work(id: 501, title: 'First'));
+      await controller.toggleFavorite(_work(id: 502, title: 'Second'));
+      expect(api.calls, isEmpty);
+
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(api.reviewPuts, containsAll(['501:marked', '502:marked']));
+      expect(api.calls.where((call) => call.startsWith('fetch:')), isEmpty);
+      expect(syncService.snapshot.remoteProgressByWorkId[501], 'marked');
+      expect(syncService.snapshot.remoteProgressByWorkId[502], 'marked');
+
+      // Unfavoriting removes remote progress without a full 5-list pull.
+      api.calls.clear();
+      await controller.toggleFavorite(_work(id: 501, title: 'First'));
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(api.deletedReviewWorkIds, contains(501));
+      expect(api.calls.where((call) => call.startsWith('fetch:')), isEmpty);
+      expect(syncService.snapshot.remoteProgressByWorkId[501], isNull);
+
+      // Manual force sync runs immediately with a full 5-list pull.
+      api.calls.clear();
+      await controller.syncAsmrAccount(force: true);
+      expect(
+        api.calls.where((call) => call.startsWith('fetch:')),
+        hasLength(5),
+      );
+
+      // After cooldown expires, a background sync performs a full pull again.
+      api.calls.clear();
+      clock = clock.add(const Duration(minutes: 6));
+      await controller.recordHistory(_work(id: 503, title: 'After Cooldown'));
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(api.reviewPuts, contains('503:listening'));
+      expect(
+        api.calls.where((call) => call.startsWith('fetch:')),
+        isNotEmpty,
+      );
+    },
+  );
 }
 
 class _CountingFavoritePreferences extends AsmrPreferencesStore {

@@ -690,6 +690,9 @@ void main() {
     final retryButton = find.byKey(
       const ValueKey<String>('asmr_download_manual_retry_Track.mp3'),
     );
+    final retryingSpinner = find.byKey(
+      const ValueKey<String>('asmr_download_manual_retrying_Track.mp3'),
+    );
     expect(tester.widget<IconButton>(retryButton).onPressed, isNull);
     expect(manager.retriedPaths, isEmpty);
     await tester.pumpWidget(
@@ -699,7 +702,7 @@ void main() {
     expect(retryButton, findsOneWidget);
     expect(tester.widget<IconButton>(retryButton).onPressed, isNotNull);
     expect(tester.getSize(retryButton), const Size.square(44));
-    expect(find.byTooltip('Retry'), findsOneWidget);
+    expect(tester.widget<IconButton>(retryButton).tooltip, 'Retry');
     await tester.tap(retryButton);
     expect(manager.retriedPaths, <String>['Track.mp3']);
 
@@ -722,8 +725,14 @@ void main() {
       await tester.pump();
 
       expect(retryButton, findsNothing);
-      expect(find.byTooltip('Retry'), findsNothing);
-      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(retryingSpinner, findsOneWidget);
+      expect(
+        find.descendant(
+          of: retryingSpinner,
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsOneWidget,
+      );
     }
 
     await tester.pumpWidget(
@@ -740,6 +749,7 @@ void main() {
     await tester.pump();
     expect(find.text('Retrying (1/7)'), findsOneWidget);
     expect(retryButton, findsNothing);
+    expect(retryingSpinner, findsOneWidget);
 
     await tester.pumpWidget(
       _downloadDetailsApp(

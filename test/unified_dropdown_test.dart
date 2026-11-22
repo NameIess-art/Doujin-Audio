@@ -48,13 +48,15 @@ void main() {
     await tester.pump(const Duration(milliseconds: 76));
     expect(background, findsOneWidget);
     expect(blur, findsNothing);
+    final scrim = find.descendant(
+      of: background,
+      matching: find.byType(ColoredBox),
+    );
+    final scrimFade = tester.widget<FadeTransition>(
+      find.ancestor(of: scrim, matching: find.byType(FadeTransition)).first,
+    );
     expect(
-      tester
-          .widget<ColoredBox>(
-            find.descendant(of: background, matching: find.byType(ColoredBox)),
-          )
-          .color
-          .a,
+      tester.widget<ColoredBox>(scrim).color.a * scrimFade.opacity.value,
       0,
     );
     await tester.pumpAndSettle();
@@ -495,4 +497,37 @@ void main() {
       variant: TargetPlatformVariant.only(TargetPlatform.windows),
     );
   }
+
+  testWidgets(
+    'keyboard selection preserves focus on UnifiedDropdownButton trigger',
+    (tester) async {
+      String? selected = 'a';
+      await tester.pumpWidget(
+        harness(
+          StatefulBuilder(
+            builder: (context, setState) => UnifiedDropdownButton<String>(
+              value: selected,
+              items: items,
+              onChanged: (value) => setState(() => selected = value),
+            ),
+          ),
+        ),
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(selected, 'c');
+      final trigger = find.descendant(
+        of: find.byType(DropdownButton<String>),
+        matching: find.byType(InkWell),
+      );
+      expect(tester.widget<InkWell>(trigger).focusNode!.hasFocus, isTrue);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
 }

@@ -29,15 +29,29 @@ class AppModalBackground extends StatefulWidget {
 }
 
 class _AppModalBackgroundState extends State<AppModalBackground> {
-  static const int _blurSteps = 16;
+  static const double _blurSigma = 8.0;
+  static const int _blurSteps = 8;
+  static final ui.ImageFilter _staticBlurFilter = ui.ImageFilter.blur(
+    sigmaX: _blurSigma,
+    sigmaY: _blurSigma,
+    tileMode: ui.TileMode.clamp,
+  );
+  // Reuse a single static Gaussian kernel and fade its alpha via composed
+  // ColorFilter steps so BackdropFilter stays un-isolated from the page behind
+  // it while never recalculating varying blur radii.
   static final _blurFilters = List<ui.ImageFilter>.generate(_blurSteps, (
     index,
   ) {
-    final sigma = (index + 1) / 2;
-    return ui.ImageFilter.blur(
-      sigmaX: sigma,
-      sigmaY: sigma,
-      tileMode: ui.TileMode.clamp,
+    if (index == _blurSteps - 1) return _staticBlurFilter;
+    final alpha = (index + 1) / _blurSteps;
+    return ui.ImageFilter.compose(
+      outer: ui.ColorFilter.matrix(<double>[
+        1, 0, 0, 0, 0,
+        0, 1, 0, 0, 0,
+        0, 0, 1, 0, 0,
+        0, 0, 0, alpha, 0,
+      ]),
+      inner: _staticBlurFilter,
     );
   }, growable: false);
 
@@ -45,6 +59,8 @@ class _AppModalBackgroundState extends State<AppModalBackground> {
   CurvedAnimation? _blurCurved;
   late Animation<double> _scrimAnimation;
   late Animation<double> _blurAnimation;
+  bool _blurListenerAttached = false;
+  final ValueNotifier<int> _blurStep = ValueNotifier<int>(0);
 
   @override
   void initState() {
@@ -52,7 +68,24 @@ class _AppModalBackgroundState extends State<AppModalBackground> {
     _initAnimations();
   }
 
+  int _computeBlurStep() =>
+      (_blurSteps * _blurAnimation.value.clamp(0.0, 1.0)).round();
+
+  void _syncBlurStep() {
+    final next = _computeBlurStep();
+    if (_blurStep.value != next) {
+      _blurStep.value = next;
+    }
+  }
+
+  void _detachBlurListener() {
+    if (!_blurListenerAttached) return;
+    _blurAnimation.removeListener(_syncBlurStep);
+    _blurListenerAttached = false;
+  }
+
   void _initAnimations() {
+    _detachBlurListener();
     _disposeCurvedAnimations();
     _scrimCurved = widget.curve == widget.reverseCurve
         ? null
@@ -79,6 +112,9 @@ class _AppModalBackgroundState extends State<AppModalBackground> {
       );
       _blurAnimation = _blurCurved!;
     }
+    _blurAnimation.addListener(_syncBlurStep);
+    _blurListenerAttached = true;
+    _blurStep.value = _computeBlurStep();
   }
 
   void _disposeCurvedAnimations() {
@@ -116,6 +152,7 @@ class _AppModalBackgroundState extends State<AppModalBackground> {
         _blurCurved!.curve = widget.curve;
         _blurCurved!.reverseCurve = widget.blurReverseCurve;
       }
+      _syncBlurStep();
       return;
     }
     _initAnimations();
@@ -123,43 +160,42 @@ class _AppModalBackgroundState extends State<AppModalBackground> {
 
   @override
   void dispose() {
+    _detachBlurListener();
     _disposeCurvedAnimations();
+    _blurStep.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return RepaintBoundary(
-      child: AnimatedBuilder(
-        animation: widget.animation,
-        builder: (context, _) {
-          final blurProgress = _blurAnimation.value.clamp(0.0, 1.0);
-          final scrimProgress = _scrimAnimation.value.clamp(0.0, 1.0);
-          // Reuse blur kernels in half-pixel steps. Paint the scrim separately
-          // so its continuous fade does not dirty the retained blur layer.
-          final blurStep = (_blurSteps * blurProgress).round();
-          final scrim = ColoredBox(
-            key: widget.scrimKey,
-            color: kSecondaryOverlayConfig.scrimColor(context, scrimProgress),
-          );
-          return Stack(
-            fit: StackFit.passthrough,
-            children: [
-              if (blurStep > 0)
-                Positioned.fill(
-                  child: RepaintBoundary(
-                    child: ClipRect(
-                      child: BackdropFilter(
-                        filter: _blurFilters[blurStep - 1],
-                        child: const SizedBox.expand(),
-                      ),
+      child: Stack(
+        fit: StackFit.passthrough,
+        children: [
+          Positioned.fill(
+            child: ValueListenableBuilder<int>(
+              valueListenable: _blurStep,
+              builder: (context, blurStep, _) {
+                if (blurStep <= 0) return const SizedBox.shrink();
+                return RepaintBoundary(
+                  child: ClipRect(
+                    child: BackdropFilter(
+                      filter: _blurFilters[blurStep - 1],
+                      child: const SizedBox.expand(),
                     ),
                   ),
-                ),
-              scrim,
-            ],
-          );
-        },
+                );
+              },
+            ),
+          ),
+          FadeTransition(
+            opacity: _scrimAnimation,
+            child: ColoredBox(
+              key: widget.scrimKey,
+              color: kSecondaryOverlayConfig.scrimColor(context, 1.0),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -267,9 +303,12 @@ class _AppOverlayPanelShell extends StatelessWidget {
                     reverseCurve: kSecondaryOverlayConfig.reverseCurve,
                     // Ink must paint inside the transition so tile backgrounds
                     // and splashes fade and scale with the panel content.
-                    child: Material(
-                      type: MaterialType.transparency,
-                      child: child,
+                    child: AppGlassBackdropScope(
+                      backdropBlurred: true,
+                      child: Material(
+                        type: MaterialType.transparency,
+                        child: child,
+                      ),
                     ),
                   ),
                 ),
@@ -347,9 +386,12 @@ Future<T?> showAppDialog<T>({
                             beginScale: 0.88,
                             curve: kSecondaryOverlayConfig.curve,
                             reverseCurve: kSecondaryOverlayConfig.reverseCurve,
-                            child: Material(
-                              color: Colors.transparent,
-                              child: Builder(builder: builder),
+                            child: AppGlassBackdropScope(
+                              backdropBlurred: true,
+                              child: Material(
+                                color: Colors.transparent,
+                                child: Builder(builder: builder),
+                              ),
                             ),
                           ),
                         ),

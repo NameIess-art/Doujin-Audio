@@ -1048,92 +1048,183 @@ void main() {
     }
   });
 
-  for (final outcome in ['success', 'failure', 'pause', 'shutdown']) {
-    test('entity persistence precedes file bytes ($outcome)', () async {
-      final temp = await Directory.systemTemp.createTemp('asmr_entity_flush_');
+  test(
+    'small files skip per-file full-queue persistence while large files persist sidecar ETag before bytes',
+    () async {
+      final temp = await Directory.systemTemp.createTemp('asmr_entity_sidecar_');
+      const largeSize = 1024 * 1024;
+      final largePayload = Uint8List(largeSize)..fillRange(0, largeSize, 7);
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      server.listen((request) async {
-        expect(
-          request.headers.value(HttpHeaders.acceptEncodingHeader),
-          'identity',
-        );
-        request.response.headers.set(HttpHeaders.etagHeader, '"verified"');
-        request.response.contentLength = 3;
-        request.response.add([1, 2, 3]);
-        await request.response.close();
-      });
-      final started = Completer<void>();
-      final release = Completer<void>();
-      var reject = outcome == 'failure';
+      final largeFirstChunkSent = Completer<void>();
+      final releaseLarge = Completer<void>();
+      var largeRequests = 0;
+      final largeRangeStarts = <int>[];
+      final largeIfRanges = <String?>[];
+      unawaited(
+        server.forEach((request) async {
+          if (request.uri.path == '/small.lrc') {
+            request.response.headers.set(HttpHeaders.etagHeader, '"small-tag"');
+            request.response.contentLength = 5;
+            request.response.add([1, 2, 3, 4, 5]);
+            await request.response.close();
+            return;
+          }
+          largeRequests++;
+          final range = request.headers.value(HttpHeaders.rangeHeader);
+          final start =
+              int.tryParse(
+                RegExp(r'^bytes=(\d+)-$').firstMatch(range ?? '')?.group(1) ??
+                    '',
+              ) ??
+              0;
+          largeRangeStarts.add(start);
+          largeIfRanges.add(request.headers.value(HttpHeaders.ifRangeHeader));
+          request.response.headers.set(HttpHeaders.etagHeader, '"large-tag"');
+          if (start > 0) {
+            request.response.statusCode = HttpStatus.partialContent;
+            request.response.headers.set(
+              HttpHeaders.contentRangeHeader,
+              'bytes $start-${largeSize - 1}/$largeSize',
+            );
+          }
+          request.response.contentLength = largeSize - start;
+          try {
+            if (largeRequests == 1) {
+              request.response.add(largePayload.sublist(0, 16384));
+              await request.response.flush();
+              if (!largeFirstChunkSent.isCompleted) {
+                largeFirstChunkSent.complete();
+              }
+              await releaseLarge.future;
+            }
+            final offset = largeRequests == 1 ? 16384 : start;
+            request.response.add(largePayload.sublist(offset));
+          } catch (_) {
+            // Pause closes the first streaming response.
+          } finally {
+            await request.response.close().catchError((_) {});
+          }
+        }),
+      );
+      var entityTagFlushes = 0;
       final manager = AsmrDownloadManager(
         persistenceWriter: (payload) async {
           if (payload == null) return;
           final tasks = (jsonDecode(payload) as Map)['tasks'] as List;
-          final tags = (tasks.single as Map)['fileEntityTags'] as Map;
-          if (tags['Track.mp3'] != '"verified"') return;
-          if (!started.isCompleted) started.complete();
-          await release.future;
-          if (reject) throw StateError('identity_write_failed');
+          for (final task in tasks) {
+            final tags = (task as Map)['fileEntityTags'] as Map;
+            if (tags.containsKey('small.lrc')) {
+              entityTagFlushes++;
+            }
+          }
         },
       );
-      final target = File(path.join(temp.path, 'Work', 'Track.mp3'));
-      final staging = File('${target.path}.doujin.part');
+      final smallTarget = File(path.join(temp.path, 'Work', 'small.lrc'));
+      final largeTarget = File(path.join(temp.path, 'Work', 'Large.mp3'));
+      final largeStaging = File('${largeTarget.path}.doujin.part');
+      final largeSidecar = File('${largeStaging.path}.etag');
       try {
-        await target.parent.create(recursive: true);
-        await target.writeAsBytes([9]);
         await manager.startDownload(
           work: _work(),
           selectedRoots: [
             _file(
-              downloadUrl: 'http://${server.address.host}:${server.port}/track',
-              size: 3,
+              title: 'small.lrc',
+              downloadUrl:
+                  'http://${server.address.host}:${server.port}/small.lrc',
+              size: 5,
+            ),
+            _file(
+              title: 'Large.mp3',
+              downloadUrl:
+                  'http://${server.address.host}:${server.port}/large.mp3',
+              size: largeSize,
             ),
           ],
           destinationRoot: temp.path,
           conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
           saveMetadata: false,
         );
-        await started.future.timeout(const Duration(seconds: 5));
-        expect(await staging.exists(), isFalse);
-        expect(await target.readAsBytes(), [9]);
-        final interrupted = outcome == 'pause'
-            ? manager.pauseTask(_key(1))
-            : outcome == 'shutdown'
-            ? manager.shutdown()
-            : null;
-        release.complete();
-        await interrupted;
-        if (outcome == 'shutdown') {
-          expect(await target.readAsBytes(), [9]);
-        } else {
-          await _waitForTaskStatus(
-            manager,
-            1,
-            outcome == 'success'
-                ? AsmrDownloadTaskStatus.completed
-                : outcome == 'pause'
-                ? AsmrDownloadTaskStatus.paused
-                : AsmrDownloadTaskStatus.failed,
-            allowFailure: outcome == 'failure',
-          );
-          expect(
-            await target.readAsBytes(),
-            outcome == 'success' ? [1, 2, 3] : [9],
-          );
-          if (outcome != 'pause') {
-            expect(manager.getTask(_key(1))?.fileEntityTags, isEmpty);
-          }
-        }
-        expect(await staging.exists(), isFalse);
+        await largeFirstChunkSent.future.timeout(const Duration(seconds: 5));
+        await _waitForFiles([largeStaging, largeSidecar]);
+        expect(await largeSidecar.exists(), isTrue);
+        expect(await largeSidecar.readAsString(), '"large-tag"');
+        expect(entityTagFlushes, 0);
+
+        await manager.pauseTask(_key(1));
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.paused);
+        expect(await largeSidecar.exists(), isTrue);
+        expect(await smallTarget.readAsBytes(), [1, 2, 3, 4, 5]);
+
+        releaseLarge.complete();
+        await manager.resumeTask(_key(1));
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+        expect(largeRangeStarts, hasLength(2));
+        expect(largeRangeStarts.first, 0);
+        expect(largeRangeStarts.last, greaterThan(0));
+        expect(largeIfRanges.last, '"large-tag"');
+        expect(await largeTarget.length(), largeSize);
+        expect(await largeStaging.exists(), isFalse);
+        expect(await largeSidecar.exists(), isFalse);
       } finally {
-        reject = false;
-        if (!release.isCompleted) release.complete();
+        if (!releaseLarge.isCompleted) releaseLarge.complete();
         await manager.shutdown();
         await server.close(force: true);
-        await temp.delete(recursive: true);
+        if (await temp.exists()) await temp.delete(recursive: true);
       }
-    });
-  }
+    },
+  );
+
+  test(
+    'sidecar ETag write failure prevents writing bytes to staging or target',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'asmr_entity_sidecar_fail_',
+      );
+      const largeSize = 1024 * 1024;
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((request) async {
+        request.response.headers.set(HttpHeaders.etagHeader, '"verified"');
+        request.response.contentLength = largeSize;
+        request.response.add(Uint8List(largeSize));
+        await request.response.close();
+      });
+      final manager = _manager();
+      final target = File(path.join(temp.path, 'Work', 'Track.mp3'));
+      final staging = File('${target.path}.doujin.part');
+      final sidecarBlocker = Directory('${staging.path}.etag');
+      try {
+        await target.parent.create(recursive: true);
+        await target.writeAsBytes([9]);
+        // Occupying the sidecar path with a directory forces sidecar write failure.
+        await sidecarBlocker.create();
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: [
+            _file(
+              downloadUrl: 'http://${server.address.host}:${server.port}/track',
+              size: largeSize,
+            ),
+          ],
+          destinationRoot: temp.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveMetadata: false,
+        );
+        await _waitForTaskStatus(
+          manager,
+          1,
+          AsmrDownloadTaskStatus.failed,
+          allowFailure: true,
+        );
+        expect(await staging.exists(), isFalse);
+        expect(await target.readAsBytes(), [9]);
+        expect(manager.getTask(_key(1))?.fileEntityTags, isEmpty);
+      } finally {
+        await manager.shutdown();
+        await server.close(force: true);
+        if (await temp.exists()) await temp.delete(recursive: true);
+      }
+    },
+  );
 
   for (final responseKind in ['partial', 'compressed']) {
     test(

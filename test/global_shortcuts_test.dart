@@ -446,14 +446,12 @@ void main() {
         app(const SizedBox(), focusedCardSessionId: 'primary'),
       );
       await tester.pump();
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.pump(const Duration(milliseconds: 200));
       expect(native.seeks, [('primary', const Duration(seconds: 2))]);
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
       await tester.pump(const Duration(milliseconds: 200));
       expect(native.seeks.last, ('primary', Duration.zero));
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.pump(const Duration(seconds: 1));
       expect(native.volumes, [('primary', 0.0)]);
@@ -681,6 +679,30 @@ void main() {
   );
 
   testWidgets(
+    'Windows ignores Alt+ArrowLeft and Alt+ArrowRight instead of seeking',
+    (tester) async {
+      notifications.registerSessionFocus('primary');
+      playback.sessionById('primary')!
+        ..duration = const Duration(seconds: 30)
+        ..loadedPath = '/primary.mp3';
+      await tester.pumpWidget(
+        app(const SizedBox(), focusedCardSessionId: 'primary'),
+      );
+      await tester.pump();
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(native.seeks, isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
     'Android does not install Windows modified shortcuts',
     (tester) async {
       await tester.pumpWidget(app(const SizedBox()));
@@ -691,6 +713,105 @@ void main() {
       expect(resumed, isEmpty);
     },
     variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
+
+  testWidgets(
+    'Android space activates focused button instead of toggling playback',
+    (tester) async {
+      var activated = 0;
+      await tester.pumpWidget(
+        app(
+          TextButton(
+            autofocus: true,
+            onPressed: () => activated++,
+            child: const Text('Press me'),
+          ),
+          focusedCardSessionId: 'primary',
+        ),
+      );
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pump();
+      expect(activated, 1);
+      expect(resumed, isEmpty);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
+
+  testWidgets(
+    'Windows accepts repeat events for seek and volume and ignores plain arrows/space in dialogs and scrollables',
+    (tester) async {
+      notifications.registerSessionFocus('primary');
+      playback.sessionById('primary')!
+        ..duration = const Duration(seconds: 60)
+        ..loadedPath = '/primary.mp3'
+        ..volume = 0.5;
+      final navigator = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        app(
+          const Text('home'),
+          navigatorKey: navigator,
+          focusedCardSessionId: 'primary',
+        ),
+      );
+      await tester.pump();
+
+      // KeyRepeatEvent adjusts seek and volume on Windows.
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+      await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowRight);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(native.seeks.length, 2);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowUp);
+      await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowUp);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(native.volumes.length, 2);
+
+      // Modal dialog ignores plain arrows and space.
+      unawaited(
+        showDialog<void>(
+          context: navigator.currentContext!,
+          builder: (_) => const AlertDialog(
+            title: Text('Modal'),
+            content: Focus(autofocus: true, child: Text('Dialog body')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final seeksBeforeDialog = native.seeks.length;
+      final volumesBeforeDialog = native.volumes.length;
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(native.seeks.length, seeksBeforeDialog);
+      expect(native.volumes.length, volumesBeforeDialog);
+      expect(resumed, isEmpty);
+
+      // Alt+ArrowLeft pops the modal/route on Windows.
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+      await tester.pumpAndSettle();
+      expect(find.text('Modal'), findsNothing);
+
+      // browserBack also pops a pushed route on Windows.
+      unawaited(
+        navigator.currentState!.push(
+          MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(body: Text('BrowserBackRoute')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('BrowserBackRoute'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.browserBack);
+      await tester.pumpAndSettle();
+      expect(find.text('BrowserBackRoute'), findsNothing);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
 }
 

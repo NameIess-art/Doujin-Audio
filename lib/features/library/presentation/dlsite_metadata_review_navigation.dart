@@ -16,6 +16,10 @@ class ReviewWorkNavigation extends StatelessWidget {
     required this.nextLabel,
     required this.onNavigatePrevious,
     required this.onNavigateNext,
+    this.skipLabel,
+    this.onSkip,
+    this.excludeLabel,
+    this.onExclude,
   });
 
   final bool skeleton;
@@ -28,6 +32,10 @@ class ReviewWorkNavigation extends StatelessWidget {
   final String nextLabel;
   final VoidCallback onNavigatePrevious;
   final VoidCallback onNavigateNext;
+  final String? skipLabel;
+  final VoidCallback? onSkip;
+  final String? excludeLabel;
+  final VoidCallback? onExclude;
 
   @override
   Widget build(BuildContext context) {
@@ -116,6 +124,20 @@ class ReviewWorkNavigation extends StatelessWidget {
               tooltip: nextLabel,
               onPressed: !canNavigateNext || saving ? null : onNavigateNext,
             ),
+            if (!skeleton && onSkip != null && skipLabel != null)
+              navigationButton(
+                key: const ValueKey<String>('dlsite_review_batch_skip'),
+                icon: Icons.skip_next_rounded,
+                tooltip: skipLabel!,
+                onPressed: saving ? null : onSkip,
+              ),
+            if (!skeleton && onExclude != null && excludeLabel != null)
+              navigationButton(
+                key: const ValueKey<String>('dlsite_review_batch_exclude'),
+                icon: Icons.block_rounded,
+                tooltip: excludeLabel!,
+                onPressed: saving ? null : onExclude,
+              ),
           ],
         ),
       ),
@@ -142,7 +164,6 @@ class ReviewConfirmButton extends StatelessWidget {
     iconKey: const ValueKey<String>('dlsite_review_confirm_icon'),
     label: label,
     loading: saving,
-    horizontalPadding: 20,
     onTap: onTap,
   );
 }

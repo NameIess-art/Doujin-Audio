@@ -72,6 +72,7 @@ void main() {
         final version = await UpdatePlatformService().getAppVersion();
         expect(version.isOk, true, reason: version.errorOrNull);
         expect(version.valueOrNull!.platform, 'windows');
+        expect(version.valueOrNull!.versionName, isNot(contains('+')));
         final storage = await FileCachePlatformGateway.instance
             .readStorageUsage();
         expect(storage, isNotNull);
@@ -116,7 +117,7 @@ void main() {
           'backgroundOpacity': 0.0,
         });
         await overlay.updateSubtitle('Windows subtitle smoke test');
-        await overlay.startOverlay();
+        expect(await overlay.startOverlay(), isTrue);
         await overlay.updateSubtitle(
           List.filled(30, '多行字幕 Windows wrapping').join(' '),
         );
@@ -334,6 +335,7 @@ void main() {
         );
         final players = <Player>[];
         final bridge = WindowsPlaybackBridge(
+          idleReleaseDelay: Duration.zero,
           createPlayer: () {
             final player = Player();
             players.add(player);
@@ -677,6 +679,7 @@ void main() {
         MediaKit.ensureInitialized();
         final directory = await Directory.systemTemp.createTemp('sound-field-');
         final bridge = WindowsPlaybackBridge(
+          idleReleaseDelay: Duration.zero,
           createPlayer: () {
             final player = Player();
             final native = player.platform! as NativePlayer;

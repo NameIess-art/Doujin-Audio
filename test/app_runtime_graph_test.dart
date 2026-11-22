@@ -595,6 +595,21 @@ void main() {
       <String>{nativeUri},
     );
   });
+
+  test(
+    'production runtime disposes AppLanguageProvider during shutdown',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final production = createProductionAppRuntime();
+
+      await production.runtimeGraph.runtime.dispose();
+
+      expect(
+        () => production.appLanguageProvider.addListener(() {}),
+        throwsFlutterError,
+      );
+    },
+  );
 }
 
 LibraryFacade _createLibraryFacade({LibraryService? service}) {

@@ -131,6 +131,117 @@ void main() {
       expect(restoreDirectory.existsSync(), isFalse);
     },
   );
+
+  test(
+    'restore rejects Zip-Slip when local header filename differs from central directory',
+    () async {
+      final bytes = ZipEncoder().encode(_backupArchive()).toList();
+      final original = utf8.encode('preferences.json');
+      final traversal = utf8.encode('../../pwned.json');
+      expect(traversal.length, original.length);
+      final localOffset = _indexOfBytes(bytes, original);
+      expect(localOffset, greaterThanOrEqualTo(0));
+      // Only overwrite the Local File Header filename, leaving the Central
+      // Directory entry intact so preflight must check both headers.
+      bytes.setRange(localOffset, localOffset + traversal.length, traversal);
+
+      final file = File('${temporaryDirectory.path}/zip_slip.dabackup');
+      await file.writeAsBytes(bytes);
+      await expectLater(
+        DataBackupService(
+          supportDirectoryProvider: () async => temporaryDirectory,
+          platformName: 'test-platform',
+        ).inspectAndStageRestore(file.path),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            'invalid_backup_entries',
+          ),
+        ),
+      );
+      expect(File('${temporaryDirectory.path}/pwned.json').existsSync(), isFalse);
+    },
+  );
+
+  test(
+    'restore rejects local header encryption flag mismatch',
+    () async {
+      final bytes = ZipEncoder().encode(_backupArchive()).toList();
+      final localHeaderOffset = _indexOfBytes(bytes, const <int>[
+        0x50,
+        0x4B,
+        0x03,
+        0x04,
+      ]);
+      expect(localHeaderOffset, greaterThanOrEqualTo(0));
+      // Set bit 0 (encrypted) in the local file header's general purpose flags.
+      bytes[localHeaderOffset + 6] |= 1;
+
+      final file = File('${temporaryDirectory.path}/local_encrypted.dabackup');
+      await file.writeAsBytes(bytes);
+      await expectLater(
+        DataBackupService(
+          supportDirectoryProvider: () async => temporaryDirectory,
+          platformName: 'test-platform',
+        ).inspectAndStageRestore(file.path),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            'invalid_backup_entries',
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'restore rejects local header compression method mismatch',
+    () async {
+      final bytes = ZipEncoder().encode(_backupArchive()).toList();
+      final localHeaderOffset = _indexOfBytes(bytes, const <int>[
+        0x50,
+        0x4B,
+        0x03,
+        0x04,
+      ]);
+      expect(localHeaderOffset, greaterThanOrEqualTo(0));
+      // Flip local compression method between store (0) and deflate (8).
+      final current = bytes[localHeaderOffset + 8];
+      bytes[localHeaderOffset + 8] = current == 0 ? 8 : 0;
+
+      final file = File('${temporaryDirectory.path}/local_method.dabackup');
+      await file.writeAsBytes(bytes);
+      await expectLater(
+        DataBackupService(
+          supportDirectoryProvider: () async => temporaryDirectory,
+          platformName: 'test-platform',
+        ).inspectAndStageRestore(file.path),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            'invalid_backup_entries',
+          ),
+        ),
+      );
+    },
+  );
+}
+
+int _indexOfBytes(List<int> haystack, List<int> needle) {
+  for (var i = 0; i <= haystack.length - needle.length; i++) {
+    var matched = true;
+    for (var j = 0; j < needle.length; j++) {
+      if (haystack[i + j] != needle[j]) {
+        matched = false;
+        break;
+      }
+    }
+    if (matched) return i;
+  }
+  return -1;
 }
 
 Archive _backupArchive({

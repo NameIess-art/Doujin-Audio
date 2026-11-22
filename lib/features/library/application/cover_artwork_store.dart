@@ -75,11 +75,26 @@ final class CoverArtworkStore {
   Map<String, int> _managedArtifacts = <String, int>{};
   final Map<String, int> _pendingReferences = <String, int>{};
   final Set<String> _accessedArtifacts = <String>{};
+  final Set<Future<void>> _activeFileWrites = <Future<void>>{};
+  final Map<
+    String,
+    Future<
+      ({
+        String outputPath,
+        bool created,
+        (String, int, int, int)? fingerprint,
+        String? computedStem,
+      })?
+    >
+  >
+  _inFlightFilePrepares = {};
   Future<void>? _initializeFuture;
   Future<void> _operations = Future<void>.value();
   Completer<void>? _pendingCommit;
   int _pendingBatchSize = 0;
   int _queuedOperations = 0;
+  int _activeCoalescedPrepares = 0;
+  int _partSequence = 0;
   bool _indexDirty = false;
   late Directory _root;
   late File _index;
@@ -145,6 +160,14 @@ final class CoverArtworkStore {
     if (loaded.changed) await _persistIndex(immediate: true);
   }
 
+  static final RegExp _legacyTempCoverNamePattern = RegExp(
+    r'^(cover|video_frame)_-?[0-9]{1,10}\.[a-zA-Z]+$',
+  );
+  static final RegExp _androidVersionSegmentPattern = RegExp(
+    r'^android-v[0-9]+$',
+  );
+  static final RegExp _unsafeFileNameChars = RegExp(r'[^a-zA-Z0-9._-]');
+
   // Old derived files stay on disk because an explicit selection may own them.
   bool isObsoleteAndroidAutomaticPath(String value) {
     if (!_isAndroid() || !_initialized || _isUri(value)) return false;
@@ -164,9 +187,7 @@ final class CoverArtworkStore {
       return true;
     }
     return parts.first == 'doujin_audio_covers' &&
-        RegExp(
-          r'^(cover|video_frame)_-?[0-9]{1,10}\.[a-zA-Z]+$',
-        ).hasMatch(path.basename(value));
+        _legacyTempCoverNamePattern.hasMatch(path.basename(value));
   }
 
   String? resolvedPath(String logicalKey) {
@@ -291,28 +312,71 @@ final class CoverArtworkStore {
     required String sourcePath,
     CoverArtworkNamespace namespace = CoverArtworkNamespace.generated,
     String? fileStem,
-  }) {
+  }) async {
     final epoch = _clearEpoch;
-    return _enqueue<String?>(() async {
+    _activeCoalescedPrepares++;
+    var enteredQueue = false;
+    try {
       await initialize();
       if (epoch != _clearEpoch) return null;
-      final managedCount = _managedArtifacts.length;
-      final output = await _storeFile(
-        logicalKey: logicalKey,
-        sourcePath: sourcePath,
-        namespace: namespace,
-        fileStem: fileStem,
-      );
-      if (output == null) return null;
-      final key = _canonicalLogicalKey(logicalKey);
-      final stored = _storedValue(output);
-      if (_bindings[key] != stored ||
-          managedCount != _managedArtifacts.length) {
-        _bindings[key] = stored;
-        await _persistIndex();
+      final outputDir = _namespaceDirectoryPath(namespace);
+      final prepareKey =
+          '$epoch|${namespace.name}|${fileStem ?? ''}|'
+          '${namespace == CoverArtworkNamespace.embedded ? '' : logicalKey}|'
+          '${PathMatcher.equivalenceKey(sourcePath)}';
+      final storedResult = await _inFlightFilePrepares.putIfAbsent(prepareKey, () {
+        late final Future<
+          ({
+            String outputPath,
+            bool created,
+            (String, int, int, int)? fingerprint,
+            String? computedStem,
+          })?
+        >
+        task;
+        task = _trackFileWrite(() async {
+          if (epoch != _clearEpoch) return null;
+          final partId = ++_partSequence;
+          return _runStoreCoverFileOnDisk(
+            logicalKey: logicalKey,
+            sourcePath: sourcePath,
+            outputDirectoryPath: outputDir,
+            namespace: namespace,
+            fileStem: fileStem,
+            knownHashes: null,
+            partId: partId,
+          );
+        }).whenComplete(() {
+          if (identical(_inFlightFilePrepares[prepareKey], task)) {
+            _inFlightFilePrepares.remove(prepareKey);
+          }
+        });
+        return task;
+      });
+      if (storedResult == null || epoch != _clearEpoch) return null;
+      enteredQueue = true;
+      _activeCoalescedPrepares--;
+      return await _enqueue<String?>(() async {
+        if (epoch != _clearEpoch) return null;
+        final managedCount = _managedArtifacts.length;
+        if (storedResult.created) {
+          _recordCreatedArtifact(File(storedResult.outputPath));
+        }
+        final key = _canonicalLogicalKey(logicalKey);
+        final stored = _storedValue(storedResult.outputPath);
+        if (_bindings[key] != stored ||
+            managedCount != _managedArtifacts.length) {
+          _bindings[key] = stored;
+          await _persistIndex();
+        }
+        return storedResult.outputPath;
+      }, coalesce: true);
+    } finally {
+      if (!enteredQueue) {
+        _activeCoalescedPrepares--;
+        _flushPendingCommitIfIdle();
       }
-      return output;
-    }, coalesce: true);
+    }
   }
 
   /// A directory discovery commits its bindings with one durable index write.
@@ -321,40 +385,82 @@ final class CoverArtworkStore {
     List<({String logicalKey, String sourcePath})> sources, {
     CoverArtworkNamespace namespace = CoverArtworkNamespace.embedded,
     bool Function()? shouldCancel,
-  }) {
+  }) async {
     final epoch = _clearEpoch;
+    await initialize();
+    final results = List<String?>.filled(sources.length, null);
+    if (sources.isEmpty || epoch != _clearEpoch) {
+      return results;
+    }
+    final hashes = <(String, int, int, int), String>{};
+    final outputDir = _namespaceDirectoryPath(namespace);
+    final prepared =
+        <({String logicalKey, String outputPath, bool created})>[];
+    await _trackFileWrite(() async {
+      for (var index = 0; index < sources.length; index++) {
+        if (epoch != _clearEpoch || (shouldCancel?.call() ?? false)) break;
+        final source = sources[index];
+        String? output;
+        var created = false;
+        try {
+          if (_isUri(source.sourcePath)) {
+            output = source.sourcePath;
+          } else {
+            final partId = ++_partSequence;
+            final knownHashes = hashes.isEmpty
+                ? null
+                : Map<(String, int, int, int), String>.of(hashes);
+            final stored = await _runStoreCoverFileOnDisk(
+              logicalKey: source.logicalKey,
+              sourcePath: source.sourcePath,
+              outputDirectoryPath: outputDir,
+              namespace: namespace,
+              fileStem: null,
+              knownHashes: knownHashes,
+              partId: partId,
+            );
+            if (stored != null) {
+              output = stored.outputPath;
+              created = stored.created;
+              if (stored.fingerprint != null && stored.computedStem != null) {
+                hashes[stored.fingerprint!] = stored.computedStem!;
+              }
+            }
+          }
+        } on FileSystemException catch (error, stackTrace) {
+          AppLogService.warning(
+            'cover_artwork_batch_source_failed path=${source.sourcePath}',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
+        if (epoch != _clearEpoch || (shouldCancel?.call() ?? false)) break;
+        if (output == null) continue;
+        results[index] = output;
+        prepared.add((
+          logicalKey: source.logicalKey,
+          outputPath: output,
+          created: created,
+        ));
+      }
+    });
+    if (epoch != _clearEpoch) {
+      return List<String?>.filled(sources.length, null);
+    }
+    if (prepared.isEmpty) return results;
     return _enqueue(() async {
-      await initialize();
-      final results = List<String?>.filled(sources.length, null);
-      final hashes = <(String, int, int, int), String>{};
+      if (epoch != _clearEpoch) {
+        return List<String?>.filled(sources.length, null);
+      }
       final managedCount = _managedArtifacts.length;
       var changed = false;
       try {
-        for (var index = 0; index < sources.length; index++) {
-          if (epoch != _clearEpoch || (shouldCancel?.call() ?? false)) break;
-          final source = sources[index];
-          String? output;
-          try {
-            output = _isUri(source.sourcePath)
-                ? source.sourcePath
-                : await _storeFile(
-                    logicalKey: source.logicalKey,
-                    sourcePath: source.sourcePath,
-                    namespace: namespace,
-                    hashes: hashes,
-                  );
-          } on FileSystemException catch (error, stackTrace) {
-            AppLogService.warning(
-              'cover_artwork_batch_source_failed path=${source.sourcePath}',
-              error: error,
-              stackTrace: stackTrace,
-            );
+        for (final item in prepared) {
+          if (item.created) {
+            _recordCreatedArtifact(File(item.outputPath));
           }
-          if (epoch != _clearEpoch || (shouldCancel?.call() ?? false)) break;
-          if (output == null) continue;
-          results[index] = output;
-          final key = _canonicalLogicalKey(source.logicalKey);
-          final stored = _storedValue(output);
+          final key = _canonicalLogicalKey(item.logicalKey);
+          final stored = _storedValue(item.outputPath);
           if (_bindings[key] == stored) continue;
           _bindings[key] = stored;
           changed = true;
@@ -368,53 +474,63 @@ final class CoverArtworkStore {
     });
   }
 
-  Future<String?> _storeFile({
+  Future<T> _trackFileWrite<T>(Future<T> Function() action) {
+    final done = Completer<void>();
+    _activeFileWrites.add(done.future);
+    return action().whenComplete(() {
+      _activeFileWrites.remove(done.future);
+      done.complete();
+    });
+  }
+
+  static Future<
+    ({
+      String outputPath,
+      bool created,
+      (String, int, int, int)? fingerprint,
+      String? computedStem,
+    })?
+  >
+  _runStoreCoverFileOnDisk({
     required String logicalKey,
     required String sourcePath,
+    required String outputDirectoryPath,
     required CoverArtworkNamespace namespace,
-    String? fileStem,
-    Map<(String, int, int, int), String>? hashes,
-  }) async {
-    final source = File(sourcePath);
-    final stat = await source.stat();
-    if (stat.type != FileSystemEntityType.file || stat.size <= 0) return null;
-    final fingerprint = (
-      PathMatcher.equivalenceKey(sourcePath),
-      stat.size,
-      stat.modified.microsecondsSinceEpoch,
-      stat.changed.microsecondsSinceEpoch,
+    required String? fileStem,
+    required Map<(String, int, int, int), String>? knownHashes,
+    required int partId,
+  }) {
+    if (IOOverrides.current != null) {
+      return _storeCoverFileOnDisk(
+        logicalKey: logicalKey,
+        sourcePath: sourcePath,
+        outputDirectoryPath: outputDirectoryPath,
+        namespace: namespace,
+        fileStem: fileStem,
+        knownHashes: knownHashes,
+        partId: partId,
+      );
+    }
+    return Isolate.run(
+      () => _storeCoverFileOnDisk(
+        logicalKey: logicalKey,
+        sourcePath: sourcePath,
+        outputDirectoryPath: outputDirectoryPath,
+        namespace: namespace,
+        fileStem: fileStem,
+        knownHashes: knownHashes,
+        partId: partId,
+      ),
     );
-    final String stem;
-    if (fileStem != null) {
-      stem = fileStem;
-    } else if (namespace == CoverArtworkNamespace.embedded) {
-      final existingStem = _sha256HexStem(path.basenameWithoutExtension(sourcePath));
-      if (existingStem != null) {
-        stem = existingStem;
-      } else {
-        final cached = hashes?[fingerprint];
-        stem = cached ?? (await sha256.bind(source.openRead()).first).toString();
-        hashes?[fingerprint] = stem;
-      }
-    } else {
-      stem = sha256
-          .convert(
-            utf8.encode(
-              namespace == CoverArtworkNamespace.generated
-                  ? logicalKey
-                  : '$logicalKey|${stat.size}|${stat.modified.millisecondsSinceEpoch}',
-            ),
-          )
-          .toString();
-    }
-    final output = _artifactFile(namespace, '$stem.image');
-    if (!await _isUsableFile(output.path)) {
-      final existed = await output.exists();
-      await _copyFile(source, output);
-      if (!existed) _recordCreatedArtifact(output);
-    }
-    return output.path;
   }
+
+  String _namespaceDirectoryPath(CoverArtworkNamespace namespace) =>
+      path.joinAll([
+        _root.path,
+        namespace.name,
+        if (_isAndroid() && namespace != CoverArtworkNamespace.remote)
+          'android-v$_androidGeneratedArtworkVersion',
+      ]);
 
   static final RegExp _sha256HexPattern = RegExp(r'^[0-9a-f]{64}$');
 
@@ -620,7 +736,7 @@ final class CoverArtworkStore {
     if ((parts.length != 2 && parts.length != 3) ||
         !CoverArtworkNamespace.values.any((item) => item.name == parts.first) ||
         (parts.length == 3 &&
-            !RegExp(r'^android-v[0-9]+$').hasMatch(parts[1])) ||
+            !_androidVersionSegmentPattern.hasMatch(parts[1])) ||
         !parts.last.endsWith('.image')) {
       return null;
     }
@@ -692,6 +808,9 @@ final class CoverArtworkStore {
     _clearEpoch++;
     return _enqueue<int>(() async {
       await initialize();
+      while (_activeFileWrites.isNotEmpty) {
+        await Future.wait(_activeFileWrites.toList(growable: false));
+      }
       final deletedBytes = await _artifactBytes(_root);
       if (await _root.exists()) await _root.delete(recursive: true);
       // Legacy remote files are reconstructible artwork too. Leaving them here
@@ -737,7 +856,8 @@ final class CoverArtworkStore {
         return await operation();
       } finally {
         _queuedOperations--;
-        if (closesBatch || _queuedOperations == 0) {
+        if (closesBatch ||
+            (_queuedOperations == 0 && _activeCoalescedPrepares == 0)) {
           if (identical(_pendingCommit, commit)) {
             _pendingCommit = null;
             _pendingBatchSize = 0;
@@ -762,6 +882,18 @@ final class CoverArtworkStore {
       result,
       commit.future,
     ]).then((values) => values.first as T);
+  }
+
+  void _flushPendingCommitIfIdle() {
+    if (_queuedOperations != 0 ||
+        _activeCoalescedPrepares != 0 ||
+        _pendingCommit == null) {
+      return;
+    }
+    final commit = _pendingCommit!;
+    _pendingCommit = null;
+    _pendingBatchSize = 0;
+    _operations = _operations.then((_) => _commitIndex(commit));
   }
 
   Future<void> _commitIndex(Completer<void> commit) async {
@@ -870,7 +1002,7 @@ final class CoverArtworkStore {
       sha256.convert(utf8.encode(path.normalize(value))).toString();
 
   String _safeFileName(String value) =>
-      value.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+      value.replaceAll(_unsafeFileNameChars, '_');
 
   Future<int> _artifactBytes(Directory directory) async {
     if (!await directory.exists()) return 0;
@@ -898,6 +1030,125 @@ final class CoverArtworkStore {
 
 Future<String> _encodeCoverIndex(Map<String, Object> snapshot) =>
     Isolate.run(() => json.encode(snapshot));
+
+Future<
+  ({
+    String outputPath,
+    bool created,
+    (String, int, int, int)? fingerprint,
+    String? computedStem,
+  })?
+>
+_storeCoverFileOnDisk({
+  required String logicalKey,
+  required String sourcePath,
+  required String outputDirectoryPath,
+  required CoverArtworkNamespace namespace,
+  required String? fileStem,
+  required Map<(String, int, int, int), String>? knownHashes,
+  required int partId,
+}) async {
+  final source = File(sourcePath);
+  final stat = await source.stat();
+  if (stat.type != FileSystemEntityType.file || stat.size <= 0) return null;
+  final fingerprint = (
+    PathMatcher.equivalenceKey(sourcePath),
+    stat.size,
+    stat.modified.microsecondsSinceEpoch,
+    stat.changed.microsecondsSinceEpoch,
+  );
+  final String stem;
+  String? computedStem;
+  if (fileStem != null) {
+    stem = fileStem;
+  } else if (namespace == CoverArtworkNamespace.embedded) {
+    final existingStem = CoverArtworkStore._sha256HexStem(
+      path.basenameWithoutExtension(sourcePath),
+    );
+    if (existingStem != null) {
+      stem = existingStem;
+    } else {
+      final cached = knownHashes?[fingerprint];
+      if (cached != null) {
+        stem = cached;
+      } else {
+        stem = (await sha256.bind(source.openRead()).first).toString();
+        computedStem = stem;
+      }
+    }
+  } else {
+    stem = sha256
+        .convert(
+          utf8.encode(
+            namespace == CoverArtworkNamespace.generated
+                ? logicalKey
+                : '$logicalKey|${stat.size}|${stat.modified.millisecondsSinceEpoch}',
+          ),
+        )
+        .toString();
+  }
+  final safeName = '$stem.image'.replaceAll(
+    CoverArtworkStore._unsafeFileNameChars,
+    '_',
+  );
+  final output = File(path.join(outputDirectoryPath, safeName));
+  var created = false;
+  if (!await _isUsableCoverFile(output.path)) {
+    final existed = await output.exists();
+    await _copyCoverFile(source, output, partId: partId);
+    created = !existed;
+  }
+  return (
+    outputPath: output.path,
+    created: created,
+    fingerprint: fingerprint,
+    computedStem: computedStem,
+  );
+}
+
+Future<bool> _isUsableCoverFile(String value) async {
+  try {
+    final stat = await File(value).stat();
+    return stat.type == FileSystemEntityType.file && stat.size > 0;
+  } on FileSystemException {
+    return false;
+  }
+}
+
+Future<void> _copyCoverFile(
+  File source,
+  File output, {
+  required int partId,
+}) async {
+  await output.parent.create(recursive: true);
+  final partial = File('${output.path}.$partId.part');
+  try {
+    await source.openRead().pipe(partial.openWrite());
+    if (await _isUsableCoverFile(output.path)) return;
+    if (await output.exists()) {
+      try {
+        await output.delete();
+      } on PathNotFoundException {
+        // Another concurrent writer already replaced the target.
+      }
+    }
+    try {
+      await partial.rename(output.path);
+    } on FileSystemException {
+      if (await _isUsableCoverFile(output.path)) return;
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      if (!await _isUsableCoverFile(output.path)) rethrow;
+    }
+  } finally {
+    if (await partial.exists()) {
+      try {
+        await partial.delete();
+      } on FileSystemException {
+        // Ignore cleanup races on temporary staging files.
+      }
+    }
+  }
+}
 
 typedef _CoverIndex = ({
   Map<String, String> bindings,

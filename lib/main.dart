@@ -55,23 +55,32 @@ Future<void> main() async {
       final windowsRuntime = Platform.isWindows
           ? WindowsRuntimeBinding()
           : null;
-      await windowsRuntime?.attach();
 
       late final AppBootstrapController appBootstrapController;
       Future<void> loadStartupState() async {
+        final lifecycleService = AppLifecyclePlatformService();
+        final systemAccentFuture = lifecycleService.getSystemAccentColor();
         await Future.wait<void>([
+          if (windowsRuntime != null) windowsRuntime.attach(),
           initializePlatformRuntime(),
           AppPreferences.init(),
         ]);
         startupRestoreOutcome =
             await _initializeAudioPlayerApp() ?? startupRestoreOutcome;
         await themeProvider.reloadPersistedState();
-        final lifecycleService = AppLifecyclePlatformService();
         if (themeProvider.useSystemAccentColor) {
-          final systemAccent = await lifecycleService.getSystemAccentColor();
+          final systemAccent = await systemAccentFuture;
           if (systemAccent != null) {
             themeProvider.setSystemAccentColor(Color(systemAccent));
           }
+        } else {
+          unawaited(
+            systemAccentFuture.then((systemAccent) {
+              if (systemAccent != null) {
+                themeProvider.setSystemAccentColor(Color(systemAccent));
+              }
+            }),
+          );
         }
         if (windowsRuntime == null) {
           unawaited(

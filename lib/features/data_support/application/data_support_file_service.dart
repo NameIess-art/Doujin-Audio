@@ -60,9 +60,7 @@ class DataSupportFileService {
         );
       });
 
-  Future<BackupValidationResult?> pickAndStageBackup({
-    required String dialogTitle,
-  }) async {
+  Future<PlatformFile?> pickBackupFile({required String dialogTitle}) async {
     final result = await FilePicker.pickFiles(
       dialogTitle: dialogTitle,
       type: FileType.custom,
@@ -70,8 +68,10 @@ class DataSupportFileService {
       withReadStream: true,
       lockParentWindow: true,
     );
-    final selected = result?.files.singleOrNull;
-    if (selected == null) return null;
+    return result?.files.singleOrNull;
+  }
+
+  Future<BackupValidationResult?> stageBackupFile(PlatformFile selected) async {
     final selectedPath = selected.path;
     if (selectedPath != null && selectedPath.isNotEmpty) {
       return _backupService.inspectAndStageRestore(selectedPath);
@@ -82,6 +82,14 @@ class DataSupportFileService {
       await stream.pipe(temporary.openWrite());
       return await _backupService.inspectAndStageRestore(temporary.path);
     });
+  }
+
+  Future<BackupValidationResult?> pickAndStageBackup({
+    required String dialogTitle,
+  }) async {
+    final selected = await pickBackupFile(dialogTitle: dialogTitle);
+    if (selected == null) return null;
+    return stageBackupFile(selected);
   }
 
   Future<T> _withTemporaryFile<T>(

@@ -258,27 +258,60 @@ class AsmrDownloadPlanner {
     return target;
   }
 
+  static const int kMaxWindowsSegmentLength = 120;
+  static const int kMinWindowsSegmentLength = 28;
+  static const int kSoftWindowsRelativePathBudget = 180;
+
   String localRelativePath(String relativePath) {
     final normalized = validatedDownloadRelativePath(relativePath);
-    if (!Platform.isWindows) return normalized;
+    if (Platform.isWindows) {
+      return windowsLocalRelativePath(normalized);
+    }
     return normalized
         .split('/')
-        .map((segment) {
-          var safe = PathDisplay.safeFileName(
+        .map(
+          (segment) => truncateAsmrDownloadPathSegment(
             segment,
-            replacement: '_',
-            collapseWhitespace: false,
-            fallback: '_',
-          );
-          if (RegExp(
-            r'^(CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\.|$)',
-            caseSensitive: false,
-          ).hasMatch(safe)) {
-            safe = '_$safe';
-          }
-          return safe;
-        })
+            maxCodeUnits: kMaxAsmrDownloadSegmentUtf8Bytes,
+            maxUtf8Bytes: kMaxAsmrDownloadSegmentUtf8Bytes,
+          ),
+        )
         .join('/');
+  }
+
+  /// Sanitizes and bounds a validated relative path for Windows NTFS/MAX_PATH
+  /// safety while preserving prefix consistency across parent/child paths.
+  String windowsLocalRelativePath(String relativePath) {
+    final normalized = validatedDownloadRelativePath(relativePath);
+    final mapped = <String>[];
+    var usedLength = 0;
+    for (final segment in normalized.split('/')) {
+      var safe = PathDisplay.safeFileName(
+        segment,
+        replacement: '_',
+        collapseWhitespace: false,
+        fallback: '_',
+      );
+      if (RegExp(
+        r'^(CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\.|$)',
+        caseSensitive: false,
+      ).hasMatch(safe)) {
+        safe = '_$safe';
+      }
+      final remaining = kSoftWindowsRelativePathBudget - usedLength;
+      final segmentCap = remaining.clamp(
+        kMinWindowsSegmentLength,
+        kMaxWindowsSegmentLength,
+      );
+      final bounded = truncateAsmrDownloadPathSegment(
+        safe,
+        maxCodeUnits: segmentCap,
+        hashInput: segment,
+      );
+      mapped.add(bounded);
+      usedLength += bounded.length + 1;
+    }
+    return mapped.join('/');
   }
 
   static const List<String> _coverExtensions = [

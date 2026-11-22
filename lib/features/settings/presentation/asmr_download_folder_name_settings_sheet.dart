@@ -93,11 +93,28 @@ class _AsmrDownloadFolderNameSettingsSheetState
     });
   }
 
+  String _previewFolderName(AppLanguageProvider i18n) {
+    return _selected
+        .map((field) {
+          return switch (field) {
+            AsmrDownloadFolderNameField.rjCode => 'RJ01234567',
+            AsmrDownloadFolderNameField.voiceActors =>
+              asmrDownloadFolderNameFieldLabel(i18n, field),
+            AsmrDownloadFolderNameField.circleName =>
+              asmrDownloadFolderNameFieldLabel(i18n, field),
+            AsmrDownloadFolderNameField.workTitle =>
+              asmrDownloadFolderNameFieldLabel(i18n, field),
+          };
+        })
+        .join(' - ');
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final cs = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     final optionShape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(
         AppDesignTokens.of(context).radiusCard,
@@ -106,24 +123,89 @@ class _AsmrDownloadFolderNameSettingsSheetState
     final unselected = AsmrDownloadFolderNameField.values
         .where((field) => !_selected.contains(field))
         .toList(growable: false);
+    final preview = _previewFolderName(i18n);
 
     return PopScope(
       canPop: !_saving,
       child: SafeArea(
         child: SizedBox(
           width: double.infinity,
-          child: ListView(
-            shrinkWrap: true,
-            padding: AppBottomSheet.contentPadding,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              AppBottomSheetHeader(
-                icon: Icons.drive_file_rename_outline,
-                iconKey: const ValueKey(
-                  'asmr_download_folder_name_header_icon',
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  AppBottomSheet.contentPadding.left,
+                  AppBottomSheet.contentPadding.top,
+                  AppBottomSheet.contentPadding.right,
+                  8,
                 ),
-                title: i18n.tr('asmr_download_folder_name_setting'),
+                child: AppBottomSheetHeader(
+                  icon: Icons.drive_file_rename_outline,
+                  iconKey: const ValueKey(
+                    'asmr_download_folder_name_header_icon',
+                  ),
+                  title: i18n.tr('asmr_download_folder_name_setting'),
+                ),
               ),
-              const SizedBox(height: 18),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.fromLTRB(
+                    AppBottomSheet.contentPadding.left,
+                    0,
+                    AppBottomSheet.contentPadding.right,
+                    AppBottomSheet.contentPadding.bottom,
+                  ),
+                  children: [
+                    Text(
+                      i18n.tr('asmr_download_folder_name_hint'),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+              const SizedBox(height: 10),
+              DecoratedBox(
+                key: const ValueKey('asmr_download_folder_name_preview'),
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(
+                    AppDesignTokens.of(context).radiusCard,
+                  ),
+                  border: Border.all(
+                    color: cs.outlineVariant.withValues(alpha: 0.6),
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.folder_outlined,
+                        size: 18,
+                        color: cs.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          i18n.tr('asmr_download_folder_preview', {
+                            'preview': preview,
+                          }),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: cs.onSurface,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
               ReorderableListView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -183,17 +265,26 @@ class _AsmrDownloadFolderNameSettingsSheetState
                   contentPadding: EdgeInsets.zero,
                 ),
               const SizedBox(height: 8),
-              AppBottomSheetActions(
-                key: const ValueKey('asmr_download_folder_name_actions'),
-                cancelKey: const ValueKey('asmr_download_folder_name_cancel'),
-                confirmKey: const ValueKey('asmr_download_folder_name_confirm'),
-                cancelLabel: i18n.tr('cancel'),
-                confirmLabel: i18n.tr('confirm'),
-                onCancel: _saving ? null : () => Navigator.of(context).pop(),
-                onConfirm: _saving ? null : _confirm,
+                    AppBottomSheetActions(
+                      key: const ValueKey('asmr_download_folder_name_actions'),
+                      cancelKey: const ValueKey(
+                        'asmr_download_folder_name_cancel',
+                      ),
+                      confirmKey: const ValueKey(
+                        'asmr_download_folder_name_confirm',
+                      ),
+                      cancelLabel: i18n.tr('cancel'),
+                      confirmLabel: i18n.tr('confirm'),
+                      onCancel: _saving
+                          ? null
+                          : () => Navigator.of(context).pop(),
+                      onConfirm: _saving ? null : _confirm,
+                    ),
+                  ],
+                ).withWindowsSmoothScroll(),
               ),
             ],
-          ).withWindowsSmoothScroll(),
+          ),
         ),
       ),
     );

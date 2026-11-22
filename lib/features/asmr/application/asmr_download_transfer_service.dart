@@ -36,6 +36,26 @@ class AsmrDownloadTransferService {
   final bool Function(String) isPaused;
   final void Function(String) throwIfCancelled;
   static const _planner = AsmrDownloadPlanner();
+  static const int _etagSidecarMinBytes = 1024 * 1024;
+  static const Set<String> _smallNonResumableExtensions = <String>{
+    '.lrc',
+    '.vtt',
+    '.srt',
+    '.ass',
+    '.ssa',
+    '.txt',
+    '.md',
+    '.json',
+    '.jpg',
+    '.jpeg',
+    '.png',
+    '.webp',
+    '.gif',
+    '.bmp',
+  };
+
+  static File _entityTagSidecarFile(File stagingFile) =>
+      localDownloadFile('${stripWindowsExtendedLocalPath(stagingFile.path)}.etag');
   Future<DownloadWriteResult> downloadItem(
     PlannedDownloadFile item, {
     required String workId,
@@ -123,9 +143,10 @@ class AsmrDownloadTransferService {
     _store.notifyProgressChanged(workId);
     final staging = PathMatcher.isContentUri(task.workRootPath)
         ? await _outputs.persistentStagingFile(task.workRootPath, relativePath)
-        : File('$targetPath.doujin.part');
-    final lease = AppCacheService.protectPaths([staging.path]);
-    _outputs.createdOutputPaths[workId]?.add(staging.path);
+        : localDownloadFile('$targetPath.doujin.part');
+    final logicalStagingPath = stripWindowsExtendedLocalPath(staging.path);
+    final lease = AppCacheService.protectPaths([logicalStagingPath]);
+    _outputs.createdOutputPaths[workId]?.add(logicalStagingPath);
     try {
       for (var attempt = 0; ; attempt++) {
         throwIfCancelled(workId);
@@ -196,10 +217,11 @@ class AsmrDownloadTransferService {
           return const DownloadWriteResult.failure(bytesDownloaded: 0);
         }
       } else {
-        await File(targetPath).parent.create(recursive: true);
+        final targetFile = localDownloadFile(targetPath);
+        await targetFile.parent.create(recursive: true);
         if (!await commitLocalDownloadedFile(
           staging: staging,
-          target: File(targetPath),
+          target: targetFile,
         )) {
           return const DownloadWriteResult.failure(bytesDownloaded: 0);
         }
@@ -275,11 +297,14 @@ class AsmrDownloadTransferService {
       }
     }
 
+    String? localTargetPath;
     File? localTargetFile;
     if (!PathMatcher.isContentUri(workRootPath)) {
-      localTargetFile = File(
-        _planner.resolveLocalPathWithin(workRootPath, normalizedRelativePath),
+      localTargetPath = _planner.resolveLocalPathWithin(
+        workRootPath,
+        normalizedRelativePath,
       );
+      localTargetFile = localDownloadFile(localTargetPath);
       if ((preserveExistingJson ||
               conflictPolicy == AsmrDownloadConflictPolicy.skip) &&
           await localTargetFile.exists()) {
@@ -299,15 +324,17 @@ class AsmrDownloadTransferService {
       }
     }
 
-    final stagingFile = localTargetFile == null || jsonLocation != null
+    final stagingFile = localTargetPath == null || jsonLocation != null
         ? await _outputs.persistentStagingFile(
             workRootPath,
             normalizedRelativePath,
           )
-        : File('${localTargetFile.path}.doujin.part');
+        : localDownloadFile('$localTargetPath.doujin.part');
     final stagingExisted = await stagingFile.exists();
     if (!stagingExisted) {
-      _outputs.createdOutputPaths[workId]?.add(stagingFile.path);
+      _outputs.createdOutputPaths[workId]?.add(
+        stripWindowsExtendedLocalPath(stagingFile.path),
+      );
     }
     final tempResult = await _downloadToTemporaryFile(
       item,
@@ -409,19 +436,20 @@ class AsmrDownloadTransferService {
         );
       }
       if (!targetExisted) {
-        _outputs.createdOutputPaths[workId]?.add(targetFile.path);
+        _outputs.createdOutputPaths[workId]?.add(localTargetPath!);
       }
       return DownloadWriteResult.success(
         bytesDownloaded: tempResult.bytesDownloaded,
       );
     } finally {
       try {
-        if (!isPaused(workId) &&
-            !isDisposed() &&
-            await tempResult.file.exists()) {
-          await tempResult.file.delete();
-        }
         if (!isPaused(workId) && !isDisposed()) {
+          await _outputs.deleteFileIfPresent(
+            _entityTagSidecarFile(tempResult.file),
+          );
+          if (await tempResult.file.exists()) {
+            await tempResult.file.delete();
+          }
           _setFileEntityTag(workId, item.relativePath, null);
         }
       } catch (_) {
@@ -465,12 +493,14 @@ class AsmrDownloadTransferService {
             task.workRootPath,
             item.relativePath,
           )
-        : File(
+        : localDownloadFile(
             '${_planner.resolveLocalPathWithin(task.workRootPath, item.relativePath)}.doujin.part',
           );
     final stagingExisted = await stagingFile.exists();
     if (!stagingExisted) {
-      _outputs.createdOutputPaths[workId]?.add(stagingFile.path);
+      _outputs.createdOutputPaths[workId]?.add(
+        stripWindowsExtendedLocalPath(stagingFile.path),
+      );
     }
     final tempResult = await _downloadToTemporaryFile(
       item,
@@ -497,7 +527,7 @@ class AsmrDownloadTransferService {
       );
       final targetExisted = PathMatcher.isContentUri(task.workRootPath)
           ? await _outputs.gateway.documentPathExists(targetPath)
-          : await File(targetPath).exists();
+          : await localDownloadFile(targetPath).exists();
       if (targetExisted && conflictPolicy == AsmrDownloadConflictPolicy.skip) {
         return const DownloadWriteResult.skipped(bytesDownloaded: 0);
       }
@@ -513,7 +543,7 @@ class AsmrDownloadTransferService {
           return const DownloadWriteResult.failure(bytesDownloaded: 0);
         }
       } else {
-        final targetFile = File(targetPath);
+        final targetFile = localDownloadFile(targetPath);
         await targetFile.parent.create(recursive: true);
         final committed = await commitLocalDownloadedFile(
           staging: tempResult.file,
@@ -532,12 +562,13 @@ class AsmrDownloadTransferService {
       return const DownloadWriteResult.success(bytesDownloaded: 0);
     } finally {
       try {
-        if (!isPaused(workId) &&
-            !isDisposed() &&
-            await tempResult.file.exists()) {
-          await tempResult.file.delete();
-        }
         if (!isPaused(workId) && !isDisposed()) {
+          await _outputs.deleteFileIfPresent(
+            _entityTagSidecarFile(tempResult.file),
+          );
+          if (await tempResult.file.exists()) {
+            await tempResult.file.delete();
+          }
           _setFileEntityTag(workId, item.relativePath, null);
         }
       } catch (_) {
@@ -555,7 +586,11 @@ class AsmrDownloadTransferService {
   }) async {
     final tempFile = stagingFile;
     await tempFile.parent.create(recursive: true);
-    final cacheLease = AppCacheService.protectPaths(<String>[tempFile.path]);
+    final sidecarFile = _entityTagSidecarFile(tempFile);
+    final cacheLease = AppCacheService.protectPaths(<String>[
+      stripWindowsExtendedLocalPath(tempFile.path),
+      stripWindowsExtendedLocalPath(sidecarFile.path),
+    ]);
     var leaseTransferred = false;
     try {
       for (var attempt = 0; ; attempt++) {
@@ -631,10 +666,11 @@ class AsmrDownloadTransferService {
       _setFileRetryAttempt(workId, item.relativePath, null);
       if (!leaseTransferred) {
         try {
-          if (!isPaused(workId) && !isDisposed() && await tempFile.exists()) {
-            await tempFile.delete();
-          }
           if (!isPaused(workId) && !isDisposed()) {
+            await _outputs.deleteFileIfPresent(sidecarFile);
+            if (await tempFile.exists()) {
+              await tempFile.delete();
+            }
             _setFileEntityTag(workId, item.relativePath, null);
           }
         } catch (_) {
@@ -662,8 +698,10 @@ class AsmrDownloadTransferService {
       } on FileSystemException {
         if (await stagingFile.exists()) rethrow;
       }
-      final savedTag = strongDownloadEntityTag(
-        _store[workId]?.fileEntityTags[item.relativePath],
+      final savedTag = await _readSavedEntityTag(
+        workId,
+        item.relativePath,
+        stagingFile,
       );
       if (received > 0 &&
           (!allowResume ||
@@ -694,7 +732,7 @@ class AsmrDownloadTransferService {
             : 'Doujin Audio downloader',
       );
       request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
-      for (final header in asmrMediaRequestHeadersForUrl(item.url).entries) {
+      for (final header in asmrMediaRequestHeadersForUrl(resolvedUrl).entries) {
         request.headers.set(header.key, header.value);
       }
       if (received > 0) {
@@ -829,8 +867,17 @@ class AsmrDownloadTransferService {
         _setFileTotalBytes(workId, item, responseTotal);
       }
       // A durable identity must precede its bytes; otherwise a restart could
-      // append a new entity's suffix to an older staging prefix.
-      await _persistFileEntityTag(workId, item.relativePath, responseTag);
+      // append a new entity's suffix to an older staging prefix. Large files
+      // store this in a lightweight sidecar next to the staging file instead
+      // of serializing the entire download queue into AppPreferences.
+      final expectedTotalBytes = responseTotal > 0 ? responseTotal : item.size;
+      await _persistFileEntityTag(
+        workId,
+        item,
+        stagingFile,
+        responseTag,
+        expectedTotalBytes: expectedTotalBytes,
+      );
       throwIfCancelled(workId);
       final sink = stagingFile.openWrite(
         mode: responseStart > 0 ? FileMode.append : FileMode.write,
@@ -907,22 +954,85 @@ class AsmrDownloadTransferService {
     throwIfCancelled(workId);
     // Clear the old identity before deleting/truncating its bytes, then persist
     // the replacement identity before opening the next response's sink.
-    await _persistFileEntityTag(workId, item.relativePath, null);
+    await _persistFileEntityTag(
+      workId,
+      item,
+      staging,
+      null,
+      expectedTotalBytes: item.size,
+    );
     throwIfCancelled(workId);
     await _outputs.deleteFileIfPresent(staging);
+    if (_store.durableFileEntityTag(workId, item.relativePath) == null) {
+      await _outputs.deleteFileIfPresent(_entityTagSidecarFile(staging));
+    }
     if (item.countsTowardByteProgress) {
       _store.reconcileLiveFileProgress(workId, item.relativePath, 0);
     }
   }
 
-  Future<void> _persistFileEntityTag(
+  bool _shouldPersistEntityTagSidecar(
+    PlannedDownloadFile item,
+    int expectedTotalBytes,
+  ) {
+    if (expectedTotalBytes > 0 && expectedTotalBytes < _etagSidecarMinBytes) {
+      return false;
+    }
+    if (expectedTotalBytes <= 0 &&
+        (item.isCover ||
+            _smallNonResumableExtensions.contains(
+              path.extension(item.relativePath).toLowerCase(),
+            ))) {
+      return false;
+    }
+    return true;
+  }
+
+  Future<String?> _readSavedEntityTag(
     String workId,
     String relativePath,
-    String? tag,
+    File stagingFile,
   ) async {
-    _setFileEntityTag(workId, relativePath, tag);
-    if (!_store.isFileEntityTagDurable(workId, relativePath, tag)) {
-      await _store.flushPersistence();
+    final sidecar = _entityTagSidecarFile(stagingFile);
+    try {
+      if (await sidecar.exists()) {
+        final raw = (await sidecar.readAsString()).trim();
+        return strongDownloadEntityTag(raw.isEmpty ? null : raw);
+      }
+    } on FileSystemException {
+      if (await sidecar.exists()) return null;
+    }
+    return strongDownloadEntityTag(_store[workId]?.fileEntityTags[relativePath]);
+  }
+
+  Future<void> _persistFileEntityTag(
+    String workId,
+    PlannedDownloadFile item,
+    File stagingFile,
+    String? tag, {
+    required int expectedTotalBytes,
+  }) async {
+    _setFileEntityTag(workId, item.relativePath, tag);
+    final sidecar = _entityTagSidecarFile(stagingFile);
+    final durableStoreTag = _store.durableFileEntityTag(
+      workId,
+      item.relativePath,
+    );
+    final conflictsWithDurableStore =
+        durableStoreTag != null && durableStoreTag != tag;
+    if (tag == null) {
+      if (conflictsWithDurableStore) {
+        await sidecar.writeAsString('', flush: true);
+      } else {
+        await _outputs.deleteFileIfPresent(sidecar);
+      }
+      return;
+    }
+    if (_shouldPersistEntityTagSidecar(item, expectedTotalBytes) ||
+        conflictsWithDurableStore) {
+      await sidecar.writeAsString(tag, flush: true);
+    } else {
+      await _outputs.deleteFileIfPresent(sidecar);
     }
   }
 

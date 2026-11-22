@@ -159,33 +159,45 @@ AsmrSearchSuggestions _decodeSearchSuggestions(String body) {
 AsmrWorkPage _decodeJapaneseWorkPage(
   ({String body, int page, int pageSize}) input,
 ) {
-  final json = jsonDecode(input.body) as Map<String, dynamic>;
+  final json = jsonDecode(input.body);
+  if (json is! Map<String, dynamic>) {
+    throw const FormatException('Invalid Japanese ASMR search response.');
+  }
   final items = json['items'];
-  if (items is! List || json['total'] is! num) {
+  final total = json['total'];
+  if (items is! List || total is! num) {
     throw const FormatException('Invalid Japanese ASMR search response.');
   }
   return AsmrWorkPage(
-    works: items
-        .map(
-          (item) =>
-              japaneseAsmrWorkFromJson(Map<String, dynamic>.from(item as Map)),
-        )
-        .toList(growable: false),
+    works: items.map((item) {
+      if (item is! Map) {
+        throw const FormatException('Invalid Japanese ASMR search item.');
+      }
+      final map = item is Map<String, dynamic>
+          ? item
+          : <String, dynamic>{
+              for (final entry in item.entries)
+                entry.key.toString(): entry.value,
+            };
+      return japaneseAsmrWorkFromJson(map);
+    }).toList(growable: false),
     currentPage: input.page,
     pageSize: input.pageSize,
-    totalCount: (json['total'] as num).toInt(),
+    totalCount: total.toInt(),
   );
 }
 
 AsmrWork japaneseAsmrWorkFromJson(Map<String, dynamic> json) {
-  final id = (json['workId'] as num?)?.toInt();
+  final rawWorkId = json['workId'];
+  final id = rawWorkId is num ? rawWorkId.toInt() : null;
   if (id == null || id <= 0) {
     throw const FormatException('Japanese ASMR work is missing workId.');
   }
   final code = normalizeAsmrWorkCode(
     (json['rj'] ?? json['sourceId'] ?? '').toString(),
   );
-  final pageUrl = (json['pageUrl'] as String?) ?? '';
+  final rawPageUrl = json['pageUrl'];
+  final pageUrl = rawPageUrl is String ? rawPageUrl : '';
   final mapped = <String, dynamic>{
     ...json,
     'id': id,
@@ -210,30 +222,46 @@ AsmrWork japaneseAsmrWorkFromJson(Map<String, dynamic> json) {
 List<AsmrTrackFile> _decodeJapaneseTrackTree(
   ({String body, AsmrWork work}) input,
 ) {
-  final json = jsonDecode(input.body) as Map<String, dynamic>;
+  final json = jsonDecode(input.body);
+  if (json is! Map<String, dynamic>) {
+    throw const FormatException('Invalid Japanese ASMR track response.');
+  }
   final roots = json['trackTree'];
   if (roots is! List) {
     throw const FormatException('Invalid Japanese ASMR track response.');
   }
-  Map<String, dynamic> mapNode(Map<dynamic, dynamic> raw) => <String, dynamic>{
-    ...raw.cast<String, dynamic>(),
-    'mediaStreamUrl': raw['streamUrl'] ?? raw['mediaStreamUrl'],
-    'workTitle': input.work.title,
-    'workKey': input.work.workKey,
-    'work': {
-      'id': input.work.resourceFor(AsmrCatalogSource.japaneseAsmr)?.id ??
-          json['workId'] ?? input.work.id,
-      'source_id': input.work.workCode,
-    },
-    'children': [
-      for (final child
-          in (raw['children'] as List<dynamic>? ?? const <dynamic>[]))
-        mapNode(child as Map<dynamic, dynamic>),
-    ],
-  };
+  Map<String, dynamic> mapNode(Object? raw) {
+    if (raw is! Map) {
+      throw const FormatException('Invalid Japanese ASMR track node.');
+    }
+    final map = raw is Map<String, dynamic>
+        ? raw
+        : <String, dynamic>{
+            for (final entry in raw.entries) entry.key.toString(): entry.value,
+          };
+    final rawChildren = map['children'];
+    if (rawChildren != null && rawChildren is! List) {
+      throw const FormatException('Invalid Japanese ASMR track children.');
+    }
+    return <String, dynamic>{
+      ...map,
+      'mediaStreamUrl': map['streamUrl'] ?? map['mediaStreamUrl'],
+      'workTitle': input.work.title,
+      'workKey': input.work.workKey,
+      'work': {
+        'id':
+            input.work.resourceFor(AsmrCatalogSource.japaneseAsmr)?.id ??
+            json['workId'] ??
+            input.work.id,
+        'source_id': input.work.workCode,
+      },
+      'children': [
+        if (rawChildren is List)
+          for (final child in rawChildren) mapNode(child),
+      ],
+    };
+  }
   return japaneseAsmrContentRoots(
-    roots.map(
-      (node) => AsmrTrackFile.fromJson(mapNode(node as Map<dynamic, dynamic>)),
-    ),
+    roots.map((node) => AsmrTrackFile.fromJson(mapNode(node))),
   ).toList(growable: false);
 }

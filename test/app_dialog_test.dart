@@ -11,6 +11,14 @@ import 'package:doujin_audio/core/widgets/unified_dropdown.dart';
 import 'package:doujin_audio/core/widgets/unified_popup_menu.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 
+double _effectiveScrimOpacity(WidgetTester tester, Finder scrim) {
+  final box = tester.widget<ColoredBox>(scrim);
+  final fade = tester.widget<FadeTransition>(
+    find.ancestor(of: scrim, matching: find.byType(FadeTransition)).first,
+  );
+  return box.color.a * fade.opacity.value.clamp(0.0, 1.0);
+}
+
 void main() {
   testWidgets('the modal only creates a blur layer above its blur threshold', (
     tester,
@@ -36,7 +44,7 @@ void main() {
       final scrim = find.byKey(scrimKey);
       expect(scrim.hitTestable(), findsOneWidget);
       expect(
-        tester.widget<ColoredBox>(scrim).color.a,
+        _effectiveScrimOpacity(tester, scrim),
         closeTo(kSecondaryOverlayConfig.backgroundOpacity * progress, 1e-6),
       );
       final blurActive = progress >= 0.25;
@@ -60,7 +68,7 @@ void main() {
     expect(tester.widget<BackdropFilter>(blur).filter, same(filter));
     expect(tester.layers.whereType<BackdropFilterLayer>().single, same(layer));
     expect(
-      tester.widget<ColoredBox>(find.byKey(scrimKey)).color.a,
+      _effectiveScrimOpacity(tester, find.byKey(scrimKey)),
       closeTo(kSecondaryOverlayConfig.backgroundOpacity * 0.26, 1e-6),
     );
   });
@@ -527,10 +535,17 @@ void main() {
     expect(dialog.backgroundColor, Colors.transparent);
     expect(dialog.semanticsRole, SemanticsRole.alertDialog);
     expect(tester.getSize(glass).height, lessThan(300));
+    // Outer modal background already blurs the page; dialog glass keeps its
+    // translucent tint without nesting a second full-screen BackdropFilter.
     expect(
       find.descendant(of: glass, matching: find.byType(BackdropFilter)),
-      findsOneWidget,
+      findsNothing,
     );
+    expect(find.byType(BackdropFilter), findsOneWidget);
+    final glassFill = tester.widget<ColoredBox>(
+      find.descendant(of: glass, matching: find.byType(ColoredBox)).first,
+    );
+    expect(glassFill.color.a, closeTo(AppGlassSurface.lightGlassOpacity, 0.01));
     await tester.tap(find.text('Close'));
     await tester.pumpAndSettle();
     expect(glass, findsNothing);
@@ -704,17 +719,12 @@ void main() {
     await tester.tap(find.text('Show dialog'));
     await tester.pump();
 
-    final dialogScrim = tester.widget<ColoredBox>(
-      find.byKey(const ValueKey('app_dialog_scrim')),
-    );
-    expect(dialogScrim.color.a, closeTo(0, 0.001));
+    final dialogScrim = find.byKey(const ValueKey('app_dialog_scrim'));
+    expect(_effectiveScrimOpacity(tester, dialogScrim), closeTo(0, 0.001));
 
     await tester.pump(kAppOverlayDuration ~/ 2);
     expect(
-      tester
-          .widget<ColoredBox>(find.byKey(const ValueKey('app_dialog_scrim')))
-          .color
-          .a,
+      _effectiveScrimOpacity(tester, dialogScrim),
       closeTo(
         kSecondaryOverlayConfig.curve.transform(0.5) *
             kSecondaryOverlayConfig.backgroundOpacity,
@@ -776,11 +786,11 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 60));
 
-    final fadingDialogScrim = tester.widget<ColoredBox>(
-      find.byKey(const ValueKey('app_dialog_scrim')),
-    );
     expect(
-      fadingDialogScrim.color.a,
+      _effectiveScrimOpacity(
+        tester,
+        find.byKey(const ValueKey('app_dialog_scrim')),
+      ),
       inExclusiveRange(0, kSecondaryOverlayConfig.backgroundOpacity),
     );
 
@@ -832,10 +842,10 @@ void main() {
     await tester.tap(find.text('Open'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 110));
-    double scrimOpacity() => tester
-        .widget<ColoredBox>(find.byKey(const ValueKey('app_dialog_scrim')))
-        .color
-        .a;
+    double scrimOpacity() => _effectiveScrimOpacity(
+      tester,
+      find.byKey(const ValueKey('app_dialog_scrim')),
+    );
     final beforeClose = scrimOpacity();
     expect(
       beforeClose,
@@ -972,10 +982,8 @@ void main() {
     await tester.tap(find.text('Open overlay'));
     await tester.pump();
 
-    final openingScrim = tester.widget<ColoredBox>(
-      find.byKey(const ValueKey('app_overlay_panel_scrim')),
-    );
-    expect(openingScrim.color.a, closeTo(0, 0.001));
+    final openingScrim = find.byKey(const ValueKey('app_overlay_panel_scrim'));
+    expect(_effectiveScrimOpacity(tester, openingScrim), closeTo(0, 0.001));
     final route = ModalRoute.of(
       tester.element(find.byKey(const ValueKey('overlay_panel_content'))),
     )!;
@@ -991,12 +999,10 @@ void main() {
         )
         .opacity
         .value;
-    double scrimOpacity() => tester
-        .widget<ColoredBox>(
-          find.byKey(const ValueKey('app_overlay_panel_scrim')),
-        )
-        .color
-        .a;
+    double scrimOpacity() => _effectiveScrimOpacity(
+      tester,
+      find.byKey(const ValueKey('app_overlay_panel_scrim')),
+    );
     await tester.pump(kAppOverlayDuration ~/ 2);
     final middleOpacity = kSecondaryOverlayConfig.curve.transform(0.5);
     expect(panelOpacity(), closeTo(middleOpacity, 0.001));
@@ -1038,11 +1044,8 @@ void main() {
     await tester.pump();
     await tester.pump(kAppOverlayDuration ~/ 2);
 
-    final fadingPanelScrim = tester.widget<ColoredBox>(
-      find.byKey(const ValueKey('app_overlay_panel_scrim')),
-    );
     expect(
-      fadingPanelScrim.color.a,
+      scrimOpacity(),
       closeTo(kSecondaryOverlayConfig.backgroundOpacity * middleOpacity, 0.001),
     );
     expect(panelOpacity(), closeTo(middleOpacity, 0.001));
@@ -1084,12 +1087,10 @@ void main() {
         )
         .opacity
         .value;
-    double scrimOpacity() => tester
-        .widget<ColoredBox>(
-          find.byKey(const ValueKey('app_overlay_panel_scrim')),
-        )
-        .color
-        .a;
+    double scrimOpacity() => _effectiveScrimOpacity(
+      tester,
+      find.byKey(const ValueKey('app_overlay_panel_scrim')),
+    );
 
     await tester.tap(find.text('Open'));
     await tester.pump();

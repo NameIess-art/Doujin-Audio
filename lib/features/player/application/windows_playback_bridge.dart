@@ -26,6 +26,8 @@ part 'windows_playback_session.dart';
 /// owns one libmpv player; video surfaces borrow it without opening another source.
 class WindowsPlaybackBridge
     implements NativePlaybackBridgeBase, PlaybackUsageSource {
+  static const defaultIdleReleaseDelay = Duration(seconds: 45);
+
   WindowsPlaybackBridge({
     Player Function()? createPlayer,
     bool persistUsage = false,
@@ -33,11 +35,13 @@ class WindowsPlaybackBridge
     Duration Function()? monotonicElapsed,
     VideoControllerConfiguration videoControllerConfiguration =
         const VideoControllerConfiguration(),
+    Duration idleReleaseDelay = defaultIdleReleaseDelay,
   }) : _persistUsage = persistUsage,
        _createPlayer = createPlayer ?? _defaultPlayer,
        _readNativePlaylist = readNativePlaylist,
        _monotonicElapsed = monotonicElapsed,
-       _videoControllerConfiguration = videoControllerConfiguration;
+       _videoControllerConfiguration = videoControllerConfiguration,
+       _idleReleaseDelay = idleReleaseDelay;
 
   static WindowsPlaybackBridge? _instance;
   static WindowsPlaybackBridge get instance {
@@ -142,6 +146,7 @@ class WindowsPlaybackBridge
   final Player Function() _createPlayer;
   final Future<String> Function(Player)? _readNativePlaylist;
   final VideoControllerConfiguration _videoControllerConfiguration;
+  final Duration _idleReleaseDelay;
   final _sessions = <String, _WindowsPlaybackSession>{};
   final _configuredProxyUrl = Expando<String>();
   final _appliedAudioFilters = Expando<String>();
@@ -360,10 +365,8 @@ class WindowsPlaybackBridge
     _focusedSessionId = sessionId;
   }
 
-  Future<void> _releaseIfIdle(_WindowsPlaybackSession session) async {
-    if (session.wantsPlay) {
-      return;
-    }
+  bool _shouldRetainPausedPlayer(_WindowsPlaybackSession session) {
+    if (session.error != null || session.queue.isEmpty) return false;
     final video = session.player?.state.videoParams;
     // Demuxed tracks identify video before its decoder produces dimensions.
     final hasVideoTrack =
@@ -374,13 +377,45 @@ class WindowsPlaybackBridge
         false;
     // Pause may arrive before tracks, dimensions or the first surface exist.
     // Keep a known video source loaded so it can still produce its paused frame.
-    if (session.error == null &&
-        (isVideoMediaFile(
-              session.queue[session.index]['path'] as String? ??
-                  Uri.parse(session.queue[session.index]['uri'] as String).path,
-            ) ||
-            hasVideoTrack ||
-            ((video?.w ?? 0) > 0 && (video?.h ?? 0) > 0))) {
+    return isVideoMediaFile(
+          session.queue[session.index]['path'] as String? ??
+              Uri.parse(session.queue[session.index]['uri'] as String).path,
+        ) ||
+        hasVideoTrack ||
+        ((video?.w ?? 0) > 0 && (video?.h ?? 0) > 0);
+  }
+
+  void _scheduleIdleRelease(_WindowsPlaybackSession session) {
+    session.cancelIdleRelease();
+    if (_disposed ||
+        session.retired ||
+        session.wantsPlay ||
+        session.player == null ||
+        _idleReleaseDelay <= Duration.zero) {
+      return;
+    }
+    final generation = session.generation;
+    final idleGeneration = session.idleReleaseGeneration;
+    session.idleReleaseTimer = Timer(_idleReleaseDelay, () {
+      if (_disposed || !_isCurrent(session)) return;
+      unawaited(
+        _change(session.id, (current) async {
+          if (current.generation != generation ||
+              current.idleReleaseGeneration != idleGeneration ||
+              current.wantsPlay) {
+            return;
+          }
+          await _releaseIfIdle(current);
+        }, markPlaybackError: false),
+      );
+    });
+  }
+
+  Future<void> _releaseIfIdle(_WindowsPlaybackSession session) async {
+    if (session.wantsPlay) {
+      return;
+    }
+    if (_shouldRetainPausedPlayer(session)) {
       if (session.temporarySpeed != null) {
         session.temporarySpeed = null;
         await session.player?.setRate(session.speed);
@@ -497,19 +532,35 @@ class WindowsPlaybackBridge
       final generation = ++session.generation;
       session.wantsPlay = autoPlay;
       session.cancelRetry();
+      session.cancelIdleRelease();
       _focus(sessionId);
       return _change(sessionId, (session) async {
         if (generation != session.generation) {
           throw ArgumentError('Playback preparation was superseded');
         }
         final index = (queueStartIndex ?? 0).clamp(0, items.length - 1);
+        final previousQueue = session.queue;
         final sameTrack =
-            session.queue.isNotEmpty &&
-            _WindowsPlaybackSession._queueKey(session.queue[session.index]) ==
+            previousQueue.isNotEmpty &&
+            _WindowsPlaybackSession._queueKey(previousQueue[session.index]) ==
                 _WindowsPlaybackSession._queueKey(items[index]);
-        session.queue = items
-            .map((item) => Map<String, Object?>.from(item))
-            .toList();
+        final sameQueueInput =
+            queue != null &&
+            queue.isNotEmpty &&
+            identical(items, session.lastQueueInput) &&
+            previousQueue.length == items.length;
+        final sameQueueStructure =
+            sameQueueInput || _sameNativeQueue(previousQueue, items);
+        final hadError = session.error != null;
+        final wasCompleted = session.completed;
+        final wasNativeQueueLimited = session.nativeQueueLimited;
+        final hadRetainedCurrent = session.retainedCurrentIndex != null;
+        final wasShuffle = session.shuffle;
+        if (!sameQueueInput) {
+          session.queue = List<Map<String, Object?>>.of(items);
+          session.lastQueueInput =
+              queue != null && queue.isNotEmpty ? items : null;
+        }
         session.index = index;
         session.volume = _finite(volume, 0, 3);
         session.speed = _finite(speed, 0.25, 3);
@@ -534,7 +585,24 @@ class WindowsPlaybackBridge
         session.externalQueueRevision = 0;
         if (session.wantsPlay || session.videoController != null) {
           if (!sameTrack) session.duration = null;
-          await _open(session);
+          final player = session.player;
+          final canJump =
+              player != null &&
+              !hadError &&
+              !wasCompleted &&
+              !wasNativeQueueLimited &&
+              !hadRetainedCurrent &&
+              sameQueueStructure &&
+              session.wantsPlay &&
+              session.position == Duration.zero &&
+              session.nativeQueueIndices.length == session.queue.length &&
+              session.shuffle == wasShuffle &&
+              (session.shuffle || session.nativeOrderMatchesLogical);
+          if (canJump) {
+            await _jump(session, player);
+          } else {
+            await _open(session);
+          }
         } else {
           await session.releasePlayer();
           if (!sameTrack) session.duration = null;
@@ -556,11 +624,93 @@ class WindowsPlaybackBridge
     }
   }
 
+  static bool _sameNativeQueue(
+    List<Map<String, Object?>> previous,
+    List<Map<String, Object?>> next,
+  ) {
+    if (previous.length != next.length || previous.isEmpty) return false;
+    for (var i = 0; i < previous.length; i++) {
+      final a = previous[i];
+      final b = next[i];
+      if (identical(a, b)) continue;
+      if (a['uri'] != b['uri'] ||
+          a['path'] != b['path'] ||
+          a['clipStartMs'] != b['clipStartMs'] ||
+          a['clipEndMs'] != b['clipEndMs'] ||
+          !_sameHttpHeaders(a['httpHeaders'], b['httpHeaders'])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static bool _sameHttpHeaders(Object? a, Object? b) {
+    if (identical(a, b)) return true;
+    if (a is! Map || b is! Map) return a == b;
+    if (a.length != b.length) return false;
+    for (final entry in a.entries) {
+      if (!b.containsKey(entry.key) || b[entry.key] != entry.value) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Future<void> _jump(_WindowsPlaybackSession session, Player player) async {
+    session.cancelIdleRelease();
+    session.opening = true;
+    session.error = null;
+    session.pendingStart = null;
+    session.lastProgressPosition = null;
+    session.lastProgressElapsed = null;
+    final generation = session.generation;
+    var fallbackToOpen = false;
+    try {
+      int physicalIndex;
+      if (!session.shuffle && session.nativeOrderMatchesLogical) {
+        physicalIndex = session.index;
+      } else {
+        final ids = await session.nativeEntryIds(player);
+        if (!_isCurrent(session) || generation != session.generation) {
+          throw ArgumentError('Playback preparation was superseded');
+        }
+        physicalIndex = ids.indexWhere(
+          (entryId) => session.nativeQueueIndices[entryId] == session.index,
+        );
+      }
+      if (physicalIndex < 0 ||
+          (player.platform is! NativePlayer &&
+              physicalIndex >= player.state.playlist.medias.length)) {
+        fallbackToOpen = true;
+      } else {
+        await _applyMode(session, force: true);
+        await _applyEffects(session, session.effects);
+        await player.setVolume(session.volume * session.fade * 100);
+        await player.setRate(session.temporarySpeed ?? session.speed);
+        if (!_isCurrent(session) || generation != session.generation) {
+          throw ArgumentError('Playback preparation was superseded');
+        }
+        await player.jump(physicalIndex);
+        if (!_isCurrent(session) || generation != session.generation) {
+          throw ArgumentError('Playback preparation was superseded');
+        }
+      }
+    } finally {
+      session.opening = false;
+    }
+    if (fallbackToOpen) {
+      await _open(session);
+    }
+  }
+
   Future<void> _open(_WindowsPlaybackSession session) async {
+    session.cancelIdleRelease();
     final player = session.player ??= _createPlayer();
     if (session.subscriptions.isEmpty) _subscribe(session, player);
     session.opening = true;
     session.error = null;
+    session.lastProgressPosition = null;
+    session.lastProgressElapsed = null;
     final generation = session.generation;
     session.pendingStart = session.position > Duration.zero
         ? session.position
@@ -606,6 +756,7 @@ class WindowsPlaybackBridge
       ], index: session.stopAfterCurrentTrack ? 0 : session.index);
       await player.open(playlist, play: false);
       session.nativeQueueLimited = session.stopAfterCurrentTrack;
+      session.nativeOrderMatchesLogical = !session.stopAfterCurrentTrack;
       if (!_isCurrent(session) || generation != session.generation) {
         throw ArgumentError('Playback preparation was superseded');
       }
@@ -738,6 +889,7 @@ class WindowsPlaybackBridge
                     );
                   }
                   current.retainedCurrentIndex = null;
+                  current.lastQueueInput = null;
                   current.queue.removeAt(retainedIndex);
                   current.invalidateRetainedUris();
                   if (current.index > retainedIndex) current.index--;
@@ -769,6 +921,7 @@ class WindowsPlaybackBridge
               current.retryStartedAt = null;
               current.error = null;
               current.retainedCurrentIndex = null;
+              current.lastQueueInput = null;
               current.queue.removeAt(retainedIndex);
               current.invalidateRetainedUris();
               if (current.index > retainedIndex) current.index--;
@@ -922,7 +1075,10 @@ class WindowsPlaybackBridge
               return;
             }
             if (canFallback) {
-              item['uri'] = candidates[next];
+              final updated = Map<String, Object?>.of(item);
+              updated['uri'] = candidates[next];
+              currentSession.queue[currentSession.index] = updated;
+              currentSession.lastQueueInput = null;
               currentSession.invalidateRetainedUris();
             }
             await _open(currentSession);
@@ -949,11 +1105,12 @@ class WindowsPlaybackBridge
     if (force || session.error != null || player.state.playlistMode != mode) {
       await player.setPlaylistMode(mode);
     }
-    await player.setShuffle(
-      !session.stopAfterCurrentTrack &&
-          session.shuffle &&
-          session.queue.length > 1,
-    );
+    final shuffleEnabled =
+        !session.stopAfterCurrentTrack &&
+        session.shuffle &&
+        session.queue.length > 1;
+    if (shuffleEnabled) session.nativeOrderMatchesLogical = false;
+    await player.setShuffle(shuffleEnabled);
   }
 
   Future<void> _applyEffects(
@@ -994,6 +1151,14 @@ class WindowsPlaybackBridge
     _appliedAudioFilters[platform] = filter;
   }
 
+  bool _isUnexpectedPauseFailure(
+    _WindowsPlaybackSession session,
+    NativeResult<NativePlaybackSnapshot> result,
+  ) =>
+      result.isFailure &&
+      !(result.errorCodeOrNull == NativeErrorCode.invalidArgument &&
+          !_isCurrent(session));
+
   @override
   Future<NativeResult<NativePlaybackSnapshot>> play(
     String sessionId, {
@@ -1009,30 +1174,44 @@ class WindowsPlaybackBridge
         ),
       );
     }
+    final generation = current.generation;
     current.wantsPlay = true;
-    current.commandId = transportCommandId;
+    if (transportCommandId > 0) current.commandId = transportCommandId;
+    current.cancelIdleRelease();
     _focus(sessionId);
     final pausedOthers = exclusive
         ? Future.wait([
             for (final other in _sessions.values.toList())
               if (other.id != sessionId &&
                   (other.wantsPlay || other.player?.state.playing == true))
-                pause(other.id),
+                pause(
+                  other.id,
+                ).then((result) => (session: other, result: result)),
           ])
-        : Future.value(const <NativeResult<NativePlaybackSnapshot>>[]);
+        : Future.value(
+            const <({
+              _WindowsPlaybackSession session,
+              NativeResult<NativePlaybackSnapshot> result,
+            })>[],
+          );
     return _change(sessionId, (session) async {
       final results = await pausedOthers;
-      final failure = results.where((result) => result.isFailure).firstOrNull;
+      final failure = results
+          .where(
+            (entry) => _isUnexpectedPauseFailure(entry.session, entry.result),
+          )
+          .map((entry) => entry.result)
+          .firstOrNull;
       if (failure != null) throw StateError(failure.errorOrNull!);
-      if (!session.wantsPlay) return;
+      if (!session.wantsPlay || generation != session.generation) return;
       if (session.completed) {
         session.position = Duration.zero;
         session.completed = false;
       }
       if (session.player == null || session.error != null) {
+        session.cancelRetry();
         session.retryAttempt = 0;
         session.retryStartedAt = null;
-        session.generation++;
         await _open(session);
       } else if (session.pendingStart == null) {
         await session.player!.play();
@@ -1051,13 +1230,26 @@ class WindowsPlaybackBridge
       if (transportCommandId > 0) current.commandId = transportCommandId;
       current.wantsPlay = false;
       current.cancelRetry();
+      current.cancelIdleRelease();
     }
     return _change(sessionId, (session) async {
       if (session.wantsPlay) return;
       await session.player?.pause();
-      await _releaseIfIdle(session);
-      // Video retains its decoder on pause, so restore its full native queue
-      // before clearing the track-stop intent. Audio has already released it.
+      if (session.player != null &&
+          !_shouldRetainPausedPlayer(session) &&
+          (session.error != null || _idleReleaseDelay <= Duration.zero)) {
+        await _releaseIfIdle(session);
+      } else {
+        if (session.temporarySpeed != null) {
+          session.temporarySpeed = null;
+          await session.player?.setRate(session.speed);
+        }
+        if (session.player != null && !_shouldRetainPausedPlayer(session)) {
+          _scheduleIdleRelease(session);
+        }
+      }
+      // Retained players keep their decoder on pause, so restore the full
+      // native queue before clearing the track-stop intent.
       await _setStopAfterCurrentTrack(session, false);
     });
   }
@@ -1067,6 +1259,7 @@ class WindowsPlaybackBridge
     final current = _sessions[sessionId];
     current?.wantsPlay = false;
     current?.cancelRetry();
+    current?.cancelIdleRelease();
     return _change(sessionId, (session) async {
       if (session.wantsPlay) return;
       session.stopAfterCurrentTrack = false;
@@ -1092,6 +1285,9 @@ class WindowsPlaybackBridge
     }
     session.position = target;
     session.seekRevision++;
+    if (session.idleReleaseTimer?.isActive == true) {
+      _scheduleIdleRelease(session);
+    }
   }, markPlaybackError: false);
   @override
   Future<NativeResult<NativePlaybackSnapshot>> setVolume(
@@ -1276,6 +1472,7 @@ class WindowsPlaybackBridge
       session.wantsPlay = false;
       session.generation++;
       session.cancelRetry();
+      session.cancelIdleRelease();
     }
     if (_focusedSessionId == sessionId) {
       _focusedSessionId = _sessions.keys.firstOrNull;
@@ -1295,9 +1492,13 @@ class WindowsPlaybackBridge
   @override
   Future<NativeResult<void>> pauseAll() => _run(() async {
     final results = await Future.wait([
-      for (final session in _sessions.values.toList()) pause(session.id),
+      for (final session in _sessions.values.toList())
+        pause(session.id).then((result) => (session: session, result: result)),
     ]);
-    final failure = results.where((result) => result.isFailure).firstOrNull;
+    final failure = results
+        .where((entry) => _isUnexpectedPauseFailure(entry.session, entry.result))
+        .map((entry) => entry.result)
+        .firstOrNull;
     if (failure != null) throw StateError(failure.errorOrNull!);
   });
   @override

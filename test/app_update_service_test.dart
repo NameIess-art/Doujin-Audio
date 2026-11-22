@@ -948,6 +948,21 @@ void main() {
     expect(missingChecksum.status, AppUpdateStatus.missingChecksum);
     expect(missingChecksum.isUpdateAvailable, isFalse);
 
+    for (final localVersion in ['0.13.0', '0.14.0']) {
+      final upToDateWithoutAssets = AppUpdateService.buildUpdateInfoForTesting(
+        currentVersion: AppVersionInfo(
+          versionName: localVersion,
+          buildNumber: 1300,
+          androidAssetVariant: 'arm64',
+        ),
+        tagName: 'v0.13.0',
+        releaseUrl: 'https://example.test/release',
+        assets: const <Map<String, dynamic>>[],
+      );
+      expect(upToDateWithoutAssets.status, AppUpdateStatus.upToDate);
+      expect(upToDateWithoutAssets.isUpdateAvailable, isFalse);
+    }
+
     final ready = AppUpdateService.buildUpdateInfoForTesting(
       currentVersion: current,
       tagName: 'v0.13.0',

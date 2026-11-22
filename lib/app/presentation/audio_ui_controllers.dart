@@ -6,29 +6,34 @@ import 'package:flutter/foundation.dart';
 final class MainScreenController {
   final ValueNotifier<int?> _scrollToTopTab = ValueNotifier<int?>(null);
   final ValueNotifier<int?> _stopScrollTab = ValueNotifier<int?>(null);
+  bool _disposed = false;
 
   ValueListenable<int?> get scrollToTopTab => _scrollToTopTab;
   ValueListenable<int?> get stopScrollTab => _stopScrollTab;
 
   void requestScrollToTop(int tabIndex) {
+    if (_disposed) return;
     _scrollToTopTab.value = tabIndex;
     scheduleMicrotask(() {
-      if (_scrollToTopTab.value == tabIndex) {
+      if (!_disposed && _scrollToTopTab.value == tabIndex) {
         _scrollToTopTab.value = null;
       }
     });
   }
 
   void requestStopScroll(int tabIndex) {
+    if (_disposed) return;
     _stopScrollTab.value = tabIndex;
     scheduleMicrotask(() {
-      if (_stopScrollTab.value == tabIndex) {
+      if (!_disposed && _stopScrollTab.value == tabIndex) {
         _stopScrollTab.value = null;
       }
     });
   }
 
   void dispose() {
+    if (_disposed) return;
+    _disposed = true;
     _scrollToTopTab.dispose();
     _stopScrollTab.dispose();
   }

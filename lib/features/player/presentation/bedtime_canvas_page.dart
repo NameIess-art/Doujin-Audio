@@ -13,7 +13,9 @@ import '../../../core/platform/power_platform_gateway.dart';
 import '../../../core/platform/video_display_platform_gateway.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/target_countdown_builder.dart';
 import '../application/playback_session.dart';
+import '../domain/playback_mode.dart';
 
 /// Low-blue-light warm amber foreground designed for dark bedroom viewing.
 const Color _bedtimeWarmForeground = Color(0xFFFFE6C4);
@@ -50,7 +52,10 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
   Timer? _clockTimer;
   Timer? _idleDimTimer;
   Timer? _feedbackTimer;
+  Timer? _backHintTimer;
   IconData? _feedbackIcon;
+  bool _isIdleDimmed = false;
+  bool _showBackBlockedHint = false;
   int? _activePointerId;
   Offset? _touchPosition;
   Offset? _touchStartPosition;
@@ -150,6 +155,7 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     _clockTimer?.cancel();
     _idleDimTimer?.cancel();
     _feedbackTimer?.cancel();
+    _backHintTimer?.cancel();
     _breathingController.dispose();
     _holdExitController.dispose();
     if (_brightnessToken != null) {
@@ -180,6 +186,11 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
   }
 
   void _onUserInteraction() {
+    if (_isIdleDimmed && mounted) {
+      setState(() => _isIdleDimmed = false);
+    } else {
+      _isIdleDimmed = false;
+    }
     if (_disableAnimations == true) {
       _breathingController.value = 0;
     } else if (_idleDimTimer?.isActive != true) {
@@ -192,6 +203,9 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     _idleDimTimer?.cancel();
     _idleDimTimer = Timer(BedtimeCanvasPage.idleDimDelay, () {
       if (mounted && !_disposed) {
+        if (!_isIdleDimmed) {
+          setState(() => _isIdleDimmed = true);
+        }
         if (_disableAnimations == true) {
           _breathingController.value = 0;
         } else {
@@ -201,6 +215,19 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
             curve: Curves.easeOut,
           );
         }
+      }
+    });
+  }
+
+  void _handleBlockedBack() {
+    _onUserInteraction();
+    _backHintTimer?.cancel();
+    if (mounted) {
+      setState(() => _showBackBlockedHint = true);
+    }
+    _backHintTimer = Timer(const Duration(milliseconds: 2400), () {
+      if (mounted && !_disposed) {
+        setState(() => _showBackBlockedHint = false);
       }
     });
   }
@@ -358,77 +385,111 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     final timeStr =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: const SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        systemNavigationBarColor: Colors.transparent,
-        systemNavigationBarDividerColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.light,
-        statusBarBrightness: Brightness.dark,
-        systemNavigationBarIconBrightness: Brightness.light,
-        systemStatusBarContrastEnforced: false,
-        systemNavigationBarContrastEnforced: false,
-      ),
-      child: Scaffold(
-        backgroundColor: Colors.black,
-        body: Listener(
-          behavior: HitTestBehavior.opaque,
-          onPointerDown: _onPointerDown,
-          onPointerMove: _onPointerMove,
-          onPointerUp: _onPointerUp,
-          onPointerCancel: _onPointerCancel,
-          child: GestureDetector(
+    return PopScope<void>(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _handleBlockedBack();
+      },
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          systemNavigationBarColor: Colors.transparent,
+          systemNavigationBarDividerColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.light,
+          statusBarBrightness: Brightness.dark,
+          systemNavigationBarIconBrightness: Brightness.light,
+          systemStatusBarContrastEnforced: false,
+          systemNavigationBarContrastEnforced: false,
+        ),
+        child: Scaffold(
+          backgroundColor: Colors.black,
+          body: Listener(
             behavior: HitTestBehavior.opaque,
-            onDoubleTap: _handleDoubleTap,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                // Main content with gentle breathing animation
-                FadeTransition(
-                  opacity: _breathingAnimation,
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Clock time display
-                        Text(
-                          timeStr,
-                          style: const TextStyle(
-                            color: _bedtimeWarmForeground,
-                            fontSize: 68,
-                            fontWeight: FontWeight.w200,
-                            letterSpacing: 2,
-                            fontFeatures: [FontFeature.tabularFigures()],
+            onPointerDown: _onPointerDown,
+            onPointerMove: _onPointerMove,
+            onPointerUp: _onPointerUp,
+            onPointerCancel: _onPointerCancel,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onDoubleTap: _handleDoubleTap,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Main content with gentle breathing animation
+                  FadeTransition(
+                    opacity: _breathingAnimation,
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Clock time display
+                          Text(
+                            timeStr,
+                            style: const TextStyle(
+                              color: _bedtimeWarmForeground,
+                              fontSize: 68,
+                              fontWeight: FontWeight.w200,
+                              letterSpacing: 2,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 12),
-                        // Sleep timer / status subtitle
-                        const _BedtimeTimerStatus(),
-                      ],
+                          const SizedBox(height: 12),
+                          // Sleep timer / status subtitle
+                          const _BedtimeTimerStatus(),
+                        ],
+                      ),
                     ),
                   ),
-                ),
 
-                // Bottom subtle hint
-                Positioned(
-                  bottom: 32,
-                  left: 20,
-                  right: 20,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        i18n.tr('hold_to_exit_sleep_mode'),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: _bedtimeWarmForeground.withValues(alpha: 0.18),
-                          fontSize: 12,
-                          letterSpacing: 0.5,
-                        ),
+                  // Bottom subtle hint (dims along with idle timer)
+                  Positioned(
+                    bottom: 32,
+                    left: 20,
+                    right: 20,
+                    child: AnimatedOpacity(
+                      key: const ValueKey<String>('bedtime_bottom_hint_fade'),
+                      opacity: _showBackBlockedHint
+                          ? 1.0
+                          : (_isIdleDimmed ? 0.25 : 1.0),
+                      duration: _disableAnimations == true
+                          ? Duration.zero
+                          : const Duration(milliseconds: 900),
+                      curve: Curves.easeOut,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_showBackBlockedHint) ...[
+                            Text(
+                              i18n.tr('bedtime_back_blocked_hint'),
+                              key: const ValueKey<String>(
+                                'bedtime_back_blocked_hint',
+                              ),
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: _bedtimeWarmForeground.withValues(
+                                  alpha: 0.36,
+                                ),
+                                fontSize: 12,
+                                letterSpacing: 0.4,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                          ],
+                          Text(
+                            i18n.tr('bedtime_controls_hint'),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: _bedtimeWarmForeground.withValues(
+                                alpha: 0.18,
+                              ),
+                              fontSize: 12,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
 
                 // Faint gesture feedback badge
                 if (_feedbackIcon != null)
@@ -525,6 +586,7 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
           ),
         ),
       ),
+    ),
     );
   }
 }
@@ -539,45 +601,78 @@ class _BedtimeTimerStatus extends ConsumerWidget {
     final timerState =
         ref.watch(timerStateProvider).value ??
         ref.read(timerFacadeProvider).state;
-    final String timerText;
     final waitingForTrackEnd =
         timerState.stopAfterCurrentTrack &&
         timerState.remaining == Duration.zero;
-    if (waitingForTrackEnd) {
-      timerText = i18n.tr('waiting_for_track_end');
-    } else if (timerState.active &&
+    final activeCountdown =
+        timerState.active &&
         timerState.remaining != null &&
-        timerState.remaining! > Duration.zero) {
-      timerText =
-          '${i18n.tr('sleep_countdown')}  ${formatDurationCompact(timerState.remaining!)}';
-    } else {
-      timerText = i18n.tr('no_timer_set');
+        timerState.remaining! > Duration.zero;
+    final waitingForAutoResume =
+        !waitingForTrackEnd &&
+        !activeCountdown &&
+        timerState.autoResumeAt != null;
+    final waitingForTrigger =
+        !waitingForTrackEnd &&
+        !activeCountdown &&
+        !waitingForAutoResume &&
+        timerState.mode == TimerMode.trigger &&
+        timerState.duration != null &&
+        timerState.duration! > Duration.zero;
+
+    Widget buildRow(IconData icon, String timerText) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 14,
+            color: _bedtimeWarmForeground.withValues(alpha: 0.85),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            timerText,
+            style: TextStyle(
+              color: _bedtimeWarmForeground.withValues(alpha: 0.85),
+              fontSize: 13,
+              fontWeight: FontWeight.w400,
+              letterSpacing: 0.5,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      );
     }
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          waitingForTrackEnd
-              ? Icons.music_note_rounded
-              : timerState.active
-              ? Icons.timer_outlined
-              : Icons.nights_stay_outlined,
-          size: 14,
-          color: _bedtimeWarmForeground.withValues(alpha: 0.85),
+    if (waitingForTrackEnd) {
+      return buildRow(
+        Icons.music_note_rounded,
+        i18n.tr('waiting_for_track_end'),
+      );
+    }
+    if (waitingForAutoResume) {
+      return TargetCountdownBuilder(
+        target: timerState.autoResumeAt,
+        builder: (context, remaining) => buildRow(
+          Icons.restore_rounded,
+          '${i18n.tr('waiting_for_auto_resume')}  '
+          '${formatDurationCompact(remaining)}',
         ),
-        const SizedBox(width: 6),
-        Text(
-          timerText,
-          style: TextStyle(
-            color: _bedtimeWarmForeground.withValues(alpha: 0.85),
-            fontSize: 13,
-            fontWeight: FontWeight.w400,
-            letterSpacing: 0.5,
-            fontFeatures: const [FontFeature.tabularFigures()],
-          ),
-        ),
-      ],
-    );
+      );
+    }
+    if (activeCountdown) {
+      return buildRow(
+        Icons.timer_outlined,
+        '${i18n.tr('sleep_countdown')}  '
+        '${formatDurationCompact(timerState.remaining!)}',
+      );
+    }
+    if (waitingForTrigger) {
+      return buildRow(
+        Icons.schedule_rounded,
+        i18n.tr('waiting_to_start_countdown'),
+      );
+    }
+    return buildRow(Icons.nights_stay_outlined, i18n.tr('no_timer_set'));
   }
 }

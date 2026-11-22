@@ -30,35 +30,75 @@ class SubtitleEditorPage extends ConsumerStatefulWidget {
 }
 
 class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
+  static final RegExp _lineBreakPattern = RegExp(r'\r?\n');
+  static final RegExp _fullTimePattern = RegExp(
+    r'^(\d+):(\d{1,2}):(\d{2})(?:[.,](\d{1,3}))?$',
+  );
+  static final RegExp _shortTimePattern = RegExp(
+    r'^(\d+):(\d{2})(?:[.,](\d{1,3}))?$',
+  );
+
+  final ScrollController _scrollController = ScrollController();
   SubtitleTrack? _sourceTrack;
   List<SubtitleCue>? _cues;
   bool _saving = false;
   bool _dirty = false;
+  bool _cuesValid = false;
   bool _confirmingExit = false;
+  bool _highlightInvalid = false;
   // Ignore dialogs opened before a save, including results after it completes.
   int _saveGeneration = 0;
+  int _editGeneration = 0;
   String? _errorKey;
 
-  bool get _canSave {
+  bool get _canSave => _dirty && !_saving && _cuesValid;
+
+  int? _firstInvalidCueIndex() {
     final cues = _cues;
-    if (!_dirty || _saving || cues == null) return false;
+    if (cues == null) return null;
     final hasSameTiming = _sourceTrack?.hasSameCueTimings(cues) ?? false;
     for (var index = 0; index < cues.length; index++) {
-      final cue = cues[index];
-      if (cue.text.trim().isEmpty ||
-          cue.start < Duration.zero ||
-          cue.end <= cue.start ||
-          (!hasSameTiming && index > 0 && cue.start < cues[index - 1].end)) {
-        return false;
+      if (_isCueInvalidAt(cues, index, hasSameTiming: hasSameTiming)) {
+        return index;
       }
     }
-    return true;
+    return null;
+  }
+
+  bool _isCueInvalidAt(
+    List<SubtitleCue> cues,
+    int index, {
+    required bool hasSameTiming,
+  }) {
+    final cue = cues[index];
+    return cue.text.trim().isEmpty ||
+        cue.start < Duration.zero ||
+        cue.end <= cue.start ||
+        (!hasSameTiming && index > 0 && cue.start < cues[index - 1].end);
+  }
+
+  void _recomputeCuesValid() {
+    final cues = _cues;
+    if (cues == null) {
+      _cuesValid = false;
+      return;
+    }
+    _cuesValid = _firstInvalidCueIndex() == null;
+    if (_cuesValid) {
+      _highlightInvalid = false;
+    }
   }
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -70,6 +110,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
       setState(() {
         _sourceTrack = track;
         _cues = track?.cues.toList() ?? <SubtitleCue>[];
+        _recomputeCuesValid();
       });
     } catch (_) {
       if (mounted) setState(() => _errorKey = 'subtitle_load_failed');
@@ -89,7 +130,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     if (_saving || _resolveCueIndex(index, cue) < 0) return;
     final generation = _saveGeneration;
     String normalizeLines(String value) => value
-        .split(RegExp(r'\r?\n'))
+        .split(_lineBreakPattern)
         .map((line) => line.trim())
         .where((line) => line.isNotEmpty)
         .join('\n');
@@ -193,8 +234,27 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
         originalText: next.originalText,
         assSourceLine: cue.assSourceLine,
       );
+      _editGeneration++;
       _dirty = true;
+      _recomputeCuesValid();
     });
+  }
+
+  (Duration, Duration) _suggestedRangeForIndex(int index) {
+    final cues = _cues!;
+    final previousEnd = index == 0 ? Duration.zero : cues[index - 1].end;
+    final nextCue = index + 1 < cues.length ? cues[index + 1] : null;
+    final start = previousEnd < Duration.zero ? Duration.zero : previousEnd;
+    var end = start + const Duration(seconds: 2);
+    if (nextCue != null && nextCue.start > start && nextCue.start < end) {
+      end = nextCue.start;
+    } else if (nextCue != null && nextCue.end > start && nextCue.end <= end) {
+      final clampedMs = nextCue.end.inMilliseconds - 1;
+      if (clampedMs > start.inMilliseconds) {
+        end = Duration(milliseconds: clampedMs);
+      }
+    }
+    return (start, end);
   }
 
   Future<void> _editTime(int index, SubtitleCue cue) async {
@@ -203,8 +263,11 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     if (resolvedIndex < 0) return;
     final generation = _saveGeneration;
     final hasTime = cue.end > cue.start;
-    var startText = hasTime ? _formatTime(cue.start) : '';
-    var endText = hasTime ? _formatTime(cue.end) : '';
+    final suggested = hasTime ? null : _suggestedRangeForIndex(resolvedIndex);
+    var startText = hasTime
+        ? _formatTime(cue.start)
+        : _formatTime(suggested!.$1);
+    var endText = hasTime ? _formatTime(cue.end) : _formatTime(suggested!.$2);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     String? validationError;
     final header = AppEditPanelHeader(
@@ -214,7 +277,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     final next = await showAppInputPanel<(Duration, Duration)>(
       context: context,
       header: header,
-      preferredHeight: 288,
+      preferredHeight: 300,
       builder: (context, height) => StatefulBuilder(
         builder: (context, setDialogState) => AppEditPanelForm(
           height: height,
@@ -229,6 +292,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                 keyboardType: TextInputType.datetime,
                 decoration: InputDecoration(
                   labelText: i18n.tr('subtitle_start_time'),
+                  hintText: i18n.tr('subtitle_time_format_hint'),
                 ),
               ),
               const SizedBox(height: 16),
@@ -239,6 +303,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                 keyboardType: TextInputType.datetime,
                 decoration: InputDecoration(
                   labelText: i18n.tr('subtitle_end_time'),
+                  hintText: i18n.tr('subtitle_time_format_hint'),
                   errorText: validationError,
                 ),
               ),
@@ -256,6 +321,12 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
             }
             final start = _parseTime(startText);
             final end = _parseTime(endText);
+            if (start == null || end == null) {
+              setDialogState(
+                () => validationError = i18n.tr('subtitle_invalid_format'),
+              );
+              return;
+            }
             final previousEnd = activeIndex == 0
                 ? Duration.zero
                 : _cues![activeIndex - 1].end;
@@ -265,13 +336,11 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
             final nextEnd = nextCue != null && nextCue.end > nextCue.start
                 ? nextCue.end
                 : null;
-            if (start == null ||
-                end == null ||
-                start < previousEnd ||
+            if (start < previousEnd ||
                 end <= start ||
-                (nextEnd != null && end > nextEnd)) {
+                (nextEnd != null && end >= nextEnd)) {
               setDialogState(
-                () => validationError = i18n.tr('subtitle_invalid_time'),
+                () => validationError = i18n.tr('subtitle_overlap_error'),
               );
               return;
             }
@@ -299,7 +368,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
       );
       if (currentIndex + 1 < _cues!.length) {
         final nextCue = _cues![currentIndex + 1];
-        if (nextCue.start < next.$2 && nextCue.end >= next.$2) {
+        if (nextCue.start < next.$2 && nextCue.end > next.$2) {
           _cues![currentIndex + 1] = SubtitleCue(
             start: next.$2,
             end: nextCue.end,
@@ -309,7 +378,26 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
           );
         }
       }
+      _editGeneration++;
       _dirty = true;
+      _recomputeCuesValid();
+    });
+  }
+
+  void _insertCueAt(int insertIndex) {
+    if (_saving || _cues == null) return;
+    final clampedIndex = insertIndex.clamp(0, _cues!.length);
+    final anchor = clampedIndex == 0
+        ? Duration.zero
+        : _cues![clampedIndex - 1].end;
+    setState(() {
+      _cues!.insert(
+        clampedIndex,
+        SubtitleCue(start: anchor, end: anchor, text: ''),
+      );
+      _editGeneration++;
+      _dirty = true;
+      _recomputeCuesValid();
     });
   }
 
@@ -317,12 +405,29 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     if (_saving) return;
     final resolvedIndex = _resolveCueIndex(index, cue);
     if (resolvedIndex < 0) return;
-    setState(() {
-      _cues!.insert(
-        resolvedIndex + 1,
-        SubtitleCue(start: cue.end, end: cue.end, text: ''),
+    _insertCueAt(resolvedIndex + 1);
+  }
+
+  void _insertBefore(int index, SubtitleCue cue) {
+    if (_saving) return;
+    final resolvedIndex = _resolveCueIndex(index, cue);
+    if (resolvedIndex < 0) return;
+    _insertCueAt(resolvedIndex);
+  }
+
+  void _appendCue() {
+    if (_saving || _cues == null) return;
+    final targetIndex = _cues!.length;
+    _insertCueAt(targetIndex);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : kAppMotionFast,
+        curve: Curves.easeOutCubic,
       );
-      _dirty = true;
     });
   }
 
@@ -330,6 +435,8 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     if (_saving) return;
     final resolvedIndex = _resolveCueIndex(index, cue);
     if (resolvedIndex < 0) return;
+    final wasDirty = _dirty;
+    final deleteEditGen = ++_editGeneration;
     setState(() {
       if (_cues!.length == 1) {
         // The outgoing list can still build its final row while fading.
@@ -338,7 +445,52 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
         _cues!.removeAt(resolvedIndex);
       }
       _dirty = true;
+      _recomputeCuesValid();
     });
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    showAppSnackBar(
+      context,
+      i18n.tr('subtitle_cue_deleted'),
+      actionLabel: i18n.tr('undo'),
+      onAction: () {
+        if (!mounted || _saving || _cues == null) return;
+        setState(() {
+          final restoreIndex = resolvedIndex.clamp(0, _cues!.length);
+          _cues!.insert(restoreIndex, cue);
+          if (_editGeneration == deleteEditGen) {
+            _dirty = wasDirty;
+          }
+          _editGeneration++;
+          _recomputeCuesValid();
+        });
+      },
+    );
+  }
+
+  void _scrollToFirstInvalidCue() {
+    final invalidIndex = _firstInvalidCueIndex();
+    if (invalidIndex == null) return;
+    setState(() => _highlightInvalid = true);
+    if (_scrollController.hasClients && _cues != null && _cues!.isNotEmpty) {
+      final maxExtent = _scrollController.position.maxScrollExtent;
+      final estimatedOffset = _cues!.length <= 1
+          ? 0.0
+          : (invalidIndex / (_cues!.length - 1)) * maxExtent;
+      _scrollController.animateTo(
+        estimatedOffset.clamp(0.0, maxExtent),
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : kAppMotionFast,
+        curve: Curves.easeOutCubic,
+      );
+    }
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    showAppSnackBar(
+      context,
+      i18n.tr('subtitle_complete_cue'),
+      tone: AppFeedbackTone.warning,
+      icon: Icons.error_outline_rounded,
+    );
   }
 
   Future<bool> _save() async {
@@ -360,6 +512,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
         _sourceTrack = saved;
         _cues = saved.cues.toList();
         _dirty = false;
+        _recomputeCuesValid();
       });
       showAppSnackBar(
         context,
@@ -453,20 +606,39 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     return '${(ms ~/ 3600000).toString().padLeft(2, '0')}:${((ms ~/ 60000) % 60).toString().padLeft(2, '0')}:${((ms ~/ 1000) % 60).toString().padLeft(2, '0')}.${(ms % 1000).toString().padLeft(3, '0')}';
   }
 
+  static int _parseFractionMillis(String? raw) {
+    if (raw == null || raw.isEmpty) return 0;
+    return int.parse(raw.padRight(3, '0'));
+  }
+
   static Duration? _parseTime(String value) {
-    final match = RegExp(
-      r'^(\d+):(\d{2}):(\d{2})[.,](\d{3})$',
-    ).firstMatch(value.trim());
-    if (match == null) return null;
-    final minutes = int.parse(match[2]!);
-    final seconds = int.parse(match[3]!);
-    if (minutes > 59 || seconds > 59) return null;
-    return Duration(
-      hours: int.parse(match[1]!),
-      minutes: minutes,
-      seconds: seconds,
-      milliseconds: int.parse(match[4]!),
-    );
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return null;
+    final fullMatch = _fullTimePattern.firstMatch(trimmed);
+    if (fullMatch != null) {
+      final hours = int.parse(fullMatch[1]!);
+      final minutes = int.parse(fullMatch[2]!);
+      final seconds = int.parse(fullMatch[3]!);
+      if (minutes > 59 || seconds > 59) return null;
+      return Duration(
+        hours: hours,
+        minutes: minutes,
+        seconds: seconds,
+        milliseconds: _parseFractionMillis(fullMatch[4]),
+      );
+    }
+    final shortMatch = _shortTimePattern.firstMatch(trimmed);
+    if (shortMatch != null) {
+      final minutes = int.parse(shortMatch[1]!);
+      final seconds = int.parse(shortMatch[2]!);
+      if (seconds > 59) return null;
+      return Duration(
+        minutes: minutes,
+        seconds: seconds,
+        milliseconds: _parseFractionMillis(shortMatch[3]),
+      );
+    }
+    return null;
   }
 
   @override
@@ -523,17 +695,34 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                     : cues.isEmpty
                     ? Center(
                         key: ValueKey('cues_empty_$_dirty'),
-                        child: Text(
-                          i18n.tr(
-                            _dirty
-                                ? 'subtitle_all_removed'
-                                : 'subtitle_no_content',
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                i18n.tr(
+                                  _dirty
+                                      ? 'subtitle_all_removed'
+                                      : 'subtitle_no_content',
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 16),
+                              FilledButton.icon(
+                                key: const ValueKey('subtitle_empty_add_button'),
+                                onPressed: _saving ? null : _appendCue,
+                                icon: const Icon(Icons.add_rounded),
+                                label: Text(i18n.tr('subtitle_add_cue')),
+                              ),
+                            ],
                           ),
                         ),
                       )
                     : KeyedSubtree(
                         key: const ValueKey('cues_list'),
                         child: ListView.separated(
+                          controller: _scrollController,
                           padding: EdgeInsets.fromLTRB(
                             16,
                             contentTopInset,
@@ -548,6 +737,19 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                             final cue = cues[index];
                             final needsText = cue.text.trim().isEmpty;
                             final needsTime = cue.end <= cue.start;
+                            final hasSameTiming =
+                                _sourceTrack?.hasSameCueTimings(cues) ?? false;
+                            final hasOverlap =
+                                !hasSameTiming &&
+                                index > 0 &&
+                                cue.start < cues[index - 1].end;
+                            final isInvalid =
+                                needsText ||
+                                needsTime ||
+                                cue.start < Duration.zero ||
+                                hasOverlap;
+                            final showErrorHighlight =
+                                isInvalid && (_highlightInvalid || hasOverlap);
                             return SwipeRevealCard(
                               key: ObjectKey(cue),
                               enabled: !_saving,
@@ -564,9 +766,29 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                                 'subtitle_add_below',
                               ),
                               leadingActionIcon: Icons.add_rounded,
+                              onSecondaryLeadingAction: () =>
+                                  _insertBefore(index, cue),
+                              secondaryLeadingActionLabel: i18n.tr(
+                                'subtitle_add_above',
+                              ),
+                              secondaryLeadingActionTooltip: i18n.tr(
+                                'subtitle_add_above',
+                              ),
+                              secondaryLeadingActionIcon:
+                                  Icons.playlist_add_rounded,
                               child: Material(
                                 color: cs.surfaceContainerLow,
-                                borderRadius: BorderRadius.circular(12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  side: showErrorHighlight
+                                      ? BorderSide(
+                                          color: cs.error.withValues(
+                                            alpha: 0.75,
+                                          ),
+                                          width: 1.5,
+                                        )
+                                      : BorderSide.none,
+                                ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
@@ -594,8 +816,10 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                                                       : cue.text,
                                                   style: needsText
                                                       ? TextStyle(
-                                                          color: cs
-                                                              .onSurfaceVariant,
+                                                          color:
+                                                              showErrorHighlight
+                                                                  ? cs.error
+                                                                  : cs.onSurfaceVariant,
                                                         )
                                                       : null,
                                                 ),
@@ -619,6 +843,11 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                                                       i18n.tr(
                                                         'subtitle_new_time',
                                                       ),
+                                                      style: showErrorHighlight
+                                                          ? TextStyle(
+                                                              color: cs.error,
+                                                            )
+                                                          : null,
                                                     )
                                                   : Column(
                                                       crossAxisAlignment:
@@ -629,6 +858,12 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                                                           _formatTime(
                                                             cue.start,
                                                           ),
+                                                          style: hasOverlap
+                                                              ? TextStyle(
+                                                                  color:
+                                                                      cs.error,
+                                                                )
+                                                              : null,
                                                         ),
                                                         Text(
                                                           _formatTime(cue.end),
@@ -639,7 +874,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                                           ),
                                         ],
                                       ),
-                                    if (needsText || needsTime)
+                                    if (needsText || needsTime || hasOverlap)
                                       Padding(
                                         padding: const EdgeInsets.fromLTRB(
                                           14,
@@ -648,12 +883,18 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                                           12,
                                         ),
                                         child: Text(
-                                          i18n.tr('subtitle_complete_cue'),
+                                          hasOverlap
+                                              ? i18n.tr('subtitle_overlap_error')
+                                              : i18n.tr(
+                                                  'subtitle_complete_cue',
+                                                ),
                                           style: Theme.of(context)
                                               .textTheme
                                               .bodySmall
                                               ?.copyWith(
-                                                color: cs.onSurfaceVariant,
+                                                color: showErrorHighlight
+                                                    ? cs.error
+                                                    : cs.onSurfaceVariant,
                                               ),
                                         ),
                                       ),
@@ -678,15 +919,41 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                   enabled: !_saving,
                   onPressed: _requestExit,
                 ),
-                trailing: IconButton(
-                  tooltip: i18n.tr('save'),
-                  onPressed: _canSave ? _save : null,
-                  icon: _saving
-                      ? const SizedBox.square(
-                          dimension: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.save_rounded),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    HeaderFloatingButton(
+                      child: IconButton(
+                        key: const ValueKey('subtitle_add_button'),
+                        tooltip: i18n.tr('subtitle_add_cue'),
+                        onPressed: (_saving || cues == null)
+                            ? null
+                            : _appendCue,
+                        icon: const Icon(Icons.add_rounded),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    HeaderFloatingButton(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: (_dirty && !_cuesValid && !_saving)
+                            ? _scrollToFirstInvalidCue
+                            : null,
+                        child: IconButton(
+                          tooltip: i18n.tr('save'),
+                          onPressed: _canSave ? _save : null,
+                          icon: _saving
+                              ? const SizedBox.square(
+                                  dimension: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.save_rounded),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

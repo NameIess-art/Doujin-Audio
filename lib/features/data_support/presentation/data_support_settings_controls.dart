@@ -111,6 +111,10 @@ class _DataSupportSettingsControlsState
         final playback = ref.read(playbackFacadeProvider).nativeRepository;
         final listeningActivity = ref.read(listeningActivityServiceProvider);
         final lifecycle = ref.read(appLifecyclePlatformServiceProvider);
+        final selected = await _fileService.pickBackupFile(
+          dialogTitle: i18n.tr('restore_backup'),
+        );
+        if (selected == null || !mounted) return;
         final dismissProgress = showAppProgressFeedback(
           context,
           i18n.tr('loading_dot'),
@@ -119,9 +123,7 @@ class _DataSupportSettingsControlsState
         );
         var staged = false;
         try {
-          final result = await _fileService.pickAndStageBackup(
-            dialogTitle: i18n.tr('restore_backup'),
-          );
+          final result = await _fileService.stageBackupFile(selected);
           if (result == null) return;
           staged = true;
           await playback.clearAll();
@@ -192,25 +194,28 @@ class _DataSupportSettingsControlsState
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      final incompatible =
-          error is FormatException && error.message == 'incompatible_backup';
+      final i18n = ref.read(appLanguageProviderInstanceProvider);
+      final formatCode = error is FormatException ? error.message : null;
+      final incompatible = formatCode == 'incompatible_backup';
+      final messageKey = switch (formatCode) {
+        'incompatible_backup' => 'backup_incompatible',
+        'backup_checksum_mismatch' => 'backup_checksum_mismatch',
+        'backup_too_large' => 'backup_too_large',
+        'invalid_backup_manifest' ||
+        'backup_invalid_manifest' ||
+        'invalid_backup_entries' ||
+        'invalid_backup_entry_length' ||
+        'invalid_preferences_backup' ||
+        'invalid_account_backup' => 'backup_invalid_manifest',
+        _ => 'operation_failed_diagnostics_hint',
+      };
       showAppSnackBar(
         context,
-        ref
-            .read(appLanguageProviderInstanceProvider)
-            .tr(
-              incompatible
-                  ? 'backup_incompatible'
-                  : 'operation_failed_diagnostics_hint',
-            ),
+        i18n.tr(messageKey),
         tone: AppFeedbackTone.destructive,
-        title: ref
-            .read(appLanguageProviderInstanceProvider)
-            .tr('operation_failed'),
+        title: i18n.tr('operation_failed'),
         icon: Icons.error_outline_rounded,
-        actionLabel: incompatible || retry == null
-            ? null
-            : ref.read(appLanguageProviderInstanceProvider).tr('retry'),
+        actionLabel: incompatible || retry == null ? null : i18n.tr('retry'),
         onAction: incompatible ? null : retry,
         duration: const Duration(seconds: 6),
       );

@@ -897,7 +897,7 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('Windows playback detail covers the title bar without moving the previous page', (
+  testWidgets('Windows playback detail and fullscreen routes cover drawn title bar', (
     tester,
   ) async {
     final windowCalls = <MethodCall>[];
@@ -1009,8 +1009,25 @@ void main() {
     unawaited(navigator.push(detailRoute));
     await tester.pumpAndSettle();
     final detail = find.byType(SessionDetailPage);
-    expect(tester.getRect(detail), const Rect.fromLTWH(0, 0, 1280, 800));
-    expect(titleBar, findsOneWidget);
+    expect(
+      tester.getRect(detail),
+      const Rect.fromLTWH(0, 0, 1280, 800),
+    );
+    expect(titleBar.hitTestable(), findsNothing);
+
+    final fullscreenRoute = MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (_) => const SizedBox.expand(key: ValueKey('fullscreen_probe')),
+    );
+    unawaited(navigator.push(fullscreenRoute));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getRect(find.byKey(const ValueKey('fullscreen_probe'))),
+      const Rect.fromLTWH(0, 0, 1280, 800),
+    );
+    expect(titleBar.hitTestable(), findsNothing);
+    navigator.pop();
+    await tester.pumpAndSettle();
     expect(titleBar.hitTestable(), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('session_detail_close_button')));
@@ -1022,6 +1039,7 @@ void main() {
     expect(tester.state(main), same(mainState));
     expect(tester.getRect(main), mainRect);
     expect(tester.getRect(titleBar), titleRect);
+    expect(titleBar.hitTestable(), findsOneWidget);
     expect(windowCalls, isEmpty);
     UiInteractionCoordinator.instance.finishInteractionsForTest();
     await tester.pump(const Duration(milliseconds: 200));
@@ -3173,7 +3191,7 @@ void main() {
     expect(find.text(label).evaluate().length, originalTextCount);
   });
 
-  testWidgets('windows production app shell disables tooltips on hover', (
+  testWidgets('windows production app shell hides tooltips on hover', (
     tester,
   ) async {
     await _pumpAppShell(tester);
@@ -3182,11 +3200,12 @@ void main() {
       tester.element(find.byType(MaterialApp)).markNeedsBuild();
       await tester.pump();
 
-      expect(find.byType(TooltipVisibility), findsWidgets);
-      final tooltipVisibility = tester.widget<TooltipVisibility>(
-        find.byType(TooltipVisibility).first,
+      expect(
+        find.byWidgetPredicate(
+          (widget) => widget is TooltipVisibility && !widget.visible,
+        ),
+        findsOneWidget,
       );
-      expect(tooltipVisibility.visible, isFalse);
 
       final tooltipFinder = find.byWidgetPredicate(
         (widget) => widget is Tooltip && widget.message?.isNotEmpty == true,

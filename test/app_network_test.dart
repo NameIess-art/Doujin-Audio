@@ -237,6 +237,82 @@ void main() {
     },
   );
 
+  test(
+    'NetworkSocket.readHeader scans across chunk boundaries and preserves body',
+    () async {
+      final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(server.close);
+      final clientFuture = Socket.connect(InternetAddress.loopbackIPv4, server.port);
+      final accepted = await server.first;
+      final client = await clientFuture;
+      addTearDown(accepted.destroy);
+      addTearDown(client.destroy);
+      final wrapped = NetworkSocket(accepted);
+
+      client.add(ascii.encode('HTTP/1.1 200 OK\r\nX-Test: a\r'));
+      await client.flush();
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      client.add(ascii.encode('\r\n'));
+      await client.flush();
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      client.add(ascii.encode('\r\nBODY'));
+      await client.flush();
+      await client.close();
+
+      expect(await wrapped.readHeader(), 'HTTP/1.1 200 OK\r\nX-Test: a\r\r\n\r\n');
+      final bodyBytes = await wrapped.remaining.expand((chunk) => chunk).toList();
+      expect(ascii.decode(bodyBytes), 'BODY');
+    },
+  );
+
+  test(
+    'NetworkSocket.readHeader enforces 64 KiB cap and detects truncated handshake',
+    () async {
+      final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(server.close);
+      final acceptedSockets = <Socket>[];
+      final acceptedQueue = StreamIterator(server);
+      addTearDown(() async {
+        await acceptedQueue.cancel();
+        for (final s in acceptedSockets) {
+          s.destroy();
+        }
+      });
+
+      // Oversized header > 64 KiB throws HttpException.
+      final oversizedClient = await Socket.connect(
+        InternetAddress.loopbackIPv4,
+        server.port,
+      );
+      addTearDown(oversizedClient.destroy);
+      expect(await acceptedQueue.moveNext(), isTrue);
+      final oversizedServer = acceptedQueue.current;
+      acceptedSockets.add(oversizedServer);
+      oversizedClient.add(Uint8List(65537)..fillRange(0, 65537, 65));
+      await oversizedClient.flush();
+      await expectLater(
+        NetworkSocket(oversizedServer).readHeader(),
+        throwsA(isA<HttpException>()),
+      );
+
+      // Connection closed before \r\n\r\n throws SocketException.
+      final truncatedClient = await Socket.connect(
+        InternetAddress.loopbackIPv4,
+        server.port,
+      );
+      addTearDown(truncatedClient.destroy);
+      expect(await acceptedQueue.moveNext(), isTrue);
+      final truncatedServer = acceptedQueue.current;
+      acceptedSockets.add(truncatedServer);
+      truncatedClient.add(ascii.encode('HTTP/1.1 200 OK\r\n'));
+      await truncatedClient.close();
+      await expectLater(
+        NetworkSocket(truncatedServer).readHeader(),
+        throwsA(isA<SocketException>()),
+      );
+    },
+  );
+
   test('system SOCKS proxy never receives saved manual credentials', () async {
     final socks = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
     addTearDown(socks.close);
@@ -594,6 +670,39 @@ void main() {
         Uri.parse('http://unresolvable.invalid/'),
       )).close();
       expect(await utf8.decodeStream(response), 'policy-ok');
+    },
+  );
+
+  test(
+    'fromJson and AppNetwork.configure normalize bracketed and padded custom DNS servers',
+    () async {
+      final parsed = NetworkRouteSettings.fromJson(<String, Object?>{
+        'customDnsServer': ' [2001:4860:4860::8888] ',
+      });
+      expect(parsed.customDnsServer, '2001:4860:4860::8888');
+
+      NetworkRouteSettings? appliedSettings;
+      InternetAddress? resolverAddress;
+      await network.close();
+      network = AppNetwork(
+        resolveSystemProxy: (_) async => 'DIRECT',
+        applyNativeRoute: (settings, _) async {
+          appliedSettings = settings;
+        },
+        createDnsResolver: (address) {
+          resolverAddress = address;
+          return DnsServerResolver(address);
+        },
+      );
+      await network.ensureStarted();
+
+      await network.configure(
+        const NetworkRouteSettings(customDnsServer: ' [::1] '),
+        null,
+      );
+
+      expect(resolverAddress, InternetAddress('::1'));
+      expect(appliedSettings?.customDnsServer, '::1');
     },
   );
 }

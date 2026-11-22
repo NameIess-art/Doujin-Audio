@@ -27,15 +27,6 @@ abstract final class LibraryScanPresentationMapper {
     if (outcome.code == LibraryScanOutcomeCode.noSources) return null;
     final detailImportFailureCount =
         (outcome.details['detailImportFailureCount'] as int?) ?? 0;
-    if (detailImportFailureCount > 0) {
-      return LibraryScanFeedback(
-        message: i18n.tr('detail_backup_import_failed', {
-          'count': detailImportFailureCount,
-        }),
-        tone: AppFeedbackTone.warning,
-        icon: Icons.sync_problem_rounded,
-      );
-    }
     final isFailure = switch (outcome.code) {
       LibraryScanOutcomeCode.permissionDenied ||
       LibraryScanOutcomeCode.failed ||
@@ -43,46 +34,72 @@ abstract final class LibraryScanPresentationMapper {
       _ => false,
     };
     final isCancelled = outcome.code == LibraryScanOutcomeCode.cancelled;
+    final isInfo = switch (outcome.code) {
+      LibraryScanOutcomeCode.noAudio ||
+      LibraryScanOutcomeCode.folderExists ||
+      LibraryScanOutcomeCode.libraryExists ||
+      LibraryScanOutcomeCode.fileExists => true,
+      _ => false,
+    };
+    final primaryMessage = switch (outcome.code) {
+      LibraryScanOutcomeCode.noSources => '',
+      LibraryScanOutcomeCode.permissionDenied => i18n.tr(
+        'need_storage_permission_scan_folder',
+      ),
+      LibraryScanOutcomeCode.alreadyRunning => i18n.tr('scanning_title'),
+      LibraryScanOutcomeCode.folderExists => i18n.tr('library_folder_exists'),
+      LibraryScanOutcomeCode.libraryExists => i18n.tr('library_exists'),
+      LibraryScanOutcomeCode.fileExists => i18n.tr('library_file_exists'),
+      LibraryScanOutcomeCode.cancelled => i18n.tr('scan_cancelled'),
+      LibraryScanOutcomeCode.failed => i18n.tr('scan_failed_next_step'),
+      LibraryScanOutcomeCode.noAudio => i18n.tr('no_audio_found'),
+      LibraryScanOutcomeCode.refreshAdded => i18n.tr('refresh_done_added', {
+        'count': outcome.addedCount,
+      }),
+      LibraryScanOutcomeCode.refreshNoChanges => i18n.tr(
+        'refresh_done_no_new',
+      ),
+      LibraryScanOutcomeCode.importAdded => i18n.tr('import_done_added', {
+        'count': outcome.addedCount,
+      }),
+      LibraryScanOutcomeCode.libraryImported => i18n.tr(
+        'import_library_done',
+        <String, Object?>{
+          'count': outcome.addedCount,
+          'folderCount': outcome.folderCount,
+        },
+      ),
+    };
+    final baseTone = isFailure
+        ? AppFeedbackTone.destructive
+        : isCancelled
+        ? AppFeedbackTone.warning
+        : isInfo
+        ? AppFeedbackTone.info
+        : AppFeedbackTone.success;
+    final baseIcon = isFailure
+        ? Icons.error_outline_rounded
+        : isCancelled
+        ? Icons.cancel_outlined
+        : isInfo
+        ? Icons.info_outline_rounded
+        : Icons.check_circle_outline_rounded;
+    if (detailImportFailureCount > 0) {
+      final detailWarning = i18n.tr('detail_backup_import_failed', {
+        'count': detailImportFailureCount,
+      });
+      return LibraryScanFeedback(
+        message: primaryMessage.isEmpty
+            ? detailWarning
+            : '$primaryMessage · $detailWarning',
+        tone: isFailure ? baseTone : AppFeedbackTone.warning,
+        icon: isFailure ? baseIcon : Icons.sync_problem_rounded,
+      );
+    }
     return LibraryScanFeedback(
-      message: switch (outcome.code) {
-        LibraryScanOutcomeCode.noSources => '',
-        LibraryScanOutcomeCode.permissionDenied => i18n.tr(
-          'need_storage_permission_scan_folder',
-        ),
-        LibraryScanOutcomeCode.alreadyRunning => i18n.tr('scanning_title'),
-        LibraryScanOutcomeCode.folderExists => i18n.tr('library_folder_exists'),
-        LibraryScanOutcomeCode.libraryExists => i18n.tr('library_exists'),
-        LibraryScanOutcomeCode.fileExists => i18n.tr('library_file_exists'),
-        LibraryScanOutcomeCode.cancelled => i18n.tr('scan_cancelled'),
-        LibraryScanOutcomeCode.failed => i18n.tr('scan_failed_next_step'),
-        LibraryScanOutcomeCode.noAudio => i18n.tr('no_audio_found'),
-        LibraryScanOutcomeCode.refreshAdded => i18n.tr('refresh_done_added', {
-          'count': outcome.addedCount,
-        }),
-        LibraryScanOutcomeCode.refreshNoChanges => i18n.tr(
-          'refresh_done_no_new',
-        ),
-        LibraryScanOutcomeCode.importAdded => i18n.tr('import_done_added', {
-          'count': outcome.addedCount,
-        }),
-        LibraryScanOutcomeCode.libraryImported => i18n.tr(
-          'import_library_done',
-          <String, Object?>{
-            'count': outcome.addedCount,
-            'folderCount': outcome.folderCount,
-          },
-        ),
-      },
-      tone: isFailure
-          ? AppFeedbackTone.destructive
-          : isCancelled
-          ? AppFeedbackTone.warning
-          : AppFeedbackTone.success,
-      icon: isFailure
-          ? Icons.error_outline_rounded
-          : isCancelled
-          ? Icons.cancel_outlined
-          : Icons.check_circle_outline_rounded,
+      message: primaryMessage,
+      tone: baseTone,
+      icon: baseIcon,
     );
   }
 }

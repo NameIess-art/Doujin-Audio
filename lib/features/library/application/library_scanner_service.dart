@@ -10,6 +10,7 @@ import '../../../core/media/music_track.dart';
 import '../../../core/cache/app_cache_service.dart';
 import '../../../core/logging/app_log_service.dart';
 import 'library_catalog.dart';
+import 'library_service.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/media_file_support.dart';
@@ -267,6 +268,7 @@ class LibraryScannerService {
         [...watchedLibraries, ...foldersToRefresh],
       );
       final mergeWorker = LibraryScanMergeWorker();
+      var completedNormally = false;
       try {
         for (final libraryRoot in watchedLibraries) {
           if (!provider.isScanGenerationActive(generation) || !batchOpen) {
@@ -314,10 +316,11 @@ class LibraryScannerService {
             ),
           );
         }
+        completedNormally = true;
       } finally {
         await mergeWorker.dispose();
         if (batchStarted) {
-          if (provider.isScanGenerationActive(generation)) {
+          if (completedNormally && provider.isScanGenerationActive(generation)) {
             for (final chunk in deferredCleanupChunks) {
               if (!provider.isScanGenerationActive(generation)) break;
               writeBudget.start();
@@ -346,7 +349,9 @@ class LibraryScannerService {
             }
           }
           await provider.finishStagedLibraryRefresh(
-            commit: provider.isScanGenerationActive(generation),
+            commit:
+                completedNormally &&
+                provider.isScanGenerationActive(generation),
           );
         }
       }
@@ -519,12 +524,9 @@ class LibraryScannerService {
     }
     LibraryExclusionSnapshot? exclusionSnapshot;
     final trackChanges =
-        HashMap<String, ({MusicTrack? before, MusicTrack after})>(
-          equals: (first, second) =>
-              PathMatcher.equivalenceKey(first) ==
-              PathMatcher.equivalenceKey(second),
-          hashCode: (value) => PathMatcher.equivalenceKey(value).hashCode,
-        );
+        LibraryService.createPathIndex<
+          ({MusicTrack? before, MusicTrack after})
+        >();
     void recordTrackChange(MusicTrack? before, MusicTrack after) {
       final key = PathMatcher.normalize(after.path);
       final previous = trackChanges[key];
@@ -538,17 +540,11 @@ class LibraryScannerService {
       trackChanges[key] = (before: original, after: after);
     }
 
-    final existingEntryPaths =
-        HashSet<String>(
-          equals: (first, second) =>
-              PathMatcher.equivalenceKey(first) ==
-              PathMatcher.equivalenceKey(second),
-          hashCode: (value) => PathMatcher.equivalenceKey(value).hashCode,
-        )..addAll(
-          provider
-              .libraryEntriesForLibrary(normalizedFolderPath)
-              .map((entry) => PathMatcher.normalize(entry.path)),
-        );
+    final existingEntryPaths = LibraryService.createPathSet(
+      provider
+          .libraryEntriesForLibrary(normalizedFolderPath)
+          .map((entry) => PathMatcher.normalize(entry.path)),
+    );
     var batchStarted = false;
     var added = 0;
     var completed = false;
@@ -747,7 +743,10 @@ class LibraryScannerService {
       );
     }
     var childFolders = const <String>[];
-    final trackChanges = <String, ({MusicTrack? before, MusicTrack after})>{};
+    final trackChanges =
+        LibraryService.createPathIndex<
+          ({MusicTrack? before, MusicTrack after})
+        >();
     void recordTrackChange(MusicTrack? before, MusicTrack after) {
       final key = PathMatcher.normalize(after.path);
       final previous = trackChanges[key];
@@ -761,10 +760,11 @@ class LibraryScannerService {
       trackChanges[key] = (before: original, after: after);
     }
 
-    final existingEntryPaths = provider
-        .libraryEntriesForLibrary(normalizedFolderPath)
-        .map((entry) => PathMatcher.normalize(entry.path))
-        .toSet();
+    final existingEntryPaths = LibraryService.createPathSet(
+      provider
+          .libraryEntriesForLibrary(normalizedFolderPath)
+          .map((entry) => PathMatcher.normalize(entry.path)),
+    );
     provider.beginLibraryBatch(snapshotAllEntries: false);
     var added = 0;
     var completed = false;

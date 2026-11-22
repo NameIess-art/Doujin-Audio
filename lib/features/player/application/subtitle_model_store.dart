@@ -86,6 +86,16 @@ class SubtitleModelStore extends ChangeNotifier {
         active: false,
       );
 
+  void cancelDownload(SubtitleModelSpec spec) {
+    final active = _activeDownloads[spec.name];
+    if (active == null) return;
+    active.hasUncancellableCaller = false;
+    active.cancelling = true;
+    for (final entry in active.entries) {
+      entry.cancelled = true;
+    }
+  }
+
   Future<SubtitleModelStatus> status(SubtitleModelSpec spec) async {
     final directory = await _directoryResolver();
     final ready = await _valid(
@@ -175,7 +185,7 @@ class SubtitleModelStore extends ChangeNotifier {
           received: last.received,
           total: spec.bytes,
           active: false,
-          error: error,
+          error: error is SubtitleModelDownloadCancelled ? null : error,
         );
         notifyListeners();
         for (final entry in active.entries) {

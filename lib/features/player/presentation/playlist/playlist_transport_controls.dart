@@ -316,6 +316,7 @@ class _PrimaryPlaybackControlsState
                 },
               ),
               PrimaryTransportButton(
+                tooltip: i18n.tr('rewind_5s'),
                 constraints: sideBox,
                 enabled: enabled,
                 icon: Icons.replay_5_rounded,
@@ -392,6 +393,7 @@ class _PrimaryPlaybackControlsState
                 ),
               ),
               PrimaryTransportButton(
+                tooltip: i18n.tr('forward_5s'),
                 constraints: sideBox,
                 enabled: enabled,
                 icon: Icons.forward_5_rounded,
@@ -605,9 +607,14 @@ class _PlaybackSecondaryControlsState
 }
 
 class PlaybackSecondaryControlSurface extends StatelessWidget {
-  const PlaybackSecondaryControlSurface({super.key, required this.child});
+  const PlaybackSecondaryControlSurface({
+    super.key,
+    required this.child,
+    this.blurEnabled = true,
+  });
 
   final Widget child;
+  final bool blurEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -615,7 +622,8 @@ class PlaybackSecondaryControlSurface extends StatelessWidget {
     final cs = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
     final background = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
-    final glassEnabled = AppDesignTokens.of(context).barGlassEnabled;
+    final glassEnabled =
+        blurEnabled && AppDesignTokens.of(context).barGlassEnabled;
     const capsuleHeight = 46.0;
     const borderRadius = BorderRadius.all(Radius.circular(capsuleHeight / 2));
     return SizedBox(
@@ -624,7 +632,9 @@ class PlaybackSecondaryControlSurface extends StatelessWidget {
         enabled: glassEnabled,
         backgroundColor: glassEnabled
             ? background.withValues(alpha: background.a * 0.9)
-            : background,
+            : blurEnabled
+            ? background
+            : background.withValues(alpha: isDark ? 0.88 : 0.92),
         borderRadius: borderRadius,
         child: DecoratedBox(
           decoration: BoxDecoration(

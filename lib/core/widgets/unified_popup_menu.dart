@@ -130,6 +130,7 @@ class UnifiedMenuEntry<T> {
     required this.label,
     this.trailing,
     this.trailingValue,
+    this.trailingTooltip,
     this.destructive = false,
     this.enabled = true,
   }) : divider = false;
@@ -141,6 +142,7 @@ class UnifiedMenuEntry<T> {
       label = '',
       trailing = null,
       trailingValue = null,
+      trailingTooltip = null,
       destructive = false,
       enabled = false,
       divider = true;
@@ -151,6 +153,7 @@ class UnifiedMenuEntry<T> {
   final String label;
   final Widget? trailing;
   final T? trailingValue;
+  final String? trailingTooltip;
   final bool destructive;
   final bool enabled;
   final bool divider;
@@ -272,9 +275,7 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
     final anchorRect = anchorOffset & box.size;
     if (menuBox.size.width <= 20) return;
     final isWindows = Theme.of(context).platform == TargetPlatform.windows;
-    final (overlay, menuInsets) = isWindows
-        ? _fullWindowMenuOverlay(context, menuOverlay)
-        : (menuOverlay, EdgeInsets.zero);
+    final (overlay, menuInsets) = _fullWindowMenuOverlay(context, menuOverlay);
     final themes = overlay == menuOverlay
         ? null
         : InheritedTheme.capture(from: context, to: null);
@@ -528,13 +529,10 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
               children: [
                 IgnorePointer(child: background),
                 Positioned.fill(
-                  left: widget.menuInsets.left,
-                  top: widget.menuInsets.top,
-                  right: widget.menuInsets.right,
-                  bottom: widget.menuInsets.bottom,
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: widget.onDismiss,
+                    onSecondaryTapDown: (_) => widget.onDismiss(),
                   ),
                 ),
                 Padding(
@@ -543,6 +541,9 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
                     builder: (context, constraints) {
                       final size = constraints.biggest;
                       final layout = _PopupMenuPositionDelegate(
+                        preferredLeft: widget.pointerAnchored
+                            ? widget.anchorRect.left
+                            : null,
                         preferredRight: widget.anchorRect.right,
                         preferredTop: widget.anchorRect.top,
                       );
@@ -602,11 +603,13 @@ class _PopupMenuPositionDelegate extends SingleChildLayoutDelegate {
   const _PopupMenuPositionDelegate({
     required this.preferredRight,
     required this.preferredTop,
+    this.preferredLeft,
     this.menuWidth,
   });
 
   final double preferredRight;
   final double preferredTop;
+  final double? preferredLeft;
   final double? menuWidth;
 
   @override
@@ -627,10 +630,16 @@ class _PopupMenuPositionDelegate extends SingleChildLayoutDelegate {
   @override
   Offset getPositionForChild(Size size, Size childSize) {
     final maxLeft = math.max(10.0, size.width - childSize.width - 10.0);
-    final resolvedLeft = (preferredRight - childSize.width).clamp(
-      10.0,
-      maxLeft,
-    );
+    final double desiredLeft;
+    if (preferredLeft != null) {
+      final fitsRight = preferredLeft! + childSize.width <= size.width - 10.0;
+      desiredLeft = fitsRight
+          ? preferredLeft!
+          : preferredRight - childSize.width;
+    } else {
+      desiredLeft = preferredRight - childSize.width;
+    }
+    final resolvedLeft = desiredLeft.clamp(10.0, maxLeft);
     final maxTop = math.max(8.0, size.height - childSize.height - 8.0);
     final resolvedTop = preferredTop.clamp(8.0, maxTop);
     return Offset(resolvedLeft, resolvedTop);
@@ -638,7 +647,8 @@ class _PopupMenuPositionDelegate extends SingleChildLayoutDelegate {
 
   @override
   bool shouldRelayout(covariant _PopupMenuPositionDelegate oldDelegate) {
-    return preferredRight != oldDelegate.preferredRight ||
+    return preferredLeft != oldDelegate.preferredLeft ||
+        preferredRight != oldDelegate.preferredRight ||
         preferredTop != oldDelegate.preferredTop ||
         menuWidth != oldDelegate.menuWidth;
   }
@@ -847,9 +857,9 @@ class _UnifiedPopupMenuContent<T> extends StatelessWidget {
                     height: 38,
                   ),
                   padding: EdgeInsets.zero,
-                  tooltip: MaterialLocalizations.of(
-                    context,
-                  ).deleteButtonTooltip,
+                  tooltip:
+                      entry.trailingTooltip ??
+                      MaterialLocalizations.of(context).deleteButtonTooltip,
                   onPressed: () {
                     AppInteractionFeedback.trigger(
                       AppInteractionFeedbackType.confirmation,
@@ -1074,7 +1084,8 @@ class _MenuBackdropClipper extends CustomClipper<Path> {
 
   @override
   Path getClip(Size size) {
-    final backdrop = Path()..addRect(Offset.zero & size);
+    final fullRect = Offset.zero & size;
+    final backdrop = Path()..addRect(fullRect);
     if (!highlightedBox.attached ||
         !highlightedBox.hasSize ||
         !overlayBox.attached) {
@@ -1087,22 +1098,36 @@ class _MenuBackdropClipper extends CustomClipper<Path> {
         )
         .transform(highlightedBox.getTransformTo(overlayBox).storage);
 
-    // A partially scrolled item only stays clear within its visible bounds.
+    // Intersect ancestor viewport clips as rects first, falling back to path
+    // intersection only when the highlighted item is partially scrolled off.
+    var visibleClip = fullRect;
     RenderObject child = highlightedBox;
     for (var parent = child.parent; parent != null; parent = parent.parent) {
       final clip = parent.describeApproximatePaintClip(child);
       if (clip != null && clip.isFinite) {
-        exclusion = Path.combine(
-          PathOperation.intersect,
-          exclusion,
-          (Path()..addRect(clip)).transform(
-            parent.getTransformTo(overlayBox).storage,
-          ),
+        final mapped = MatrixUtils.transformRect(
+          parent.getTransformTo(overlayBox),
+          clip,
         );
+        visibleClip = visibleClip.intersect(mapped);
       }
       child = parent;
     }
-    return Path.combine(PathOperation.difference, backdrop, exclusion);
+    if (visibleClip.isEmpty) return backdrop;
+    final exclusionBounds = exclusion.getBounds();
+    if (!visibleClip.contains(exclusionBounds.topLeft) ||
+        !visibleClip.contains(exclusionBounds.bottomRight)) {
+      exclusion = Path.combine(
+        PathOperation.intersect,
+        exclusion,
+        Path()..addRect(visibleClip),
+      );
+    }
+    // Use even-odd fill instead of CPU PathOperation.difference polygon ops.
+    return Path()
+      ..fillType = PathFillType.evenOdd
+      ..addRect(fullRect)
+      ..addPath(exclusion, Offset.zero);
   }
 
   @override
@@ -1473,25 +1498,17 @@ Widget _buildTextSelectionMenu(
   if (entries.isEmpty) return const SizedBox.shrink();
 
   final anchor = anchors.primaryAnchor;
-  return Stack(
-    fit: StackFit.expand,
-    children: [
-      // Leave selection, focus, and outside clicks to Flutter's text toolbar.
-      const IgnorePointer(
-        child: AppModalBackground(animation: kAlwaysCompleteAnimation),
-      ),
-      CustomSingleChildLayout(
-        delegate: _PopupMenuPositionDelegate(
-          preferredRight: anchor.dx,
-          preferredTop: anchor.dy,
-          menuWidth: _textSelectionMenuWidth,
-        ),
-        child: _UnifiedPopupMenuCard<VoidCallback>(
-          entries: entries,
-          fitContent: false,
-          onSelected: (action) => action(),
-        ),
-      ),
-    ],
+  return CustomSingleChildLayout(
+    delegate: _PopupMenuPositionDelegate(
+      preferredLeft: anchor.dx,
+      preferredRight: anchor.dx,
+      preferredTop: anchor.dy,
+      menuWidth: _textSelectionMenuWidth,
+    ),
+    child: _UnifiedPopupMenuCard<VoidCallback>(
+      entries: entries,
+      fitContent: false,
+      onSelected: (action) => action(),
+    ),
   );
 }

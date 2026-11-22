@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 // The plugin exposes its platform test seam from this library.
 // ignore: implementation_imports
 import 'package:file_picker/src/platform/file_picker_platform_interface.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -624,7 +625,7 @@ void main() {
         ),
       );
       final cancelButton = find.ancestor(
-        of: find.text(language.tr('subtitle_pause_task')),
+        of: find.text(language.tr('subtitle_cancel_task')),
         matching: find.byType(AppSecondaryButton),
       );
       expect(
@@ -1641,7 +1642,9 @@ void main() {
           );
           expect(
             find.descendant(of: selection, matching: find.byType(Scrollbar)),
-            findsNothing,
+            defaultTargetPlatform == TargetPlatform.windows
+                ? findsOneWidget
+                : findsNothing,
           );
           if (fileCount > 2) {
             final scrollable = tester.state<ScrollableState>(

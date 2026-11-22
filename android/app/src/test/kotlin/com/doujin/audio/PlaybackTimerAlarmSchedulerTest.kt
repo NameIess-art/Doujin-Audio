@@ -125,6 +125,84 @@ class PlaybackTimerAlarmSchedulerTest {
         }
     }
 
+    @Test
+    fun `sync persists pausedSessionIds and manual stop clears runtime state even if paused ids were stale`() {
+        val resumeAtMs = System.currentTimeMillis() + 60_000L
+        PlaybackTimerAlarmScheduler.sync(
+            context = context,
+            timerModeIndex = null,
+            durationMs = null,
+            waitingForPlayback = false,
+            timerEndsAtWallClockMs = null,
+            autoResumeEnabled = true,
+            autoResumeHour = 7,
+            autoResumeMinute = 0,
+            autoResumeAtMs = resumeAtMs,
+            pausedSessionIds = listOf("A"),
+            generation = 11,
+            timerCandidateSessionIds = emptyList(),
+            stopAfterCurrentTrack = false
+        )
+
+        assertEquals(listOf("A"), NativePlaybackStateStore.loadPausedSessionIds(context))
+        val alarmManager = context.getSystemService(AlarmManager::class.java)
+        assertEquals(1, shadowOf(alarmManager).scheduledAlarms.size)
+
+        // Simulate stale/empty pausedSessionIds key while runtime state still references session A.
+        NativePlaybackStateStore.clearPausedSessionIds(context)
+        PlaybackTimerAlarmScheduler.onManualPlaybackStopped(context, "A")
+
+        assertNull(NativePlaybackStateStore.loadTimerRuntimeState(context))
+        assertTrue(NativePlaybackStateStore.loadPausedSessionIds(context).isEmpty())
+        assertTrue(shadowOf(alarmManager).scheduledAlarms.isEmpty())
+    }
+
+    @Test
+    fun `timer expiry with stopAfterCurrentTrack recovers persisted candidates after service restart`() {
+        val service = Robolectric.buildService(NativePlaybackService::class.java).get()
+        val state = timerState().copy(
+            pausedSessionIds = emptyList(),
+            stopAfterCurrentTrack = true
+        )
+        NativePlaybackStateStore.saveTimerRuntimeState(context, state)
+        NativePlaybackStateStore.storeTimerCandidateSessionIds(context, listOf("A"))
+        val latch = java.util.concurrent.CountDownLatch(1)
+        var outcome: String? = null
+        try {
+            val complete: (String) -> Unit = { result ->
+                outcome = result
+                latch.countDown()
+            }
+            ReflectionHelpers.callInstanceMethod<Unit>(
+                PlaybackTimerAlarmScheduler,
+                "executeTimerExpired",
+                ClassParameter.from(Context::class.java, context),
+                ClassParameter.from(NativePlaybackService::class.java, service),
+                ClassParameter.from(StoredPlaybackTimerRuntimeState::class.java, state),
+                ClassParameter.from(Function1::class.java, complete)
+            )
+            // Wait for background candidate read to post to main looper, then idle main looper.
+            val deadline = System.currentTimeMillis() + 5_000L
+            while (latch.count > 0 && System.currentTimeMillis() < deadline) {
+                shadowOf(android.os.Looper.getMainLooper()).idle()
+                Thread.sleep(10)
+            }
+            assertEquals(PlaybackTimerAlarmScheduler.resultExecuted, outcome)
+            val updated = checkNotNull(NativePlaybackStateStore.loadTimerRuntimeState(context))
+            assertEquals(listOf("A"), updated.pausedSessionIds)
+            assertNotNull(updated.autoResumeAtMs)
+            assertFalse(updated.stopAfterCurrentTrack)
+            assertEquals(listOf("A"), NativePlaybackStateStore.loadPausedSessionIds(context))
+        } finally {
+            val persistence = ReflectionHelpers.callInstanceMethod<NativePlaybackStatePersistenceCoordinator>(
+                service,
+                "getStatePersistence"
+            )
+            persistence.shutdown()
+            assertTrue(persistence.awaitTermination())
+        }
+    }
+
     private fun timerState() = StoredPlaybackTimerRuntimeState(
         timerModeIndex = 0, durationMs = 60_000L, waitingForPlayback = false,
         timerEndsAtWallClockMs = System.currentTimeMillis() + 60_000L,

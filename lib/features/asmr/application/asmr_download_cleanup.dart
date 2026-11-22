@@ -8,6 +8,7 @@ import '../../../core/media/path_matcher.dart';
 import '../../../core/persistence/json_document_store.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../library/data/audio_detail_json_codec.dart';
+import 'asmr_download_io.dart';
 import 'asmr_download_models.dart';
 import 'asmr_download_internal_models.dart';
 import 'asmr_download_planner.dart';
@@ -133,7 +134,10 @@ class AsmrDownloadOutputStore {
           );
         }
       } else {
-        await deleteFileIfPresent(File(targetPath));
+        await deleteFileIfPresent(localDownloadFile(targetPath));
+        if (targetPath.endsWith('.doujin.part')) {
+          await deleteFileIfPresent(localDownloadFile('$targetPath.etag'));
+        }
       }
     }
 
@@ -144,9 +148,9 @@ class AsmrDownloadOutputStore {
         path.absolute(task.destinationRoot),
       );
       if (normalizedWorkRoot != normalizedDestRoot) {
-        await _pruneEmptyDirectory(Directory(workRootPath));
+        await _pruneEmptyDirectory(localDownloadDirectory(workRootPath));
       } else {
-        final directory = Directory(workRootPath);
+        final directory = localDownloadDirectory(workRootPath);
         if (await directory.exists()) {
           try {
             await for (final entity in directory.list(followLinks: false)) {
@@ -165,7 +169,9 @@ class AsmrDownloadOutputStore {
   Future<bool> _pruneEmptyDirectory(Directory directory) async {
     try {
       if (!await directory.exists()) return true;
-      final normalized = path.normalize(path.absolute(directory.path));
+      final normalized = path.normalize(
+        path.absolute(stripWindowsExtendedLocalPath(directory.path)),
+      );
       if (normalized == path.rootPrefix(normalized)) {
         return false;
       }
@@ -211,7 +217,7 @@ class AsmrDownloadOutputStore {
     if (PathMatcher.isContentUri(outputPath)) {
       return _fileCacheGateway.documentPathExists(outputPath);
     }
-    return File(outputPath).exists();
+    return localDownloadFile(outputPath).exists();
   }
 
   Future<void> cleanupCancelledTask(String workId) async {
@@ -233,9 +239,12 @@ class AsmrDownloadOutputStore {
         if (PathMatcher.isContentUri(createdPath)) {
           await _fileCacheGateway.deleteDocumentPath(createdPath);
         } else {
-          final file = File(createdPath);
+          final file = localDownloadFile(createdPath);
           if (await file.exists()) {
             await file.delete();
+          }
+          if (createdPath.endsWith('.doujin.part')) {
+            await deleteFileIfPresent(localDownloadFile('$createdPath.etag'));
           }
         }
       } catch (_) {
@@ -267,13 +276,14 @@ class AsmrDownloadOutputStore {
                         .extension(_planner.localRelativePath(candidate))
                         .toLowerCase() ==
                     '.json');
-        final staging = usesCache
-            ? await persistentStagingFile(task.workRootPath, candidate)
-            : File(
-                '${_planner.resolveLocalPathWithin(task.workRootPath, candidate)}.doujin.part',
-              );
-        if (ownedPaths.contains(staging.path)) {
-          await deleteFileIfPresent(staging);
+        final logicalStagingPath = usesCache
+            ? (await persistentStagingFile(task.workRootPath, candidate)).path
+            : '${_planner.resolveLocalPathWithin(task.workRootPath, candidate)}.doujin.part';
+        if (ownedPaths.contains(logicalStagingPath)) {
+          await deleteFileIfPresent(
+            localDownloadFile('$logicalStagingPath.etag'),
+          );
+          await deleteFileIfPresent(localDownloadFile(logicalStagingPath));
         }
       }
     }
@@ -333,7 +343,7 @@ class AsmrDownloadOutputStore {
           null;
     }
 
-    final folder = Directory(
+    final folder = localDownloadDirectory(
       _planner.resolveLocalPathWithin(basePath, normalized),
     );
     try {

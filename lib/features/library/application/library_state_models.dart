@@ -178,6 +178,14 @@ class LibraryExclusionMatcher {
         isExcluded(entry.parentPath ?? entry.libraryPath);
   }
 
+  bool isTrackPathExcluded(String trackPath, {String? parentPath}) {
+    if (isExcluded(trackPath)) return true;
+    return parentPath != null &&
+        PathMatcher.hasSameContentTree(trackPath, libraryPath) &&
+        PathMatcher.isWithinOrEqual(parentPath, libraryPath) &&
+        isExcluded(parentPath);
+  }
+
   bool isEntryInheritedExcluded(LibraryEntry? entry, String entityPath) {
     if (_excludedFolderKeys.isEmpty) return false;
     if (isInheritedExcluded(entityPath)) return true;

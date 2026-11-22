@@ -134,6 +134,7 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
   final TextEditingController _accountController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _submitting = false;
+  bool _obscurePassword = true;
 
   @override
   void dispose() {
@@ -166,13 +167,20 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
         icon: Icons.verified_user_rounded,
         iconColor: _accountAccentColor(context),
       );
-    } catch (_) {
+    } catch (error) {
       if (!mounted) {
         return;
       }
+      final i18n = ref.read(appLanguageProviderInstanceProvider);
+      final isCredentialError =
+          AsmrApiException.isAuthenticationError(error) ||
+          (error is AsmrApiException &&
+              error.statusCode == HttpStatus.badRequest);
       showAppSnackBar(
         context,
-        ref.read(appLanguageProviderInstanceProvider).tr('asmr_login_failed'),
+        isCredentialError
+            ? i18n.tr('asmr_login_failed')
+            : localizedAsmrCatalogErrorText(i18n, error),
         tone: AppFeedbackTone.destructive,
         icon: Icons.error_outline_rounded,
         iconColor: _accountAccentColor(context),
@@ -227,6 +235,22 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
     }
     final controller = ref.read(asmrLibraryControllerProvider);
     if (controller == null) return;
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final pendingCount = controller.syncViewState.pendingCount;
+    final confirmMessage = pendingCount > 0
+        ? '${i18n.tr('asmr_logout_confirm_message')}\n\n${i18n.tr('asmr_logout_pending_warning', {'count': pendingCount})}'
+        : i18n.tr('asmr_logout_confirm_message');
+    final confirmed = await showConfirmActionDialog(
+      context: context,
+      title: i18n.tr('asmr_logout_confirm_title'),
+      message: confirmMessage,
+      cancelLabel: i18n.tr('cancel'),
+      confirmLabel: i18n.tr('asmr_logout_action'),
+      icon: Icons.logout_rounded,
+    );
+    if (!confirmed || !mounted) {
+      return;
+    }
     setState(() => _submitting = true);
     try {
       await controller.logoutAsmrAccount();
@@ -280,7 +304,8 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
           lastError: null,
           revision: 0,
         );
-    final syncing = syncState.phase == AsmrSyncPhase.syncing || _submitting;
+    final syncing = syncState.phase == AsmrSyncPhase.syncing;
+    final busy = syncing || _submitting;
     final header = AppEditPanelHeader(
       icon: Icons.account_circle_rounded,
       title: i18n.tr('asmr_account_title'),
@@ -317,14 +342,14 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
       final canLogin =
           _accountController.text.trim().isNotEmpty &&
           _passwordController.text.isNotEmpty &&
-          !syncing;
+          !_submitting;
       return AppEditPanelForm(
         header: header,
         cancelLabel: i18n.tr('close'),
         submitLabel: i18n.tr(
-          syncing ? 'asmr_account_syncing' : 'asmr_login_action',
+          _submitting ? 'asmr_logging_in' : 'asmr_login_action',
         ),
-        onCancel: syncing ? null : () => Navigator.of(context).pop(),
+        onCancel: _submitting ? null : () => Navigator.of(context).pop(),
         onSubmit: canLogin ? _login : null,
         fields: Column(
           mainAxisSize: MainAxisSize.min,
@@ -332,7 +357,7 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
             TextField(
               contextMenuBuilder: buildAppEditableTextMenu,
               controller: _accountController,
-              enabled: !syncing,
+              enabled: !_submitting,
               textInputAction: TextInputAction.next,
               decoration: InputDecoration(
                 labelText: i18n.tr('asmr_login_account'),
@@ -350,8 +375,8 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
             TextField(
               contextMenuBuilder: buildAppEditableTextMenu,
               controller: _passwordController,
-              enabled: !syncing,
-              obscureText: true,
+              enabled: !_submitting,
+              obscureText: _obscurePassword,
               textInputAction: TextInputAction.done,
               onSubmitted: (_) {
                 if (canLogin) {
@@ -361,6 +386,21 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
               decoration: InputDecoration(
                 labelText: i18n.tr('asmr_login_password'),
                 prefixIcon: const Icon(Icons.lock_outline_rounded),
+                suffixIcon: IconButton(
+                  onPressed: _submitting
+                      ? null
+                      : () => setState(
+                          () => _obscurePassword = !_obscurePassword,
+                        ),
+                  tooltip: i18n.tr(
+                    _obscurePassword ? 'show_password' : 'hide_password',
+                  ),
+                  icon: Icon(
+                    _obscurePassword
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                  ),
+                ),
               ),
               onChanged: (_) => setState(() {}),
             ),
@@ -375,13 +415,13 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
       actions: [
         _AsmrPanelAction(
           label: i18n.tr('asmr_logout_action'),
-          onPressed: syncing ? null : _logout,
+          onPressed: busy ? null : _logout,
         ),
         _AsmrPanelAction(
           label: syncing
               ? i18n.tr('asmr_account_syncing')
               : i18n.tr('asmr_account_sync_now'),
-          onPressed: syncing ? null : _sync,
+          onPressed: busy ? null : _sync,
           filled: true,
         ),
       ],

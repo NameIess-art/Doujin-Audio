@@ -123,12 +123,19 @@ typedef _LibraryEditTreeRow = ({LibraryEditTreeNode node, int depth});
 class _LibraryEditTreeListState extends ConsumerState<LibraryEditTreeList>
     with SingleTickerProviderStateMixin {
   final _expandedPaths = <String>{};
+  final _searchExpandedPaths = <String>{};
+  final _searchCollapsedPaths = <String>{};
   final _rowIndices = <String, int>{};
   List<_LibraryEditTreeRow> _rows = [];
   late final FileTreeExpansionMotion<String, _LibraryEditTreeRow> _motion;
   List<LibraryEditTreeNode>? _countedNodes;
   int? _countedContentRevision;
   Map<String, int> _includedTrackCounts = const {};
+
+  bool _isFolderExpanded(String pathValue) => widget.initiallyExpanded
+      ? _searchExpandedPaths.contains(pathValue) &&
+            !_searchCollapsedPaths.contains(pathValue)
+      : _expandedPaths.contains(pathValue);
 
   @override
   void initState() {
@@ -145,11 +152,16 @@ class _LibraryEditTreeListState extends ConsumerState<LibraryEditTreeList>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.libraryPath != widget.libraryPath) {
       _restoreExpansion();
+      _searchExpandedPaths.clear();
+      _searchCollapsedPaths.clear();
       _countedNodes = null;
     }
     if (oldWidget.libraryPath != widget.libraryPath ||
         !identical(oldWidget.nodes, widget.nodes) ||
         oldWidget.initiallyExpanded != widget.initiallyExpanded) {
+      if (widget.initiallyExpanded && !oldWidget.initiallyExpanded) {
+        _searchCollapsedPaths.clear();
+      }
       _updateNodes();
     }
   }
@@ -178,15 +190,19 @@ class _LibraryEditTreeListState extends ConsumerState<LibraryEditTreeList>
   void _updateNodes() {
     _motion.finish();
     if (widget.initiallyExpanded) {
+      _searchExpandedPaths.clear();
       void expand(Iterable<LibraryEditTreeNode> nodes) {
         for (final folder in nodes.whereType<LibraryEditFolderTreeNode>()) {
-          _expandedPaths.add(folder.pathValue);
+          _searchExpandedPaths.add(folder.pathValue);
           expand(folder.children);
         }
       }
 
       expand(widget.nodes);
-      _storeExpansion();
+      _searchCollapsedPaths.retainWhere(_searchExpandedPaths.contains);
+    } else {
+      _searchExpandedPaths.clear();
+      _searchCollapsedPaths.clear();
     }
     _projectRows();
   }
@@ -197,7 +213,7 @@ class _LibraryEditTreeListState extends ConsumerState<LibraryEditTreeList>
       _rowIndices[node.pathValue] = rows.length;
       rows.add((node: node, depth: depth));
       if (node is LibraryEditFolderTreeNode &&
-          _expandedPaths.contains(node.pathValue)) {
+          _isFolderExpanded(node.pathValue)) {
         for (final child in node.children) {
           visit(child, node.depth + 1);
         }
@@ -216,10 +232,20 @@ class _LibraryEditTreeListState extends ConsumerState<LibraryEditTreeList>
       final key = folder.pathValue;
       final progress = _motion.progressFor(key);
       _motion.finish();
-      final expanding = !_expandedPaths.remove(key);
-      if (expanding) _expandedPaths.add(key);
+      final bool expanding;
+      if (widget.initiallyExpanded) {
+        expanding = _searchCollapsedPaths.remove(key);
+        if (!expanding) {
+          _searchCollapsedPaths.add(key);
+        } else {
+          _searchExpandedPaths.add(key);
+        }
+      } else {
+        expanding = !_expandedPaths.remove(key);
+        if (expanding) _expandedPaths.add(key);
+        _storeExpansion();
+      }
       final outgoing = expanding ? null : _rows;
-      _storeExpansion();
       _projectRows();
       if (!MediaQuery.disableAnimationsOf(context)) {
         _motion.start(key, outgoing: outgoing, from: progress);
@@ -303,7 +329,7 @@ class _LibraryEditTreeListState extends ConsumerState<LibraryEditTreeList>
                   libraryPath: widget.libraryPath,
                   folder: node,
                   includedCount: _includedTrackCounts[node.folderPath]!,
-                  expanded: _expandedPaths.contains(node.pathValue),
+                  expanded: _isFolderExpanded(node.pathValue),
                   onToggle: () => _toggleFolder(node),
                   onRememberFolder: widget.onRememberFolder,
                 )
@@ -393,6 +419,7 @@ class _LibraryEditFolderTreeTile extends ConsumerWidget {
             Flexible(
               child: _LibraryEditExclusionButton(
                 excluded: explicitExcluded,
+                inheritedExcluded: inheritedExcluded,
                 onPressed: inheritedExcluded
                     ? null
                     : () {
@@ -460,6 +487,7 @@ class _LibraryEditTrackTile extends ConsumerWidget {
       trailingSpacing: AppSpacing.xxs,
       trailing: _LibraryEditExclusionButton(
         excluded: viewState.explicitExcluded,
+        inheritedExcluded: viewState.inheritedExcluded,
         onPressed: viewState.inheritedExcluded
             ? null
             : () => libraryFacade.setLibraryTrackExcluded(
@@ -476,17 +504,23 @@ class _LibraryEditExclusionButton extends ConsumerWidget {
   const _LibraryEditExclusionButton({
     required this.excluded,
     required this.onPressed,
+    this.inheritedExcluded = false,
   });
 
   final bool excluded;
   final VoidCallback? onPressed;
+  final bool inheritedExcluded;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     return IconButton(
-      tooltip: i18n.tr(excluded ? 'restore' : 'exclude'),
+      tooltip: i18n.tr(
+        inheritedExcluded
+            ? 'excluded_by_parent'
+            : (excluded ? 'restore' : 'exclude'),
+      ),
       onPressed: onPressed,
       style: appIconButtonStyle(
         IconButton.styleFrom(

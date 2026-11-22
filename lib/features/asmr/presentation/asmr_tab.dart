@@ -3,6 +3,7 @@ import '../../library/presentation/library_providers.dart';
 import '../../library/presentation/library_cover_ui_controller.dart';
 import '../../settings/presentation/settings_providers.dart';
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -21,6 +22,7 @@ import '../application/asmr_download_models.dart';
 import '../application/asmr_api_service.dart';
 import '../application/asmr_remote_catalog_service.dart';
 import '../application/asmr_library_controller.dart';
+import '../application/asmr_playback_coordinator.dart';
 import '../../../core/immutable_collections.dart';
 import '../../../core/media/search_query_utils.dart';
 import '../../../core/media/time_text_formatters.dart';
@@ -33,6 +35,7 @@ import '../../../app/theme/app_styles.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/app_edit_panel.dart';
+import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_search_page.dart';
 import '../../../core/widgets/async_cover_image.dart';
@@ -235,6 +238,7 @@ class _AsmrBatchSelectionHeader extends ConsumerWidget {
       topCapsuleDataCount: selectedWorks.length,
       titleWidget: const SizedBox.shrink(),
       leading: HeaderActionPill(
+        shrinkSpacingToFit: true,
         children: [
           IconButton(
             key: ValueKey<String>('${keyPrefix}_batch_add_button'),
@@ -821,11 +825,13 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       return;
     }
 
-    if (controller.categoryViewState(_selectedCategory).operationError !=
-        null) {
+    final refreshError = controller
+        .categoryViewState(_selectedCategory)
+        .operationError;
+    if (refreshError != null) {
       showAppSnackBar(
         context,
-        i18n.tr('asmr_refresh_failed'),
+        localizedAsmrCatalogErrorText(i18n, refreshError),
         tone: AppFeedbackTone.warning,
         icon: Icons.sync_problem_rounded,
         iconColor: primaryColor,
@@ -999,7 +1005,10 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                           ),
                           children: [
                             OperationStatusBanner(
-                              label: i18n.tr('operation_failed_retry'),
+                              label: localizedAsmrCatalogErrorText(
+                                i18n,
+                                _activationError,
+                              ),
                               error: _activationError,
                               onRetry: _retryActivation,
                               retryTooltip: i18n.tr('retry'),

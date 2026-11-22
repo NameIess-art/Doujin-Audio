@@ -2568,11 +2568,20 @@ void main() {
       expect(find.byKey(const ValueKey('home-header')), findsOneWidget);
       expect(await pixelAt(0.1), const Color(0xfff44336));
       await expectOpaqueBodyPixel(0.9);
-      final headerOpacity = tester.widgetList<Opacity>(
+      expect(
         find.ancestor(of: header, matching: find.byType(Opacity)),
+        findsNothing,
       );
-      expect(headerOpacity.length, 1);
-      expect(headerOpacity.single.opacity, 1);
+      final headerFades = tester
+          .widgetList<FadeTransition>(
+            find.ancestor(
+              of: header,
+              matching: find.byWidgetPredicate((w) => w is FadeTransition),
+            ),
+          )
+          .toList();
+      expect(headerFades, hasLength(1));
+      expect(headerFades.single.opacity.value, inExclusiveRange(0, 1));
       expect(_effectiveOpacity(tester, header), inExclusiveRange(0, 1));
       expect(_effectiveOpacity(tester, body), 1);
       expect(
@@ -5405,6 +5414,133 @@ void main() {
         await tester.pump();
         expect(index.value, 1);
         expect(find.text('rm_1'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'edge-swipe back stops user gesture cleanly when animations disable or route pops mid-drag',
+      (tester) async {
+        for (final mode in ['disable_animations', 'programmatic_pop']) {
+          final coordinator = UiInteractionCoordinator(idleDelay: Duration.zero);
+          final observer = UiInteractionNavigatorObserver(
+            coordinator: coordinator,
+          );
+          final navigatorKey = GlobalKey<NavigatorState>();
+          var disableAnimations = false;
+          late StateSetter updateApp;
+
+          await tester.pumpWidget(
+            StatefulBuilder(
+              builder: (context, setState) {
+                updateApp = setState;
+                return MaterialApp(
+                  navigatorKey: navigatorKey,
+                  navigatorObservers: [observer],
+                  builder: (context, child) => MediaQuery(
+                    data: MediaQuery.of(
+                      context,
+                    ).copyWith(disableAnimations: disableAnimations),
+                    child: child!,
+                  ),
+                  home: const Scaffold(body: Center(child: Text('home'))),
+                );
+              },
+            ),
+          );
+
+          final route = buildAppPageRoute<void>(
+            context: navigatorKey.currentContext!,
+            child: const Scaffold(body: Center(child: Text('detail'))),
+          );
+          unawaited(navigatorKey.currentState!.push(route));
+          await tester.pumpAndSettle();
+
+          final gesture = await tester.startGesture(const Offset(8, 240));
+          await gesture.moveBy(const Offset(60, 0));
+          await tester.pump();
+          expect(navigatorKey.currentState!.userGestureInProgress, isTrue);
+          expect(coordinator.isInteracting, isTrue);
+
+          if (mode == 'disable_animations') {
+            updateApp(() => disableAnimations = true);
+            await tester.pumpAndSettle();
+          } else {
+            navigatorKey.currentState!.removeRoute(route);
+            await tester.pumpAndSettle();
+          }
+
+          await gesture.cancel();
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+          expect(navigatorKey.currentState!.userGestureInProgress, isFalse);
+          expect(coordinator.isInteracting, isFalse);
+          expect(coordinator.navigationAllowed.value, isTrue);
+
+          observer.resetForTest();
+          coordinator.dispose();
+        }
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.android),
+    );
+
+    testWidgets(
+      'AppFadeThroughIndexedStack switching immediately during didChangeDependencies defers notifications cleanly',
+      (tester) async {
+        final coordinator = UiInteractionCoordinator.instance;
+        coordinator.resetForTest();
+        addTearDown(coordinator.resetForTest);
+        final index = ValueNotifier<int>(0);
+        addTearDown(index.dispose);
+        final dragPosition = ValueNotifier<double?>(null);
+        addTearDown(dragPosition.dispose);
+        final completed = <int>[];
+        var tickerEnabled = true;
+        late StateSetter updateHost;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: StatefulBuilder(
+              builder: (context, setState) {
+                updateHost = setState;
+                return Column(
+                  children: [
+                    ValueListenableBuilder<double?>(
+                      valueListenable: dragPosition,
+                      builder: (_, value, _) => Text('drag:$value'),
+                    ),
+                    Expanded(
+                      child: TickerMode(
+                        enabled: tickerEnabled,
+                        child: AppFadeThroughIndexedStack.lazy(
+                          indexListenable: index,
+                          itemCount: 2,
+                          onDragPositionChanged: (value) {
+                            dragPosition.value = value;
+                          },
+                          onTransitionCompleted: completed.add,
+                          itemBuilder: (_, page) =>
+                              Center(child: Text('tab_$page')),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        index.value = 1;
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 40));
+
+        updateHost(() => tickerEnabled = false);
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+        expect(completed, contains(1));
+        await tester.pumpAndSettle();
+        expect(coordinator.navigationAllowed.value, isTrue);
       },
     );
   });

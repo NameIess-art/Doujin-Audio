@@ -86,14 +86,31 @@ class PlaybackSubtitleService extends ChangeNotifier {
   final SubtitleAiEngine _aiEngine;
   final DateTime Function() _now;
   static const _automaticRetryInterval = Duration(seconds: 30);
+  static const _persistOffsetsDebounce = Duration(milliseconds: 350);
   final Map<String, ({_SubtitleSource source, DateTime retryAt})>
   _automaticRetries = {};
+  final Expando<SubtitleLanguage> _cachedTrackLanguages =
+      Expando<SubtitleLanguage>('subtitle_track_language');
+  Timer? _persistOffsetsTimer;
   late final Future<void> _settingsReady;
   SubtitleGenerationJob? _generationJob;
+  bool Function()? _retryLastGeneration;
 
   SubtitleModelStore get modelStore => _aiEngine.modelStore;
   TextTranslationService get translationService => _aiEngine.translationService;
   SubtitleGenerationJob? get generationJob => _generationJob;
+  bool get canRetryGeneration {
+    final job = _generationJob;
+    return _retryLastGeneration != null &&
+        job != null &&
+        (job.status == SubtitleGenerationStatus.failed ||
+            job.status == SubtitleGenerationStatus.noMatch);
+  }
+
+  bool retryGeneration() {
+    if (!canRetryGeneration) return false;
+    return _retryLastGeneration!.call();
+  }
   bool canEditSubtitle(String trackPath) =>
       _trackResolver(trackPath)?.isRemoteAsmr != true;
 
@@ -150,6 +167,8 @@ class PlaybackSubtitleService extends ChangeNotifier {
     }
     final job = SubtitleGenerationJob(trackPath: trackPath, kind: kind);
     _generationJob = job;
+    _retryLastGeneration = () =>
+        _startGeneration(trackPath, kind, prepare, onApplied);
     notifyListeners();
     unawaited(_runGeneration(job, prepare, onApplied));
     return true;
@@ -252,6 +271,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
     final job = _generationJob;
     if (job == null || job.status == SubtitleGenerationStatus.running) return;
     _generationJob = null;
+    _retryLastGeneration = null;
     notifyListeners();
   }
 
@@ -324,7 +344,9 @@ class PlaybackSubtitleService extends ChangeNotifier {
   SubtitleLanguage classifyCurrentSubtitle(String trackPath) {
     final track = trackSync(trackPath);
     if (track == null || track.cues.isEmpty) return SubtitleLanguage.unknown;
-    return classifySubtitleLanguage(track.cues);
+    return _cachedTrackLanguages[track] ??= classifySubtitleLanguage(
+      track.cues,
+    );
   }
 
   Future<bool> isTimedSubtitleFile(String filePath) async {
@@ -603,7 +625,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
     } else {
       _offsets[trackPath] = offset;
     }
-    unawaited(_persistOffsets());
+    _schedulePersistOffsets();
     final currentTrack = trackSync(trackPath);
     if (currentTrack != null) {
       final updatedTrack = currentTrack.withOffset(offset);
@@ -1087,6 +1109,22 @@ class PlaybackSubtitleService extends ChangeNotifier {
     }
   }
 
+  void _schedulePersistOffsets() {
+    _persistOffsetsTimer?.cancel();
+    _persistOffsetsTimer = Timer(_persistOffsetsDebounce, () {
+      _persistOffsetsTimer = null;
+      unawaited(_persistOffsets());
+    });
+  }
+
+  Future<void> _flushPendingOffsets() async {
+    final timer = _persistOffsetsTimer;
+    if (timer == null) return;
+    timer.cancel();
+    _persistOffsetsTimer = null;
+    await _persistOffsets();
+  }
+
   Future<void> _persistOffsets() async {
     final list = _offsets.entries
         .map((e) => '${e.key}|${e.value.inMilliseconds}')
@@ -1095,6 +1133,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
   }
 
   Future<void> _persistCustomPaths({bool throwOnFailure = false}) async {
+    await _flushPendingOffsets();
     final list = _customPaths.entries
         .map((e) => '${e.key}|${e.value}')
         .toList(growable: false);
@@ -1105,6 +1144,17 @@ class PlaybackSubtitleService extends ChangeNotifier {
     if (!saved && throwOnFailure) {
       throw StateError('Failed to save subtitle file selection');
     }
+  }
+
+  @override
+  void dispose() {
+    final timer = _persistOffsetsTimer;
+    if (timer != null) {
+      timer.cancel();
+      _persistOffsetsTimer = null;
+      unawaited(_persistOffsets());
+    }
+    super.dispose();
   }
 
   Future<SubtitleTrack?> loadAutomatically(String trackPath) =>

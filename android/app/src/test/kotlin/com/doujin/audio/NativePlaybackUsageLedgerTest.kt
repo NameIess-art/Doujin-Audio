@@ -108,4 +108,23 @@ class NativePlaybackUsageLedgerTest {
         val restored = ledger()
         assertTrue(restored.read().isEmpty())
     }
+
+    @Test fun `preloadAsync restores persisted batches on background executor`() {
+        val seed = ledger()
+        seed.update(listOf(work))
+        advance(1_000)
+        seed.update(emptyList())
+        val expectedId = seed.read().single()["id"]
+
+        val tasks = ArrayDeque<Runnable>()
+        val preloaded = ledger(Executor { tasks.addLast(it) })
+        preloaded.preloadAsync()
+        preloaded.preloadAsync() // Idempotent
+        assertEquals(1, tasks.size)
+        tasks.removeFirst().run()
+
+        val restored = preloaded.read().single()
+        assertEquals(expectedId, restored["id"])
+        assertTrue(tasks.isEmpty())
+    }
 }

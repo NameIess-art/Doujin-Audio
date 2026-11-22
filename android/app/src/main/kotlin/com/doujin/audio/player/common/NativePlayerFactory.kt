@@ -168,10 +168,27 @@ internal fun nativePlaybackMediaDataSourceFactory(
     return ResolvingDataSource.Factory(delegate) { it.withAdditionalHeaders(headers) }
 }
 
+internal val NATIVE_PLAYER_RELEVANT_EVENTS = intArrayOf(
+    Player.EVENT_PLAYBACK_STATE_CHANGED,
+    Player.EVENT_PLAY_WHEN_READY_CHANGED,
+    Player.EVENT_IS_PLAYING_CHANGED,
+    Player.EVENT_MEDIA_ITEM_TRANSITION,
+    Player.EVENT_POSITION_DISCONTINUITY,
+    Player.EVENT_PLAYBACK_PARAMETERS_CHANGED,
+    Player.EVENT_REPEAT_MODE_CHANGED,
+    Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED,
+    Player.EVENT_PLAYER_ERROR,
+    Player.EVENT_TIMELINE_CHANGED,
+    Player.EVENT_AUDIO_SESSION_ID
+)
+
+internal fun isRelevantPlayerEvents(events: Player.Events): Boolean =
+    events.containsAny(*NATIVE_PLAYER_RELEVANT_EVENTS)
+
 internal interface NativePlayerEventCallbacks {
     fun onPlaybackStateChanged(sessionId: String, playbackState: Int)
     fun onMediaItemTransition(sessionId: String, reason: Int)
-    fun onPlayerEvents(sessionId: String)
+    fun onPlayerEvents(sessionId: String, positionChanged: Boolean = false)
     fun onPlayWhenReadyChanged(sessionId: String, playWhenReady: Boolean, reason: Int)
     fun onIsPlayingChanged(sessionId: String, isPlaying: Boolean)
     fun onPlayerError(sessionId: String, error: PlaybackException)
@@ -257,7 +274,11 @@ internal class NativePlayerFactory(
 
                     override fun onEvents(player: Player, events: Player.Events) {
                         if (!isCurrentPlayer(sessionId, player)) return
-                        callbacks.onPlayerEvents(sessionId)
+                        if (!isRelevantPlayerEvents(events)) return
+                        callbacks.onPlayerEvents(
+                            sessionId = sessionId,
+                            positionChanged = events.contains(Player.EVENT_POSITION_DISCONTINUITY)
+                        )
                     }
 
                     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {

@@ -1,4 +1,5 @@
 import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
+import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/widgets/page_header_inset.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -356,4 +357,47 @@ void main() {
     expect(offsetAfter100ms, lessThan(460.0));
     await tester.pumpAndSettle();
   });
+
+  testWidgets(
+    'MobileOverlayInset bottom padding does not double-count mediaPadding.bottom',
+    (tester) async {
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MediaQuery(
+            data: const MediaQueryData(
+              size: Size(360, 600),
+              padding: EdgeInsets.only(bottom: 34),
+            ),
+            child: MobileOverlayInset(
+              bottomInset: 90,
+              child: Scaffold(
+                body: DragOnlyScrollbar(
+                  controller: controller,
+                  child: ListView.builder(
+                    controller: controller,
+                    itemExtent: 40,
+                    itemCount: 100,
+                    itemBuilder: (_, index) => Text('Item $index'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final customPaint = tester.widget<CustomPaint>(
+        find
+            .descendant(
+              of: find.byType(DragOnlyScrollbar),
+              matching: find.byType(CustomPaint),
+            )
+            .first,
+      );
+      final painter = customPaint.foregroundPainter! as ScrollbarPainter;
+      expect(painter.padding.resolve(TextDirection.ltr).bottom, 90);
+    },
+  );
 }

@@ -21,14 +21,23 @@ const Set<String> supportedVideoExtensions = <String>{
   '.avi',
 };
 
+String _mediaPathForFormatCheck(String filePath) {
+  final lower = filePath.toLowerCase();
+  if (lower.startsWith('http://') || lower.startsWith('https://')) {
+    final parsed = Uri.tryParse(filePath);
+    if (parsed != null) return parsed.path;
+  }
+  return filePath;
+}
+
 bool isSupportedMediaFile(String filePath) {
-  final lowerPath = filePath.toLowerCase();
-  final extension = path.extension(lowerPath);
+  final target = _mediaPathForFormatCheck(filePath);
+  final extension = path.extension(target.toLowerCase());
   if (supportedAudioExtensions.contains(extension) ||
       supportedVideoExtensions.contains(extension)) {
     return true;
   }
-  final mimeType = lookupMimeType(filePath);
+  final mimeType = lookupMimeType(target);
   if (mimeType == null) return false;
   return mimeType.startsWith('audio/') ||
       mimeType.startsWith('video/') ||
@@ -36,12 +45,12 @@ bool isSupportedMediaFile(String filePath) {
 }
 
 bool isVideoMediaFile(String filePath) {
-  final lowerPath = filePath.toLowerCase();
-  final extension = path.extension(lowerPath);
+  final target = _mediaPathForFormatCheck(filePath);
+  final extension = path.extension(target.toLowerCase());
   if (supportedVideoExtensions.contains(extension)) {
     return true;
   }
-  final mimeType = lookupMimeType(filePath);
+  final mimeType = lookupMimeType(target);
   if (mimeType == null) return false;
   return mimeType.startsWith('video/');
 }

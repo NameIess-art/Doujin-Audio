@@ -259,15 +259,19 @@ void main() {
           expect(confirmSurface.height, 46);
           expect(confirmSurface.radius, 23);
           expect(tester.getSize(confirm).height, 46);
+          final confirmColorScheme = Theme.of(tester.element(confirm)).colorScheme;
+          final confirmMaterial = tester.widget<Material>(
+            find
+                .descendant(of: confirm, matching: find.byType(Material))
+                .first,
+          );
+          expect(confirmMaterial.color?.a, 1.0);
           expect(
-            tester
-                .widget<Material>(
-                  find
-                      .descendant(of: confirm, matching: find.byType(Material))
-                      .first,
-                )
-                .color,
-            Theme.of(tester.element(confirm)).colorScheme.primary,
+            confirmMaterial.color,
+            Color.alphaBlend(
+              confirmColorScheme.onSurface.withValues(alpha: 0.12),
+              confirmColorScheme.surfaceContainerHigh,
+            ),
           );
           final titleCapsule = find
               .descendant(
@@ -600,7 +604,15 @@ void main() {
         await tester.tap(find.byType(AppElementChip));
         await tester.pumpAndSettle();
         expect(controller.saveCalls, 0);
+        final i18n = fixture.languageProvider;
+        expect(
+          find.text(i18n.tr('my_confirm_count', {'count': 1})),
+          findsOneWidget,
+        );
         await tester.tap(find.byType(AppHeaderBackButton));
+        await tester.pumpAndSettle();
+        expect(find.text(i18n.tr('my_unsaved_title')), findsOneWidget);
+        await tester.tap(find.text(i18n.tr('confirm')).last);
         await tester.pumpAndSettle();
         await open();
         expect(
@@ -613,6 +625,11 @@ void main() {
         await tester.tap(find.byKey(const ValueKey('my_tags_confirm')));
         await tester.pumpAndSettle();
         expect(find.byType(MyTagManagementPage), findsOneWidget);
+        expect(find.textContaining('save failed'), findsNothing);
+        expect(
+          find.textContaining(i18n.tr('operation_failed_retry')),
+          findsOneWidget,
+        );
         expect(
           tester.widget<AppElementChip>(find.byType(AppElementChip)).selected,
           isTrue,

@@ -9,6 +9,7 @@ import '../application/app_bootstrap_controller.dart';
 import '../localization/app_language_provider.dart';
 import '../theme/theme_provider.dart';
 import 'app_error_view.dart';
+import 'windows_window_title_bar.dart';
 
 class AppBootstrapHost extends StatelessWidget {
   const AppBootstrapHost({
@@ -60,7 +61,7 @@ class AppBootstrapHost extends StatelessWidget {
             if (defaultTargetPlatform == TargetPlatform.windows) {
               return TooltipVisibility(
                 visible: false,
-                child: app,
+                child: WindowsTitleBarShell(child: app),
               );
             }
             return app;
@@ -145,15 +146,9 @@ class _AppBootstrapGateState extends State<AppBootstrapGate> {
       if (widget.initializeAfterFirstFrame) {
         final controller = widget.controller;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted || !identical(widget.controller, controller)) return;
-          // The presentation gate releases the native splash after this frame.
-          // Start hydration after the following rendered framework frame.
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted && identical(widget.controller, controller)) {
-              unawaited(controller.initialize());
-            }
-          });
-          WidgetsBinding.instance.scheduleFrame();
+          if (mounted && identical(widget.controller, controller)) {
+            unawaited(controller.initialize());
+          }
         });
       } else {
         unawaited(widget.controller.initialize());

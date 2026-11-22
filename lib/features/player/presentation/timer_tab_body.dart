@@ -171,7 +171,7 @@ extension _TimerTabBody on _TimerTabState {
             subtitle: compactMode ? '' : _modeSubtitle(i18n, _selectedMode),
           ),
         ),
-        SizedBox(height: compactMode ? 12 : 16),
+        SizedBox(height: compactMode ? 8 : 16),
         _DurationPicker(
           hours: _hours,
           minutes: _minutes,
@@ -185,7 +185,80 @@ extension _TimerTabBody on _TimerTabState {
             timer.setTimerDraft(_selectedMode, _pickedDuration);
           }),
         ),
-        SizedBox(height: compactMode ? 12 : 18),
+        SizedBox(height: compactMode ? 8 : 14),
+        if (!compactMode) ...[
+          _TimerFieldLabel(
+            icon: Icons.bolt_rounded,
+            text: i18n.tr('timer_presets_label'),
+          ),
+          const SizedBox(height: 8),
+        ],
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 8,
+          runSpacing: 6,
+          children: [
+            for (final minutes in const [15, 30, 60])
+              Builder(
+                builder: (context) {
+                  final presetDuration = Duration(minutes: minutes);
+                  final selected = _pickedDuration == presetDuration;
+                  final radius = BorderRadius.circular(999);
+                  return Material(
+                    color: selected
+                        ? cs.primaryContainer
+                        : cs.surfaceContainerHighest,
+                    shape: StadiumBorder(
+                      side: BorderSide(
+                        color: selected ? cs.primary : cs.outlineVariant,
+                      ),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: AppEntryInkWell(
+                      key: ValueKey('timer_preset_${minutes}m'),
+                      borderRadius: radius,
+                      onTap: () {
+                        AppInteractionFeedback.trigger(
+                          AppInteractionFeedbackType.selection,
+                        );
+                        final nextHours = presetDuration.inHours;
+                        final nextMinutes = presetDuration.inMinutes.remainder(
+                          60,
+                        );
+                        _setLocalState(() {
+                          _hours = nextHours;
+                          _minutes = nextMinutes;
+                          _seconds = 0;
+                          _lastSyncedDraftKey = _draftKey(
+                            _selectedMode,
+                            presetDuration,
+                          );
+                          timer.setTimerDraft(_selectedMode, presetDuration);
+                        });
+                      },
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: compactMode ? 12 : 14,
+                          vertical: compactMode ? 5 : 6,
+                        ),
+                        child: Text(
+                          i18n.tr('minutes_duration', {'count': minutes}),
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(
+                                color: selected
+                                    ? cs.onPrimaryContainer
+                                    : cs.onSurfaceVariant,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+          ],
+        ),
+        SizedBox(height: compactMode ? 8 : 18),
         if (!compactMode) ...[
           _TimerFieldLabel(
             icon: Icons.tune_rounded,
@@ -203,14 +276,7 @@ extension _TimerTabBody on _TimerTabState {
                 AppInteractionFeedbackType.selection,
               );
             }
-            if (timerConfigured && timerSlice.mode != mode) {
-              timer.configureTimer(mode, _pickedDuration);
-              if (mode == TimerMode.manual) {
-                timer.startCountdown();
-              }
-            } else {
-              timer.setTimerDraft(mode, _pickedDuration);
-            }
+            timer.setTimerDraft(mode, _pickedDuration);
             _setLocalState(() {
               _selectedMode = mode;
               _lastSyncedDraftKey = _draftKey(mode, _pickedDuration);
@@ -254,6 +320,7 @@ extension _TimerTabBody on _TimerTabState {
                 children: [
                   Expanded(
                     child: SingleChildScrollView(
+                      primary: false,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: sectionChildren,
@@ -262,6 +329,15 @@ extension _TimerTabBody on _TimerTabState {
                   ),
                   const SizedBox(height: 12),
                   confirmButton,
+                  if (_durationIsZero)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        i18n.tr('set_duration_first'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: cs.error, fontSize: 12),
+                      ),
+                    ),
                 ],
               )
             : Column(

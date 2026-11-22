@@ -1,9 +1,12 @@
 import 'package:flutter/foundation.dart';
 
+import '../../core/logging/app_log_service.dart';
 import '../../core/media/audio_detail.dart';
 import '../../core/media/music_track.dart';
 import '../../core/media/path_display.dart';
 import '../../core/media/path_matcher.dart';
+import '../../features/asmr/application/asmr_playback_coordinator.dart';
+import '../../features/asmr/domain/asmr_models.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/library/application/library_organizer.dart';
 import '../../features/player/application/playback_facade.dart';
@@ -14,11 +17,14 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
   AudioPathCoordinator({
     required LibraryFacade library,
     required PlaybackFacade playback,
+    AsmrPlaybackSource? asmrPlaybackSource,
   }) : _library = library,
-       _playback = playback;
+       _playback = playback,
+       _asmrPlaybackSource = asmrPlaybackSource;
 
   final LibraryFacade _library;
   final PlaybackFacade _playback;
+  final AsmrPlaybackSource? _asmrPlaybackSource;
   static const _maxCachedWorks = 64;
   static const _inlineWorkLookupLimit = 64;
   final Map<String, _WorkTracksCache> _workTracksCache = {};
@@ -251,6 +257,39 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
       );
       return result;
     }
+  }
+
+  Future<List<MusicTrack>> tracksForQueueSource(
+    String sessionId,
+    MusicTrack track,
+  ) async {
+    if (!track.isRemoteAsmr) return tracksInSameWorkAsync(track);
+
+    final metadata = track.remoteMetadata;
+    final source = _asmrPlaybackSource;
+    if (metadata != null && source != null) {
+      try {
+        final work = AsmrWork.fromJson(metadata);
+        if (work.workCode.isNotEmpty || work.preferredResource.id > 0) {
+          final tracks = await source.loadPlayableTracks(work);
+          if (tracks.isNotEmpty) return tracks;
+        }
+      } catch (error, stackTrace) {
+        AppLogService.warning(
+          'queue_source_online_work_load_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+    }
+
+    // Restored sessions may have playable tracks even when the catalog is offline.
+    final savedTracks =
+        _playback.sessionById(sessionId)?.customQueueTracks ??
+        const <MusicTrack>[];
+    return savedTracks
+        .where((candidate) => candidate.groupKey == track.groupKey)
+        .toList(growable: false);
   }
 
   Future<List<MusicTrack>> tracksForSessionSwitcher(String sessionId) async {

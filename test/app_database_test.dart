@@ -3719,6 +3719,61 @@ void main() {
     expect(renamed.single.name, 'Part');
   });
 
+  test(
+    'retargetTimeSegmentLabels matches Windows case variants and SAF URI aliases',
+    () async {
+      await repository.upsertTimeSegmentLabel(
+        TimeSegmentLabel(
+          id: 'segment_win',
+          trackKey: r'C:\Library\Work\01.mp3',
+          name: 'WinPart',
+          start: const Duration(seconds: 1),
+          end: const Duration(seconds: 5),
+          colorValue: 0xFFE57373,
+          createdAt: DateTime.fromMillisecondsSinceEpoch(1000),
+          updatedAt: DateTime.fromMillisecondsSinceEpoch(1000),
+        ),
+      );
+      await appDatabase.retargetTimeSegmentLabels(
+        oldTrackKey: 'c:/library/work/01.mp3',
+        newTrackKey: r'C:\Library\Work\01-renamed.mp3',
+      );
+      expect(
+        await repository.loadTimeSegmentLabels(r'C:\Library\Work\01.mp3'),
+        isEmpty,
+      );
+      final renamedWin = await repository.loadTimeSegmentLabels(
+        r'C:\Library\Work\01-renamed.mp3',
+      );
+      expect(renamedWin.single.id, 'segment_win');
+
+      const safTree =
+          'content://com.android.externalstorage.documents/tree/primary%3ALibrary';
+      const safDocOld = '$safTree/document/primary%3ALibrary%2F01.mp3';
+      const safSyntheticOld = '$safTree::01.mp3';
+      const safDocNew = '$safTree/document/primary%3ALibrary%2F02.mp3';
+      await repository.upsertTimeSegmentLabel(
+        TimeSegmentLabel(
+          id: 'segment_saf',
+          trackKey: safDocOld,
+          name: 'SafPart',
+          start: const Duration(seconds: 2),
+          end: const Duration(seconds: 9),
+          colorValue: 0xFF64B5F6,
+          createdAt: DateTime.fromMillisecondsSinceEpoch(2000),
+          updatedAt: DateTime.fromMillisecondsSinceEpoch(2000),
+        ),
+      );
+      await appDatabase.retargetTimeSegmentLabels(
+        oldTrackKey: safSyntheticOld,
+        newTrackKey: safDocNew,
+      );
+      expect(await repository.loadTimeSegmentLabels(safDocOld), isEmpty);
+      final renamedSaf = await repository.loadTimeSegmentLabels(safDocNew);
+      expect(renamedSaf.single.id, 'segment_saf');
+    },
+  );
+
   test('schema creates time segment label track index', () async {
     final indexes = await db.rawQuery('PRAGMA index_list(time_segment_labels)');
     final indexNames = indexes

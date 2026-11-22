@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../app/localization/app_language_provider.dart';
@@ -143,6 +144,13 @@ class AppUpdateFlow {
               onPressed: () => Navigator.of(dialogContext).pop(false),
               label: i18n.tr('later'),
             ),
+            if (info.releaseUrl.trim().isNotEmpty)
+              AppSecondaryButton(
+                onPressed: () =>
+                    unawaited(_updateService.openReleasePage(info.releaseUrl)),
+                label: i18n.tr('open_release_page'),
+                icon: Icons.open_in_new_rounded,
+              ),
             AppPrimaryButton(
               onPressed: () => Navigator.of(dialogContext).pop(true),
               label: i18n.tr('download_update'),
@@ -167,8 +175,9 @@ class AppUpdateFlow {
 
   Future<bool> _ensureInstallPermission(
     BuildContext context,
-    Future<void> Function() onGranted,
-  ) {
+    Future<void> Function() onGranted, {
+    VoidCallback? onCancelled,
+  }) {
     final i18n = _languageProvider;
     return _permissionController.ensureGrantedAndRun(
       context: context,
@@ -179,6 +188,7 @@ class AppUpdateFlow {
       isGranted: _updateService.canInstallUnknownApps,
       openSettings: _updateService.openInstallPermissionSettings,
       onGranted: onGranted,
+      onCancelled: onCancelled,
     );
   }
 
@@ -206,10 +216,15 @@ class AppUpdateFlow {
         error: error,
         stackTrace: stackTrace,
       );
-      if (!context.mounted) return;
+      if (!context.mounted) {
+        operations.clear(UiOperationScope.settingsUpdate);
+        return;
+      }
       final retry = await _showDownloadFailureDialog(context, info, i18n);
       if (retry == true && context.mounted) {
         unawaited(_downloadAndInstall(context, operations, info));
+      } else {
+        operations.clear(UiOperationScope.settingsUpdate);
       }
       return;
     }
@@ -218,13 +233,15 @@ class AppUpdateFlow {
       _updateService.releaseDownloadedUpdate(updateFile);
       return;
     }
+    final displayFileName = info.assetName?.trim().isNotEmpty == true
+        ? info.assetName!.trim()
+        : updateFile.path.split(RegExp(r'[\\/]')).last;
     showAppSnackBar(
       context,
       i18n.tr('update_install_preparing_message', {
         'version': info.latestVersionName,
-        'path': updateFile.path,
+        'path': displayFileName,
       }),
-      tone: AppFeedbackTone.warning,
       title: i18n.tr('update_install_preparing_title'),
       icon: Icons.system_update_alt_rounded,
       duration: const Duration(seconds: 8),
@@ -277,11 +294,17 @@ class AppUpdateFlow {
     final i18n = _languageProvider;
     try {
       final result = await _updateService.installUpdate(updateFile);
-      if (!context.mounted) return;
+      if (!context.mounted) {
+        if (result.needsPermission) {
+          _updateService.releaseDownloadedUpdate(updateFile);
+        }
+        return;
+      }
       if (result.needsPermission) {
         await _ensureInstallPermission(
           context,
           () => _install(context, operations, updateFile),
+          onCancelled: () => _updateService.releaseDownloadedUpdate(updateFile),
         );
         return;
       }
@@ -293,7 +316,9 @@ class AppUpdateFlow {
         context,
         i18n.tr('update_ready_install'),
         tone: AppFeedbackTone.success,
-        icon: Icons.install_mobile_rounded,
+        icon: defaultTargetPlatform == TargetPlatform.windows
+            ? Icons.install_desktop_rounded
+            : Icons.install_mobile_rounded,
       );
     } catch (error, stackTrace) {
       AppLogService.error(

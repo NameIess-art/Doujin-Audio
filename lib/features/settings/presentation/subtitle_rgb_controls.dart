@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
 
 class SubtitleRgbControls extends StatelessWidget {
@@ -50,9 +51,9 @@ class SubtitleRgbControls extends StatelessWidget {
             if (currentColor != null)
               IconButton(
                 color: cs.onSurfaceVariant,
-                icon: const Icon(Icons.close_rounded, size: 18),
+                icon: const Icon(Icons.restart_alt_rounded, size: 18),
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
                 onPressed: onReset,
                 tooltip: resetTooltip,
               ),
@@ -117,36 +118,68 @@ class _RgbSliderRow extends StatefulWidget {
 
 class _RgbSliderRowState extends State<_RgbSliderRow> {
   late final TextEditingController _controller;
+  late final FocusNode _focusNode;
   bool _editing = false;
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.value.toString());
+    _focusNode = FocusNode()..addListener(_handleFocusChange);
   }
 
   @override
   void didUpdateWidget(covariant _RgbSliderRow oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!_editing && widget.value != oldWidget.value) {
-      _controller.text = widget.value.toString();
+      _syncControllerText(widget.value.toString());
     }
   }
 
   @override
   void dispose() {
+    _focusNode.removeListener(_handleFocusChange);
+    _focusNode.dispose();
     _controller.dispose();
     super.dispose();
+  }
+
+  void _syncControllerText(String nextText) {
+    if (_controller.text == nextText) return;
+    _controller.value = TextEditingValue(
+      text: nextText,
+      selection: TextSelection.collapsed(offset: nextText.length),
+    );
+  }
+
+  void _handleFocusChange() {
+    if (_focusNode.hasFocus) {
+      _editing = true;
+    } else {
+      _submit();
+    }
   }
 
   void _submit() {
     if (!_editing) return;
     _editing = false;
-    final parsed = int.tryParse(_controller.text);
+    final parsed = int.tryParse(_controller.text.trim());
     if (parsed != null) {
-      widget.onChanged(parsed.clamp(0, 255).toDouble());
+      final clamped = parsed.clamp(0, 255);
+      _syncControllerText(clamped.toString());
+      if (clamped != widget.value) {
+        widget.onChanged(clamped.toDouble());
+      }
     } else {
-      _controller.text = widget.value.toString();
+      _syncControllerText(widget.value.toString());
+    }
+  }
+
+  void _handleTextChanged(String text) {
+    _editing = true;
+    final parsed = int.tryParse(text.trim());
+    if (parsed != null && parsed >= 0 && parsed <= 255 && parsed != widget.value) {
+      widget.onChanged(parsed.toDouble());
     }
   }
 
@@ -180,7 +213,12 @@ class _RgbSliderRowState extends State<_RgbSliderRow> {
           child: TextField(
             contextMenuBuilder: buildAppEditableTextMenu,
             controller: _controller,
+            focusNode: _focusNode,
             keyboardType: TextInputType.number,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(3),
+            ],
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 11, color: widget.cs.onSurface),
             decoration: const InputDecoration(
@@ -192,7 +230,7 @@ class _RgbSliderRowState extends State<_RgbSliderRow> {
                 vertical: 4,
               ),
             ),
-            onTap: () => _editing = true,
+            onChanged: _handleTextChanged,
             onSubmitted: (_) => _submit(),
             onEditingComplete: _submit,
             onTapOutside: (_) => _submit(),

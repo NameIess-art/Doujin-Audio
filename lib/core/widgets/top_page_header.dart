@@ -3,6 +3,7 @@ import 'dart:ui' as dart_ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 
 import 'app_buttons.dart';
 
@@ -84,21 +85,33 @@ class TopPageHeader extends StatefulWidget {
 class _TopPageHeaderState extends State<TopPageHeader> {
   final ValueNotifier<double> _collapseProgress = ValueNotifier<double>(0);
   final BackdropKey _rowBackdropKey = BackdropKey();
+  bool _collapseSyncScheduled = false;
 
   @override
   void initState() {
     super.initState();
+    _collapseProgress.value = _computeCollapseProgress();
     widget.collapseController?.addListener(_updateCollapseProgress);
+    if (widget.collapseController != null &&
+        !widget.collapseController!.hasClients) {
+      _scheduleCollapseProgressSync();
+    }
   }
 
   @override
   void didUpdateWidget(covariant TopPageHeader oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.collapseController != widget.collapseController) {
+    final controllerChanged =
+        oldWidget.collapseController != widget.collapseController;
+    final distanceChanged =
+        oldWidget.collapseDistance != widget.collapseDistance;
+    if (controllerChanged) {
       oldWidget.collapseController?.removeListener(_updateCollapseProgress);
       widget.collapseController?.addListener(_updateCollapseProgress);
     }
-    _updateCollapseProgress();
+    if (controllerChanged || distanceChanged) {
+      _scheduleCollapseProgressSync();
+    }
   }
 
   @override
@@ -108,19 +121,38 @@ class _TopPageHeaderState extends State<TopPageHeader> {
     super.dispose();
   }
 
-  void _updateCollapseProgress() {
+  double _computeCollapseProgress() {
     final controller = widget.collapseController;
-    var progress = 0.0;
-    if (controller != null && controller.hasClients) {
-      final offset = controller.positions.length == 1
-          ? controller.positions.single.pixels
-          : 0.0;
-      progress = widget.collapseDistance <= 0
-          ? 1.0
-          : (offset / widget.collapseDistance).clamp(0.0, 1.0);
+    if (controller == null || !controller.hasClients) return 0.0;
+    final offset = controller.positions.length == 1
+        ? controller.positions.single.pixels
+        : 0.0;
+    return widget.collapseDistance <= 0
+        ? 1.0
+        : (offset / widget.collapseDistance).clamp(0.0, 1.0);
+  }
+
+  void _updateCollapseProgress() {
+    final progress = _computeCollapseProgress();
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      if (_collapseProgress.value != progress) {
+        _scheduleCollapseProgressSync();
+      }
+      return;
     }
     // Fully collapsed/expanded headers need no work for further scroll ticks.
     _collapseProgress.value = progress;
+  }
+
+  void _scheduleCollapseProgressSync() {
+    if (_collapseSyncScheduled) return;
+    _collapseSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _collapseSyncScheduled = false;
+      if (!mounted) return;
+      _collapseProgress.value = _computeCollapseProgress();
+    });
   }
 
   @override
@@ -251,22 +283,46 @@ class _TopPageHeaderState extends State<TopPageHeader> {
         ? ValueListenableBuilder<double>(
             valueListenable: _collapseProgress,
             child: trailing,
-            builder: (context, progress, child) => Opacity(
-              opacity: 1 - Curves.easeOutCubic.transform(progress),
-              child: child,
-            ),
+            builder: (context, _, child) {
+              final collapseT = _computeCollapseProgress();
+              final hidden = collapseT > 0.8;
+              return IgnorePointer(
+                ignoring: hidden,
+                child: ExcludeFocus(
+                  excluding: hidden,
+                  child: ExcludeSemantics(
+                    excluding: hidden,
+                    child: Opacity(
+                      opacity: 1 - Curves.easeOutCubic.transform(collapseT),
+                      child: child,
+                    ),
+                  ),
+                ),
+              );
+            },
           )
         : trailing == null
         ? null
         : Opacity(opacity: 1, child: trailing);
+
+    final hasEmptyTitleWidget =
+        widget.titleWidget is SizedBox &&
+        (widget.titleWidget as SizedBox).width == 0 &&
+        (widget.titleWidget as SizedBox).height == 0;
 
     Widget buildSecondaryCapsuleRow() {
       // Only siblings in this row share input. The upper capsule can overlap
       // this row while collapsing and must keep its own backdrop.
       final row = Row(
         children: [
-          if (widget.leading != null) ...[leading!, const SizedBox(width: 8)],
-          Expanded(child: titleContent),
+          if (widget.leading != null && hasEmptyTitleWidget)
+            Expanded(
+              child: Align(alignment: Alignment.centerLeft, child: leading!),
+            )
+          else ...[
+            if (widget.leading != null) ...[leading!, const SizedBox(width: 8)],
+            Expanded(child: titleContent),
+          ],
           if (trailingContent != null) ...[
             const SizedBox(width: 8),
             trailingContent,
@@ -357,9 +413,12 @@ class _TopPageHeaderState extends State<TopPageHeader> {
                     opacity: topCapsuleOpacity,
                     child: IgnorePointer(
                       ignoring: collapseT > 0.8,
-                      child: ExcludeSemantics(
+                      child: ExcludeFocus(
                         excluding: collapseT > 0.8,
-                        child: topCapsuleWidget,
+                        child: ExcludeSemantics(
+                          excluding: collapseT > 0.8,
+                          child: topCapsuleWidget,
+                        ),
                       ),
                     ),
                   ),
@@ -378,7 +437,9 @@ class _TopPageHeaderState extends State<TopPageHeader> {
       );
     }
 
-    _updateCollapseProgress();
+    if (_collapseProgress.value != _computeCollapseProgress()) {
+      _scheduleCollapseProgressSync();
+    }
 
     final headerContent = Padding(
       padding: EdgeInsets.only(top: topPadding),
@@ -386,7 +447,7 @@ class _TopPageHeaderState extends State<TopPageHeader> {
         animation: _collapseProgress,
         child: widget.additionalChild,
         builder: (context, additionalChild) {
-          final collapseT = _collapseProgress.value;
+          final collapseT = _computeCollapseProgress();
           return Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -587,8 +648,19 @@ class HeaderFloatingActionPill extends StatelessWidget {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final enabled = !loading && onTap != null;
-    final baseBg = backgroundColor ?? cs.primary;
-    final effectiveFg = foregroundColor ?? cs.onPrimary;
+    final interactive = enabled || loading;
+    final rawBg =
+        backgroundColor ??
+        (interactive
+            ? cs.primary
+            : Color.alphaBlend(
+                cs.onSurface.withValues(alpha: 0.12),
+                cs.surfaceContainerHigh,
+              ));
+    final baseBg = rawBg.a < 1.0 ? Color.alphaBlend(rawBg, cs.surface) : rawBg;
+    final effectiveFg =
+        foregroundColor ??
+        (interactive ? cs.onPrimary : cs.onSurface.withValues(alpha: 0.38));
     final borderRadius = BorderRadius.circular(23);
 
     return AppSurfaceButtonShell(
@@ -750,9 +822,11 @@ class HeaderActionPill extends StatelessWidget {
     super.key,
     required this.children,
     this.padding = EdgeInsets.zero,
+    this.shrinkSpacingToFit = false,
   });
 
   static const double _buttonWidth = 48;
+  static const double _minCompactButtonWidth = 32;
   static const double _buttonHeight = AppPageHeaderMetrics.buttonSize;
   static const BoxConstraints buttonConstraints = BoxConstraints.tightFor(
     width: _buttonWidth,
@@ -761,53 +835,75 @@ class HeaderActionPill extends StatelessWidget {
 
   final List<Widget> children;
   final EdgeInsetsGeometry padding;
+  final bool shrinkSpacingToFit;
 
   @override
   Widget build(BuildContext context) {
-    final actions = IconButtonTheme(
-      data: IconButtonThemeData(
-        style: appIconButtonStyle(
-          IconButton.styleFrom(
-            fixedSize: const Size(_buttonWidth, _buttonHeight),
-            padding: EdgeInsets.zero,
-            visualDensity: VisualDensity.standard,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            shape: const StadiumBorder(),
-          ),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final child in children)
-            if (child is IconButton || child is UnifiedPopupMenuButton<Object?>)
-              SizedBox(
-                width: _buttonWidth,
-                height: _buttonHeight,
-                child: ClipPath(
-                  clipper: const ShapeBorderClipper(shape: StadiumBorder()),
-                  child: child,
-                ),
-              )
-            else
-              child,
-        ],
-      ),
+    final allStandardButtons = children.every(
+      (child) =>
+          child is IconButton || child is UnifiedPopupMenuButton<Object?>,
     );
     return LayoutBuilder(
       builder: (context, constraints) {
         final horizontalPadding = padding
             .resolve(Directionality.of(context))
             .horizontal;
+        final canShrinkSpacing =
+            shrinkSpacingToFit &&
+            allStandardButtons &&
+            children.length > 1 &&
+            constraints.hasBoundedWidth;
+        final availableForButtons = constraints.hasBoundedWidth
+            ? (constraints.maxWidth - horizontalPadding).clamp(
+                0.0,
+                double.infinity,
+              )
+            : double.infinity;
+        final naturalButtonsWidth = children.length * _buttonWidth;
+        final double buttonWidth =
+            canShrinkSpacing && availableForButtons < naturalButtonsWidth
+            ? (availableForButtons / children.length).clamp(
+                _minCompactButtonWidth,
+                _buttonWidth,
+              )
+            : _buttonWidth;
         final scroll =
             constraints.hasBoundedWidth &&
-            (constraints.maxWidth <
-                    children.length * _buttonWidth + horizontalPadding ||
-                children.any(
-                  (child) =>
-                      child is! IconButton &&
-                      child is! UnifiedPopupMenuButton<Object?>,
-                ));
+            (availableForButtons < children.length * buttonWidth - 0.01 ||
+                !allStandardButtons);
+        final actions = IconButtonTheme(
+          data: IconButtonThemeData(
+            style: appIconButtonStyle(
+              IconButton.styleFrom(
+                fixedSize: Size(buttonWidth, _buttonHeight),
+                minimumSize: Size(buttonWidth, _buttonHeight),
+                maximumSize: Size(buttonWidth, _buttonHeight),
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.standard,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                shape: const StadiumBorder(),
+              ),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final child in children)
+                if (child is IconButton ||
+                    child is UnifiedPopupMenuButton<Object?>)
+                  SizedBox(
+                    width: buttonWidth,
+                    height: _buttonHeight,
+                    child: ClipPath(
+                      clipper: const ShapeBorderClipper(shape: StadiumBorder()),
+                      child: child,
+                    ),
+                  )
+                else
+                  child,
+            ],
+          ),
+        );
         return Align(
           alignment: Alignment.centerLeft,
           child: ClipPath(

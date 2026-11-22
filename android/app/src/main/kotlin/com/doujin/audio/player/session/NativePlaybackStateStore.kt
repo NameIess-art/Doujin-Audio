@@ -501,8 +501,14 @@ object NativePlaybackStateStore {
     }
 }
 
-internal fun StoredPlaybackTimerRuntimeState.withoutSession(sessionId: String) =
-    copy(pausedSessionIds = pausedSessionIds.filterNot { it == sessionId })
+internal fun StoredPlaybackTimerRuntimeState.withoutSession(sessionId: String): StoredPlaybackTimerRuntimeState {
+    if (sessionId !in pausedSessionIds) return this
+    val remaining = pausedSessionIds.filterNot { it == sessionId }
+    return copy(
+        autoResumeAtMs = autoResumeAtMs.takeIf { remaining.isNotEmpty() },
+        pausedSessionIds = remaining
+    )
+}
 
 private fun JSONObject.optNullableString(key: String): String? {
     if (!has(key) || isNull(key)) return null

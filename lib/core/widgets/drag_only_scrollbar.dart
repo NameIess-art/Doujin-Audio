@@ -48,11 +48,7 @@ class _DragOnlyScrollbarState extends RawScrollbarState<DragOnlyScrollbar> {
   @override
   void handleHover(PointerHoverEvent event) {
     super.handleHover(event);
-    final hovered = isPointerOverScrollbar(
-      event.position,
-      event.kind,
-      forHover: true,
-    );
+    final hovered = isPointerOverThumb(event.position, event.kind);
     if (hovered != _states.contains(WidgetState.hovered)) {
       setState(() {
         if (hovered) {
@@ -83,7 +79,7 @@ class _DragOnlyScrollbarState extends RawScrollbarState<DragOnlyScrollbar> {
     final effectiveTop = resolvedPadding?.top ??
         (headerTop > 0 ? headerTop : mediaPadding.top);
     final effectiveBottom = resolvedPadding?.bottom ??
-        (mediaPadding.bottom + bottomInset);
+        math.max(mediaPadding.bottom, bottomInset);
 
     scrollbarPainter
       ..color =

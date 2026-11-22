@@ -30,6 +30,7 @@ import '../../../core/widgets/page_translation_scope.dart';
 import '../../../core/widgets/playlist_icon.dart';
 import '../../../core/translation/text_translation_service.dart';
 import '../../../core/widgets/swipe_reveal_card.dart';
+import '../../../core/widgets/unified_popup_menu.dart';
 import 'audio_detail_sheet.dart';
 import '../../../app/theme/app_styles.dart';
 
@@ -236,6 +237,12 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
   bool _hasLoadError = false;
 
   @override
+  void dispose() {
+    _expansionController.dispose();
+    super.dispose();
+  }
+
+  @override
   void initState() {
     super.initState();
     if (widget.renderChildrenInline &&
@@ -405,6 +412,50 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
         addLabel: i18n.tr('add'),
         playLabel: i18n.tr('play'),
       );
+      final showSearchExpandToggle =
+          widget.onFolderExpansionChanged != null &&
+          !widget.isSelectionMode &&
+          folder.children.isNotEmpty;
+      final Widget trailingActions = showSearchExpandToggle
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                actions,
+                IconButton(
+                  key: ValueKey<String>(
+                    'search_folder_expand_toggle_${PathMatcher.normalize(folder.path)}',
+                  ),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 32,
+                    height: 32,
+                  ),
+                  tooltip: i18n.tr(_expanded ? 'collapse' : 'expand'),
+                  onPressed: () {
+                    final nextExpanded = !_expanded;
+                    setState(() => _expanded = nextExpanded);
+                    widget.onFolderExpansionChanged?.call(
+                      widget.folder,
+                      nextExpanded,
+                    );
+                  },
+                  icon: AnimatedRotation(
+                    turns: _expanded ? 0.5 : 0,
+                    duration: MediaQuery.disableAnimationsOf(context)
+                        ? Duration.zero
+                        : const Duration(milliseconds: 200),
+                    curve: Curves.easeOutCubic,
+                    child: Icon(
+                      Icons.expand_more_rounded,
+                      color: cs.onSurfaceVariant,
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : actions;
       content = ListTile(
         contentPadding: LibraryLikeCardMetrics.rootTilePadding,
         minTileHeight: _rootFolderTileHeight,
@@ -418,7 +469,7 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
           folderName: folder.name,
           folderDuration: folder.totalDuration,
           detailTarget: AudioDetailTarget.libraryRootFolder(folder.path),
-          trailingActions: actions,
+          trailingActions: trailingActions,
           index: widget.index,
           isSelected: widget.isSelected,
           isPinned: isPinned,
@@ -889,88 +940,129 @@ class _TrackNodeWidget extends ConsumerWidget {
       );
     }
 
-    final result = track.isSingle
-        ? buildSingleTrackCard(useFeaturedSingleCard)
-        : SwipeRevealCard(
-            onTertiaryAction: defaultTargetPlatform == TargetPlatform.windows
-                ? () => unawaited(
-                    openLocalContainingFolder(context, ref, track.path),
-                  )
-                : null,
-            tertiaryActionLabel: i18n.tr('open_containing_folder'),
-            tertiaryActionTooltip: i18n.tr('open_containing_folder'),
-            tertiaryActionIcon: Icons.folder_open_rounded,
-            onLeadingAction: () => unawaited(playSingleTrack()),
-            leadingActionLabel: i18n.tr('play'),
-            leadingActionTooltip: i18n.tr('play'),
-            leadingActionIcon: Icons.play_arrow_rounded,
-            onSecondaryLeadingAction: () => unawaited(addTrackToPlaylist()),
-            secondaryLeadingActionLabel: i18n.tr('add_to_playlist'),
-            secondaryLeadingActionTooltip: i18n.tr('add_to_playlist'),
-            secondaryLeadingActionIconWidget: const PlaylistIcon.add(),
-            shape: cardShape,
-            swipeEnabled: false,
-            enabled: !isSelectionMode,
-            closedColor: cs.surface,
-            actionLabel: removalLabel,
-            removeTooltip: removalLabel,
-            onRemove: () => _removeTrack(context, ref, track),
-            child: Material(
-              color: Colors.transparent,
-              shadowColor: Colors.transparent,
-              surfaceTintColor: Colors.transparent,
-              child: AppEntryInkWell(
-                canRequestFocus: isSelectionMode,
-                onLongPress: onLongPress,
-                onTap: isSelectionMode
-                    ? onToggleSelect
-                    : () => unawaited(playSingleTrack()),
-                child: SizedBox(
-                  height: kLibraryTrackTileHeight,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.xs,
+    Widget buildNestedTrackRow() {
+      final row = SwipeRevealCard(
+        onTertiaryAction: defaultTargetPlatform == TargetPlatform.windows
+            ? () => unawaited(
+                openLocalContainingFolder(context, ref, track.path),
+              )
+            : null,
+        tertiaryActionLabel: i18n.tr('open_containing_folder'),
+        tertiaryActionTooltip: i18n.tr('open_containing_folder'),
+        tertiaryActionIcon: Icons.folder_open_rounded,
+        onLeadingAction: () => unawaited(playSingleTrack()),
+        leadingActionLabel: i18n.tr('play'),
+        leadingActionTooltip: i18n.tr('play'),
+        leadingActionIcon: Icons.play_arrow_rounded,
+        onSecondaryLeadingAction: () => unawaited(addTrackToPlaylist()),
+        secondaryLeadingActionLabel: i18n.tr('add_to_playlist'),
+        secondaryLeadingActionTooltip: i18n.tr('add_to_playlist'),
+        secondaryLeadingActionIconWidget: const PlaylistIcon.add(),
+        shape: cardShape,
+        swipeEnabled: false,
+        enabled: !isSelectionMode,
+        closedColor: cs.surface,
+        actionLabel: removalLabel,
+        removeTooltip: removalLabel,
+        onRemove: () => _removeTrack(context, ref, track),
+        child: Material(
+          color: Colors.transparent,
+          shadowColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          child: AppEntryInkWell(
+            canRequestFocus: isSelectionMode,
+            onLongPress: onLongPress,
+            onTap: isSelectionMode
+                ? onToggleSelect
+                : () => unawaited(playSingleTrack()),
+            child: SizedBox(
+              height: kLibraryTrackTileHeight,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.audio_file_rounded,
+                      size: 16,
+                      color: cs.onSurfaceVariant.withValues(alpha: 0.6),
                     ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.audio_file_rounded,
-                          size: 16,
-                          color: cs.onSurfaceVariant.withValues(alpha: 0.6),
-                        ),
-                        const SizedBox(width: AppSpacing.sm),
-                        Expanded(
-                          child: WorkPageTranslationBuilder(
-                            texts: [nameParts.source],
-                            builder: (context, translate, _) =>
-                                SearchHighlightedText(
-                                  text:
-                                      '${translate(nameParts.source)}${nameParts.suffix}',
-                                  terms: searchQuery.trim().isEmpty
-                                      ? null
-                                      : extractSearchTerms(searchQuery),
-                                  maxLines: 1,
-                                  style:
-                                      Theme.of(
-                                        context,
-                                      ).textTheme.bodyMedium?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 13,
-                                        color: isAlreadyPlaying
-                                            ? cs.primary
-                                            : cs.onSurface,
-                                      ) ??
-                                      const TextStyle(),
-                                ),
-                          ),
-                        ),
-                      ],
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: WorkPageTranslationBuilder(
+                        texts: [nameParts.source],
+                        builder: (context, translate, _) =>
+                            SearchHighlightedText(
+                              text:
+                                  '${translate(nameParts.source)}${nameParts.suffix}',
+                              terms: searchQuery.trim().isEmpty
+                                  ? null
+                                  : extractSearchTerms(searchQuery),
+                              maxLines: 1,
+                              style:
+                                  Theme.of(
+                                    context,
+                                  ).textTheme.bodyMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                    color: isAlreadyPlaying
+                                        ? cs.primary
+                                        : cs.onSurface,
+                                  ) ??
+                                  const TextStyle(),
+                            ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
             ),
-          );
+          ),
+        ),
+      );
+      if (defaultTargetPlatform == TargetPlatform.windows ||
+          isSelectionMode ||
+          onLongPress != null) {
+        return row;
+      }
+      return UnifiedContextMenuRegion(
+        openOnAndroidLongPress: true,
+        shape: cardShape,
+        buildEntries: () => [
+          UnifiedMenuEntry<VoidCallback>.action(
+            value: () => unawaited(playSingleTrack()),
+            icon: Icons.play_arrow_rounded,
+            label: i18n.tr('play'),
+          ),
+          UnifiedMenuEntry<VoidCallback>.action(
+            value: () => unawaited(addTrackToPlaylist()),
+            iconWidget: const PlaylistIcon.add(),
+            label: i18n.tr('add_to_playlist'),
+          ),
+          UnifiedMenuEntry<VoidCallback>.action(
+            value: () => unawaited(
+              showAudioDetailEditor(
+                context,
+                ref,
+                AudioDetailTarget.singleAudioFile(track.path),
+              ),
+            ),
+            icon: Icons.edit_rounded,
+            label: i18n.tr('audio_detail_edit_info'),
+          ),
+          UnifiedMenuEntry<VoidCallback>.action(
+            value: () => unawaited(_removeTrack(context, ref, track)),
+            icon: Icons.delete_outline_rounded,
+            label: removalLabel,
+            destructive: true,
+          ),
+        ],
+        child: row,
+      );
+    }
+
+    final result = track.isSingle
+        ? buildSingleTrackCard(useFeaturedSingleCard)
+        : buildNestedTrackRow();
 
     return UndoableRemovalTransition(hidden: isHidden, child: result);
   }

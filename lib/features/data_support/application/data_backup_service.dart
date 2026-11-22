@@ -277,7 +277,7 @@ class DataBackupService {
     try {
       final journal = await _readJournal(restoreDirectory);
       if (journal?.phase == 'committed') {
-        await _deleteDirectory(restoreDirectory);
+        await _cleanupCommittedRestoreDirectory(restoreDirectory);
         return const StartupRestoreOutcome.succeeded();
       }
       final resumeCommit =
@@ -359,7 +359,7 @@ class DataBackupService {
         restoreDirectory,
         PendingRestoreJournal(phase: 'committed', createdAt: _clock()),
       );
-      await _deleteDirectory(restoreDirectory);
+      await _cleanupCommittedRestoreDirectory(restoreDirectory);
       return const StartupRestoreOutcome.succeeded();
     } catch (_) {
       if (!commitStarted) {
@@ -450,6 +450,20 @@ class DataBackupService {
         ),
       ),
     );
+  }
+
+  Future<void> _cleanupCommittedRestoreDirectory(
+    Directory restoreDirectory,
+  ) async {
+    try {
+      await _deleteDirectory(restoreDirectory);
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'backup_restore_committed_cleanup_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   Future<Directory> _restoreDirectory() async {
@@ -649,7 +663,20 @@ Future<Map<String, Object?>> _decodeBackupArchive(
     var actualExpandedBytes = 0;
     final extractedFiles = <String, File>{};
     for (final entry in archive.files) {
+      if (!entry.isFile ||
+          entry.isSymbolicLink ||
+          !_allowedArchiveEntries.contains(entry.name) ||
+          extractedFiles.containsKey(entry.name)) {
+        throw const FormatException('invalid_backup_entries');
+      }
+      if (entry.size < 0 ||
+          entry.size > _maximumBackupEntryBytes(entry.name, request)) {
+        throw const FormatException('backup_too_large');
+      }
       final file = File(path.join(decodeDirectory.path, entry.name));
+      if (!path.isWithin(decodeDirectory.path, file.path)) {
+        throw const FormatException('invalid_backup_entries');
+      }
       final output = _LimitedOutputFileStream(file.path, entry.size, (count) {
         actualExpandedBytes = _checkedBackupExpandedTotal(
           actualExpandedBytes,
@@ -666,6 +693,10 @@ Future<Map<String, Object?>> _decodeBackupArchive(
         throw const FormatException('invalid_backup_entry_length');
       }
       extractedFiles[entry.name] = file;
+    }
+    if (extractedFiles.length != _allowedArchiveEntries.length ||
+        !extractedFiles.keys.toSet().containsAll(_allowedArchiveEntries)) {
+      throw const FormatException('invalid_backup_entries');
     }
 
     final manifestRaw = jsonDecode(
@@ -747,17 +778,26 @@ void _preflightBackupArchive(
     final maximumExpandedBytes = request['maximumExpandedBytes']! as int;
     for (final header in directory.fileHeaders) {
       final name = header.filename;
+      final localFile = header.file;
+      final expectedLocalCompression = switch (header.compressionMethod) {
+        ZipFile.zipCompressionStore => CompressionType.none,
+        ZipFile.zipCompressionDeflate => CompressionType.deflate,
+        _ => null,
+      };
       final unixMode = header.externalFileAttributes >> 16;
       final isSymbolicLink =
           header.versionMadeBy >> 8 == 3 && unixMode & 0xf000 == 0xa000;
       if (name.endsWith('/') ||
           name.endsWith('\\') ||
           isSymbolicLink ||
+          expectedLocalCompression == null ||
+          localFile == null ||
+          localFile.filename != name ||
+          localFile.compressionMethod != expectedLocalCompression ||
+          localFile.flags & 1 != 0 ||
           header.generalPurposeBitFlag & 1 != 0 ||
           !_allowedArchiveEntries.contains(name) ||
-          !names.add(name) ||
-          (header.compressionMethod != ZipFile.zipCompressionStore &&
-              header.compressionMethod != ZipFile.zipCompressionDeflate)) {
+          !names.add(name)) {
         throw const FormatException('invalid_backup_entries');
       }
       if (header.uncompressedSize < 0 ||

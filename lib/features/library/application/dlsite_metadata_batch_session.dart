@@ -14,6 +14,8 @@ enum DlsiteMetadataBatchLookupStatus {
   searching,
   found,
   confirmed,
+  applied,
+  saveFailed,
   notFound,
   failed,
 }
@@ -42,7 +44,19 @@ final class DlsiteMetadataBatchItem {
   bool get isReviewable =>
       !isExcluded &&
       (status == DlsiteMetadataBatchLookupStatus.found ||
-          status == DlsiteMetadataBatchLookupStatus.confirmed);
+          status == DlsiteMetadataBatchLookupStatus.confirmed ||
+          status == DlsiteMetadataBatchLookupStatus.saveFailed);
+
+  bool get isReadyToApply =>
+      !isExcluded &&
+      confirmedMetadata != null &&
+      (status == DlsiteMetadataBatchLookupStatus.confirmed ||
+          status == DlsiteMetadataBatchLookupStatus.saveFailed);
+
+  bool get isSingleExactMatch =>
+      !isExcluded &&
+      status == DlsiteMetadataBatchLookupStatus.found &&
+      candidates.length == 1;
 
   List<DlsiteMetadata> get reviewCandidates {
     final confirmedMetadata = this.confirmedMetadata;
@@ -87,11 +101,13 @@ final class DlsiteMetadataBatchApplyResult {
     required this.savedCount,
     required this.skippedCount,
     required this.failedCount,
+    this.saveFailedCount = 0,
   });
 
   final int savedCount;
   final int skippedCount;
   final int failedCount;
+  final int saveFailedCount;
 }
 
 final class DlsiteMetadataBatchSession extends ChangeNotifier {
@@ -163,11 +179,37 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
   List<DlsiteMetadataBatchItem> get items =>
       List<DlsiteMetadataBatchItem>.unmodifiable(_items);
 
-  int get confirmedCount => _items
+  int get confirmedCount =>
+      _items.where((item) => item.isReadyToApply).length;
+
+  int get appliedCount => _items
+      .where((item) => item.status == DlsiteMetadataBatchLookupStatus.applied)
+      .length;
+
+  int get completedLookupCount => _items
+      .where(
+        (item) =>
+            item.isExcluded ||
+            item.status != DlsiteMetadataBatchLookupStatus.searching,
+      )
+      .length;
+
+  int get exactMatchFoundCount =>
+      _items.where((item) => item.isSingleExactMatch).length;
+
+  int get failedLookupCount => _items
       .where(
         (item) =>
             !item.isExcluded &&
-            item.status == DlsiteMetadataBatchLookupStatus.confirmed,
+            item.status == DlsiteMetadataBatchLookupStatus.failed,
+      )
+      .length;
+
+  int get saveFailedCount => _items
+      .where(
+        (item) =>
+            !item.isExcluded &&
+            item.status == DlsiteMetadataBatchLookupStatus.saveFailed,
       )
       .length;
 
@@ -176,6 +218,16 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
         !item.isExcluded &&
         item.status == DlsiteMetadataBatchLookupStatus.searching,
   );
+
+  bool get hasUnappliedWork =>
+      hasPendingLookups ||
+      _items.any(
+        (item) =>
+            !item.isExcluded &&
+            (item.status == DlsiteMetadataBatchLookupStatus.found ||
+                item.status == DlsiteMetadataBatchLookupStatus.confirmed ||
+                item.status == DlsiteMetadataBatchLookupStatus.saveFailed),
+      );
 
   void start() {
     if (_started) return;
@@ -192,6 +244,7 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
   void toggleExcluded(int index) {
     if (index < 0 || index >= _items.length) return;
     final item = _items[index];
+    if (item.status == DlsiteMetadataBatchLookupStatus.applied) return;
     final nextExcluded = !item.isExcluded;
     _items[index] = item.copyWith(isExcluded: nextExcluded);
     if (nextExcluded) {
@@ -213,7 +266,10 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
       return;
     }
     final item = _items[index];
-    if (!item.query.hasQuery) return;
+    if (item.status == DlsiteMetadataBatchLookupStatus.applied ||
+        !item.query.hasQuery) {
+      return;
+    }
     _items[index] = item.copyWith(
       status: DlsiteMetadataBatchLookupStatus.searching,
       candidates: const <DlsiteMetadata>[],
@@ -222,6 +278,50 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
     _enqueue(index);
     _notify();
     _pump();
+  }
+
+  void retryAllFailed() {
+    var enqueued = false;
+    for (var index = 0; index < _items.length; index += 1) {
+      final item = _items[index];
+      if (_active.contains(index) ||
+          item.isExcluded ||
+          item.status != DlsiteMetadataBatchLookupStatus.failed ||
+          !item.query.hasQuery) {
+        continue;
+      }
+      _items[index] = item.copyWith(
+        status: DlsiteMetadataBatchLookupStatus.searching,
+        candidates: const <DlsiteMetadata>[],
+        clearError: true,
+      );
+      _enqueue(index);
+      enqueued = true;
+    }
+    if (!enqueued) return;
+    _notify();
+    _pump();
+  }
+
+  int confirmAllMatched({bool saveCover = true}) {
+    var confirmed = 0;
+    for (var index = 0; index < _items.length; index += 1) {
+      final item = _items[index];
+      if (!item.isSingleExactMatch) continue;
+      final candidate = item.candidates.first;
+      _items[index] = item.copyWith(
+        status: DlsiteMetadataBatchLookupStatus.confirmed,
+        confirmedMetadata: candidate,
+        saveCover:
+            saveCover &&
+            item.entry.target.isLibraryRootFolder &&
+            candidate.coverUrl != null,
+        clearError: true,
+      );
+      confirmed += 1;
+    }
+    if (confirmed > 0) _notify();
+    return confirmed;
   }
 
   void confirm(
@@ -236,6 +336,7 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
       status: DlsiteMetadataBatchLookupStatus.confirmed,
       confirmedMetadata: metadata,
       saveCover: saveCover,
+      clearError: true,
     );
     _notify();
   }
@@ -253,6 +354,24 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
     return null;
   }
 
+  int? nextUnconfirmedFoundIndexFrom(int currentIndex) {
+    for (var index = currentIndex + 1; index < _items.length; index += 1) {
+      final item = _items[index];
+      if (!item.isExcluded &&
+          item.status == DlsiteMetadataBatchLookupStatus.found) {
+        return index;
+      }
+    }
+    for (var index = 0; index < currentIndex && index < _items.length; index += 1) {
+      final item = _items[index];
+      if (!item.isExcluded &&
+          item.status == DlsiteMetadataBatchLookupStatus.found) {
+        return index;
+      }
+    }
+    return null;
+  }
+
   Future<DlsiteMetadataBatchApplyResult> applyConfirmed() async {
     final apply = _apply;
     if (apply == null) {
@@ -262,6 +381,7 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
       throw StateError('Cannot save metadata while lookups are pending.');
     }
     var savedCount = 0;
+    var saveFailedCount = 0;
     final skippedCount = _items
         .where(
           (item) =>
@@ -270,7 +390,7 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
               item.status == DlsiteMetadataBatchLookupStatus.found,
         )
         .length;
-    var failedCount = _items
+    final lookupFailedCount = _items
         .where(
           (item) =>
               !item.isExcluded &&
@@ -278,25 +398,33 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
         )
         .length;
     try {
-      for (final item in _items.where(
-        (item) =>
-            !item.isExcluded &&
-            item.status == DlsiteMetadataBatchLookupStatus.confirmed,
-      )) {
+      for (var index = 0; index < _items.length; index += 1) {
+        final item = _items[index];
+        if (!item.isReadyToApply) continue;
         try {
           await apply(item);
+          _items[index] = item.copyWith(
+            status: DlsiteMetadataBatchLookupStatus.applied,
+            clearError: true,
+          );
           savedCount += 1;
-        } catch (_) {
-          failedCount += 1;
+        } catch (error) {
+          _items[index] = item.copyWith(
+            status: DlsiteMetadataBatchLookupStatus.saveFailed,
+            error: error,
+          );
+          saveFailedCount += 1;
         }
       }
     } finally {
       _onApplyCompleted?.call();
+      _notify();
     }
     return DlsiteMetadataBatchApplyResult(
       savedCount: savedCount,
       skippedCount: skippedCount,
-      failedCount: failedCount,
+      failedCount: lookupFailedCount + saveFailedCount,
+      saveFailedCount: saveFailedCount,
     );
   }
 

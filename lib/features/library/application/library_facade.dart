@@ -267,6 +267,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   Future<void> prepareForPersistedStateReset() async {
     _metadataCoordinator.prepareForReset();
     cancelScan();
+    await scanIdle;
     await _startupMaintenanceCoordinator.cancelAndWait();
     await _persistenceCoordinator.prepareForReset();
     await detailCacheService.suspendAndWait();
@@ -281,6 +282,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     _service.libraryDerivedGeneration++;
     await prepareForPersistedStateReset();
     cancelPendingScanProgressNotification();
+    _catalogWrites.resetPersistedState();
     _service
       ..library.clear()
       ..libraryByPath.clear()
@@ -300,10 +302,6 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
       ..scanFoundCount = 0
       ..scanDuplicateCount = 0
       ..scanFailureCount = 0
-      ..libraryBatchDepth = 0
-      ..libraryBatchChanged = false
-      ..libraryBatchPersistTracks.clear()
-      ..libraryBatchPersistEntriesByKey.clear()
       ..markStructureChanged();
     snapshotCacheService.clear();
     _coverArtworkCacheService?.invalidateAll();
@@ -442,13 +440,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
       lastPlayedPosition: position,
       lastPlayedAt: updatePlayedAt ? now : track.lastPlayedAt,
     );
-    _service.libraryByPath[track.path] = updated;
-    final index = _service.libraryIndexByPath[track.path];
-    if (index != null &&
-        index < _service.library.length &&
-        _service.library[index].path == track.path) {
-      _service.library[index] = updated;
-    }
+    _replaceTrackInIndexes(updated);
     return updated;
   }
 
@@ -593,12 +585,13 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     if (!snapshot.authoritative) return const <String>{};
     final root = PathMatcher.normalize(libraryPath);
     const organizer = LibraryService.organizer;
-    final liveFolders = <String>{};
+    final liveFolders = LibraryService.createPathSet();
+    final visitedParents = LibraryService.createPathSet();
     void addFolderAndAncestors(String folderPath) {
       var current = organizer.canonicalLibraryFolderPath(root, folderPath);
       while (!PathMatcher.equalsNormalized(current, root) &&
           PathMatcher.isWithinOrEqual(current, root)) {
-        liveFolders.add(current);
+        if (!liveFolders.add(current)) break;
         final parent = organizer.parentLibraryFolderPath(current, root);
         if (parent == null || PathMatcher.equalsNormalized(parent, current)) {
           break;
@@ -616,11 +609,13 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
       if (work != null) populatedWorks.add(PathMatcher.equivalenceKey(work));
     }
 
+    final hasTrackParents = snapshot.trackParentPaths.isNotEmpty;
     for (final track in snapshot.audioFilePaths) {
-      final parent =
-          snapshot.trackParentPaths[PathMatcher.normalize(track)] ??
-          PathMatcher.parentPath(track);
-      if (parent == null) continue;
+      final parent = hasTrackParents
+          ? snapshot.trackParentPaths[PathMatcher.normalize(track)] ??
+                PathMatcher.parentPath(track)
+          : PathMatcher.parentPath(track);
+      if (parent == null || !visitedParents.add(parent)) continue;
       addFolderAndAncestors(parent);
       retainWork(parent);
     }
@@ -640,12 +635,18 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
       return retainedFolders;
     }
     final retainedIndex = PathMembershipIndex(retainedFolders);
+    final foldersToRemove = <String>[];
     for (final folder in _service.childFoldersForLibrary(root)) {
       if (PathMatcher.equalsNormalized(folder, root)) continue;
       final canonical = organizer.canonicalLibraryFolderPath(root, folder);
       if (!retainedIndex.containsEquivalent(canonical)) {
-        _catalogWrites.removeWatchedFolder(folder, notify: false);
+        foldersToRemove.add(folder);
       }
+    }
+    _catalogWrites.beginLibraryBatch(snapshotAllEntries: false);
+    _catalogWrites.rememberBatchEntriesForLibrary(root);
+    for (final folder in foldersToRemove) {
+      _catalogWrites.removeWatchedFolder(folder, notify: false);
     }
     _catalogWrites.removeTracksDeletedFromFolder(
       root,
@@ -655,6 +656,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
       ...snapshot.audioFilePaths,
       ...retainedFolders,
     });
+    unawaited(_catalogWrites.endLibraryBatch());
     _syncStateSlice();
     return retainedFolders;
   }
@@ -1104,12 +1106,40 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
       return;
     }
     final updatedTrack = currentTrack.copyWith(duration: duration);
-    _service.libraryByPath[trackPath] = updatedTrack;
-    final index = _service.libraryIndexByPath[trackPath];
-    if (index != null) _service.library[index] = updatedTrack;
+    _replaceTrackInIndexes(updatedTrack);
     if (_persistenceCoordinator.enabled) {
-      unawaited(databaseRepository.updateTrackDurations({trackPath: duration}));
+      unawaited(
+        databaseRepository.updateTrackDurations({currentTrack.path: duration}),
+      );
     }
+  }
+
+  void _replaceTrackInIndexes(MusicTrack updated) {
+    _service.libraryByPath[updated.path] = updated;
+    final index = _service.libraryIndexByPath[updated.path];
+    if (index != null &&
+        index < _service.library.length &&
+        _service.library[index].path == updated.path) {
+      _service.library[index] = updated;
+    } else {
+      final fallbackIndex = _service.library.indexWhere(
+        (item) => item.path == updated.path,
+      );
+      if (fallbackIndex >= 0) {
+        _service.library[fallbackIndex] = updated;
+      }
+    }
+    final groupTracks = _service.tracksByGroup[updated.groupKey];
+    if (groupTracks == null) return;
+    final groupIndex = groupTracks.indexWhere(
+      (item) => item.path == updated.path,
+    );
+    if (groupIndex < 0) return;
+    final nextGroupTracks = List<MusicTrack>.of(groupTracks);
+    nextGroupTracks[groupIndex] = updated;
+    _service.tracksByGroup[updated.groupKey] = List<MusicTrack>.unmodifiable(
+      nextGroupTracks,
+    );
   }
 
   Future<void> _persistRetargetedManualCovers(

@@ -48,9 +48,11 @@ final class JsonDocumentLocation {
     'name': name,
   };
 
+  static final RegExp _trailingSlashes = RegExp(r'/+$');
+
   String get lockKey {
     if (usesSaf) {
-      final normalizedBase = basePath.trim().replaceAll(RegExp(r'/+$'), '');
+      final normalizedBase = basePath.trim().replaceAll(_trailingSlashes, '');
       return '${kind.name}\u0000$normalizedBase\u0000${name.toLowerCase()}';
     }
     final parentPath = switch (kind) {
@@ -143,10 +145,17 @@ abstract interface class JsonDocumentStore {
 }
 
 final class DefaultJsonDocumentStore implements JsonDocumentStore {
-  DefaultJsonDocumentStore({FileCachePlatformGateway? platformGateway})
-    : _platformGateway = platformGateway ?? FileCachePlatformGateway.instance;
+  DefaultJsonDocumentStore({
+    FileCachePlatformGateway? platformGateway,
+    bool? caseSensitiveFileSystem,
+  }) : _platformGateway = platformGateway ?? FileCachePlatformGateway.instance,
+       _caseSensitiveFileSystem = caseSensitiveFileSystem;
 
   final FileCachePlatformGateway _platformGateway;
+  final bool? _caseSensitiveFileSystem;
+
+  static Future<T> _runLocal<T>(Future<T> Function() action) =>
+      IOOverrides.current == null ? Isolate.run(action) : action();
 
   @override
   Future<JsonDocumentReadResult> read(JsonDocumentLocation location) {
@@ -157,8 +166,55 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
         );
         return _decodePlatformRead(value);
       }
-      return Isolate.run(() => _readLocal(location));
+      final caseSensitive = _caseSensitiveFileSystem;
+      return _runLocal(
+        () => _readLocal(location, caseSensitiveFileSystem: caseSensitive),
+      );
     });
+  }
+
+  Future<T> readAndTransform<T>(
+    JsonDocumentLocation location,
+    T Function(JsonDocumentReadResult result) transform,
+  ) {
+    return _serialized(location, () async {
+      if (location.usesSaf) {
+        final value = await _platformGateway.readJsonDocument(
+          location.toPlatformArguments(),
+        );
+        final result = _decodePlatformRead(value);
+        if (result.status != JsonDocumentReadStatus.found) {
+          return transform(result);
+        }
+        return Isolate.run(() => transform(result));
+      }
+      final caseSensitive = _caseSensitiveFileSystem;
+      return _runLocal(
+        () async => transform(
+          await _readLocal(location, caseSensitiveFileSystem: caseSensitive),
+        ),
+      );
+    });
+  }
+
+  Future<List<T>> readManyLocalAndTransform<T>(
+    List<JsonDocumentLocation> locations,
+    List<T> Function(List<JsonDocumentReadResult> results) transform,
+  ) {
+    if (locations.isEmpty) return Future<List<T>>.value(const []);
+    final caseSensitive = _caseSensitiveFileSystem;
+    return _JsonDocumentOperationCoordinator.runMany(
+      locations.map((location) => location.lockKey),
+      () => _runLocal(() async {
+        final results = <JsonDocumentReadResult>[];
+        for (final location in locations) {
+          results.add(
+            await _readLocal(location, caseSensitiveFileSystem: caseSensitive),
+          );
+        }
+        return transform(results);
+      }),
+    );
   }
 
   @override
@@ -170,13 +226,15 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
   }) {
     return _serialized(location, () async {
       if (!location.usesSaf) {
+        final caseSensitive = _caseSensitiveFileSystem;
         try {
-          return await Isolate.run(
+          return await _runLocal(
             () => _writeLocal(
               location: location,
               bytes: bytes,
               mode: mode,
               expectedRevision: expectedRevision,
+              caseSensitiveFileSystem: caseSensitive,
             ),
           );
         } on Object catch (error) {
@@ -229,16 +287,27 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
         );
         return _decodePlatformDelete(value);
       }
-      return Isolate.run(() => _deleteLocal(location, expectedRevision));
+      final caseSensitive = _caseSensitiveFileSystem;
+      return _runLocal(
+        () => _deleteLocal(
+          location,
+          expectedRevision,
+          caseSensitiveFileSystem: caseSensitive,
+        ),
+      );
     });
   }
 
   static Future<JsonDocumentDeleteResult> _deleteLocal(
     JsonDocumentLocation location,
-    String expectedRevision,
-  ) async {
+    String expectedRevision, {
+    bool? caseSensitiveFileSystem,
+  }) async {
     try {
-      final recovered = await _recoverLocal(location);
+      final recovered = await _recoverLocal(
+        location,
+        caseSensitiveFileSystem: caseSensitiveFileSystem,
+      );
       if (recovered.error != null) {
         return JsonDocumentDeleteResult(
           status: JsonDocumentDeleteStatus.conflict,
@@ -275,10 +344,15 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
   ) => _JsonDocumentOperationCoordinator.run(location.lockKey, action);
 
   static Future<JsonDocumentReadResult> _readLocal(
-    JsonDocumentLocation location,
-  ) async {
+    JsonDocumentLocation location, {
+    bool? caseSensitiveFileSystem,
+  }) async {
     try {
-      final recovered = await _recoverLocal(location, forRead: true);
+      final recovered = await _recoverLocal(
+        location,
+        forRead: true,
+        caseSensitiveFileSystem: caseSensitiveFileSystem,
+      );
       if (recovered.error != null) {
         return JsonDocumentReadResult.unreadable(recovered.error!);
       }
@@ -297,6 +371,7 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
     required Uint8List bytes,
     required JsonDocumentWriteMode mode,
     required String? expectedRevision,
+    bool? caseSensitiveFileSystem,
   }) async {
     final validationError = _validate(bytes);
     if (validationError != null) {
@@ -315,7 +390,10 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
     final target = _localTarget(location);
     final parent = target.parent;
     await parent.create(recursive: true);
-    final recovered = await _recoverLocal(location);
+    final recovered = await _recoverLocal(
+      location,
+      caseSensitiveFileSystem: caseSensitiveFileSystem,
+    );
     if (recovered.error != null) {
       return JsonDocumentWriteResult(
         status: JsonDocumentWriteStatus.conflict,
@@ -418,12 +496,20 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
   }
 
   static Future<({File? target, Uint8List? bytes, String? error})>
-  _recoverLocal(JsonDocumentLocation location, {bool forRead = false}) async {
+  _recoverLocal(
+    JsonDocumentLocation location, {
+    bool forRead = false,
+    bool? caseSensitiveFileSystem,
+  }) async {
     final target = _localTarget(location);
-    final files = await _findLocalTransactionFiles(target);
-    final actualTarget = files.target;
-    final backup = files.backup;
-    final staged = files.staged;
+    final caseSensitive = caseSensitiveFileSystem ?? !Platform.isWindows;
+    var files = await _findLocalTransactionFiles(
+      target,
+      caseSensitiveFileSystem: caseSensitive,
+    );
+    var actualTarget = files.target;
+    var backup = files.backup;
+    var staged = files.staged;
     try {
       final targetBytes = await _validJsonBytes(actualTarget);
       if (targetBytes != null) {
@@ -436,6 +522,20 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
           if (!forRead) rethrow;
         }
         return (target: actualTarget, bytes: targetBytes, error: null);
+      }
+      if (caseSensitive &&
+          actualTarget != null &&
+          (backup == null || staged == null)) {
+        // Exact target existed but failed validation; lazily check case-variant
+        // backup/staged recovery files before reporting unreadable.
+        files = await _findLocalTransactionFiles(
+          target,
+          caseSensitiveFileSystem: true,
+          includeCaseVariantsWhenTargetPresent: true,
+        );
+        actualTarget = files.target;
+        backup = files.backup;
+        staged = files.staged;
       }
       final backupBytes = await _validJsonBytes(backup);
       if (backupBytes != null) {
@@ -489,7 +589,11 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
   }
 
   static Future<({File? target, File? backup, File? staged})>
-  _findLocalTransactionFiles(File target) async {
+  _findLocalTransactionFiles(
+    File target, {
+    required bool caseSensitiveFileSystem,
+    bool includeCaseVariantsWhenTargetPresent = false,
+  }) async {
     final expected = <File>[
       target,
       _transactionFile(target, '.doujin.bak'),
@@ -499,13 +603,17 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
     final matches = <File?>[
       for (var i = 0; i < expected.length; i++) present[i] ? expected[i] : null,
     ];
-    if (!Platform.isWindows &&
-        present.any((exists) => !exists) &&
-        await target.parent.exists()) {
+    final shouldListParent =
+        caseSensitiveFileSystem &&
+        (!present[0] ||
+            (includeCaseVariantsWhenTargetPresent &&
+                (!present[1] || !present[2])));
+    if (shouldListParent && await target.parent.exists()) {
       final names = expected
           .map((file) => path.basename(file.path).toLowerCase())
           .toList(growable: false);
-      // One enumeration per transaction, including case variants of recovery files.
+      // Only enumerate on case-sensitive file systems when the exact target is
+      // absent (or corrupt recovery needs case-variant recovery files).
       await for (final entity in target.parent.list(followLinks: false)) {
         if (entity is! File) continue;
         final index = names.indexOf(path.basename(entity.path).toLowerCase());
@@ -583,6 +691,37 @@ final class _JsonDocumentOperationCoordinator {
       completer.complete();
       if (identical(_tails[key], completer.future)) {
         final _ = _tails.remove(key);
+      }
+    }
+  }
+
+  static Future<T> runMany<T>(
+    Iterable<String> keys,
+    Future<T> Function() action,
+  ) async {
+    final sortedKeys = keys.toSet().toList(growable: false)..sort();
+    if (sortedKeys.isEmpty) return action();
+    if (sortedKeys.length == 1) return run(sortedKeys.first, action);
+    final predecessors = <Future<void>>[
+      for (final key in sortedKeys)
+        if (_tails[key] case final previous?)
+          previous.then<void>((_) {}, onError: (_, _) {}),
+    ];
+    final completer = Completer<void>();
+    for (final key in sortedKeys) {
+      _tails[key] = completer.future;
+    }
+    if (predecessors.isNotEmpty) {
+      await Future.wait(predecessors);
+    }
+    try {
+      return await action();
+    } finally {
+      completer.complete();
+      for (final key in sortedKeys) {
+        if (identical(_tails[key], completer.future)) {
+          final _ = _tails.remove(key);
+        }
       }
     }
   }

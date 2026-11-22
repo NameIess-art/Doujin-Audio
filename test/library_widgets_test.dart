@@ -4427,7 +4427,7 @@ void main() {
     expect(tester.widget<FileTreeRow>(childFolderHeader).subtitleMaxLines, 1);
     final disabledChildActions = tester
         .widgetList<IconButton>(
-          _libraryEditAction(languageProvider.tr('exclude')),
+          _libraryEditAction(languageProvider.tr('excluded_by_parent')),
         )
         .where((button) => button.onPressed == null);
     expect(disabledChildActions, isNotEmpty);

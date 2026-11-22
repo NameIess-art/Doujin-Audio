@@ -172,6 +172,13 @@ class LibraryScanCoordinator extends ChangeNotifier {
     required LibraryScanOperation operation,
     required Future<LibraryScanOutcome?> Function(int generation) task,
   }) async {
+    if (_disposed) return null;
+    if (_state.phase == LibraryScanPhase.running) {
+      return LibraryScanOutcome(
+        code: LibraryScanOutcomeCode.alreadyRunning,
+        source: _sourceFor(operation),
+      );
+    }
     final generation = ++_operationGeneration;
     _setState(
       LibraryScanState(phase: LibraryScanPhase.running, operation: operation),
@@ -233,6 +240,13 @@ class LibraryScanCoordinator extends ChangeNotifier {
   bool _isCurrent(int generation) {
     return !_disposed && generation == _operationGeneration;
   }
+
+  String _sourceFor(LibraryScanOperation operation) => switch (operation) {
+    LibraryScanOperation.refresh => 'refresh',
+    LibraryScanOperation.importFolder => 'import_folder',
+    LibraryScanOperation.importLibrary => 'import_library',
+    LibraryScanOperation.importFiles => 'import_files',
+  };
 
   LibraryScanPhase _phaseFor(LibraryScanOutcomeCode code) {
     if (code == LibraryScanOutcomeCode.cancelled) {

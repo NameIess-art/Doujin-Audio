@@ -63,6 +63,7 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
   final _viewportKey = GlobalKey();
   final _fadeKey = GlobalKey();
   final _flight = ValueNotifier<SessionCoverFlight?>(null);
+  ValueNotifier<bool>? segmentPanelExpandedNotifier;
   SessionCoverAnchorState? _flightStart;
   SessionCoverAnchorState? _flightEnd;
   late final Animation<double> _progress = animation!.drive(
@@ -232,8 +233,14 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
     final page = PopScope<void>(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        final panelExpanded = segmentPanelExpandedNotifier;
+        if (panelExpanded != null && panelExpanded.value) {
+          panelExpanded.value = false;
+          return;
+        }
         // Use the same preparation as the close button before popping.
-        if (!didPop) unawaited(requestClose());
+        unawaited(requestClose());
       },
       child: super.buildPage(context, animation, secondaryAnimation),
     );

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:doujin_audio/features/asmr/application/asmr_api_service.dart';
@@ -14,9 +15,16 @@ class _UnusedPersistence implements AsmrPersistenceRepository {
 
 class _One extends AsmrApiService {
   int calls = 0;
+  int mediaProbeCalls = 0;
   Object? error;
   Object? mediaError;
   bool empty = false;
+  List<AsmrTrackFile>? customTree;
+  Future<void> Function(
+    String url,
+    AsmrRequestCancellationToken? cancellationToken,
+  )?
+  onVerifyMediaStream;
 
   @override
   Future<List<AsmrTrackFile>> fetchTrackTree(
@@ -27,6 +35,7 @@ class _One extends AsmrApiService {
     calls++;
     if (error != null) throw error!;
     if (empty) return [];
+    if (customTree != null) return customTree!;
     return [
       AsmrTrackFile.fromJson(const {
         'type': 'audio',
@@ -41,6 +50,11 @@ class _One extends AsmrApiService {
     String url, {
     AsmrRequestCancellationToken? cancellationToken,
   }) async {
+    mediaProbeCalls++;
+    if (onVerifyMediaStream != null) {
+      await onVerifyMediaStream!(url, cancellationToken);
+      return;
+    }
     if (mediaError != null) throw mediaError!;
   }
 }
@@ -146,4 +160,70 @@ void main() {
     expect(one.calls, 1);
     expect(japanese.calls, 1);
   });
+
+  test(
+    'media host health cache skips redundant probes within TTL and refreshes after expiry',
+    () async {
+      var now = DateTime.utc(2026, 11, 22, 12);
+      final cachedCatalog = AsmrRemoteCatalogService(
+        apiService: one,
+        japaneseApiService: japanese,
+        persistenceRepository: _UnusedPersistence(),
+        now: () => now,
+      );
+
+      // Healthy host is cached for 60 seconds.
+      await cachedCatalog.loadTrackTree(work, token: null);
+      await cachedCatalog.loadTrackTree(work, token: null);
+      expect(one.mediaProbeCalls, 1);
+      expect(japanese.calls, 0);
+
+      // After 61 seconds, host health expires and probes again.
+      now = now.add(const Duration(seconds: 61));
+      one.mediaError = const HttpException('Media unavailable');
+      final fallback1 = await cachedCatalog.loadTrackTree(work, token: null);
+      expect(fallback1.single.title, 'japanese.m4a');
+      expect(one.mediaProbeCalls, 2);
+      expect(japanese.calls, 1);
+
+      // Unhealthy host skips probe within TTL and falls back immediately.
+      final fallback2 = await cachedCatalog.loadTrackTree(work, token: null);
+      expect(fallback2.single.title, 'japanese.m4a');
+      expect(one.mediaProbeCalls, 2);
+      expect(japanese.calls, 2);
+    },
+  );
+
+  test(
+    'media probe races multiple candidates concurrently and cancels slower losers',
+    () async {
+      final slowCancelled = Completer<void>();
+      final fastReady = Completer<void>();
+      one.customTree = [
+        AsmrTrackFile.fromJson(const {
+          'type': 'audio',
+          'title': 'one.m4a',
+          'mediaStreamUrl': 'https://slow.example/one.m4a',
+          'mediaDownloadUrl': 'https://fast.example/one.m4a',
+        }),
+      ];
+      one.onVerifyMediaStream = (url, token) async {
+        if (url.contains('slow.example')) {
+          token?.addListener(() {
+            if (!slowCancelled.isCompleted) slowCancelled.complete();
+          });
+          if (!fastReady.isCompleted) fastReady.complete();
+          final blocker = Completer<void>();
+          await token?.waitFor(blocker.future);
+          return;
+        }
+        await fastReady.future;
+      };
+
+      final tree = await catalog.loadTrackTree(work, token: null);
+      expect(tree.single.title, 'one.m4a');
+      expect(one.mediaProbeCalls, 2);
+      await slowCancelled.future.timeout(const Duration(seconds: 1));
+    },
+  );
 }

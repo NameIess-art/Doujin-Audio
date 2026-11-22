@@ -19,6 +19,7 @@ class _NetworkSettingsControlsState
   late final TextEditingController _dns;
   late AppProxyMode _mode;
   late bool _authentication;
+  bool _obscurePassword = true;
   bool _saving = false;
   bool _validateProxy = false;
   bool _validateDns = false;
@@ -107,55 +108,77 @@ class _NetworkSettingsControlsState
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final state =
-        ref.watch(settingsStateProvider).value ?? _settings.slice.state;
-    ref.listen(settingsStateProvider, (previous, next) {
-      if (previous?.value?.networkRouteSettings !=
-              next.value?.networkRouteSettings ||
-          previous?.value?.asmrApiDomain != next.value?.asmrApiDomain) {
-        _probe.reset();
-      }
-    });
-    final route = state.networkRouteSettings;
+    final (route, asmrApiDomain) = ref.watch(
+      settingsStateProvider.select(
+        (state) => (
+          state.value?.networkRouteSettings ?? _settings.networkRouteSettings,
+          state.value?.asmrApiDomain ?? _settings.asmrApiDomain,
+        ),
+      ),
+    );
+    ref.listen(
+      settingsStateProvider.select(
+        (state) =>
+            (state.value?.networkRouteSettings, state.value?.asmrApiDomain),
+      ),
+      (previous, next) {
+        if (previous != next) {
+          _probe.reset();
+        }
+      },
+    );
     final cs = Theme.of(context).colorScheme;
-    final port = int.tryParse(_port.text.trim());
-    final hostInvalid = NetworkRouteSettings.normalizeHost(_host.text) == null;
-    final portInvalid = port == null || port < 1 || port > 65535;
-    final usernameInvalid =
+    bool isHostInvalid() =>
+        NetworkRouteSettings.normalizeHost(_host.text) == null;
+    bool isPortInvalid() {
+      final port = int.tryParse(_port.text.trim());
+      return port == null || port < 1 || port > 65535;
+    }
+
+    bool isUsernameInvalid() =>
         _username.text.trim().isEmpty ||
         (_mode == AppProxyMode.socks5 &&
             utf8.encode(_username.text.trim()).length > 255);
-    final passwordInvalid =
+    bool isPasswordInvalid() =>
         (_password.text.isEmpty && !route.proxyPasswordConfigured) ||
         (_mode == AppProxyMode.socks5 &&
             utf8.encode(_password.text).length > 255);
-    final credentialsInvalid =
-        _authentication && (usernameInvalid || passwordInvalid);
-    final dnsInvalid =
+    bool isDnsInvalid() =>
         _dns.text.trim().isNotEmpty &&
         NetworkRouteSettings.normalizeDns(_dns.text) == null;
     Widget field(
       TextEditingController controller,
       String label, {
       bool secret = false,
+      bool obscureText = false,
+      Widget? suffixIcon,
       bool numeric = false,
-      bool invalid = false,
+      required bool validate,
+      required bool Function() isInvalid,
       String? hint,
-    }) => TextField(
-      contextMenuBuilder: buildAppEditableTextMenu,
-      controller: controller,
-      enabled: !_saving,
-      obscureText: secret,
-      enableSuggestions: !secret,
-      autocorrect: false,
-      keyboardType: numeric ? TextInputType.number : TextInputType.text,
-      onChanged: (_) => setState(() {}),
-      decoration: InputDecoration(
-        labelText: i18n.tr(label),
-        hintText: hint,
-        errorText: invalid ? i18n.tr('network_invalid_value') : null,
-      ),
-    );
+    }) {
+      Widget buildTextField(bool invalid) => TextField(
+        contextMenuBuilder: buildAppEditableTextMenu,
+        controller: controller,
+        enabled: !_saving,
+        obscureText: secret && obscureText,
+        enableSuggestions: !secret,
+        autocorrect: false,
+        keyboardType: numeric ? TextInputType.number : TextInputType.text,
+        decoration: InputDecoration(
+          labelText: i18n.tr(label),
+          hintText: hint,
+          suffixIcon: suffixIcon,
+          errorText: invalid ? i18n.tr('network_invalid_value') : null,
+        ),
+      );
+      if (!validate) return buildTextField(false);
+      return ValueListenableBuilder<TextEditingValue>(
+        valueListenable: controller,
+        builder: (context, _, _) => buildTextField(isInvalid()),
+      );
+    }
+
     Widget inset(Widget child) => ColoredBox(
       color: cs.surfaceContainerLow,
       child: Padding(padding: const EdgeInsets.all(16), child: child),
@@ -184,8 +207,8 @@ class _NetworkSettingsControlsState
               children: [
                 Expanded(
                   child: UnifiedDropdownButton<String>(
-                    value: state.asmrApiDomain,
-                    key: ValueKey(state.asmrApiDomain),
+                    value: asmrApiDomain,
+                    key: ValueKey(asmrApiDomain),
                     insetTrigger: false,
                     items: [
                       for (final domain in asmrApiDomains)
@@ -212,9 +235,7 @@ class _NetworkSettingsControlsState
                 _probeAction(
                   i18n,
                   'asmr',
-                  Uri.parse(
-                    '${state.asmrApiDomain}/api/works?page=1&pageSize=1',
-                  ),
+                  Uri.parse('$asmrApiDomain/api/works?page=1&pageSize=1'),
                 ),
               ],
             ),
@@ -275,14 +296,16 @@ class _NetworkSettingsControlsState
                   field(
                     _host,
                     'network_proxy_host',
-                    invalid: _validateProxy && hostInvalid,
+                    validate: _validateProxy,
+                    isInvalid: isHostInvalid,
                   ),
                   const SizedBox(height: 12),
                   field(
                     _port,
                     'network_proxy_port',
                     numeric: true,
-                    invalid: _validateProxy && portInvalid,
+                    validate: _validateProxy,
+                    isInvalid: isPortInvalid,
                   ),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
@@ -303,23 +326,81 @@ class _NetworkSettingsControlsState
                     field(
                       _username,
                       'network_proxy_username',
-                      invalid: _validateProxy && usernameInvalid,
+                      validate: _validateProxy,
+                      isInvalid: isUsernameInvalid,
                     ),
                     const SizedBox(height: 12),
                     field(
                       _password,
                       'network_proxy_password',
                       secret: true,
+                      obscureText: _obscurePassword,
+                      suffixIcon: IconButton(
+                        onPressed: _saving
+                            ? null
+                            : () => setState(
+                                () => _obscurePassword = !_obscurePassword,
+                              ),
+                        tooltip: i18n.tr(
+                          _obscurePassword ? 'show_password' : 'hide_password',
+                        ),
+                        icon: Icon(
+                          _obscurePassword
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                        ),
+                      ),
                       hint: route.proxyPasswordConfigured
                           ? i18n.tr('network_password_keep')
                           : null,
-                      invalid:
-                          _validateProxy &&
-                          credentialsInvalid &&
-                          passwordInvalid,
+                      validate: _validateProxy,
+                      isInvalid: isPasswordInvalid,
                     ),
                     const SizedBox(height: 12),
                   ],
+                  ListenableBuilder(
+                    listenable: Listenable.merge([
+                      _host,
+                      _port,
+                      _username,
+                      _password,
+                    ]),
+                    builder: (context, _) {
+                      final hasUnsavedProxyChanges =
+                          _mode != route.proxyMode ||
+                          _host.text.trim() != route.proxyHost ||
+                          (int.tryParse(_port.text.trim()) ?? 0) !=
+                              route.proxyPort ||
+                          _authentication != route.proxyAuthenticationEnabled ||
+                          (_authentication &&
+                              (_username.text.trim() != route.proxyUsername ||
+                                  _password.text.isNotEmpty));
+                      if (!hasUnsavedProxyChanges) {
+                        return const SizedBox.shrink();
+                      }
+                      final tokens = AppDesignTokens.of(context);
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline_rounded,
+                              size: 16,
+                              color: tokens.warning,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                i18n.tr('network_proxy_unsaved'),
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: tokens.warning),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                   AppPillButton(
                     onPressed: _saving ? null : _applyProxy,
                     child: Text(i18n.tr('network_apply_proxy')),
@@ -350,7 +431,8 @@ class _NetworkSettingsControlsState
                 field(
                   _dns,
                   'network_dns_ip',
-                  invalid: _validateDns && dnsInvalid,
+                  validate: _validateDns,
+                  isInvalid: isDnsInvalid,
                 ),
                 const SizedBox(height: 12),
                 AppPillButton(

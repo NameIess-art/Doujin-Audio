@@ -112,9 +112,11 @@ class AsmrLibraryController extends ChangeNotifier
     required AsmrPreferencesStore preferencesStore,
     required AsmrRemoteCatalogService remoteCatalogService,
     required AsmrAccountSyncService accountSyncService,
+    Duration backgroundSyncDebounce = const Duration(seconds: 2),
   }) : _preferencesStore = preferencesStore,
        _remoteCatalogService = remoteCatalogService,
-       _accountSyncService = accountSyncService {
+       _accountSyncService = accountSyncService,
+       _backgroundSyncDebounce = backgroundSyncDebounce {
     _remoteCatalogService.isWorkAllowed = _isWorkAllowed;
     _remoteCatalogService.tagWeights = () =>
         _interestSnapshot(_tagPreferences).weights;
@@ -129,6 +131,7 @@ class AsmrLibraryController extends ChangeNotifier
   final AsmrPreferencesStore _preferencesStore;
   final AsmrRemoteCatalogService _remoteCatalogService;
   final AsmrAccountSyncService _accountSyncService;
+  final Duration _backgroundSyncDebounce;
   late final AsmrWorkContentStore _workContent = AsmrWorkContentStore(
     onChanged: notifyListeners,
   );
@@ -707,7 +710,10 @@ class AsmrLibraryController extends ChangeNotifier
   Future<void>? _authRestoreTask;
   final Map<_AsmrSyncRequestKey, Future<void>> _syncTasks =
       <_AsmrSyncRequestKey, Future<void>>{};
+  final Map<_AsmrSyncRequestKey, bool> _syncTaskFullPull =
+      <_AsmrSyncRequestKey, bool>{};
   AsmrRequestCancellationToken? _activeSyncCancellationToken;
+  Timer? _backgroundSyncTimer;
   Future<void> _stateMutationTail = Future<void>.value();
   bool _initialized = false;
   int _globalRevision = 0;
@@ -726,6 +732,7 @@ class AsmrLibraryController extends ChangeNotifier
   void clearRuntimeCaches() {
     _invalidateSearchSuggestions();
     _remoteCatalogService.invalidateLocalTracksRead();
+    _remoteCatalogService.clearMediaHostHealthCache();
     _creatorCatalogTasks.clear();
     _creatorCatalogErrors.clear();
     _tagInterestsTask = null;
@@ -788,6 +795,10 @@ class AsmrLibraryController extends ChangeNotifier
 
   void _applyAccountSnapshot(AsmrAccountSnapshot snapshot) {
     _authSession = snapshot.session;
+    _applyLocalAccountState(snapshot);
+  }
+
+  void _applyLocalAccountState(AsmrAccountSnapshot snapshot) {
     _favoriteWorks = snapshot.favoriteWorks;
     _favoriteIds = snapshot.favoriteIds;
     _historyWorks = snapshot.historyWorks;
@@ -797,8 +808,30 @@ class AsmrLibraryController extends ChangeNotifier
   }
 
   void _cancelActiveSync() {
+    _backgroundSyncTimer?.cancel();
+    _backgroundSyncTimer = null;
     _activeSyncCancellationToken?.cancel();
     _activeSyncCancellationToken = null;
+  }
+
+  void _scheduleBackgroundSync() {
+    if (_disposed || !isAsmrAccountLoggedIn) return;
+    if (_backgroundSyncDebounce <= Duration.zero) {
+      unawaited(_syncAsmrAccount(fullPull: false));
+      return;
+    }
+    _backgroundSyncTimer?.cancel();
+    final scheduledEpoch = _authEpoch;
+    final scheduledToken = _authSession?.token;
+    _backgroundSyncTimer = Timer(_backgroundSyncDebounce, () {
+      _backgroundSyncTimer = null;
+      if (_disposed ||
+          scheduledEpoch != _authEpoch ||
+          scheduledToken != _authSession?.token) {
+        return;
+      }
+      unawaited(_syncAsmrAccount(fullPull: false));
+    });
   }
 
   bool get initialized => _initialized;
@@ -971,22 +1004,23 @@ class AsmrLibraryController extends ChangeNotifier
     AsmrContentLanguage? defaultLanguage,
     required bool restoreAccountSession,
   }) async {
+    final initEpoch = _runtimeCacheEpoch;
     final visibleCategories = await _preferencesStore.loadVisibleCategories();
-    if (_disposed) return;
+    if (_disposed || initEpoch != _runtimeCacheEpoch) return;
     _visibleCategories = visibleCategories;
     if (defaultLanguage != null) {
       _pageLanguage = defaultLanguage.appLanguage;
     }
     final contentLanguagePreference = await _preferencesStore
         .loadContentLanguagePreference();
-    if (_disposed) return;
+    if (_disposed || initEpoch != _runtimeCacheEpoch) return;
     _contentLanguagePreference = contentLanguagePreference;
     _contentLanguage = _resolveContentLanguage();
     final accountSnapshot = await _accountSyncService.initialize();
-    if (_disposed) return;
+    if (_disposed || initEpoch != _runtimeCacheEpoch) return;
     _applyAccountSnapshot(accountSnapshot);
     final interests = await _preferencesStore.loadAllInterestPreferences();
-    if (_disposed) return;
+    if (_disposed || initEpoch != _runtimeCacheEpoch) return;
     _tagPreferences = interests.tags;
     _voiceActorPreferences = interests.voiceActors;
     _circlePreferences = interests.circles;
@@ -1000,6 +1034,7 @@ class AsmrLibraryController extends ChangeNotifier
   }
 
   Future<void> restoreAsmrAccountSession({bool force = false}) {
+    if (_disposed) return Future<void>.value();
     if (!force && _authSession != null) {
       return Future<void>.value();
     }
@@ -1011,8 +1046,10 @@ class AsmrLibraryController extends ChangeNotifier
     task = _restoreAsmrAccountSessionInternal().whenComplete(() {
       if (identical(_authRestoreTask, task)) {
         _authRestoreTask = null;
-        _bumpGlobalRevision();
-        notifyListeners();
+        if (!_disposed) {
+          _bumpGlobalRevision();
+          notifyListeners();
+        }
       }
     });
     _authRestoreTask = task;
@@ -1026,7 +1063,7 @@ class AsmrLibraryController extends ChangeNotifier
     final previousSession = _authSession;
     try {
       final snapshot = await _accountSyncService.restoreSession();
-      if (requestEpoch != _authEpoch) return;
+      if (_disposed || requestEpoch != _authEpoch) return;
       final restored = snapshot.session;
       if (previousSession?.token == restored?.token &&
           previousSession?.userName == restored?.userName) {
@@ -1042,7 +1079,7 @@ class AsmrLibraryController extends ChangeNotifier
       notifyListeners();
       _refreshLoadedCategoriesForCurrentAuth();
     } catch (error) {
-      if (requestEpoch != _authEpoch) return;
+      if (_disposed || requestEpoch != _authEpoch) return;
       _lastSyncError = error;
       _bumpGlobalRevision();
       notifyListeners();
@@ -1051,10 +1088,21 @@ class AsmrLibraryController extends ChangeNotifier
 
   @override
   Future<void> reloadPersistedState() async {
+    if (_disposed) return;
+    _cancelActiveSync();
+    _authEpoch++;
+    _syncTasks.clear();
+    _syncTaskFullPull.clear();
+    _authRestoreTask = null;
+    _authSession = null;
+    _syncPhase = AsmrSyncPhase.idle;
+    _lastSyncError = null;
     _invalidateSearchSuggestions();
     _remoteCatalogService.invalidateLocalTracksRead();
     _creatorCatalogTasks.clear();
     _creatorCatalogErrors.clear();
+    final pendingInitialize = _initializeTask;
+    _initializeTask = null;
     _initialized = false;
     _tagInterestsReady = false;
     _tagInterestsTask = null;
@@ -1062,10 +1110,20 @@ class AsmrLibraryController extends ChangeNotifier
     _contentEpoch++;
     _catalog.clearWorks();
     _workContent.clearCaches(clearErrors: true);
+    if (pendingInitialize != null) {
+      try {
+        await pendingInitialize;
+      } catch (_) {
+        // Superseded initialization belongs to pre-reload state.
+      }
+    }
+    if (_disposed) return;
     // Let an already-started preference write finish before reloading it.
     await _stateMutationTail;
-    await initialize();
-    await restoreAsmrAccountSession();
+    if (_disposed) return;
+    await _initialize(restoreAccountSession: false);
+    if (_disposed) return;
+    await restoreAsmrAccountSession(force: true);
   }
 
   Future<void> loginAsmrAccount(String name, String password) async {
@@ -1128,18 +1186,38 @@ class AsmrLibraryController extends ChangeNotifier
   }
 
   Future<void> syncAsmrAccount({bool force = false}) {
+    _backgroundSyncTimer?.cancel();
+    _backgroundSyncTimer = null;
+    return _syncAsmrAccount(fullPull: true, upgradeInFlight: force);
+  }
+
+  Future<void> _syncAsmrAccount({
+    required bool fullPull,
+    bool upgradeInFlight = false,
+  }) {
     final session = _authSession;
     if (session == null || !session.isValid) return Future<void>.value();
     final key = (authEpoch: _authEpoch, token: session.token);
     final existing = _syncTasks[key];
     if (existing != null) {
+      if (upgradeInFlight && fullPull && !(_syncTaskFullPull[key] ?? false)) {
+        return existing.then((_) {
+          if (_disposed ||
+              key.authEpoch != _authEpoch ||
+              key.token != _authSession?.token) {
+            return Future<void>.value();
+          }
+          return _syncAsmrAccount(fullPull: true, upgradeInFlight: true);
+        });
+      }
       return existing;
     }
     late final Future<void> task;
-    task = _syncAsmrAccountInternal(key)
+    task = _syncAsmrAccountInternal(key, fullPull: fullPull)
         .then<void>((completedKey) async {
           if (!identical(_syncTasks[key], task)) return;
           unawaited(_syncTasks.remove(key));
+          _syncTaskFullPull.remove(key);
           // Mutations can arrive after the batch drained, during the last sync
           // timestamp write. Token recovery can also change the completed key.
           if (!_disposed &&
@@ -1147,21 +1225,24 @@ class AsmrLibraryController extends ChangeNotifier
               completedKey.authEpoch == _authEpoch &&
               completedKey.token == _authSession?.token &&
               _accountSyncService.snapshot.pendingOperations.isNotEmpty) {
-            await syncAsmrAccount();
+            await _syncAsmrAccount(fullPull: false);
           }
         })
         .whenComplete(() {
           if (identical(_syncTasks[key], task)) {
             unawaited(_syncTasks.remove(key));
+            _syncTaskFullPull.remove(key);
           }
         });
     _syncTasks[key] = task;
+    _syncTaskFullPull[key] = fullPull;
     return task;
   }
 
   Future<_AsmrSyncRequestKey?> _syncAsmrAccountInternal(
-    _AsmrSyncRequestKey key,
-  ) async {
+    _AsmrSyncRequestKey key, {
+    required bool fullPull,
+  }) async {
     if (key.authEpoch != _authEpoch || key.token != _authSession?.token) {
       return null;
     }
@@ -1177,6 +1258,7 @@ class AsmrLibraryController extends ChangeNotifier
       final result = await _accountSyncService.synchronize(
         language: _contentLanguage,
         cancellationToken: cancellationToken,
+        fullPull: fullPull,
       );
       if (cancellationToken.isCancelled || key.authEpoch != _authEpoch) {
         return null;
@@ -1570,25 +1652,30 @@ class AsmrLibraryController extends ChangeNotifier
     List<AsmrWork> works, {
     bool? favorite,
   }) async {
-    final mutationAuthEpoch = _authEpoch;
     final previous = _accountSyncService.snapshot;
     final snapshot = favorite == null
         ? await _accountSyncService.toggleFavorite(works.single)
         : await _accountSyncService.setFavorites(works, favorite: favorite);
-    if (mutationAuthEpoch != _authEpoch) return;
-    if (identical(previous, snapshot)) return;
+    if (_disposed) return;
+    final latest = _accountSyncService.snapshot;
+    if (identical(previous, snapshot) && identical(snapshot, latest)) return;
     final previousIds = _favoriteIds;
-    _applyAccountSnapshot(snapshot);
+    final previousOperations = _syncOperations;
+    _applyLocalAccountState(latest);
     final changedIds = {
       for (final work in works)
         if (previousIds.contains(work.workKey) !=
             _favoriteIds.contains(work.workKey))
           work.workKey: _favoriteIds.contains(work.workKey),
     };
-    _catalog.updateFavorites(changedIds);
+    if (changedIds.isNotEmpty) {
+      _catalog.updateFavorites(changedIds);
+    }
     _bumpGlobalRevision();
-    if (isAsmrAccountLoggedIn) {
-      unawaited(syncAsmrAccount());
+    if (isAsmrAccountLoggedIn &&
+        (changedIds.isNotEmpty ||
+            !identical(previousOperations, _syncOperations))) {
+      _scheduleBackgroundSync();
     }
     _catalog.updateLocalCounts();
     _catalog.bumpRevision(AsmrCategoryType.favorites);
@@ -1602,13 +1689,12 @@ class AsmrLibraryController extends ChangeNotifier
   }
 
   Future<void> _recordHistoryNow(AsmrWork work) async {
-    final mutationAuthEpoch = _authEpoch;
-    final snapshot = await _accountSyncService.recordHistory(work);
-    if (mutationAuthEpoch != _authEpoch) return;
-    _applyAccountSnapshot(snapshot);
+    await _accountSyncService.recordHistory(work);
+    if (_disposed) return;
+    _applyLocalAccountState(_accountSyncService.snapshot);
     _bumpGlobalRevision();
     if (isAsmrAccountLoggedIn) {
-      unawaited(syncAsmrAccount());
+      _scheduleBackgroundSync();
     }
     _catalog.updateLocalCounts();
     _catalog.bumpRevision(AsmrCategoryType.history);
@@ -1644,6 +1730,8 @@ class AsmrLibraryController extends ChangeNotifier
     _searchSuggestionsCancellation?.cancel();
     _disposed = true;
     _remoteCatalogService.invalidateLocalTracksRead();
+    _backgroundSyncTimer?.cancel();
+    _backgroundSyncTimer = null;
     _activeSyncCancellationToken?.cancel();
     _activeSyncCancellationToken = null;
     _authEpoch++;

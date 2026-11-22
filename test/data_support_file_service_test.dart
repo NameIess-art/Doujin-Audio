@@ -307,19 +307,63 @@ void main() {
   }
 
   test(
-    'global error exporter passes bytes to the picker and cleans up',
+    'global error exporter streams to the picker destination and cleans up',
     () async {
-      filePicker.savePath = path.join(temporaryDirectory.path, 'exported.zip');
+      final destination = path.join(temporaryDirectory.path, 'exported.zip');
+      filePicker.savePath = destination;
       final exporter = DiagnosticReportExporter(
         reportService: _TestDiagnosticReportService(),
+        isAndroid: () => false,
       );
 
       final result = await exporter.export(dialogTitle: 'Export diagnostics');
 
-      expect(result, filePicker.savePath);
+      expect(result, destination);
       expect(filePicker.dialogTitle, 'Export diagnostics');
       expect(filePicker.allowedExtensions, const <String>['zip']);
-      expect(filePicker.bytes, _TestDiagnosticReportService.contents);
+      expect(filePicker.bytes, isNull);
+      expect(
+        await File(destination).readAsBytes(),
+        _TestDiagnosticReportService.contents,
+      );
+      expect(
+        File(
+          path.join(temporaryDirectory.path, 'DoujinAudio-diagnostic.zip'),
+        ).existsSync(),
+        isFalse,
+      );
+    },
+  );
+
+  test(
+    'global error exporter streams through the Android gateway and cleans up',
+    () async {
+      String? exportedFileName;
+      String? exportedMimeType;
+      List<int>? exportedBytes;
+      messenger.setMockMethodCallHandler(fileCacheChannel, (call) async {
+        expect(call.method, 'exportFile');
+        final args = Map<String, Object?>.from(call.arguments as Map);
+        exportedFileName = args['fileName'] as String?;
+        exportedMimeType = args['mimeType'] as String?;
+        exportedBytes = await File(args['sourcePath'] as String).readAsBytes();
+        return <String, Object?>{
+          'ok': true,
+          'value': 'content://downloads/DoujinAudio-diagnostic.zip',
+        };
+      });
+      final exporter = DiagnosticReportExporter(
+        reportService: _TestDiagnosticReportService(),
+        fileCacheGateway: FileCachePlatformGateway(channel: fileCacheChannel),
+        isAndroid: () => true,
+      );
+
+      final result = await exporter.export(dialogTitle: 'Export diagnostics');
+
+      expect(result, 'content://downloads/DoujinAudio-diagnostic.zip');
+      expect(exportedFileName, 'DoujinAudio-diagnostic.zip');
+      expect(exportedMimeType, 'application/zip');
+      expect(exportedBytes, _TestDiagnosticReportService.contents);
       expect(
         File(
           path.join(temporaryDirectory.path, 'DoujinAudio-diagnostic.zip'),

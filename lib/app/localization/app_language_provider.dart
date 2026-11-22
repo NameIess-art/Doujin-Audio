@@ -72,18 +72,29 @@ class AppLanguageProvider
   late AppLanguage _language;
   int _preferenceRevision = 0;
   bool _disposed = false;
+  bool _synchronouslyInitialized = false;
   Future<void>? _preferenceWrites;
   late Future<void> _loadFuture;
 
   AppLanguageProvider() {
-    _language = _resolveSystemLanguage();
     WidgetsBinding.instance.addObserver(this);
-    _loadFuture = _loadLanguage();
+    if (AppPreferences.isInitialized) {
+      final raw = AppPreferences.getStringSync(_prefsKey);
+      _preference = _parsePreference(raw);
+      _language = _preference.explicitLanguage ?? _resolveSystemLanguage();
+      _synchronouslyInitialized = true;
+      _loadFuture = Future<void>.value();
+    } else {
+      _language = _resolveSystemLanguage();
+      _loadFuture = _loadLanguage();
+    }
   }
 
   AppLanguagePreference get preference => _preference;
 
   AppLanguage get language => _language;
+
+  bool get isSynchronouslyInitialized => _synchronouslyInitialized;
 
   Future<void> get initialized => _loadFuture;
 
@@ -155,14 +166,17 @@ class AppLanguageProvider
     await _loadFuture;
   }
 
+  static AppLanguagePreference _parsePreference(String? raw) =>
+      AppLanguagePreference.values.firstWhere(
+        (value) => value.name == raw,
+        orElse: () => AppLanguagePreference.system,
+      );
+
   Future<void> _loadLanguage() async {
     final revision = _preferenceRevision;
     final raw = await AppPreferences.getString(_prefsKey);
     if (_disposed || revision != _preferenceRevision) return;
-    final preference = AppLanguagePreference.values.firstWhere(
-      (value) => value.name == raw,
-      orElse: () => AppLanguagePreference.system,
-    );
+    final preference = _parsePreference(raw);
     final language = preference.explicitLanguage ?? _resolveSystemLanguage();
     if (_preference == preference && _language == language) return;
     _preference = preference;

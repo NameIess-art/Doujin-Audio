@@ -1809,7 +1809,7 @@ void main() {
               await tester.sendEventToBinding(
                 PointerScrollEvent(
                   position: tester.getCenter(viewport),
-                  scrollDelta: const Offset(0, 120),
+                  scrollDelta: const Offset(120, 0),
                 ),
               );
             } else {
@@ -2018,7 +2018,7 @@ void main() {
       await tester.sendEventToBinding(
         PointerScrollEvent(
           position: tester.getCenter(viewport),
-          scrollDelta: Offset(0, delta),
+          scrollDelta: Offset(delta, 0),
         ),
       );
       await tester.pumpAndSettle();
@@ -2083,12 +2083,24 @@ void main() {
     final pageView = tester.widget<PageView>(find.byType(PageView));
     expect(pageView.childrenDelegate.estimatedChildCount, isNull);
     final initialPage = pageView.controller!.page!;
+    // Plain vertical wheel must not hijack cover navigation.
     await tester.sendEventToBinding(
       PointerScrollEvent(
         position: tester.getCenter(
           find.byKey(const ValueKey('audio_detail_cover_content')),
         ),
         scrollDelta: const Offset(0, 120),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('1 / 2'), findsOneWidget);
+
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        position: tester.getCenter(
+          find.byKey(const ValueKey('audio_detail_cover_content')),
+        ),
+        scrollDelta: const Offset(120, 0),
       ),
     );
     await tester.pump(const Duration(milliseconds: 350));
@@ -2102,7 +2114,7 @@ void main() {
         position: tester.getCenter(
           find.byKey(const ValueKey('audio_detail_cover_content')),
         ),
-        scrollDelta: const Offset(0, 120),
+        scrollDelta: const Offset(120, 0),
       ),
     );
     await tester.pump(const Duration(milliseconds: 350));

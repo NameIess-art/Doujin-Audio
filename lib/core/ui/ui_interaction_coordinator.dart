@@ -31,6 +31,8 @@ class UiInteractionCoordinator extends ChangeNotifier {
   final Map<String, Timer> _throttleTimers = <String, Timer>{};
   final Map<String, VoidCallback> _throttledCommits = <String, VoidCallback>{};
   bool _frameScheduled = false;
+  bool _publishScheduled = false;
+  bool _disposed = false;
   int _generation = 0;
   (bool, bool) _publishedInteractionState = (false, false);
 
@@ -51,32 +53,26 @@ class UiInteractionCoordinator extends ChangeNotifier {
 
   void beginNavigation(Object source, {bool lockInput = true}) {
     _navigationSources.add(source);
-    _navigationAllowed.value = false;
     if (lockInput) {
       _inputLockSources.add(source);
-      _navigationInputAllowed.value = false;
     }
     beginInteraction(source);
-    _notifyInteractionChanged();
+    _syncPublishedState();
   }
 
   void endNavigation(Object source) {
     _navigationSources.remove(source);
     _inputLockSources.remove(source);
-    _navigationAllowed.value = _navigationSources.isEmpty;
-    _navigationInputAllowed.value = _inputLockSources.isEmpty;
     endInteraction(source);
-    _notifyInteractionChanged();
+    _syncPublishedState();
     scheduleCommitFrame();
   }
 
   void cancelNavigation(Object source) {
     _navigationSources.remove(source);
     _inputLockSources.remove(source);
-    _navigationAllowed.value = _navigationSources.isEmpty;
-    _navigationInputAllowed.value = _inputLockSources.isEmpty;
     cancelInteraction(source);
-    _notifyInteractionChanged();
+    _syncPublishedState();
     scheduleCommitFrame();
   }
 
@@ -87,16 +83,36 @@ class UiInteractionCoordinator extends ChangeNotifier {
         deferVisualUpdates && _visualUpdateSources.add(source);
     if (!added && !visualProtectionAdded) return;
     _backgroundScheduler.setPaused(true);
-    _notifyInteractionChanged();
+    _syncPublishedState();
   }
 
-  void _notifyInteractionChanged() {
+  void _syncPublishedState() {
+    if (_disposed) return;
+    final nextNavAllowed = _navigationSources.isEmpty;
+    final nextNavInputAllowed = _inputLockSources.isEmpty;
     final current = (isInteracting, isVisualUpdateDeferred);
-    if (_publishedInteractionState == current) return;
-    // Listeners consume the aggregate guard, not individual scrolls or fades.
-    // Keep visual release observable even while another interaction continues.
-    _publishedInteractionState = current;
-    notifyListeners();
+    final navChanged = _navigationAllowed.value != nextNavAllowed;
+    final inputChanged = _navigationInputAllowed.value != nextNavInputAllowed;
+    final interactionChanged = _publishedInteractionState != current;
+    if (!navChanged && !inputChanged && !interactionChanged) return;
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      if (_publishScheduled) return;
+      _publishScheduled = true;
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        _publishScheduled = false;
+        _syncPublishedState();
+      });
+      return;
+    }
+    if (navChanged) _navigationAllowed.value = nextNavAllowed;
+    if (inputChanged) _navigationInputAllowed.value = nextNavInputAllowed;
+    if (interactionChanged) {
+      // Listeners consume the aggregate guard, not individual scrolls or fades.
+      // Keep visual release observable even while another interaction continues.
+      _publishedInteractionState = current;
+      notifyListeners();
+    }
   }
 
   void endInteraction(Object source) {
@@ -199,7 +215,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
     if (!_activeSources.remove(source)) return;
     _visualUpdateSources.remove(source);
     _backgroundScheduler.setPaused(isInteracting);
-    _notifyInteractionChanged();
+    _syncPublishedState();
     scheduleCommitFrame();
   }
 
@@ -273,6 +289,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
     _navigationSources.clear();
     _inputLockSources.clear();
     _visualUpdateSources.clear();
+    _publishScheduled = false;
     _navigationAllowed.value = true;
     _navigationInputAllowed.value = true;
     _backgroundScheduler.setPaused(false);
@@ -291,6 +308,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
     _navigationSources.clear();
     _inputLockSources.clear();
     _visualUpdateSources.clear();
+    _publishScheduled = false;
     _navigationAllowed.value = true;
     _navigationInputAllowed.value = true;
     _backgroundScheduler.setPaused(false);
@@ -308,6 +326,8 @@ class UiInteractionCoordinator extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    _publishScheduled = false;
     for (final timer in _idleTimers.values) {
       timer.cancel();
     }

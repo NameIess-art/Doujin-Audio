@@ -155,11 +155,13 @@ internal fun NetworkRoute.createClient(
         val proxyHosts = ConcurrentHashMap.newKeySet<String>()
         fun hostKey(host: String) = host.removeSurrounding("[", "]").lowercase()
         // Let OkHttp retain PAC fallback and re-evaluate policy after redirects.
-        // Its Dns also resolves HTTP proxy endpoints, which must use OS DNS.
+        // Its Dns also resolves proxy endpoints, which must use OS DNS.
         builder.proxySelector(object : ProxySelector() {
             override fun select(uri: URI): List<Proxy> = systemProxySelector.select(uri).also { proxies ->
-                proxies.filter { it.type() == Proxy.Type.HTTP }.forEach {
-                    proxyHosts.add(hostKey((it.address() as InetSocketAddress).hostString))
+                proxies.filter { it.type() != Proxy.Type.DIRECT }.forEach { proxy ->
+                    (proxy.address() as? InetSocketAddress)?.hostString?.let { host ->
+                        proxyHosts.add(hostKey(host))
+                    }
                 }
             }
             override fun connectFailed(uri: URI, address: SocketAddress, error: IOException) =

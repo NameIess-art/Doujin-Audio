@@ -61,7 +61,7 @@ class TimerRuntimeCalculator {
   }) {
     var target = DateTime(now.year, now.month, now.day, hour, minute);
     if (!target.isAfter(now)) {
-      target = target.add(const Duration(days: 1));
+      target = DateTime(now.year, now.month, now.day + 1, hour, minute);
     }
     return target;
   }

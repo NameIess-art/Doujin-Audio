@@ -242,7 +242,13 @@ class AppSearchFiltersPanel extends StatelessWidget {
                 icon: const Icon(Icons.close_rounded, size: 16),
                 padding: EdgeInsets.zero,
                 visualDensity: VisualDensity.compact,
-                constraints: const BoxConstraints.tightFor(width: 26),
+                constraints: const BoxConstraints.tightFor(
+                  width: 40,
+                  height: 40,
+                ),
+                style: IconButton.styleFrom(
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
               ),
           ],
         ),

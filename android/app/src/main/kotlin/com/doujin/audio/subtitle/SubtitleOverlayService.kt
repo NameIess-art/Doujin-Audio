@@ -26,6 +26,15 @@ class SubtitleOverlayService : Service() {
     private var subtitleTextView: TextView? = null
     private lateinit var params: WindowManager.LayoutParams
     private val binder = LocalBinder()
+    private var appliedStyle: OverlayStyle? = null
+
+    private data class OverlayStyle(
+        val fontSize: Float,
+        val backgroundColor: String,
+        val textColor: String,
+        val fontFamily: String,
+        val borderDepth: Float
+    )
 
     private fun dp(value: Float): Float = value * resources.displayMetrics.density
 
@@ -39,17 +48,33 @@ class SubtitleOverlayService : Service() {
         return binder
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        return START_NOT_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        removeOverlayView()
+        stopSelf()
+    }
+
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         createOverlay()
     }
 
+    fun ensureOverlayAttached(): Boolean {
+        if (subtitleTextView != null) return true
+        return createOverlay()
+    }
+
     @SuppressLint("ClickableViewAccessibility")
-    private fun createOverlay() {
+    private fun createOverlay(): Boolean {
+        if (subtitleTextView != null) return true
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
             stopSelf()
-            return
+            return false
         }
 
         val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -104,10 +129,14 @@ class SubtitleOverlayService : Service() {
                         return true
                     }
                     MotionEvent.ACTION_MOVE -> {
-                        params.x = initialX + (event.rawX - initialTouchX).toInt()
-                        params.y = initialY - (event.rawY - initialTouchY).toInt()
-                        if (subtitleTextView === textView) {
-                            windowManager.updateViewLayout(textView, params)
+                        val nextX = initialX + (event.rawX - initialTouchX).toInt()
+                        val nextY = initialY - (event.rawY - initialTouchY).toInt()
+                        if (nextX != params.x || nextY != params.y) {
+                            params.x = nextX
+                            params.y = nextY
+                            if (subtitleTextView === textView) {
+                                windowManager.updateViewLayout(textView, params)
+                            }
                         }
                         return true
                     }
@@ -116,15 +145,20 @@ class SubtitleOverlayService : Service() {
             }
         })
 
-        try {
+        return try {
             windowManager.addView(textView, params)
             subtitleTextView = textView
+            appliedStyle = null
+            true
         } catch (_: WindowManager.BadTokenException) {
             stopSelf()
+            false
         } catch (_: SecurityException) {
             stopSelf()
+            false
         } catch (_: IllegalStateException) {
             stopSelf()
+            false
         }
     }
 
@@ -159,9 +193,18 @@ class SubtitleOverlayService : Service() {
         borderDepth: Float = 0.5f
     ) {
         subtitleTextView?.post {
-            subtitleTextView?.textSize = fontSize
+            val view = subtitleTextView ?: return@post
+            val nextStyle = OverlayStyle(
+                fontSize = fontSize,
+                backgroundColor = backgroundColor,
+                textColor = textColor,
+                fontFamily = fontFamily,
+                borderDepth = borderDepth
+            )
+            if (appliedStyle == nextStyle) return@post
+            view.textSize = fontSize
             try {
-                subtitleTextView?.setTextColor(Color.parseColor(textColor))
+                view.setTextColor(Color.parseColor(textColor))
                 
                 val shape = GradientDrawable().apply {
                     cornerRadius = dp(fontSize * 1.2f)
@@ -170,24 +213,25 @@ class SubtitleOverlayService : Service() {
                         setStroke(dpInt(borderDepth * 4).coerceAtLeast(1), Color.parseColor("#40FFFFFF"))
                     }
                 }
-                subtitleTextView?.background = shape
+                view.background = shape
 
                 if (fontFamily.isNotEmpty()) {
                     val tf = android.graphics.Typeface.create(fontFamily, android.graphics.Typeface.NORMAL)
-                    subtitleTextView?.typeface = tf
+                    view.typeface = tf
                 } else {
-                    subtitleTextView?.typeface = android.graphics.Typeface.DEFAULT
+                    view.typeface = android.graphics.Typeface.DEFAULT
                 }
 
-                subtitleTextView?.setShadowLayer(dp(4f), 0f, dp(2f), Color.parseColor("#80000000"))
+                view.setShadowLayer(dp(4f), 0f, dp(2f), Color.parseColor("#80000000"))
+                appliedStyle = nextStyle
             } catch (e: Exception) {
                 // Ignore invalid colors
             }
         }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
+    private fun removeOverlayView() {
+        appliedStyle = null
         val view = subtitleTextView
         subtitleTextView = null
         if (view != null) {
@@ -196,5 +240,10 @@ class SubtitleOverlayService : Service() {
             } catch (_: IllegalArgumentException) {
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        removeOverlayView()
     }
 }

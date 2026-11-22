@@ -87,6 +87,7 @@ class AsmrApiService {
 
   static const String _acceptLanguage = 'zh-CN,zh;q=0.9,en;q=0.8';
   static const Duration _requestTimeout = Duration(seconds: 15);
+  static const Duration _mediaProbeTimeout = Duration(seconds: 4);
 
   /// The public tag directory is an unpaginated array; reject partial envelopes.
   Future<List<AsmrTag>> fetchTagCatalog() =>
@@ -290,6 +291,12 @@ class AsmrApiService {
     AsmrRequestCancellationToken? cancellationToken,
   }) async {
     cancellationToken?.throwIfCancelled();
+    final elapsed = Stopwatch()..start();
+    Duration remainingTimeout() {
+      final left = _mediaProbeTimeout - elapsed.elapsed;
+      return left > Duration.zero ? left : Duration.zero;
+    }
+
     HttpClientRequest? request;
     StreamSubscription<List<int>>? subscription;
     var retired = false;
@@ -306,12 +313,12 @@ class AsmrApiService {
         return request = value;
       });
       request = await (cancellationToken?.waitFor(opening) ?? opening).timeout(
-        _requestTimeout,
+        remainingTimeout(),
       );
       request!.headers.set(HttpHeaders.rangeHeader, 'bytes=0-15');
       final closing = request!.close();
       final response = await (cancellationToken?.waitFor(closing) ?? closing)
-          .timeout(_requestTimeout);
+          .timeout(remainingTimeout());
       if (response.statusCode < 200 ||
           response.statusCode >= 300 ||
           response.headers.contentType?.mimeType == 'text/html') {
@@ -340,7 +347,7 @@ class AsmrApiService {
         cancelOnError: true,
       );
       await (cancellationToken?.waitFor(received.future) ?? received.future)
-          .timeout(_requestTimeout);
+          .timeout(remainingTimeout());
     } finally {
       retired = true;
       removeListener?.call();

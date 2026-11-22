@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:isolate';
 
 import 'package:path/path.dart' as path;
@@ -50,6 +51,7 @@ final class LibraryMetadataCoordinator {
   static const _backupRestoreAuthoritativeKey =
       'backup_restore_authoritative_v1';
   static const _durationDocumentSyncKey = 'audio_detail_duration_document_v1';
+  static const _durationProbeFailuresKey = 'library_duration_probe_failures_v1';
 
   final LibraryPersistenceRepository _databaseRepository;
   final AudioDetailCacheService _detailCacheService;
@@ -129,14 +131,8 @@ final class LibraryMetadataCoordinator {
   }
 
   Future<bool> exportTimeSegmentLabels(String trackKey) async {
-    final track = _service.library
-        .where(
-          (item) =>
-              !item.isRemoteAsmr &&
-              PathMatcher.normalize(item.path) == trackKey,
-        )
-        .firstOrNull;
-    if (track == null) return true;
+    final track = _service.trackByPath(trackKey);
+    if (track == null || track.isRemoteAsmr) return true;
     try {
       return await _detailCacheService.exportTimeSegments(
         targetForTrack(track),
@@ -363,6 +359,7 @@ final class LibraryMetadataCoordinator {
     final settings = await _databaseRepository.loadAppSettings([
       _backupRestoreAuthoritativeKey,
       _durationDocumentSyncKey,
+      _durationProbeFailuresKey,
     ]);
     final syncSetting = settings[_durationDocumentSyncKey];
     final synchronized = syncSetting == null
@@ -371,6 +368,21 @@ final class LibraryMetadataCoordinator {
     final previousSyncCount = synchronized.length;
     synchronized.removeWhere((key, _) => !targetsByKey.containsKey(key));
     var syncChanged = synchronized.length != previousSyncCount;
+    final failureSetting = settings[_durationProbeFailuresKey];
+    final failedProbes = failureSetting == null
+        ? <String, String>{}
+        : await _readDurationProbeFailures(failureSetting);
+    var failuresChanged = false;
+    if (failedProbes.isNotEmpty) {
+      final missingTrackKeys = <String>{
+        for (final track in tracks)
+          if (track.duration <= Duration.zero)
+            PathMatcher.equivalenceKey(track.path),
+      };
+      final previousFailureCount = failedProbes.length;
+      failedProbes.removeWhere((key, _) => !missingTrackKeys.contains(key));
+      failuresChanged = failedProbes.length != previousFailureCount;
+    }
     final targets = targetsByKey.values.toList(growable: false);
     final loadResults = <AudioDetailLoadResult>[];
     for (var start = 0; start < targets.length; start += 64) {
@@ -423,6 +435,21 @@ final class LibraryMetadataCoordinator {
         durationReader,
         epoch: epoch,
         waitForIdle: waitForIdle,
+        failedFingerprints: failedProbes,
+        onResolved: (track) {
+          if (failedProbes.remove(PathMatcher.equivalenceKey(track.path)) !=
+              null) {
+            failuresChanged = true;
+          }
+        },
+        onUnresolved: (track) {
+          final key = PathMatcher.equivalenceKey(track.path);
+          final fingerprint = _durationFailureFingerprint(track);
+          if (failedProbes[key] != fingerprint) {
+            failedProbes[key] = fingerprint;
+            failuresChanged = true;
+          }
+        },
         commitBatch: (batch) => _commitDurations(
           batch,
           epoch,
@@ -493,7 +520,59 @@ final class LibraryMetadataCoordinator {
         if (syncChanged) {
           await _persistDurationDocumentSync(synchronized, epoch);
         }
+        if (failuresChanged) {
+          await _persistDurationProbeFailures(failedProbes, epoch);
+        }
       }
+    }
+  }
+
+  static String _durationFailureFingerprint(MusicTrack track) =>
+      '${track.fileSizeBytes ?? -1}|${track.modifiedAt?.millisecondsSinceEpoch ?? -1}';
+
+  static Future<Map<String, String>> _readDurationProbeFailures(String value) =>
+      Isolate.run(() => _decodeDurationProbeFailures(value));
+
+  static Map<String, String> _decodeDurationProbeFailures(String value) {
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is Map<String, dynamic>) {
+        return <String, String>{
+          for (final entry in decoded.entries)
+            if (entry.value case final String fingerprint
+                when entry.key.isNotEmpty && fingerprint.isNotEmpty)
+              entry.key: fingerprint,
+        };
+      }
+    } on FormatException {
+      // Negative cache is an optimization and can be regenerated.
+    }
+    return <String, String>{};
+  }
+
+  static Future<String> _encodeDurationProbeFailures(
+    Map<String, String> values,
+  ) => Isolate.run(() => jsonEncode(values));
+
+  Future<void> _persistDurationProbeFailures(
+    Map<String, String> failedProbes,
+    int epoch,
+  ) async {
+    try {
+      final encoded = failedProbes.isEmpty
+          ? null
+          : await _encodeDurationProbeFailures(failedProbes);
+      if (!_isCurrent(epoch)) return;
+      await _databaseRepository.saveAppSetting(
+        _durationProbeFailuresKey,
+        encoded,
+      );
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'library_duration_probe_failures_checkpoint_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -622,6 +701,9 @@ final class LibraryMetadataCoordinator {
     Future<Duration?> Function(String path)? durationReader, {
     required int epoch,
     Future<bool> Function()? waitForIdle,
+    Map<String, String>? failedFingerprints,
+    void Function(MusicTrack track)? onResolved,
+    void Function(MusicTrack track)? onUnresolved,
     Future<bool> Function(List<MusicTrack>)? commitBatch,
   }) async {
     if (tracks.isEmpty || !_isCurrent(epoch)) {
@@ -633,9 +715,19 @@ final class LibraryMetadataCoordinator {
     for (final track in tracks) {
       if (track.duration > Duration.zero) {
         total += track.duration;
+      } else if (failedFingerprints != null &&
+          failedFingerprints[PathMatcher.equivalenceKey(track.path)] ==
+              _durationFailureFingerprint(track)) {
+        hasUnknown = true;
       } else {
         missing.add(track);
       }
+    }
+    if (missing.isEmpty) {
+      return (
+        totalDuration: !hasUnknown && total > Duration.zero ? total : null,
+        updatedTracks: const <MusicTrack>[],
+      );
     }
     Future<Duration?> resolve(MusicTrack track) async {
       try {
@@ -654,43 +746,61 @@ final class LibraryMetadataCoordinator {
     }
 
     final updated = <MusicTrack>[];
-    const concurrency = 2;
+    final concurrency = Platform.isWindows ? 4 : 2;
     const commitBatchSize = 64;
-    for (var start = 0; start < missing.length; start += concurrency) {
-      if (!(await waitForIdle?.call() ?? true) || !_isCurrent(epoch)) {
-        return (totalDuration: null, updatedTracks: const <MusicTrack>[]);
-      }
-      final chunk = missing.sublist(
-        start,
-        (start + concurrency).clamp(0, missing.length),
-      );
-      final durations = await Future.wait(chunk.map(resolve));
-      if (!_isCurrent(epoch)) {
-        return (totalDuration: null, updatedTracks: const <MusicTrack>[]);
-      }
-      for (var index = 0; index < chunk.length; index++) {
-        final duration = durations[index] ?? Duration.zero;
-        if (duration > Duration.zero) {
-          total += duration;
-          updated.add(chunk[index].copyWith(duration: duration));
-        } else {
-          hasUnknown = true;
-          AppLogService.warning(
-            'library_duration_unresolved path=${chunk[index].path} '
-            'video=${chunk[index].isVideo}',
-          );
+    var aborted = false;
+
+    for (
+      var batchStart = 0;
+      batchStart < missing.length && !aborted;
+      batchStart += commitBatchSize
+    ) {
+      final batchEnd = (batchStart + commitBatchSize < missing.length)
+          ? batchStart + commitBatchSize
+          : missing.length;
+      var nextIndex = batchStart;
+
+      Future<void> worker() async {
+        while (!aborted) {
+          if (!(await waitForIdle?.call() ?? true) || !_isCurrent(epoch)) {
+            aborted = true;
+            return;
+          }
+          if (aborted || nextIndex >= batchEnd) return;
+          final track = missing[nextIndex++];
+          final duration = await resolve(track) ?? Duration.zero;
+          if (aborted || !_isCurrent(epoch)) {
+            aborted = true;
+            return;
+          }
+          if (duration > Duration.zero) {
+            total += duration;
+            updated.add(track.copyWith(duration: duration));
+            onResolved?.call(track);
+          } else {
+            hasUnknown = true;
+            onUnresolved?.call(track);
+            AppLogService.warning(
+              'library_duration_unresolved path=${track.path} '
+              'video=${track.isVideo}',
+            );
+          }
         }
       }
-      if (commitBatch != null && updated.length >= commitBatchSize) {
-        if (!await commitBatch(updated)) {
+
+      final remaining = batchEnd - batchStart;
+      final workerCount = remaining < concurrency ? remaining : concurrency;
+      await Future.wait(List.generate(workerCount, (_) => worker()));
+      if (aborted || !_isCurrent(epoch)) {
+        return (totalDuration: null, updatedTracks: const <MusicTrack>[]);
+      }
+      if (commitBatch != null && updated.isNotEmpty) {
+        final batch = List<MusicTrack>.of(updated);
+        updated.clear();
+        if (!await commitBatch(batch)) {
           return (totalDuration: null, updatedTracks: const <MusicTrack>[]);
         }
-        updated.clear();
       }
-    }
-    if (commitBatch != null && updated.isNotEmpty) {
-      await commitBatch(updated);
-      updated.clear();
     }
     return (
       totalDuration: !hasUnknown && total > Duration.zero ? total : null,

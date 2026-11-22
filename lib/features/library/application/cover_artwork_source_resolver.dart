@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
+import 'dart:isolate';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -30,8 +31,63 @@ const int _coverTrackIndexThreshold = 512;
 
 class _FolderImageIndex {
   late Future<List<CoverImageReference>> result;
+  List<CoverImageReference>? _indexedSource;
+  List<({String key, int index})>? _sortedByKey;
   bool refreshing = false;
   int users = 0;
+
+  List<CoverImageReference> filterWithin(
+    List<CoverImageReference> images,
+    String normalizedFolder, {
+    required bool firstOnly,
+  }) {
+    if (images.isEmpty) return const <CoverImageReference>[];
+    if (!identical(_indexedSource, images)) {
+      _indexedSource = images;
+      _sortedByKey = [
+        for (var i = 0; i < images.length; i++)
+          (key: PathMatcher.equivalenceKey(images[i].displayPath), index: i),
+      ]..sort((a, b) => a.key.compareTo(b.key));
+    }
+    final sorted = _sortedByKey!;
+    final folderKey = PathMatcher.equivalenceKey(normalizedFolder);
+    final prefix = folderKey.endsWith('/') ? folderKey : '$folderKey/';
+    var low = 0;
+    var high = sorted.length;
+    while (low < high) {
+      final mid = low + ((high - low) >> 1);
+      if (sorted[mid].key.compareTo(prefix) < 0) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
+    }
+    if (firstOnly) {
+      var minIndex = -1;
+      for (var i = low; i < sorted.length; i++) {
+        final entry = sorted[i];
+        if (!entry.key.startsWith(prefix)) break;
+        if (minIndex < 0 || entry.index < minIndex) {
+          minIndex = entry.index;
+        }
+      }
+      if (minIndex < 0) return const <CoverImageReference>[];
+      return List<CoverImageReference>.unmodifiable(<CoverImageReference>[
+        images[minIndex],
+      ]);
+    }
+    final matchedIndices = <int>[];
+    for (var i = low; i < sorted.length; i++) {
+      final entry = sorted[i];
+      if (!entry.key.startsWith(prefix)) break;
+      matchedIndices.add(entry.index);
+    }
+    if (matchedIndices.isEmpty) return const <CoverImageReference>[];
+    matchedIndices.sort();
+    return List<CoverImageReference>.unmodifiable([
+      for (final index in matchedIndices) images[index],
+    ]);
+  }
 }
 
 /// Discovers sources while selection and result caches remain in the cache service.
@@ -90,30 +146,8 @@ final class CoverArtworkSourceResolver {
   Iterable<Future<String?>> get pendingPlatformCovers =>
       _platformCoverFutures.values;
 
-  static final RegExp _windowsAbsolutePath = RegExp(
-    r'^(?:[A-Za-z]:[\\/]|\\\\)',
-  );
-
-  String? _mostSpecificWatchedFolder(String value) {
-    final watchedFolders = _libraryService.watchedFolders;
-    if (watchedFolders.isEmpty) return null;
-    if (!PathMatcher.isContentUri(value) && !PathMatcher.isRemoteUri(value)) {
-      final normalized = PathMatcher.normalize(value);
-      if (normalized.startsWith('/') ||
-          _windowsAbsolutePath.hasMatch(normalized)) {
-        String? current = normalized;
-        while (current != null && current.isNotEmpty) {
-          final match = watchedFolders.lookup(current);
-          if (match != null) return match;
-          final parent = PathMatcher.parentPath(current);
-          if (parent == null || parent == current) break;
-          current = parent;
-        }
-        return null;
-      }
-    }
-    return mostSpecificContainingCoverRoot(watchedFolders, value);
-  }
+  String? _mostSpecificWatchedFolder(String value) =>
+      _libraryService.mostSpecificWatchedFolder(value);
 
   String? coverScopeFolderForTrack(MusicTrack? track, {String? trackPath}) {
     final pathValue = trackPath ?? track?.path;
@@ -137,14 +171,8 @@ final class CoverArtworkSourceResolver {
     final watchedLibrary =
         (groupKey.isEmpty
             ? null
-            : mostSpecificContainingCoverRoot(
-                _libraryService.watchedLibraries,
-                groupKey,
-              )) ??
-        mostSpecificContainingCoverRoot(
-          _libraryService.watchedLibraries,
-          pathValue,
-        );
+            : _libraryService.mostSpecificWatchedLibrary(groupKey)) ??
+        _libraryService.mostSpecificWatchedLibrary(pathValue);
     if (watchedLibrary != null && watchedLibrary.isNotEmpty) {
       final workScope = groupKey.isEmpty
           ? null
@@ -210,9 +238,7 @@ final class CoverArtworkSourceResolver {
         final normalizedCurrent = PathMatcher.normalize(current);
         addScope(normalizedCurrent);
         if (_libraryService.watchedFolders.contains(normalizedCurrent) ||
-            _libraryService.watchedLibraries.any(
-              (root) => PathMatcher.equalsNormalized(root, normalizedCurrent),
-            )) {
+            _libraryService.containsWatchedLibrary(normalizedCurrent)) {
           break;
         }
         final parent = PathMatcher.parentPath(current);
@@ -237,14 +263,15 @@ final class CoverArtworkSourceResolver {
 
   String _rootPathForTrack(MusicTrack track) {
     if (track.isSingle) return track.path;
-    String? libraryMatch;
-    for (final root in _libraryService.watchedLibraries) {
-      if (libraryMatch != null && root.length <= libraryMatch.length) continue;
-      if (PathMatcher.isWithinOrEqual(track.groupKey, root) ||
-          PathMatcher.isWithinOrEqual(track.path, root)) {
-        libraryMatch = root;
-      }
-    }
+    final groupLibrary = track.groupKey.isEmpty
+        ? null
+        : _libraryService.mostSpecificWatchedLibrary(track.groupKey);
+    final pathLibrary = _libraryService.mostSpecificWatchedLibrary(track.path);
+    final libraryMatch = groupLibrary == null
+        ? pathLibrary
+        : pathLibrary == null || groupLibrary.length >= pathLibrary.length
+        ? groupLibrary
+        : pathLibrary;
     if (libraryMatch != null) {
       return const LibraryOrganizer().workScopeFolderPath(
             libraryMatch,
@@ -313,21 +340,14 @@ final class CoverArtworkSourceResolver {
     return List<String>.unmodifiable(distinct);
   }
 
-  Future<String?> localCoverContentKey(String coverPath) async {
+  Future<String?> localCoverContentKey(String coverPath) {
     if (PathMatcher.isContentUri(coverPath) ||
         PathMatcher.isRemoteUri(coverPath)) {
-      return null;
+      return Future<String?>.value();
     }
-    try {
-      final file = File(coverPath);
-      if (!await file.exists()) return null;
-      final length = await file.length();
-      if (length <= 0 || length > maxCoverFileBytes) return null;
-      final digest = await sha256.bind(file.openRead()).first;
-      return '$length:$digest';
-    } catch (_) {
-      return null;
-    }
+    return IOOverrides.current == null
+        ? Isolate.run(() => _computeLocalCoverContentKey(coverPath))
+        : _computeLocalCoverContentKey(coverPath);
   }
 
   Future<String?> resolveVideoFramePathForTrack(MusicTrack track) async {
@@ -852,16 +872,17 @@ final class CoverArtworkSourceResolver {
           rememberFolderImageSource(image.displayPath, image.sourcePath);
         }
       }
-      final matching = isContent || !recursive
-          ? indexedImages
-          : indexedImages.where(
-              (image) => PathMatcher.isWithinOrEqual(
-                image.displayPath,
-                normalizedFolder,
-              ),
-            );
-      return List<CoverImageReference>.unmodifiable(
-        firstOnly ? matching.take(1) : matching,
+      if (isContent ||
+          !recursive ||
+          PathMatcher.equalsNormalized(normalizedFolder, key.rootPath)) {
+        return firstOnly
+            ? List<CoverImageReference>.unmodifiable(indexedImages.take(1))
+            : indexedImages;
+      }
+      return lookup.filterWithin(
+        indexedImages,
+        normalizedFolder,
+        firstOnly: firstOnly,
       );
     } finally {
       lookup.users--;
@@ -989,10 +1010,7 @@ final class CoverArtworkSourceResolver {
   }
 
   String folderImageIndexRoot(String folderPath) {
-    final libraryMatch = mostSpecificContainingCoverRoot(
-      _libraryService.watchedLibraries,
-      folderPath,
-    );
+    final libraryMatch = _libraryService.mostSpecificWatchedLibrary(folderPath);
     final folderMatch = _mostSpecificWatchedFolder(folderPath);
     if (libraryMatch == null) return folderMatch ?? folderPath;
     if (folderMatch == null) return libraryMatch;
@@ -1070,9 +1088,6 @@ final class CoverArtworkSourceResolver {
               : await _scanFilesystemFiles(request)
         : await scanner(rootPath, recursive);
     if (!isCurrent()) return const [];
-    for (final imagePath in images) {
-      rememberFolderImageSource(imagePath, imagePath);
-    }
     return List<CoverImageReference>.unmodifiable(
       images.map(
         (image) => CoverImageReference(displayPath: image, sourcePath: image),
@@ -1327,15 +1342,21 @@ Future<List<String>> _scanFilesystemFiles(
   return files;
 }
 
-String? mostSpecificContainingCoverRoot(Iterable<String> roots, String value) {
-  String? bestMatch;
-  for (final root in roots) {
-    if (bestMatch != null && root.length <= bestMatch.length) continue;
-    if (PathMatcher.isWithinOrEqual(value, root)) {
-      bestMatch = root;
-    }
+Future<String?> _computeLocalCoverContentKey(String coverPath) async {
+  try {
+    final file = File(coverPath);
+    if (!await file.exists()) return null;
+    final length = await file.length();
+    if (length <= 0 || length > maxCoverFileBytes) return null;
+    final digest = await sha256.bind(file.openRead()).first;
+    return '$length:$digest';
+  } catch (_) {
+    return null;
   }
-  return bestMatch;
+}
+
+String? mostSpecificContainingCoverRoot(Iterable<String> roots, String value) {
+  return PathRootIndex(roots).mostSpecificContaining(value);
 }
 
 bool isStandaloneCoverAudioTrack(MusicTrack? track, {String? trackPath}) {

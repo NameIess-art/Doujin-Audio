@@ -24,6 +24,7 @@ import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
 import 'asmr_download_summary_card.dart';
 import 'asmr_download_selection_tree.dart';
+import 'asmr_download_task_page.dart';
 export 'asmr_download_task_page.dart';
 
 enum AsmrDownloadPageResult { added, skipped, canceled }
@@ -271,6 +272,16 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     _selectionRevision.value++;
   }
 
+  void _openDownloadTasks() {
+    if (!mounted) return;
+    Navigator.of(context).push(
+      buildAppPageRoute<void>(
+        context: context,
+        child: const AsmrDownloadTaskPage(),
+      ),
+    );
+  }
+
   Future<void> _startDownload() async {
     final work = _work;
     final selection = _selection;
@@ -292,6 +303,8 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
         i18n.tr('asmr_download_task_running'),
         icon: Icons.downloading_rounded,
         iconColor: primaryColor,
+        actionLabel: i18n.tr('asmr_download_view_tasks'),
+        onAction: _openDownloadTasks,
       );
       return;
     }
@@ -443,6 +456,16 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     final bottomInset = mediaPadding.bottom + MobileOverlayInset.of(context);
     final listBottomPadding = 76 + bottomInset;
 
+    final activeTaskStatus = _work == null
+        ? null
+        : ref.watch(
+            asmrDownloadTaskProvider(_work!.workKey).select((t) => t?.status),
+          );
+    final hasActiveTask =
+        activeTaskStatus != null &&
+        activeTaskStatus != AsmrDownloadTaskStatus.completed &&
+        activeTaskStatus != AsmrDownloadTaskStatus.failed;
+
     _scheduleHeaderMeasurement((
       _work?.id,
       _work?.title,
@@ -450,6 +473,8 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
       widget.batchIndex,
       widget.batchTotal,
       widget.customWorkFolderName,
+      _destinationRoot,
+      hasActiveTask,
       mediaSize.width,
       mediaPadding.top,
       MediaQuery.textScalerOf(context),
@@ -510,18 +535,22 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                                 ),
                               ),
                             )
-                          : AsmrDownloadSelectionList(
-                              key: const ValueKey<String>(
-                                'asmr_download_file_list',
-                              ),
-                              padding: EdgeInsets.fromLTRB(
-                                16,
-                                listTopPadding,
-                                16,
-                                listBottomPadding,
-                              ),
-                              selection: selection,
-                              onSelectionChanged: _refreshSelection,
+                          : ListenableBuilder(
+                              listenable: _selectionRevision,
+                              builder: (context, _) =>
+                                  AsmrDownloadSelectionList(
+                                    key: const ValueKey<String>(
+                                      'asmr_download_file_list',
+                                    ),
+                                    padding: EdgeInsets.fromLTRB(
+                                      16,
+                                      listTopPadding,
+                                      16,
+                                      listBottomPadding,
+                                    ),
+                                    selection: selection,
+                                    onSelectionChanged: _refreshSelection,
+                                  ),
                             ),
                     ),
                   ),
@@ -537,7 +566,6 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                         icon: Icons.download_rounded,
                         label: i18n.tr('asmr_download_action'),
                         loading: _starting,
-                        horizontalPadding: 16,
                         onTap: _starting || _choosingDestination
                             ? null
                             : _startDownload,
@@ -679,6 +707,12 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                         valueListenable: _selectionRevision,
                         builder: (context, _, _) {
                           final summary = selection?.selectedSummary();
+                          final allSelected =
+                              selection != null &&
+                              selection.rootNodes.isNotEmpty &&
+                              selection.rootNodes.every(
+                                (root) => root.selected,
+                              );
                           return AnimatedSwitcher(
                             duration: MediaQuery.disableAnimationsOf(context)
                                 ? Duration.zero
@@ -695,6 +729,24 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                               selectedHasUnknownSize:
                                   summary?.hasUnknownSize ?? false,
                               customWorkFolderName: widget.customWorkFolderName,
+                              destinationRoot: _destinationRoot,
+                              allSelected: allSelected,
+                              onToggleSelectAll:
+                                  selection == null ||
+                                      _loading ||
+                                      _starting ||
+                                      _choosingDestination
+                                  ? null
+                                  : () {
+                                      if (allSelected) {
+                                        selection.clearAll();
+                                      } else {
+                                        selection.selectAll();
+                                      }
+                                      _refreshSelection();
+                                    },
+                              hasActiveTask: hasActiveTask,
+                              onViewTasks: _openDownloadTasks,
                             ),
                           );
                         },

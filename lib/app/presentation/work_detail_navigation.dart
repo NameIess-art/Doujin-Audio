@@ -43,6 +43,46 @@ class WorkDetailNavigation extends ChangeNotifier {
   bool get isContentOpen =>
       _contentRoutes.length > 1 || _contentClosing.isNotEmpty;
 
+  NavigatorState? preferredBackNavigator([BuildContext? focusContext]) {
+    final detailNav = navigatorKey.currentState;
+    final contentNav = contentNavigatorKey.currentState;
+    final detailCanPop = detailNav?.canPop() ?? false;
+    final contentCanPop = contentNav?.canPop() ?? false;
+    if (!detailCanPop && !contentCanPop) return null;
+    if (detailCanPop && contentCanPop) {
+      final activeFocus =
+          focusContext ?? FocusManager.instance.primaryFocus?.context;
+      if (_isDescendantOfNavigator(activeFocus, contentNav)) {
+        return contentNav;
+      }
+      if (_isDescendantOfNavigator(activeFocus, detailNav)) {
+        return detailNav;
+      }
+    }
+    if (detailCanPop) return detailNav;
+    return contentNav;
+  }
+
+  static bool _isDescendantOfNavigator(
+    BuildContext? descendant,
+    NavigatorState? navigator,
+  ) {
+    if (descendant == null || !descendant.mounted || navigator == null) {
+      return false;
+    }
+    final ancestorContext = navigator.context;
+    if (identical(descendant, ancestorContext)) return true;
+    var found = false;
+    descendant.visitAncestorElements((element) {
+      if (identical(element, ancestorContext)) {
+        found = true;
+        return false;
+      }
+      return true;
+    });
+    return found;
+  }
+
   static Future<void> openFrom(
     BuildContext context,
     Object identity,
@@ -383,6 +423,19 @@ class WorkDetailPane extends StatelessWidget {
   static const mainWidthFraction = 5 / 8;
   static const detailWidthFraction = 3 / 8;
 
+  static double detailPaneWidthFor(double contentWidth) {
+    final available = (contentWidth - 1).clamp(0.0, contentWidth);
+    final proportional = available * detailWidthFraction;
+    if (available < 600) return proportional;
+    final minUsable = math.min(340.0, available * 0.48);
+    return math.max(proportional, minUsable).clamp(0.0, available);
+  }
+
+  static double mainPaneWidthFor(double contentWidth) {
+    final available = (contentWidth - 1).clamp(0.0, contentWidth);
+    return (available - detailPaneWidthFor(contentWidth)).clamp(0.0, available);
+  }
+
   const WorkDetailPane({
     super.key,
     required this.child,
@@ -411,7 +464,7 @@ class WorkDetailPane extends StatelessWidget {
         final size = MediaQuery.sizeOf(context);
         final contentWidth = (size.width - sidebarWidth).clamp(0.0, size.width);
         final paneWidth = isLandscape
-            ? (contentWidth - 1).clamp(0.0, contentWidth) * detailWidthFraction
+            ? detailPaneWidthFor(contentWidth)
             : size.width;
         final detailNavigator = MainContentNavigator(
           key: const ValueKey('work_detail_pane'),
@@ -525,9 +578,7 @@ class WorkDetailPane extends StatelessWidget {
               if (dismissMenu != null) {
                 dismissMenu();
               } else {
-                final navigator = navigation.isOpen
-                    ? navigation.navigatorKey.currentState
-                    : navigation.contentNavigatorKey.currentState;
+                final navigator = navigation.preferredBackNavigator();
                 unawaited(navigator?.maybePop());
               }
             },

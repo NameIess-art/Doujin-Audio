@@ -151,6 +151,8 @@ void main() {
     );
 
     await tester.tap(find.text(i18n.tr('asmr_logout_action')));
+    await pumpUntilFound(tester, find.text(i18n.tr('asmr_logout_confirm_title')));
+    await tester.tap(find.text(i18n.tr('asmr_logout_action')).last);
     await pumpUntilFound(
       tester,
       find.textContaining(i18n.tr('operation_failed_retry')),

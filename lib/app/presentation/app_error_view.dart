@@ -35,27 +35,51 @@ class AppErrorView extends StatefulWidget {
 
 class _AppErrorViewState extends State<AppErrorView> {
   bool _exporting = false;
+  String? _exportStatusMessage;
+  bool _exportStatusFailed = false;
 
   Future<void> _exportDiagnostics() async {
     if (_exporting) return;
-    setState(() => _exporting = true);
+    final strings = _localizedStrings();
+    String tr(String key) => strings[key] ?? appLanguageEn[key] ?? key;
+    setState(() {
+      _exporting = true;
+      _exportStatusMessage = null;
+      _exportStatusFailed = false;
+    });
     try {
       final export = widget.exportDiagnostics;
+      String? exportedPath;
       if (export != null) {
         await export();
       } else {
-        await DiagnosticReportExporter().export(
-          dialogTitle:
-              _localizedStrings()['export_diagnostics'] ??
-              appLanguageEn['export_diagnostics']!,
+        exportedPath = await DiagnosticReportExporter().export(
+          dialogTitle: tr('export_diagnostics'),
         );
       }
+      if (!mounted) return;
+      if (export == null && exportedPath == null) {
+        return;
+      }
+      final message = exportedPath != null && exportedPath.isNotEmpty
+          ? tr('diagnostics_exported').replaceAll('{path}', exportedPath)
+          : tr('diagnostics_exported_done');
+      setState(() {
+        _exportStatusMessage = message;
+        _exportStatusFailed = false;
+      });
     } catch (error, stackTrace) {
       AppLogService.error(
         'global_error_diagnostic_export_failed',
         error: error,
         stackTrace: stackTrace,
       );
+      if (mounted) {
+        setState(() {
+          _exportStatusMessage = tr('diagnostics_export_failed');
+          _exportStatusFailed = true;
+        });
+      }
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
@@ -132,6 +156,42 @@ class _AppErrorViewState extends State<AppErrorView> {
                           icon: Icons.bug_report_outlined,
                           label: tr('export_diagnostics'),
                         ),
+                  if (_exportStatusMessage != null) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    Semantics(
+                      liveRegion: true,
+                      child: Row(
+                        key: const ValueKey<String>(
+                          'error_export_diagnostics_status',
+                        ),
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            _exportStatusFailed
+                                ? Icons.error_outline_rounded
+                                : Icons.check_circle_outline_rounded,
+                            size: 16,
+                            color: _exportStatusFailed
+                                ? cs.error
+                                : cs.primary,
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              _exportStatusMessage!,
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: _exportStatusFailed
+                                    ? cs.error
+                                    : cs.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   if (!canRetry &&
                       defaultTargetPlatform != TargetPlatform.windows) ...[
                     const SizedBox(height: AppSpacing.sm),

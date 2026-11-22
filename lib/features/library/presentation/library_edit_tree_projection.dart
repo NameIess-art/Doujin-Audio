@@ -74,16 +74,26 @@ LibraryEditTreeSnapshot _projectLibraryEditTree(
   LibraryEditTreeRequest request,
 ) {
   final projection = LibraryEditTreeProjection(request.libraryPath);
+  final diskTrackKeys = request.diskTrackPathSet
+      .map(PathMatcher.equivalenceKey)
+      .toSet();
+  final diskTrackParentsByKey = <String, String>{
+    for (final entry in request.diskTrackParents.entries)
+      PathMatcher.equivalenceKey(entry.key): entry.value,
+  };
+  final liveFolderKeys = request.liveFolders
+      .map(PathMatcher.equivalenceKey)
+      .toSet();
   bool trackExists(String track) =>
       !request.authoritative ||
-      request.diskTrackPathSet.contains(PathMatcher.normalize(track));
+      diskTrackKeys.contains(PathMatcher.equivalenceKey(track));
   bool belongs(String track) =>
-      request.diskTrackParents.containsKey(PathMatcher.normalize(track)) ||
+      diskTrackParentsByKey.containsKey(PathMatcher.equivalenceKey(track)) ||
       PathMatcher.isWithinOrEqual(track, request.libraryPath);
   bool folderExists(String folder) =>
       !request.authoritative ||
       PathMatcher.equalsNormalized(folder, request.libraryPath) ||
-      request.liveFolders.contains(PathMatcher.normalize(folder));
+      liveFolderKeys.contains(PathMatcher.equivalenceKey(folder));
   final entries = request.entries
       .where(
         (entry) => entry.isFolder
@@ -92,12 +102,13 @@ LibraryEditTreeSnapshot _projectLibraryEditTree(
       )
       .toList(growable: false);
   final tracksByPath = <String, MusicTrack>{};
-  final paths = <String>{};
+  final pathsByKey = <String, String>{};
   for (final track in request.tracks) {
     if (!belongs(track.path) || !trackExists(track.path)) continue;
     final normalized = PathMatcher.normalize(track.path);
-    paths.add(normalized);
-    tracksByPath[PathMatcher.equivalenceKey(normalized)] = track;
+    final key = PathMatcher.equivalenceKey(normalized);
+    pathsByKey.putIfAbsent(key, () => normalized);
+    tracksByPath[key] = track;
   }
   for (final track in <String>[
     for (final entry in entries)
@@ -105,20 +116,37 @@ LibraryEditTreeSnapshot _projectLibraryEditTree(
     ...request.diskTrackPaths,
     ...request.excludedTracks.where(trackExists),
   ]) {
-    if (belongs(track)) paths.add(PathMatcher.normalize(track));
+    if (!belongs(track)) continue;
+    final normalized = PathMatcher.normalize(track);
+    pathsByKey.putIfAbsent(
+      PathMatcher.equivalenceKey(normalized),
+      () => normalized,
+    );
+  }
+  final persistentFoldersByKey = <String, String>{};
+  for (final folder in [
+    ...request.childFolders,
+    ...request.excludedFolders,
+  ]) {
+    final childFolder = projection.folderPathForLibraryChild(folder);
+    if (folderExists(childFolder)) {
+      persistentFoldersByKey.putIfAbsent(
+        PathMatcher.equivalenceKey(childFolder),
+        () => childFolder,
+      );
+    }
+  }
+  for (final entry in entries) {
+    if (!entry.isFolder) continue;
+    final childFolder = projection.folderPathForLibraryChild(entry.path);
+    persistentFoldersByKey.putIfAbsent(
+      PathMatcher.equivalenceKey(childFolder),
+      () => childFolder,
+    );
   }
   final nodes = projection.buildEditTree(
-    paths.toList(growable: false),
-    <String>{
-      for (final folder in [
-        ...request.childFolders,
-        ...request.excludedFolders,
-      ])
-        if (folderExists(projection.folderPathForLibraryChild(folder)))
-          projection.folderPathForLibraryChild(folder),
-      for (final entry in entries)
-        if (entry.isFolder) projection.folderPathForLibraryChild(entry.path),
-    }.toList(growable: false),
+    pathsByKey.values.toList(growable: false),
+    persistentFoldersByKey.values.toList(growable: false),
     request.restoringFolders
         .where((node) => folderExists(node.folderPath))
         .toList(growable: false),
@@ -194,6 +222,10 @@ class LibraryEditTreeProjection {
   const LibraryEditTreeProjection(this.libraryPath);
   final String libraryPath;
 
+  static final RegExp _leadingSlashPattern = RegExp(r'^/+');
+  static final RegExp _trailingSlashPattern = RegExp(r'/+$');
+  static final RegExp _pathSeparatorPattern = RegExp(r'[\\/]+');
+
   Map<String, int> includedTrackCounts(
     List<LibraryEditTreeNode> nodes,
     bool Function(String) isTrackIncluded,
@@ -225,9 +257,13 @@ class LibraryEditTreeProjection {
     Map<String, String> trackParentPaths = const <String, String>{},
   }) {
     final rootPath = PathMatcher.normalize(libraryPath);
-    final folderByPath = <String, LibraryEditFolderTreeNode>{};
+    final folderByKey = <String, LibraryEditFolderTreeNode>{};
     final roots = <LibraryEditTreeNode>[];
-    final insertedTrackPaths = <String>{};
+    final insertedTrackKeys = <String>{};
+    final trackParentsByKey = <String, String>{
+      for (final entry in trackParentPaths.entries)
+        PathMatcher.equivalenceKey(entry.key): entry.value,
+    };
 
     LibraryEditFolderTreeNode? ensureFolder(String folderPath) {
       final normalizedFolderPath = PathMatcher.normalize(folderPath);
@@ -236,7 +272,8 @@ class LibraryEditTreeProjection {
         return null;
       }
 
-      final existing = folderByPath[normalizedFolderPath];
+      final folderKey = PathMatcher.equivalenceKey(normalizedFolderPath);
+      final existing = folderByKey[folderKey];
       if (existing != null) return existing;
 
       final parentPath = parentFolderPath(normalizedFolderPath, rootPath);
@@ -245,7 +282,7 @@ class LibraryEditTreeProjection {
         folderPath: normalizedFolderPath,
         depth: relativeFolderDepth(normalizedFolderPath),
       );
-      folderByPath[normalizedFolderPath] = folder;
+      folderByKey[folderKey] = folder;
       if (parent == null) {
         roots.add(folder);
       } else {
@@ -262,15 +299,15 @@ class LibraryEditTreeProjection {
           !PathMatcher.hasSameContentTree(normalizedTrackPath, rootPath)) {
         return;
       }
-      final confirmedParent =
-          trackParentPaths[normalizedTrackPath] ?? snapshotParent;
+      final trackKey = PathMatcher.equivalenceKey(normalizedTrackPath);
+      final confirmedParent = trackParentsByKey[trackKey] ?? snapshotParent;
       final hasConfirmedParent =
           confirmedParent != null &&
           PathMatcher.hasSameContentTree(normalizedTrackPath, rootPath) &&
           PathMatcher.isWithinOrEqual(confirmedParent, rootPath);
       if ((!PathMatcher.isWithinOrEqual(normalizedTrackPath, libraryPath) &&
               !hasConfirmedParent) ||
-          !insertedTrackPaths.add(normalizedTrackPath)) {
+          !insertedTrackKeys.add(trackKey)) {
         return;
       }
       final trackNode = LibraryEditTrackTreeNode(normalizedTrackPath);
@@ -325,8 +362,8 @@ class LibraryEditTreeProjection {
         final relative = normalizedFolderPath
             .substring(markerIndex + 2)
             .replaceAll('\\', '/')
-            .replaceFirst(RegExp(r'^/+'), '')
-            .replaceFirst(RegExp(r'/+$'), '');
+            .replaceFirst(_leadingSlashPattern, '')
+            .replaceFirst(_trailingSlashPattern, '');
         final parentRelative = path.posix.dirname(relative);
         if (parentRelative == '.' || parentRelative.isEmpty) {
           return base;
@@ -347,7 +384,7 @@ class LibraryEditTreeProjection {
       return 0;
     }
     return relative
-            .split(RegExp(r'[\\/]+'))
+            .split(_pathSeparatorPattern)
             .where((segment) => segment.isNotEmpty)
             .length -
         1;

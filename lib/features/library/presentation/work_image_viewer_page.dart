@@ -3,7 +3,9 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/presentation/app_presentation_providers.dart';
@@ -12,6 +14,7 @@ import '../../../app/theme/app_styles.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
+import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/app_transitions.dart';
@@ -100,6 +103,8 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
   bool _isDismissing = false;
   bool _fullscreenTarget = false;
   bool _movingFullscreen = false;
+  final Map<String, int> _localRetrySeeds = <String, int>{};
+  DateTime _lastWheelTurnAt = DateTime.fromMillisecondsSinceEpoch(0);
 
   static int _pageForIndex(int index, int length) {
     if (length <= 1) return index;
@@ -389,6 +394,47 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
     }
   }
 
+  void _handleEscapeShortcut() {
+    if (_fullscreenController.isShowing || _fullscreenTarget) {
+      _fullscreenTarget = false;
+      unawaited(_moveFullscreen());
+      return;
+    }
+    unawaited(Navigator.of(context).maybePop());
+  }
+
+  void _handleFullscreenShortcut() {
+    if (View.of(context).physicalSize.aspectRatio <= 1) return;
+    _toggleFullscreen();
+  }
+
+  void _handlePointerSignal(PointerSignalEvent event) {
+    if (defaultTargetPlatform != TargetPlatform.windows ||
+        event is! PointerScrollEvent ||
+        _isCurrentZoomed ||
+        widget.images.length <= 1) {
+      return;
+    }
+    final delta = event.scrollDelta.dy != 0
+        ? event.scrollDelta.dy
+        : event.scrollDelta.dx;
+    if (delta == 0) return;
+    GestureBinding.instance.pointerSignalResolver.register(event, (_) {
+      if (!mounted || _isCurrentZoomed || widget.images.length <= 1) return;
+      final now = DateTime.now();
+      if (now.difference(_lastWheelTurnAt) <
+          const Duration(milliseconds: 160)) {
+        return;
+      }
+      _lastWheelTurnAt = now;
+      if (delta > 0) {
+        _goToNext();
+      } else {
+        _goToPrevious();
+      }
+    });
+  }
+
   Widget _buildImage(
     WorkImageItem image,
     ColorScheme cs, {
@@ -410,14 +456,22 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
         loadingBuilder: loadingIndicator,
       );
     }
+    final retrySeed = _localRetrySeeds[imagePath] ?? 0;
     return RetryingFileImage(
+      key: ValueKey<String>('local_work_image_${imagePath}_$retrySeed'),
       deferLoadDuringInteraction: true,
       path: imagePath,
       fit: BoxFit.contain,
       cacheWidth: maxCacheWidth,
       useDefaultCacheWidth: false,
       loadingBuilder: loadingIndicator,
-      fallbackBuilder: loadingIndicator,
+      fallbackBuilder: (context) => _ImageLoadErrorView(
+        onRetry: () {
+          setState(() {
+            _localRetrySeeds[imagePath] = retrySeed + 1;
+          });
+        },
+      ),
     );
   }
 
@@ -685,19 +739,23 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
                 itemBuilder: (context, page) {
                   final index = _indexForPage(page, widget.images.length);
                   final img = widget.images[index];
-                  return _WorkImageViewerItem(
-                    key: ValueKey<String>('image_item_${img.path}_$page'),
-                    isActive: widget.images.length > 1
-                        ? page == _currentPage
-                        : index == _currentIndex,
-                    onToggleChrome: _toggleChrome,
-                    onZoomChanged: (zoomed) {
-                      setState(() => _isCurrentZoomed = zoomed);
-                    },
-                    child: _buildImage(
-                      img,
-                      cs,
-                      maxCacheWidth: maxCacheWidth,
+                  return Listener(
+                    behavior: HitTestBehavior.opaque,
+                    onPointerSignal: _handlePointerSignal,
+                    child: _WorkImageViewerItem(
+                      key: ValueKey<String>('image_item_${img.path}_$page'),
+                      isActive: widget.images.length > 1
+                          ? page == _currentPage
+                          : index == _currentIndex,
+                      onToggleChrome: _toggleChrome,
+                      onZoomChanged: (zoomed) {
+                        setState(() => _isCurrentZoomed = zoomed);
+                      },
+                      child: _buildImage(
+                        img,
+                        cs,
+                        maxCacheWidth: maxCacheWidth,
+                      ),
                     ),
                   );
                 },
@@ -708,7 +766,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
       ),
     );
 
-    return Scaffold(
+    final viewerScaffold = Scaffold(
       // Reparent this same subtree so paging and image zoom survive the toggle.
       key: _viewerKey,
       backgroundColor: Colors.transparent,
@@ -733,9 +791,8 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
                 },
               ),
             ),
-            Positioned.fill(
-              top: imageTop,
-              bottom: imageBottom,
+            AnimatedBuilder(
+              animation: _chromeOpacity,
               child: ValueListenableBuilder<double>(
                 valueListenable: _dragOffset,
                 child: pagedViewer,
@@ -750,6 +807,11 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
                     child: Transform.scale(scale: viewportScale, child: child),
                   );
                 },
+              ),
+              builder: (context, child) => Positioned.fill(
+                top: imageTop * _chromeOpacity.value,
+                bottom: imageBottom * _chromeOpacity.value,
+                child: child!,
               ),
             ),
             // Floating Top Page Header
@@ -919,6 +981,65 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
         ),
       ),
     );
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.arrowLeft): _goToPrevious,
+        const SingleActivator(LogicalKeyboardKey.arrowRight): _goToNext,
+        const SingleActivator(LogicalKeyboardKey.escape): _handleEscapeShortcut,
+        const SingleActivator(LogicalKeyboardKey.keyF):
+            _handleFullscreenShortcut,
+        const SingleActivator(LogicalKeyboardKey.f11):
+            _handleFullscreenShortcut,
+      },
+      child: Focus(autofocus: true, child: viewerScaffold),
+    );
+  }
+}
+
+class _ImageLoadErrorView extends ConsumerWidget {
+  const _ImageLoadErrorView({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return Center(
+      key: const ValueKey<String>('work_image_load_error'),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.broken_image_outlined,
+              size: 48,
+              color: cs.onSurfaceVariant,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              i18n.tr('image_load_failed'),
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 16),
+            AppPillButton(
+              key: const ValueKey<String>('image_viewer_retry_button'),
+              onPressed: onRetry,
+              style: FilledButton.styleFrom(
+                backgroundColor: cs.secondaryContainer,
+                foregroundColor: cs.onSecondaryContainer,
+              ),
+              child: Text(i18n.tr('retry')),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -940,6 +1061,7 @@ class _RemoteWorkImage extends ConsumerStatefulWidget {
 class _RemoteWorkImageState extends ConsumerState<_RemoteWorkImage> {
   Object? _requestKey;
   Future<String?>? _future;
+  int _retryCount = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -955,25 +1077,32 @@ class _RemoteWorkImageState extends ConsumerState<_RemoteWorkImage> {
     final coverUi = ref.read(libraryCoverUiControllerProvider);
     Future<String?> loadImage() =>
         coverUi.deferredRemoteCover(widget.url, context: context);
-    final requestKey = (widget.url, resolved, revision);
+    final requestKey = (widget.url, resolved, revision, _retryCount);
     if (_requestKey != requestKey) {
       _requestKey = requestKey;
-      _future = resolved != null
+      _future = resolved != null && _retryCount == 0
           ? SynchronousFuture<String?>(resolved)
           : loadImage();
     }
     return AsyncRemoteCoverImage(
+      key: ValueKey<String>('remote_work_image_${widget.url}_$_retryCount'),
       deferLoadDuringInteraction: true,
       url: widget.url,
       future: _future!,
-      initialPath: resolved,
+      initialPath: _retryCount == 0 ? resolved : null,
       retryFutureBuilder: loadImage,
       onImageError: library.coverArtworkCacheService.reportArtworkReadFailure,
       fit: BoxFit.contain,
       cacheWidth: widget.maxCacheWidth,
       useDefaultCacheWidth: false,
       loadingBuilder: widget.loadingBuilder,
-      fallbackBuilder: widget.loadingBuilder,
+      fallbackBuilder: (_) => _ImageLoadErrorView(
+        onRetry: () {
+          setState(() {
+            _retryCount += 1;
+          });
+        },
+      ),
     );
   }
 }

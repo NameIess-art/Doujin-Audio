@@ -6,12 +6,35 @@ import com.doujin.audio.storage.*
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.provider.DocumentsContract
 import java.io.File
 import java.io.FileInputStream
+import java.net.URLDecoder
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
 import java.security.MessageDigest
+import java.util.Locale
+
+internal fun shouldAttemptWavEmbeddedPictureFallback(source: String): Boolean {
+    val trimmed = source.trim()
+    if (trimmed.isEmpty()) return false
+    val withoutQuery = trimmed.substringBefore('?').substringBefore('#')
+    val decoded = if (withoutQuery.contains('%')) {
+        runCatching { URLDecoder.decode(withoutQuery, Charsets.UTF_8.name()) }
+            .getOrDefault(withoutQuery)
+    } else {
+        withoutQuery
+    }
+    val fileName = decoded
+        .substringAfterLast('/')
+        .substringAfterLast('\\')
+        .substringAfterLast(':')
+    val dotIndex = fileName.lastIndexOf('.')
+    if (dotIndex <= 0 || dotIndex == fileName.lastIndex) return true
+    val extension = fileName.substring(dotIndex + 1).lowercase(Locale.US)
+    return extension == "wav"
+}
 
 internal fun embeddedCoverCacheFileName(bytes: ByteArray): String =
     artworkCacheFileName(bytes, "embedded", "image")
@@ -28,7 +51,26 @@ internal class MediaMetadataOperations(
     private val context: Context,
     private val storage: DocumentStorageOperations
 ) {
+    private data class EmbeddedCoverFingerprint(
+        val key: String,
+        val lastModifiedMs: Long,
+        val lengthBytes: Long
+    )
+
+    private data class EmbeddedCoverCacheEntry(
+        val coverPath: String?
+    )
+
     private val embeddedCoverWriteLock = Any()
+    private val embeddedCoverCache = object : LinkedHashMap<EmbeddedCoverFingerprint, EmbeddedCoverCacheEntry>(
+        64,
+        0.75f,
+        true
+    ) {
+        override fun removeEldestEntry(
+            eldest: MutableMap.MutableEntry<EmbeddedCoverFingerprint, EmbeddedCoverCacheEntry>?
+        ): Boolean = size > MAX_EMBEDDED_COVER_CACHE_ENTRIES
+    }
 
     private val videoFrameResolver by lazy {
         FileCacheVideoFrameResolver(
@@ -46,10 +88,47 @@ internal class MediaMetadataOperations(
     }
 
     fun resolveEmbeddedCover(source: String): String? {
+        val trimmed = source.trim()
+        if (trimmed.isEmpty()) return null
+        val directPath = if (trimmed.startsWith("content://")) {
+            storage.contentUriToFilePath(trimmed)
+        } else {
+            trimmed
+        }
+        val fingerprint = embeddedCoverFingerprint(trimmed, directPath)
+        if (fingerprint != null) {
+            val cached = synchronized(embeddedCoverCache) { embeddedCoverCache[fingerprint] }
+            if (cached != null) {
+                val cachedPath = cached.coverPath ?: return null
+                val cachedFile = File(cachedPath)
+                if (cachedFile.exists() && cachedFile.length() > 0L) {
+                    touchCacheFile(cachedFile)
+                    return cachedPath
+                }
+            }
+        }
+
+        val resolvedPath = extractAndCacheEmbeddedCover(trimmed, directPath)
+        if (fingerprint != null) {
+            synchronized(embeddedCoverCache) {
+                embeddedCoverCache[fingerprint] = EmbeddedCoverCacheEntry(resolvedPath)
+            }
+        }
+        return resolvedPath
+    }
+
+    private fun extractAndCacheEmbeddedCover(trimmed: String, directPath: String?): String? {
         val coverDirectory = File(context.cacheDir, "doujin_audio_covers")
         if (!coverDirectory.exists()) coverDirectory.mkdirs()
-        val bytes = withRetriever(source) { it.embeddedPicture }
-            ?: extractEmbeddedPictureFallback(source)
+        val bytes = withRetriever(trimmed, directPath) { it.embeddedPicture }
+            ?: run {
+                val fallbackTarget = directPath ?: trimmed
+                if (shouldAttemptWavEmbeddedPictureFallback(fallbackTarget)) {
+                    extractEmbeddedPictureFallback(trimmed, directPath)
+                } else {
+                    null
+                }
+            }
             ?: return null
         if (bytes.isEmpty()) return null
         val output = File(coverDirectory, embeddedCoverCacheFileName(bytes))
@@ -69,14 +148,58 @@ internal class MediaMetadataOperations(
         }
     }
 
+    private fun embeddedCoverFingerprint(
+        trimmed: String,
+        directPath: String?
+    ): EmbeddedCoverFingerprint? {
+        if (directPath != null) {
+            val file = File(directPath)
+            if (file.exists() && file.canRead()) {
+                return EmbeddedCoverFingerprint(
+                    key = file.absolutePath,
+                    lastModifiedMs = file.lastModified(),
+                    lengthBytes = file.length()
+                )
+            }
+        }
+        if (trimmed.startsWith("content://")) {
+            val resolvedUri = storage.resolveDocumentUri(trimmed)
+                ?: Uri.parse(trimmed.substringBefore("::"))
+            val projection = arrayOf(
+                DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+                DocumentsContract.Document.COLUMN_SIZE
+            )
+            runCatching {
+                context.contentResolver.query(resolvedUri, projection, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val modified = if (cursor.isNull(0)) 0L else cursor.getLong(0)
+                        val size = if (cursor.isNull(1)) 0L else cursor.getLong(1)
+                        if (modified > 0L || size > 0L) {
+                            return EmbeddedCoverFingerprint(
+                                key = resolvedUri.toString(),
+                                lastModifiedMs = modified,
+                                lengthBytes = size
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        return null
+    }
+
     fun resolveVideoFrame(source: String, modifiedAtMs: Long?): String? =
         videoFrameResolver.resolve(source, modifiedAtMs)
 
-    private fun <T> withRetriever(source: String, block: (MediaMetadataRetriever) -> T?): T? {
+    private fun <T> withRetriever(
+        source: String,
+        preResolvedDirectPath: String? = null,
+        block: (MediaMetadataRetriever) -> T?
+    ): T? {
         val trimmed = source.trim()
         if (trimmed.isEmpty()) return null
 
-        val directPath = if (trimmed.startsWith("content://")) {
+        val directPath = preResolvedDirectPath ?: if (trimmed.startsWith("content://")) {
             storage.contentUriToFilePath(trimmed)
         } else {
             trimmed
@@ -133,15 +256,12 @@ internal class MediaMetadataOperations(
         return null
     }
 
-    private fun extractEmbeddedPictureFallback(source: String): ByteArray? {
-        val trimmed = source.trim()
+    private fun extractEmbeddedPictureFallback(
+        trimmed: String,
+        directPath: String?
+    ): ByteArray? {
         if (trimmed.isEmpty()) return null
 
-        val directPath = if (trimmed.startsWith("content://")) {
-            storage.contentUriToFilePath(trimmed)
-        } else {
-            trimmed
-        }
         if (directPath != null) {
             val file = File(directPath)
             if (file.exists() && file.canRead()) {
@@ -256,6 +376,10 @@ internal class MediaMetadataOperations(
         tagBuf.get(tagData)
 
         return parseId3TagPicture(tagData, majorVersion, extHeader)
+    }
+
+    private companion object {
+        const val MAX_EMBEDDED_COVER_CACHE_ENTRIES = 512
     }
 }
 

@@ -55,6 +55,12 @@ class LibraryService {
   List<String> get watchedFoldersSnapshot =>
       _watchedFoldersSnapshot ??= List.unmodifiable(_watchedFolders);
   final List<String> watchedLibraries = <String>[];
+  int _rootIndexGeneration = -1;
+  PathRootIndex _watchedFoldersIndex = PathRootIndex(const <String>[]);
+  PathRootIndex _watchedLibrariesIndex = PathRootIndex(const <String>[]);
+  List<String> _sortedWatchedFoldersCache = const <String>[];
+  List<String> _sortedWatchedLibrariesCache = const <String>[];
+  Map<String, String> _watchedFolderByPathCache = createPathIndex<String>();
   final Map<String, Set<String>> excludedLibraryFolders =
       createPathIndex<Set<String>>();
   final Map<String, Set<String>> excludedLibraryTracks =
@@ -96,11 +102,58 @@ class LibraryService {
     contentRevision++;
   }
 
+  void _ensureRootIndexes() {
+    if (_rootIndexGeneration == libraryDerivedGeneration) return;
+    _watchedFoldersIndex = PathRootIndex(_watchedFolders);
+    _watchedLibrariesIndex = PathRootIndex(watchedLibraries);
+    _sortedWatchedFoldersCache = _watchedFolders.toList(growable: false)
+      ..sort((a, b) => b.length.compareTo(a.length));
+    _sortedWatchedLibrariesCache = watchedLibraries.toList(growable: false)
+      ..sort((a, b) => b.length.compareTo(a.length));
+    final folderByPath = createPathIndex<String>();
+    for (final folder in _sortedWatchedFoldersCache) {
+      folderByPath.putIfAbsent(folder, () => PathMatcher.normalize(folder));
+    }
+    _watchedFolderByPathCache = folderByPath;
+    _rootIndexGeneration = libraryDerivedGeneration;
+  }
+
+  List<String> get sortedWatchedFolders {
+    _ensureRootIndexes();
+    return _sortedWatchedFoldersCache;
+  }
+
+  List<String> get sortedWatchedLibraries {
+    _ensureRootIndexes();
+    return _sortedWatchedLibrariesCache;
+  }
+
+  Map<String, String> get watchedFolderByPath {
+    _ensureRootIndexes();
+    return _watchedFolderByPathCache;
+  }
+
+  String? mostSpecificWatchedFolder(String value) {
+    _ensureRootIndexes();
+    return _watchedFoldersIndex.mostSpecificContaining(value);
+  }
+
+  String? mostSpecificWatchedLibrary(String value) {
+    _ensureRootIndexes();
+    return _watchedLibrariesIndex.mostSpecificContaining(value);
+  }
+
+  bool containsWatchedLibrary(String value) {
+    _ensureRootIndexes();
+    return _watchedLibrariesIndex.containsEquivalent(value);
+  }
+
   void replaceWatchedFolders(Iterable<String> folders) {
     _watchedFolders
       ..clear()
       ..addAll(folders);
     _watchedFoldersSnapshot = null;
+    _rootIndexGeneration = -1;
   }
 
   bool addWatchedFolder(String folderPath, {VoidCallback? onPersist}) {
@@ -203,6 +256,9 @@ class LibraryService {
       ),
     );
   }
+
+  void invalidateExclusionMatcher(String libraryPath) =>
+      _exclusionMatchers.remove(PathMatcher.normalize(libraryPath));
 
   void invalidateExclusionMatchers() => _exclusionMatchers.clear();
 
@@ -393,17 +449,15 @@ class LibraryService {
         ? newRoot
         : oldLibraryRoot;
     final retargetedTracks = createPathIndex<MusicTrack>();
-    final tracks = createPathIndex<MusicTrack>({
-      for (final track in retainedTracks) track.path: track,
-      for (final track in library) track.path: track,
-    });
-    for (final track in tracks.values) {
-      if (!PathMatcher.isWithinOrEqual(track.path, oldRoot)) continue;
+    final activeRetargeted = <({int index, MusicTrack oldTrack, MusicTrack nextTrack})>[];
+    final affectedGroups = <String>{};
+
+    MusicTrack retargetTrack(MusicTrack track) {
       final nextTrackPath = _replacePathPrefix(track.path, oldRoot, newRoot);
       final nextGroupKey = PathMatcher.isWithinOrEqual(track.groupKey, oldRoot)
           ? _replacePathPrefix(track.groupKey, oldRoot, newRoot)
           : track.groupKey;
-      final updatedTrack = _copyTrackForRetarget(
+      return _copyTrackForRetarget(
         track,
         path: nextTrackPath,
         groupKey: nextGroupKey,
@@ -423,9 +477,58 @@ class LibraryService {
           newRoot,
         ),
       );
-      final index = libraryIndexByPath[track.path];
-      if (index != null) library[index] = updatedTrack;
+    }
+
+    for (var i = 0; i < library.length; i++) {
+      final track = library[i];
+      if (!PathMatcher.isWithinOrEqual(track.path, oldRoot)) continue;
+      final updatedTrack = retargetTrack(track);
+      library[i] = updatedTrack;
       retargetedTracks[track.path] = updatedTrack;
+      activeRetargeted.add((index: i, oldTrack: track, nextTrack: updatedTrack));
+      affectedGroups
+        ..add(track.groupKey)
+        ..add(updatedTrack.groupKey);
+    }
+    for (final track in retainedTracks) {
+      if (retargetedTracks.containsKey(track.path) ||
+          !PathMatcher.isWithinOrEqual(track.path, oldRoot)) {
+        continue;
+      }
+      retargetedTracks[track.path] = retargetTrack(track);
+    }
+
+    // Update path indexes incrementally for moved active tracks.
+    for (final item in activeRetargeted) {
+      libraryByPath.remove(item.oldTrack.path);
+      libraryIndexByPath.remove(item.oldTrack.path);
+    }
+    for (final item in activeRetargeted) {
+      libraryByPath[item.nextTrack.path] = item.nextTrack;
+      libraryIndexByPath[item.nextTrack.path] = item.index;
+    }
+
+    // Incrementally rebuild and sort only the affected track groups.
+    if (affectedGroups.isNotEmpty) {
+      final rebuiltGroups = <String, List<MusicTrack>>{};
+      for (final group in affectedGroups) {
+        final existing = tracksByGroup.remove(group);
+        if (existing == null) continue;
+        final surviving = <MusicTrack>[
+          for (final track in existing)
+            if (!retargetedTracks.containsKey(track.path)) track,
+        ];
+        if (surviving.isNotEmpty) rebuiltGroups[group] = surviving;
+      }
+      for (final item in activeRetargeted) {
+        rebuiltGroups
+            .putIfAbsent(item.nextTrack.groupKey, () => <MusicTrack>[])
+            .add(item.nextTrack);
+      }
+      for (final entry in rebuiltGroups.entries) {
+        entry.value.sort(compareTracks);
+        tracksByGroup[entry.key] = List<MusicTrack>.unmodifiable(entry.value);
+      }
     }
 
     List<String> retargetRoots(Iterable<String> roots) {
@@ -451,20 +554,40 @@ class LibraryService {
     }
 
     _retargetLibraryExclusions(oldRoot, newRoot);
-    final retargetedEntries = _retargetLibraryEntries(
+    final entryRetarget = _retargetLibraryEntries(
       oldRoot,
       newRoot,
       folderName,
       oldLibraryRoot: oldLibraryRoot,
       newLibraryRoot: newLibraryRoot,
     );
-    syncGroupOrderFromLibrary();
-    rebuildLibraryIndexes();
+    _syncGroupOrderFromTrackedGroups();
     markStructureChanged();
     return LibraryFolderRetargetResult(
       retargetedTracks: retargetedTracks,
-      retargetedEntries: retargetedEntries,
+      retargetedEntries: entryRetarget.retargetedEntries,
+      removedEntryPaths: entryRetarget.removedEntryPaths,
     );
+  }
+
+  void _syncGroupOrderFromTrackedGroups() {
+    final activeGroupKeys = tracksByGroup.keys.toSet();
+    final nextOrder = <String>[];
+    final seen = <String>{};
+    for (final groupKey in groupOrder) {
+      if (activeGroupKeys.contains(groupKey) && seen.add(groupKey)) {
+        nextOrder.add(groupKey);
+      }
+    }
+    for (final groupKey in activeGroupKeys) {
+      if (seen.add(groupKey)) nextOrder.add(groupKey);
+    }
+    groupOrder
+      ..clear()
+      ..addAll(nextOrder);
+    groupOrderSet
+      ..clear()
+      ..addAll(nextOrder);
   }
 
   MusicTrack? retargetSingleTrack(
@@ -476,22 +599,15 @@ class LibraryService {
     final oldPath = PathMatcher.normalize(oldTrackPath);
     final newPath = PathMatcher.normalize(newTrackPath);
     for (final entries in libraryEntriesByLibrary.values) {
-      final previousKey = entries.keys
-          .where((key) => PathMatcher.equalsNormalized(key, oldPath))
-          .firstOrNull;
-      if (previousKey == null) continue;
-      final entry = entries.remove(previousKey)!;
+      final entry = entries.remove(oldPath);
+      if (entry == null) continue;
       entries[newPath] = entry.copyWith(
         path: newPath,
         displayName: displayName,
       );
     }
     for (final excluded in excludedLibraryTracks.values) {
-      final previousLength = excluded.length;
-      excluded.removeWhere(
-        (value) => PathMatcher.equalsNormalized(value, oldPath),
-      );
-      if (excluded.length != previousLength) excluded.add(newPath);
+      if (excluded.remove(oldPath)) excluded.add(newPath);
     }
     invalidateExclusionMatchers();
     final track = libraryByPath[oldPath] ?? retainedTrack;
@@ -504,11 +620,39 @@ class LibraryService {
       path: newPath,
       displayName: displayName,
     );
-    final index = library.indexWhere(
-      (item) => PathMatcher.equalsNormalized(item.path, oldPath),
-    );
-    if (index >= 0) library[index] = updatedTrack;
-    rebuildLibraryIndexes();
+    final mappedIndex = libraryIndexByPath[oldPath];
+    final index =
+        mappedIndex != null &&
+            mappedIndex < library.length &&
+            PathMatcher.equalsNormalized(library[mappedIndex].path, oldPath)
+        ? mappedIndex
+        : library.indexWhere(
+            (item) => PathMatcher.equalsNormalized(item.path, oldPath),
+          );
+    if (index >= 0) {
+      library[index] = updatedTrack;
+      libraryByPath.remove(oldPath);
+      libraryIndexByPath.remove(oldPath);
+      libraryByPath[newPath] = updatedTrack;
+      libraryIndexByPath[newPath] = index;
+      final groupTracks = tracksByGroup[updatedTrack.groupKey];
+      if (groupTracks != null) {
+        final nextGroup = <MusicTrack>[
+          for (final item in groupTracks)
+            if (PathMatcher.equalsNormalized(item.path, oldPath))
+              updatedTrack
+            else
+              item,
+        ]..sort(compareTracks);
+        tracksByGroup[updatedTrack.groupKey] = List<MusicTrack>.unmodifiable(
+          nextGroup,
+        );
+      } else {
+        tracksByGroup[updatedTrack.groupKey] = List<MusicTrack>.unmodifiable([
+          updatedTrack,
+        ]);
+      }
+    }
     markStructureChanged();
     return updatedTrack;
   }
@@ -543,32 +687,85 @@ class LibraryService {
     invalidateExclusionMatchers();
   }
 
-  List<LibraryEntry> _retargetLibraryEntries(
+  ({List<LibraryEntry> retargetedEntries, List<String> removedEntryPaths})
+  _retargetLibraryEntries(
     String oldRoot,
     String newRoot,
     String folderName, {
     required String oldLibraryRoot,
     required String newLibraryRoot,
   }) {
-    final existingEntries = libraryEntriesByLibrary.remove(oldLibraryRoot);
+    final existingEntries = libraryEntriesByLibrary[oldLibraryRoot];
     if (existingEntries == null || existingEntries.isEmpty) {
-      return const <LibraryEntry>[];
+      return (
+        retargetedEntries: const <LibraryEntry>[],
+        removedEntryPaths: const <String>[],
+      );
     }
-    final retargetedEntries = existingEntries.values
-        .map(
-          (entry) => _retargetLibraryEntry(
-            entry,
-            oldRoot: oldRoot,
-            newRoot: newRoot,
-            folderName: folderName,
-            libraryPath: newLibraryRoot,
-          ),
-        )
-        .toList(growable: false);
-    libraryEntriesByLibrary[newLibraryRoot] = createPathIndex<LibraryEntry>({
-      for (final entry in retargetedEntries) entry.path: entry,
-    });
-    return retargetedEntries;
+    final rootChanged = !PathMatcher.equalsNormalized(
+      oldLibraryRoot,
+      newLibraryRoot,
+    );
+    if (rootChanged) {
+      libraryEntriesByLibrary.remove(oldLibraryRoot);
+      final removedPaths = <String>[];
+      final retargetedEntries = <LibraryEntry>[];
+      final nextEntries = createPathIndex<LibraryEntry>();
+      for (final entry in existingEntries.values) {
+        removedPaths.add(entry.path);
+        final updated = _retargetLibraryEntry(
+          entry,
+          oldRoot: oldRoot,
+          newRoot: newRoot,
+          folderName: folderName,
+          libraryPath: newLibraryRoot,
+        );
+        retargetedEntries.add(updated);
+        nextEntries[updated.path] = updated;
+      }
+      libraryEntriesByLibrary[newLibraryRoot] = nextEntries;
+      return (
+        retargetedEntries: retargetedEntries,
+        removedEntryPaths: removedPaths,
+      );
+    }
+
+    // Subfolder rename within the same library root: only mutate affected rows.
+    final changedEntries = <LibraryEntry>[];
+    final removedPaths = <String>[];
+    final toUpdate = <({String oldPath, LibraryEntry next})>[];
+    for (final entry in existingEntries.values) {
+      final pathMatches = PathMatcher.isWithinOrEqual(entry.path, oldRoot);
+      final parentMatches =
+          entry.parentPath != null &&
+          PathMatcher.isWithinOrEqual(entry.parentPath!, oldRoot);
+      final groupMatches =
+          !entry.isFolder &&
+          PathMatcher.isWithinOrEqual(entry.groupKey, oldRoot);
+      if (!pathMatches && !parentMatches && !groupMatches) continue;
+      final updated = _retargetLibraryEntry(
+        entry,
+        oldRoot: oldRoot,
+        newRoot: newRoot,
+        folderName: folderName,
+        libraryPath: newLibraryRoot,
+      );
+      toUpdate.add((oldPath: entry.path, next: updated));
+      changedEntries.add(updated);
+      if (entry.path != updated.path) {
+        removedPaths.add(entry.path);
+      }
+    }
+    for (final item in toUpdate) {
+      existingEntries.remove(item.oldPath);
+    }
+    for (final item in toUpdate) {
+      existingEntries[item.next.path] = item.next;
+    }
+    return (
+      retargetedEntries: changedEntries,
+      removedEntryPaths: removedPaths,
+    );
   }
 
   LibraryEntry _retargetLibraryEntry(
@@ -804,13 +1001,7 @@ class LibraryService {
     });
 
     if (removedPaths.isNotEmpty) {
-      _exclusionMatchers.remove(normalizedLibraryPath);
-      final folders = excludedLibraryFolders[normalizedLibraryPath];
-      final tracks = excludedLibraryTracks[normalizedLibraryPath];
-      for (final removedPath in removedPaths) {
-        if (folders != null) _removePathsWithin(folders, removedPath);
-        if (tracks != null) _removePathsWithin(tracks, removedPath);
-      }
+      _removeExclusionsWithinRemovedPaths(normalizedLibraryPath, removedPaths);
     }
 
     return removedPaths;
@@ -831,16 +1022,35 @@ class LibraryService {
     }
 
     if (removedPaths.isNotEmpty) {
-      _exclusionMatchers.remove(normalizedLibraryPath);
-      final folders = excludedLibraryFolders[normalizedLibraryPath];
-      final tracks = excludedLibraryTracks[normalizedLibraryPath];
-      for (final removedPath in removedPaths) {
-        if (folders != null) _removePathsWithin(folders, removedPath);
-        if (tracks != null) _removePathsWithin(tracks, removedPath);
-      }
+      _removeExclusionsWithinRemovedPaths(normalizedLibraryPath, removedPaths);
     }
 
     return removedPaths;
+  }
+
+  void _removeExclusionsWithinRemovedPaths(
+    String normalizedLibraryPath,
+    List<String> removedPaths,
+  ) {
+    _exclusionMatchers.remove(normalizedLibraryPath);
+    final folders = excludedLibraryFolders[normalizedLibraryPath];
+    final tracks = excludedLibraryTracks[normalizedLibraryPath];
+    final hasFolders = folders != null && folders.isNotEmpty;
+    final hasTracks = tracks != null && tracks.isNotEmpty;
+    if (!hasFolders && !hasTracks) return;
+    if (removedPaths.length == 1) {
+      final removedPath = removedPaths.first;
+      if (hasFolders) _removePathsWithin(folders, removedPath);
+      if (hasTracks) _removePathsWithin(tracks, removedPath);
+      return;
+    }
+    final removedIndex = PathMembershipIndex(removedPaths);
+    if (hasFolders) {
+      folders.removeWhere(removedIndex.containsAncestorOrEqual);
+    }
+    if (hasTracks) {
+      tracks.removeWhere(removedIndex.containsAncestorOrEqual);
+    }
   }
 
   List<String> setLibraryEntriesSubtreeState(
@@ -905,13 +1115,8 @@ class LibraryService {
   MusicTrack? trackByPath(String trackPath) => libraryByPath[trackPath];
 
   String? libraryRootForPath(String entityPath) {
-    for (final rootPath in watchedLibraries) {
-      if (PathMatcher.isWithinOrEqual(entityPath, rootPath)) return rootPath;
-    }
-    for (final rootPath in watchedFolders) {
-      if (PathMatcher.isWithinOrEqual(entityPath, rootPath)) return rootPath;
-    }
-    return null;
+    return mostSpecificWatchedLibrary(entityPath) ??
+        mostSpecificWatchedFolder(entityPath);
   }
 
   int compareTracks(MusicTrack first, MusicTrack second) {
@@ -1159,19 +1364,14 @@ class LibraryService {
   );
 
   String? libraryPathForTrack(MusicTrack track) {
-    for (final libraryPath in watchedLibraries) {
-      if (PathMatcher.isWithinOrEqual(track.path, libraryPath) ||
-          PathMatcher.isWithinOrEqual(track.groupKey, libraryPath)) {
-        return libraryPath;
-      }
-    }
-    for (final folderPath in watchedFolders) {
-      if (PathMatcher.isWithinOrEqual(track.path, folderPath) ||
-          PathMatcher.isWithinOrEqual(track.groupKey, folderPath)) {
-        return folderPath;
-      }
-    }
-    return null;
+    return mostSpecificWatchedLibrary(track.path) ??
+        (track.groupKey.isEmpty
+            ? null
+            : mostSpecificWatchedLibrary(track.groupKey)) ??
+        mostSpecificWatchedFolder(track.path) ??
+        (track.groupKey.isEmpty
+            ? null
+            : mostSpecificWatchedFolder(track.groupKey));
   }
 
   String? folderPathForLibraryTrack(String libraryPath, MusicTrack track) =>
@@ -1295,8 +1495,10 @@ class LibraryFolderRetargetResult {
   const LibraryFolderRetargetResult({
     required this.retargetedTracks,
     required this.retargetedEntries,
+    this.removedEntryPaths = const <String>[],
   });
 
   final Map<String, MusicTrack> retargetedTracks;
   final List<LibraryEntry> retargetedEntries;
+  final List<String> removedEntryPaths;
 }

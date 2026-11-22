@@ -687,6 +687,45 @@ class NativePlaybackSessionStateTest {
         assertEquals(1, loaded)
     }
 
+    @Test
+    fun `shouldPublishSnapshot ignores routine progress ticks unless explicitly forced`() {
+        val session = NativePlaybackSession(
+            sessionId = "progress-dedup",
+            createPlayer = { _, _ -> error("player not needed") },
+            logWarn = { _, _, _ -> },
+            elapsedRealtimeMs = { 1_000L }
+        )
+        val first = session.snapshot()
+        assertTrue(session.shouldPublishSnapshot(first, includePositionChange = false))
+
+        session.lastPositionMs = 2_500L
+        session.lastBufferedPositionMs = 9_000L
+        val ticked = session.snapshot()
+        assertEquals(false, session.shouldPublishSnapshot(ticked, includePositionChange = false))
+        assertTrue(session.shouldPublishSnapshot(ticked, includePositionChange = true))
+
+        session.lastIsPlaying = true
+        val stateChanged = session.snapshot()
+        assertTrue(session.shouldPublishSnapshot(stateChanged, includePositionChange = false))
+    }
+
+    @Test
+    fun `queue dropFirst reuses initialized media items and stored items slices`() {
+        val first = NativeMediaItemDescriptor("/a.mp3", "https://example.com/a.mp3", "A", null, null, playOnceBeforeQueue = true)
+        val second = NativeMediaItemDescriptor("/b.mp3", "file:///b.mp3", "B", null, null)
+        val third = NativeMediaItemDescriptor("/c.mp3", "file:///c.mp3", "C", null, null)
+        val original = NativePlaybackQueue(listOf(first, second, third))
+        val originalStored = original.storedItems
+        val originalWake = original.wakeMode
+        assertEquals(C.WAKE_MODE_NETWORK, originalWake)
+
+        val dropped = original.dropFirst()
+        assertEquals(listOf(second, third), dropped.descriptors)
+        assertSame(originalStored[1], dropped.storedItems[0])
+        assertSame(originalStored[2], dropped.storedItems[1])
+        assertEquals(C.WAKE_MODE_LOCAL, dropped.wakeMode)
+    }
+
     private fun progressAnchor(
         sessionId: String = "session",
         positionMs: Long = 1000L,

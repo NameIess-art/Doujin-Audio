@@ -40,14 +40,14 @@ class WorkDetailActions extends StatelessWidget {
   final bool isLocal;
   final bool isFavorite;
   final Color accentColor;
-  final VoidCallback onFetchInfo;
-  final VoidCallback onDownload;
+  final VoidCallback? onFetchInfo;
+  final VoidCallback? onDownload;
   final VoidCallback onToggleFavorite;
 
   Widget _button(
     BuildContext context, {
     required String keyName,
-    required VoidCallback onPressed,
+    required VoidCallback? onPressed,
     required IconData icon,
     required String label,
     bool isPrimary = false,
@@ -115,7 +115,7 @@ class WorkDetailActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Row(
     children: [
-      if (isLocal)
+      if (isLocal) ...[
         _button(
           context,
           keyName: 'work_detail_fetch_info',
@@ -123,7 +123,8 @@ class WorkDetailActions extends StatelessWidget {
           icon: Icons.cloud_download_rounded,
           label: i18n.tr('audio_detail_fetch_info'),
         ),
-      if (isLocal) const SizedBox(width: 8),
+        const SizedBox(width: 8),
+      ],
       _button(
         context,
         keyName: isLocal ? 'work_detail_download' : 'asmr_work_detail_download',

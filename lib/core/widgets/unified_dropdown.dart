@@ -107,10 +107,13 @@ class _UnifiedDropdownButtonState<T> extends State<UnifiedDropdownButton<T>> {
                 onChanged: onChanged == null
                     ? null
                     : (value) {
-                        _focusNode.unfocus(
-                          disposition:
-                              UnfocusDisposition.previouslyFocusedChild,
-                        );
+                        if (FocusManager.instance.highlightMode !=
+                            FocusHighlightMode.traditional) {
+                          _focusNode.unfocus(
+                            disposition:
+                                UnfocusDisposition.previouslyFocusedChild,
+                          );
+                        }
                         onChanged(value);
                       },
                 isExpanded: true,

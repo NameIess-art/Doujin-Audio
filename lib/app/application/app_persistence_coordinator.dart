@@ -56,6 +56,16 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
     _loadEpoch++;
   }
 
+  bool initializePresentationSync() {
+    if (_disposed) return false;
+    if (_presentationInitialized) return true;
+    if (!_settings.loadPersistedPresentationStateSync()) return false;
+    AppInteractionFeedbackSettings.hapticFeedbackEnabled =
+        _settings.hapticFeedbackEnabled;
+    applyCoverImageCachePolicy(_settings.coverImageResolution);
+    return true;
+  }
+
   Future<void> initializePresentation() {
     if (_disposed || _presentationInitialized) return Future<void>.value();
     final active = _presentationInitialization;
@@ -91,22 +101,22 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
       }
       await initializePresentation();
       if (!isCurrent()) return;
-      await _playback.nativeRepository.setPlaybackBehavior(
-        pauseOnAudioDeviceDisconnect:
-            _settings.audioDeviceDisconnectBehavior ==
-            AudioDeviceDisconnectBehavior.pause,
-        requestAudioFocus:
-            _settings.audioFocusStrategy == AudioFocusStrategy.standard,
-        pauseOnTransientAudioFocusLoss:
-            _settings.transientAudioFocusLossBehavior ==
-            TransientAudioFocusLossBehavior.pause,
-        resumeAfterTransientAudioFocusGain:
-            _settings.interruptionResumeBehavior ==
-            InterruptionResumeBehavior.resume,
-      );
       // A rebuilt Flutter engine reconnects to playback that may still be live.
       // Session restore below reconciles its native snapshot without pausing it.
       await Future.wait<void>(<Future<void>>[
+        _playback.nativeRepository.setPlaybackBehavior(
+          pauseOnAudioDeviceDisconnect:
+              _settings.audioDeviceDisconnectBehavior ==
+              AudioDeviceDisconnectBehavior.pause,
+          requestAudioFocus:
+              _settings.audioFocusStrategy == AudioFocusStrategy.standard,
+          pauseOnTransientAudioFocusLoss:
+              _settings.transientAudioFocusLossBehavior ==
+              TransientAudioFocusLossBehavior.pause,
+          resumeAfterTransientAudioFocusGain:
+              _settings.interruptionResumeBehavior ==
+              InterruptionResumeBehavior.resume,
+        ),
         _library.coverArtworkCacheService.initialize(),
         _library.loadPersistedState(),
         _timer.loadPersistedState(),

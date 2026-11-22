@@ -40,6 +40,11 @@ class SessionTrackSwitcherSheet extends ConsumerStatefulWidget {
 class _SessionTrackSwitcherSheetState
     extends ConsumerState<SessionTrackSwitcherSheet>
     with SingleTickerProviderStateMixin {
+  static const double _estimatedHeaderHeight = 56.0;
+  static const double _estimatedRowHeight = 52.0;
+
+  late final ScrollController _scrollController =
+      WindowsSmoothScrollController();
   late final Set<String> _expandedFolders = Set.of(widget.tree.expanded);
   late List<SessionSwitcherRow> _rows = widget.tree.rows;
   late Map<String, int> _rowIndices = widget.tree.indices;
@@ -51,6 +56,25 @@ class _SessionTrackSwitcherSheetState
     _motion = FileTreeExpansionMotion(this, () {
       if (mounted) setState(_motion.finish);
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToSelectedTrack();
+    });
+  }
+
+  void _scrollToSelectedTrack() {
+    if (!mounted || !_scrollController.hasClients) return;
+    final selectedIndex = _rows.indexWhere((row) => row.node.selected);
+    if (selectedIndex <= 0) return;
+    final position = _scrollController.position;
+    final viewportExtent = position.viewportDimension;
+    final targetOffset =
+        (_estimatedHeaderHeight +
+                selectedIndex * _estimatedRowHeight -
+                viewportExtent * 0.35)
+            .clamp(0.0, position.maxScrollExtent);
+    if (targetOffset > 0) {
+      _scrollController.jumpTo(targetOffset);
+    }
   }
 
   void _projectRows() {
@@ -89,6 +113,7 @@ class _SessionTrackSwitcherSheetState
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _motion.dispose();
     super.dispose();
   }
@@ -131,6 +156,7 @@ class _SessionTrackSwitcherSheetState
         ? _rowIndices
         : {for (var i = 0; i < rows.length; i++) rows[i].key: i};
     return ListView.builder(
+      controller: _scrollController,
       padding: AppBottomSheet.contentPadding,
       itemCount: rows.length + 1,
       findChildIndexCallback: (key) {
@@ -149,7 +175,7 @@ class _SessionTrackSwitcherSheetState
         final rowIndex = index - 1;
         return _buildRow(rows[rowIndex], rowIndex);
       },
-    ).withWindowsSmoothScroll();
+    );
   }
 
   @override

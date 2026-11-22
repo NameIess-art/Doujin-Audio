@@ -25,6 +25,12 @@ internal class JsonDocumentStorage(
         }
     }
 
+    private data class RecoveredJsonDocument(
+        val document: DocumentFile?,
+        val bytes: ByteArray?,
+        val failed: Boolean
+    )
+
     private fun readJsonDocumentLocked(
         folder: DocumentFile,
         name: String
@@ -37,7 +43,8 @@ internal class JsonDocumentStorage(
         }
         val target = recovery.document ?: return mapOf("status" to "missing")
         return runCatching {
-            val bytes = contentResolver.openInputStream(target.uri)?.use { it.readBytes() }
+            val bytes = recovery.bytes
+                ?: contentResolver.openInputStream(target.uri)?.use { it.readBytes() }
                 ?: return mapOf("status" to "unreadable", "error" to "open_failed")
             mapOf(
                 "status" to "found",
@@ -88,17 +95,19 @@ internal class JsonDocumentStorage(
         }
         val existing = recovery.document
         if (mode == "createIfAbsent" && existing != null) {
-            return jsonPreserved(existing)
+            return jsonPreserved(existing, recovery.bytes)
         }
         if (mode == "replaceIfRevision") {
             if (existing == null) return jsonWriteConflict("document_missing")
-            val revision = documentRevision(existing)
+            val revision = recovery.bytes?.let(::sha256)
+                ?: documentRevision(existing)
                 ?: return jsonWriteConflict("document_unreadable")
             if (revision != expectedRevision) {
                 return jsonWriteConflict("revision_mismatch", revision)
             }
         }
 
+        val expectedCommittedRevision = sha256(bytes)
         val temporaryName = "$name.doujin.part"
         val temporary = runCatching {
             folder.createFile("application/octet-stream", temporaryName)
@@ -126,7 +135,7 @@ internal class JsonDocumentStorage(
         val stagedBytes = runCatching {
             contentResolver.openInputStream(temporary.uri)?.use { it.readBytes() }
         }.getOrNull()
-        if (stagedBytes == null || !isValidJson(stagedBytes) || sha256(stagedBytes) != sha256(bytes)) {
+        if (stagedBytes == null || !stagedBytes.contentEquals(bytes)) {
             deleteTemporary()
             return jsonWriteConflict("staging_validation_failed")
         }
@@ -149,7 +158,6 @@ internal class JsonDocumentStorage(
             }
         }
 
-        val expectedCommittedRevision = sha256(bytes)
         if (commitSafDocumentReplacement(
             targetName = name,
             current = current,
@@ -195,7 +203,8 @@ internal class JsonDocumentStorage(
             return mapOf("status" to "conflict", "error" to "transaction_recovery_failed")
         }
         val target = recovery.document ?: return mapOf("status" to "missing")
-        val revision = documentRevision(target)
+        val revision = recovery.bytes?.let(::sha256)
+            ?: documentRevision(target)
             ?: return mapOf("status" to "conflict", "error" to "document_unreadable")
         if (revision != expectedRevision) {
             return mapOf("status" to "conflict", "error" to "revision_mismatch")
@@ -239,23 +248,34 @@ internal class JsonDocumentStorage(
         folder: DocumentFile,
         name: String,
         forRead: Boolean = false
-    ): Result<SafDocumentRecovery<DocumentFile>> = runCatching {
+    ): Result<RecoveredJsonDocument> = runCatching {
         val documents = listReadableDirectoryDocuments(context, folder.uri)
-        recoverSafDocument(
+        var validatedBytes: ByteArray? = null
+        val recovery = recoverSafDocument(
             targetName = name,
             existing = findJsonDocument(documents, name),
             staleBackup = findJsonDocument(documents, "$name.doujin.bak"),
             staleTemp = findJsonDocument(documents, "$name.doujin.part"),
             forRead = forRead,
             isValid = { document ->
-                contentResolver.openInputStream(document.uri)?.use { input ->
-                    isValidJson(input.readBytes())
+                val readBytes = contentResolver.openInputStream(document.uri)?.use { input ->
+                    input.readBytes()
                 } ?: throw IOException("Document cannot be opened: ${document.uri}")
+                val valid = isValidJson(readBytes)
+                if (valid) {
+                    validatedBytes = readBytes
+                }
+                valid
             },
             rename = { document, targetName ->
                 paths.renameDocumentFile(document, targetName)
             },
             delete = { document -> document.delete() }
+        )
+        RecoveredJsonDocument(
+            document = recovery.document,
+            bytes = if (!recovery.failed && recovery.document != null) validatedBytes else null,
+            failed = recovery.failed
         )
     }
 
@@ -263,9 +283,12 @@ internal class JsonDocumentStorage(
         contentResolver.openInputStream(document.uri)?.use { sha256(it.readBytes()) }
     }.getOrNull()
 
-    private fun jsonPreserved(document: DocumentFile): Map<String, Any?> = mapOf(
+    private fun jsonPreserved(
+        document: DocumentFile,
+        existingBytes: ByteArray? = null
+    ): Map<String, Any?> = mapOf(
         "status" to "preserved",
-        "revision" to documentRevision(document),
+        "revision" to (existingBytes?.let(::sha256) ?: documentRevision(document)),
         "bytesWritten" to 0
     )
 
@@ -279,10 +302,16 @@ internal class JsonDocumentStorage(
         "error" to error
     )
 
-    private fun sha256(bytes: ByteArray): String = MessageDigest
-        .getInstance("SHA-256")
-        .digest(bytes)
-        .joinToString("") { "%02x".format(it) }
+    private fun sha256(bytes: ByteArray): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+        val chars = CharArray(digest.size * 2)
+        for (i in digest.indices) {
+            val value = digest[i].toInt() and 0xFF
+            chars[i * 2] = HEX_DIGITS[value ushr 4]
+            chars[i * 2 + 1] = HEX_DIGITS[value and 0x0F]
+        }
+        return String(chars)
+    }
 
     private fun isValidJson(bytes: ByteArray): Boolean = runCatching {
         if (bytes.isEmpty()) return false
@@ -292,4 +321,8 @@ internal class JsonDocumentStorage(
         tokenizer.nextValue()
         tokenizer.nextClean() == 0.toChar()
     }.getOrDefault(false)
+
+    private companion object {
+        val HEX_DIGITS = "0123456789abcdef".toCharArray()
+    }
 }

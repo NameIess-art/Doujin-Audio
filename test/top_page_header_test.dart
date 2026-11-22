@@ -902,4 +902,110 @@ void main() {
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
+
+  testWidgets(
+    'swapping collapseController or collapseDistance does not trigger setState during build',
+    (tester) async {
+      final firstController = ScrollController(initialScrollOffset: 56);
+      final secondController = ScrollController();
+      addTearDown(firstController.dispose);
+      addTearDown(secondController.dispose);
+
+      Widget buildPage({
+        required ScrollController controller,
+        required double distance,
+      }) => MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: [
+              ListView.builder(
+                key: ObjectKey(controller),
+                controller: controller,
+                itemCount: 30,
+                itemExtent: 48,
+                itemBuilder: (_, index) => Text('Item $index'),
+              ),
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: TopPageHeader(
+                  title: 'Library',
+                  trailing: const Icon(Icons.more_horiz_rounded),
+                  collapseController: controller,
+                  collapseDistance: distance,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(
+        buildPage(controller: firstController, distance: 56),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+
+      await tester.pumpWidget(
+        buildPage(controller: secondController, distance: 56),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+
+      secondController.jumpTo(28);
+      await tester.pump();
+      await tester.pumpWidget(
+        buildPage(controller: secondController, distance: 28),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'TopPageHeader with empty titleWidget keeps leading HeaderFloatingButton aligned left',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(420, 300));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: TopPageHeader(
+              useSafeAreaTop: false,
+              titleWidget: const SizedBox.shrink(),
+              leading: HeaderFloatingButton(
+                child: IconButton(
+                  key: const ValueKey('detail_back_button'),
+                  onPressed: () {},
+                  icon: const Icon(Icons.chevron_left_rounded),
+                ),
+              ),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  HeaderFloatingButton(
+                    child: IconButton(
+                      onPressed: () {},
+                      icon: const Icon(Icons.edit_rounded),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final backRect = tester.getRect(
+        find.ancestor(
+          of: find.byKey(const ValueKey('detail_back_button')),
+          matching: find.byType(HeaderFloatingButton),
+        ),
+      );
+      expect(backRect.left, closeTo(16, 0.01));
+      expect(backRect.width, closeTo(38, 0.01));
+    },
+  );
 }

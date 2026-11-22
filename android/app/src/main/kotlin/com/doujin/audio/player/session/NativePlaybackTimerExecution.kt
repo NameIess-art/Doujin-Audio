@@ -34,6 +34,18 @@ internal class NativePlaybackTimerExecution(
 
     fun removeTarget(sessionId: String) = onTrackEnded(sessionId, generationFor(sessionId))
 
+    /** Removes a target on the main thread without synchronously triggering [onAllTracksFinished]. */
+    fun removeTargetWithoutCallback(sessionId: String): Boolean {
+        if (!sessionIds.remove(sessionId)) return false
+        setPauseAtEnd(sessionId, false)
+        restoreFade(sessionId)
+        if (sessionIds.isEmpty()) {
+            generation = null
+            return true
+        }
+        return false
+    }
+
     fun cancel() {
         sessionIds.forEach {
             setPauseAtEnd(it, false)

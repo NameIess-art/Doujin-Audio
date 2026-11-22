@@ -28,6 +28,7 @@ class DesktopMainNavigation extends StatefulWidget {
     required this.playbackGeometryKey,
     required this.onReportPlaybackRect,
     this.pageDragPosition,
+    this.onShowShortcuts,
   });
   final AppLanguageProvider i18n;
   final List<PlaybackSessionSnapshot> overlaySessions;
@@ -41,6 +42,7 @@ class DesktopMainNavigation extends StatefulWidget {
   collapseOffset;
   final ValueChanged<int> onSwitchPage;
   final VoidCallback? onToggleMenu;
+  final VoidCallback? onShowShortcuts;
   final GlobalKey playbackGeometryKey;
   final void Function({
     required bool dockCollapsed,
@@ -54,7 +56,7 @@ class DesktopMainNavigation extends StatefulWidget {
 }
 
 class _DesktopMainNavigationState extends State<DesktopMainNavigation>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   static const double _landscapeCollapsedRailWidth = 64.0;
   static const double _landscapeExpandedRailWidth = 244.0;
 
@@ -68,6 +70,10 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
   late final AnimationController _widthController;
   late final CurvedAnimation _widthCurve;
   late final Animation<double> _landscapeWidthAnimation;
+  late final Animation<double> _landscapeLabelOpacity;
+  late final AnimationController _collapseController;
+  late final CurvedAnimation _collapseCurve;
+  late final Animation<double> _inactiveFollowerOpacity;
   bool _motionActive = false;
   bool _tickerModeEnabled = true;
   bool _disableAnimations = false;
@@ -89,12 +95,44 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
       begin: _landscapeCollapsedRailWidth,
       end: _landscapeExpandedRailWidth,
     ).animate(_widthCurve);
+    _landscapeLabelOpacity = _widthCurve.drive(
+      CurveTween(curve: const Interval(0.0, 0.25)),
+    );
+    _collapseController = AnimationController(
+      vsync: this,
+      duration: kAppFadeDuration,
+      value: 0.0,
+    );
+    _collapseCurve = CurvedAnimation(
+      parent: _collapseController,
+      curve: kAppFadeCurve,
+    );
+    _inactiveFollowerOpacity = _collapseCurve.drive(
+      Tween<double>(begin: 1.0, end: 0.0),
+    );
     _widthController.addStatusListener((status) {
       if (_landscapeLayout == true &&
           (status.isDismissed || status.isCompleted)) {
         _finishMotion();
       }
     });
+  }
+
+  void _syncCollapseAnimation() {
+    final target = widget.isMenuCollapsed && _landscapeLayout == false
+        ? 1.0
+        : 0.0;
+    if (_disableAnimations) {
+      if (_collapseController.value != target ||
+          _collapseController.isAnimating) {
+        _collapseController.value = target;
+      }
+      return;
+    }
+    if (_collapseController.value != target ||
+        _collapseController.isAnimating) {
+      _collapseController.animateTo(target);
+    }
   }
 
   void _syncWidthAnimation() {
@@ -129,6 +167,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
       _motionActive = !_disableAnimations;
       _syncMotionInteraction();
       _syncWidthAnimation();
+      _syncCollapseAnimation();
     }
     final remaining = widget.destinations.map((item) => item.type).toSet();
     for (final item in oldWidget.destinations) {
@@ -155,6 +194,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
     _landscapeLayout = landscape;
     _syncMotionInteraction();
     _syncWidthAnimation();
+    _syncCollapseAnimation();
   }
 
   @override
@@ -162,6 +202,8 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
     UiInteractionCoordinator.instance.cancelInteraction(_motionInteraction);
     _widthCurve.dispose();
     _widthController.dispose();
+    _collapseCurve.dispose();
+    _collapseController.dispose();
     _railScroll.dispose();
     for (final states in _destinationStates.values) {
       states.dispose();
@@ -328,57 +370,63 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
                       );
                     }
 
-                    Widget buildDestinationFollower(
-                      int index,
-                      double collapse,
-                    ) {
+                    Widget buildDestinationFollower(int index) {
                       final item = destinations[index];
                       final selected = index == activeIndex;
                       final iconOffset = isLandscapeLayout
                           ? Offset(-(railMinWidth - 48) / 2, -8)
                           : Offset.zero;
-                      final offset = selected
-                          ? iconOffset
+                      final iconButton = _buildDestinationIcon(
+                        landscapeWidthListenable: landscapeWidthListenable,
+                        railMinWidth: railMinWidth,
+                        onPressed: () => onSwitchPage(index),
+                        colorScheme: cs,
+                        pointerStates: _destinationStates[item.type]!,
+                        foregroundColor: selected
+                            ? cs.primary
+                            : cs.onSurfaceVariant,
+                        icon: item.buildIcon(
+                          key: ValueKey<String>(
+                            'main_destination_${item.labelKey}',
+                          ),
+                          selected: selected,
+                          size: selected ? 22 : 21,
+                          color: landscapeWidthListenable == null
+                              ? (selected
+                                    ? cs.primary
+                                    : cs.onSurfaceVariant)
+                              : null,
+                        ),
+                      );
+                      final travel = selected
+                          ? Offset.zero
                           : collapseOffset(
-                                      item.type,
-                                      destinations[activeIndex].type,
-                                    ) *
-                                    collapse +
-                                iconOffset;
+                              item.type,
+                              destinations[activeIndex].type,
+                            );
+                      // Keep one widget tree shape across selection changes so
+                      // _DestinationPointerRow stays mounted and pointer hover
+                      // or press states never orphan on tab switches.
                       return Positioned(
                         key: ValueKey(item.type),
                         left: 0,
                         top: 0,
-                        child: CompositedTransformFollower(
-                          link: menuIconLinks[item.type.index],
-                          showWhenUnlinked: false,
-                          offset: offset,
-                          child: Opacity(
-                            opacity: selected ? 1 : 1 - collapse,
-                            child: _buildDestinationIcon(
-                              landscapeWidthListenable:
-                                  landscapeWidthListenable,
-                              railMinWidth: railMinWidth,
-                              onPressed: () => onSwitchPage(index),
-                              colorScheme: cs,
-                              pointerStates: _destinationStates[item.type]!,
-                              foregroundColor: selected
-                                  ? cs.primary
-                                  : cs.onSurfaceVariant,
-                              icon: item.buildIcon(
-                                key: ValueKey<String>(
-                                  'main_destination_${item.labelKey}',
-                                ),
-                                selected: selected,
-                                size: selected ? 22 : 21,
-                                color: landscapeWidthListenable == null
-                                    ? (selected
-                                          ? cs.primary
-                                          : cs.onSurfaceVariant)
-                                    : null,
-                              ),
-                            ),
+                        child: AnimatedBuilder(
+                          animation: _collapseCurve,
+                          child: FadeTransition(
+                            opacity: selected
+                                ? kAlwaysCompleteAnimation
+                                : _inactiveFollowerOpacity,
+                            child: iconButton,
                           ),
+                          builder: (context, child) =>
+                              CompositedTransformFollower(
+                                link: menuIconLinks[item.type.index],
+                                showWhenUnlinked: false,
+                                offset:
+                                    travel * _collapseCurve.value + iconOffset,
+                                child: child,
+                              ),
                         ),
                       );
                     }
@@ -582,16 +630,20 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
                                       )
                                     : null;
 
-                                Widget iconTarget(bool selected) =>
-                                    CompositedTransformTarget(
-                                      key: menuIconKeys[item.type.index],
-                                      link: menuIconLinks[item.type.index],
-                                      child: SizedBox.square(
-                                        dimension: isLandscapeLayout
-                                            ? 48
-                                            : (selected ? 22 : 21),
-                                      ),
-                                    );
+                                Widget iconTarget(bool selected) {
+                                  final target = CompositedTransformTarget(
+                                    key: menuIconKeys[item.type.index],
+                                    link: menuIconLinks[item.type.index],
+                                    child: SizedBox.square(
+                                      dimension: isLandscapeLayout
+                                          ? 48
+                                          : (selected ? 22 : 21),
+                                    ),
+                                  );
+                                  return isMenuCollapsed
+                                      ? Tooltip(message: label, child: target)
+                                      : target;
+                                }
                                 return NavigationRailDestination(
                                   icon: iconTarget(false),
                                   selectedIcon: iconTarget(true),
@@ -602,42 +654,20 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
                                             alignment: AlignmentDirectional
                                                 .centerStart,
                                             widthFactor: 1,
-                                            child:
-                                                ValueListenableBuilder<double>(
-                                                  valueListenable:
-                                                      landscapeWidthListenable,
-                                                  child: AppButtonText(
-                                                    states:
-                                                        _destinationStates[item
-                                                            .type]!,
-                                                    label: label,
-                                                    style: labelStyle,
-                                                    accentColor: cs.primary,
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                  ),
-                                                  builder:
-                                                      (
-                                                        context,
-                                                        landscapeWidth,
-                                                        labelChild,
-                                                      ) => Opacity(
-                                                        alwaysIncludeSemantics:
-                                                            true,
-                                                        opacity:
-                                                            (4 *
-                                                                    (landscapeWidth -
-                                                                        railMinWidth) /
-                                                                    (railMinExtendedWidth -
-                                                                        railMinWidth))
-                                                                .clamp(
-                                                                  0.0,
-                                                                  1.0,
-                                                                ),
-                                                        child: labelChild,
-                                                      ),
-                                                ),
+                                            child: FadeTransition(
+                                              opacity: _landscapeLabelOpacity,
+                                              alwaysIncludeSemantics: true,
+                                              child: AppButtonText(
+                                                states:
+                                                    _destinationStates[item
+                                                        .type]!,
+                                                label: label,
+                                                style: labelStyle,
+                                                accentColor: cs.primary,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
                                           ),
                                         )
                                       : Text(
@@ -655,33 +685,19 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
                               ignoring: !isLandscapeLayout,
                               child: ExcludeFocus(
                                 child: ExcludeSemantics(
-                                  child: TweenAnimationBuilder<double>(
-                                    tween: Tween<double>(
-                                      end: isMenuCollapsed && !isLandscapeLayout
-                                          ? 1
-                                          : 0,
-                                    ),
-                                    duration: _disableAnimations
-                                        ? Duration.zero
-                                        : kAppFadeDuration,
-                                    curve: kAppFadeCurve,
-                                    builder: (context, collapse, _) => Stack(
-                                      children: [
-                                        for (final index in [
-                                          for (
-                                            var i = 0;
-                                            i < destinations.length;
-                                            i++
-                                          )
-                                            if (i != activeIndex) i,
-                                          activeIndex,
-                                        ])
-                                          buildDestinationFollower(
-                                            index,
-                                            collapse,
-                                          ),
-                                      ],
-                                    ),
+                                  child: Stack(
+                                    children: [
+                                      for (final index in [
+                                        for (
+                                          var i = 0;
+                                          i < destinations.length;
+                                          i++
+                                        )
+                                          if (i != activeIndex) i,
+                                        activeIndex,
+                                      ])
+                                        buildDestinationFollower(index),
+                                    ],
                                   ),
                                 ),
                               ),
@@ -725,6 +741,36 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation>
               },
             ),
           ),
+          if (widget.onShowShortcuts != null)
+            Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.xs),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: SizedBox(
+                  width: railMinWidth,
+                  child: Center(
+                    child: IconButton(
+                      key: const ValueKey<String>(
+                        'desktop_keyboard_shortcuts_button',
+                      ),
+                      tooltip: '${i18n.tr('keyboard_shortcuts_entry')} (F1)',
+                      style: appIconButtonStyle(
+                        IconButton.styleFrom(
+                          shape: const CircleBorder(),
+                          fixedSize: const Size.square(44),
+                        ),
+                      ),
+                      icon: Icon(
+                        Icons.keyboard_rounded,
+                        size: 20,
+                        color: cs.onSurfaceVariant,
+                      ),
+                      onPressed: widget.onShowShortcuts,
+                    ),
+                  ),
+                ),
+              ),
+            ),
           if (overlaySessions.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: AppSpacing.sm),
@@ -863,11 +909,16 @@ class _DestinationPointerRowState extends State<_DestinationPointerRow> {
     super.initState();
     _iconStates.addListener(_syncStates);
     _labelStates.addListener(_syncStates);
+    widget.landscapeWidthListenable.addListener(_syncLabelAvailability);
   }
 
   @override
   void didUpdateWidget(covariant _DestinationPointerRow oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.landscapeWidthListenable != widget.landscapeWidthListenable) {
+      oldWidget.landscapeWidthListenable.removeListener(_syncLabelAvailability);
+      widget.landscapeWidthListenable.addListener(_syncLabelAvailability);
+    }
     if (oldWidget.pointerStates != widget.pointerStates) {
       oldWidget.pointerStates
         ..update(WidgetState.hovered, false)
@@ -878,6 +929,7 @@ class _DestinationPointerRowState extends State<_DestinationPointerRow> {
 
   @override
   void dispose() {
+    widget.landscapeWidthListenable.removeListener(_syncLabelAvailability);
     _iconStates
       ..removeListener(_syncStates)
       ..dispose();
@@ -885,6 +937,14 @@ class _DestinationPointerRowState extends State<_DestinationPointerRow> {
       ..removeListener(_syncStates)
       ..dispose();
     super.dispose();
+  }
+
+  void _syncLabelAvailability() {
+    if (widget.landscapeWidthListenable.value <= widget.railMinWidth) {
+      _labelStates
+        ..update(WidgetState.hovered, false)
+        ..update(WidgetState.pressed, false);
+    }
   }
 
   void _syncStates() {

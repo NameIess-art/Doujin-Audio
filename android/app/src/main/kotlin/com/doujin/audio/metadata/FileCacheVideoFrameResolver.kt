@@ -230,9 +230,6 @@ internal class FileCacheVideoFrameResolver(
         val height = bitmap.height
         if (width == 0 || height == 0) return true
 
-        val pixels = IntArray(width * height)
-        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
-
         val stepX = (width / 10).coerceAtLeast(1)
         val stepY = (height / 10).coerceAtLeast(1)
         var darkPixels = 0
@@ -240,9 +237,8 @@ internal class FileCacheVideoFrameResolver(
         var totalSamples = 0
 
         for (y in 0 until height step stepY) {
-            val rowOffset = y * width
             for (x in 0 until width step stepX) {
-                val pixel = pixels[rowOffset + x]
+                val pixel = bitmap.getPixel(x, y)
                 val red = (pixel shr 16) and 0xFF
                 val green = (pixel shr 8) and 0xFF
                 val blue = pixel and 0xFF

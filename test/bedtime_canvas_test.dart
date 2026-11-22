@@ -450,9 +450,9 @@ void main() {
       expect(find.byIcon(Icons.skip_next_rounded), findsNothing);
       expect(find.byIcon(Icons.skip_previous_rounded), findsNothing);
 
-      // Only the long-press exit hint remains.
+      // Bottom hint mentions both double-tap play/pause and hold-to-exit.
       final i18n = fixture.languageProvider;
-      expect(find.text(i18n.tr('hold_to_exit_sleep_mode')), findsOneWidget);
+      expect(find.text(i18n.tr('bedtime_controls_hint')), findsOneWidget);
 
       await tester.pump(const Duration(seconds: 1));
     });

@@ -96,6 +96,7 @@ class TextTranslationService {
     DateTime Function()? now,
     Duration requestInterval = const Duration(milliseconds: 250),
     Duration requestTimeout = const Duration(seconds: 20),
+    Duration diskWriteDebounce = const Duration(milliseconds: 500),
     int memoryCapacity = 1000,
     int diskCapacity = 3000,
   }) : assert(memoryCapacity > 0),
@@ -109,6 +110,7 @@ class TextTranslationService {
        _now = now ?? DateTime.now,
        _requestInterval = requestInterval,
        _requestTimeout = requestTimeout,
+       _diskWriteDebounce = diskWriteDebounce,
        _memoryCapacity = memoryCapacity,
        _diskCapacity = diskCapacity;
 
@@ -120,14 +122,19 @@ class TextTranslationService {
   final DateTime Function() _now;
   final Duration _requestInterval;
   final Duration _requestTimeout;
+  final Duration _diskWriteDebounce;
   final int _memoryCapacity;
   final int _diskCapacity;
   final _memory = <_TranslationKey, String>{};
+  final _recentlyAccessed = <_TranslationKey, String>{};
+  final _pendingDiskAdditions = <_TranslationKey, String>{};
   final _requests = <TextTranslationRequest>{};
   // Pages and subtitle jobs share the same file even when they own different
   // service instances. Serialize read/modify/write and clearing as one operation.
   static Future<void> _diskTail = Future<void>.value();
   static final _cacheUsers = <TextTranslationService>{};
+  HttpClient? _httpClient;
+  Timer? _diskSaveTimer;
   ({String path, JsonDocumentStore? store})? _cacheKey;
   Future<Map<_TranslationKey, String>>? _diskEntries;
   Future<void> _operations = Future<void>.value();
@@ -154,7 +161,14 @@ class TextTranslationService {
   String? cached(String text, String target, {String source = 'auto'}) {
     final key = (text, source, target);
     final value = _memory.remove(key);
-    if (value != null) _memory[key] = value;
+    if (value != null) {
+      _memory[key] = value;
+      _recentlyAccessed.remove(key);
+      _recentlyAccessed[key] = value;
+      while (_recentlyAccessed.length > _memoryCapacity) {
+        _recentlyAccessed.remove(_recentlyAccessed.keys.first);
+      }
+    }
     return value;
   }
 
@@ -262,16 +276,31 @@ class TextTranslationService {
     }
   }
 
+  HttpClient _ensureClient() {
+    final existing = _httpClient;
+    if (existing != null) return existing;
+    final client = _clientFactory();
+    client.connectionTimeout = _requestTimeout;
+    return _httpClient = client;
+  }
+
   Future<List<String>> _fetch(
     List<String> texts,
     String source,
     String target,
     TextTranslationRequest request,
   ) async {
-    if (request.cancelled) throw const _TranslationCancelled();
-    final client = _clientFactory();
-    client.connectionTimeout = _requestTimeout;
-    request._abort = () => client.close(force: true);
+    if (request.cancelled || _disposed) throw const _TranslationCancelled();
+    final client = _ensureClient();
+    HttpClientRequest? pendingRequest;
+    StreamSubscription<String>? responseSubscription;
+    var aborted = false;
+    var responseCompleted = false;
+    request._abort = () {
+      aborted = true;
+      pendingRequest?.abort(const _TranslationCancelled());
+      unawaited(responseSubscription?.cancel());
+    };
     try {
       final uri = _endpoint.replace(
         queryParameters: {
@@ -281,7 +310,16 @@ class TextTranslationService {
         },
       );
       final pending = await request._active(
-        client.postUrl(uri).timeout(_requestTimeout),
+        client
+            .postUrl(uri)
+            .then((req) {
+              if (aborted || request.cancelled || _disposed) {
+                req.abort(const _TranslationCancelled());
+                throw const _TranslationCancelled();
+              }
+              return pendingRequest = req;
+            })
+            .timeout(_requestTimeout),
       );
       pending.followRedirects = false;
       pending.headers.contentType = ContentType(
@@ -295,17 +333,36 @@ class TextTranslationService {
       final response = await request._active(
         pending.close().timeout(_requestTimeout),
       );
+      final bodyBuffer = StringBuffer();
+      final bodyCompleter = Completer<String>();
+      responseSubscription = utf8.decoder
+          .bind(response)
+          .listen(
+            bodyBuffer.write,
+            onError: (Object error, StackTrace stack) {
+              if (bodyCompleter.isCompleted) return;
+              if (error is FormatException) {
+                bodyCompleter.completeError(
+                  const _TranslationError(
+                    TextTranslationFailure.invalidResponse,
+                  ),
+                  stack,
+                );
+              } else {
+                bodyCompleter.completeError(error, stack);
+              }
+            },
+            onDone: () {
+              if (!bodyCompleter.isCompleted) {
+                bodyCompleter.complete(bodyBuffer.toString());
+              }
+            },
+            cancelOnError: true,
+          );
       final body = await request._active(
-        utf8.decoder
-            .bind(response)
-            .join()
-            .timeout(_requestTimeout)
-            .onError<FormatException>(
-              (_, _) => throw const _TranslationError(
-                TextTranslationFailure.invalidResponse,
-              ),
-            ),
+        bodyCompleter.future.timeout(_requestTimeout),
       );
+      responseCompleted = true;
       if (request.cancelled) throw const _TranslationCancelled();
       final unusual =
           response.statusCode != HttpStatus.ok &&
@@ -339,7 +396,10 @@ class TextTranslationService {
     } finally {
       _lastRequestAt = _now();
       request._abort = null;
-      client.close(force: true);
+      await responseSubscription?.cancel();
+      if (!responseCompleted) {
+        pendingRequest?.abort();
+      }
     }
   }
 
@@ -391,11 +451,34 @@ class TextTranslationService {
   }
 
   void _saveDisk(Map<_TranslationKey, String> additions) {
-    final changes = Map<_TranslationKey, String>.of(additions);
-    for (final entry in _memory.entries) {
+    for (final entry in additions.entries) {
+      _pendingDiskAdditions.remove(entry.key);
+      _pendingDiskAdditions[entry.key] = entry.value;
+    }
+    if (_diskWriteDebounce <= Duration.zero) {
+      _flushDiskAdditions();
+      return;
+    }
+    _diskSaveTimer?.cancel();
+    _diskSaveTimer = Timer(_diskWriteDebounce, _flushDiskAdditions);
+  }
+
+  void _flushDiskAdditions() {
+    _diskSaveTimer?.cancel();
+    _diskSaveTimer = null;
+    if (_pendingDiskAdditions.isEmpty) return;
+    final changes = <_TranslationKey, String>{};
+    for (final entry in _recentlyAccessed.entries) {
+      if (_memory.containsKey(entry.key)) {
+        changes[entry.key] = entry.value;
+      }
+    }
+    _recentlyAccessed.clear();
+    for (final entry in _pendingDiskAdditions.entries) {
       changes.remove(entry.key);
       changes[entry.key] = entry.value;
     }
+    _pendingDiskAdditions.clear();
     final epoch = _cacheEpoch;
     unawaited(
       _serializeDisk(() async {
@@ -425,7 +508,7 @@ class TextTranslationService {
           if (!written.committed) {
             AppLogService.warning('page_translation_cache_write_failed');
           } else {
-            _invalidatePeerCaches();
+            _syncPeerCaches(changes);
           }
         } on Object {
           // Cache I/O must not discard a successfully translated batch.
@@ -433,6 +516,34 @@ class TextTranslationService {
         }
       }),
     );
+  }
+
+  void _syncPeerCaches(Map<_TranslationKey, String> changes) {
+    for (final peer in _cacheUsers) {
+      if (peer._cacheKey != _cacheKey || identical(peer, this)) continue;
+      final peerDiskFuture = peer._diskEntries;
+      if (peerDiskFuture != null) {
+        unawaited(
+          peerDiskFuture.then((entries) {
+            if (peer._disposed || !identical(peer._diskEntries, peerDiskFuture)) {
+              return;
+            }
+            for (final entry in changes.entries) {
+              entries.remove(entry.key);
+              entries[entry.key] = entry.value;
+            }
+            while (entries.length > peer._diskCapacity) {
+              entries.remove(entries.keys.first);
+            }
+          }),
+        );
+      }
+      for (final entry in changes.entries) {
+        if (peer._memory.containsKey(entry.key)) {
+          peer._remember(entry.key, entry.value);
+        }
+      }
+    }
   }
 
   void _invalidatePeerCaches({bool clearing = false}) {
@@ -446,6 +557,10 @@ class TextTranslationService {
 
   void _cancelCacheRequests() {
     _cacheEpoch++;
+    _diskSaveTimer?.cancel();
+    _diskSaveTimer = null;
+    _pendingDiskAdditions.clear();
+    _recentlyAccessed.clear();
     _diskEntries = null;
     _memory.clear();
     for (final request in _requests.toList()) {
@@ -478,10 +593,14 @@ class TextTranslationService {
 
   void dispose() {
     _disposed = true;
+    _flushDiskAdditions();
     for (final request in _requests.toList()) {
       request.cancel();
     }
+    _httpClient?.close(force: true);
+    _httpClient = null;
     _memory.clear();
+    _recentlyAccessed.clear();
     _diskEntries = null;
     _cacheUsers.remove(this);
   }

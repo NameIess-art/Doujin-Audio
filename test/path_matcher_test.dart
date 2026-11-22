@@ -221,4 +221,147 @@ void main() {
       isFalse,
     );
   });
+
+  test('PathMatcher.join preserves content:// URIs and SAF synthetic hierarchy', () {
+    const treeRoot =
+        'content://com.android.externalstorage.documents/tree/primary%3ALibrary';
+    const docUri = '$treeRoot/document/primary%3ALibrary%2FWork';
+
+    final joinedFromTree = PathMatcher.join(treeRoot, 'cover.jpg');
+    expect(joinedFromTree, '$treeRoot::cover.jpg');
+    expect(PathMatcher.isContentUri(joinedFromTree), isTrue);
+    expect(
+      PathMatcher.equalsNormalized(
+        joinedFromTree,
+        '$treeRoot/document/primary%3ALibrary%2Fcover.jpg',
+      ),
+      isTrue,
+    );
+
+    expect(
+      PathMatcher.join('$treeRoot/', r'./art\cover.jpg/'),
+      '$treeRoot::art/cover.jpg',
+    );
+    expect(
+      PathMatcher.join('$treeRoot::Work', 'art/cover.jpg'),
+      '$treeRoot::Work/art/cover.jpg',
+    );
+    expect(
+      PathMatcher.join('$treeRoot::Work/Sub', '../cover.jpg'),
+      '$treeRoot::Work/cover.jpg',
+    );
+    expect(PathMatcher.join('$treeRoot::Work', '.'), '$treeRoot::Work');
+    expect(PathMatcher.join(docUri, 'cover.jpg'), '$docUri::cover.jpg');
+    expect(
+      PathMatcher.equalsNormalized(
+        PathMatcher.join(docUri, 'cover.jpg'),
+        '$treeRoot/document/primary%3ALibrary%2FWork%2Fcover.jpg',
+      ),
+      isTrue,
+    );
+  });
+
+  test('equivalenceKey fast path matches normalized forms for edge cases', () {
+    expect(PathMatcher.equivalenceKey('/'), 'file:/');
+    expect(PathMatcher.equivalenceKey('///'), 'file:/');
+    expect(
+      PathMatcher.equivalenceKey('/library/Work/.hidden/01.mp3'),
+      'file:/library/Work/.hidden/01.mp3',
+    );
+    expect(
+      PathMatcher.equivalenceKey('/library/Work/'),
+      'file:/library/Work',
+    );
+    expect(
+      PathMatcher.equivalenceKey('/library/Work//sub/../01.mp3'),
+      'file:/library/Work/01.mp3',
+    );
+    expect(
+      PathMatcher.equivalenceKey('/library/Work/.'),
+      'file:/library/Work',
+    );
+    expect(
+      PathMatcher.equivalenceKey('/library/Work/..'),
+      'file:/library',
+    );
+    expect(PathMatcher.equivalenceKey(r'C:\'), 'windows:c:/');
+    expect(PathMatcher.equivalenceKey('c:/'), 'windows:c:/');
+    expect(
+      PathMatcher.equivalenceKey(r'D:\作品\RJ123\01.mp3'),
+      'windows:d:/作品/rj123/01.mp3',
+    );
+    expect(
+      PathMatcher.equivalenceKey(r'D:\作品\RJ123\'),
+      'windows:d:/作品/rj123',
+    );
+    expect(
+      PathMatcher.equivalenceKey(r'D:\作品\.\RJ123\..\RJ456\01.mp3'),
+      'windows:d:/作品/rj456/01.mp3',
+    );
+    expect(PathMatcher.equivalenceKey(r'D:\.'), 'windows:d:/');
+    expect(
+      PathMatcher.equivalenceKey(r'\\Server\Share\Album\01.mp3'),
+      'windows://server/share/album/01.mp3',
+    );
+    expect(
+      PathMatcher.equivalenceKey('HTTP://Example.COM/audio/'),
+      'remote:HTTP://Example.COM/audio',
+    );
+    expect(
+      PathMatcher.equivalenceKey('https://example.com/a/b'),
+      'remote:https://example.com/a/b',
+    );
+  });
+
+  test(
+    'PathRootIndex resolves most specific containing root across platforms',
+    () {
+      final index = PathRootIndex(<String>[
+        r'C:\Library',
+        r'C:\Library\Nested',
+        '/storage/Music',
+        '/storage/Music/Favorites',
+        'content://com.android.externalstorage.documents/tree/primary%3A',
+        'content://com.android.externalstorage.documents/tree/primary%3AMusic',
+        'relative/root',
+      ]);
+
+      expect(
+        index.mostSpecificContaining(r'c:\library\nested\work\01.mp3'),
+        r'C:\Library\Nested',
+      );
+      expect(
+        index.mostSpecificContaining(r'C:\Library\Other\01.mp3'),
+        r'C:\Library',
+      );
+      expect(
+        index.mostSpecificContaining(r'C:\LibraryOther\01.mp3'),
+        isNull,
+      );
+      expect(
+        index.mostSpecificContaining('/storage/Music/Favorites/01.mp3'),
+        '/storage/Music/Favorites',
+      );
+      expect(
+        index.mostSpecificContaining('/storage/Music/01.mp3'),
+        '/storage/Music',
+      );
+      expect(
+        index.mostSpecificContaining(
+          'content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2FAlbum%2F01.mp3',
+        ),
+        'content://com.android.externalstorage.documents/tree/primary%3AMusic',
+      );
+      expect(
+        index.mostSpecificContaining(
+          'content://com.android.externalstorage.documents/tree/primary%3A/document/primary%3AOther%2F01.mp3',
+        ),
+        'content://com.android.externalstorage.documents/tree/primary%3A',
+      );
+      expect(
+        index.mostSpecificContaining('relative/root/track.mp3'),
+        'relative/root',
+      );
+    },
+  );
 }

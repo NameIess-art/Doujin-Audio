@@ -3629,6 +3629,26 @@ class _MemoryAudioDetailCacheService extends AudioDetailCacheService {
   }
 
   @override
+  Future<List<AudioDetailLoadResult>> loadMany(
+    Iterable<AudioDetailTarget> targets, {
+    bool Function()? isActive,
+  }) async {
+    return [
+      for (final target in targets)
+        () {
+          loadedTargets.add(target);
+          final key = _key(target);
+          return AudioDetailLoadResult(
+            detail: AudioDetail.empty(target).copyWith(
+              cardCoverPath: _cardCoverPaths[key],
+              cardCoverSelected: _cardCoverSelections[key] ?? false,
+            ),
+          );
+        }(),
+    ];
+  }
+
+  @override
   Future<({String? path, bool selected})> loadCardCoverSelection(
     AudioDetailTarget target,
   ) async {

@@ -12,10 +12,14 @@ class SubtitleWindow {
   void Update(const std::string& text);
   void Style(const flutter::EncodableMap& style);
  private:
+  void SavePlacement() const;
+  void LoadPlacement(LONG& x, LONG& y, LONG& width, LONG min_width) const;
   void FitText();
   int MeasureText(HDC dc, int width);
   bool EnsureFont(UINT dpi);
   bool EnsureSurface(HDC screen, int width, int rows);
+  bool EnsureMaskSurface(HDC screen, int width, int rows);
+  void ReleaseMaskSurface();
   void ReleaseSurface();
   void PaintBackground(int width, int rows, double scale);
   void Paint(HDC screen);
@@ -37,10 +41,12 @@ class SubtitleWindow {
   DWORD *pixels_ = nullptr, *coverage_ = nullptr;
   int surface_width_ = 0, surface_rows_ = 0;
   int surface_capacity_width_ = 0, surface_capacity_rows_ = 0;
+  int mask_capacity_width_ = 0, mask_capacity_rows_ = 0;
   UINT surface_dpi_ = 0;
   int measured_text_width_ = 0, measured_text_height_ = 0;
   RECT painted_text_bounds_{};
   std::vector<DWORD> background_pixels_;
   bool background_dirty_ = true, content_dirty_ = true, fitting_text_ = false;
-  bool dpi_changing_ = false, sized_during_dpi_change_ = false;
+  bool dpi_changing_ = false, sized_during_dpi_change_ = false, resizing_ = false;
+  bool hovered_ = false;
 };

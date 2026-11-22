@@ -255,37 +255,67 @@ abstract final class AppLogService {
   }
 
   static String sanitize(String message) {
-    var sanitized = message.replaceAllMapped(_httpUrl, (match) {
-      final value = match.group(0)!;
-      final uri = Uri.tryParse(value);
-      if (uri == null || !uri.hasQuery) return value;
-      return uri.replace(query: '').toString();
-    });
-    sanitized = sanitized.replaceAll(_bearerToken, 'Bearer [REDACTED]');
-    sanitized = sanitized.replaceAllMapped(
-      _doubleQuotedKeyValue,
-      (match) => '"${match.group(1)}"${match.group(2)}"[REDACTED]"',
-    );
-    sanitized = sanitized.replaceAllMapped(
-      _singleQuotedKeyValue,
-      (match) => "'${match.group(1)}'${match.group(2)}'[REDACTED]'",
-    );
-    sanitized = sanitized.replaceAllMapped(_doubleQuotedValue, (match) {
-      final prefix = match
-          .group(0)!
-          .substring(0, match.group(0)!.indexOf('"') + 1);
-      return '$prefix[REDACTED]"';
-    });
-    sanitized = sanitized.replaceAllMapped(_singleQuotedValue, (match) {
-      final prefix = match
-          .group(0)!
-          .substring(0, match.group(0)!.indexOf("'") + 1);
-      return "$prefix[REDACTED]'";
-    });
-    sanitized = sanitized.replaceAllMapped(
-      _unquotedValue,
-      (match) => '${match.group(1)}${match.group(2)}[REDACTED]',
-    );
+    if (message.isEmpty) return message;
+    final hasUrl = message.contains('://');
+    final hasDelimiter = hasUrl || message.contains(':') || message.contains('=');
+    if (!hasDelimiter && !message.contains('b') && !message.contains('B')) {
+      return message;
+    }
+    final lower = message.toLowerCase();
+    final hasBearer = lower.contains('bearer');
+    final hasSensitiveKey =
+        hasDelimiter &&
+        (lower.contains('token') ||
+            lower.contains('passw') ||
+            lower.contains('authorization') ||
+            lower.contains('api'));
+    if (!hasUrl && !hasBearer && !hasSensitiveKey) {
+      return message;
+    }
+    var sanitized = message;
+    if (hasUrl) {
+      sanitized = sanitized.replaceAllMapped(_httpUrl, (match) {
+        final value = match.group(0)!;
+        final uri = Uri.tryParse(value);
+        if (uri == null || !uri.hasQuery) return value;
+        return uri.replace(query: '').toString();
+      });
+    }
+    if (hasBearer) {
+      sanitized = sanitized.replaceAll(_bearerToken, 'Bearer [REDACTED]');
+    }
+    if (hasSensitiveKey) {
+      final hasDoubleQuote = sanitized.contains('"');
+      final hasSingleQuote = sanitized.contains("'");
+      if (hasDoubleQuote) {
+        sanitized = sanitized.replaceAllMapped(
+          _doubleQuotedKeyValue,
+          (match) => '"${match.group(1)}"${match.group(2)}"[REDACTED]"',
+        );
+        sanitized = sanitized.replaceAllMapped(_doubleQuotedValue, (match) {
+          final prefix = match
+              .group(0)!
+              .substring(0, match.group(0)!.indexOf('"') + 1);
+          return '$prefix[REDACTED]"';
+        });
+      }
+      if (hasSingleQuote) {
+        sanitized = sanitized.replaceAllMapped(
+          _singleQuotedKeyValue,
+          (match) => "'${match.group(1)}'${match.group(2)}'[REDACTED]'",
+        );
+        sanitized = sanitized.replaceAllMapped(_singleQuotedValue, (match) {
+          final prefix = match
+              .group(0)!
+              .substring(0, match.group(0)!.indexOf("'") + 1);
+          return "$prefix[REDACTED]'";
+        });
+      }
+      sanitized = sanitized.replaceAllMapped(
+        _unquotedValue,
+        (match) => '${match.group(1)}${match.group(2)}[REDACTED]',
+      );
+    }
     return sanitized;
   }
 

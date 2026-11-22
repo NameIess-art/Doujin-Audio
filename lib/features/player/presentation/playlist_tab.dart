@@ -6,6 +6,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/application/audio_path_coordinator.dart';
@@ -109,16 +110,38 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
   void _selectOnlySession(String sessionId) {
     if (_creatingQueue) return;
-    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
-    if (_selectedSessionIds.length != 1 ||
-        !_selectedSessionIds.contains(sessionId)) {
-      _selection.value = {sessionId};
+    if (_selectedSessionIds.isNotEmpty) {
+      _toggleSessionSelection(sessionId);
+      return;
     }
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    _selection.value = {sessionId};
+  }
+
+  void _toggleSelectAll(List<PlaybackDirectoryEntry> entries) {
+    if (_creatingQueue || entries.isEmpty) return;
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    final allIds = entries.map((entry) => entry.id).toSet();
+    final allSelected = allIds.every(_selectedSessionIds.contains);
+    _selection.value = allSelected ? const <String>{} : allIds;
   }
 
   void _exitSelectionMode() {
     if (_creatingQueue) return;
     _selection.value = const {};
+  }
+
+  bool _handleHardwareKey(KeyEvent event) {
+    if (!mounted ||
+        _creatingQueue ||
+        _selectedSessionIds.isEmpty ||
+        !_isActive ||
+        event is! KeyDownEvent ||
+        event.logicalKey != LogicalKeyboardKey.escape) {
+      return false;
+    }
+    _exitSelectionMode();
+    return true;
   }
 
   void _toggleSessionSelection(String sessionId) {
@@ -281,6 +304,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     super.initState();
     final controller = ref.read(mainScreenControllerProvider);
     initTabState(controller.scrollToTopTab, controller.stopScrollTab);
+    HardwareKeyboard.instance.addHandler(_handleHardwareKey);
   }
 
   Future<void> _clearAllWithUndo(
@@ -365,6 +389,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     disposeTabState();
     _selection.dispose();
     _scrollController.dispose();
@@ -483,6 +508,24 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                 final canCreateQueue =
                                     !_creatingQueue &&
                                     _hasSelectedPlaybackQueueSource(paths);
+                                final allSelected =
+                                    entries.isNotEmpty &&
+                                    entries.every(
+                                      (entry) => selectedIds.contains(entry.id),
+                                    );
+
+                                final closeButton = HeaderFloatingButton(
+                                  child: IconButton(
+                                    key: const ValueKey(
+                                      'exit_selection_button',
+                                    ),
+                                    onPressed: _creatingQueue
+                                        ? null
+                                        : _exitSelectionMode,
+                                    icon: const Icon(Icons.close_rounded),
+                                    tooltip: i18n.tr('cancel'),
+                                  ),
+                                );
 
                                 return TopPageHeader(
                                   key: const ValueKey(
@@ -494,6 +537,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                   topCapsuleDataCount: count,
                                   titleWidget: const SizedBox.shrink(),
                                   leading: HeaderActionPill(
+                                    shrinkSpacingToFit: true,
                                     children: [
                                       IconButton(
                                         key: const ValueKey('batch_play_button'),
@@ -587,17 +631,33 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                       ),
                                     ],
                                   ),
-                                  trailing: HeaderFloatingButton(
-                                    child: IconButton(
-                                      key: const ValueKey(
-                                        'exit_selection_button',
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      HeaderFloatingButton(
+                                        child: IconButton(
+                                          key: const ValueKey(
+                                            'batch_select_all_button',
+                                          ),
+                                          onPressed:
+                                              entries.isEmpty || _creatingQueue
+                                              ? null
+                                              : () => _toggleSelectAll(entries),
+                                          icon: Icon(
+                                            allSelected
+                                                ? Icons.deselect_rounded
+                                                : Icons.select_all_rounded,
+                                          ),
+                                          tooltip: i18n.tr(
+                                            allSelected
+                                                ? 'deselect_all'
+                                                : 'select_all',
+                                          ),
+                                        ),
                                       ),
-                                      onPressed: _creatingQueue
-                                          ? null
-                                          : _exitSelectionMode,
-                                      icon: const Icon(Icons.close_rounded),
-                                      tooltip: i18n.tr('cancel'),
-                                    ),
+                                      const SizedBox(width: 8),
+                                      closeButton,
+                                    ],
                                   ),
                                 );
                               },
@@ -734,8 +794,15 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     return ValueListenableBuilder<Set<String>>(
       valueListenable: _selection,
       child: page,
-      builder: (context, ids, child) =>
-          PlaylistSelectionScope(ids: ids, child: child!),
+      builder: (context, ids, child) => PopScope<void>(
+        canPop: ids.isEmpty,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop && _selectedSessionIds.isNotEmpty) {
+            _exitSelectionMode();
+          }
+        },
+        child: PlaylistSelectionScope(ids: ids, child: child!),
+      ),
     );
   }
 
@@ -832,12 +899,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                               ?.currentTrackPath
                               .isNotEmpty !=
                           true
-                      ? showAppSnackBar(
-                          cardContext,
-                          i18n.tr('queue_add_audio_first'),
-                          tone: AppFeedbackTone.warning,
-                          icon: Icons.playlist_play_rounded,
-                        )
+                      ? _openQueueEditor(cardContext, session.id)
                       : _openSessionDetail(coverOrigin, session.id),
                   onEdit: () => _openQueueEditor(cardContext, session.id),
                 )
@@ -971,7 +1033,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
           ? Consumer(
               builder: (context, ref, _) {
                 final timerRemaining = ref.watch(
-                  playlistHeaderUiProvider.select((s) => s.timerRemaining),
+                  playlistTimerRemainingUiProvider,
                 );
                 return TimerCountdownCapsule(
                   remaining:

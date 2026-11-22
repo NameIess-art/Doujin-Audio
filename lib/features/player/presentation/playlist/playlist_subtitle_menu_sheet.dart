@@ -72,13 +72,33 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
   late PlaybackSubtitleService _subtitles;
   int _availableSubtitleCount = 0;
   int _subtitleCountRequestId = 0;
+  String? _observedTrackPath;
+
+  PlaybackSessionSnapshot get _liveSession {
+    final asyncSession = ref.read(
+      playbackSessionStateProvider(widget.session.id),
+    );
+    if (asyncSession.hasValue && asyncSession.value != null) {
+      return asyncSession.value!;
+    }
+    if (!asyncSession.hasError) {
+      return ref
+              .read(playbackFacadeProvider)
+              .sessionSnapshotById(widget.session.id) ??
+          widget.session;
+    }
+    return widget.session;
+  }
+
+  String get _currentTrackPath => _liveSession.currentTrackPath;
 
   @override
   void initState() {
     super.initState();
     _subtitles = ref.read(playbackSubtitleServiceProvider)
       ..addListener(_handleSubtitleServiceChanged);
-    final trackPath = widget.session.currentTrackPath;
+    final trackPath = _currentTrackPath;
+    _observedTrackPath = trackPath;
     if (trackPath.isNotEmpty) {
       if (!_subtitles.hasResult(trackPath)) {
         unawaited(_subtitles.load(trackPath));
@@ -90,12 +110,21 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
   @override
   void didUpdateWidget(SubtitleMenuSheet oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.session.currentTrackPath != widget.session.currentTrackPath) {
-      _subtitleFiles = null;
-      _scriptFiles = null;
-      _availableSubtitleCount = 0;
-      _updateAvailableSubtitleCount();
+    final nextPath = _currentTrackPath;
+    if (_observedTrackPath != nextPath) {
+      _handleTrackChanged(nextPath);
     }
+  }
+
+  void _handleTrackChanged(String trackPath) {
+    _observedTrackPath = trackPath;
+    _subtitleFiles = null;
+    _scriptFiles = null;
+    _availableSubtitleCount = 0;
+    if (trackPath.isNotEmpty && !_subtitles.hasResult(trackPath)) {
+      unawaited(_subtitles.load(trackPath));
+    }
+    _updateAvailableSubtitleCount();
   }
 
   @override
@@ -112,7 +141,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
   }
 
   void _updateAvailableSubtitleCount() {
-    final trackPath = widget.session.currentTrackPath;
+    final trackPath = _currentTrackPath;
     if (trackPath.isEmpty) {
       if (_availableSubtitleCount != 0) {
         setState(() => _availableSubtitleCount = 0);
@@ -124,14 +153,14 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
         .availableSubtitleFiles(trackPath)
         .then((files) {
           if (!mounted || requestId != _subtitleCountRequestId) return;
-          if (widget.session.currentTrackPath != trackPath) return;
+          if (_currentTrackPath != trackPath) return;
           if (_availableSubtitleCount != files.length) {
             setState(() => _availableSubtitleCount = files.length);
           }
         })
         .catchError((_) {
           if (!mounted || requestId != _subtitleCountRequestId) return;
-          if (widget.session.currentTrackPath != trackPath) return;
+          if (_currentTrackPath != trackPath) return;
           if (_availableSubtitleCount != 0) {
             setState(() => _availableSubtitleCount = 0);
           }
@@ -152,11 +181,11 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
       return;
     }
     final menuHeight = _menuKey.currentContext?.size?.height;
-    final trackPath = widget.session.currentTrackPath;
+    final trackPath = _currentTrackPath;
     setState(() => _subtitleBusy = true);
     try {
       final files = await subtitles.availableSubtitleFiles(trackPath);
-      if (!mounted || widget.session.currentTrackPath != trackPath) return;
+      if (!mounted || _currentTrackPath != trackPath) return;
       if (files.isEmpty) {
         showAppSnackBar(
           context,
@@ -174,7 +203,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
         _availableSubtitleCount = files.length;
       });
     } catch (_) {
-      if (mounted && widget.session.currentTrackPath == trackPath) {
+      if (mounted && _currentTrackPath == trackPath) {
         showAppSnackBar(
           context,
           ref
@@ -196,13 +225,13 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
         subtitles.generationJob?.status == SubtitleGenerationStatus.running) {
       return;
     }
-    final trackPath = widget.session.currentTrackPath;
+    final trackPath = _currentTrackPath;
     final sessionId = widget.session.id;
     setState(() => _subtitleBusy = true);
     try {
       await subtitles.selectSubtitleFile(trackPath, sourcePath);
       if (!mounted ||
-          widget.session.currentTrackPath != trackPath ||
+          _currentTrackPath != trackPath ||
           widget.session.id != sessionId) {
         return;
       }
@@ -218,7 +247,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
       );
     } catch (_) {
       if (mounted &&
-          widget.session.currentTrackPath == trackPath &&
+          _currentTrackPath == trackPath &&
           widget.session.id == sessionId) {
         showAppSnackBar(
           context,
@@ -243,7 +272,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
     }
     setState(() => _importing = true);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final trackPath = widget.session.currentTrackPath;
+    final trackPath = _currentTrackPath;
 
     try {
       final result = await FilePicker.pickFiles(
@@ -315,7 +344,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
       final i18n = ref.read(appLanguageProviderInstanceProvider);
       final target = ref
           .read(libraryFacadeProvider)
-          .audioDetailTargetForPath(widget.session.currentTrackPath);
+          .audioDetailTargetForPath(_currentTrackPath);
       final folderPath = target.isLibraryRootFolder
           ? target.targetPath
           : PathMatcher.parentPath(target.targetPath);
@@ -379,7 +408,8 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
         return;
       }
       if (!mounted) return;
-      if (subtitles.hasKnownSubtitle(widget.session.currentTrackPath)) {
+      final trackPath = _currentTrackPath;
+      if (subtitles.hasKnownSubtitle(trackPath)) {
         final confirmed = await showConfirmActionDialog(
           context: context,
           title: i18n.tr('subtitle_script_existing_title'),
@@ -392,14 +422,19 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
       }
       if (!mounted) return;
       if (!await _confirmModelDownload(SubtitleModelStore.japaneseCtc)) return;
+      final downloadingInBackground = subtitles.modelStore
+          .snapshot(SubtitleModelStore.japaneseCtc)
+          .active;
       final settings = ref.read(subtitleSettingsProvider.notifier);
       final sessionId = widget.session.id;
       if (subtitles.startScriptGeneration(
-        widget.session.currentTrackPath,
+        trackPath,
         selectedPath,
         onApplied: () => settings.ensureSubtitlesEnabled(sessionId),
       )) {
-        await _showGeneration(subtitles);
+        if (!downloadingInBackground) {
+          await _showGeneration(subtitles);
+        }
       }
     } catch (_) {
       if (mounted) {
@@ -427,7 +462,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
       final overwrite = await _confirmSubtitleOverwrite(subtitles);
       if (overwrite == null) return;
       final imported = await subtitles.importSubtitle(
-        widget.session.currentTrackPath,
+        _currentTrackPath,
         selectedPath,
         fileName: fileName,
         overwrite: overwrite,
@@ -456,9 +491,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
   Future<bool?> _confirmSubtitleOverwrite(
     PlaybackSubtitleService subtitles,
   ) async {
-    final exists = await subtitles.hasLocalSubtitleFile(
-      widget.session.currentTrackPath,
-    );
+    final exists = await subtitles.hasLocalSubtitleFile(_currentTrackPath);
     if (!mounted) return null;
     if (!exists) return false;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
@@ -629,7 +662,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
     final settings = ref.read(subtitleSettingsProvider.notifier);
     final sessionId = widget.session.id;
     if (subtitles.startTranslationGeneration(
-      widget.session.currentTrackPath,
+      _currentTrackPath,
       targetLanguage,
       sourceJapaneseConfirmed: language == SubtitleLanguage.unknown,
       onApplied: () => settings.ensureSubtitlesEnabled(sessionId),
@@ -658,7 +691,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
   }
 
   void _adjustOffset(PlaybackSubtitleService subtitles, int deltaMs) {
-    final trackPath = widget.session.currentTrackPath;
+    final trackPath = _currentTrackPath;
     final currentOffset = subtitles.getOffset(trackPath);
     final nextMs = (currentOffset.inMilliseconds + deltaMs).clamp(
       -60000,
@@ -672,7 +705,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
   }
 
   void _resetOffset(PlaybackSubtitleService subtitles) {
-    final trackPath = widget.session.currentTrackPath;
+    final trackPath = _currentTrackPath;
     if (subtitles.getOffset(trackPath) == Duration.zero) return;
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     unawaited(subtitles.setTrackOffset(trackPath, Duration.zero));
@@ -686,8 +719,34 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final subtitles = ref.watch(playbackSubtitleServiceProvider);
     final subtitleSettings = ref.watch(subtitleSettingsProvider);
+    final asyncSession = ref.watch(
+      playbackSessionStateProvider(widget.session.id),
+    );
+    final liveSession =
+        asyncSession.value ??
+        (asyncSession.hasError
+            ? widget.session
+            : ref
+                      .read(playbackFacadeProvider)
+                      .sessionSnapshotById(widget.session.id) ??
+                  widget.session);
 
-    final trackPath = widget.session.currentTrackPath;
+    final trackPath = liveSession.currentTrackPath;
+    if (_observedTrackPath != trackPath) {
+      _observedTrackPath = trackPath;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _currentTrackPath != trackPath) return;
+        setState(() {
+          _subtitleFiles = null;
+          _scriptFiles = null;
+          _availableSubtitleCount = 0;
+        });
+        if (trackPath.isNotEmpty && !_subtitles.hasResult(trackPath)) {
+          unawaited(_subtitles.load(trackPath));
+        }
+        _updateAvailableSubtitleCount();
+      });
+    }
     final showSubtitles = subtitleSettings.isShowEnabled(widget.session.id);
     final globalSubtitles = subtitleSettings.isGlobalEnabled(widget.session.id);
 
@@ -957,9 +1016,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                                       : cs.onSurfaceVariant),
                           ),
                           title: Text(
-                            showSubtitles
-                                ? i18n.tr('turn_off_subtitle')
-                                : i18n.tr('turn_on_subtitle'),
+                            i18n.tr('turn_on_subtitle'),
                             style: theme.textTheme.bodyLarge?.copyWith(
                               fontWeight: FontWeight.w600,
                               color: !hasSubtitle

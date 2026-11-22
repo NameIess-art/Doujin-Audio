@@ -42,7 +42,16 @@ final class AudioDetailDocumentRepository {
   static final Map<String, Future<void>> _pendingSaves = {};
 
   Future<AudioDetailDocumentReadResult> read(AudioDetailTarget target) async {
-    final result = await _store.read(locationFor(target));
+    final location = locationFor(target);
+    final codec = _codec;
+    if (_store case final DefaultJsonDocumentStore defaultStore) {
+      final decoded = await defaultStore.readAndTransform(
+        location,
+        (result) => _decodeReadResult(codec, result, target),
+      );
+      return _finalizeDecodedRead(decoded, target);
+    }
+    final result = await _store.read(location);
     final snapshot = result.snapshot;
     if (result.status != JsonDocumentReadStatus.found || snapshot == null) {
       return AudioDetailDocumentReadResult(
@@ -50,17 +59,138 @@ final class AudioDetailDocumentRepository {
         error: result.error,
       );
     }
-    try {
-      final codec = _codec;
-      final decoded = await Isolate.run(
-        () => codec.decodeDocument(snapshot.bytes, target),
+    final decoded = await Isolate.run(
+      () => _decodeReadResult(codec, result, target),
+    );
+    return _finalizeDecodedRead(decoded, target);
+  }
+
+  /// Reads and decodes [targets], deduplicating sibling targets that share a
+  /// single document location so each JSON file is read and parsed once.
+  Future<List<AudioDetailDocumentReadResult>> readMany(
+    List<AudioDetailTarget> targets,
+  ) async {
+    if (targets.isEmpty) return const [];
+    if (targets.length == 1) return [await read(targets.first)];
+
+    final groupsByKey =
+        <
+          String,
+          ({
+            JsonDocumentLocation location,
+            List<int> indices,
+            List<AudioDetailTarget> targets,
+          })
+        >{};
+    for (var i = 0; i < targets.length; i++) {
+      final target = targets[i];
+      final location = locationFor(target);
+      final group = groupsByKey.putIfAbsent(
+        location.lockKey,
+        () => (location: location, indices: <int>[], targets: <AudioDetailTarget>[]),
       );
+      group.indices.add(i);
+      group.targets.add(target);
+    }
+
+    final results = List<AudioDetailDocumentReadResult?>.filled(
+      targets.length,
+      null,
+    );
+    final codec = _codec;
+    final localGroups =
+        <
+          ({
+            JsonDocumentLocation location,
+            List<int> indices,
+            List<AudioDetailTarget> targets,
+          })
+        >[];
+    final otherGroups =
+        <
+          ({
+            JsonDocumentLocation location,
+            List<int> indices,
+            List<AudioDetailTarget> targets,
+          })
+        >[];
+
+    final defaultStore = _store is DefaultJsonDocumentStore ? _store : null;
+    for (final group in groupsByKey.values) {
+      if (defaultStore != null && !group.location.usesSaf) {
+        localGroups.add(group);
+      } else {
+        otherGroups.add(group);
+      }
+    }
+
+    if (localGroups.isNotEmpty) {
+      final locations = [for (final group in localGroups) group.location];
+      final groupedTargets = [for (final group in localGroups) group.targets];
+      final decodedGroups = await defaultStore!.readManyLocalAndTransform(
+        locations,
+        (readResults) => [
+          for (var i = 0; i < readResults.length; i++)
+            _decodeReadResultMany(codec, readResults[i], groupedTargets[i]),
+        ],
+      );
+      for (var g = 0; g < localGroups.length; g++) {
+        final group = localGroups[g];
+        final decodedList = decodedGroups[g];
+        for (var j = 0; j < group.indices.length; j++) {
+          results[group.indices[j]] = await _finalizeDecodedRead(
+            decodedList[j],
+            group.targets[j],
+          );
+        }
+      }
+    }
+
+    for (final group in otherGroups) {
+      final readResult = await _store.read(group.location);
+      final List<_DecodedDocumentEntry> decodedList;
+      if (readResult.status != JsonDocumentReadStatus.found ||
+          readResult.snapshot == null) {
+        decodedList = List.filled(group.targets.length, (
+          status: readResult.status,
+          document: null,
+          error: readResult.error,
+        ));
+      } else {
+        final groupTargets = group.targets;
+        decodedList = await Isolate.run(
+          () => _decodeReadResultMany(codec, readResult, groupTargets),
+        );
+      }
+      for (var j = 0; j < group.indices.length; j++) {
+        results[group.indices[j]] = await _finalizeDecodedRead(
+          decodedList[j],
+          group.targets[j],
+        );
+      }
+    }
+
+    return [for (final result in results) result!];
+  }
+
+  Future<AudioDetailDocumentReadResult> _finalizeDecodedRead(
+    _DecodedDocumentEntry decoded,
+    AudioDetailTarget target,
+  ) async {
+    final document = decoded.document;
+    if (decoded.status != JsonDocumentReadStatus.found || document == null) {
+      return AudioDetailDocumentReadResult(
+        status: decoded.status,
+        error: decoded.error,
+      );
+    }
+    try {
       return AudioDetailDocumentReadResult(
         detail: await _coverStore.restore(
-          decoded.detail.copyWith(target: target),
-          decoded.fields,
+          document.detail.copyWith(target: target),
+          document.fields,
         ),
-        timeSegmentLabels: decoded.timeSegmentLabels,
+        timeSegmentLabels: document.timeSegmentLabels,
         status: JsonDocumentReadStatus.found,
       );
     } on Object catch (error) {
@@ -239,4 +369,64 @@ final class AudioDetailDocumentRepository {
             name: audioDetailDocumentName,
           );
   }
+}
+
+typedef _DecodedDocumentEntry = ({
+  JsonDocumentReadStatus status,
+  AudioDetailJsonDocument? document,
+  String? error,
+});
+
+_DecodedDocumentEntry _decodeReadResult(
+  AudioDetailJsonCodec codec,
+  JsonDocumentReadResult result,
+  AudioDetailTarget target,
+) {
+  final snapshot = result.snapshot;
+  if (result.status != JsonDocumentReadStatus.found || snapshot == null) {
+    return (status: result.status, document: null, error: result.error);
+  }
+  try {
+    return (
+      status: JsonDocumentReadStatus.found,
+      document: codec.decodeDocument(snapshot.bytes, target),
+      error: null,
+    );
+  } on Object catch (error) {
+    return (
+      status: JsonDocumentReadStatus.unreadable,
+      document: null,
+      error: error.toString(),
+    );
+  }
+}
+
+List<_DecodedDocumentEntry> _decodeReadResultMany(
+  AudioDetailJsonCodec codec,
+  JsonDocumentReadResult result,
+  List<AudioDetailTarget> targets,
+) {
+  final snapshot = result.snapshot;
+  if (result.status != JsonDocumentReadStatus.found || snapshot == null) {
+    return List.filled(targets.length, (
+      status: result.status,
+      document: null,
+      error: result.error,
+    ));
+  }
+  final decoded = codec.decodeDocumentsForTargets(snapshot.bytes, targets);
+  return [
+    for (final entry in decoded)
+      entry.document == null
+          ? (
+              status: JsonDocumentReadStatus.unreadable,
+              document: null,
+              error: entry.error,
+            )
+          : (
+              status: JsonDocumentReadStatus.found,
+              document: entry.document,
+              error: null,
+            ),
+  ];
 }

@@ -73,6 +73,7 @@ class _AsmrCategoryList extends ConsumerStatefulWidget {
     required this.topInset,
     required this.bottomInset,
     required this.onRefresh,
+    this.onClearFilters,
     required this.selectionListenable,
     required this.onEnterSelectionMode,
     required this.onToggleSelection,
@@ -89,6 +90,7 @@ class _AsmrCategoryList extends ConsumerStatefulWidget {
   final double topInset;
   final double bottomInset;
   final Future<void> Function() onRefresh;
+  final VoidCallback? onClearFilters;
   final ValueListenable<({bool active, Set<String> ids})> selectionListenable;
   final ValueChanged<AsmrWork> onEnterSelectionMode;
   final ValueChanged<AsmrWork> onToggleSelection;
@@ -123,6 +125,8 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   AsmrCategoryViewState? _lastLoadState;
   final Map<String, Animation<double>> _loadingWorkAnimations = {};
   final Set<AnimationController> _loadingBatchControllers = {};
+  final List<AnimationController> _pendingDisposedLoadControllers = [];
+  bool _loadControllerDisposeScheduled = false;
   final Map<String, GlobalKey> _itemKeys = {};
   final Map<String, _SelectableAsmrWorkCard> _workCardCache = {};
   List<AsmrWork>? _visibleWorksSource;
@@ -299,16 +303,52 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       entry.dispose();
     }
     _collapsingWorks.clear();
-    _clearLoadAnimations();
+    _clearLoadAnimations(immediate: true);
     super.dispose();
   }
 
-  void _clearLoadAnimations() {
-    for (final controller in _loadingBatchControllers) {
+  void _retireLoadControllers(Iterable<AnimationController> controllers) {
+    var added = false;
+    for (final controller in controllers) {
+      controller.stop(canceled: false);
+      _pendingDisposedLoadControllers.add(controller);
+      added = true;
+    }
+    if (!added || _loadControllerDisposeScheduled) return;
+    _loadControllerDisposeScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadControllerDisposeScheduled = false;
+      _disposePendingLoadControllers();
+    });
+  }
+
+  void _disposePendingLoadControllers() {
+    if (_pendingDisposedLoadControllers.isEmpty) return;
+    final controllers = List<AnimationController>.of(
+      _pendingDisposedLoadControllers,
+    );
+    _pendingDisposedLoadControllers.clear();
+    for (final controller in controllers) {
       controller.dispose();
     }
-    _loadingBatchControllers.clear();
+  }
+
+  void _clearLoadAnimations({bool immediate = false}) {
     _loadingWorkAnimations.clear();
+    if (_loadingBatchControllers.isEmpty) {
+      if (immediate) _disposePendingLoadControllers();
+      return;
+    }
+    final controllers = List<AnimationController>.of(_loadingBatchControllers);
+    _loadingBatchControllers.clear();
+    if (immediate) {
+      for (final controller in controllers) {
+        controller.dispose();
+      }
+      _disposePendingLoadControllers();
+      return;
+    }
+    _retireLoadControllers(controllers);
   }
 
   void _updateLoadAnimations(
@@ -360,8 +400,15 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       _loadingWorkAnimations[work.workKey] = animation;
     }
     controller.forward().then((_) {
-      if (!mounted) return;
+      if (!_loadingBatchControllers.remove(controller)) return;
       _loadingWorkAnimations.removeWhere((_, value) => value == animation);
+      if (!mounted) {
+        controller.dispose();
+        return;
+      }
+      // Rebuild first so mounted FadeTransitions detach before dispose.
+      _retireLoadControllers([controller]);
+      setState(() {});
     });
   }
 
@@ -538,7 +585,27 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       }
       // Rows regroup on resize; retain the complete card, including its
       // removal host and decoded cover, when it moves to another row.
-      final key = _itemKeys.putIfAbsent(work.workKey, GlobalKey.new);
+      var key = _itemKeys[work.workKey];
+      if (key == null) {
+        if (_itemKeys.length >= 128) {
+          final staleIds = <String>[];
+          _itemKeys.forEach((id, itemKey) {
+            if (itemKey.currentContext == null) {
+              staleIds.add(id);
+            }
+          });
+          for (final id in staleIds) {
+            final removedKey = _itemKeys.remove(id);
+            if (removedKey != null) {
+              _workKeyIndices.remove(removedKey);
+              workKeyIndices.remove(removedKey);
+            }
+            _workCardCache.remove(id);
+          }
+        }
+        key = GlobalKey();
+        _itemKeys[work.workKey] = key;
+      }
       workKeyIndices[key] = workIndexById[work.workKey]!;
       return KeyedSubtree(key: key, child: workCard);
     }
@@ -685,12 +752,22 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                         child: Text(i18n.tr('retry')),
                       );
                     }
-                    return Text(
-                      i18n.tr('asmr_load_more_hint'),
+                    return TextButton(
                       key: const ValueKey<String>('asmr_load_more_retry_hint'),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
+                      onPressed: state.isLoadingMore
+                          ? null
+                          : () => _loadMore(
+                              expectedPaginationToken: state.paginationToken,
+                            ),
+                      style: TextButton.styleFrom(
+                        foregroundColor: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      child: Text(
+                        i18n.tr('asmr_load_more_hint'),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     );
                   }
@@ -740,19 +817,38 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                           ? Padding(
                               key: const ValueKey('asmr_filtered_load_more'),
                               padding: const EdgeInsets.only(top: 24),
-                              child:
-                                  state.needsLoadMoreRetry &&
-                                      !state.isLoadingMore
-                                  ? TextButton(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (state.needsLoadMoreRetry &&
+                                      !state.isLoadingMore)
+                                    TextButton(
                                       onPressed: () => _loadMore(
                                         expectedPaginationToken:
                                             state.paginationToken,
                                       ),
                                       child: Text(i18n.tr('my_load_more')),
                                     )
-                                  : const Center(
+                                  else
+                                    const Center(
                                       child: CircularProgressIndicator(),
                                     ),
+                                  if (widget.onClearFilters != null) ...[
+                                    const SizedBox(height: 8),
+                                    TextButton.icon(
+                                      key: const ValueKey(
+                                        'asmr_filtered_clear_filters',
+                                      ),
+                                      onPressed: widget.onClearFilters,
+                                      icon: const Icon(
+                                        Icons.filter_alt_off_rounded,
+                                        size: 18,
+                                      ),
+                                      label: Text(i18n.tr('clear_filters')),
+                                    ),
+                                  ],
+                                ],
+                              ),
                             )
                           : visibleWorks.isEmpty
                           ? Padding(
@@ -775,16 +871,26 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                                           ),
                                     actionLabel: state.lastError != null
                                         ? i18n.tr('retry')
+                                        : widget.filters !=
+                                                  emptySearchFilters &&
+                                              widget.onClearFilters != null
+                                        ? i18n.tr('clear_filters')
                                         : null,
-                                    actionIcon: Icons.refresh_rounded,
+                                    actionIcon: state.lastError != null
+                                        ? Icons.refresh_rounded
+                                        : Icons.filter_alt_off_rounded,
                                     onAction:
                                         state.lastError != null &&
                                             !state.isLoading &&
                                             !state.isRefreshing
                                         ? () => unawaited(widget.onRefresh())
+                                        : state.lastError == null &&
+                                              widget.filters !=
+                                                  emptySearchFilters
+                                        ? widget.onClearFilters
                                         : null,
                                   ),
-                                  if (hasLoadMore)
+                                  if (hasLoadMore && state.lastError == null)
                                     TextButton(
                                       key: const ValueKey(
                                         'asmr_empty_load_more',

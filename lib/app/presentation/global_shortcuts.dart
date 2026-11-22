@@ -17,6 +17,45 @@ class TogglePlayPauseIntent extends Intent {
   const TogglePlayPauseIntent();
 }
 
+class _TogglePlayPauseAction extends Action<TogglePlayPauseIntent> {
+  _TogglePlayPauseAction({required this.enabled, required this.ref});
+
+  final bool enabled;
+  final WidgetRef ref;
+
+  @override
+  bool isEnabled(TogglePlayPauseIntent intent) {
+    if (!enabled) return false;
+    final focusContext = FocusManager.instance.primaryFocus?.context;
+    if (focusContext != null) {
+      if (focusContext.findAncestorStateOfType<EditableTextState>() != null) {
+        return false;
+      }
+      if (Actions.maybeFind<ActivateIntent>(focusContext) != null) {
+        return false;
+      }
+      final modalRoute = ModalRoute.of(focusContext);
+      if (modalRoute != null && modalRoute is! PageRoute<dynamic>) {
+        return false;
+      }
+    }
+    return ref.read(focusedPlaybackSessionProvider) != null;
+  }
+
+  @override
+  Object? invoke(TogglePlayPauseIntent intent) {
+    final session = ref.read(focusedPlaybackSessionProvider);
+    if (session != null) {
+      unawaited(
+        ref
+            .read(notificationFacadeProvider)
+            .toggleSessionPlayback(session.id),
+      );
+    }
+    return null;
+  }
+}
+
 class GlobalShortcuts extends ConsumerWidget {
   const GlobalShortcuts({
     super.key,
@@ -58,29 +97,83 @@ class GlobalShortcuts extends ConsumerWidget {
       },
       child: Actions(
         actions: <Type, Action<Intent>>{
-          TogglePlayPauseIntent: CallbackAction<TogglePlayPauseIntent>(
-            onInvoke: (TogglePlayPauseIntent intent) {
-              if (!enabled) return null;
-              final focusContext = FocusManager.instance.primaryFocus?.context;
-              if (focusContext?.findAncestorStateOfType<EditableTextState>() !=
-                  null) {
-                return null;
-              }
-              final session = ref.read(focusedPlaybackSessionProvider);
-              if (session != null) {
-                unawaited(
-                  ref
-                      .read(notificationFacadeProvider)
-                      .toggleSessionPlayback(session.id),
-                );
-              }
-              return null;
-            },
+          TogglePlayPauseIntent: _TogglePlayPauseAction(
+            enabled: enabled,
+            ref: ref,
           ),
         },
         child: Focus(autofocus: true, child: child),
       ),
     );
+  }
+
+  KeyEventResult _handleBackNavigation(
+    BuildContext context,
+    BuildContext routeContext,
+    BuildContext? focusContext,
+  ) {
+    final navigator =
+        navigatorKey?.currentState ?? Navigator.maybeOf(routeContext);
+    if (navigator != null && navigator.canPop()) {
+      unawaited(navigator.maybePop());
+      return KeyEventResult.handled;
+    }
+    final detail = WorkDetailNavigationScope.maybeOf(context);
+    final dismissMenu = detail?.menuDismiss.value;
+    if (dismissMenu != null) {
+      dismissMenu();
+      return KeyEventResult.handled;
+    }
+    final preferred = detail?.preferredBackNavigator(focusContext);
+    if (preferred != null && preferred.canPop()) {
+      unawaited(preferred.maybePop());
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  bool _hasModalOrMenuActive(BuildContext context, BuildContext? focusContext) {
+    if (_isHelpOpen) return true;
+    if (WorkDetailNavigationScope.maybeOf(context)?.menuDismiss.value != null) {
+      return true;
+    }
+    if (focusContext != null) {
+      final modalRoute = ModalRoute.of(focusContext);
+      if (modalRoute != null && modalRoute is! PageRoute<dynamic>) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _focusHandlesArrowKey(
+    BuildContext rootContext,
+    BuildContext? focusContext, {
+    required bool vertical,
+  }) {
+    if (focusContext == null) return false;
+    final scrollable = Scrollable.maybeOf(focusContext);
+    if (scrollable != null) {
+      final isVerticalScroll =
+          axisDirectionToAxis(scrollable.axisDirection) == Axis.vertical;
+      if (isVerticalScroll == vertical) return true;
+    }
+    final localScroll = Actions.maybeFind<ScrollIntent>(focusContext);
+    final rootScroll = Actions.maybeFind<ScrollIntent>(rootContext);
+    if (localScroll != null && !identical(localScroll, rootScroll)) {
+      return true;
+    }
+    final localDirectional = Actions.maybeFind<DirectionalFocusIntent>(
+      focusContext,
+    );
+    final rootDirectional = Actions.maybeFind<DirectionalFocusIntent>(
+      rootContext,
+    );
+    if (localDirectional != null &&
+        !identical(localDirectional, rootDirectional)) {
+      return true;
+    }
+    return false;
   }
 
   KeyEventResult _handleWindowsKey(
@@ -89,7 +182,10 @@ class GlobalShortcuts extends ConsumerWidget {
     KeyEvent event, {
     bool allowNavigation = true,
   }) {
-    if (!enabled || event is! KeyDownEvent) return KeyEventResult.ignored;
+    final isRepeat = event is KeyRepeatEvent;
+    if (!enabled || (event is! KeyDownEvent && !isRepeat)) {
+      return KeyEventResult.ignored;
+    }
     final keyboard = HardwareKeyboard.instance;
     if (keyboard.isShiftPressed || keyboard.isMetaPressed) {
       return KeyEventResult.ignored;
@@ -100,48 +196,37 @@ class GlobalShortcuts extends ConsumerWidget {
     final key = event.logicalKey;
     final control = keyboard.isControlPressed;
     final alt = keyboard.isAltPressed;
-    if (allowNavigation && !control && !alt && key == LogicalKeyboardKey.f1) {
+    if (!isRepeat &&
+        allowNavigation &&
+        !control &&
+        !alt &&
+        key == LogicalKeyboardKey.f1) {
       if (!_isHelpOpen) {
-        unawaited(_showHelp(routeContext, ref));
+        unawaited(showHelp(routeContext, ref));
       }
       return KeyEventResult.handled;
     }
-    if (allowNavigation &&
-        !control &&
-        !alt &&
-        key == LogicalKeyboardKey.escape) {
-      final navigator =
-          navigatorKey?.currentState ?? Navigator.maybeOf(routeContext);
-      if (navigator != null && navigator.canPop()) {
-        unawaited(navigator.maybePop());
-        return KeyEventResult.handled;
+    if (!isRepeat && allowNavigation) {
+      final isEscape = !control && !alt && key == LogicalKeyboardKey.escape;
+      final isBrowserBack =
+          (!control && alt && key == LogicalKeyboardKey.arrowLeft) ||
+          (!control && !alt && key == LogicalKeyboardKey.browserBack);
+      if (isEscape || isBrowserBack) {
+        return _handleBackNavigation(context, routeContext, focusContext);
       }
-      final detail = WorkDetailNavigationScope.maybeOf(context);
-      final dismissMenu = detail?.menuDismiss.value;
-      if (dismissMenu != null) {
-        dismissMenu();
-        return KeyEventResult.handled;
-      }
-      if (detail?.navigatorKey.currentState?.canPop() == true) {
-        unawaited(detail!.navigatorKey.currentState!.maybePop());
-        return KeyEventResult.handled;
-      }
-      if (detail?.contentNavigatorKey.currentState?.canPop() == true) {
-        unawaited(detail!.contentNavigatorKey.currentState!.maybePop());
-        return KeyEventResult.handled;
-      }
-      return KeyEventResult.ignored;
     }
     if (focusContext?.findAncestorStateOfType<EditableTextState>() != null) {
       return KeyEventResult.ignored;
     }
-    final toggle = !alt && key == LogicalKeyboardKey.space;
+    final toggle = !isRepeat && !alt && key == LogicalKeyboardKey.space;
     final skip =
+        !isRepeat &&
         control &&
         !alt &&
         (key == LogicalKeyboardKey.arrowLeft ||
             key == LogicalKeyboardKey.arrowRight);
     final seek =
+        !alt &&
         !control &&
         (key == LogicalKeyboardKey.arrowLeft ||
             key == LogicalKeyboardKey.arrowRight);
@@ -153,12 +238,20 @@ class GlobalShortcuts extends ConsumerWidget {
     if (!toggle && !skip && !seek && !volume) {
       return KeyEventResult.ignored;
     }
+    final isPlainShortcut = !control && !alt;
+    if (isPlainShortcut && _hasModalOrMenuActive(context, focusContext)) {
+      return KeyEventResult.ignored;
+    }
     if (toggle && !control && focusContext != null) {
       final action = Actions.maybeFind<ActivateIntent>(focusContext);
       if (action != null) {
         // Let Material's normal space shortcut activate the focused control.
         return KeyEventResult.ignored;
       }
+    }
+    if ((seek || volume) &&
+        _focusHandlesArrowKey(context, focusContext, vertical: volume)) {
+      return KeyEventResult.ignored;
     }
     final session = ref.read(focusedPlaybackSessionProvider);
     if (session == null) {
@@ -194,7 +287,7 @@ class GlobalShortcuts extends ConsumerWidget {
 
   static bool _isHelpOpen = false;
 
-  Future<void> _showHelp(BuildContext context, WidgetRef ref) async {
+  static Future<void> showHelp(BuildContext context, WidgetRef ref) async {
     if (_isHelpOpen) return;
     _isHelpOpen = true;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
@@ -288,7 +381,7 @@ class GlobalShortcuts extends ConsumerWidget {
                           ('Tab / Shift + Tab', 'focus'),
                           ('Enter / Space', 'activate'),
                           (i18n.tr('keyboard_shortcuts_arrows'), 'adjust'),
-                          ('Esc', 'back'),
+                          ('Esc / Alt + ←', 'back'),
                           ('F1', 'help'),
                         ])
                           row(keys, i18n.tr('keyboard_shortcuts_$action')),

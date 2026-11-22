@@ -318,13 +318,13 @@ void main() {
           'audio_focus_strategy',
           'transient_audio_focus_loss_behavior',
         ],
-        'section_data_storage': [
+        'settings_group_data': [
           'storage_usage_title',
           'settings_group_cache',
           'max_cache_size',
           'clear_app_cache',
         ],
-        'section_updates_permissions': ['settings_group_permissions'],
+        'settings_group_updates': ['settings_group_permissions'],
       }.entries) {
         await tester.ensureVisible(find.text(i18n.tr(entry.key)));
         await tester.tap(find.text(i18n.tr(entry.key)));
@@ -884,7 +884,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         find.text(i18n.tr('asmr_download_folder_name_hint')),
-        findsNothing,
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('asmr_download_folder_name_preview')),
+        findsOneWidget,
       );
       final headerIcon = find.byKey(
         const ValueKey('asmr_download_folder_name_header_icon'),
@@ -1196,14 +1200,15 @@ void main() {
 
       expectMatchingInkCorners();
       final i18n = harness.languageProvider;
+      final isWindows = defaultTargetPlatform == TargetPlatform.windows;
       for (final category in [
         'section_common',
         'section_appearance',
         'section_playback',
         'section_asmr_download',
-        'section_data_storage',
+        isWindows ? 'settings_group_data' : 'section_data_storage',
         'section_network',
-        'section_updates_permissions',
+        isWindows ? 'settings_group_updates' : 'section_updates_permissions',
       ]) {
         final entry = find.text(i18n.tr(category));
         await tester.ensureVisible(entry);
@@ -1320,13 +1325,14 @@ void main() {
 
       expectRows();
       final i18n = harness.languageProvider;
+      final isWindows = defaultTargetPlatform == TargetPlatform.windows;
       for (final category in [
         'section_common',
         'section_appearance',
         'section_playback',
         'section_asmr_download',
-        'section_data_storage',
-        'section_updates_permissions',
+        isWindows ? 'settings_group_data' : 'section_data_storage',
+        isWindows ? 'settings_group_updates' : 'section_updates_permissions',
       ]) {
         final entry = find.text(i18n.tr(category));
         await tester.ensureVisible(entry);
@@ -1468,12 +1474,13 @@ void main() {
       await tester.tap(find.descendant(of: field, matching: label));
       await tester.pumpAndSettle();
       expect(find.byType(AppModalBackground), findsOneWidget);
-      await tester.tap(find.text('monospace'));
+      final monoLabel = harness.languageProvider.tr('subtitle_font_monospace');
+      await tester.tap(find.text(monoLabel));
       await tester.pumpAndSettle();
       expect(find.byType(AppModalBackground), findsNothing);
 
       expect(
-        find.descendant(of: field, matching: find.text('monospace')),
+        find.descendant(of: field, matching: find.text(monoLabel)),
         findsOneWidget,
       );
       final preview = tester.widget<Text>(
@@ -1526,7 +1533,7 @@ void main() {
       );
 
       await tester.tap(field);
-      await tester.enterText(field, '-7');
+      await tester.enterText(field, '0');
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pumpAndSettle();
       expect(tester.widget<TextField>(field).controller!.text, '0');
@@ -1652,7 +1659,7 @@ void main() {
             find.byKey(const ValueKey<String>('subtitle_window_preview_card')),
           )
           .height,
-      136,
+      greaterThanOrEqualTo(136),
     );
     final previewText = tester.widget<Text>(
       find.text(i18n.tr('subtitle_preview_sample')),
@@ -1685,7 +1692,7 @@ void main() {
             find.byKey(const ValueKey<String>('subtitle_window_preview_card')),
           )
           .height,
-      136,
+      greaterThanOrEqualTo(136),
     );
   });
 

@@ -39,6 +39,7 @@ void main() {
     elapsed = Duration.zero;
     bridge = WindowsPlaybackBridge(
       monotonicElapsed: () => elapsed,
+      idleReleaseDelay: Duration.zero,
       readNativePlaylist: (player) async {
         playlistReads++;
         return playlistGetter?.call(player) ?? _playlistJson(player);
@@ -2940,6 +2941,246 @@ void main() {
       ]);
     },
   );
+
+  group('Windows same-queue jump fast path and delayed audio idle release', () {
+    test(
+      'switching tracks within the same queue uses jump without reopening libmpv',
+      () async {
+        final database = await AppRuntimeTestFixture.installSharedDatabase();
+        final graph = createTestRuntimeGraph(
+          nativePlaybackRepository: NativePlaybackRepository(bridge: bridge),
+        );
+        addTearDown(() async {
+          await graph.runtime.dispose();
+          await AppRuntimeTestFixture.disposeSharedDatabase(database);
+        });
+        await graph.runtime.start();
+        final tracks = [
+          for (var i = 0; i < 4; i++)
+            testMusicTrack(
+              name: 'Track $i',
+              path: 'https://example.com/track-$i.wav',
+              groupKey: 'jump-album',
+              groupTitle: 'Jump album',
+            ),
+        ];
+        graph.library.addTracks(tracks, persist: false);
+        final session = graph.playback.createTrackSession(
+          tracks.first,
+          customQueueTracks: tracks,
+        );
+
+        await graph.playback.toggleSessionPlayPause(session.id);
+        final player = players.single;
+        expect(player.opens, 1);
+        expect(player.jumps, 0);
+        expect(playlistReads, 1);
+        expect(player.state.playlist.index, 0);
+
+        await graph.playback.seekSessionToNext(session.id);
+        expect(players, hasLength(1));
+        expect(player.disposed, isFalse);
+        expect(player.opens, 1);
+        expect(player.jumps, 1);
+        expect(playlistReads, 1);
+        expect(player.state.playlist.index, 1);
+        expect(player.state.playing, isTrue);
+
+        await graph.playback.switchSessionQueueTrack(session.id, 3);
+        expect(players, hasLength(1));
+        expect(player.opens, 1);
+        expect(player.jumps, 2);
+        expect(playlistReads, 1);
+        expect(player.state.playlist.index, 3);
+        expect(player.state.playing, isTrue);
+      },
+    );
+
+    test(
+      'shuffled same-queue switch jumps to the shuffled physical entry without reopening',
+      () async {
+        configureNextPlayer = (player) => player.reorderOnShuffle = true;
+        final queue = [
+          for (final name in ['a', 'b', 'c'])
+            <String, Object?>{
+              'uri': 'https://example.com/$name.wav',
+              'path': name,
+              'title': name,
+            },
+        ];
+        expect(
+          (await bridge.prepareSession(
+            sessionId: 'shuffled',
+            uri: Uri.parse(queue[0]['uri'] as String),
+            title: 'a',
+            queue: queue,
+            queueStartIndex: 0,
+            shuffle: true,
+            autoPlay: true,
+          )).isOk,
+          isTrue,
+        );
+        final player = players.single;
+        expect(player.opens, 1);
+        expect(player.jumps, 0);
+
+        expect(
+          (await bridge.prepareSession(
+            sessionId: 'shuffled',
+            uri: Uri.parse(queue[2]['uri'] as String),
+            title: 'c',
+            queue: queue,
+            queueStartIndex: 2,
+            shuffle: true,
+            autoPlay: true,
+          )).isOk,
+          isTrue,
+        );
+        expect(players, hasLength(1));
+        expect(player.opens, 1);
+        expect(player.jumps, 1);
+        expect(
+          player.state.playlist.medias[player.state.playlist.index].uri,
+          queue[2]['uri'],
+        );
+      },
+    );
+
+    test(
+      'paused audio retains libmpv during idle window, resumes instantly, and releases on timeout',
+      () async {
+        expect(
+          WindowsPlaybackBridge.defaultIdleReleaseDelay,
+          const Duration(seconds: 45),
+        );
+        final delayedPlayers = <_Player>[];
+        final delayedBridge = WindowsPlaybackBridge(
+          idleReleaseDelay: const Duration(milliseconds: 90),
+          readNativePlaylist: (player) async => _playlistJson(player),
+          createPlayer: () {
+            final platform = _Player();
+            delayedPlayers.add(platform);
+            return Player(platformPlayer: platform);
+          },
+        )..startListening();
+        addTearDown(delayedBridge.dispose);
+
+        await delayedBridge.prepareSession(
+          sessionId: 'audio',
+          uri: Uri.parse('https://example.com/audio.wav'),
+          title: 'Audio',
+          autoPlay: true,
+        );
+        final first = delayedPlayers.single;
+        first.loaded();
+        await delayedBridge.seek('audio', const Duration(seconds: 18));
+        await delayedBridge.setTemporarySpeed('audio', 2);
+
+        final paused = await delayedBridge.pause('audio');
+        expect(paused.isOk, isTrue);
+        expect(paused.valueOrNull!.playing, isFalse);
+        expect(paused.valueOrNull!.playWhenReady, isFalse);
+        expect(paused.valueOrNull!.processingState, 'ready');
+        expect(first.disposed, isFalse);
+        expect(first.state.rate, 1);
+        expect(delayedBridge.playerForSession('audio'), isNotNull);
+
+        // Resume before the idle window expires reuses the live player and cancels release.
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+        expect((await delayedBridge.play('audio')).isOk, isTrue);
+        expect(delayedPlayers, hasLength(1));
+        expect(first.opens, 1);
+        expect(first.state.playing, isTrue);
+        await Future<void>.delayed(const Duration(milliseconds: 110));
+        expect(first.disposed, isFalse);
+        expect(first.state.playing, isTrue);
+
+        // Pause again and allow the idle release timer to reclaim libmpv.
+        expect((await delayedBridge.pause('audio')).isOk, isTrue);
+        expect(first.disposed, isFalse);
+        await Future<void>.delayed(const Duration(milliseconds: 140));
+        expect(first.disposed, isTrue);
+        expect(delayedBridge.playerForSession('audio'), isNull);
+        final idleSnapshot =
+            (await delayedBridge.snapshot()).valueOrNull!.sessions.single;
+        expect(idleSnapshot.processingState, 'idle');
+        expect(idleSnapshot.position, const Duration(seconds: 18));
+        expect(idleSnapshot.duration, const Duration(minutes: 5));
+
+        // Cold resume recreates libmpv and restores saved position.
+        expect((await delayedBridge.play('audio')).isOk, isTrue);
+        expect(delayedPlayers, hasLength(2));
+        final reopened = delayedPlayers.last;
+        reopened.loaded();
+        await Future<void>.delayed(Duration.zero);
+        await delayedBridge.snapshot();
+        expect(reopened.seeks, [const Duration(seconds: 18)]);
+        expect(reopened.state.playing, isTrue);
+      },
+    );
+
+    test(
+      'paused track switch stops old retained audio player so idle timer cannot revert track',
+      () async {
+        final delayedPlayers = <_Player>[];
+        final delayedBridge = WindowsPlaybackBridge(
+          idleReleaseDelay: const Duration(milliseconds: 70),
+          readNativePlaylist: (player) async => _playlistJson(player),
+          createPlayer: () {
+            final platform = _Player();
+            delayedPlayers.add(platform);
+            return Player(platformPlayer: platform);
+          },
+        )..startListening();
+        final database = await AppRuntimeTestFixture.installSharedDatabase();
+        final graph = createTestRuntimeGraph(
+          nativePlaybackRepository: NativePlaybackRepository(
+            bridge: delayedBridge,
+          ),
+        );
+        addTearDown(() async {
+          await graph.runtime.dispose();
+          await AppRuntimeTestFixture.disposeSharedDatabase(database);
+        });
+        await graph.runtime.start();
+        final tracks = [
+          testMusicTrack(
+            name: 'First',
+            path: 'https://example.com/first.wav',
+            groupKey: 'g',
+            groupTitle: 'G',
+          ),
+          testMusicTrack(
+            name: 'Second',
+            path: 'https://example.com/second.wav',
+            groupKey: 'g',
+            groupTitle: 'G',
+          ),
+        ];
+        graph.library.addTracks(tracks, persist: false);
+        final session = graph.playback.createTrackSession(
+          tracks.first,
+          customQueueTracks: tracks,
+        );
+
+        await graph.playback.toggleSessionPlayPause(session.id);
+        final player = delayedPlayers.single;
+        player.loaded();
+        await graph.playback.toggleSessionPlayPause(session.id);
+        expect(player.disposed, isFalse);
+
+        await graph.playback.switchSessionQueueTrack(session.id, 1);
+        expect(session.currentTrackPath, tracks[1].path);
+        expect(session.currentQueueIndex, 1);
+        expect(player.disposed, isTrue);
+
+        // Waiting past idleReleaseDelay must not revert currentTrackPath to track 0.
+        await Future<void>.delayed(const Duration(milliseconds: 110));
+        expect(session.currentTrackPath, tracks[1].path);
+        expect(session.currentQueueIndex, 1);
+      },
+    );
+  });
 }
 
 class _Player extends PlatformPlayer {
@@ -2955,7 +3196,7 @@ class _Player extends PlatformPlayer {
     completedController.add(true);
   }
 
-  int opens = 0, plays = 0, adds = 0, removes = 0, moves = 0;
+  int opens = 0, plays = 0, jumps = 0, adds = 0, removes = 0, moves = 0;
   Object? removeError;
   Completer<void>? removeGate, removeStarted;
   int playlistModeWrites = 0;
@@ -3050,6 +3291,21 @@ class _Player extends PlatformPlayer {
       playlist: Playlist(state.playlist.medias, index: index),
     );
     playlistController.add(state.playlist);
+  }
+
+  @override
+  Future<void> jump(int index) async {
+    jumps++;
+    plays++;
+    actions.add('play');
+    state = state.copyWith(
+      playlist: Playlist(state.playlist.medias, index: index),
+      playing: true,
+      position: Duration.zero,
+      completed: false,
+    );
+    playlistController.add(state.playlist);
+    playingController.add(true);
   }
 
   @override

@@ -44,7 +44,8 @@ internal data class PlaybackTimerSyncArguments(
 internal class PlaybackTimerSyncCoordinator(
     private val loadCandidates: ((FileCacheTaskResult<Map<String, Long>>) -> Unit) -> Boolean,
     private val isSessionCurrent: (String, Long) -> Boolean,
-    private val apply: (PlaybackTimerSyncArguments, List<String>) -> Unit
+    private val apply: (PlaybackTimerSyncArguments, List<String>) -> Unit = { _, _ -> },
+    private val applyAsync: ((PlaybackTimerSyncArguments, List<String>, (Exception?) -> Unit) -> Unit)? = null
 ) {
     private var request = 0L
     private var closed = false
@@ -56,19 +57,30 @@ internal class PlaybackTimerSyncCoordinator(
                 complete(null)
                 return
             }
-            val error = try {
-                when (result) {
-                    is FileCacheTaskResult.Success -> {
-                        val ids = result.value.filter { (id, revision) -> isSessionCurrent(id, revision) }.keys.toList()
+            when (result) {
+                is FileCacheTaskResult.Success -> {
+                    val ids = result.value.filter { (id, revision) -> isSessionCurrent(id, revision) }.keys.toList()
+                    val asyncApply = applyAsync
+                    if (asyncApply != null) {
+                        try {
+                            asyncApply(arguments, ids) { error ->
+                                complete(if (closed || expectedRequest != request) null else error)
+                            }
+                        } catch (error: Exception) {
+                            complete(error)
+                        }
+                        return
+                    }
+                    val error = try {
                         apply(arguments, ids)
                         null
+                    } catch (error: Exception) {
+                        error
                     }
-                    is FileCacheTaskResult.Failure -> result.exception
+                    complete(error)
                 }
-            } catch (error: Exception) {
-                error
+                is FileCacheTaskResult.Failure -> complete(result.exception)
             }
-            complete(error)
         }
         if (arguments.timerEndsAtWallClockMs == null) {
             finish(FileCacheTaskResult.Success(emptyMap()))
@@ -128,8 +140,8 @@ internal class PowerMethodHandler(
             }
         },
         isSessionCurrent = { id, revision -> NativePlaybackStateStore.sessionRevision(id) == revision },
-        apply = { arguments, candidateIds ->
-            PlaybackTimerAlarmScheduler.sync(
+        applyAsync = { arguments, candidateIds, complete ->
+            PlaybackTimerAlarmScheduler.syncAsync(
                 activity.applicationContext,
                 timerModeIndex = arguments.timerModeIndex,
                 durationMs = arguments.durationMs,
@@ -142,7 +154,8 @@ internal class PowerMethodHandler(
                 pausedSessionIds = arguments.pausedSessionIds,
                 generation = arguments.generation,
                 timerCandidateSessionIds = candidateIds,
-                stopAfterCurrentTrack = arguments.stopAfterCurrentTrack
+                stopAfterCurrentTrack = arguments.stopAfterCurrentTrack,
+                onComplete = complete
             )
         }
     )

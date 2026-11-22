@@ -160,9 +160,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       (_hasLeadingAction ? 1 : 0) + (_hasSecondaryLeadingAction ? 1 : 0);
   double get _actionWidth => widget.verticalActions && _actionCount > 1
       ? 76
-      : _hasSecondaryAction
-      ? 144
-      : 72;
+      : _actionCount * 72.0;
   double get _leadingActionWidth =>
       widget.verticalActions && _leadingActionCount > 1
       ? 76

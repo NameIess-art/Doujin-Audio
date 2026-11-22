@@ -49,9 +49,32 @@ class SubtitleTrack {
   final String? sourceRevision;
   late final _SubtitleTimeIndex _timeIndex;
 
+  List<SubtitleCue> get timelineCues => _timeIndex.cues;
+
   SubtitleTrack withOffset(Duration newOffset) {
     if (newOffset == offset) return this;
     return SubtitleTrack._withOffset(this, newOffset);
+  }
+
+  int? timelineCueIndexAt(Duration position) {
+    final ordered = _timeIndex.cues;
+    if (ordered.isEmpty) return null;
+    final effectivePosition = position - offset;
+    if (effectivePosition < ordered.first.start) return 0;
+
+    var low = 0;
+    var high = ordered.length - 1;
+    var result = 0;
+    while (low <= high) {
+      final mid = low + ((high - low) >> 1);
+      if (ordered[mid].start <= effectivePosition) {
+        result = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return result;
   }
 
   bool hasSameCueTimings(List<SubtitleCue> edited) {
@@ -104,12 +127,20 @@ final class _SubtitleTimeIndex {
   final List<SubtitleCue> _sourceCues;
   // Keep source order for ASS editing while time lookup uses a stable index.
   late final List<SubtitleCue> cues = (() {
+    var sorted = true;
+    for (var index = 1; index < _sourceCues.length; index++) {
+      if (_sourceCues[index].start < _sourceCues[index - 1].start) {
+        sorted = false;
+        break;
+      }
+    }
+    if (sorted) return _sourceCues;
     final indexed = _sourceCues.indexed.toList()
       ..sort((a, b) {
         final byStart = a.$2.start.compareTo(b.$2.start);
         return byStart != 0 ? byStart : a.$1.compareTo(b.$1);
       });
-    return indexed.map((entry) => entry.$2).toList(growable: false);
+    return immutableList(indexed.map((entry) => entry.$2));
   })();
   late final List<Duration> latestEnds = (() {
     var latest = Duration.zero;
@@ -608,12 +639,12 @@ Duration? _parseAssTimestamp(String input) {
   final hours = int.tryParse(match.group(1) ?? '0') ?? 0;
   final minutes = int.tryParse(match.group(2) ?? '0') ?? 0;
   final seconds = int.tryParse(match.group(3) ?? '0') ?? 0;
-  final centiseconds = int.tryParse(match.group(4) ?? '0') ?? 0;
+  final milliseconds = _fractionToMilliseconds(match.group(4) ?? '0');
   return Duration(
     hours: hours,
     minutes: minutes,
     seconds: seconds,
-    milliseconds: centiseconds * 10,
+    milliseconds: milliseconds,
   );
 }
 

@@ -13,11 +13,40 @@ const Set<String> supportedCoverMimeTypes = <String>{
   'image/heif',
 };
 
+final MimeTypeResolver _coverMimeResolver = MimeTypeResolver()
+  ..addMagicNumber(const <int>[0x42, 0x4D], 'image/bmp')
+  ..addMagicNumber(
+    const <int>[
+      0x00, 0x00, 0x00, 0x00,
+      0x66, 0x74, 0x79, 0x70,
+      0x61, 0x76, 0x69, 0x66,
+    ],
+    'image/avif',
+    mask: const <int>[
+      0x00, 0x00, 0x00, 0x00,
+      0xFF, 0xFF, 0xFF, 0xFF,
+      0xFF, 0xFF, 0xFF, 0xFF,
+    ],
+  )
+  ..addMagicNumber(
+    const <int>[
+      0x00, 0x00, 0x00, 0x00,
+      0x66, 0x74, 0x79, 0x70,
+      0x61, 0x76, 0x69, 0x73,
+    ],
+    'image/avif',
+    mask: const <int>[
+      0x00, 0x00, 0x00, 0x00,
+      0xFF, 0xFF, 0xFF, 0xFF,
+      0xFF, 0xFF, 0xFF, 0xFF,
+    ],
+  );
+
 String? detectCoverMimeType(String filePath, List<int> headerBytes) {
-  final detected = lookupMimeType(
-    filePath,
-    headerBytes: headerBytes,
-  )?.toLowerCase();
+  final detected = (headerBytes.isNotEmpty
+          ? _coverMimeResolver.lookup('', headerBytes: headerBytes)
+          : _coverMimeResolver.lookup(filePath))
+      ?.toLowerCase();
   return supportedCoverMimeTypes.contains(detected) ? detected : null;
 }
 

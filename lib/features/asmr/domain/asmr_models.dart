@@ -531,8 +531,8 @@ class AsmrWork {
           false,
       isFavorite: json['isFavorite'] as bool? ?? false,
       resources: (json['resources'] as List?)
-          ?.whereType<Map<String, dynamic>>()
-          .map(AsmrWorkResource.fromJson)
+          ?.whereType<Map<Object?, Object?>>()
+          .map((resource) => AsmrWorkResource.fromJson(resource.cast()))
           .toList(),
     );
   }

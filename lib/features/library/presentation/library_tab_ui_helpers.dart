@@ -212,6 +212,7 @@ Future<void> removeLibraryBatchSelections({
   }
   exitSelectionMode();
   for (final selection in selections) {
+    if (!context.mounted) break;
     await stageLibraryRemoval(
       context,
       ref,
@@ -247,9 +248,12 @@ class LibraryBatchSelectionHeader extends StatelessWidget {
     required this.selectedCount,
     required this.onAddToPlaylist,
     required this.onCompleteMetadata,
+    this.onEditInfo,
     this.onTogglePin,
     this.isPinned = false,
     required this.onRemove,
+    this.allSelected = false,
+    this.onToggleSelectAll,
     required this.onExit,
   });
 
@@ -258,13 +262,24 @@ class LibraryBatchSelectionHeader extends StatelessWidget {
   final int selectedCount;
   final VoidCallback? onAddToPlaylist;
   final VoidCallback? onCompleteMetadata;
+  final VoidCallback? onEditInfo;
   final VoidCallback? onTogglePin;
   final bool isPinned;
   final VoidCallback? onRemove;
+  final bool allSelected;
+  final VoidCallback? onToggleSelectAll;
   final VoidCallback onExit;
 
   @override
   Widget build(BuildContext context) {
+    final closeButton = HeaderFloatingButton(
+      child: IconButton(
+        key: ValueKey<String>('${keyPrefix}_exit_selection_button'),
+        onPressed: onExit,
+        icon: const Icon(Icons.close_rounded),
+        tooltip: i18n.tr('cancel'),
+      ),
+    );
     return TopPageHeader(
       key: ValueKey<String>('${keyPrefix}_batch_selection_header'),
       icon: Icons.library_music_rounded,
@@ -273,6 +288,7 @@ class LibraryBatchSelectionHeader extends StatelessWidget {
       topCapsuleDataCount: selectedCount,
       titleWidget: const SizedBox.shrink(),
       leading: HeaderActionPill(
+        shrinkSpacingToFit: true,
         children: [
           IconButton(
             key: ValueKey<String>('${keyPrefix}_batch_add_button'),
@@ -292,6 +308,16 @@ class LibraryBatchSelectionHeader extends StatelessWidget {
             padding: EdgeInsets.zero,
             constraints: HeaderActionPill.buttonConstraints,
           ),
+          if (onEditInfo != null)
+            IconButton(
+              key: ValueKey<String>('${keyPrefix}_batch_edit_info_button'),
+              onPressed: onEditInfo,
+              icon: const Icon(Icons.edit_rounded),
+              tooltip: i18n.tr('audio_detail_edit_info'),
+              iconSize: 20,
+              padding: EdgeInsets.zero,
+              constraints: HeaderActionPill.buttonConstraints,
+            ),
           IconButton(
             key: ValueKey<String>('${keyPrefix}_batch_pin_button'),
             onPressed: onTogglePin,
@@ -319,14 +345,31 @@ class LibraryBatchSelectionHeader extends StatelessWidget {
           ),
         ],
       ),
-      trailing: HeaderFloatingButton(
-        child: IconButton(
-          key: ValueKey<String>('${keyPrefix}_exit_selection_button'),
-          onPressed: onExit,
-          icon: const Icon(Icons.close_rounded),
-          tooltip: i18n.tr('cancel'),
-        ),
-      ),
+      trailing: onToggleSelectAll == null
+          ? closeButton
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                HeaderFloatingButton(
+                  child: IconButton(
+                    key: ValueKey<String>(
+                      '${keyPrefix}_batch_select_all_button',
+                    ),
+                    onPressed: onToggleSelectAll,
+                    icon: Icon(
+                      allSelected
+                          ? Icons.deselect_rounded
+                          : Icons.select_all_rounded,
+                    ),
+                    tooltip: i18n.tr(
+                      allSelected ? 'deselect_all' : 'select_all',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                closeButton,
+              ],
+            ),
     );
   }
 }

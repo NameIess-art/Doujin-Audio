@@ -28,8 +28,12 @@ internal class SubtitleOverlayCoordinator(
     private fun newConnection() = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             if (connection !== this) return
-            val localBinder = binder as SubtitleOverlayService.LocalBinder
-            service = localBinder.getService()
+            val boundService = (binder as? SubtitleOverlayService.LocalBinder)?.getService()
+            if (boundService == null || !boundService.ensureOverlayAttached()) {
+                dispose()
+                return
+            }
+            service = boundService
             applyPendingState()
         }
 
@@ -61,40 +65,41 @@ internal class SubtitleOverlayCoordinator(
     }
 
     fun start(): Boolean {
-        if (connection != null) {
+        if (!canDrawOverlays()) {
+            dispose()
+            return false
+        }
+        val existingService = service
+        if (existingService != null) {
+            if (!existingService.ensureOverlayAttached()) {
+                dispose()
+                return false
+            }
             applyPendingState()
             return true
         }
-        val intent = Intent(context, SubtitleOverlayService::class.java)
-        try {
-            context.startService(intent)
-        } catch (error: IllegalStateException) {
-            throw IllegalStateException("Unable to start subtitle overlay service.", error)
-        } catch (error: SecurityException) {
-            throw IllegalStateException("Unable to start subtitle overlay service.", error)
+        if (connection != null) {
+            return true
         }
+        val intent = Intent(context, SubtitleOverlayService::class.java)
         val nextConnection = newConnection()
         connection = nextConnection
         try {
             if (context.bindService(intent, nextConnection, Context.BIND_AUTO_CREATE)) return true
         } catch (error: IllegalStateException) {
             connection = null
-            runCatching { context.stopService(intent) }
             throw IllegalStateException("Unable to bind subtitle overlay service.", error)
         } catch (error: SecurityException) {
             connection = null
-            runCatching { context.stopService(intent) }
             throw IllegalStateException("Unable to bind subtitle overlay service.", error)
         }
         connection = null
-        runCatching { context.stopService(intent) }
         return false
     }
 
     fun stop() {
         dispose()
         pendingText = null
-        context.stopService(Intent(context, SubtitleOverlayService::class.java))
     }
 
     fun updateSubtitle(text: String) {

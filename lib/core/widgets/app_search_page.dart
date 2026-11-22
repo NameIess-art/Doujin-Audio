@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' show FlutterView;
 
 import 'package:flutter/material.dart';
@@ -89,8 +90,10 @@ class AppSearchPageScaffold<T> extends StatefulWidget {
   final ValueChanged<String>? onRemoveElement;
   final String Function(String)? translate;
 
-  static double contentBottomInset(BuildContext context) =>
-      MediaQuery.paddingOf(context).bottom + MobileOverlayInset.of(context);
+  static double contentBottomInset(BuildContext context) => math.max(
+    MediaQuery.paddingOf(context).bottom,
+    MobileOverlayInset.of(context),
+  );
 
   static double controlsTopInset(
     BuildContext context, {

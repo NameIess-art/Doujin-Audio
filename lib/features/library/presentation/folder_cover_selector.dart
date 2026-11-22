@@ -4,6 +4,8 @@ import '../../../core/widgets/app_buttons.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/localization/app_language_provider.dart';
@@ -295,13 +297,18 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
   void _handleWindowsWheel(PointerSignalEvent signal) {
     if (defaultTargetPlatform != TargetPlatform.windows ||
         signal is! PointerScrollEvent ||
-        signal.scrollDelta.dy == 0 ||
         _saving ||
         _images.length <= 1) {
       return;
     }
+    final horizontalDelta = signal.scrollDelta.dx;
+    final shiftVerticalDelta = HardwareKeyboard.instance.isShiftPressed
+        ? signal.scrollDelta.dy
+        : 0.0;
+    final delta = horizontalDelta != 0 ? horizontalDelta : shiftVerticalDelta;
+    if (delta == 0) return;
     GestureBinding.instance.pointerSignalResolver.register(signal, (_) {
-      if (signal.scrollDelta.dy > 0) {
+      if (delta > 0) {
         _goToNext();
       } else {
         _goToPrevious();
@@ -342,29 +349,56 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
     );
   }
 
+  void _showSaveFailedSnackBar() {
+    showAppSnackBar(
+      context,
+      ProviderScope.containerOf(context, listen: false)
+          .read(appLanguageProviderInstanceProvider)
+          .tr('audio_detail_save_failed'),
+      tone: AppFeedbackTone.warning,
+    );
+  }
+
   Future<void> _commitSelection() async {
     final index = _currentIndex;
     if (!mounted || index < 0 || index >= _images.length) return;
+    final requestedFolderPath = widget.folderPath;
     setState(() => _saving = true);
     try {
       final selectedPath = _images[index];
       final storedCoverPath = await ref
           .read(libraryFacadeProvider)
-          .setFolderManualCover(widget.folderPath, selectedPath);
-      if (!mounted) return;
+          .setFolderManualCover(requestedFolderPath, selectedPath);
+      if (!mounted ||
+          !PathMatcher.equalsNormalized(
+            widget.folderPath,
+            requestedFolderPath,
+          )) {
+        return;
+      }
+      if (storedCoverPath == null) {
+        _showSaveFailedSnackBar();
+        return;
+      }
       setState(() => _currentCoverPath = selectedPath);
-      widget.onCoverSelected?.call(storedCoverPath ?? selectedPath);
+      widget.onCoverSelected?.call(storedCoverPath);
     } catch (_) {
-      if (!mounted) return;
-      showAppSnackBar(
-        context,
-        ProviderScope.containerOf(context, listen: false)
-            .read(appLanguageProviderInstanceProvider)
-            .tr('audio_detail_save_failed'),
-        tone: AppFeedbackTone.warning,
-      );
+      if (!mounted ||
+          !PathMatcher.equalsNormalized(
+            widget.folderPath,
+            requestedFolderPath,
+          )) {
+        return;
+      }
+      _showSaveFailedSnackBar();
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted &&
+          PathMatcher.equalsNormalized(
+            widget.folderPath,
+            requestedFolderPath,
+          )) {
+        setState(() => _saving = false);
+      }
     }
   }
 
@@ -456,16 +490,20 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
                       color: foregroundColor,
                     ),
                   const SizedBox(width: 6),
-                  Text(
-                    i18n.tr(
-                      isCurrent
-                          ? 'audio_detail_current_cover'
-                          : 'audio_detail_set_cover',
-                    ),
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: foregroundColor,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
+                  Flexible(
+                    child: Text(
+                      i18n.tr(
+                        isCurrent
+                            ? 'audio_detail_current_cover'
+                            : 'audio_detail_set_cover',
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: foregroundColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ],
@@ -534,9 +572,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
         CoverArtworkFrame(
           key: const ValueKey('audio_detail_cover_content'),
           borderRadius: BorderRadius.circular(16),
-          child: Listener(
-            onPointerSignal: _handleWindowsWheel,
-            child: AspectRatio(
+          child: AspectRatio(
               aspectRatio: kStandardCoverAspectRatio,
               child: Stack(
                 fit: StackFit.expand,
@@ -554,33 +590,38 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
                           PointerDeviceKind.stylus,
                         },
                       ),
-                      child: NotificationListener<ScrollNotification>(
-                        onNotification: _handlePageScroll,
-                        child: PageView.builder(
-                          // Candidate discovery replaces the preview controller;
-                          // recreate its viewport so it uses the loop's initial page.
-                          key: ObjectKey(_pageController),
-                          controller: _pageController,
-                          itemCount: _images.length > 1 ? null : _images.length,
-                          physics: _images.length > 1
-                              ? const PageScrollPhysics()
-                              : const NeverScrollableScrollPhysics(),
-                          onPageChanged: _handlePageChanged,
-                          itemBuilder: (context, page) {
-                            final index = _indexForPage(page, _images.length);
-                            return RetryingFileImage(
-                              key: ValueKey<String>(
-                                'cover_item_${_images[index]}_$page',
-                              ),
-                              path: _images[index],
-                              fit: BoxFit.cover,
-                              cacheWidth: coverCacheWidth,
-                              useDefaultCacheWidth: coverCacheWidth != null,
-                              deferLoadDuringInteraction: true,
-                              fallbackBuilder: (_) =>
-                                  const CoverFallbackArtwork(),
-                            );
-                          },
+                      child: _CoverWheelInterceptor(
+                        onPointerSignal: _handleWindowsWheel,
+                        child: NotificationListener<ScrollNotification>(
+                          onNotification: _handlePageScroll,
+                          child: PageView.builder(
+                            // Candidate discovery replaces the preview controller;
+                            // recreate its viewport so it uses the loop's initial page.
+                            key: ObjectKey(_pageController),
+                            controller: _pageController,
+                            itemCount: _images.length > 1
+                                ? null
+                                : _images.length,
+                            physics: _images.length > 1
+                                ? const PageScrollPhysics()
+                                : const NeverScrollableScrollPhysics(),
+                            onPageChanged: _handlePageChanged,
+                            itemBuilder: (context, page) {
+                              final index = _indexForPage(page, _images.length);
+                              return RetryingFileImage(
+                                key: ValueKey<String>(
+                                  'cover_item_${_images[index]}_$page',
+                                ),
+                                path: _images[index],
+                                fit: BoxFit.cover,
+                                cacheWidth: coverCacheWidth,
+                                useDefaultCacheWidth: coverCacheWidth != null,
+                                deferLoadDuringInteraction: true,
+                                fallbackBuilder: (_) =>
+                                    const CoverFallbackArtwork(),
+                              );
+                            },
+                          ),
                         ),
                       ),
                     ),
@@ -643,51 +684,52 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
                           _CoverCaption(
                             text: '${_currentIndex + 1} / ${_images.length}',
                           ),
-                          Flexible(
-                            child: _CoverCaption(
-                              text: i18n.tr('audio_detail_cover_swipe_hint'),
+                          if (_images.length > 1)
+                            Flexible(
+                              child: _CoverCaption(
+                                text: i18n.tr('audio_detail_cover_swipe_hint'),
+                              ),
                             ),
-                          ),
                         ],
                       ),
                     ),
                   ],
-                  Positioned(
-                    right: 12,
-                    top: 12,
-                    child: AnimatedOpacity(
-                      duration: MediaQuery.disableAnimationsOf(context)
-                          ? Duration.zero
-                          : kAppFadeDuration,
-                      curve: kAppFadeCurve,
-                      opacity: _saving ? 1 : 0,
-                      child: TickerMode(
-                        enabled: _saving,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.58),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: const Padding(
-                            padding: EdgeInsets.all(8),
-                            child: SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
+                  if (!widget.compactNavigation)
+                    Positioned(
+                      right: 12,
+                      top: 12,
+                      child: AnimatedOpacity(
+                        duration: MediaQuery.disableAnimationsOf(context)
+                            ? Duration.zero
+                            : kAppFadeDuration,
+                        curve: kAppFadeCurve,
+                        opacity: _saving ? 1 : 0,
+                        child: TickerMode(
+                          enabled: _saving,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.58),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
                               ),
                             ),
                           ),
                         ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ),
           ),
-        ),
         if (!widget.compactNavigation) ...[
           const SizedBox(height: 12),
           Center(
@@ -741,5 +783,50 @@ class _CoverCaption extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _CoverWheelInterceptor extends SingleChildRenderObjectWidget {
+  const _CoverWheelInterceptor({
+    required this.onPointerSignal,
+    required super.child,
+  });
+
+  final PointerSignalEventListener onPointerSignal;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderCoverWheelInterceptor(onPointerSignal);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderCoverWheelInterceptor renderObject,
+  ) {
+    renderObject.onPointerSignal = onPointerSignal;
+  }
+}
+
+class _RenderCoverWheelInterceptor extends RenderProxyBox {
+  _RenderCoverWheelInterceptor(this.onPointerSignal);
+
+  PointerSignalEventListener onPointerSignal;
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    if (!size.contains(position)) return false;
+    // Register ahead of PageView's internal Scrollable so horizontal and
+    // Shift+wheel events stay on our page controller even during animations
+    // when Scrollable ignores hits on its viewport.
+    result.add(BoxHitTestEntry(this, position));
+    hitTestChildren(result, position: position);
+    return true;
+  }
+
+  @override
+  void handleEvent(PointerEvent event, BoxHitTestEntry entry) {
+    if (event is PointerSignalEvent) {
+      onPointerSignal(event);
+    }
   }
 }

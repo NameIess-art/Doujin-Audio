@@ -716,6 +716,76 @@ void main() {
     final loaded = await database.load(target);
     expect(loaded?.tags, isEmpty);
   });
+
+  test(
+    'importBackupsMany reads shared sibling document once for files in same folder',
+    () async {
+      final firstFile =
+          '${directory.path}${Platform.pathSeparator}01.mp3';
+      final secondFile =
+          '${directory.path}${Platform.pathSeparator}02.mp3';
+      final firstTarget = AudioDetailTarget.singleAudioFile(firstFile);
+      final secondTarget = AudioDetailTarget.singleAudioFile(secondFile);
+      await repository.save(
+        AudioDetail.empty(firstTarget).copyWith(workTitle: 'Track One'),
+      );
+      await repository.save(
+        AudioDetail.empty(secondTarget).copyWith(workTitle: 'Track Two'),
+      );
+
+      final countingStore = _ReadCountingDocumentStore(documents);
+      final freshDatabase = _MemoryAudioDetailStore();
+      final freshRepository = AudioDetailRepository(
+        databaseRepository: freshDatabase,
+        jsonDocumentStore: countingStore,
+      );
+
+      final result = await freshRepository.importBackupsMany([
+        firstTarget,
+        secondTarget,
+      ]);
+      expect(result.importedCount, 2);
+      expect(result.failureCount, 0);
+      expect(countingStore.readCount, 1);
+      expect((await freshDatabase.load(firstTarget))?.workTitle, 'Track One');
+      expect((await freshDatabase.load(secondTarget))?.workTitle, 'Track Two');
+    },
+  );
+}
+
+final class _ReadCountingDocumentStore implements JsonDocumentStore {
+  _ReadCountingDocumentStore(this._delegate);
+
+  final JsonDocumentStore _delegate;
+  int readCount = 0;
+
+  @override
+  Future<JsonDocumentReadResult> read(JsonDocumentLocation location) {
+    readCount++;
+    return _delegate.read(location);
+  }
+
+  @override
+  Future<JsonDocumentWriteResult> write({
+    required JsonDocumentLocation location,
+    required Uint8List bytes,
+    required JsonDocumentWriteMode mode,
+    String? expectedRevision,
+  }) => _delegate.write(
+    location: location,
+    bytes: bytes,
+    mode: mode,
+    expectedRevision: expectedRevision,
+  );
+
+  @override
+  Future<JsonDocumentDeleteResult> delete({
+    required JsonDocumentLocation location,
+    required String expectedRevision,
+  }) => _delegate.delete(
+    location: location,
+    expectedRevision: expectedRevision,
+  );
 }
 
 final class _MemoryAudioDetailStore implements AudioDetailStore {

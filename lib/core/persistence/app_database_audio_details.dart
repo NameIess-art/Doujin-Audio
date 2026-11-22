@@ -234,17 +234,34 @@ extension AppDatabaseAudioDetails on AppDatabase {
     required String newTrackKey,
   }) async {
     if (oldTrackKey == newTrackKey) return;
-    await _runDatabaseWrite((db) async {
-      await db.update(
-        'time_segment_labels',
-        {
-          'track_key': newTrackKey,
-          'track_match_key': PathMatcher.equivalenceKey(newTrackKey),
-        },
-        where: 'track_key = ?',
-        whereArgs: [oldTrackKey],
-      );
-    });
+    await _runDatabaseWrite(
+      (db) => db.transaction((txn) async {
+        final rows = await _queryTimeSegmentLabelRowsForTarget(
+          txn,
+          oldTrackKey,
+          isFolder: false,
+          columns: const ['id', 'track_key'],
+        );
+        final batch = txn.batch();
+        final newMatchKey = PathMatcher.equivalenceKey(newTrackKey);
+        var hasUpdates = false;
+        for (final row in rows) {
+          final id = row['id'] as String;
+          final trackKey = row['track_key'] as String;
+          if (trackKey == newTrackKey) continue;
+          batch.update(
+            'time_segment_labels',
+            {'track_key': newTrackKey, 'track_match_key': newMatchKey},
+            where: 'id = ?',
+            whereArgs: [id],
+          );
+          hasUpdates = true;
+        }
+        if (hasUpdates) {
+          await batch.commit(noResult: true);
+        }
+      }),
+    );
   }
 
   Future<void> retargetTimeSegmentLabelsWithinPath({

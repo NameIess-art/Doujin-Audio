@@ -125,12 +125,22 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     widget.segmentPanelExpandedNotifier?.value = false;
   }
 
+  void _handleSegmentPanelNotifierChanged() {
+    if (widget.segmentPanelExpandedNotifier?.value == false &&
+        _segmentPanelExpanded) {
+      collapseSegmentPanel();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _timeSegments = ref.read(playbackTimeSegmentServiceProvider);
     widget.transitionActive?.addListener(_scheduleSegmentResult);
     widget.transitionActive?.addListener(_scheduleSiblingQuery);
+    widget.segmentPanelExpandedNotifier?.addListener(
+      _handleSegmentPanelNotifierChanged,
+    );
     _segmentNameController = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -156,6 +166,15 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
       _scheduleSegmentResult();
       _scheduleSiblingQuery();
     }
+    if (oldWidget.segmentPanelExpandedNotifier !=
+        widget.segmentPanelExpandedNotifier) {
+      oldWidget.segmentPanelExpandedNotifier?.removeListener(
+        _handleSegmentPanelNotifierChanged,
+      );
+      widget.segmentPanelExpandedNotifier?.addListener(
+        _handleSegmentPanelNotifierChanged,
+      );
+    }
     if (oldWidget.session.id != widget.session.id) {
       _flushSegmentNameDraft();
       _segmentTrackKey = null;
@@ -170,6 +189,9 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     _segmentLoadGeneration++;
     widget.transitionActive?.removeListener(_scheduleSegmentResult);
     widget.transitionActive?.removeListener(_scheduleSiblingQuery);
+    widget.segmentPanelExpandedNotifier?.removeListener(
+      _handleSegmentPanelNotifierChanged,
+    );
     UiInteractionCoordinator.instance.cancelCommit(_segmentCommitKey);
     _pendingSegmentResult = null;
     _segmentNameController.removeListener(_handleSegmentNameChanged);

@@ -172,12 +172,42 @@ class ScrollToTopTransitionState extends State<ScrollToTopTransition> {
     }
   }
 
+  void _interruptDuringBuild() {
+    if (_position == null && _snapshot == null && _snapshotOpacity == null) {
+      return;
+    }
+    _generation++;
+    final position = _position;
+    final controller = _activeController;
+    final image = _snapshot;
+    _position = null;
+    _activeController = null;
+    _panZoomPosition = null;
+    _snapshotOpacity?.dispose();
+    _snapshotOpacity = null;
+    _snapshot = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      image?.dispose();
+      if (_position == null) {
+        UiInteractionCoordinator.instance.cancelInteraction(this);
+      }
+      if (mounted &&
+          _position == null &&
+          position != null &&
+          controller != null &&
+          controller.hasClients &&
+          identical(controller.position, position)) {
+        position.jumpTo(position.pixels);
+      }
+    });
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!TickerMode.valuesOf(context).enabled ||
         MediaQuery.disableAnimationsOf(context)) {
-      _interrupt(notify: false);
+      _interruptDuringBuild();
     }
   }
 
@@ -186,7 +216,7 @@ class ScrollToTopTransitionState extends State<ScrollToTopTransition> {
     super.didUpdateWidget(oldWidget);
     if (_activeController != null &&
         !identical(_activeController, widget.controller())) {
-      _interrupt(notify: false);
+      _interruptDuringBuild();
     }
   }
 
@@ -201,7 +231,7 @@ class ScrollToTopTransitionState extends State<ScrollToTopTransition> {
     builder: (context, constraints) {
       final size = constraints.biggest;
       if (_layoutSize != null && size != _layoutSize) {
-        _interrupt(notify: false);
+        _interruptDuringBuild();
       }
       _layoutSize = size;
       return _buildContent(context);

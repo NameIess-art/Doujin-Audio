@@ -279,6 +279,15 @@ final class LibraryMutationCoordinator {
     }.toList();
     if (removedPaths.isEmpty && !wasWatched) return false;
 
+    final removedFolderExclusions = _service.excludedLibraryFolders.remove(
+      normalizedFolderPath,
+    );
+    final removedTrackExclusions = _service.excludedLibraryTracks.remove(
+      normalizedFolderPath,
+    );
+    if (removedFolderExclusions != null || removedTrackExclusions != null) {
+      _service.invalidateExclusionMatcher(normalizedFolderPath);
+    }
     _service.removeWatchedFolder(normalizedFolderPath);
     _service.libraryEntriesByLibrary.remove(normalizedFolderPath);
     _service.syncGroupOrderFromLibrary();
@@ -299,6 +308,7 @@ final class LibraryMutationCoordinator {
         databaseRepository.deleteLibraryEntriesForLibrary(normalizedFolderPath),
       );
       persistenceTasks.add(_persistenceCoordinator.saveCatalogLists());
+      persistenceTasks.add(_persistenceCoordinator.saveExclusions());
     }
     await Future.wait(persistenceTasks);
     return true;
@@ -779,6 +789,11 @@ final class LibraryMutationCoordinator {
     } else if (isMedia) {
       await _retargetSingleTrack(oldPath, newPath, safeName);
     } else {
+      await _retargetManualCoverFile(
+        libraryRootPath: rootPath,
+        oldFilePath: oldPath,
+        newFilePath: newPath,
+      );
       _coverArtwork().invalidateFolder(rootPath);
       snapshotCacheService.markStructureChanged();
       _syncStateSlice();
@@ -786,30 +801,81 @@ final class LibraryMutationCoordinator {
     return newPath;
   }
 
+  Future<void> _retargetManualCoverFile({
+    required String libraryRootPath,
+    required String oldFilePath,
+    required String newFilePath,
+  }) async {
+    final covers = _coverArtwork();
+    await covers.retargetFolderCoverSelection(oldFilePath, newFilePath);
+    final target = AudioDetailTarget.libraryRootFolder(libraryRootPath);
+    final detail = (await detailCacheService.load(target)).detail;
+    final currentCoverPath = detail.cardCoverPath;
+    if (currentCoverPath == null || currentCoverPath.isEmpty) return;
+    final resolvedCoverSource = covers.sourcePathForFolderImage(
+      currentCoverPath,
+    );
+    if (!PathMatcher.equalsNormalized(currentCoverPath, oldFilePath) &&
+        !PathMatcher.equalsNormalized(resolvedCoverSource, oldFilePath)) {
+      return;
+    }
+    final saveResult = await detailCacheService.save(
+      detail.copyWith(cardCoverPath: newFilePath),
+    );
+    snapshotCacheService.markDetailChanged(saveResult.detail);
+  }
+
   Future<void> _checkRenameDestination(
     String source,
     String destination, {
     required bool isDirectory,
   }) async {
-    bool conflicts(String candidate) => isDirectory
-        ? PathMatcher.isWithinOrEqual(candidate, destination) &&
-              !PathMatcher.isWithinOrEqual(candidate, source)
-        : PathMatcher.equalsNormalized(candidate, destination) &&
-              PathMatcher.normalize(candidate) != source;
+    if (!isDirectory) {
+      final existingTrack = _service.libraryByPath[destination];
+      if (existingTrack != null &&
+          PathMatcher.normalize(existingTrack.path) != source) {
+        throw const AudioDetailRenameException('nameConflict');
+      }
+      for (final entries in _service.libraryEntriesByLibrary.values) {
+        final existingEntry = entries[destination];
+        if (existingEntry != null &&
+            PathMatcher.normalize(existingEntry.path) != source) {
+          throw const AudioDetailRenameException('nameConflict');
+        }
+      }
+      if (_persistenceCoordinator.enabled &&
+          await databaseRepository.loadTrackDetail(destination) != null) {
+        throw const AudioDetailRenameException('nameConflict');
+      }
+      return;
+    }
 
-    if (_service.library.any((track) => conflicts(track.path)) ||
-        _service.libraryEntriesByLibrary.values.any(
-          (entries) => entries.keys.any(conflicts),
-        ) ||
-        (isDirectory &&
-            (_service.watchedFolders.any(conflicts) ||
-                _service.watchedLibraries.any(conflicts)))) {
+    bool conflicts(String candidate) =>
+        PathMatcher.isWithinOrEqual(candidate, destination) &&
+        !PathMatcher.isWithinOrEqual(candidate, source);
+
+    if (_service.libraryByPath[destination] != null &&
+        !PathMatcher.isWithinOrEqual(destination, source)) {
       throw const AudioDetailRenameException('nameConflict');
     }
-    if (!isDirectory &&
-        _persistenceCoordinator.enabled &&
-        await databaseRepository.loadTrackDetail(destination) != null) {
+    if (_service.watchedFolders.any(conflicts) ||
+        _service.watchedLibraries.any(conflicts) ||
+        _service.library.any((track) => conflicts(track.path))) {
       throw const AudioDetailRenameException('nameConflict');
+    }
+    for (final entry in _service.libraryEntriesByLibrary.entries) {
+      final root = entry.key;
+      if (!PathMatcher.isWithinOrEqual(destination, root) &&
+          !PathMatcher.isWithinOrEqual(root, destination)) {
+        continue;
+      }
+      if (entry.value.containsKey(destination) &&
+          !PathMatcher.isWithinOrEqual(destination, source)) {
+        throw const AudioDetailRenameException('nameConflict');
+      }
+      if (entry.value.keys.any(conflicts)) {
+        throw const AudioDetailRenameException('nameConflict');
+      }
     }
   }
 
@@ -843,23 +909,29 @@ final class LibraryMutationCoordinator {
         _syncStateSlice();
       }
     }
+    final entriesRoot =
+        _service.libraryRootForPath(oldFolderPath) ?? libraryRootPath;
     final retainedTracks = <MusicTrack>[];
     if (_persistenceCoordinator.enabled) {
-      for (final entry in _service.libraryEntriesForLibrary(libraryRootPath)) {
-        if (!entry.isTrack ||
-            _service.trackByPath(entry.path) != null ||
-            !PathMatcher.isWithinOrEqual(entry.path, oldFolderPath)) {
-          continue;
-        }
-        final track = await databaseRepository.loadTrackDetail(entry.path);
-        if (track != null) retainedTracks.add(track);
+      final excludedTrackPaths = <String>[
+        for (final entry in _service.libraryEntriesForLibrary(entriesRoot))
+          if (entry.isTrack &&
+              _service.trackByPath(entry.path) == null &&
+              PathMatcher.isWithinOrEqual(entry.path, oldFolderPath))
+            entry.path,
+      ];
+      if (excludedTrackPaths.isNotEmpty) {
+        final loaded = await databaseRepository.loadTrackDetails(
+          excludedTrackPaths,
+        );
+        retainedTracks.addAll(loaded.values);
       }
     }
     final retargetResult = _service.retargetLibraryFolder(
       oldFolderPath,
       newFolderPath,
       folderName,
-      libraryRootPath: libraryRootPath,
+      libraryRootPath: entriesRoot,
       retainedTracks: retainedTracks,
     );
     _coverArtwork().invalidateFolders([oldFolderPath, newFolderPath]);
@@ -869,12 +941,27 @@ final class LibraryMutationCoordinator {
       await databaseRepository.replaceTrackPaths(
         retargetResult.retargetedTracks,
       );
-    }
-    await databaseRepository.deleteLibraryEntriesForLibrary(libraryRootPath);
-    if (retargetResult.retargetedEntries.isNotEmpty) {
-      await databaseRepository.upsertLibraryEntries(
-        retargetResult.retargetedEntries,
+      final rootRenamed = PathMatcher.equalsNormalized(
+        entriesRoot,
+        oldFolderPath,
       );
+      final removedEntryPaths = <String>[
+        ...retargetResult.removedEntryPaths,
+        if (rootRenamed)
+          for (final track in retargetResult.retargetedTracks.values)
+            track.path,
+      ];
+      if (removedEntryPaths.isNotEmpty ||
+          retargetResult.retargetedEntries.isNotEmpty) {
+        await databaseRepository.commitLibraryBatch(
+          tracks: const <MusicTrack>[],
+          entries: retargetResult.retargetedEntries,
+          catalogSettings: const <String, String>{},
+          removedEntryPaths: removedEntryPaths.isEmpty
+              ? const <String, List<String>>{}
+              : <String, List<String>>{entriesRoot: removedEntryPaths},
+        );
+      }
     }
     await _persistenceCoordinator.saveCatalogLists();
     await _persistenceCoordinator.saveExclusions();

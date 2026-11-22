@@ -102,6 +102,63 @@ class PlaylistIconPainter extends CustomPainter {
   static const double _plusHalf = 2.45;
   static const _barXs = (12.9, 17.9);
   static const _barYs = [8.6, 12.0, 15.4];
+  static const double _filledCutoutRadius = 1.75 / 2;
+
+  static final RRect _filledCardRRect = RRect.fromRectAndRadius(
+    const Rect.fromLTRB(1.8, 3.2, 22.2, 20.8),
+    const Radius.circular(3.5),
+  );
+
+  static Path _buildFilledPath(Path leftCutout) {
+    final path = Path()
+      ..fillType = PathFillType.evenOdd
+      ..addRRect(_filledCardRRect)
+      ..addPath(leftCutout, Offset.zero);
+    for (final y in _barYs) {
+      path.addRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTRB(
+            _barXs.$1 - _filledCutoutRadius,
+            y - _filledCutoutRadius,
+            _barXs.$2 + _filledCutoutRadius,
+            y + _filledCutoutRadius,
+          ),
+          const Radius.circular(_filledCutoutRadius),
+        ),
+      );
+    }
+    return path;
+  }
+
+  static final Path _filledPlayPath = _buildFilledPath(_playTrianglePath);
+
+  static final Path _filledAddPath = _buildFilledPath(
+    Path.combine(
+      PathOperation.union,
+      Path()..addRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTRB(
+            _plusCenter.dx - _plusHalf - _filledCutoutRadius,
+            _plusCenter.dy - _filledCutoutRadius,
+            _plusCenter.dx + _plusHalf + _filledCutoutRadius,
+            _plusCenter.dy + _filledCutoutRadius,
+          ),
+          const Radius.circular(_filledCutoutRadius),
+        ),
+      ),
+      Path()..addRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTRB(
+            _plusCenter.dx - _filledCutoutRadius,
+            _plusCenter.dy - _plusHalf - _filledCutoutRadius,
+            _plusCenter.dx + _filledCutoutRadius,
+            _plusCenter.dy + _plusHalf + _filledCutoutRadius,
+          ),
+          const Radius.circular(_filledCutoutRadius),
+        ),
+      ),
+    ),
+  );
 
   void _paintLeftGlyph(
     Canvas canvas, {
@@ -166,31 +223,10 @@ class PlaylistIconPainter extends CustomPainter {
         canvas.drawLine(Offset(_barXs.$1, y), Offset(_barXs.$2, y), strokePaint);
       }
     } else {
-      final clearFill = Paint()
-        ..blendMode = BlendMode.clear
-        ..style = PaintingStyle.fill
-        ..isAntiAlias = true;
-
-      final clearStroke = Paint()
-        ..blendMode = BlendMode.clear
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.75
-        ..strokeCap = StrokeCap.round
-        ..isAntiAlias = true;
-
-      canvas.saveLayer(const Rect.fromLTWH(0, 0, 24, 24), Paint());
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          const Rect.fromLTRB(1.8, 3.2, 22.2, 20.8),
-          const Radius.circular(3.5),
-        ),
+      canvas.drawPath(
+        variant == PlaylistIconVariant.play ? _filledPlayPath : _filledAddPath,
         fillPaint,
       );
-      _paintLeftGlyph(canvas, fillPaint: clearFill, strokePaint: clearStroke);
-      for (final y in _barYs) {
-        canvas.drawLine(Offset(_barXs.$1, y), Offset(_barXs.$2, y), clearStroke);
-      }
-      canvas.restore();
     }
 
     canvas.restore();

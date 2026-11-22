@@ -233,44 +233,51 @@ class _RoutedPlaybackDockHostState
   Widget _wrapNavigator(BuildContext context, Widget child) {
     final size = MediaQuery.sizeOf(context);
     final padding = MediaQuery.paddingOf(context);
-    final hasOverlaySessions = ref.watch(
-      mainOverlayUiProvider.select((state) => state.overlaySessions.isNotEmpty),
-    );
     return ValueListenableBuilder<({bool isWorkDetailRoute, bool hasPopups})>(
       valueListenable: _navigatorWrapState,
       child: child,
       builder: (context, wrapState, navigatorChild) {
         final supportsRoutedDock = size.width >= 300 && size.height >= 300;
-        final reserveWorkDetailDockInset =
-            widget.enabled &&
-            wrapState.isWorkDetailRoute &&
-            supportsRoutedDock &&
-            hasOverlaySessions;
+        final canReserveWorkDetailDockInset =
+            widget.enabled && wrapState.isWorkDetailRoute && supportsRoutedDock;
         final dockBottom = padding.bottom > kMobileDockBottomMargin
             ? padding.bottom
             : kMobileDockBottomMargin;
-        final routeDockInset = reserveWorkDetailDockInset
-            ? kActiveSessionCarouselDockHeight + dockBottom + 6
-            : 0.0;
-        return MobileOverlayInset(
-          bottomInset: routeDockInset,
-          menuOverlayKey: _menuOverlayKey,
-          menuDismiss: widget.menuDismiss,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              ColoredBox(
-                color:
-                    widget.backgroundColor ??
-                    Theme.of(context).colorScheme.surface,
-                child: AppPageTransitionHost(
-                  enabled: !wrapState.hasPopups,
-                  child: navigatorChild!,
-                ),
+        final stack = Stack(
+          fit: StackFit.expand,
+          children: [
+            ColoredBox(
+              color:
+                  widget.backgroundColor ??
+                  Theme.of(context).colorScheme.surface,
+              child: AppPageTransitionHost(
+                enabled: !wrapState.hasPopups,
+                child: navigatorChild!,
               ),
-              Overlay(key: _menuOverlayKey),
-            ],
-          ),
+            ),
+            Overlay(key: _menuOverlayKey),
+          ],
+        );
+        return Consumer(
+          child: stack,
+          builder: (context, ref, stackChild) {
+            final hasOverlaySessions = canReserveWorkDetailDockInset
+                ? ref.watch(
+                    mainOverlayUiProvider.select(
+                      (state) => state.overlaySessions.isNotEmpty,
+                    ),
+                  )
+                : false;
+            final routeDockInset = hasOverlaySessions
+                ? kActiveSessionCarouselDockHeight + dockBottom + 6
+                : 0.0;
+            return MobileOverlayInset(
+              bottomInset: routeDockInset,
+              menuOverlayKey: _menuOverlayKey,
+              menuDismiss: widget.menuDismiss,
+              child: stackChild!,
+            );
+          },
         );
       },
     );

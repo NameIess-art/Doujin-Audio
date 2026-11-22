@@ -1,12 +1,18 @@
 package com.doujin.audio
 
+import com.doujin.audio.storage.DocumentTooLargeException
 import com.doujin.audio.storage.discoverLocalWorkTexts
+import com.doujin.audio.storage.readBoundedDocumentBytes
+import com.doujin.audio.storage.readLocalDocumentBytes
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
 
@@ -70,5 +76,30 @@ class WorkTextDocumentReaderTest {
         val result = discoverLocalWorkTexts(root.absolutePath)
 
         assertEquals("0", result.single()["fileSizeBytes"])
+    }
+
+    @Test
+    fun `bounded document reader accepts files up to limit and rejects oversized files`() {
+        val file = temporary.newFile("booklet.pdf")
+        val payload = ByteArray(16) { it.toByte() }
+        file.writeBytes(payload)
+
+        assertArrayEquals(payload, readLocalDocumentBytes(file, maxBytes = 16L))
+        assertNull(readLocalDocumentBytes(File(temporary.root, "missing.pdf"), maxBytes = 16L))
+
+        val fileError = assertThrows(DocumentTooLargeException::class.java) {
+            readLocalDocumentBytes(file, maxBytes = 15L)
+        }
+        assertEquals(15L, fileError.maxBytes)
+        assertEquals(16L, fileError.actualBytes)
+
+        assertArrayEquals(
+            payload,
+            readBoundedDocumentBytes(ByteArrayInputStream(payload), maxBytes = 16L)
+        )
+        val streamError = assertThrows(DocumentTooLargeException::class.java) {
+            readBoundedDocumentBytes(ByteArrayInputStream(payload), maxBytes = 15L)
+        }
+        assertEquals(15L, streamError.maxBytes)
     }
 }

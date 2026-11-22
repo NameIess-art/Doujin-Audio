@@ -85,4 +85,31 @@ void main() {
     expect(failedUndoCount, 1);
     expect(service.state.hiddenKeys, isEmpty);
   });
+
+  test('in-flight stage prepare cancelled by undo rolls back and does not stage', () async {
+    final service = UndoableRemovalService();
+    addTearDown(service.dispose);
+    const key = UndoableRemovalKey('test', 'in-flight');
+    final releasePrepare = Completer<void>();
+    var undoCalls = 0;
+    final staging = service.stage(
+      UndoableRemovalAction(
+        key: key,
+        prepare: () async {
+          await releasePrepare.future;
+          return true;
+        },
+        commit: () {},
+        undo: () => undoCalls++,
+      ),
+    );
+
+    expect(service.state.isHidden(key), isTrue);
+    expect(await service.undoPending(), 0);
+    releasePrepare.complete();
+    expect(await staging, isFalse);
+    expect(undoCalls, 1);
+    expect(service.state.hasPending, isFalse);
+    expect(service.state.isHidden(key), isFalse);
+  });
 }

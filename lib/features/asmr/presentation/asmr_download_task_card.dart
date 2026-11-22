@@ -87,7 +87,11 @@ class AsmrDownloadTaskCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   if (task.status != AsmrDownloadTaskStatus.completed)
                     IconButton(
-                      style: actionStyle(cs.onSurfaceVariant),
+                      style: actionStyle(
+                        task.status == AsmrDownloadTaskStatus.failed
+                            ? cs.error
+                            : cs.onSurfaceVariant,
+                      ),
                       icon: Icon(
                         task.status == AsmrDownloadTaskStatus.failed
                             ? Icons.refresh_rounded
@@ -127,6 +131,8 @@ class AsmrDownloadTaskCard extends StatelessWidget {
                     estimatedTotalBytes: task.estimatedTotalBytes,
                     retryAttempt: highestRetryAttempt(task),
                     automaticFileRetryCount: task.automaticFileRetryCount,
+                    failedFiles: task.failedFiles,
+                    errorMessage: task.error,
                     i18n: i18n,
                   ),
             ],
@@ -194,6 +200,8 @@ class AsmrDownloadTaskProgressSection extends StatelessWidget {
     required this.estimatedTotalBytes,
     required this.retryAttempt,
     required this.automaticFileRetryCount,
+    this.failedFiles = 0,
+    this.errorMessage,
     required this.i18n,
   });
 
@@ -205,12 +213,25 @@ class AsmrDownloadTaskProgressSection extends StatelessWidget {
   final int? estimatedTotalBytes;
   final int? retryAttempt;
   final int automaticFileRetryCount;
+  final int failedFiles;
+  final String? errorMessage;
   final AppLanguageProvider i18n;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final primaryColor = cs.primary;
+    final isFailed = status == AsmrDownloadTaskStatus.failed;
+    final indicatorColor = isFailed ? cs.error : cs.primary;
+    final trimmedError = errorMessage?.trim();
+    final failedSummary = isFailed
+        ? <String>[
+            if (failedFiles > 0)
+              i18n.tr('asmr_download_failed_files_count', {
+                'count': failedFiles,
+              }),
+            if (trimmedError != null && trimmedError.isNotEmpty) trimmedError,
+          ].join(' · ')
+        : '';
     return RepaintBoundary(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -221,8 +242,8 @@ class AsmrDownloadTaskProgressSection extends StatelessWidget {
             child: LinearProgressIndicator(
               value: progress,
               minHeight: 6,
-              color: primaryColor,
-              backgroundColor: primaryColor.withValues(alpha: 0.2),
+              color: indicatorColor,
+              backgroundColor: indicatorColor.withValues(alpha: 0.2),
             ),
           ),
           const SizedBox(height: 12),
@@ -241,7 +262,7 @@ class AsmrDownloadTaskProgressSection extends StatelessWidget {
                           'max': automaticFileRetryCount,
                         }),
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: cs.onSurfaceVariant,
+                    color: isFailed ? cs.error : cs.onSurfaceVariant,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -255,6 +276,18 @@ class AsmrDownloadTaskProgressSection extends StatelessWidget {
               ],
             ),
           ),
+          if (failedSummary.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              failedSummary,
+              key: const ValueKey<String>('asmr_download_task_error_summary'),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: cs.error,
+              ),
+            ),
+          ],
         ],
       ),
     );

@@ -222,6 +222,30 @@ class NativePlaybackForegroundCoordinatorTest {
         assertFalse(coordinator.isStarted)
     }
 
+    @Test
+    fun `idle stop defers by grace period while UI listens and tightens immediately on detach`() {
+        val environment = FakeForegroundEnvironment()
+        val host = FakeForegroundHost(hasPlaybackToKeepAlive = false, hasActiveUiListeners = true)
+        val coordinator = NativePlaybackForegroundCoordinator(
+            host = host,
+            environment = environment,
+            watchdogIntervalMs = 4_000L,
+            idleGracePeriodMs = 15_000L
+        )
+
+        coordinator.sync()
+        assertEquals(listOf(15_000L), environment.delays())
+        assertEquals(0, host.idleStopRequests)
+
+        // UI detaches while waiting in grace period -> reschedule immediately to 0ms.
+        host.hasActiveUiListeners = false
+        coordinator.sync()
+        assertEquals(listOf(0L), environment.delays())
+
+        environment.runFirst(0L)
+        assertEquals(1, host.idleStopRequests)
+    }
+
     private fun coordinator(
         host: FakeForegroundHost,
         environment: FakeForegroundEnvironment
@@ -255,6 +279,7 @@ private class FakeForegroundEnvironment : NativePlaybackForegroundEnvironment {
 private class FakeForegroundHost(
     override var hasPlaybackToKeepAlive: Boolean = true,
     override var playbackSuspended: Boolean = false,
+    override var hasActiveUiListeners: Boolean = false,
     var signature: String? = "playback",
     var notificationPosted: Boolean? = true,
     var failPlaybackStart: Boolean = false

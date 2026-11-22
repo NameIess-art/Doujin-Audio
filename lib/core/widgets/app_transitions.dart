@@ -7,6 +7,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../ui/ui_interaction_coordinator.dart';
 import 'app_edge_fade_mask.dart';
@@ -902,6 +903,14 @@ class _CoveringPageTransition extends StatefulWidget {
       _CoveringPageTransitionState();
 }
 
+class _MultiplyAnimation extends CompoundAnimation<double> {
+  _MultiplyAnimation(Animation<double> first, Animation<double> next)
+    : super(first: first, next: next);
+
+  @override
+  double get value => first.value * next.value;
+}
+
 // Record headers in the preparation frame even at zero opacity, so their first
 // visible fade tick does not introduce the glass and control paint work.
 class _PreparedHeaderFadeTransition extends FadeTransition {
@@ -1010,6 +1019,8 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
   final _headerViewport = GlobalKey();
   late Animation<Offset> _position;
   late Animation<double> _opacity;
+  late Animation<double> _coveredOpacity;
+  late Animation<double> _combinedHeaderOpacity;
   late Listenable _headerAnimation;
   Animation<double>? _routeSecondaryAnimation;
   late bool _interactive;
@@ -1049,6 +1060,10 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
   }
 
   void _updateHeaderAnimation() {
+    _coveredOpacity = _secondaryAnimation.drive(
+      Tween<double>(begin: 1, end: 0).chain(CurveTween(curve: kAppFadeCurve)),
+    );
+    _combinedHeaderOpacity = _MultiplyAnimation(_opacity, _coveredOpacity);
     _headerAnimation = Listenable.merge([
       widget.animation,
       _secondaryAnimation,
@@ -1191,30 +1206,30 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
       headerBuilder: (context, header) {
         final needsSlideOffset =
             animatePage && !widget.separateHeader && widget.slide;
+        final boundaryHeader = RepaintBoundary(child: header);
+        if (!animatePage || (!widget.slide && !widget.separateHeader)) {
+          return FadeTransition(
+            opacity: _coveredOpacity,
+            child: boundaryHeader,
+          );
+        }
+        final fadedHeader = _PreparedHeaderFadeTransition(
+          opacity: _combinedHeaderOpacity,
+          snapFullOpacity: defaultTargetPlatform == TargetPlatform.windows,
+          child: boundaryHeader,
+        );
+        if (!needsSlideOffset) {
+          return fadedHeader;
+        }
+        // Unseparated pages slide as a whole; keep their header in place
+        // while its own opacity follows the route instead of the body.
         return AnimatedBuilder(
-          animation: needsSlideOffset ? _headerAnimation : _secondaryAnimation,
-          child: RepaintBoundary(child: header),
-          builder: (context, header) {
-            final outgoing = kAppFadeCurve.transform(_secondaryAnimation.value);
-            final coveredHeader = Opacity(opacity: 1 - outgoing, child: header);
-            if (!animatePage || (!widget.slide && !widget.separateHeader)) {
-              return coveredHeader;
-            }
-            final fadedHeader = _PreparedHeaderFadeTransition(
-              opacity: _opacity,
-              snapFullOpacity: defaultTargetPlatform == TargetPlatform.windows,
-              child: coveredHeader,
-            );
-            if (!needsSlideOffset) {
-              return fadedHeader;
-            }
-            // Unseparated pages slide as a whole; keep their header in place
-            // while its own opacity follows the route instead of the body.
-            return Transform.translate(
-              offset: Offset(-constraints.maxWidth * _position.value.dx, 0),
-              child: fadedHeader,
-            );
-          },
+          animation: _position,
+          child: fadedHeader,
+          builder: (context, child) => Transform.translate(
+            offset: Offset(-constraints.maxWidth * _position.value.dx, 0),
+            child: child,
+          ),
         );
       },
       child: ValueListenableBuilder<Widget>(
@@ -2314,11 +2329,14 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     }
     if (!itemsChanged &&
         !identical(oldWidget.indexListenable, widget.indexListenable)) {
-      _handleIndexChanged();
+      _syncIndexChanged(inBuild: true);
     }
     if (widget.duration == Duration.zero &&
         (_isAnimating || _pendingIndex != null)) {
-      _switchImmediately(_safeIndex(widget.indexListenable.value));
+      _switchImmediately(
+        _safeIndex(widget.indexListenable.value),
+        inBuild: true,
+      );
     }
   }
 
@@ -2330,36 +2348,82 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     if ((!TickerMode.valuesOf(context).enabled ||
             MediaQuery.disableAnimationsOf(context)) &&
         (_isAnimating || _pendingIndex != null)) {
-      _switchImmediately(_safeIndex(widget.indexListenable.value));
+      _switchImmediately(
+        _safeIndex(widget.indexListenable.value),
+        inBuild: true,
+      );
     }
   }
 
-  void _notifyDragPosition(double? value) {
+  bool get _isInBuildPhase =>
+      SchedulerBinding.instance.schedulerPhase ==
+      SchedulerPhase.persistentCallbacks;
+
+  void _notifyDragPosition(double? value, {bool deferIfBuilding = false}) {
     if (_lastNotifiedDragPosition == value) return;
     _lastNotifiedDragPosition = value;
+    if (deferIfBuilding || _isInBuildPhase) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _lastNotifiedDragPosition != value) return;
+        widget.onDragPositionChanged?.call(value);
+      });
+      return;
+    }
     widget.onDragPositionChanged?.call(value);
   }
 
-  void _clearSwipeState() {
+  void _notifyTransitionCompleted(int index, {bool deferIfBuilding = false}) {
+    if (deferIfBuilding || _isInBuildPhase) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted ||
+            _isAnimating ||
+            _pendingIndex != null ||
+            _currentIndex != index) {
+          return;
+        }
+        widget.onTransitionCompleted?.call(index);
+      });
+      return;
+    }
+    widget.onTransitionCompleted?.call(index);
+  }
+
+  void _clearSwipeState({bool deferNotifications = false}) {
     _isDragging = false;
     _dragDeltaPx = 0.0;
-    _rubberBandOffset.value = Offset.zero;
     _rubberBandStart = 0.0;
     _completingSwipeTarget = null;
+    if (deferNotifications || _isInBuildPhase) {
+      if (_rubberBandOffset.value != Offset.zero) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _isDragging || _rubberBandStart != 0.0) return;
+          _rubberBandOffset.value = Offset.zero;
+        });
+      }
+      _notifyDragPosition(null, deferIfBuilding: true);
+      return;
+    }
+    _rubberBandOffset.value = Offset.zero;
     _notifyDragPosition(null);
   }
 
-  void _switchImmediately(int index) {
+  void _switchImmediately(int index, {bool inBuild = false}) {
     _controller.stop();
-    _clearSwipeState();
-    setState(() {
+    _clearSwipeState(deferNotifications: inBuild);
+    void applyState() {
       _pendingIndex = null;
       _currentIndex = index;
       _targetIndex = index;
       _isAnimating = false;
       _controller.value = 1;
-    });
-    widget.onTransitionCompleted?.call(index);
+    }
+
+    if (inBuild) {
+      applyState();
+    } else {
+      setState(applyState);
+    }
+    _notifyTransitionCompleted(index, deferIfBuilding: inBuild);
     UiInteractionCoordinator.instance.endNavigation(_transitionInteraction);
   }
 
@@ -2385,7 +2449,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       return previousIndex == null ? GlobalKey() : previousKeys[previousIndex];
     });
     _controller.stop();
-    _clearSwipeState();
+    _clearSwipeState(deferNotifications: true);
     _dirtyChildren.clear();
     _pendingIndex = null;
     _preparedPages.removeWhere(
@@ -2396,7 +2460,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     _targetIndex = _currentIndex;
     _controller.value = 1;
     UiInteractionCoordinator.instance.cancelNavigation(_transitionInteraction);
-    widget.onTransitionCompleted?.call(_currentIndex);
+    _notifyTransitionCompleted(_currentIndex, deferIfBuilding: true);
   }
 
   int _safeIndex(int index) {
@@ -2594,8 +2658,18 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   void _handleHorizontalSwipeCancel() =>
       _handleHorizontalSwipeEnd(0.0, cancelled: true);
 
-  void _handleIndexChanged() {
+  void _handleIndexChanged() => _syncIndexChanged();
+
+  void _syncIndexChanged({bool inBuild = false}) {
     if (!mounted || _itemCount == 0) return;
+    void applyState(VoidCallback update) {
+      if (inBuild) {
+        update();
+      } else {
+        setState(update);
+      }
+    }
+
     final nextIndex = _safeIndex(widget.indexListenable.value);
     if (_isDragging) {
       if (nextIndex == _targetIndex &&
@@ -2604,11 +2678,11 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         _handleHorizontalSwipeEnd(0, selectedIndex: nextIndex);
         return;
       }
-      _clearSwipeState();
+      _clearSwipeState(deferNotifications: inBuild);
       _controller.stop();
       _targetIndex = _currentIndex;
       if (nextIndex == _currentIndex) {
-        _switchImmediately(nextIndex);
+        _switchImmediately(nextIndex, inBuild: inBuild);
         return;
       }
     }
@@ -2624,7 +2698,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         _controller.value = 1;
       }
     }
-    if (_pendingIndex != null) setState(() => _pendingIndex = null);
+    if (_pendingIndex != null) applyState(() => _pendingIndex = null);
     if (nextIndex == _targetIndex) {
       if (_isAnimating && _preparedPages.contains(nextIndex)) {
         _controller.forward();
@@ -2638,7 +2712,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     if (widget.duration == Duration.zero ||
         !TickerMode.getValuesNotifier(context).value.enabled ||
         MediaQuery.disableAnimationsOf(context)) {
-      _switchImmediately(nextIndex);
+      _switchImmediately(nextIndex, inBuild: inBuild);
       return;
     }
 
@@ -2650,7 +2724,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     }
     if (_isAnimating && !_preparedPages.contains(nextIndex)) {
       _controller.stop();
-      setState(() => _pendingIndex = nextIndex);
+      applyState(() => _pendingIndex = nextIndex);
       return;
     }
 
@@ -2665,7 +2739,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       }
       final direction = nextIndex > _currentIndex ? 1 : -1;
       if (direction == _transitionDirection) {
-        setState(() => _targetIndex = nextIndex);
+        applyState(() => _targetIndex = nextIndex);
         _controller.forward();
         return;
       }
@@ -2686,7 +2760,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         ).chain(CurveTween(curve: kAppSpringCurve)),
       );
       _reverseProgress = ReverseAnimation(_headerProgress);
-      setState(() {
+      applyState(() {
         _currentIndex = _targetIndex;
         _targetIndex = nextIndex;
         _transitionDirection = direction;
@@ -2696,12 +2770,12 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     }
 
     if (nextIndex == _currentIndex) {
-      setState(() {
+      applyState(() {
         _targetIndex = nextIndex;
         _isAnimating = false;
         _controller.value = 1;
       });
-      widget.onTransitionCompleted?.call(_currentIndex);
+      _notifyTransitionCompleted(_currentIndex, deferIfBuilding: inBuild);
       UiInteractionCoordinator.instance.endNavigation(_transitionInteraction);
       return;
     }
@@ -2709,7 +2783,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     _progress.parent = _controller.drive(CurveTween(curve: kAppSpringCurve));
     _headerProgress = _controller.drive(CurveTween(curve: kAppSpringCurve));
     _reverseProgress = ReverseAnimation(_headerProgress);
-    setState(() {
+    applyState(() {
       _targetIndex = nextIndex;
       _transitionDirection = _targetIndex > _currentIndex ? 1 : -1;
       _isAnimating = true;
@@ -3303,6 +3377,10 @@ class AppRootPageFrame extends InheritedWidget {
         !identical(Navigator.maybeOf(context), frame.navigatorKey.currentState)) {
       return page;
     }
+    final route = ModalRoute.of(context);
+    if (route is PageRoute<dynamic> && route.fullscreenDialog) {
+      return page;
+    }
     return frame.builder(context, page);
   }
 
@@ -3413,6 +3491,8 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
   bool _prepared = false;
   bool _disposed = false;
   bool _reducedMotion = false;
+  bool _interactivePopInProgress = false;
+  NavigatorState? _interactivePopNavigator;
   Timer? _exitCompletionTimer;
 
   @override
@@ -3506,6 +3586,25 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
   void dispose() {
     _disposed = true;
     _exitCompletionTimer?.cancel();
+    final nav = _interactivePopNavigator ?? navigator;
+    final hadInteractivePop = _interactivePopInProgress;
+    _interactivePopInProgress = false;
+    _interactivePopNavigator = null;
+    if (hadInteractivePop &&
+        nav != null &&
+        nav.mounted &&
+        nav.userGestureInProgress) {
+      if (SchedulerBinding.instance.schedulerPhase ==
+          SchedulerPhase.persistentCallbacks) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (nav.mounted && nav.userGestureInProgress) {
+            nav.didStopUserGesture();
+          }
+        });
+      } else {
+        nav.didStopUserGesture();
+      }
+    }
     super.dispose();
   }
 
@@ -3518,8 +3617,11 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
       navigator != null;
 
   bool _startInteractivePop() {
-    if (!_canStartInteractivePop) return false;
-    navigator!.didStartUserGesture();
+    if (!_canStartInteractivePop || _interactivePopInProgress) return false;
+    final nav = navigator!;
+    nav.didStartUserGesture();
+    _interactivePopInProgress = true;
+    _interactivePopNavigator = nav;
     return true;
   }
 
@@ -3531,31 +3633,51 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
   }
 
   void _endInteractivePop(double velocityFraction, {bool cancelled = false}) {
-    final nav = navigator;
-    if (!_disposed && controller != null && nav != null) {
-      if (!cancelled &&
-          (velocityFraction >= 0.65 || controller!.value <= 0.68)) {
-        if (isCurrent) {
-          nav.pop();
+    final nav = navigator ?? _interactivePopNavigator;
+    final hadInteractivePop = _interactivePopInProgress;
+    _interactivePopInProgress = false;
+    _interactivePopNavigator = null;
+
+    void finish() {
+      if (!_disposed && controller != null && nav != null) {
+        if (!cancelled &&
+            (velocityFraction >= 0.65 || controller!.value <= 0.68)) {
+          if (isCurrent) {
+            nav.pop();
+          }
+        } else if (isActive) {
+          if (_reducedMotion) {
+            controller!.value = 1.0;
+          } else {
+            final spring = SpringDescription.withDampingRatio(
+              mass: 1.0,
+              stiffness: 520.0,
+              ratio: 0.92,
+            );
+            final simulation = SpringSimulation(
+              spring,
+              controller!.value,
+              1.0,
+              (-velocityFraction).clamp(-6.0, 6.0),
+            );
+            controller!.animateWith(simulation);
+          }
         }
-      } else {
-        final spring = SpringDescription.withDampingRatio(
-          mass: 1.0,
-          stiffness: 520.0,
-          ratio: 0.92,
-        );
-        final simulation = SpringSimulation(
-          spring,
-          controller!.value,
-          1.0,
-          (-velocityFraction).clamp(-6.0, 6.0),
-        );
-        controller!.animateWith(simulation);
+      }
+      if (hadInteractivePop &&
+          nav != null &&
+          nav.mounted &&
+          nav.userGestureInProgress) {
+        nav.didStopUserGesture();
       }
     }
-    if (nav != null && nav.userGestureInProgress) {
-      nav.didStopUserGesture();
+
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => finish());
+      return;
     }
+    finish();
   }
 }
 
@@ -3578,6 +3700,28 @@ class _EdgeSwipeBackLayerState extends State<_EdgeSwipeBackLayer> {
   static const double _edgeWidth = 32;
   bool _dragging = false;
   bool _thresholdHapticTriggered = false;
+
+  @override
+  void didUpdateWidget(covariant _EdgeSwipeBackLayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_dragging &&
+        ((oldWidget.enabled && !widget.enabled) ||
+            !identical(oldWidget.route, widget.route))) {
+      _dragging = false;
+      _thresholdHapticTriggered = false;
+      oldWidget.route._endInteractivePop(0.0, cancelled: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    if (_dragging) {
+      _dragging = false;
+      _thresholdHapticTriggered = false;
+      widget.route._endInteractivePop(0.0, cancelled: true);
+    }
+    super.dispose();
+  }
 
   void _handleDragStart() {
     _dragging = widget.route._startInteractivePop();

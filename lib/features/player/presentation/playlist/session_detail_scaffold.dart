@@ -653,7 +653,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
             child: ValueListenableBuilder<bool>(
               valueListenable: widget.segmentPanelExpandedNotifier,
               builder: (context, expanded, child) =>
-                  expanded ? const SizedBox.shrink() : child!,
+                  (expanded && !isLandscape) ? const SizedBox.shrink() : child!,
               child: AnimatedOpacity(
                 key: const ValueKey('session_detail_close_fade'),
                 opacity: _coverOverlaysVisible ? 1 : 0,
@@ -680,18 +680,25 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
 
                               if (timer.hasTimer) {
                                 return RepaintBoundary(
-                                  child: TimerCountdownCapsule(
-                                    key: const ValueKey(
-                                      'session_detail_timer_capsule',
-                                    ),
-                                    showBackground: false,
-                                    remaining:
-                                        timer.timerRemaining ??
-                                        timer.timerDuration ??
-                                        Duration.zero,
-                                    active: timer.timerActive,
-                                    autoResumeAt: timer.autoResumeAt,
-                                    onTap: openTimer,
+                                  child: Consumer(
+                                    builder: (context, ref, _) {
+                                      final timerRemaining = ref.watch(
+                                        playlistTimerRemainingUiProvider,
+                                      );
+                                      return TimerCountdownCapsule(
+                                        key: const ValueKey(
+                                          'session_detail_timer_capsule',
+                                        ),
+                                        showBackground: false,
+                                        remaining:
+                                            timerRemaining ??
+                                            timer.timerDuration ??
+                                            Duration.zero,
+                                        active: timer.timerActive,
+                                        autoResumeAt: timer.autoResumeAt,
+                                        onTap: openTimer,
+                                      );
+                                    },
                                   ),
                                 );
                               }
@@ -825,35 +832,39 @@ class _SessionDetailBlurredCoverBackground extends StatelessWidget {
     final surface = theme.colorScheme.surface;
     final isDark = theme.brightness == Brightness.dark;
 
-    Widget buildBackground(Widget image) => ClipRect(
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          Transform.scale(
-            scale: isDark ? 1.12 : 1.08,
-            // ImageFiltered already isolates the artwork from the tint.
-            child: ImageFiltered(
-              imageFilter: isDark ? _darkBlur : _lightBlur,
-              child: image,
-            ),
-          ),
-          ColoredBox(color: surface.withValues(alpha: isDark ? 0.62 : 0.68)),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  surface.withValues(alpha: isDark ? 0.32 : 0.22),
-                  Colors.transparent,
-                  surface.withValues(alpha: isDark ? 0.48 : 0.36),
-                ],
-                stops: const [0.0, 0.45, 1.0],
+    Widget buildBackground(Widget image) => Stack(
+      fit: StackFit.expand,
+      children: [
+        // Isolate the full-screen blur in its own RepaintBoundary so animated
+        // surface color transitions repaint only the cheap tint/gradient layers.
+        RepaintBoundary(
+          key: const ValueKey('session_detail_blurred_cover_layer'),
+          child: ClipRect(
+            child: Transform.scale(
+              scale: isDark ? 1.12 : 1.08,
+              child: ImageFiltered(
+                imageFilter: isDark ? _darkBlur : _lightBlur,
+                child: image,
               ),
             ),
           ),
-        ],
-      ),
+        ),
+        ColoredBox(color: surface.withValues(alpha: isDark ? 0.62 : 0.68)),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                surface.withValues(alpha: isDark ? 0.32 : 0.22),
+                Colors.transparent,
+                surface.withValues(alpha: isDark ? 0.48 : 0.36),
+              ],
+              stops: const [0.0, 0.45, 1.0],
+            ),
+          ),
+        ),
+      ],
     );
 
     Widget buildPreview(BuildContext context) {

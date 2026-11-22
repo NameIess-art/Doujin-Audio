@@ -24,6 +24,14 @@ add_executable(${BINARY_NAME} WIN32
 # Apply the standard set of build settings. This can be removed for applications
 # that need different build settings.
 apply_standard_settings(${BINARY_NAME})
+# The runner relies on C++ exceptions (std::invalid_argument, C++/WinRT) under
+# /EHsc. Remove _HAS_EXCEPTIONS=0 from the runner target so STL errors throw
+# instead of terminating the process, without changing plugin targets.
+get_target_property(RUNNER_COMPILE_DEFINITIONS ${BINARY_NAME} COMPILE_DEFINITIONS)
+if(RUNNER_COMPILE_DEFINITIONS)
+  list(REMOVE_ITEM RUNNER_COMPILE_DEFINITIONS "_HAS_EXCEPTIONS=0")
+  set_target_properties(${BINARY_NAME} PROPERTIES COMPILE_DEFINITIONS "${RUNNER_COMPILE_DEFINITIONS}")
+endif()
 
 # Add preprocessor definitions for the build version.
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION=\"${FLUTTER_VERSION}\"")

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../core/media/path_display.dart';
 import '../domain/asmr_models.dart';
 import '../../../core/widgets/shimmer_loading.dart';
 import '../../../core/widgets/top_page_header.dart';
@@ -17,6 +18,11 @@ class AsmrDownloadSummaryCard extends ConsumerWidget {
     required this.selectedTotalSizeBytes,
     this.selectedHasUnknownSize = false,
     this.customWorkFolderName,
+    this.destinationRoot,
+    this.allSelected = false,
+    this.onToggleSelectAll,
+    this.hasActiveTask = false,
+    this.onViewTasks,
   });
 
   final AsmrWork? work;
@@ -25,6 +31,11 @@ class AsmrDownloadSummaryCard extends ConsumerWidget {
   final int selectedTotalSizeBytes;
   final bool selectedHasUnknownSize;
   final String? customWorkFolderName;
+  final String? destinationRoot;
+  final bool allSelected;
+  final VoidCallback? onToggleSelectAll;
+  final bool hasActiveTask;
+  final VoidCallback? onViewTasks;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -93,6 +104,13 @@ class AsmrDownloadSummaryCard extends ConsumerWidget {
       );
     }
 
+    final displayPath =
+        customWorkFolderName != null && customWorkFolderName!.trim().isNotEmpty
+        ? customWorkFolderName!.trim()
+        : destinationRoot != null && destinationRoot!.trim().isNotEmpty
+        ? PathDisplay.displayPathFor(destinationRoot!.trim())
+        : null;
+
     return HeaderFloatingSurface(
       key: const ValueKey<String>('asmr_download_summary'),
       height: null,
@@ -102,6 +120,49 @@ class AsmrDownloadSummaryCard extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (hasActiveTask) ...[
+            Container(
+              key: const ValueKey<String>('asmr_download_active_notice_banner'),
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: cs.primaryContainer.withValues(alpha: 0.65),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.downloading_rounded,
+                    size: 16,
+                    color: cs.onPrimaryContainer,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      i18n.tr('asmr_download_active_notice'),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: cs.onPrimaryContainer,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  if (onViewTasks != null)
+                    TextButton(
+                      key: const ValueKey<String>(
+                        'asmr_download_active_notice_view_tasks',
+                      ),
+                      onPressed: onViewTasks,
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        minimumSize: const Size(0, 32),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: Text(i18n.tr('asmr_download_view_tasks')),
+                    ),
+                ],
+              ),
+            ),
+          ],
           Text(
             currentWork.title,
             maxLines: 3,
@@ -133,6 +194,23 @@ class AsmrDownloadSummaryCard extends ConsumerWidget {
                   ),
                 ),
               ),
+              if (onToggleSelectAll != null) ...[
+                const SizedBox(width: 8),
+                TextButton(
+                  key: const ValueKey<String>(
+                    'asmr_download_toggle_select_all',
+                  ),
+                  onPressed: onToggleSelectAll,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 32),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text(
+                    i18n.tr(allSelected ? 'deselect_all' : 'select_all'),
+                  ),
+                ),
+              ],
             ],
           ),
           if (currentWork.resources.any(
@@ -147,10 +225,10 @@ class AsmrDownloadSummaryCard extends ConsumerWidget {
               ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
             ),
           ],
-          if (customWorkFolderName != null &&
-              customWorkFolderName!.trim().isNotEmpty) ...[
+          if (displayPath != null) ...[
             const SizedBox(height: 6),
             Row(
+              key: const ValueKey<String>('asmr_download_destination_path'),
               children: [
                 Icon(
                   Icons.folder_outlined,
@@ -160,7 +238,7 @@ class AsmrDownloadSummaryCard extends ConsumerWidget {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    customWorkFolderName!.trim(),
+                    displayPath,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(

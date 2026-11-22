@@ -21,6 +21,7 @@ class WorkDetailEntryTile extends StatefulWidget {
     required this.moreLabel,
     required this.unknownSizeLabel,
     required this.onAction,
+    this.isActiveTrack = false,
   });
 
   final WorkEntryItem item;
@@ -29,6 +30,7 @@ class WorkDetailEntryTile extends StatefulWidget {
   final String moreLabel;
   final String unknownSizeLabel;
   final ValueChanged<WorkEntryAction> onAction;
+  final bool isActiveTrack;
 
   @override
   State<WorkDetailEntryTile> createState() => _WorkDetailEntryTileState();
@@ -120,11 +122,15 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
     final cs = Theme.of(context).colorScheme;
     final item = widget.item;
     final isFolder = item.type == WorkEntryType.folder;
+    final isActiveTrack =
+        item.type == WorkEntryType.audio && widget.isActiveTrack;
     final nameStyle = Theme.of(context).textTheme.bodyMedium!.copyWith(
       fontSize: 13.5,
       height: 1.2,
-      fontWeight: isFolder ? FontWeight.w600 : FontWeight.w500,
-      color: cs.onSurface,
+      fontWeight: isActiveTrack
+          ? FontWeight.w700
+          : (isFolder ? FontWeight.w600 : FontWeight.w500),
+      color: isActiveTrack ? widget.accentColor : cs.onSurface,
     );
     final infoStyle = Theme.of(context).textTheme.labelSmall!.copyWith(
       fontSize: 11,
@@ -142,10 +148,11 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
     ].join(' · ');
     final icon = switch (item.type) {
       WorkEntryType.folder => AppDesignTokens.folderIcon,
-      WorkEntryType.audio =>
-        (item.track?.isVideo ?? item.isRemoteVideo)
-            ? Icons.videocam_outlined
-            : AppDesignTokens.audioFileIcon,
+      WorkEntryType.audio => isActiveTrack
+          ? Icons.graphic_eq_rounded
+          : (item.track?.isVideo ?? item.isRemoteVideo)
+          ? Icons.videocam_outlined
+          : AppDesignTokens.audioFileIcon,
       WorkEntryType.text => AppDesignTokens.textFileIcon,
       WorkEntryType.image => AppDesignTokens.imageFileIcon,
     };
@@ -156,7 +163,7 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
       WorkEntryType.text => tokens.textFileColor,
       WorkEntryType.image => tokens.imageFileColor,
     };
-    final isHighlighted = _isMenuOpen;
+    final isHighlighted = _isMenuOpen || isActiveTrack;
 
     void onTap() {
       widget.onAction(
@@ -199,7 +206,9 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
         ),
         shape: _shape,
         selected: isHighlighted,
-        selectedTileColor: widget.accentColor.withValues(alpha: 0.16 * opacity),
+        selectedTileColor: widget.accentColor.withValues(
+          alpha: isActiveTrack && opacity < 0.625 ? 0.10 : 0.16 * opacity,
+        ),
         selectedColor: widget.accentColor,
         leading: leading,
         title: title,

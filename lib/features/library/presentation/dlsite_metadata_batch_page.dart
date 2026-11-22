@@ -220,9 +220,6 @@ class _DlsiteMetadataBatchPageState
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final canStart = !_loading && _selectedEntries.isNotEmpty;
-    final startForeground = canStart
-        ? cs.onPrimary
-        : cs.onSurface.withValues(alpha: 0.38);
     final mediaPadding = MediaQuery.paddingOf(context);
     _scheduleHeaderMeasurement((
       _error != null,
@@ -314,10 +311,6 @@ class _DlsiteMetadataBatchPageState
                     pillKey: const ValueKey<String>('batch_metadata_start'),
                     icon: Icons.play_arrow_rounded,
                     label: i18n.tr('batch_metadata_start'),
-                    backgroundColor: canStart
-                        ? cs.primary
-                        : cs.onSurface.withValues(alpha: 0.12),
-                    foregroundColor: startForeground,
                     onTap: canStart ? _run : null,
                   ),
                 ),

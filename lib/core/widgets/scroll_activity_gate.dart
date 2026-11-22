@@ -70,8 +70,8 @@ class _ScrollActivityGateState extends State<ScrollActivityGate> {
       _idleTimer?.cancel();
       _idleTimer = null;
       _scrolling = false;
-      _resetSpeed();
-      _publishScrolling();
+      _resetSpeed(deferNotification: true);
+      _publishScrolling(defer: true);
       UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
     }
   }
@@ -140,19 +140,20 @@ class _ScrollActivityGateState extends State<ScrollActivityGate> {
     }
   }
 
-  void _resetSpeed() {
+  void _resetSpeed({bool deferNotification = false}) {
     _slowTimer?.cancel();
     _slowTimer = null;
     _sampleTime = null;
     _samplePixels = null;
-    _setFastScrolling(false);
+    _setFastScrolling(false, defer: deferNotification);
   }
 
-  void _setFastScrolling(bool value) {
+  void _setFastScrolling(bool value, {bool defer = false}) {
     if (_fastScrolling == value) return;
     _fastScrolling = value;
-    if (SchedulerBinding.instance.schedulerPhase ==
-        SchedulerPhase.persistentCallbacks) {
+    if (defer ||
+        SchedulerBinding.instance.schedulerPhase ==
+            SchedulerPhase.persistentCallbacks) {
       if (_fastScrollingUpdateScheduled) return;
       _fastScrollingUpdateScheduled = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -175,9 +176,10 @@ class _ScrollActivityGateState extends State<ScrollActivityGate> {
     _publishScrolling();
   }
 
-  void _publishScrolling() {
-    if (SchedulerBinding.instance.schedulerPhase !=
-        SchedulerPhase.persistentCallbacks) {
+  void _publishScrolling({bool defer = false}) {
+    if (!defer &&
+        SchedulerBinding.instance.schedulerPhase !=
+            SchedulerPhase.persistentCallbacks) {
       _isScrolling.value = _scrolling;
       return;
     }

@@ -9,7 +9,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../core/media/subtitle_parser.dart';
 import '../../../../core/media/time_text_formatters.dart';
-import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/scroll_to_top_list.dart';
 import '../../../../core/widgets/windows_smooth_scroll_controller.dart';
@@ -99,7 +98,7 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
   bool _layoutAlignmentScheduled = false;
   int? _wheelTargetIndex;
 
-  int get _lastIndex => widget.cues.length - 1;
+  int get _lastIndex => max(0, widget.cues.length - 1);
   int get _windowLength => _windowEnd - _windowStart;
   bool get _hasCurrentWindowLayout =>
       _layoutSignature?.$2 == _windowStart &&
@@ -108,7 +107,9 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
   @override
   void initState() {
     super.initState();
-    _focusedIndex = widget.playbackSubtitleIndex.clamp(0, _lastIndex);
+    _focusedIndex = widget.cues.isEmpty
+        ? 0
+        : widget.playbackSubtitleIndex.clamp(0, _lastIndex);
     _resetWindowAround(_focusedIndex);
     _scrollController = WindowsSmoothScrollController()
       ..addListener(_handleScrollOffsetChanged);
@@ -117,11 +118,20 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
   @override
   void didUpdateWidget(covariant TimelineSubtitleView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.cues.isEmpty) {
+      _returnTimer?.cancel();
+      _returnTimer = null;
+      _isBrowsing = false;
+      _wheelTargetIndex = null;
+      _focusedIndex = 0;
+      _resetWindowAround(0);
+      return;
+    }
     final playbackIndex = widget.playbackSubtitleIndex.clamp(0, _lastIndex);
     if (!identical(oldWidget.cues, widget.cues)) {
       if (_scrollController.isWheelScrolling) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && _wheelTargetIndex == null) {
+          if (mounted && _wheelTargetIndex == null && widget.cues.isNotEmpty) {
             _scrollToIndex(_focusedIndex);
           }
         });
@@ -139,15 +149,16 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
       return;
     }
     if (oldWidget.playbackSubtitleIndex != widget.playbackSubtitleIndex) {
-      if (widget.cues.isNotEmpty) {
-        _focusedIndex = playbackIndex;
-        if (!_windowContains(playbackIndex)) {
-          _resetWindowAround(playbackIndex);
-        }
-        _extendWindowNearFocusedIndex(inBuildOrUpdate: true);
+      _focusedIndex = playbackIndex;
+      if (!_windowContains(playbackIndex)) {
+        _resetWindowAround(playbackIndex);
       }
+      _extendWindowNearFocusedIndex(inBuildOrUpdate: true);
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && !_isBrowsing && !_isPointerDown) {
+        if (mounted &&
+            !_isBrowsing &&
+            !_isPointerDown &&
+            widget.cues.isNotEmpty) {
           _scrollToIndex(playbackIndex);
         }
       });
@@ -196,6 +207,7 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
   }
 
   void _browseToIndex(int index, {bool fromWheel = false}) {
+    if (widget.cues.isEmpty) return;
     _returnTimer?.cancel();
     if (!_isBrowsing) {
       AppInteractionFeedback.resetContinuous();
@@ -275,14 +287,14 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
   }
 
   void _finishManualScroll() {
-    if (_isSnapping || !mounted) return;
+    if (_isSnapping || !mounted || widget.cues.isEmpty) return;
     _isSnapping = true;
     try {
       _scrollToIndex(_focusedIndex);
     } finally {
       _isSnapping = false;
     }
-    if (!mounted || !_isBrowsing) return;
+    if (!mounted || !_isBrowsing || widget.cues.isEmpty) return;
     final playbackIndex = widget.playbackSubtitleIndex.clamp(0, _lastIndex);
     if (_focusedIndex == playbackIndex) {
       setState(() => _isBrowsing = false);
@@ -295,13 +307,14 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
   void _returnToPlaybackSubtitle() {
     _returnTimer = null;
     _wheelTargetIndex = null;
-    if (!mounted) return;
+    if (!mounted || widget.cues.isEmpty) return;
     final playbackIndex = widget.playbackSubtitleIndex.clamp(0, _lastIndex);
     setState(() => _isBrowsing = false);
     _scrollToIndex(playbackIndex);
   }
 
   void _scrollToIndex(int index, {bool fromWheel = false}) {
+    if (widget.cues.isEmpty) return;
     final targetIndex = index.clamp(0, _lastIndex);
     if (_focusedIndex != targetIndex || !_windowContains(targetIndex)) {
       setState(() {
@@ -316,7 +329,9 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
         _itemCenters.isEmpty ||
         !_hasCurrentWindowLayout) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && (!fromWheel || _wheelTargetIndex == targetIndex)) {
+        if (mounted &&
+            widget.cues.isNotEmpty &&
+            (!fromWheel || _wheelTargetIndex == targetIndex)) {
           _scrollToIndex(targetIndex, fromWheel: fromWheel);
         }
       });
@@ -346,6 +361,11 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
     if (_isBrowsing) {
       setState(() => _isBrowsing = false);
     }
+    if (widget.cues.isEmpty ||
+        _focusedIndex < 0 ||
+        _focusedIndex >= widget.cues.length) {
+      return;
+    }
     unawaited(widget.onSeek(widget.cues[_focusedIndex].start));
   }
 
@@ -373,6 +393,12 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
       index >= _windowStart && index < _windowEnd;
 
   void _resetWindowAround(int index) {
+    if (widget.cues.isEmpty) {
+      _windowStart = 0;
+      _windowEnd = 0;
+      _invalidateLayoutMetrics();
+      return;
+    }
     final targetIndex = index.clamp(0, _lastIndex);
     _windowStart = max(0, targetIndex - _initialWindowRadius);
     _windowEnd = min(
@@ -383,6 +409,7 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
   }
 
   void _extendWindowNearFocusedIndex({bool inBuildOrUpdate = false}) {
+    if (widget.cues.isEmpty) return;
     final threshold =
         (_viewportHeight / (2 * _minimumItemExtent)).ceil() +
         _windowExpansionThreshold;
@@ -412,6 +439,23 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
     _itemCenters = const <double>[];
     _itemOffsets = const <double>[];
   }
+
+  static TextStyle _layoutMetricsStyle(TextStyle style) => TextStyle(
+    fontFamily: style.fontFamily,
+    fontFamilyFallback: style.fontFamilyFallback,
+    fontSize: style.fontSize,
+    fontWeight: style.fontWeight,
+    fontStyle: style.fontStyle,
+    letterSpacing: style.letterSpacing,
+    wordSpacing: style.wordSpacing,
+    textBaseline: style.textBaseline,
+    height: style.height,
+    leadingDistribution: style.leadingDistribution,
+    locale: style.locale,
+    fontFeatures: style.fontFeatures,
+    fontVariations: style.fontVariations,
+    overflow: style.overflow,
+  );
 
   double _measureCueExtent(
     SubtitleCue cue, {
@@ -567,6 +611,9 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
             : null;
         final textScaler = MediaQuery.textScalerOf(context);
         final textDirection = Directionality.of(context);
+        // Strip color/paint-only properties so theme color transitions reuse
+        // cached cue heights without re-running TextPainter layout every frame.
+        final metricsStyle = _layoutMetricsStyle(focusedTextStyle);
         final layoutSignature = (
           widget.cues,
           _windowStart,
@@ -575,7 +622,7 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
           availableHeight,
           textScaler,
           textDirection,
-          focusedTextStyle,
+          metricsStyle,
         );
         if (_layoutSignature != layoutSignature) {
           final previous = _layoutSignature;
@@ -585,7 +632,7 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
               previous.$4 == textWidth &&
               previous.$6 == textScaler &&
               previous.$7 == textDirection &&
-              previous.$8 == focusedTextStyle;
+              previous.$8 == metricsStyle;
           final previousCenter =
               canReuse &&
                   _focusedIndex >= previous.$2 &&
@@ -601,7 +648,7 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
                 _measureCueExtent(
                   widget.cues[index],
                   textWidth: textWidth,
-                  textStyle: focusedTextStyle,
+                  textStyle: metricsStyle,
                   textDirection: textDirection,
                   textScaler: textScaler,
                 ),
@@ -673,14 +720,20 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
                             final index = _windowStart + localIndex;
                             final cue = widget.cues[index];
                             final isFocused = index == _focusedIndex;
+                            final canTapToSeek = isFocused && _isBrowsing;
                             return Semantics(
                               selected: isFocused,
+                              button: !isFocused || canTapToSeek,
                               child: MouseRegion(
-                                cursor: isFocused ? MouseCursor.defer : SystemMouseCursors.click,
+                                cursor: (!isFocused || canTapToSeek)
+                                    ? SystemMouseCursors.click
+                                    : MouseCursor.defer,
                                 child: GestureDetector(
                                   behavior: HitTestBehavior.opaque,
                                   onTap: isFocused
-                                      ? null
+                                      ? (canTapToSeek
+                                            ? _seekToFocusedSubtitle
+                                            : null)
                                       : () => _browseToIndex(index),
                                   child: SizedBox(
                                     key: ValueKey(
@@ -742,142 +795,163 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
                       widget.cues.isNotEmpty &&
                       _focusedIndex >= 0 &&
                       _focusedIndex < widget.cues.length)
-                    Positioned(
-                      left: 12,
-                      right: widget.isLandscape ? 48 : 12,
-                      top: max(0.0, (_viewportHeight - 36) / 2),
-                      height: 36,
-                      child: Row(
-                        children: [
-                          if (widget.isLandscape) const Spacer(),
-                          SizedBox(
-                            key: const ValueKey(
-                              'subtitle_timeline_seek_dashes',
-                            ),
-                            width: 36,
-                            child: IgnorePointer(
-                              child: ShaderMask(
-                                shaderCallback: (bounds) =>
-                                    const LinearGradient(
-                                      colors: [
-                                        Colors.transparent,
-                                        Colors.white,
-                                      ],
-                                    ).createShader(bounds),
-                                blendMode: BlendMode.dstIn,
-                                child: CustomPaint(
-                                  painter: _DashedLinePainter(
-                                    color: cs.primary.withValues(
-                                      alpha: isDark ? 0.6 : 0.45,
-                                    ),
-                                  ),
+                    Builder(
+                      builder: (context) {
+                        const seekBarHeight = 44.0;
+                        final focusedLocal = _focusedIndex - _windowStart;
+                        final focusedExtent =
+                            focusedLocal >= 0 &&
+                                focusedLocal < _itemExtents.length
+                            ? _itemExtents[focusedLocal]
+                            : 36.0;
+                        final seekBarTop = widget.isLandscape
+                            ? max(0.0, (_viewportHeight - seekBarHeight) / 2)
+                            : min(
+                                max(0.0, _viewportHeight - seekBarHeight),
+                                (_viewportHeight + focusedExtent) / 2 + 2,
+                              );
+                        return Positioned(
+                          left: 12,
+                          right: widget.isLandscape ? 48 : 12,
+                          top: seekBarTop,
+                          height: seekBarHeight,
+                          child: Row(
+                            children: [
+                              if (widget.isLandscape) const Spacer(),
+                              SizedBox(
+                                key: const ValueKey(
+                                  'subtitle_timeline_seek_dashes',
                                 ),
-                              ),
-                            ),
-                          ),
-                          if (!widget.isLandscape) const Spacer(),
-                          Container(
-                            height: 32,
-                            padding: const EdgeInsets.only(left: 10, right: 3),
-                            decoration: BoxDecoration(
-                              color: isDark
-                                  ? cs.surfaceContainerHighest.withValues(
-                                      alpha: 0.88,
-                                    )
-                                  : cs.surfaceContainerHighest.withValues(
-                                      alpha: 0.94,
-                                    ),
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(
-                                color: cs.primary.withValues(
-                                  alpha: isDark ? 0.35 : 0.25,
-                                ),
-                                width: 0.8,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: cs.shadow.withValues(
-                                    alpha: isDark ? 0.35 : 0.08,
-                                  ),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IgnorePointer(
-                                  child: Text(
-                                    formatDurationCompact(
-                                      widget.cues[_focusedIndex].start,
-                                    ),
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelSmall
-                                        ?.copyWith(
-                                          color: cs.primary,
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 11.5,
+                                width: 36,
+                                child: IgnorePointer(
+                                  child: ShaderMask(
+                                    shaderCallback: (bounds) =>
+                                        const LinearGradient(
+                                          colors: [
+                                            Colors.transparent,
+                                            Colors.white,
+                                          ],
+                                        ).createShader(bounds),
+                                    blendMode: BlendMode.dstIn,
+                                    child: CustomPaint(
+                                      painter: _DashedLinePainter(
+                                        color: cs.primary.withValues(
+                                          alpha: isDark ? 0.6 : 0.45,
                                         ),
+                                      ),
+                                    ),
                                   ),
                                 ),
-                                const SizedBox(width: 6),
-                                Container(
-                                  width: 1,
-                                  height: 12,
-                                  color: cs.outlineVariant.withValues(
-                                    alpha: isDark ? 0.35 : 0.5,
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                Container(
-                                  width: 26,
-                                  height: 26,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: cs.primary,
-                                  ),
+                              ),
+                              if (!widget.isLandscape) const Spacer(),
+                              Tooltip(
+                                message: i18n.tr('seek_to_subtitle'),
+                                child: Semantics(
+                                  button: true,
+                                  label: i18n.tr('seek_to_subtitle'),
                                   child: Material(
-                                    type: MaterialType.transparency,
-                                    shape: const CircleBorder(),
-                                    clipBehavior: Clip.antiAlias,
-                                    child: IconButton(
+                                    color: Colors.transparent,
+                                    child: InkWell(
                                       key: const ValueKey(
                                         'subtitle_timeline_seek_button',
                                       ),
-                                      padding: EdgeInsets.zero,
-                                      constraints:
-                                          const BoxConstraints.tightFor(
-                                            width: 26,
-                                            height: 26,
-                                          ),
-                                      style: appIconButtonStyle(
-                                        IconButton.styleFrom(
-                                          fixedSize: const Size.square(26),
-                                          minimumSize: const Size.square(26),
-                                          maximumSize: const Size.square(26),
-                                          padding: EdgeInsets.zero,
-                                          tapTargetSize:
-                                              MaterialTapTargetSize.shrinkWrap,
-                                          shape: const CircleBorder(),
+                                      borderRadius: BorderRadius.circular(999),
+                                      onTap: _seekToFocusedSubtitle,
+                                      child: ConstrainedBox(
+                                        constraints: const BoxConstraints(
+                                          minWidth: 44,
+                                          minHeight: 44,
                                         ),
-                                      ),
-                                      tooltip: i18n.tr('seek_to_subtitle'),
-                                      onPressed: _seekToFocusedSubtitle,
-                                      icon: Icon(
-                                        Icons.play_arrow_rounded,
-                                        color: cs.onPrimary,
-                                        size: 18,
+                                        child: Center(
+                                          child: Container(
+                                            height: 36,
+                                            padding: const EdgeInsets.only(
+                                              left: 12,
+                                              right: 5,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: isDark
+                                                  ? cs.surfaceContainerHighest
+                                                        .withValues(alpha: 0.90)
+                                                  : cs.surfaceContainerHighest
+                                                        .withValues(
+                                                          alpha: 0.95,
+                                                        ),
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                              border: Border.all(
+                                                color: cs.primary.withValues(
+                                                  alpha: isDark ? 0.35 : 0.25,
+                                                ),
+                                                width: 0.8,
+                                              ),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: cs.shadow.withValues(
+                                                    alpha: isDark ? 0.35 : 0.08,
+                                                  ),
+                                                  blurRadius: 8,
+                                                  offset: const Offset(0, 2),
+                                                ),
+                                              ],
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  formatDurationCompact(
+                                                    widget
+                                                        .cues[_focusedIndex]
+                                                        .start,
+                                                  ),
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .labelSmall
+                                                      ?.copyWith(
+                                                        color: cs.primary,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        fontSize: 12,
+                                                      ),
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Container(
+                                                  width: 1,
+                                                  height: 14,
+                                                  color: cs.outlineVariant
+                                                      .withValues(
+                                                        alpha: isDark
+                                                            ? 0.35
+                                                            : 0.5,
+                                                      ),
+                                                ),
+                                                const SizedBox(width: 5),
+                                                Container(
+                                                  width: 28,
+                                                  height: 28,
+                                                  decoration: BoxDecoration(
+                                                    shape: BoxShape.circle,
+                                                    color: cs.primary,
+                                                  ),
+                                                  child: Icon(
+                                                    Icons.play_arrow_rounded,
+                                                    color: cs.onPrimary,
+                                                    size: 18,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ),
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                        );
+                      },
                     ),
                   if (defaultTargetPlatform == TargetPlatform.windows)
                     Positioned.fill(

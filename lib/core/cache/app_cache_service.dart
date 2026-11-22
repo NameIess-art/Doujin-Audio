@@ -100,15 +100,11 @@ class AppCacheService {
       if (_useBackgroundIsolate) {
         final rootPaths = [for (final directory in roots) directory.path];
         if (rootPaths.isEmpty) return 0;
-        final protectedPaths = _snapshotProtectedPaths();
-        final result = await _clearCacheRootsInBackground(
-          rootPaths,
-          protectedPaths,
-        );
-        for (final error in result.errors) {
+        final listed = await _listCacheRootsInBackground(rootPaths);
+        for (final error in listed.errors) {
           AppLogService.warning('cache_directory_clear_failed', error: error);
         }
-        return result.deletedBytes;
+        return _deleteListedEntries(listed.files, listed.directories);
       }
       var deletedBytes = 0;
       for (final directory in roots) {
@@ -180,18 +176,13 @@ class AppCacheService {
       if (_useBackgroundIsolate) {
         final listed = await _listDirectoryTreeInBackground(directory.path);
         if (listed == null) return 0;
-        // Recheck after the background listing: an import may have committed
-        // or acquired a lease while this operation was queued or scanning.
-        final filesToDelete = <({String path, int size})>[
-          for (final file in listed.files)
-            if (!_isProtected(file.path) && !isRetained(file.path)) file,
-        ];
-        final dirsToPrune = <String>[
-          for (final subdir in listed.directories)
-            if (!_containsProtectedPath(subdir)) subdir,
-        ];
-        if (filesToDelete.isEmpty && dirsToPrune.isEmpty) return 0;
-        return _deleteListedEntriesInBackground(filesToDelete, dirsToPrune);
+        // Recheck live leases and retention immediately before each deletion:
+        // an import may commit or acquire a lease while scanning or deleting.
+        return _deleteListedEntries(
+          listed.files,
+          listed.directories,
+          canDelete: (candidate) => !isRetained(candidate),
+        );
       }
       var deletedBytes = 0;
       if (!await directory.exists()) return 0;
@@ -401,64 +392,93 @@ class AppCacheService {
     return deletedBytes;
   }
 
+  static Future<int> _deleteListedEntries(
+    List<({String path, int size})> files,
+    List<String> directories, {
+    bool Function(String path)? canDelete,
+  }) async {
+    var deletedBytes = 0;
+    for (final file in files) {
+      try {
+        if (await FileSystemEntity.type(file.path, followLinks: false) !=
+            FileSystemEntityType.file) {
+          continue;
+        }
+        final length = await File(file.path).length();
+        await _beforeDelete?.call(file.path);
+        if (_isProtected(file.path) || !(canDelete?.call(file.path) ?? true)) {
+          continue;
+        }
+        await File(file.path).delete();
+        deletedBytes += length;
+      } on FileSystemException {
+        // Locked or vanished cache entries can be retried in later maintenance.
+      }
+    }
+    for (final dirPath in directories) {
+      try {
+        if (_containsProtectedPath(dirPath)) continue;
+        if (await FileSystemEntity.type(dirPath, followLinks: false) !=
+            FileSystemEntityType.directory) {
+          continue;
+        }
+        final directory = Directory(dirPath);
+        final isEmpty = await directory.list(followLinks: false).isEmpty;
+        if (!_containsProtectedPath(dirPath) && isEmpty) {
+          await directory.delete();
+        }
+      } on FileSystemException {
+        // Locked, vanished, or non-empty directories can remain until later.
+      }
+    }
+    return deletedBytes;
+  }
+
   static Future<void> _enforceLimitOnce() async {
     final rootPaths = [for (final root in await _cacheRoots()) root.path];
     if (rootPaths.isEmpty) return;
     final maxBytes = _maxCacheBytes;
     final target = applicationCacheTrimTargetBytes(maxBytes);
-    if (_useBackgroundIsolate) {
-      final protectedPaths = _snapshotProtectedPaths();
-      final leaseReleaseGenBefore = _leaseReleaseGeneration;
-      final result = await _enforceCacheLimitInBackground(
-        rootPaths: rootPaths,
-        protectedPaths: protectedPaths,
-        maxBytes: maxBytes,
-        targetBytes: target,
-      );
-      for (final error in result.errors) {
-        AppLogService.warning('cache_directory_scan_failed', error: error);
-      }
-      if (!result.exceededLimit) return;
-      if (result.remainingBytes > target) {
-        if (_leaseReleaseGeneration != leaseReleaseGenBefore) {
-          scheduleEnforce();
-        } else if (_protectedPaths.isNotEmpty) {
-          _enforceAfterLeaseRelease = true;
-        }
-      }
-      return;
-    }
     final scan = IOOverrides.current == null
         ? await Isolate.run(
-            () => _scanCacheRootsSync(rootPaths, collectEntries: true),
+            () => _scanCacheRootsSync(
+              rootPaths,
+              collectEntries: true,
+              sortEntries: true,
+            ),
           )
-        : _scanCacheRootsSync(rootPaths, collectEntries: true);
+        : _scanCacheRootsSync(
+            rootPaths,
+            collectEntries: true,
+            sortEntries: true,
+          );
     for (final error in scan.errors) {
       AppLogService.warning('cache_directory_scan_failed', error: error);
     }
     var totalBytes = scan.totalBytes;
     if (totalBytes <= maxBytes) return;
+    final leaseReleaseGenBefore = _leaseReleaseGeneration;
     final entries = scan.entries
         .where((entry) => !_isProtected(entry.path))
         .toList(growable: false);
     // A lease can end while another candidate is being deleted. Arrange its
     // retry before awaiting deletion so that the skipped files are revisited.
     _enforceAfterLeaseRelease = _protectedPaths.isNotEmpty;
-    entries.sort((a, b) {
-      final order = a.modifiedMicros.compareTo(b.modifiedMicros);
-      return order == 0 ? a.path.compareTo(b.path) : order;
-    });
     for (final entry in entries) {
       if (totalBytes <= target) break;
       totalBytes -= await _deleteEntity(File(entry.path));
     }
-    _enforceAfterLeaseRelease =
-        totalBytes > target && _protectedPaths.isNotEmpty;
+    if (totalBytes > target) {
+      if (_protectedPaths.isNotEmpty) {
+        _enforceAfterLeaseRelease = true;
+      } else if (_leaseReleaseGeneration != leaseReleaseGenBefore &&
+          _scheduledEnforceTimer == null) {
+        scheduleEnforce();
+      }
+    } else {
+      _enforceAfterLeaseRelease = false;
+    }
   }
-
-  static List<String> _snapshotProtectedPaths() => [
-    for (final entry in _protectedPaths.values) entry.path,
-  ];
 
   static bool _isProtected(String candidate) => _protectedPaths.values.any(
     (entry) => PathMatcher.isWithinOrEqual(candidate, entry.path),
@@ -504,95 +524,44 @@ int applicationCacheTrimTargetBytes(int maxBytes) {
 
 typedef _ScannedCacheEntry = ({String path, int size, int modifiedMicros});
 
-bool _isPathProtected(String candidate, List<String> protectedPaths) =>
-    protectedPaths.any((root) => PathMatcher.isWithinOrEqual(candidate, root));
-
-bool _directoryContainsProtectedPath(
-  String directory,
-  List<String> protectedPaths,
-) => protectedPaths.any((root) => PathMatcher.isWithinOrEqual(root, directory));
-
-Future<({int deletedBytes, List<String> errors})> _clearCacheRootsInBackground(
-  List<String> rootPaths,
-  List<String> protectedPaths,
-) => Isolate.run(() => _clearCacheRootsSync(rootPaths, protectedPaths));
+Future<
+  ({
+    List<({String path, int size})> files,
+    List<String> directories,
+    List<String> errors,
+  })
+>
+_listCacheRootsInBackground(List<String> rootPaths) =>
+    Isolate.run(() => _listCacheRootsSync(rootPaths));
 
 Future<({List<({String path, int size})> files, List<String> directories})?>
 _listDirectoryTreeInBackground(String rootPath) =>
     Isolate.run(() => _listDirectoryTreeSync(rootPath));
 
-Future<int> _deleteListedEntriesInBackground(
+({
   List<({String path, int size})> files,
   List<String> directories,
-) => Isolate.run(() => _deleteListedEntriesSync(files, directories));
-
-Future<({int remainingBytes, bool exceededLimit, List<String> errors})>
-_enforceCacheLimitInBackground({
-  required List<String> rootPaths,
-  required List<String> protectedPaths,
-  required int maxBytes,
-  required int targetBytes,
-}) => Isolate.run(
-  () => _enforceCacheLimitSync(
-    rootPaths: rootPaths,
-    protectedPaths: protectedPaths,
-    maxBytes: maxBytes,
-    targetBytes: targetBytes,
-  ),
-);
-
-({int deletedBytes, List<String> errors}) _clearCacheRootsSync(
-  List<String> rootPaths,
-  List<String> protectedPaths,
-) {
-  var deletedBytes = 0;
+  List<String> errors,
+})
+_listCacheRootsSync(List<String> rootPaths) {
+  final files = <({String path, int size})>[];
+  final directories = <String>[];
   final errors = <String>[];
   for (final rootPath in rootPaths) {
     try {
-      if (FileSystemEntity.typeSync(rootPath, followLinks: false) !=
-          FileSystemEntityType.directory) {
-        continue;
-      }
-      for (final entity in Directory(rootPath).listSync(followLinks: false)) {
-        deletedBytes += _deleteEntitySync(entity, protectedPaths);
-      }
+      final listed = _listDirectoryTreeSync(rootPath, rethrowRootErrors: true);
+      if (listed == null) continue;
+      files.addAll(listed.files);
+      directories.addAll(listed.directories);
     } on FileSystemException catch (error) {
       errors.add(error.toString());
     }
   }
-  return (deletedBytes: deletedBytes, errors: errors);
-}
-
-int _deleteEntitySync(FileSystemEntity entity, List<String> protectedPaths) {
-  var deletedBytes = 0;
-  try {
-    final type = FileSystemEntity.typeSync(entity.path, followLinks: false);
-    if (type == FileSystemEntityType.file) {
-      if (_isPathProtected(entity.path, protectedPaths)) return 0;
-      final file = File(entity.path);
-      final length = file.lengthSync();
-      file.deleteSync();
-      return length;
-    }
-    if (type == FileSystemEntityType.directory) {
-      final directory = Directory(entity.path);
-      for (final child in directory.listSync(followLinks: false)) {
-        deletedBytes += _deleteEntitySync(child, protectedPaths);
-      }
-      if (!_directoryContainsProtectedPath(directory.path, protectedPaths) &&
-          directory.listSync(followLinks: false).isEmpty) {
-        directory.deleteSync();
-      }
-      return deletedBytes;
-    }
-  } on FileSystemException {
-    // Locked or vanished cache entries can be retried in later maintenance.
-  }
-  return deletedBytes;
+  return (files: files, directories: directories, errors: errors);
 }
 
 ({List<({String path, int size})> files, List<String> directories})?
-_listDirectoryTreeSync(String rootPath) {
+_listDirectoryTreeSync(String rootPath, {bool rethrowRootErrors = false}) {
   if (FileSystemEntity.typeSync(rootPath, followLinks: false) !=
       FileSystemEntityType.directory) {
     return null;
@@ -604,6 +573,7 @@ _listDirectoryTreeSync(String rootPath) {
     try {
       entries = directory.listSync(followLinks: false);
     } on FileSystemException {
+      if (isRoot && rethrowRootErrors) rethrow;
       return;
     }
     for (final entity in entries) {
@@ -625,83 +595,11 @@ _listDirectoryTreeSync(String rootPath) {
   return (files: files, directories: directories);
 }
 
-int _deleteListedEntriesSync(
-  List<({String path, int size})> files,
-  List<String> directories,
-) {
-  var deletedBytes = 0;
-  for (final file in files) {
-    try {
-      if (FileSystemEntity.typeSync(file.path, followLinks: false) ==
-          FileSystemEntityType.file) {
-        File(file.path).deleteSync();
-        deletedBytes += file.size;
-      }
-    } on FileSystemException {
-      // Locked or vanished cache entries can be retried in later maintenance.
-    }
-  }
-  for (final dirPath in directories) {
-    try {
-      if (FileSystemEntity.typeSync(dirPath, followLinks: false) ==
-          FileSystemEntityType.directory) {
-        final directory = Directory(dirPath);
-        if (directory.listSync(followLinks: false).isEmpty) {
-          directory.deleteSync();
-        }
-      }
-    } on FileSystemException {
-      // Locked, vanished, or non-empty directories can remain until later.
-    }
-  }
-  return deletedBytes;
-}
-
-({int remainingBytes, bool exceededLimit, List<String> errors})
-_enforceCacheLimitSync({
-  required List<String> rootPaths,
-  required List<String> protectedPaths,
-  required int maxBytes,
-  required int targetBytes,
-}) {
-  final scan = _scanCacheRootsSync(rootPaths, collectEntries: true);
-  var totalBytes = scan.totalBytes;
-  if (totalBytes <= maxBytes) {
-    return (
-      remainingBytes: totalBytes,
-      exceededLimit: false,
-      errors: scan.errors,
-    );
-  }
-  final entries = protectedPaths.isEmpty
-      ? scan.entries
-      : scan.entries
-            .where((entry) => !_isPathProtected(entry.path, protectedPaths))
-            .toList(growable: false);
-  entries.sort((a, b) {
-    final order = a.modifiedMicros.compareTo(b.modifiedMicros);
-    return order == 0 ? a.path.compareTo(b.path) : order;
-  });
-  for (final entry in entries) {
-    if (totalBytes <= targetBytes) break;
-    try {
-      File(entry.path).deleteSync();
-      totalBytes -= entry.size;
-    } on FileSystemException {
-      // Locked or vanished cache entries can be retried in later maintenance.
-    }
-  }
-  return (
-    remainingBytes: totalBytes,
-    exceededLimit: true,
-    errors: scan.errors,
-  );
-}
-
 ({int totalBytes, List<_ScannedCacheEntry> entries, List<String> errors})
 _scanCacheRootsSync(
   List<String> rootPaths, {
   bool collectEntries = false,
+  bool sortEntries = false,
 }) {
   var totalBytes = 0;
   final entries = <_ScannedCacheEntry>[];
@@ -734,6 +632,12 @@ _scanCacheRootsSync(
     } on FileSystemException catch (error) {
       errors.add(error.toString());
     }
+  }
+  if (sortEntries) {
+    entries.sort((a, b) {
+      final order = a.modifiedMicros.compareTo(b.modifiedMicros);
+      return order == 0 ? a.path.compareTo(b.path) : order;
+    });
   }
   return (totalBytes: totalBytes, entries: entries, errors: errors);
 }

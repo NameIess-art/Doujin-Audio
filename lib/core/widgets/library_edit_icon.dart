@@ -52,6 +52,30 @@ class LibraryEditIconPainter extends CustomPainter {
     ..lineTo(-2.3, 1.55)
     ..close();
 
+  static final Path _cardWithPencilPath = () {
+    final transform = (Matrix4.identity()
+      ..translateByDouble(14.1, 9.9, 0.0, 1.0)
+      ..rotateZ(-0.78539816339)).storage;
+    final card = Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(
+          const Rect.fromLTRB(6.6, 2.4, 21.6, 17.4),
+          const Radius.circular(2.3),
+        ),
+      );
+    final pencil = _pencilPath.transform(transform);
+    final collar = (Path()
+          ..addRect(const Rect.fromLTRB(1.8, -1.65, 2.55, 1.65)))
+        .transform(transform);
+    // Precompute the knocked-out silhouette with the collar divider once so
+    // paint() draws directly without saveLayer + BlendMode.clear.
+    return Path.combine(
+      PathOperation.union,
+      Path.combine(PathOperation.difference, card, pencil),
+      collar,
+    );
+  }();
+
   @override
   void paint(Canvas canvas, Size size) {
     final side = size.shortestSide;
@@ -77,29 +101,7 @@ class LibraryEditIconPainter extends CustomPainter {
       ..isAntiAlias = true;
 
     canvas.drawPath(_stackPath, stackPaint);
-
-    final clearPaint = Paint()
-      ..blendMode = BlendMode.clear
-      ..style = PaintingStyle.fill
-      ..isAntiAlias = true;
-
-    canvas.saveLayer(const Rect.fromLTWH(0, 0, 24, 24), Paint());
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTRB(6.6, 2.4, 21.6, 17.4),
-        const Radius.circular(2.3),
-      ),
-      fillPaint,
-    );
-
-    canvas.save();
-    canvas.translate(14.1, 9.9);
-    canvas.rotate(-0.78539816339);
-    canvas.drawPath(_pencilPath, clearPaint);
-    // Keep a crisp collar divider matching Material's pencil silhouette.
-    canvas.drawRect(const Rect.fromLTRB(1.8, -1.65, 2.55, 1.65), fillPaint);
-    canvas.restore();
-    canvas.restore();
+    canvas.drawPath(_cardWithPencilPath, fillPaint);
 
     canvas.restore();
   }

@@ -4,10 +4,12 @@ import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_buttons.dart';
 import 'package:doujin_audio/core/widgets/app_dialog.dart';
 import 'package:doujin_audio/core/widgets/app_entry_ink_well.dart';
+import 'package:doujin_audio/core/widgets/app_glass_surface.dart';
 import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
 import 'package:doujin_audio/core/widgets/unified_popup_menu.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/app/presentation/work_detail_navigation.dart';
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_entries.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_entry_tile.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
@@ -33,6 +35,9 @@ void main() {
         RepaintBoundary(
           key: captureKey,
           child: MaterialApp(
+            theme: ThemeData(
+              extensions: [AppDesignTokens.light.copyWith(barGlassEnabled: true)],
+            ),
             home: Scaffold(
               body: Stack(
                 fit: StackFit.expand,
@@ -131,6 +136,13 @@ void main() {
       }
       await tester.pumpAndSettle();
       expect(find.text('Action'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(AppGlassSurface),
+          matching: find.byType(BackdropFilter),
+        ),
+        findsOneWidget,
+      );
       final (highlighted, background) = await stripeContrast();
       expect(highlighted, greaterThan(180));
       expect(background, lessThan(40));
@@ -210,7 +222,7 @@ void main() {
     final selectAll = find.byIcon(Icons.select_all_rounded);
     final row = find.ancestor(of: selectAll, matching: find.byType(AppEntryInkWell));
     expect(tester.getSize(row), const Size(236, 48));
-    expect(find.byType(AppModalBackground), findsOneWidget);
+    expect(find.byType(AppModalBackground), findsNothing);
     await tester.tap(selectAll);
     await tester.pumpAndSettle();
     expect(controller.selection.textInside(text), text);
@@ -1228,16 +1240,32 @@ void main() {
           contextMenu ? find.text('Menu') : find.byTooltip('Menu'),
         );
         await tester.pumpAndSettle();
-        final previousDismiss = navigation.menuDismiss.value;
-        await tester.tap(find.text('Main menu'));
+        expect(find.text('Action'), findsOneWidget);
+        expect(navigation.menuDismiss.value, isNotNull);
+
+        // Clicking empty space in the other pane dismisses the open menu.
+        await tester.tapAt(const Offset(20, 20));
         await tester.pumpAndSettle();
         expect(find.text('Action'), findsNothing);
+        expect(navigation.menuDismiss.value, isNull);
+
+        // Clicking a button in the other pane dismisses the menu without activating it.
+        await tester.tap(
+          contextMenu ? find.text('Menu') : find.byTooltip('Menu'),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Action'), findsOneWidget);
+        await tester.tap(find.text('Main menu'), warnIfMissed: false);
+        await tester.pumpAndSettle();
+        expect(find.text('Action'), findsNothing);
+        expect(find.text('Main action'), findsNothing);
+        expect(navigation.menuDismiss.value, isNull);
+
+        // Once dismissed, tapping Main menu opens its menu normally.
+        await tester.tap(find.text('Main menu'));
+        await tester.pumpAndSettle();
         expect(find.text('Main action'), findsOneWidget);
         expect(navigation.menuDismiss.value, isNotNull);
-        expect(
-          identical(navigation.menuDismiss.value, previousDismiss),
-          isFalse,
-        );
         await tester.binding.handlePopRoute();
         await tester.pumpAndSettle();
         expect(find.text('Main action'), findsNothing);
@@ -1980,4 +2008,81 @@ void main() {
     expect(chosen, 12);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'pointer-anchored context menu opens rightward and respects custom trailingTooltip',
+    (tester) async {
+      late BuildContext hostContext;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(platform: TargetPlatform.windows),
+          home: Builder(
+            builder: (context) {
+              hostContext = context;
+              return const Scaffold();
+            },
+          ),
+        ),
+      );
+      const anchor = Offset(240, 120);
+      unawaited(
+        showUnifiedContextMenu<int>(
+          context: hostContext,
+          globalPosition: anchor,
+          entries: const [
+            UnifiedMenuEntry.action(
+              value: 1,
+              label: 'Rightward item',
+              trailing: Icon(Icons.close, size: 16),
+              trailingValue: 99,
+              trailingTooltip: 'Custom remove tip',
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final card = find
+          .ancestor(
+            of: find.text('Rightward item'),
+            matching: find.byType(ClipRRect),
+          )
+          .first;
+      expect(tester.getRect(card).left, closeTo(anchor.dx, 0.5));
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+
+      // Custom trailingTooltip is used on UnifiedPopupMenuButton entries.
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(platform: TargetPlatform.windows),
+          home: Scaffold(
+            body: Center(
+              child: UnifiedPopupMenuButton<int>(
+                icon: Icons.more_vert,
+                tooltip: 'Trailing menu',
+                entries: const [
+                  UnifiedMenuEntry.action(
+                    value: 1,
+                    label: 'Row',
+                    trailing: Icon(Icons.clear, size: 16),
+                    trailingValue: 2,
+                    trailingTooltip: 'Custom trailing action',
+                  ),
+                ],
+                onSelected: (_) {},
+                onTrailingSelected: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byTooltip('Trailing menu'));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Custom trailing action'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
 }

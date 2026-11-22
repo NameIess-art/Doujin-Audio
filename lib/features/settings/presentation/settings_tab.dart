@@ -339,6 +339,17 @@ enum _SettingsCategory {
   final String subtitleKey;
   final IconData icon;
 
+  String labelKeyFor(TargetPlatform platform) {
+    if (platform == TargetPlatform.windows) {
+      return switch (this) {
+        _SettingsCategory.dataStorage => 'settings_group_data',
+        _SettingsCategory.updatesPermissions => 'settings_group_updates',
+        _ => labelKey,
+      };
+    }
+    return labelKey;
+  }
+
   String subtitleKeyFor(TargetPlatform platform) {
     if (platform == TargetPlatform.windows) {
       return switch (this) {
@@ -384,7 +395,7 @@ class _SettingsCategoryTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                i18n.tr(category.labelKey),
+                i18n.tr(category.labelKeyFor(defaultTargetPlatform)),
                 softWrap: true,
                 overflow: TextOverflow.visible,
                 style: theme.textTheme.titleMedium,
@@ -463,7 +474,9 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
               right: 0,
               child: TopPageHeader(
                 icon: widget.category.icon,
-                title: i18n.tr(widget.category.labelKey),
+                title: i18n.tr(
+                  widget.category.labelKeyFor(defaultTargetPlatform),
+                ),
                 leading: const AppHeaderBackButton(),
               ),
             ),

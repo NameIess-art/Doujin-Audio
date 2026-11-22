@@ -305,7 +305,9 @@ class _VolumeBalancePageState extends ConsumerState<VolumeBalancePage> {
               return _quantize(
                 Offset(
                   width > 0 ? (2 * local.dx - constraints.maxWidth) / width : 0,
-                  (constraints.maxHeight - 2 * local.dy) / height,
+                  height > 0
+                      ? (constraints.maxHeight - 2 * local.dy) / height
+                      : 0,
                 ),
               );
             }
@@ -654,6 +656,7 @@ class EqualizerPage extends ConsumerWidget {
                 ),
                 min: eqCapabilities.minGainDb,
                 max: eqCapabilities.maxGainDb,
+                resetTooltip: i18n.tr('eq_reset_band_hint'),
                 onChanged: eqEnabled
                     ? (nextValue) {
                         AppInteractionFeedback.continuous(
@@ -816,6 +819,7 @@ class EqBandSlider extends StatefulWidget {
     required this.max,
     required this.onChanged,
     this.onChangeEnd,
+    this.resetTooltip,
   });
 
   final String label;
@@ -824,6 +828,7 @@ class EqBandSlider extends StatefulWidget {
   final double max;
   final ValueChanged<double>? onChanged;
   final ValueChanged<double>? onChangeEnd;
+  final String? resetTooltip;
 
   @override
   State<EqBandSlider> createState() => _EqBandSliderState();
@@ -898,16 +903,24 @@ class _EqBandSliderState extends State<EqBandSlider> {
                   },
           ),
         ),
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: widget.onChanged == null ? null : _resetToZero,
-          child: SizedBox(
-            width: 54,
-            child: Text(
-              '${activeValue.toStringAsFixed(1)} dB',
-              textAlign: TextAlign.end,
-              style: const TextStyle(
-                fontFeatures: [FontFeature.tabularFigures()],
+        Tooltip(
+          message: widget.onChanged == null ? '' : (widget.resetTooltip ?? ''),
+          child: MouseRegion(
+            cursor: widget.onChanged == null
+                ? MouseCursor.defer
+                : SystemMouseCursors.click,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: widget.onChanged == null ? null : _resetToZero,
+              child: SizedBox(
+                width: 54,
+                child: Text(
+                  '${activeValue.toStringAsFixed(1)} dB',
+                  textAlign: TextAlign.end,
+                  style: const TextStyle(
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
               ),
             ),
           ),

@@ -294,6 +294,32 @@ class _MyPageState extends ConsumerState<MyPage>
       );
     }
 
+    Widget sectionError({
+      Key? key,
+      required VoidCallback onRetry,
+    }) {
+      final cs = theme.colorScheme;
+      return Row(
+        key: key,
+        children: [
+          Icon(Icons.error_outline_rounded, size: 18, color: cs.error),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              i18n.tr('my_load_failed'),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: onRetry,
+            child: Text(i18n.tr('my_retry')),
+          ),
+        ],
+      );
+    }
+
     Widget interestTab(MyInterestType type) {
       final selected = _interestType == type;
       final colors = theme.colorScheme;
@@ -398,10 +424,9 @@ class _MyPageState extends ConsumerState<MyPage>
                     final Widget interestContent;
                     if (!state.hasValue) {
                       if (state.hasError) {
-                        interestContent = TextButton(
+                        interestContent = sectionError(
                           key: const ValueKey('interest-error'),
-                          onPressed: () => ref.invalidate(provider),
-                          child: Text(i18n.tr('my_retry')),
+                          onRetry: () => ref.invalidate(provider),
                         );
                       } else {
                         interestContent = const ShimmerLoader(
@@ -578,10 +603,7 @@ class _MyPageState extends ConsumerState<MyPage>
           loading: () => const SizedBox.shrink(),
           error: (error, stack) => section(
             i18n.tr('my_listening_time'),
-            TextButton(
-              onPressed: _refreshActivity,
-              child: Text(i18n.tr('my_retry')),
-            ),
+            sectionError(onRetry: _refreshActivity),
           ),
         );
       },
@@ -644,17 +666,23 @@ class _MyPageState extends ConsumerState<MyPage>
                             .when(
                               skipError: true,
                               data: (view) => view.history.isEmpty
-                                  ? Text(i18n.tr('my_no_history'))
+                                  ? Text(
+                                      i18n.tr('my_no_history'),
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                            color: theme
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                          ),
+                                    )
                                   : _HistoryList(
                                       view: view,
                                       onOpen: _openHistory,
                                       onRemove: _removeHistory,
                                     ),
                               loading: () => const SizedBox.shrink(),
-                              error: (error, stack) => TextButton(
-                                onPressed: _refreshActivity,
-                                child: Text(i18n.tr('my_retry')),
-                              ),
+                              error: (error, stack) =>
+                                  sectionError(onRetry: _refreshActivity),
                             ),
                       ),
                     ),
@@ -949,7 +977,7 @@ final _historyWorkTitleProvider = FutureProvider.autoDispose
       return title.isNotEmpty ? title : folderName;
     });
 
-class _HistoryWorkRow extends ConsumerWidget {
+class _HistoryWorkRow extends ConsumerStatefulWidget {
   const _HistoryWorkRow({
     super.key,
     required this.entry,
@@ -973,34 +1001,82 @@ class _HistoryWorkRow extends ConsumerWidget {
   final Future<void> Function(String workKey) onRemove;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_HistoryWorkRow> createState() => _HistoryWorkRowState();
+}
+
+class _HistoryWorkRowState extends ConsumerState<_HistoryWorkRow> {
+  Future<String?>? _coverFuture;
+  Object? _coverFutureKey;
+
+  Future<String?> _resolveCoverFuture(
+    BuildContext context,
+    String? initialPath,
+  ) {
+    final track = widget.entry.track;
+    final key = (
+      widget.entry.workKey,
+      track.path,
+      track.manualCoverPath,
+      track.coverCachePath,
+      track.remoteCoverUrl,
+      initialPath,
+    );
+    final cached = _coverFuture;
+    if (cached != null && _coverFutureKey == key) {
+      return cached;
+    }
+    _coverFutureKey = key;
+    return _coverFuture = ref
+        .read(libraryCoverUiControllerProvider)
+        .deferredPlaybackCover(track, context: context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final entry = widget.entry;
     final library = ref.read(libraryFacadeProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final title =
         ref.watch(_historyWorkTitleProvider(entry.track)).value ??
         i18n.tr('my_untitled_work');
+    final initialCoverPath = library.resolvedPlaybackCoverPathForTrack(
+      entry.track,
+    );
+    final coverFuture = _resolveCoverFuture(context, initialCoverPath);
+    final lastPlayedAt = entry.lastPlayedAt;
+    final theme = Theme.of(context);
     final row = FileTreeRow(
       key: ValueKey('my-history-card-${entry.workKey}'),
       title: title,
-      minHeight: _minHeight,
+      minHeight: _HistoryWorkRow._minHeight,
       titleMaxLines: 2,
-      horizontalPadding: coverInset(layoutHeight(context)),
-      onTap: () => onOpen(entry.track),
+      horizontalPadding: _HistoryWorkRow.coverInset(
+        _HistoryWorkRow.layoutHeight(context),
+      ),
+      onTap: () => widget.onOpen(entry.track),
+      trailing: lastPlayedAt == null
+          ? null
+          : Text(
+              _formatHistoryTimestamp(lastPlayedAt),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
       leading: SizedBox(
-        width: _coverWidth,
-        height: coverHeight,
+        width: _HistoryWorkRow._coverWidth,
+        height: _HistoryWorkRow.coverHeight,
         child: CoverArtworkFrame(
           showShadow: false,
           child: AsyncLocalCoverImage(
             requestKey: entry.workKey,
-            future: ref
-                .read(libraryCoverUiControllerProvider)
-                .deferredPlaybackCover(entry.track, context: context),
-            initialPath: library.resolvedPlaybackCoverPathForTrack(entry.track),
+            future: coverFuture,
+            initialPath: initialCoverPath,
             fit: BoxFit.cover,
             deferLoadDuringInteraction: true,
-            cacheWidth: (_coverWidth * MediaQuery.devicePixelRatioOf(context))
-                .ceil(),
+            cacheWidth:
+                (_HistoryWorkRow._coverWidth *
+                        MediaQuery.devicePixelRatioOf(context))
+                    .ceil(),
           ),
         ),
       ),
@@ -1008,8 +1084,7 @@ class _HistoryWorkRow extends ConsumerWidget {
     if (ref.watch(listeningActivityServiceProvider) == null) return row;
     const shape = RoundedRectangleBorder(borderRadius: FileTreeRow.borderRadius);
     final label = i18n.tr('my_history_delete');
-    final theme = Theme.of(context);
-    void remove() => unawaited(onRemove(entry.workKey));
+    void remove() => unawaited(widget.onRemove(entry.workKey));
 
     if (theme.platform == TargetPlatform.android) {
       return SwipeRevealCard(
@@ -1037,4 +1112,20 @@ class _HistoryWorkRow extends ConsumerWidget {
       child: row,
     );
   }
+}
+
+String _formatHistoryTimestamp(DateTime timestamp) {
+  final local = timestamp.toLocal();
+  final now = DateTime.now();
+  String two(int value) => value.toString().padLeft(2, '0');
+  final time = '${two(local.hour)}:${two(local.minute)}';
+  if (local.year == now.year &&
+      local.month == now.month &&
+      local.day == now.day) {
+    return time;
+  }
+  if (local.year == now.year) {
+    return '${local.month}/${local.day} $time';
+  }
+  return '${local.year}/${local.month}/${local.day}';
 }

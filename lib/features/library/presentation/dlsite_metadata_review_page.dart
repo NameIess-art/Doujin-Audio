@@ -75,6 +75,7 @@ class DlsiteMetadataReviewPage extends ConsumerStatefulWidget {
     this.canNavigatePrevious = false,
     this.canNavigateNext = false,
     this.onBatchNavigate,
+    this.onBatchExclude,
     this.onCompleted,
     this.editing = false,
   }) : assert(
@@ -96,6 +97,7 @@ class DlsiteMetadataReviewPage extends ConsumerStatefulWidget {
       canNavigatePrevious = false,
       canNavigateNext = false,
       onBatchNavigate = null,
+      onBatchExclude = null,
       onCompleted = null,
       editing = true;
 
@@ -111,6 +113,7 @@ class DlsiteMetadataReviewPage extends ConsumerStatefulWidget {
   final bool canNavigatePrevious;
   final bool canNavigateNext;
   final ValueChanged<int>? onBatchNavigate;
+  final VoidCallback? onBatchExclude;
   final ValueChanged<DlsiteMetadataReviewResult>? onCompleted;
   final bool editing;
 
@@ -122,6 +125,10 @@ class DlsiteMetadataReviewPage extends ConsumerStatefulWidget {
 class _DlsiteMetadataReviewPageState
     extends ConsumerState<DlsiteMetadataReviewPage> {
   final GlobalKey _headerKey = GlobalKey();
+  final GlobalKey _folderNameFieldKey = GlobalKey();
+  final GlobalKey _releaseDateFieldKey = GlobalKey();
+  final GlobalKey _durationFieldKey = GlobalKey();
+  final GlobalKey _ratingFieldKey = GlobalKey();
   final ScrollController _scrollController = WindowsSmoothScrollController();
   double _headerHeight = 0;
   bool _headerMeasurementScheduled = false;
@@ -479,10 +486,40 @@ class _DlsiteMetadataReviewPageState
     final metadata = _metadata;
     if (metadata == null || _saving) return;
     setState(() => _validate = true);
-    if (metadataDateErrorKey(_releaseDateController.text) != null ||
-        metadataDurationErrorKey(_durationController.text) != null ||
-        metadataRatingErrorKey(_ratingController.text) != null ||
-        (widget.editing && _folderNameController.text.trim().isEmpty)) {
+    GlobalKey? firstInvalidFieldKey;
+    if (widget.editing && _folderNameController.text.trim().isEmpty) {
+      firstInvalidFieldKey = _folderNameFieldKey;
+    } else if (metadataDateErrorKey(_releaseDateController.text) != null) {
+      firstInvalidFieldKey = _releaseDateFieldKey;
+    } else if (metadataDurationErrorKey(_durationController.text) != null) {
+      firstInvalidFieldKey = _durationFieldKey;
+    } else if (metadataRatingErrorKey(_ratingController.text) != null) {
+      firstInvalidFieldKey = _ratingFieldKey;
+    }
+    if (firstInvalidFieldKey != null) {
+      showAppSnackBar(
+        context,
+        ProviderScope.containerOf(
+          context,
+          listen: false,
+        ).read(appLanguageProviderInstanceProvider).tr(
+          'metadata_validation_failed',
+        ),
+        tone: AppFeedbackTone.warning,
+      );
+      final targetKey = firstInvalidFieldKey;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final fieldContext = targetKey.currentContext;
+        if (fieldContext != null && fieldContext.mounted) {
+          unawaited(
+            Scrollable.ensureVisible(
+              fieldContext,
+              duration: const Duration(milliseconds: 220),
+              alignment: 0.25,
+            ),
+          );
+        }
+      });
       return;
     }
     setState(() {
@@ -669,6 +706,13 @@ class _DlsiteMetadataReviewPageState
   Future<void> _skip() async {
     if (await _confirmDiscard() && mounted) {
       _finish(DlsiteMetadataReviewResult.skipped(_saveCover));
+    }
+  }
+
+  Future<void> _excludeWork() async {
+    if (await _confirmDiscard() && mounted) {
+      _dirty = false;
+      widget.onBatchExclude?.call();
     }
   }
 
@@ -976,6 +1020,10 @@ class _DlsiteMetadataReviewPageState
                               releaseDateController: _releaseDateController,
                               durationController: _durationController,
                               ratingController: _ratingController,
+                              folderNameFieldKey: _folderNameFieldKey,
+                              releaseDateFieldKey: _releaseDateFieldKey,
+                              durationFieldKey: _durationFieldKey,
+                              ratingFieldKey: _ratingFieldKey,
                             ),
                           ],
                         );
@@ -1004,6 +1052,16 @@ class _DlsiteMetadataReviewPageState
                     nextLabel: i18n.tr('next'),
                     onNavigatePrevious: () => _navigateWork(-1),
                     onNavigateNext: () => _navigateWork(1),
+                    skipLabel: widget.allowSkip
+                        ? i18n.tr('batch_review_skip')
+                        : null,
+                    onSkip: widget.allowSkip ? _skip : null,
+                    excludeLabel: widget.onBatchExclude != null
+                        ? i18n.tr('batch_review_exclude')
+                        : null,
+                    onExclude: widget.onBatchExclude != null
+                        ? _excludeWork
+                        : null,
                   ),
                 ),
               ),

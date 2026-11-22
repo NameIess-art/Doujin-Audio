@@ -16,16 +16,21 @@ class MediaControls {
  public:
   explicit MediaControls(HWND window);
   ~MediaControls();
+  void Initialize();
   void Update(const flutter::EncodableMap& payload);
   void Clear();
   std::optional<std::string> HandleMessage(UINT message, WPARAM wparam,
                                            LPARAM lparam);
-  flutter::EncodableMap HotkeyStatus() const;
+  flutter::EncodableMap HotkeyStatus();
  private:
+  void EnsureHotkeysRegistered();
   void UpdateThumbnailButtons();
   void SetThumbnailCover(const flutter::EncodableValue* cover);
   void SupplyThumbnail(int max_width, int max_height);
   HWND window_;
+  bool initialized_ = false;
+  bool hotkeys_registered_ = false;
+  std::optional<flutter::EncodableMap> pending_update_;
   Microsoft::WRL::ComPtr<ITaskbarList3> taskbar_;
   bool thumbnail_added_ = false;
   bool thumbnail_playing_ = false;

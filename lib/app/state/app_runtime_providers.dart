@@ -169,6 +169,7 @@ final audioPathCoordinatorProvider = Provider<AudioPathCoordinator>((ref) {
   return AudioPathCoordinator(
     library: ref.watch(libraryFacadeProvider),
     playback: ref.watch(playbackFacadeProvider),
+    asmrPlaybackSource: ref.watch(asmrLibraryControllerProvider),
   );
 });
 

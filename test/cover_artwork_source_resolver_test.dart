@@ -586,11 +586,43 @@ void main() {
     await firstFailure;
     expect((await other).single.sourcePath, '/work/b/kept.jpg');
     expect(resolver.sourcePathForDisplay('/work/a/retired.jpg'), isNull);
-    expect(
-      resolver.sourcePathForDisplay('/work/b/kept.jpg'),
-      '/work/b/kept.jpg',
-    );
+    // Local filesystem scans do not populate the SAF display->source alias map.
+    expect(resolver.sourcePathForDisplay('/work/b/kept.jpg'), isNull);
   });
+
+  test(
+    'local filesystem image scans do not evict SAF display-to-source mappings',
+    () async {
+      final libraryService = LibraryService();
+      libraryService.addWatchedLibrary('/root');
+      final resolver = CoverArtworkSourceResolver(
+        libraryService: libraryService,
+        fileCacheGateway: FileCachePlatformGateway.instance,
+        artworkStore: CoverArtworkStore(),
+        isClearingPersistentCache: () => false,
+        filesystemImageScanner: (_, _) async => [
+          for (var i = 0; i < 600; i++) '/root/work_$i/cover.jpg',
+        ],
+      );
+      resolver.rememberFolderImageSource(
+        '/cache/saf.image',
+        'content://provider/tree/root/document/cover.jpg',
+      );
+
+      final found = await resolver.discoverFolderImageReferences('/root/work_42');
+      expect(found.map((e) => e.displayPath), ['/root/work_42/cover.jpg']);
+      expect(
+        resolver.sourcePathForDisplay('/cache/saf.image'),
+        'content://provider/tree/root/document/cover.jpg',
+      );
+      expect(
+        resolver.displayPathForSource(
+          'content://provider/tree/root/document/cover.jpg',
+        ),
+        '/cache/saf.image',
+      );
+    },
+  );
 
   test(
     'standalone detail and card extraction share a request and restart artifact',
@@ -769,7 +801,10 @@ void main() {
             [image],
           );
           expect(requests, [recursive]);
-          expect(resolver.sourcePathForDisplay(image), isNotNull);
+          expect(
+            resolver.sourcePathForDisplay(image),
+            contentUri ? isNotNull : isNull,
+          );
           if (!contentUri) {
             await resolver.discoverFolderImages(
               root.toLowerCase().replaceAll('\\', '/'),

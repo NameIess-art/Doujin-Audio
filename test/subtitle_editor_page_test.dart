@@ -591,7 +591,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.byType(TopPageHeader), findsOneWidget);
-    expect(find.byType(HeaderFloatingButton), findsNWidgets(2));
+    expect(find.byType(HeaderFloatingButton), findsNWidgets(3));
 
     await tester.tap(find.byKey(const ValueKey('subtitle_text_0')));
     await tester.pumpAndSettle();
@@ -775,5 +775,99 @@ void main() {
       expect(find.text('填写字幕文字'), findsOneWidget);
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'P0-10: delete supports undo, add cue/add above work, flexible MM:SS and overlap validation',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final service = _RecordingSubtitleService(const [
+        SubtitleCue(
+          start: Duration(seconds: 2),
+          end: Duration(seconds: 4),
+          text: 'First',
+        ),
+        SubtitleCue(
+          start: Duration(seconds: 6),
+          end: Duration(seconds: 8),
+          text: 'Second',
+        ),
+      ]);
+      await _showEditor(tester, service);
+      final language = ProviderScope.containerOf(
+        tester.element(find.byType(SubtitleEditorPage)),
+      ).read(appLanguageProviderInstanceProvider);
+
+      // Delete first cue -> Undo restores it at original index.
+      tester
+          .widget<SwipeRevealCard>(find.byType(SwipeRevealCard).first)
+          .onRemove();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.text('First'), findsNothing);
+      expect(find.text(language.tr('undo')), findsOneWidget);
+      await tester.tap(find.text(language.tr('undo')));
+      await tester.pumpAndSettle();
+      expect(find.text('First'), findsOneWidget);
+      expect(find.byType(SwipeRevealCard), findsNWidgets(2));
+
+      // Header add button appends a new cue.
+      await tester.tap(find.byKey(const ValueKey('subtitle_add_button')));
+      await tester.pumpAndSettle();
+      expect(find.byType(SwipeRevealCard), findsNWidgets(3));
+
+      // Opening time dialog on the new cue prefills start/end and accepts MM:SS.
+      await tester.tap(find.byKey(const ValueKey('subtitle_time_2')));
+      await tester.pumpAndSettle();
+      final timeFields = find.descendant(
+        of: find.byType(AppEditPanelForm),
+        matching: find.byType(TextField),
+      );
+      expect(
+        tester.widget<TextField>(timeFields.first).controller?.text,
+        '00:00:08.000',
+      );
+      expect(
+        tester.widget<TextField>(timeFields.last).controller?.text,
+        '00:00:10.000',
+      );
+      // Invalid format reports subtitle_invalid_format.
+      await tester.enterText(timeFields.first, 'not-a-time');
+      await _tapInputSave(tester);
+      await tester.pump();
+      expect(
+        tester.widget<TextField>(timeFields.last).decoration?.errorText,
+        language.tr('subtitle_invalid_format'),
+      );
+      // Flexible MM:SS format succeeds.
+      await tester.enterText(timeFields.first, '00:09');
+      await tester.enterText(timeFields.last, '00:11.500');
+      await _tapInputSave(tester);
+      await tester.pumpAndSettle();
+      expect(find.text('00:00:09.000'), findsOneWidget);
+      expect(find.text('00:00:11.500'), findsOneWidget);
+
+      // Setting first cue end == second cue end (00:00:08.000) is rejected with overlap error.
+      await tester.tap(find.byKey(const ValueKey('subtitle_time_0')));
+      await tester.pumpAndSettle();
+      final firstTimeFields = find.descendant(
+        of: find.byType(AppEditPanelForm),
+        matching: find.byType(TextField),
+      );
+      await tester.enterText(firstTimeFields.last, '00:08');
+      await _tapInputSave(tester);
+      await tester.pump();
+      expect(
+        tester.widget<TextField>(firstTimeFields.last).decoration?.errorText,
+        language.tr('subtitle_overlap_error'),
+      );
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AppEditPanelForm),
+          matching: find.text(language.tr('cancel')),
+        ),
+      );
+      await tester.pumpAndSettle();
+    },
   );
 }

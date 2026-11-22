@@ -1,10 +1,62 @@
 import 'dart:io';
+
+import 'package:path/path.dart' as path;
+
 import '../../../core/media/playback_media_reference.dart';
 import '../../../core/logging/app_log_service.dart';
 import 'asmr_api_service.dart';
 
 const String _asmrMediaAcceptLanguage = 'zh-CN,zh;q=0.9,en;q=0.8';
+const int _kWindowsExtendedPathThreshold = 220;
 final RegExp _strongEntityTag = RegExp(r'^"[\x21\x23-\x7e\x80-\xff]*"$');
+
+/// Applies the Windows extended-length prefix (`\\?\`) when a normalized local
+/// path approaches legacy Win32 `MAX_PATH` limits, leaving short logical paths
+/// unchanged.
+String windowsExtendedLocalPath(
+  String localPath, {
+  bool? forceWindows,
+}) {
+  final isWindows = forceWindows ?? Platform.isWindows;
+  if (!isWindows || localPath.isEmpty) return localPath;
+  if (localPath.startsWith(r'\\?\') || localPath.startsWith(r'\\.\')) {
+    return localPath;
+  }
+  final normalized = path.windows.normalize(localPath.replaceAll('/', r'\'));
+  if (normalized.length < _kWindowsExtendedPathThreshold) {
+    return localPath;
+  }
+  if (normalized.startsWith(r'\\')) {
+    return r'\\?\UNC\' + normalized.substring(2);
+  }
+  final hasDrivePrefix =
+      normalized.length >= 2 &&
+      normalized[1] == ':' &&
+      ((normalized.codeUnitAt(0) >= 65 && normalized.codeUnitAt(0) <= 90) ||
+          (normalized.codeUnitAt(0) >= 97 && normalized.codeUnitAt(0) <= 122));
+  if (!hasDrivePrefix) return localPath;
+  final trimmed =
+      normalized.length > 3 && normalized.endsWith(r'\')
+      ? normalized.substring(0, normalized.length - 1)
+      : normalized;
+  return r'\\?\' + trimmed;
+}
+
+String stripWindowsExtendedLocalPath(String localPath) {
+  if (localPath.startsWith(r'\\?\UNC\')) {
+    return r'\\' + localPath.substring(8);
+  }
+  if (localPath.startsWith(r'\\?\')) {
+    return localPath.substring(4);
+  }
+  return localPath;
+}
+
+File localDownloadFile(String localPath) =>
+    File(windowsExtendedLocalPath(localPath));
+
+Directory localDownloadDirectory(String localPath) =>
+    Directory(windowsExtendedLocalPath(localPath));
 
 String? strongDownloadEntityTag(Object? value) {
   if (value is! String) return null;
@@ -50,30 +102,35 @@ Future<bool> commitLocalDownloadedFile({
   required File target,
   LocalFileRename? rename,
 }) async {
+  final useExtended = rename == null;
+  final stagingFile = useExtended ? localDownloadFile(staging.path) : staging;
+  final targetFile = useExtended ? localDownloadFile(target.path) : target;
   final renameFile =
       rename ?? (source, destination) => source.rename(destination);
-  final backup = File('${target.path}.doujin.bak');
+  final backup = useExtended
+      ? localDownloadFile('${stripWindowsExtendedLocalPath(target.path)}.doujin.bak')
+      : File('${target.path}.doujin.bak');
 
-  if (!await target.exists() && await backup.exists()) {
-    await renameFile(backup, target.path);
+  if (!await targetFile.exists() && await backup.exists()) {
+    await renameFile(backup, targetFile.path);
   }
-  if (await target.exists()) {
+  if (await targetFile.exists()) {
     if (await backup.exists()) {
       throw FileSystemException(
         'Cannot replace file while a previous backup is still present.',
         backup.path,
       );
     }
-    await renameFile(target, backup.path);
+    await renameFile(targetFile, backup.path);
   }
 
   try {
-    await renameFile(staging, target.path);
+    await renameFile(stagingFile, targetFile.path);
   } catch (error, stackTrace) {
     try {
       if (await backup.exists()) {
-        if (await target.exists()) await target.delete();
-        await renameFile(backup, target.path);
+        if (await targetFile.exists()) await targetFile.delete();
+        await renameFile(backup, targetFile.path);
       }
     } catch (rollbackError, rollbackStackTrace) {
       AppLogService.error(

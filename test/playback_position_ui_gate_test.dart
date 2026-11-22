@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/scheduler.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
@@ -458,4 +460,81 @@ void main() {
       isNull,
     );
   });
+
+  testWidgets(
+    'defers interaction-end notification to post-frame during persistentCallbacks',
+    (tester) async {
+      final session = _session('one');
+      final coordinator = UiInteractionCoordinator(idleDelay: Duration.zero);
+      final source = Object();
+      final gate = PlaybackPositionUiGate(
+        session: PlaybackSessionSnapshot.fromRuntime(session),
+        interactionCoordinator: coordinator,
+        minUpdateInterval: Duration.zero,
+      );
+      addTearDown(gate.dispose);
+      addTearDown(coordinator.dispose);
+      addTearDown(session.shutdown);
+
+      final notificationPhases = <SchedulerPhase>[];
+      gate.addListener(() {
+        notificationPhases.add(SchedulerBinding.instance.schedulerPhase);
+      });
+
+      coordinator.beginInteraction(source);
+      session.setOptimisticPosition(const Duration(seconds: 12));
+      await tester.pump();
+      expect(notificationPhases, isEmpty);
+
+      var cancelDuringLayout = false;
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: StatefulBuilder(
+            builder: (context, setState) {
+              return ListenableBuilder(
+                listenable: gate,
+                builder: (context, _) => LayoutBuilder(
+                  builder: (context, constraints) {
+                    if (cancelDuringLayout) {
+                      cancelDuringLayout = false;
+                      coordinator.cancelInteraction(source);
+                    }
+                    return Text('${gate.value.position.inSeconds}');
+                  },
+                ),
+              );
+            },
+          ),
+        ),
+      );
+
+      cancelDuringLayout = true;
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 300,
+            child: ListenableBuilder(
+              listenable: gate,
+              builder: (context, _) => LayoutBuilder(
+                builder: (context, constraints) {
+                  if (cancelDuringLayout) {
+                    cancelDuringLayout = false;
+                    coordinator.cancelInteraction(source);
+                  }
+                  return Text('${gate.value.position.inSeconds}');
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      expect(notificationPhases, [SchedulerPhase.postFrameCallbacks]);
+      await tester.pump();
+      expect(find.text('12'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

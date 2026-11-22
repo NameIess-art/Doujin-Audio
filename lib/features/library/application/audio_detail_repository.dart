@@ -245,8 +245,10 @@ class AudioDetailRepository {
     final labels = <TimeSegmentLabel>[];
     var imported = 0;
     var failures = 0;
-    for (final target in ordered) {
-      final document = await _documents.read(target);
+    final documents = await _documents.readMany(ordered);
+    for (var i = 0; i < ordered.length; i++) {
+      final target = ordered[i];
+      final document = documents[i];
       final fileDetail = document.detail;
       if (fileDetail == null) {
         if (document.status == JsonDocumentReadStatus.unreadable) failures++;

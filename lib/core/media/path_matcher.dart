@@ -2,13 +2,38 @@ import 'package:path/path.dart' as path;
 
 abstract final class PathMatcher {
   static final RegExp _invalidPercentEscape = RegExp(r'%(?![0-9A-Fa-f]{2})');
-  static final RegExp _remoteScheme = RegExp(r'^https?:', caseSensitive: false);
-  static final RegExp _windowsAbsolutePath = RegExp(
-    r'^(?:[A-Za-z]:[\\/]|\\\\)',
-  );
   static final path.Context _windowsContext = path.Context(
     style: path.Style.windows,
   );
+
+  static bool _hasHttpSchemePrefix(String value) {
+    final len = value.length;
+    if (len < 5) return false;
+    final c0 = value.codeUnitAt(0) | 0x20;
+    if (c0 != 0x68) return false; // 'h'
+    if ((value.codeUnitAt(1) | 0x20) != 0x74) return false; // 't'
+    if ((value.codeUnitAt(2) | 0x20) != 0x74) return false; // 't'
+    if ((value.codeUnitAt(3) | 0x20) != 0x70) return false; // 'p'
+    final c4 = value.codeUnitAt(4);
+    if (c4 == 0x3A) return true; // ':'
+    return len >= 6 &&
+        (c4 | 0x20) == 0x73 && // 's'
+        value.codeUnitAt(5) == 0x3A; // ':'
+  }
+
+  static bool _isWindowsAbsolutePath(String value) {
+    final len = value.length;
+    if (len < 2) return false;
+    final c0 = value.codeUnitAt(0);
+    final c1 = value.codeUnitAt(1);
+    if (c0 == 0x5C && c1 == 0x5C) return true; // '\\'
+    if (len < 3 || c1 != 0x3A) return false; // ':'
+    final isAsciiLetter =
+        (c0 >= 0x41 && c0 <= 0x5A) || (c0 >= 0x61 && c0 <= 0x7A);
+    if (!isAsciiLetter) return false;
+    final c2 = value.codeUnitAt(2);
+    return c2 == 0x5C || c2 == 0x2F;
+  }
 
   static bool isContentUri(String value) => value.startsWith('content://');
 
@@ -30,7 +55,7 @@ abstract final class PathMatcher {
   }
 
   static bool isRemoteUri(String value) =>
-      _remoteScheme.hasMatch(value) && Uri.tryParse(value) != null;
+      _hasHttpSchemePrefix(value) && Uri.tryParse(value) != null;
 
   static String safeDecodeComponent(String value) {
     final sanitized = value.replaceAll(_invalidPercentEscape, '%25');
@@ -93,6 +118,8 @@ abstract final class PathMatcher {
   }
 
   static String equivalenceKey(String value) {
+    final fast = _tryFastEquivalenceKey(value);
+    if (fast != null) return fast;
     if (isRemoteUri(value)) return 'remote:${trimRightSlash(value)}';
 
     final context = isContentUri(value) ? null : _contextFor(value);
@@ -107,8 +134,98 @@ abstract final class PathMatcher {
     final canonical = normalized.replaceAll('\\', '/');
     final windows = normalized == value
         ? identical(context, _windowsContext)
-        : _windowsAbsolutePath.hasMatch(normalized);
+        : _isWindowsAbsolutePath(normalized);
     return windows ? 'windows:${canonical.toLowerCase()}' : 'file:$canonical';
+  }
+
+  static String? _tryFastEquivalenceKey(String value) {
+    final len = value.length;
+    if (len == 0) return null;
+    final c0 = value.codeUnitAt(0);
+
+    // Clean POSIX absolute paths `/...` (not starting with `//`).
+    if (c0 == 0x2F) {
+      if (len == 1) return 'file:/';
+      if (value.codeUnitAt(1) == 0x2F) return null;
+      final effectiveEnd = value.codeUnitAt(len - 1) == 0x2F ? len - 1 : len;
+      if (effectiveEnd <= 1) return null;
+      var segStart = 1;
+      for (var i = 1; i < effectiveEnd; i++) {
+        final c = value.codeUnitAt(i);
+        if (c == 0x5C) return null;
+        if (c == 0x2F) {
+          final segLen = i - segStart;
+          if (segLen == 0 ||
+              (segLen == 1 && value.codeUnitAt(segStart) == 0x2E) ||
+              (segLen == 2 &&
+                  value.codeUnitAt(segStart) == 0x2E &&
+                  value.codeUnitAt(segStart + 1) == 0x2E)) {
+            return null;
+          }
+          segStart = i + 1;
+        }
+      }
+      final lastLen = effectiveEnd - segStart;
+      if (lastLen == 0 ||
+          (lastLen == 1 && value.codeUnitAt(segStart) == 0x2E) ||
+          (lastLen == 2 &&
+              value.codeUnitAt(segStart) == 0x2E &&
+              value.codeUnitAt(segStart + 1) == 0x2E)) {
+        return null;
+      }
+      return effectiveEnd == len
+          ? 'file:$value'
+          : 'file:${value.substring(0, effectiveEnd)}';
+    }
+
+    // Clean Windows drive paths `X:\...` or `X:/...`.
+    if (len >= 3 &&
+        value.codeUnitAt(1) == 0x3A &&
+        ((c0 >= 0x41 && c0 <= 0x5A) || (c0 >= 0x61 && c0 <= 0x7A))) {
+      final c2 = value.codeUnitAt(2);
+      if (c2 != 0x5C && c2 != 0x2F) return null;
+      if (len == 3) {
+        final drive = c0 <= 0x5A ? String.fromCharCode(c0 + 32) : value[0];
+        return 'windows:$drive:/';
+      }
+      final lastChar = value.codeUnitAt(len - 1);
+      final effectiveEnd = (lastChar == 0x5C || lastChar == 0x2F)
+          ? len - 1
+          : len;
+      if (effectiveEnd <= 3) return null;
+      var hasBackslash = c2 == 0x5C;
+      var segStart = 3;
+      for (var i = 3; i < effectiveEnd; i++) {
+        final c = value.codeUnitAt(i);
+        if (c == 0x5C || c == 0x2F) {
+          if (c == 0x5C) hasBackslash = true;
+          final segLen = i - segStart;
+          if (segLen == 0 ||
+              (segLen == 1 && value.codeUnitAt(segStart) == 0x2E) ||
+              (segLen == 2 &&
+                  value.codeUnitAt(segStart) == 0x2E &&
+                  value.codeUnitAt(segStart + 1) == 0x2E)) {
+            return null;
+          }
+          segStart = i + 1;
+        }
+      }
+      final lastLen = effectiveEnd - segStart;
+      if (lastLen == 0 ||
+          (lastLen == 1 && value.codeUnitAt(segStart) == 0x2E) ||
+          (lastLen == 2 &&
+              value.codeUnitAt(segStart) == 0x2E &&
+              value.codeUnitAt(segStart + 1) == 0x2E)) {
+        return null;
+      }
+      final sliced = effectiveEnd == len
+          ? value
+          : value.substring(0, effectiveEnd);
+      final canonical = hasBackslash ? sliced.replaceAll('\\', '/') : sliced;
+      return 'windows:${canonical.toLowerCase()}';
+    }
+
+    return null;
   }
 
   static String parentEquivalenceKey(String value) {
@@ -282,8 +399,43 @@ abstract final class PathMatcher {
   }
 
   static String join(String parent, String child) {
+    if (isContentUri(parent)) {
+      return _joinContentUri(parent, child);
+    }
     final context = _contextFor(parent);
     return context.normalize(context.join(parent, child));
+  }
+
+  static String _joinContentUri(String parent, String child) {
+    final normalizedParent = normalize(parent);
+    final sanitizedChild = child.replaceAll('\\', '/').trim();
+    final relativeChild = sanitizedChild.trimLeftSlash().trimRightSlash();
+    if (relativeChild.isEmpty || relativeChild == '.') {
+      return normalizedParent;
+    }
+    final normalizedChild = path.posix.normalize(relativeChild);
+    if (normalizedChild.isEmpty || normalizedChild == '.') {
+      return normalizedParent;
+    }
+    final markerIndex = normalizedParent.indexOf('::');
+    if (markerIndex >= 0) {
+      final base = normalize(normalizedParent.substring(0, markerIndex));
+      final existingRelative = normalizedParent
+          .substring(markerIndex + 2)
+          .replaceAll('\\', '/')
+          .trimLeftSlash()
+          .trimRightSlash();
+      final combined = existingRelative.isEmpty
+          ? normalizedChild
+          : path.posix.normalize(
+              path.posix.join(existingRelative, normalizedChild),
+            );
+      if (combined.isEmpty || combined == '.') {
+        return base;
+      }
+      return '$base::$combined';
+    }
+    return _appendSyntheticRelative(normalizedParent, normalizedChild);
   }
 
   static path.Context _contextFor(
@@ -291,9 +443,9 @@ abstract final class PathMatcher {
     String? second,
     String? third,
   ]) {
-    if (_windowsAbsolutePath.hasMatch(first) ||
-        (second != null && _windowsAbsolutePath.hasMatch(second)) ||
-        (third != null && _windowsAbsolutePath.hasMatch(third))) {
+    if (_isWindowsAbsolutePath(first) ||
+        (second != null && _isWindowsAbsolutePath(second)) ||
+        (third != null && _isWindowsAbsolutePath(third))) {
       return _windowsContext;
     }
     return path.context;
@@ -500,6 +652,92 @@ final class PathMembershipIndex {
       key = key.substring(0, separator);
       if (_keys.contains(key)) return true;
     }
+  }
+}
+
+/// Maps path equivalence keys to their original roots for O(depth) ancestor lookup.
+final class PathRootIndex {
+  PathRootIndex(Iterable<String> roots) {
+    for (final root in roots) {
+      if (root.isEmpty) continue;
+      final key = PathMatcher.equivalenceKey(root);
+      if (key.startsWith('remote:')) continue;
+      final opaqueContent =
+          key.startsWith('content:') && key.contains(':content://');
+      final relativeFile = key.startsWith('file:') && !key.startsWith('file:/');
+      if (opaqueContent || relativeFile) {
+        _fallbackRoots.add(root);
+        continue;
+      }
+      final existing = _byKey[key];
+      if (existing == null || root.length > existing.length) {
+        _byKey[key] = root;
+      }
+    }
+  }
+
+  final Map<String, String> _byKey = <String, String>{};
+  final List<String> _fallbackRoots = <String>[];
+
+  bool get isEmpty => _byKey.isEmpty && _fallbackRoots.isEmpty;
+
+  bool containsEquivalent(String value) {
+    if (isEmpty || value.isEmpty) return false;
+    final key = PathMatcher.equivalenceKey(value);
+    if (_byKey.containsKey(key)) return true;
+    for (final root in _fallbackRoots) {
+      if (PathMatcher.equalsNormalized(value, root)) return true;
+    }
+    return false;
+  }
+
+  String? mostSpecificContaining(String value) {
+    if (isEmpty || value.isEmpty) return null;
+    final key = PathMatcher.equivalenceKey(value);
+    if (key.startsWith('remote:')) return null;
+    String? best;
+    if (_byKey.isNotEmpty) {
+      var current = key;
+      if (_byKey[current] case final match?) {
+        best = match;
+      } else {
+        while (true) {
+          final separator = current.lastIndexOf('/');
+          if (separator < 0) {
+            if (current.startsWith('content:')) {
+              final authorityEnd = current.indexOf(':', 'content:'.length);
+              if (authorityEnd >= 0 &&
+                  !current.startsWith('content://', authorityEnd + 1)) {
+                final rootColon = current.indexOf(':', authorityEnd + 1);
+                if (rootColon >= 0 && rootColon + 1 < current.length) {
+                  final match = _byKey[current.substring(0, rootColon + 1)];
+                  if (match != null) best = match;
+                }
+              }
+            }
+            break;
+          }
+          final withSlash = _byKey[current.substring(0, separator + 1)];
+          if (withSlash != null) {
+            best = withSlash;
+            break;
+          }
+          current = current.substring(0, separator);
+          final withoutSlash = _byKey[current];
+          if (withoutSlash != null) {
+            best = withoutSlash;
+            break;
+          }
+        }
+      }
+    }
+    for (final root in _fallbackRoots) {
+      if (best != null && root.length <= best.length) continue;
+      if (PathMatcher.isWithinOrEqual(value, root)) {
+        best = root;
+      }
+    }
+    return best;
   }
 }
 

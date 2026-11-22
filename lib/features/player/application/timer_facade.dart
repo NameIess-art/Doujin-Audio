@@ -201,6 +201,34 @@ final class TimerFacade {
     unawaited(syncNativeAlarms());
   }
 
+  void extendCountdown(Duration delta) {
+    if (delta == Duration.zero || !_service.timerActive) return;
+    final now = DateTime.now();
+    final baseEndsAt =
+        _service.timerEndsAt ??
+        now.add(
+          _service.timerRemaining ?? _service.timerDuration ?? Duration.zero,
+        );
+    final nextEndsAt = baseEndsAt.add(delta);
+    final nextRemaining = nextEndsAt.difference(now);
+    if (nextRemaining <= Duration.zero) return;
+    _service.timerEndsAt = nextEndsAt;
+    _service.timerRemaining = nextRemaining;
+    final currentDuration = _service.timerDuration;
+    final updatedDuration = currentDuration != null
+        ? currentDuration + delta
+        : nextRemaining;
+    _service.timerDuration = updatedDuration > nextRemaining
+        ? updatedDuration
+        : nextRemaining;
+    if (nextRemaining > const Duration(seconds: 30)) {
+      _setFadeMultiplier(1.0);
+    }
+    _changed();
+    unawaited(saveRuntime());
+    unawaited(syncNativeAlarms());
+  }
+
   void setTimerDraft(TimerMode mode, Duration duration) {
     final normalizedDuration = duration > Duration.zero
         ? duration
@@ -686,9 +714,10 @@ final class TimerFacade {
       );
     }
     _maybeResetTimerAfterExpiry();
+    final currentGeneration = _service.timerGeneration;
     _changed();
     await saveRuntime();
-    if (!_isCurrentGeneration(generation)) return;
+    if (!_isCurrentGeneration(currentGeneration)) return;
     await syncNativeAlarms();
   }
 
@@ -839,6 +868,7 @@ final class TimerFacade {
       _service.autoResumeTimer?.cancel();
       _service.autoResumeTimer = null;
     }
+    final currentGeneration = _service.timerGeneration;
     if (resumedSessionIds.isNotEmpty) {
       _startResumeFadeIn();
     } else {
@@ -846,7 +876,7 @@ final class TimerFacade {
     }
     _changed();
     await saveRuntime();
-    if (!_isCurrentGeneration(generation)) return;
+    if (!_isCurrentGeneration(currentGeneration)) return;
     await syncNativeAlarms();
   }
 
@@ -892,6 +922,7 @@ final class TimerFacade {
       generation == _service.timerGeneration;
 
   void _cancelTimerInternal() {
+    _cancelResumeFadeIn();
     _setFadeMultiplier(1.0);
     _restoredCountdownSessions.clear();
     _service.timerGeneration++;

@@ -1,5 +1,16 @@
 part of 'app_update_service.dart';
 
+List<_GitHubRelease> _decodeGitHubReleases(String body) {
+  final decoded = jsonDecode(body);
+  if (decoded is! List) {
+    throw const FormatException('GitHub releases response is not a list.');
+  }
+  return decoded
+      .map(_GitHubRelease.fromJson)
+      .whereType<_GitHubRelease>()
+      .toList(growable: false);
+}
+
 class _GitHubRelease {
   _GitHubRelease({
     required this.tagName,

@@ -596,6 +596,9 @@ void main() {
                 ? find.descendant(of: target, matching: find.byType(Icon))
                 : null;
             final beforeBg = _surfaceColor(tester, target);
+            if (key == floatingPill || key == disabledPill) {
+              expect(beforeBg?.a, 1.0);
+            }
             final beforeBorder = _surfaceBorderColor(tester, target);
             final restLabelColor = _glyphColor(tester, labelFinder);
             void expectHighlightedContent() {

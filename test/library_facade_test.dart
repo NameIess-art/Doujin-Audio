@@ -518,8 +518,9 @@ void main() {
       addTearDown(() => root.delete(recursive: true));
       final library = runtimeGraph.library;
       library.addWatchedFolder(root.path, notify: false);
+      final expectedConcurrency = Platform.isWindows ? 4 : 2;
       final tracks = List.generate(
-        3,
+        expectedConcurrency + 1,
         (index) => _localDurationTrack(root.path, filename: '$index.mp3'),
       );
       library.addTracks(tracks, persist: false);
@@ -529,7 +530,7 @@ void main() {
       final backfill = library.backfillMissingLibraryDurations(
         durationReader: (trackPath) async {
           requestedPaths.add(trackPath);
-          if (requestedPaths.length == 2) {
+          if (requestedPaths.length == expectedConcurrency) {
             library.setInteractionPaused(true);
             firstBatch.complete();
           }
@@ -542,7 +543,7 @@ void main() {
       library.setBackgroundMode(false);
       await firstBatch.future;
       await pumpEventQueue();
-      expect(requestedPaths, hasLength(2));
+      expect(requestedPaths, hasLength(expectedConcurrency));
 
       library.setInteractionPaused(false);
       await backfill;
@@ -2519,7 +2520,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(probes, 70);
-      expect(peak, 2);
+      expect(peak, Platform.isWindows ? 4 : 2);
       expect(persistedBeforeNextBatch, 64);
       expect(repository.updateDurationsCallCount, 2);
       expect(
@@ -2909,6 +2910,93 @@ void main() {
     },
   );
 
+  test(
+    'duration backfill negative-caches unresolved probes by file fingerprint',
+    () async {
+      final repository = _CountingTestPersistenceRepository(
+        AppDatabase.test(db),
+      );
+      const folder = '/negative-cache-work';
+      const trackPath = '$folder/broken.mp3';
+      final initialTime = DateTime.utc(2026);
+      final updatedTime = DateTime.utc(2026, 2);
+
+      LibraryFacade openLibrary(MusicTrack track) {
+        final library = LibraryFacade.create(
+          databaseRepository: repository,
+          jsonDocumentStore: TestJsonDocumentStore(),
+        );
+        addTearDown(library.dispose);
+        library.addWatchedFolder(folder, notify: false);
+        library.addTracks([track], persist: false);
+        return library;
+      }
+
+      var probeCalls = 0;
+      final firstTrack = MusicTrack(
+        path: trackPath,
+        displayName: 'broken',
+        groupKey: folder,
+        groupTitle: 'negative-cache-work',
+        groupSubtitle: folder,
+        isSingle: false,
+        fileSizeBytes: 1024,
+        modifiedAt: initialTime,
+      );
+      final library = openLibrary(firstTrack);
+      await library.backfillMissingLibraryDurations(
+        durationReader: (_) async {
+          probeCalls++;
+          return null;
+        },
+      );
+      expect(probeCalls, 1);
+
+      // Re-running with unchanged file fingerprint skips probing.
+      await library.backfillMissingLibraryDurations(
+        durationReader: (_) async {
+          probeCalls++;
+          return const Duration(seconds: 30);
+        },
+      );
+      expect(probeCalls, 1);
+
+      // Reopening with the same fingerprint still skips probing.
+      final reopened = openLibrary(firstTrack);
+      await reopened.backfillMissingLibraryDurations(
+        durationReader: (_) async {
+          probeCalls++;
+          return const Duration(seconds: 30);
+        },
+      );
+      expect(probeCalls, 1);
+
+      // When the file changes on disk (size/mtime), backfill probes again.
+      final modifiedTrack = MusicTrack(
+        path: trackPath,
+        displayName: 'broken',
+        groupKey: folder,
+        groupTitle: 'negative-cache-work',
+        groupSubtitle: folder,
+        isSingle: false,
+        fileSizeBytes: 2048,
+        modifiedAt: updatedTime,
+      );
+      final afterModify = openLibrary(modifiedTrack);
+      await afterModify.backfillMissingLibraryDurations(
+        durationReader: (_) async {
+          probeCalls++;
+          return const Duration(seconds: 45);
+        },
+      );
+      expect(probeCalls, 2);
+      expect(
+        afterModify.trackByPath(trackPath)?.duration,
+        const Duration(seconds: 45),
+      );
+    },
+  );
+
   for (final authoritative in [false, true]) {
     test(
       'duration backfill reuses snapshots beyond LRU capacity when authoritative=$authoritative',
@@ -3245,9 +3333,10 @@ void main() {
     final target = AudioDetailTarget.libraryRootFolder(workDir.path);
     final trackPath = path.join(workDir.path, '01.mp3');
     runtimeGraph.library.addWatchedFolder(workDir.path, notify: false);
+    final expectedConcurrency = Platform.isWindows ? 4 : 2;
     runtimeGraph.library.addTracks(
       List<MusicTrack>.generate(
-        5,
+        expectedConcurrency + 3,
         (index) => MusicTrack(
           path: path.join(workDir.path, '0${index + 1}.mp3'),
           displayName: '0${index + 1}',
@@ -3268,7 +3357,9 @@ void main() {
     final backfill = runtimeGraph.library.backfillMissingLibraryDurations(
       durationReader: (trackPath) async {
         probedPaths.add(trackPath);
-        if (probedPaths.length == 2) durationReadStarted.complete();
+        if (probedPaths.length == expectedConcurrency) {
+          durationReadStarted.complete();
+        }
         await releaseDurationRead.future;
         return const Duration(minutes: 5);
       },
@@ -3286,7 +3377,7 @@ void main() {
     releaseDurationRead.complete();
     await backfill;
 
-    expect(probedPaths, hasLength(2));
+    expect(probedPaths, hasLength(expectedConcurrency));
 
     final persisted =
         await (runtimeGraph.library.databaseRepository as AudioDetailStore)

@@ -64,6 +64,7 @@ final class UndoableRemovalService {
       StreamController<UndoableRemovalState>.broadcast(sync: true);
   UndoableRemovalState _state = const UndoableRemovalState();
   Future<void> _operationTail = Future<void>.value();
+  int _generation = 0;
   bool _disposed = false;
 
   UndoableRemovalState get state => _state;
@@ -80,6 +81,7 @@ final class UndoableRemovalService {
 
   Future<bool> stage(UndoableRemovalAction action) async {
     if (_disposed || _state.isHidden(action.key)) return false;
+    final stageGeneration = _generation;
     _preparing.add(action.key);
     _emit();
     try {
@@ -94,8 +96,15 @@ final class UndoableRemovalService {
       return false;
     }
     _preparing.remove(action.key);
-    if (_disposed) {
-      await action.undo();
+    if (_disposed || stageGeneration != _generation) {
+      try {
+        await action.undo();
+      } catch (_) {
+        // Best-effort rollback when staging was cancelled by undo or disposal.
+      }
+      if (!_disposed) {
+        _emit(restoredKeys: <UndoableRemovalKey>[action.key]);
+      }
       return false;
     }
     _pending[action.key] = action;
@@ -103,24 +112,27 @@ final class UndoableRemovalService {
     return true;
   }
 
-  Future<int> undoPending() => _serialize(() async {
-    if (_pending.isEmpty) return 0;
-    final actions = _pending.values.toList(growable: false).reversed.toList();
-    _pending.clear();
-    _emit(
-      batchChanged: true,
-      restoredKeys: actions.map((action) => action.key),
-    );
-    var failures = 0;
-    for (final action in actions) {
-      try {
-        await action.undo();
-      } catch (_) {
-        failures++;
+  Future<int> undoPending() {
+    _generation++;
+    return _serialize(() async {
+      if (_pending.isEmpty) return 0;
+      final actions = _pending.values.toList(growable: false).reversed.toList();
+      _pending.clear();
+      _emit(
+        batchChanged: true,
+        restoredKeys: actions.map((action) => action.key),
+      );
+      var failures = 0;
+      for (final action in actions) {
+        try {
+          await action.undo();
+        } catch (_) {
+          failures++;
+        }
       }
-    }
-    return failures;
-  });
+      return failures;
+    });
+  }
 
   Future<int> commitPending() => _serialize(() async {
     if (_pending.isEmpty) return 0;
@@ -187,6 +199,7 @@ final class UndoableRemovalService {
     _pending.clear();
     _preparing.clear();
     _committing.clear();
+    _generation = 0;
     _state = const UndoableRemovalState();
   }
 

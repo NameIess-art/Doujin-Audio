@@ -700,8 +700,19 @@ internal class NativePlaybackSession(
         lastPlaybackState = "idle"
     }
 
-    override fun shouldPublishSnapshot(snapshot: Map<String, Any?>): Boolean {
-        if (snapshot == lastPublishedSnapshot) return false
+    override fun shouldPublishSnapshot(
+        snapshot: Map<String, Any?>,
+        includePositionChange: Boolean
+    ): Boolean {
+        val previous = lastPublishedSnapshot
+        if (previous != null) {
+            val unchanged = if (includePositionChange) {
+                previous == snapshot
+            } else {
+                snapshotsEquivalentIgnoringProgress(previous, snapshot)
+            }
+            if (unchanged) return false
+        }
         lastPublishedSnapshot = snapshot
         return true
     }
@@ -906,8 +917,9 @@ internal class NativePlaybackSession(
             queue.first().playOnceBeforeQueue &&
             player.mediaItemCount == queue.size
         ) {
-            queue = queue.drop(1)
-            queueStructure = NativePlaybackQueue(queue)
+            val nextQueueStructure = queueStructure.dropFirst()
+            queue = nextQueueStructure.descriptors
+            queueStructure = nextQueueStructure
             discardedQueuePrefix = true
             player.removeMediaItem(0)
             applyWakeModeToPlayer(player)
@@ -983,19 +995,38 @@ internal interface NativePlaybackSessionSnapshotSource {
     fun currentAudioSessionId(): Int
     fun syncAudioSessionState(audioSessionId: Int)
     fun snapshot(): Map<String, Any?>
-    fun shouldPublishSnapshot(snapshot: Map<String, Any?>): Boolean = true
+    fun shouldPublishSnapshot(
+        snapshot: Map<String, Any?>,
+        includePositionChange: Boolean = false
+    ): Boolean = true
+}
+
+internal fun snapshotsEquivalentIgnoringProgress(
+    previous: Map<String, Any?>,
+    current: Map<String, Any?>
+): Boolean {
+    for ((key, value) in current) {
+        if (key == "positionMs" || key == "bufferedPositionMs") continue
+        if (!previous.containsKey(key) || previous[key] != value) return false
+    }
+    for (key in previous.keys) {
+        if (key == "positionMs" || key == "bufferedPositionMs") continue
+        if (!current.containsKey(key)) return false
+    }
+    return true
 }
 
 internal fun publishNativePlaybackSessionState(
     session: NativePlaybackSessionSnapshotSource,
-    listeners: Collection<(Map<String, Any?>) -> Unit>
+    listeners: Collection<(Map<String, Any?>) -> Unit>,
+    includePositionChange: Boolean = false
 ): Map<String, Any?> {
     val audioSessionId = session.currentAudioSessionId()
     if (audioSessionId != C.AUDIO_SESSION_ID_UNSET) {
         session.syncAudioSessionState(audioSessionId)
     }
     val snapshot = session.snapshot()
-    if (!session.shouldPublishSnapshot(snapshot)) return snapshot
+    if (!session.shouldPublishSnapshot(snapshot, includePositionChange)) return snapshot
     for (listener in listeners) {
         try {
             listener(snapshot)

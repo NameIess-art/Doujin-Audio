@@ -44,7 +44,21 @@ class _DlsiteMetadataBatchReviewPageState
         saveCover: result.saveCover ?? false,
       );
     }
-    final nextIndex = widget.session.reviewableIndexFrom(_currentIndex, 1);
+    final nextIndex =
+        widget.session.nextUnconfirmedFoundIndexFrom(_currentIndex);
+    if (nextIndex == null) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() {
+      _currentIndex = nextIndex;
+    });
+  }
+
+  void _excludeCurrent() {
+    final nextIndex =
+        widget.session.nextUnconfirmedFoundIndexFrom(_currentIndex);
+    widget.session.toggleExcluded(_currentIndex);
     if (nextIndex == null) {
       Navigator.of(context).pop();
       return;
@@ -63,13 +77,14 @@ class _DlsiteMetadataBatchReviewPageState
       batchIndex: _currentIndex + 1,
       batchTotal: widget.session.items.length,
       allowSkip: true,
-      initialSaveCover: _saveCover,
+      initialSaveCover: item.saveCover ?? _saveCover,
       initialCandidates: item.reviewCandidates,
       canNavigatePrevious:
           widget.session.reviewableIndexFrom(_currentIndex, -1) != null,
       canNavigateNext:
           widget.session.reviewableIndexFrom(_currentIndex, 1) != null,
       onBatchNavigate: _navigate,
+      onBatchExclude: _excludeCurrent,
       onCompleted: _complete,
     );
   }

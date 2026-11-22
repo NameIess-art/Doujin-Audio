@@ -117,6 +117,11 @@ begin
         Result := True;
         Exit;
       end;
+      if (Attempt mod 5) = 0 then begin
+        Window := FindWindowByClassName('DOUJIN_AUDIO_WIN32_WINDOW');
+        if Window <> 0 then
+          PostMessage(Window, WM_APP_EXIT, 0, 0);
+      end;
     end else begin
       Window := FindWindowByClassName('DOUJIN_AUDIO_WIN32_WINDOW');
       if Window <> 0 then begin

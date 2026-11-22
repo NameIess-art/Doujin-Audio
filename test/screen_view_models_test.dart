@@ -244,13 +244,16 @@ void main() {
         ],
       );
       container.listen(playlistHeaderUiProvider, (_, _) {});
+      container.listen(playlistTimerRemainingUiProvider, (_, _) {});
       await container.read(playbackStateProvider.future);
       await container.read(timerStateProvider.future);
       final headerState = container.read(playlistHeaderUiProvider);
+      final remaining = container.read(playlistTimerRemainingUiProvider);
 
       expect(headerState.sessionCount, 0);
       expect(headerState.playingCount, 2);
-      expect(headerState.timerRemaining, const Duration(minutes: 12));
+      expect(headerState.timerRemaining, isNull);
+      expect(remaining, const Duration(minutes: 12));
       expect(headerState.hasTimer, isTrue);
     },
   );

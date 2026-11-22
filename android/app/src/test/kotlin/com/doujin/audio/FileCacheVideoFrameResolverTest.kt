@@ -99,7 +99,7 @@ class FileCacheVideoFrameResolverTest {
     }
 
     @Test
-    fun `blank bitmap detection uses bulk pixel read accurately`() {
+    fun `blank bitmap detection samples pixels accurately without bulk allocation`() {
         val resolver = FileCacheVideoFrameResolver(
             RuntimeEnvironment.getApplication(),
             temporaryFolder.newFolder(),
@@ -109,14 +109,24 @@ class FileCacheVideoFrameResolverTest {
         val dark = Bitmap.createBitmap(20, 20, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLACK) }
         val bright = Bitmap.createBitmap(20, 20, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) }
         val mid = Bitmap.createBitmap(20, 20, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.rgb(120, 120, 120)) }
+        val mixed = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(Color.BLACK)
+            for (y in 0 until 100 step 10) {
+                for (x in 0 until 20 step 10) {
+                    setPixel(x, y, Color.rgb(140, 140, 140))
+                }
+            }
+        }
         try {
             assertTrue(resolver.isBlankBitmap(dark))
             assertTrue(resolver.isBlankBitmap(bright))
             assertFalse(resolver.isBlankBitmap(mid))
+            assertFalse(resolver.isBlankBitmap(mixed))
         } finally {
             dark.recycle()
             bright.recycle()
             mid.recycle()
+            mixed.recycle()
         }
     }
 }

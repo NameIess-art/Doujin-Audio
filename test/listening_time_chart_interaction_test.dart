@@ -135,10 +135,13 @@ void main() {
   Future<void> chooseDate(WidgetTester tester, DateTime date) async {
     await tester.tap(selector);
     await tester.pumpAndSettle();
-    expect(find.byType(InputDatePickerFormField), findsOneWidget);
+    expect(find.byType(CalendarDatePicker), findsOneWidget);
     final localizations = MaterialLocalizations.of(
       tester.element(find.byType(DatePickerDialog)),
     );
+    await tester.tap(find.byTooltip(localizations.inputDateModeButtonLabel));
+    await tester.pumpAndSettle();
+    expect(find.byType(InputDatePickerFormField), findsOneWidget);
     await tester.enterText(
       find.byType(TextFormField),
       localizations.formatCompactDate(date),
@@ -384,7 +387,7 @@ void main() {
             now: today,
           ).last;
           final bounds = tester.getRect(
-            find.byKey(const ValueKey('listening-chart-bars')),
+            find.byKey(const ValueKey('listening-chart-heatmap')),
           );
           final last = tester.getRect(find.byKey(ValueKey(latest.start)));
           expect(last.width, greaterThan(18));
@@ -403,7 +406,13 @@ void main() {
                   .toList()
                 ..sort();
           expect(rows, hasLength(7));
-          expect(rows.first, closeTo(bounds.top, 0.1));
+          expect(rows.first, greaterThan(bounds.top));
+          expect(
+            find.byKey(const ValueKey('listening-heatmap-legend')),
+            findsOneWidget,
+          );
+          expect(find.text(i18n.tr('my_heatmap_less')), findsOneWidget);
+          expect(find.text(i18n.tr('my_heatmap_more')), findsOneWidget);
           final starts =
               cells
                   .evaluate()
@@ -564,11 +573,12 @@ void main() {
       );
       expect(days.reads, 0);
       final bounds = tester.getRect(
-        find.byKey(const ValueKey('listening-chart-bars')),
+        find.byKey(const ValueKey('listening-chart-heatmap')),
       );
       final latest = tester.getRect(find.byKey(ValueKey(today)));
       expect(latest.bottomRight, bounds.bottomRight);
-      expect(latest.width, closeTo((bounds.height - 3 * 6) / 7, 0.001));
+      expect(latest.width, greaterThan(18));
+      expect(latest.width, closeTo(latest.height, 0.001));
       expect(tester.takeException(), isNull);
     },
   );
@@ -963,14 +973,17 @@ void main() {
           ),
         ),
       );
+      final localizations = MaterialLocalizations.of(
+        tester.element(find.byType(DatePickerDialog)),
+      );
+      expect(find.byType(CalendarDatePicker), findsOneWidget);
+      await tester.tap(find.byTooltip(localizations.inputDateModeButtonLabel));
+      await tester.pumpAndSettle();
       final field = tester.widget<TextField>(find.byType(TextField));
       expect(field.decoration?.fillColor, theme.inputDecorationTheme.fillColor);
       expect(
         field.decoration?.focusedBorder,
         theme.inputDecorationTheme.focusedBorder,
-      );
-      final localizations = MaterialLocalizations.of(
-        tester.element(find.byType(DatePickerDialog)),
       );
       await tester.enterText(find.byType(TextFormField), 'invalid date');
       await tester.tap(find.text(localizations.okButtonLabel));

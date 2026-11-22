@@ -26,15 +26,18 @@ class DesktopIntegration {
   void Activate(bool show_window);
   static constexpr UINT kActivate = WM_APP + 40;
   static constexpr UINT kMediaAction = WM_APP + 41;
+  static constexpr UINT kExit = WM_APP + 43;
 
  private:
   using Channel = flutter::MethodChannel<flutter::EncodableValue>;
   void Action(const std::string& action);
+  void CompleteDeferredInit();
   void AddTray();
   void ShowTrayMenu();
   void SetFullscreen(bool enabled);
   void RunWindowCommand(const std::string& command);
   void PublishWindowMaximized();
+  void UpdateHitTestMetrics();
   LRESULT TopResizeHit(POINT screen) const;
   static LRESULT CALLBACK ContentProc(HWND content, UINT message, WPARAM wparam,
       LPARAM lparam, UINT_PTR id, DWORD_PTR data);
@@ -43,22 +46,40 @@ class DesktopIntegration {
   void EndSession();
   void UpdateTheme();
   bool UsesDarkTheme() const;
+  struct AsyncIoState;
   void OpenContainingFolder(const flutter::EncodableMap& args,
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>& result);
-  void ReplyFolderOpens();
-  struct FolderOpenState;
-  std::shared_ptr<FolderOpenState> folder_opens_;
+  void GetStorageUsage(
+      std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>& result);
+  void OpenReleasePage(const flutter::EncodableMap& args,
+      std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>& result);
+  void InstallWindowsUpdate(const flutter::EncodableMap& args,
+      std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>& result);
+  void ReplyAsyncIo();
+  std::shared_ptr<AsyncIoState> async_io_;
   HWND window_;
   HWND content_ = nullptr;
   std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
   bool ready_ = false;
   bool first_frame_ready_ = false;
+  bool deferred_init_done_ = false;
+  bool tray_added_ = false;
   bool initial_shown_ = false;
   bool pending_activate_ = false;
   bool pending_activate_show_ = false;
   bool quitting_ = false;
   bool ending_session_ = false;
   bool fullscreen_ = false;
+  RECT client_screen_rect_{};
+  int resize_border_x_ = 0;
+  int resize_border_y_ = 0;
+  int caption_buttons_width_ = 0;
+  int caption_resize_border_y_ = 0;
+  bool hit_test_metrics_valid_ = false;
+  bool window_zoomed_ = false;
+  mutable POINT last_hit_point_{0, 0};
+  mutable LRESULT last_hit_result_ = HTNOWHERE;
+  mutable bool last_hit_valid_ = false;
   std::optional<bool> window_maximized_;
   bool screen_on_ = false;
   bool playback_active_ = false;

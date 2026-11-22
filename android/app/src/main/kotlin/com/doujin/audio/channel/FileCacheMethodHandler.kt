@@ -400,7 +400,7 @@ internal class FileCacheMethodHandler(
             }
             FileCacheMethods.READ_DOCUMENT_BYTES -> {
                 val path = arguments.requiredString("path")
-                runAsync(result, errorCode = { "read_document_failed" }) {
+                runAsync(result, errorCode = { if (it is DocumentTooLargeException) "document_too_large" else "read_document_failed" }) {
                     operations.readDocumentBytes(path)
                 }
             }

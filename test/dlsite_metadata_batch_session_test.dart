@@ -211,6 +211,80 @@ void main() {
     expect(session.confirmedCount, 1);
   });
 
+  test(
+    'tracks applied vs saveFailed states and only retries unapplied/failed items',
+    () async {
+      var failSecond = true;
+      final appliedTitles = <String>[];
+      final session = DlsiteMetadataBatchSession(
+        entries: [entry('001'), entry('002'), entry('003')],
+        lookup: (query) => switch (query.rjCode) {
+          'RJ000003' => Future<List<DlsiteMetadata>>.error(
+            StateError('offline'),
+          ),
+          _ => Future<List<DlsiteMetadata>>.value([
+            metadata(query.rjCode!.substring(5)),
+          ]),
+        },
+        apply: (item) async {
+          appliedTitles.add(item.entry.title);
+          if (item.entry.title == '002' && failSecond) {
+            throw StateError('disk full');
+          }
+        },
+      );
+      addTearDown(session.dispose);
+
+      session.start();
+      await Future<void>.delayed(Duration.zero);
+      expect(session.confirmAllMatched(), 2);
+      expect(session.confirmedCount, 2);
+
+      final firstResult = await session.applyConfirmed();
+      expect(firstResult.savedCount, 1);
+      expect(firstResult.saveFailedCount, 1);
+      expect(firstResult.failedCount, 2);
+      expect(session.items[0].status, DlsiteMetadataBatchLookupStatus.applied);
+      expect(
+        session.items[1].status,
+        DlsiteMetadataBatchLookupStatus.saveFailed,
+      );
+      expect(session.items[2].status, DlsiteMetadataBatchLookupStatus.failed);
+      expect(session.confirmedCount, 1);
+
+      failSecond = false;
+      appliedTitles.clear();
+      final retryResult = await session.applyConfirmed();
+      expect(appliedTitles, ['002']);
+      expect(retryResult.savedCount, 1);
+      expect(retryResult.saveFailedCount, 0);
+      expect(retryResult.failedCount, 1);
+      expect(session.items[1].status, DlsiteMetadataBatchLookupStatus.applied);
+      expect(session.confirmedCount, 0);
+      expect(session.hasUnappliedWork, isFalse);
+    },
+  );
+
+  test(
+    'nextUnconfirmedFoundIndexFrom skips already-confirmed items and wraps',
+    () async {
+      final session = DlsiteMetadataBatchSession(
+        entries: [entry('001'), entry('002'), entry('003')],
+        lookup: (query) async => [metadata(query.rjCode!.substring(5))],
+      );
+      addTearDown(session.dispose);
+
+      session.start();
+      await Future<void>.delayed(Duration.zero);
+      session.confirm(1, metadata: metadata('002'), saveCover: false);
+
+      expect(session.nextUnconfirmedFoundIndexFrom(0), 2);
+      expect(session.nextUnconfirmedFoundIndexFrom(2), 0);
+      session.confirm(2, metadata: metadata('003'), saveCover: false);
+      expect(session.nextUnconfirmedFoundIndexFrom(0), isNull);
+    },
+  );
+
   test('applyConfirmed skips excluded items and does not save them', () async {
     final saved = <DlsiteMetadataBatchItem>[];
     final session = DlsiteMetadataBatchSession(

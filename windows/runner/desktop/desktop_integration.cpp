@@ -31,7 +31,8 @@ void Success(Result& result, const Value& value = Value()) {
   result.Success(Value(Map{{Value("ok"),Value(true)},{Value("value"),value}}));
 }
 constexpr UINT kTray = WM_APP + 42;
-constexpr UINT kFolderOpenReply = WM_APP + 46;
+constexpr UINT kAsyncIoReply = WM_APP + 46;
+constexpr UINT kDeferredInit = WM_APP + 48;
 const UINT kTaskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
 #ifdef _DEBUG
 constexpr auto kSettingsKey = L"Software\\DoujinAudio\\Debug";
@@ -58,42 +59,53 @@ const Map& Arguments(const flutter::MethodCall<Value>& call) {
   auto map = call.arguments() ? std::get_if<Map>(call.arguments()) : nullptr;
   return map ? *map : empty;
 }
-void Launch(const std::wstring& path) {
-  const auto result = reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr,L"open",path.c_str(),nullptr,nullptr,SW_SHOWNORMAL));
-  if (result <= 32) throw std::runtime_error("Unable to open target: " + std::to_string(result));
-}
 
 class ScopedTrayMenuTheme {
  public:
   explicit ScopedTrayMenuTheme(bool dark) {
-    static const bool supports_preferred_app_mode = [] {
+    struct UxThemeApi {
+      SetMode set_mode = nullptr;
+      Flush flush = nullptr;
+    };
+    static const UxThemeApi api = [] {
+      UxThemeApi resolved;
       const auto ntdll = GetModuleHandleW(L"ntdll.dll");
-      if (!ntdll) return false;
+      if (!ntdll) return resolved;
       const auto get_version = reinterpret_cast<NTSTATUS(WINAPI*)(PRTL_OSVERSIONINFOW)>(
           GetProcAddress(ntdll, "RtlGetVersion"));
       RTL_OSVERSIONINFOW version{sizeof(version)};
       // Ordinal 135 had a different signature before Windows 10 version 1903.
-      return get_version && get_version(&version) == 0 &&
-             version.dwMajorVersion >= 10 && version.dwBuildNumber >= 18362;
+      if (!get_version || get_version(&version) != 0 ||
+          version.dwMajorVersion < 10 || version.dwBuildNumber < 18362) {
+        return resolved;
+      }
+      // Keep uxtheme.dll pinned once resolved to avoid repeated load/unload
+      // on every tray popup while ensuring cached function pointers stay valid.
+      const HMODULE module =
+          LoadLibraryExW(L"uxtheme.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+      if (!module) return resolved;
+      const auto set_mode =
+          reinterpret_cast<SetMode>(GetProcAddress(module, MAKEINTRESOURCEA(135)));
+      const auto flush =
+          reinterpret_cast<Flush>(GetProcAddress(module, MAKEINTRESOURCEA(136)));
+      if (set_mode && flush) {
+        resolved.set_mode = set_mode;
+        resolved.flush = flush;
+      } else {
+        FreeLibrary(module);
+      }
+      return resolved;
     }();
+    if (!api.set_mode) return;
     HIGHCONTRASTW contrast{sizeof(contrast)};
-    if (!supports_preferred_app_mode ||
-        !SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0) ||
+    if (!SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0) ||
         (contrast.dwFlags & HCF_HIGHCONTRASTON)) {
       return;
     }
 
-    module_ = LoadLibraryExW(L"uxtheme.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-    if (!module_) return;
-    const auto set_mode =
-        reinterpret_cast<SetMode>(GetProcAddress(module_, MAKEINTRESOURCEA(135)));
-    const auto flush =
-        reinterpret_cast<Flush>(GetProcAddress(module_, MAKEINTRESOURCEA(136)));
-    if (!set_mode || !flush) return;
-
     // The native menu palette is process-wide, so restore it when the popup closes.
-    set_mode_ = set_mode;
-    flush_ = flush;
+    set_mode_ = api.set_mode;
+    flush_ = api.flush;
     previous_mode_ = set_mode_(dark ? Mode::kForceDark : Mode::kForceLight);
     flush_();
   }
@@ -103,7 +115,6 @@ class ScopedTrayMenuTheme {
       set_mode_(previous_mode_);
       flush_();
     }
-    if (module_) FreeLibrary(module_);
   }
 
   ScopedTrayMenuTheme(const ScopedTrayMenuTheme&) = delete;
@@ -114,19 +125,28 @@ class ScopedTrayMenuTheme {
   using SetMode = Mode(WINAPI*)(Mode);
   using Flush = void(WINAPI*)();
 
-  HMODULE module_ = nullptr;
   SetMode set_mode_ = nullptr;
   Flush flush_ = nullptr;
   Mode previous_mode_ = Mode::kDefault;
 };
-}
+}  // namespace
 
-struct DesktopIntegration::FolderOpenState {
-  static constexpr int kMaxWorkers = 2;
+struct DesktopIntegration::AsyncIoState {
+  static constexpr int kMaxWorkers = 3;
+
+  enum class Op {
+    kOpenFolder,
+    kGetStorageUsage,
+    kOpenReleasePage,
+    kInstallUpdate,
+  };
 
   struct Request {
+    Op op = Op::kOpenFolder;
     std::unique_ptr<Result> result;
     std::filesystem::path path;
+    std::wstring target;
+    Value value;
     std::string error;
     std::string error_code = "windows_error";
     bool completed = false;
@@ -138,11 +158,42 @@ struct DesktopIntegration::FolderOpenState {
   std::deque<std::shared_ptr<Request>> queued;
   std::vector<std::shared_ptr<Request>> pending;
 
+  static void Submit(const std::shared_ptr<AsyncIoState>& state,
+                     std::shared_ptr<Request> request) {
+    {
+      std::lock_guard<std::mutex> lock(state->mutex);
+      state->pending.push_back(request);
+      state->queued.push_back(request);
+      if (state->workers == kMaxWorkers) return;
+      auto owner = std::make_unique<std::shared_ptr<AsyncIoState>>(state);
+      if (TrySubmitThreadpoolCallback(RunWorker, owner.get(), nullptr)) {
+        owner.release();
+        ++state->workers;
+        return;
+      }
+      if (state->workers > 0) return;
+      state->pending.pop_back();
+      state->queued.pop_back();
+    }
+    request->result->Error("windows_error", "Unable to schedule desktop operation");
+  }
+
   static void CALLBACK RunWorker(PTP_CALLBACK_INSTANCE instance, void* context) {
     CallbackMayRunLong(instance);
-    const std::unique_ptr<std::shared_ptr<FolderOpenState>> owner(
-        static_cast<std::shared_ptr<FolderOpenState>*>(context));
+    const std::unique_ptr<std::shared_ptr<AsyncIoState>> owner(
+        static_cast<std::shared_ptr<AsyncIoState>*>(context));
     (*owner)->RunQueuedRequests();
+  }
+
+  static void ShellOpen(const std::wstring& target) {
+    SHELLEXECUTEINFOW execute{sizeof(SHELLEXECUTEINFOW)};
+    // The worker has no message loop, so Shell activation must finish here
+    // before its apartment is released. Slow disk/Shell calls stay off the window.
+    execute.fMask = SEE_MASK_NOASYNC;
+    execute.lpVerb = L"open";
+    execute.lpFile = target.c_str();
+    execute.nShow = SW_SHOWNORMAL;
+    if (!ShellExecuteExW(&execute)) winrt::throw_last_error();
   }
 
   void RunQueuedRequests() {
@@ -157,6 +208,7 @@ struct DesktopIntegration::FolderOpenState {
         request = std::move(queued.front());
         queued.pop_front();
       }
+      Value value;
       std::string error, error_code = "windows_error";
       const HRESULT apartment =
           CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
@@ -164,26 +216,75 @@ struct DesktopIntegration::FolderOpenState {
         if (FAILED(apartment) && apartment != RPC_E_CHANGED_MODE) {
           winrt::check_hresult(apartment);
         }
-        const auto status = std::filesystem::status(request->path);
-        const bool directory = std::filesystem::is_directory(status);
-        if (!directory && !std::filesystem::is_regular_file(status)) {
-          throw std::invalid_argument("path");
-        }
-        bool active;
-        {
+        auto is_active = [this] {
           std::lock_guard<std::mutex> lock(mutex);
-          active = window != nullptr;
-        }
-        if (active) {
-          const auto folder = (directory ? request->path : request->path.parent_path()).wstring();
-          SHELLEXECUTEINFOW execute{sizeof(SHELLEXECUTEINFOW)};
-          // The worker has no message loop, so Shell activation must finish here
-          // before its apartment is released. Slow disk/Shell calls stay off the window.
-          execute.fMask = SEE_MASK_NOASYNC;
-          execute.lpVerb = L"open";
-          execute.lpFile = folder.c_str();
-          execute.nShow = SW_SHOWNORMAL;
-          if (!ShellExecuteExW(&execute)) winrt::throw_last_error();
+          return window != nullptr;
+        };
+        switch (request->op) {
+          case Op::kOpenFolder: {
+            std::error_code ec;
+            const auto status = std::filesystem::status(request->path, ec);
+            if (ec && status.type() != std::filesystem::file_type::not_found) {
+              error = ec.message();
+              if (error.empty()) error = "Unable to inspect path";
+              break;
+            }
+            const bool directory = std::filesystem::is_directory(status);
+            if (!directory && !std::filesystem::is_regular_file(status)) {
+              error_code = "invalid_argument";
+              error = "path";
+              break;
+            }
+            if (is_active()) {
+              const auto folder =
+                  (directory ? request->path : request->path.parent_path()).wstring();
+              ShellOpen(folder);
+            }
+            value = Value(true);
+            break;
+          }
+          case Op::kGetStorageUsage: {
+            PWSTR directory = nullptr;
+            winrt::check_hresult(
+                SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &directory));
+            const std::unique_ptr<wchar_t, decltype(&CoTaskMemFree)> directory_guard(
+                directory, CoTaskMemFree);
+            ULARGE_INTEGER available{}, total{}, free{};
+            if (!GetDiskFreeSpaceExW(directory, &available, &total, &free)) {
+              winrt::throw_last_error();
+            }
+            value = Value(Map{
+                {Value("totalBytes"), Value(static_cast<int64_t>(total.QuadPart))},
+                {Value("availableBytes"),
+                 Value(static_cast<int64_t>(available.QuadPart))},
+            });
+            break;
+          }
+          case Op::kOpenReleasePage: {
+            if (is_active()) ShellOpen(request->target);
+            value = Value(true);
+            break;
+          }
+          case Op::kInstallUpdate: {
+            std::error_code ec;
+            const bool regular_file = std::filesystem::is_regular_file(request->path, ec);
+            if (ec) {
+              error = ec.message();
+              if (error.empty()) error = "Unable to inspect installer path";
+              break;
+            }
+            if (!regular_file) {
+              error_code = "invalid_argument";
+              error = "path";
+              break;
+            }
+            if (is_active()) ShellOpen(request->path.wstring());
+            value = Value(Map{
+                {Value("ok"), Value(true)},
+                {Value("needsPermission"), Value(false)},
+            });
+            break;
+          }
         }
       } catch (const std::invalid_argument& e) {
         error = e.what(); error_code = "invalid_argument";
@@ -196,6 +297,7 @@ struct DesktopIntegration::FolderOpenState {
       {
         std::lock_guard<std::mutex> lock(mutex);
         if (!window) continue;
+        request->value = std::move(value);
         request->error = std::move(error);
         request->error_code = std::move(error_code);
         request->completed = true;
@@ -204,7 +306,7 @@ struct DesktopIntegration::FolderOpenState {
         {
           std::lock_guard<std::mutex> lock(mutex);
           if (!window || reply_posted) break;
-          if (PostMessage(window, kFolderOpenReply, 0, 0)) {
+          if (PostMessage(window, kAsyncIoReply, 0, 0)) {
             reply_posted = true;
             break;
           }
@@ -217,8 +319,8 @@ struct DesktopIntegration::FolderOpenState {
 };
 
 DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* messenger) : window_(window) {
-  folder_opens_ = std::make_shared<FolderOpenState>();
-  folder_opens_->window = window;
+  async_io_ = std::make_shared<AsyncIoState>();
+  async_io_->window = window;
   WINDOWPLACEMENT saved{sizeof(WINDOWPLACEMENT)};
   DWORD bytes = sizeof(saved);
   if (RegGetValueW(HKEY_CURRENT_USER,kSettingsKey,L"WindowPlacement",RRF_RT_REG_BINARY,nullptr,&saved,&bytes) == ERROR_SUCCESS && bytes == sizeof(saved)) {
@@ -240,6 +342,7 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
     saved.showCmd = SW_HIDE;
     SetWindowPlacement(window_,&saved);
   }
+  UpdateHitTestMetrics();
   subtitles_ = std::make_unique<SubtitleWindow>(GetModuleHandle(nullptr));
   media_ = std::make_unique<MediaControls>(window);
   scheduled_tasks_ = std::make_unique<ScheduledTasks>(window);
@@ -281,7 +384,7 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
   add("doujin_audio/subtitle_overlay",[this](const auto& call, Result& result) {
     const auto& name = call.method_name(); const auto& args = Arguments(call);
     if (name == "canDrawOverlays") Success(result,Value(true));
-    else if (name == "startOverlay") { subtitles_->Show(true); Success(result); }
+    else if (name == "startOverlay") { subtitles_->Show(true); Success(result,Value(true)); }
     else if (name == "stopOverlay") { subtitles_->Show(false); Success(result); }
     else if (name == "updateSubtitle") {
       auto value = Find(args,"text"); auto text = value ? std::get_if<std::string>(value) : nullptr;
@@ -350,23 +453,30 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
       Success(result);
     } else result.NotImplemented();
   });
-  add("doujin_audio/update",[this](const auto& call, Result& result) {
-    const auto& name = call.method_name(); const auto& args = Arguments(call);
-    if (name == "getAppVersion") {
-      Success(result,Value(Map{{Value("versionName"),Value(FLUTTER_VERSION)},
-        {Value("buildNumber"),Value(FLUTTER_VERSION_BUILD)}, {Value("platform"),Value("windows")}}));
-    } else if (name == "openReleasePage") {
-      auto url = RequiredText(args,"url");
-      if (url.rfind("https://",0) != 0 && url.rfind("http://",0) != 0 && url.rfind("mailto:",0) != 0) throw std::invalid_argument("url");
-      Launch(winrt::to_hstring(url).c_str()); Success(result,Value(true));
-    } else if (name == "installWindowsUpdate") {
-      const auto path = std::filesystem::path(winrt::to_hstring(RequiredText(args,"path")).c_str());
-      if (!path.is_absolute() || path.extension() != L".exe" || !std::filesystem::is_regular_file(path)) throw std::invalid_argument("path");
-      Launch(path.wstring());
-      Success(result,Value(Map{{Value("ok"),Value(true)},{Value("needsPermission"),Value(false)}}));
-      // The installer asks the running app to exit only when the user commits installation.
-    } else result.NotImplemented();
+  auto update = std::make_unique<Channel>(messenger,"doujin_audio/update",&flutter::StandardMethodCodec::GetInstance());
+  update->SetMethodCallHandler([this](const auto& call, auto result) {
+    try {
+      const auto& name = call.method_name();
+      const auto& args = Arguments(call);
+      if (name == "getAppVersion") {
+        std::string version_name(FLUTTER_VERSION);
+        const auto plus = version_name.find('+');
+        if (plus != std::string::npos) version_name.erase(plus);
+        Success(*result,Value(Map{{Value("versionName"),Value(version_name)},
+          {Value("buildNumber"),Value(FLUTTER_VERSION_BUILD)}, {Value("platform"),Value("windows")}}));
+      } else if (name == "openReleasePage") {
+        OpenReleasePage(args, result);
+      } else if (name == "installWindowsUpdate") {
+        InstallWindowsUpdate(args, result);
+        // The installer asks the running app to exit only when the user commits installation.
+      } else {
+        result->NotImplemented();
+      }
+    } catch (const std::invalid_argument& e) { result->Error("invalid_argument",e.what()); }
+      catch (const winrt::hresult_error& e) { result->Error("windows_error",winrt::to_string(e.message())); }
+      catch (const std::exception& e) { result->Error("windows_error",e.what()); }
   });
+  channels_.push_back(std::move(update));
   auto power = std::make_unique<Channel>(messenger,"doujin_audio/power",&flutter::StandardMethodCodec::GetInstance());
   power->SetMethodCallHandler([this](const auto& call, auto result) {
     try {
@@ -374,7 +484,7 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
     if (name == "syncPlaybackTimerAlarms") {
       RequiredBool(args,"timerWaitingForPlayback"); RequiredBool(args,"autoResumeEnabled");
       if (!Find(args,"generation") || !Find(args,"autoResumeHour") || !Find(args,"autoResumeMinute")) throw std::invalid_argument("timer arguments");
-      scheduled_tasks_->Sync(args,std::move(result));
+      scheduled_tasks_->Sync(args,result);
     }
     else if (name == "setKeepScreenOn") {
       screen_on_ = RequiredBool(args,"enabled");
@@ -392,45 +502,46 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
       OpenContainingFolder(Arguments(call),result);
       return;
     }
-    if (call.method_name() != "getStorageUsage") { result->NotImplemented(); return; }
-    PWSTR directory = nullptr;
-    winrt::check_hresult(SHGetKnownFolderPath(FOLDERID_LocalAppData,0,nullptr,&directory));
-    const std::filesystem::path app_data(directory);
-    CoTaskMemFree(directory);
-    ULARGE_INTEGER available{},total{},free{};
-    if (!GetDiskFreeSpaceExW(app_data.c_str(),&available,&total,&free)) winrt::throw_last_error();
-    Success(*result,Value(Map{{Value("totalBytes"),Value(static_cast<int64_t>(total.QuadPart))},
-      {Value("availableBytes"),Value(static_cast<int64_t>(available.QuadPart))}}));
+    if (call.method_name() == "getStorageUsage") {
+      GetStorageUsage(result);
+      return;
+    }
+    result->NotImplemented();
     } catch (const std::invalid_argument& e) { result->Error("invalid_argument",e.what()); }
       catch (const winrt::hresult_error& e) { result->Error("windows_error",winrt::to_string(e.message())); }
       catch (const std::exception& e) { result->Error("windows_error",e.what()); }
   });
   channels_.push_back(std::move(file_cache));
-  AddTray();
 }
 DesktopIntegration::~DesktopIntegration() {
+  if (desktop_) desktop_->SetMethodCallHandler(nullptr);
+  for (const auto& channel : channels_) {
+    if (channel) channel->SetMethodCallHandler(nullptr);
+  }
   *alive_ = false;
   if (tray_menu_open_) {
     tray_menu_open_ = false;
     EndMenu();
   }
   if (content_) RemoveWindowSubclass(content_, ContentProc, 0);
-  std::vector<std::shared_ptr<FolderOpenState::Request>> pending;
+  std::vector<std::shared_ptr<AsyncIoState::Request>> pending;
   {
-    std::lock_guard<std::mutex> lock(folder_opens_->mutex);
-    folder_opens_->window = nullptr;
-    folder_opens_->queued.clear();
-    pending.swap(folder_opens_->pending);
+    std::lock_guard<std::mutex> lock(async_io_->mutex);
+    async_io_->window = nullptr;
+    async_io_->queued.clear();
+    pending.swap(async_io_->pending);
   }
-  // Network filesystem calls cannot be cancelled reliably. Complete replies on
+  // Shell/filesystem calls cannot be cancelled reliably. Complete replies on
   // the platform thread without waiting for those workers during engine teardown.
   for (const auto& request : pending) {
-    request->result->Error("windows_error","Window closed before folder operation completed");
+    request->result->Error("windows_error","Window closed before desktop operation completed");
     request->result.reset();
   }
   scheduled_tasks_.reset();
-  NOTIFYICONDATAW icon{}; icon.cbSize = sizeof(icon); icon.hWnd = window_; icon.uID = 1;
-  Shell_NotifyIconW(NIM_DELETE,&icon);
+  if (tray_added_) {
+    NOTIFYICONDATAW icon{}; icon.cbSize = sizeof(icon); icon.hWnd = window_; icon.uID = 1;
+    Shell_NotifyIconW(NIM_DELETE,&icon);
+  }
   SetThreadExecutionState(ES_CONTINUOUS);
 }
 void DesktopIntegration::OpenContainingFolder(const Map& args,
@@ -439,49 +550,72 @@ void DesktopIntegration::OpenContainingFolder(const Map& args,
   if (target.find('\0') != std::string::npos) throw std::invalid_argument("path");
   std::filesystem::path path(winrt::to_hstring(target).c_str());
   if (!path.is_absolute()) throw std::invalid_argument("path");
-  const auto state = folder_opens_;
-  const auto request = std::make_shared<FolderOpenState::Request>();
+  const auto request = std::make_shared<AsyncIoState::Request>();
+  request->op = AsyncIoState::Op::kOpenFolder;
   request->result = std::move(result);
   request->path = std::move(path);
-  {
-    std::lock_guard<std::mutex> lock(state->mutex);
-    state->pending.push_back(request);
-    state->queued.push_back(request);
-    if (state->workers == FolderOpenState::kMaxWorkers) return;
-    auto owner = std::make_unique<std::shared_ptr<FolderOpenState>>(state);
-    if (TrySubmitThreadpoolCallback(FolderOpenState::RunWorker, owner.get(), nullptr)) {
-      owner.release();
-      ++state->workers;
-      return;
-    }
-    if (state->workers > 0) return;
-    state->pending.pop_back();
-    state->queued.pop_back();
-  }
-  request->result->Error("windows_error", "Unable to schedule folder open");
+  AsyncIoState::Submit(async_io_, std::move(request));
 }
-void DesktopIntegration::ReplyFolderOpens() {
-  std::vector<std::shared_ptr<FolderOpenState::Request>> replies;
+void DesktopIntegration::GetStorageUsage(std::unique_ptr<Result>& result) {
+  const auto request = std::make_shared<AsyncIoState::Request>();
+  request->op = AsyncIoState::Op::kGetStorageUsage;
+  request->result = std::move(result);
+  AsyncIoState::Submit(async_io_, std::move(request));
+}
+void DesktopIntegration::OpenReleasePage(const Map& args,
+    std::unique_ptr<Result>& result) {
+  const auto url = RequiredText(args,"url");
+  if (url.find('\0') != std::string::npos ||
+      (url.rfind("https://",0) != 0 && url.rfind("http://",0) != 0 && url.rfind("mailto:",0) != 0)) {
+    throw std::invalid_argument("url");
+  }
+  const auto request = std::make_shared<AsyncIoState::Request>();
+  request->op = AsyncIoState::Op::kOpenReleasePage;
+  request->result = std::move(result);
+  request->target = std::wstring(winrt::to_hstring(url));
+  AsyncIoState::Submit(async_io_, std::move(request));
+}
+void DesktopIntegration::InstallWindowsUpdate(const Map& args,
+    std::unique_ptr<Result>& result) {
+  const auto raw_path = RequiredText(args,"path");
+  if (raw_path.find('\0') != std::string::npos) throw std::invalid_argument("path");
+  std::filesystem::path path(winrt::to_hstring(raw_path).c_str());
+  if (!path.is_absolute() || path.extension() != L".exe") throw std::invalid_argument("path");
+  const auto request = std::make_shared<AsyncIoState::Request>();
+  request->op = AsyncIoState::Op::kInstallUpdate;
+  request->result = std::move(result);
+  request->path = std::move(path);
+  AsyncIoState::Submit(async_io_, std::move(request));
+}
+void DesktopIntegration::ReplyAsyncIo() {
+  std::vector<std::shared_ptr<AsyncIoState::Request>> replies;
   {
-    std::lock_guard<std::mutex> lock(folder_opens_->mutex);
-    folder_opens_->reply_posted = false;
-    auto& pending = folder_opens_->pending;
+    std::lock_guard<std::mutex> lock(async_io_->mutex);
+    async_io_->reply_posted = false;
+    auto& pending = async_io_->pending;
     for (auto it = pending.begin(); it != pending.end();) {
       if ((*it)->completed) { replies.push_back(*it); it = pending.erase(it); }
       else ++it;
     }
   }
   for (const auto& reply : replies) {
-    if (reply->error.empty()) Success(*reply->result,Value(true));
+    if (reply->error.empty()) Success(*reply->result,reply->value);
     else reply->result->Error(reply->error_code,reply->error);
     reply->result.reset();
   }
+}
+void DesktopIntegration::CompleteDeferredInit() {
+  if (deferred_init_done_) return;
+  deferred_init_done_ = true;
+  if (!tray_added_) AddTray();
+  if (media_) media_->Initialize();
 }
 void DesktopIntegration::AddTray() {
   NOTIFYICONDATAW icon{}; icon.cbSize = sizeof(icon); icon.hWnd = window_; icon.uID = 1;
   icon.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP; icon.uCallbackMessage = kTray;
   icon.hIcon = LoadIcon(GetModuleHandle(nullptr),MAKEINTRESOURCE(IDI_APP_ICON));
-  wcscpy_s(icon.szTip,L"Doujin Audio"); Shell_NotifyIconW(NIM_ADD,&icon);
+  wcscpy_s(icon.szTip,L"Doujin Audio");
+  if (Shell_NotifyIconW(NIM_ADD,&icon)) tray_added_ = true;
 }
 void DesktopIntegration::Action(const std::string& action) {
   if (ending_session_) return;
@@ -618,6 +752,9 @@ void DesktopIntegration::OnFirstFrame(bool show_initially) {
     if (activate) SetForegroundWindow(window_);
   }
   if (activate) Action("resume");
+  if (!deferred_init_done_ && !PostMessage(window_, kDeferredInit, 0, 0)) {
+    CompleteDeferredInit();
+  }
 }
 void DesktopIntegration::Activate(bool show_window) {
   if (!first_frame_ready_) {
@@ -636,20 +773,60 @@ void DesktopIntegration::AttachContent(HWND content) {
   // The window was created before this object handled WM_NCCALCSIZE.
   SetWindowPos(window_, nullptr, 0, 0, 0, 0,
                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+  UpdateHitTestMetrics();
 }
-LRESULT DesktopIntegration::TopResizeHit(POINT screen) const {
-  if (fullscreen_ || IsZoomed(window_)) return HTNOWHERE;
+void DesktopIntegration::UpdateHitTestMetrics() {
   RECT client{};
-  GetClientRect(window_, &client);
+  if (!GetClientRect(window_, &client)) {
+    hit_test_metrics_valid_ = false;
+    last_hit_valid_ = false;
+    return;
+  }
   MapWindowPoints(window_, nullptr, reinterpret_cast<POINT*>(&client), 2);
   const UINT dpi = GetDpiForWindow(window_);
   const int padding = GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
-  const int height = GetSystemMetricsForDpi(SM_CYFRAME, dpi) + padding;
-  if (!PtInRect(&client, screen) || screen.y >= client.top + height) return HTNOWHERE;
-  const int width = GetSystemMetricsForDpi(SM_CXFRAME, dpi) + padding;
-  if (screen.x < client.left + width) return HTTOPLEFT;
-  if (screen.x >= client.right - width) return HTTOPRIGHT;
-  return HTTOP;
+  client_screen_rect_ = client;
+  resize_border_y_ = GetSystemMetricsForDpi(SM_CYFRAME, dpi) + padding;
+  resize_border_x_ = GetSystemMetricsForDpi(SM_CXFRAME, dpi) + padding;
+  caption_buttons_width_ = MulDiv(138, dpi, 96);
+  caption_resize_border_y_ =
+      std::min(resize_border_y_, std::max(2, MulDiv(4, dpi, 96)));
+  window_zoomed_ = IsZoomed(window_) != FALSE;
+  hit_test_metrics_valid_ = true;
+  last_hit_valid_ = false;
+}
+LRESULT DesktopIntegration::TopResizeHit(POINT screen) const {
+  if (fullscreen_ || window_zoomed_ || !hit_test_metrics_valid_) {
+    return HTNOWHERE;
+  }
+  if (last_hit_valid_ && last_hit_point_.x == screen.x &&
+      last_hit_point_.y == screen.y) {
+    return last_hit_result_;
+  }
+  LRESULT hit = HTNOWHERE;
+  if (screen.x >= client_screen_rect_.left &&
+      screen.x < client_screen_rect_.right &&
+      screen.y >= client_screen_rect_.top &&
+      screen.y < client_screen_rect_.bottom) {
+    const bool over_caption_buttons =
+        screen.x >= client_screen_rect_.right - caption_buttons_width_ &&
+        screen.x < client_screen_rect_.right - resize_border_x_;
+    const int effective_top_border =
+        over_caption_buttons ? caption_resize_border_y_ : resize_border_y_;
+    if (screen.y < client_screen_rect_.top + effective_top_border) {
+      if (screen.x < client_screen_rect_.left + resize_border_x_) {
+        hit = HTTOPLEFT;
+      } else if (screen.x >= client_screen_rect_.right - resize_border_x_) {
+        hit = HTTOPRIGHT;
+      } else {
+        hit = HTTOP;
+      }
+    }
+  }
+  last_hit_point_ = screen;
+  last_hit_result_ = hit;
+  last_hit_valid_ = true;
+  return hit;
 }
 LRESULT CALLBACK DesktopIntegration::ContentProc(HWND content, UINT message, WPARAM wp,
                                                  LPARAM lp, UINT_PTR, DWORD_PTR data) {
@@ -669,7 +846,7 @@ void DesktopIntegration::RefreshPower() {
   power_flags_ = flags;
 }
 void DesktopIntegration::SavePlacement() {
-  if (fullscreen_) return;
+  if (fullscreen_ || !IsWindowVisible(window_)) return;
   WINDOWPLACEMENT placement{sizeof(WINDOWPLACEMENT)};
   if (!GetWindowPlacement(window_,&placement)) return;
   HKEY key;
@@ -703,6 +880,7 @@ void DesktopIntegration::SetFullscreen(bool enabled) {
     SetWindowPos(window_, nullptr, 0, 0, 0, 0,
       SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED | (visible ? 0 : SWP_NOACTIVATE));
   }
+  UpdateHitTestMetrics();
 }
 void DesktopIntegration::RunWindowCommand(const std::string& command) {
   UINT message = WM_SYSCOMMAND;
@@ -751,17 +929,27 @@ std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp
     const LRESULT hit = TopResizeHit({GET_X_LPARAM(lp), GET_Y_LPARAM(lp)});
     if (hit != HTNOWHERE) return hit;
   }
-  if (message == WM_SIZE) PublishWindowMaximized();
-  if (message == WM_DWMCOLORIZATIONCOLORCHANGED) { UpdateTheme(); return 0; }
-  if (message == WM_SETTINGCHANGE &&
-      (lp == 0 ||
-       (theme_mode_ == "system" &&
-        _wcsicmp(reinterpret_cast<const wchar_t*>(lp), L"ImmersiveColorSet") == 0))) {
-    UpdateTheme();
+  if (message == WM_SIZE) {
+    UpdateHitTestMetrics();
+    PublishWindowMaximized();
   }
+  if (message == WM_MOVE || message == WM_DPICHANGED ||
+      message == WM_DISPLAYCHANGE) {
+    UpdateHitTestMetrics();
+  }
+  if (message == WM_DWMCOLORIZATIONCOLORCHANGED) { UpdateTheme(); return 0; }
+  if (message == WM_SETTINGCHANGE) {
+    UpdateHitTestMetrics();
+    if (lp == 0 ||
+        (theme_mode_ == "system" &&
+         _wcsicmp(reinterpret_cast<const wchar_t*>(lp), L"ImmersiveColorSet") == 0)) {
+      UpdateTheme();
+    }
+  }
+  if (message == kDeferredInit) { CompleteDeferredInit(); return 0; }
   if (message == ScheduledTasks::kReply) { scheduled_tasks_->Reply(); return 0; }
   if (message == NetworkProxy::kReply) { network_proxy_->Reply(); return 0; }
-  if (message == kFolderOpenReply) { ReplyFolderOpens(); return 0; }
+  if (message == kAsyncIoReply) { ReplyAsyncIo(); return 0; }
   if (auto action = media_->HandleMessage(message, wp, lp)) {
     if (*action == "showWindow") Show();
     else if (!action->empty()) Action(*action);
@@ -769,7 +957,10 @@ std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp
   }
   if (message == kTaskbarCreated) { AddTray(); return 0; }
   if (message == kActivate) { Activate(wp == 0); return 0; }
-  if (message == WM_EXITSIZEMOVE) SavePlacement();
+  if (message == WM_EXITSIZEMOVE) {
+    UpdateHitTestMetrics();
+    SavePlacement();
+  }
   // A previously queued tray exit must not destroy the engine during the reply wait.
   if (message == WM_CLOSE && ending_session_) return 0;
   if (message == WM_CLOSE && !quitting_) { SavePlacement(); ShowWindow(window_,SW_HIDE); Action("background"); return 0; }
@@ -778,7 +969,7 @@ std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp
     if (wp) EndSession();
     return 0;
   }
-  if (message == WM_APP + 43) { Action("exit"); return 0; }
+  if (message == kExit) { Action("exit"); return 0; }
   if (message == WM_GETMINMAXINFO && !fullscreen_) {
     const auto dpi = GetDpiForWindow(window_);
     RECT rect{0,0,MulDiv(960,dpi,96),MulDiv(600,dpi,96)};
@@ -798,7 +989,7 @@ std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp
     return 0;
   }
   if (message == kTray) {
-    if (LOWORD(lp) == WM_LBUTTONDBLCLK) Show();
+    if (LOWORD(lp) == WM_LBUTTONUP || LOWORD(lp) == WM_LBUTTONDBLCLK) Show();
     if (LOWORD(lp) == WM_RBUTTONUP) ShowTrayMenu();
     return 0;
   }

@@ -12,6 +12,10 @@ import '../../../app/presentation/app_presentation_providers.dart';
 import '../domain/asmr_models.dart';
 import '../application/asmr_download_models.dart';
 import '../../../app/theme/app_design_tokens.dart';
+import '../../../core/ui/undoable_removal_service.dart';
+import '../../../core/widgets/app_bottom_sheet.dart';
+import '../../../core/widgets/app_entry_ink_well.dart';
+import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/file_tree_expansion_motion.dart';
 import '../../../core/widgets/file_tree_row.dart';
@@ -370,6 +374,13 @@ class _AsmrDownloadDetailsPageState
                 iconColor: Theme.of(context).colorScheme.primary,
                 leading: const AppHeaderBackButton(),
                 title: i18n.tr('asmr_download_details_title'),
+                trailing: downloadManager == null
+                    ? null
+                    : _AsmrDownloadDetailsHeaderActions(
+                        workId: widget.workId,
+                        i18n: i18n,
+                        coreReady: coreReady,
+                      ),
                 additionalChild: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
                   child: HeaderFloatingSurface(
@@ -409,6 +420,216 @@ class _AsmrDownloadDetailsPageState
           ],
         ),
       ),
+    );
+  }
+}
+
+enum AsmrDownloadTaskRemovalAction { removeEntry, deleteDownloaded }
+
+Future<AsmrDownloadTaskRemovalAction?> showAsmrDownloadTaskRemovalMenu(
+  BuildContext context, {
+  required String title,
+  required String removeEntryLabel,
+  required String deleteDownloadedLabel,
+}) {
+  return AppBottomSheet.show<AsmrDownloadTaskRemovalAction>(
+    context: context,
+    isScrollControlled: false,
+    builder: (sheetContext) {
+      final cs = Theme.of(sheetContext).colorScheme;
+      return SafeArea(
+        top: false,
+        child: Padding(
+          padding: AppBottomSheet.contentPadding,
+          child: Theme(
+            data: AppEntryInkWell.entryTheme(sheetContext),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: AppBottomSheetHeader(
+                    icon: Icons.delete_outline_rounded,
+                    title: title,
+                  ),
+                ),
+                ListTile(
+                  key: const ValueKey<String>(
+                    'asmr_download_remove_entry_option',
+                  ),
+                  leading: const Icon(Icons.remove_circle_outline_rounded),
+                  title: Text(removeEntryLabel),
+                  onTap: () {
+                    unawaited(
+                      AppInteractionFeedback.trigger(
+                        AppInteractionFeedbackType.destructive,
+                      ),
+                    );
+                    Navigator.of(
+                      sheetContext,
+                    ).pop(AsmrDownloadTaskRemovalAction.removeEntry);
+                  },
+                ),
+                ListTile(
+                  key: const ValueKey<String>(
+                    'asmr_download_delete_downloaded_option',
+                  ),
+                  leading: Icon(Icons.delete_forever_rounded, color: cs.error),
+                  title: Text(
+                    deleteDownloadedLabel,
+                    style: TextStyle(color: cs.error),
+                  ),
+                  onTap: () {
+                    unawaited(
+                      AppInteractionFeedback.trigger(
+                        AppInteractionFeedbackType.destructive,
+                      ),
+                    );
+                    Navigator.of(
+                      sheetContext,
+                    ).pop(AsmrDownloadTaskRemovalAction.deleteDownloaded);
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+class _AsmrDownloadDetailsHeaderActions extends ConsumerWidget {
+  const _AsmrDownloadDetailsHeaderActions({
+    required this.workId,
+    required this.i18n,
+    required this.coreReady,
+  });
+
+  final String workId;
+  final AppLanguageProvider i18n;
+  final bool coreReady;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final manager = ref.read(asmrDownloadManagerProvider);
+    final status = ref.watch(
+      asmrDownloadTaskProvider(workId).select((task) => task?.status),
+    );
+    if (manager == null || status == null) return const SizedBox.shrink();
+    final cs = Theme.of(context).colorScheme;
+    return HeaderActionPill(
+      children: [
+        if (status != AsmrDownloadTaskStatus.completed)
+          IconButton(
+            key: const ValueKey<String>('asmr_download_details_toggle_pause'),
+            onPressed: !coreReady
+                ? null
+                : () {
+                    if (status == AsmrDownloadTaskStatus.paused ||
+                        status == AsmrDownloadTaskStatus.failed) {
+                      unawaited(manager.resumeTask(workId));
+                    } else {
+                      unawaited(manager.pauseTask(workId));
+                    }
+                  },
+            icon: Icon(
+              status == AsmrDownloadTaskStatus.failed
+                  ? Icons.refresh_rounded
+                  : status == AsmrDownloadTaskStatus.paused
+                  ? Icons.play_arrow_rounded
+                  : Icons.pause_rounded,
+              color: status == AsmrDownloadTaskStatus.failed ? cs.error : null,
+            ),
+            tooltip: status == AsmrDownloadTaskStatus.failed
+                ? i18n.tr('retry')
+                : status == AsmrDownloadTaskStatus.paused
+                ? i18n.tr('resume')
+                : i18n.tr('pause'),
+            iconSize: 20,
+            padding: EdgeInsets.zero,
+            constraints: HeaderActionPill.buttonConstraints,
+          ),
+        IconButton(
+          key: const ValueKey<String>('asmr_download_details_remove_task'),
+          onPressed: !coreReady
+              ? null
+              : () async {
+                  final action = await showAsmrDownloadTaskRemovalMenu(
+                    context,
+                    title: i18n.tr('asmr_download_remove_task'),
+                    removeEntryLabel: i18n.tr('asmr_download_remove_entry'),
+                    deleteDownloadedLabel: i18n.tr(
+                      'asmr_download_remove_and_delete',
+                    ),
+                  );
+                  if (!context.mounted || action == null) return;
+                  final currentTask = manager.getTask(workId);
+                  if (currentTask == null) return;
+                  final resumeOnUndo =
+                      currentTask.isActive ||
+                      currentTask.status == AsmrDownloadTaskStatus.idle;
+                  final pausing = manager.pauseTask(workId);
+                  pausing.ignore();
+                  final removalKey = UndoableRemovalKey(
+                    'asmr_download',
+                    workId,
+                  );
+                  final undoService = ref.read(undoableRemovalServiceProvider);
+                  final navigator = Navigator.of(context);
+                  unawaited(
+                    showUndoableRemovalFeedback(
+                      context,
+                      service: undoService,
+                      action: UndoableRemovalAction(
+                        key: removalKey,
+                        commit: () async {
+                          await pausing;
+                          if (action ==
+                              AsmrDownloadTaskRemovalAction.removeEntry) {
+                            await manager.cancelTask(
+                              workId,
+                              deleteDownloaded: false,
+                            );
+                          } else {
+                            await manager.deleteTask(workId);
+                          }
+                        },
+                        undo: () async {
+                          await pausing;
+                          if (resumeOnUndo &&
+                              manager.getTask(workId)?.status ==
+                                  AsmrDownloadTaskStatus.paused) {
+                            await manager.resumeTask(workId);
+                          }
+                        },
+                      ),
+                      message: i18n.tr(
+                        action == AsmrDownloadTaskRemovalAction.removeEntry
+                            ? 'asmr_download_task_removed'
+                            : 'asmr_download_task_removed_and_deleted',
+                      ),
+                      batchMessage: (count) =>
+                          i18n.tr('items_removed_count', {'count': count}),
+                      undoLabel: i18n.tr('undo'),
+                      failureMessage: i18n.tr('removal_failed'),
+                      icon: action == AsmrDownloadTaskRemovalAction.removeEntry
+                          ? Icons.remove_circle_outline_rounded
+                          : Icons.delete_sweep_rounded,
+                    ),
+                  );
+                  if (navigator.canPop()) {
+                    unawaited(navigator.maybePop());
+                  }
+                },
+          icon: Icon(Icons.delete_outline_rounded, color: cs.error),
+          tooltip: i18n.tr('asmr_download_remove_task'),
+          iconSize: 20,
+          padding: EdgeInsets.zero,
+          constraints: HeaderActionPill.buttonConstraints,
+        ),
+      ],
     );
   }
 }
@@ -464,6 +685,8 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
     required this.onRetryFile,
   });
 
+  static final RegExp _pathSeparatorPattern = RegExp(r'[\\/]');
+
   final AsmrTrackFile node;
   final int depth;
   final String workId;
@@ -483,7 +706,7 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
         return (
           outputName:
               task?.actualOutputPaths[node.relativePath]
-                  ?.split(RegExp(r'[\\/]'))
+                  ?.split(_pathSeparatorPattern)
                   .last ??
               node.title,
           total: total,
@@ -502,6 +725,7 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
           retrying:
               task?.manuallyRetryingFilePaths.contains(node.relativePath) ??
               false,
+          paused: task?.status == AsmrDownloadTaskStatus.paused,
           canRetry:
               task?.status == AsmrDownloadTaskStatus.downloading ||
               task?.status == AsmrDownloadTaskStatus.failed,
@@ -516,12 +740,16 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
     final canRetryFile = onRetryFile != null && state.canRetry;
     final cs = Theme.of(context).colorScheme;
     final primaryColor = Theme.of(context).colorScheme.primary;
+    final progressColor = isFileFailed && !isManualRetrying
+        ? cs.error
+        : primaryColor;
     final progress =
         state.fraction ??
         (total > 0 ? (downloaded / total).clamp(0.0, 1.0) : 0.0);
 
     return FileTreeRow(
       title: state.outputName,
+      titleColor: isFileFailed && !isManualRetrying ? cs.error : null,
       minHeight: 52,
       depth: depth,
       leading: asmrDownloadFileLeading(context, node),
@@ -533,8 +761,8 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
               child: LinearProgressIndicator(
                 value: progress,
                 minHeight: 4,
-                color: primaryColor,
-                backgroundColor: primaryColor.withValues(alpha: 0.2),
+                color: progressColor,
+                backgroundColor: progressColor.withValues(alpha: 0.2),
               ),
             ),
           ),
@@ -556,7 +784,9 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: cs.onSurfaceVariant,
+                color: isFileFailed && retryAttempt == null && !isManualRetrying
+                    ? cs.error
+                    : cs.onSurfaceVariant,
                 fontWeight: FontWeight.w600,
                 fontSize: 10,
               ),
@@ -564,7 +794,23 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
           ),
         ],
       ),
-      trailing: isFileFailed && !isManualRetrying
+      trailing: isManualRetrying
+          ? SizedBox.square(
+              key: ValueKey<String>(
+                'asmr_download_manual_retrying_${node.relativePath}',
+              ),
+              dimension: 44,
+              child: Center(
+                child: SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: primaryColor,
+                  ),
+                ),
+              ),
+            )
+          : isFileFailed
           ? SizedBox.square(
               dimension: 44,
               child: IconButton(
@@ -574,8 +820,10 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
                 padding: EdgeInsets.zero,
                 icon: const Icon(Icons.refresh_rounded),
                 iconSize: 22,
-                color: primaryColor,
-                tooltip: i18n.tr('retry'),
+                color: state.paused ? cs.onSurfaceVariant : cs.error,
+                tooltip: state.paused
+                    ? i18n.tr('asmr_download_paused_retry_hint')
+                    : i18n.tr('retry'),
                 onPressed: canRetryFile
                     ? () => unawaited(onRetryFile!(node.relativePath))
                     : null,

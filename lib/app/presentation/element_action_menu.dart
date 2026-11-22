@@ -94,6 +94,10 @@ class ElementActionMenu extends StatelessWidget {
             AppDesignTokens.of(context).radiusSmall,
           ),
         );
+    final isWindows = Theme.of(context).platform == TargetPlatform.windows;
+    final Widget content = isWindows
+        ? MouseRegion(cursor: SystemMouseCursors.contextMenu, child: child)
+        : child;
     return UnifiedContextMenuRegion(
       key: ValueKey(value),
       shape: resolvedShape,
@@ -107,7 +111,7 @@ class ElementActionMenu extends StatelessWidget {
             icon: action.icon,
           ),
       ],
-      child: child,
+      child: content,
     );
   }
 }

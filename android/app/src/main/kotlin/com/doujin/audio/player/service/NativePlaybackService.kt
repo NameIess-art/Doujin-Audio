@@ -40,6 +40,7 @@ class NativePlaybackService : MediaSessionService() {
         private const val EXTRA_INTERNAL_START_TOKEN = "internal_start_token"
         private const val EXTRA_TRANSPORT_COMMAND = "transport_command"
         private const val FOREGROUND_WATCHDOG_INTERVAL_MS = 4 * 60 * 1000L
+        private const val FOREGROUND_IDLE_GRACE_PERIOD_MS = 15_000L
         private const val STATE_PERSISTENCE_INTERVAL_MS = 15 * 1000L
         private const val STATE_PERSISTENCE_SCREEN_OFF_INTERVAL_MS = 60 * 1000L
         private const val STATE_PERSISTENCE_DEBOUNCE_MS = 800L
@@ -163,10 +164,15 @@ class NativePlaybackService : MediaSessionService() {
     private val fileCacheOperations by lazy { FileCacheOperations(applicationContext) }
     private val stateListeners = ConcurrentHashMap<String, (Map<String, Any?>) -> Unit>()
     private val pendingStateSessions = linkedSetOf<String>()
+    private val pendingPositionSessions = hashSetOf<String>()
     private val publishPendingStates = Runnable {
         val pending = pendingStateSessions.toList()
+        val positionChanged = pendingPositionSessions.toSet()
         pendingStateSessions.clear()
-        pending.forEach(::publishSessionState)
+        pendingPositionSessions.clear()
+        pending.forEach { sessionId ->
+            publishSessionState(sessionId, includePositionChange = sessionId in positionChanged)
+        }
     }
     private val videoOutputs = NativeVideoOutputRegistry<Player>(
         playerForSession = { sessionId -> sessionManager.playerForSession(sessionId) },
@@ -186,7 +192,6 @@ class NativePlaybackService : MediaSessionService() {
         NativePlaybackProgressPublisher(
             mainHandler = mainHandler,
             anchors = { sessionManager.progressAnchors() },
-            currentAnchors = { sessionManager.progressAnchorsMap() },
             listeners = { stateListeners.values }
         )
     }
@@ -229,8 +234,9 @@ class NativePlaybackService : MediaSessionService() {
                     handleMediaItemTransition(sessionId, reason)
                 }
 
-                override fun onPlayerEvents(sessionId: String) {
+                override fun onPlayerEvents(sessionId: String, positionChanged: Boolean) {
                     pendingStateSessions.add(sessionId)
+                    if (positionChanged) pendingPositionSessions.add(sessionId)
                     mainHandler.removeCallbacks(publishPendingStates)
                     mainHandler.post(publishPendingStates)
                 }
@@ -276,7 +282,7 @@ class NativePlaybackService : MediaSessionService() {
             onSetPlayWhenReady = ::onMediaSessionSetPlayWhenReady,
             onPaused = { session ->
                 if (sessionManager.get(session.sessionId) === session) {
-                    publishSessionState(session.sessionId)
+                    publishSessionState(session.sessionId, includePositionChange = true)
                     publishResumePauseBatch(listOf(session.sessionId))
                     statePersistence.persistNow()
                 }
@@ -329,7 +335,7 @@ class NativePlaybackService : MediaSessionService() {
             resetRestoreState = { playbackSuspended = false },
             completeRestore = { restoredSessionIds ->
                 evictPlayersIfNeeded()
-                restoredSessionIds.forEach(::publishSessionState)
+                restoredSessionIds.forEach { publishSessionState(it, includePositionChange = true) }
                 progressHeartbeat.ensure()
                 statePersistence.ensureTicker()
                 statePersistence.persistNow()
@@ -341,7 +347,7 @@ class NativePlaybackService : MediaSessionService() {
             hasPendingCommandDelivery = ::hasPendingCommandDelivery,
             stopIdleService = { startId, reason -> stopIdleServiceAfterRestore(startId, reason) },
             onMissingSessionsRestored = { restoredSessionIds ->
-                restoredSessionIds.forEach(::publishSessionState)
+                restoredSessionIds.forEach { publishSessionState(it, includePositionChange = true) }
                 evictPlayersIfNeeded()
                 statePersistence.persistNow()
             },
@@ -469,6 +475,8 @@ class NativePlaybackService : MediaSessionService() {
                     get() = this@NativePlaybackService.hasPlaybackToKeepAlive()
                 override val playbackSuspended: Boolean
                     get() = this@NativePlaybackService.playbackSuspended
+                override val hasActiveUiListeners: Boolean
+                    get() = stateListeners.isNotEmpty()
                 override fun playbackSignature(): String? {
                     val session = foregroundSession() ?: return null
                     return foregroundNotification.signature(session, mediaSessionHost.isAttachedTo(session.playerOrNull()))
@@ -527,13 +535,15 @@ class NativePlaybackService : MediaSessionService() {
                     mainHandler.removeCallbacks(runnable)
                 }
             },
-            watchdogIntervalMs = FOREGROUND_WATCHDOG_INTERVAL_MS
+            watchdogIntervalMs = FOREGROUND_WATCHDOG_INTERVAL_MS,
+            idleGracePeriodMs = FOREGROUND_IDLE_GRACE_PERIOD_MS
         )
     }
     private var attemptedStickyPlaybackRestore = false
     private var playbackBehavior = StoredPlaybackBehavior()
     override fun onCreate() {
         super.onCreate()
+        NativePlaybackUsageLedger.get(this).preloadAsync()
         playbackBehavior = NativePlaybackStateStore.loadPlaybackBehavior(this)
         audioDeviceDisconnectMonitor.start()
         progressHeartbeat.start()
@@ -603,8 +613,13 @@ class NativePlaybackService : MediaSessionService() {
             NATIVE_PLAYBACK_TRANSPORT_PLAY_PAUSE -> {
                 val isActive = player?.let { it.isPlaying || it.playWhenReady } == true
                 if (isActive) {
-                    pause(session.sessionId)
-                    publishResumePauseBatch(listOf(session.sessionId))
+                    @Suppress("UNCHECKED_CAST")
+                    val pausedSnapshot = pause(session.sessionId)["value"] as? Map<String, Any?>
+                    if (pausedSnapshot != null) {
+                        publishResumePauseBatchSnapshots(listOf(pausedSnapshot))
+                    } else {
+                        publishResumePauseBatch(listOf(session.sessionId))
+                    }
                 } else {
                     play(session.sessionId)
                 }
@@ -647,7 +662,11 @@ class NativePlaybackService : MediaSessionService() {
         var firstFailure = runPlaybackShutdownActions(
             listOf(
                 stateListeners::clear,
-                { mainHandler.removeCallbacks(publishPendingStates); pendingStateSessions.clear() },
+                {
+                    mainHandler.removeCallbacks(publishPendingStates)
+                    pendingStateSessions.clear()
+                    pendingPositionSessions.clear()
+                },
                 videoOutputs::clear,
                 restoreCoordinator::shutdown,
                 audioDeviceDisconnectMonitor::shutdown,
@@ -732,8 +751,7 @@ class NativePlaybackService : MediaSessionService() {
         return try {
             nativeSession.configure(args.copy(deferPlayerCreation = !args.autoPlay))
             if (args.autoPlay) {
-                PlaybackTimerAlarmScheduler.onManualPlaybackStopped(this, sessionId)
-                timerExecution.removeTarget(sessionId)
+                removeTimerTargetForManualCommand(sessionId)
                 playbackSuspended = false
                 focusSession(sessionId)
                 markPlaybackIntended(sessionId)
@@ -750,7 +768,7 @@ class NativePlaybackService : MediaSessionService() {
                 if (!args.deferPlayerCreation) foregroundCoordinator.holdPlaybackStart(sessionId)
             }
             evictPlayersIfNeeded()
-            publishSessionState(sessionId)
+            publishSessionState(sessionId, includePositionChange = true)
             progressHeartbeat.ensure()
             statePersistence.persistNow()
             statePersistence.ensureTicker()
@@ -837,7 +855,7 @@ class NativePlaybackService : MediaSessionService() {
             session.updateQueue(args.queue, args.queueStartIndex, args.repeatOne,
                 args.repeatAll, args.shuffle, prepared)
         }
-        val snapshot = publishSessionState(args.sessionId)
+        val snapshot = publishSessionState(args.sessionId, includePositionChange = true)
         statePersistence.persistNow()
         syncForegroundState()
         return okResult(snapshot)
@@ -855,8 +873,7 @@ class NativePlaybackService : MediaSessionService() {
         if (session.stoppedAtTrackBoundary) {
             clearTrackStopForManualCommand(sessionId)
         } else {
-            PlaybackTimerAlarmScheduler.onManualPlaybackStopped(this, sessionId)
-            timerExecution.removeTarget(sessionId)
+            removeTimerTargetForManualCommand(sessionId)
         }
         val pausedSessionIds = if (exclusive) {
             exclusivePlaybackSessionIdsToPause(
@@ -908,8 +925,8 @@ class NativePlaybackService : MediaSessionService() {
             ensureFocusedPlayer(session).play()
         }
         evictPlayersIfNeeded()
-        pausedSessionIds.forEach(::publishSessionState)
-        val snapshot = publishSessionState(sessionId)
+        pausedSessionIds.forEach { publishSessionState(it, includePositionChange = true) }
+        val snapshot = publishSessionState(sessionId, includePositionChange = true)
         progressHeartbeat.ensure()
         statePersistence.schedulePersist()
         statePersistence.ensureTicker()
@@ -961,7 +978,7 @@ class NativePlaybackService : MediaSessionService() {
         val session = sessionManager.get(sessionId) ?: return errorResult("Unknown session.")
         playbackRecovery.resetHealth(sessionId, "seek", cancelRecovery = true)
         session.seekTo(positionMs)
-        val snapshot = publishSessionState(sessionId)
+        val snapshot = publishSessionState(sessionId, includePositionChange = true)
         statePersistence.schedulePersist()
         return okResult(snapshot)
     }
@@ -997,15 +1014,24 @@ class NativePlaybackService : MediaSessionService() {
         return okResult(publishSessionState(sessionId))
     }
 
+    private fun removeTimerTargetForManualCommand(sessionId: String) {
+        val armedGeneration = timerExecution.generationFor(sessionId)
+        val finishedAllTargets = timerExecution.removeTargetWithoutCallback(sessionId)
+        PlaybackTimerAlarmScheduler.onManualPlaybackStoppedAsync(
+            context = this,
+            sessionId = sessionId,
+            completeTrackStopGeneration = armedGeneration.takeIf { finishedAllTargets }
+        )
+    }
+
     private fun clearTrackStopForManualCommand(sessionId: String) {
         // Update recovery IDs before settling the last target, which may schedule resume.
-        PlaybackTimerAlarmScheduler.onManualPlaybackStopped(this, sessionId)
         sessionManager.get(sessionId)?.let {
             it.stopAfterCurrentTrack = false
             it.stoppedAtTrackBoundary = false
             it.syncPauseAtTrackEnd()
         }
-        timerExecution.removeTarget(sessionId)
+        removeTimerTargetForManualCommand(sessionId)
     }
 
     fun setSpeed(sessionId: String, speed: Float): Map<String, Any?> {
@@ -1274,7 +1300,7 @@ class NativePlaybackService : MediaSessionService() {
         // Keep the loaded decoder across pause and inline/fullscreen output handoff.
         if (shouldRetainVideoPlayer(session)) {
             session.applyTemporarySpeed(null)
-            return checkNotNull(publishSessionState(session.sessionId))
+            return checkNotNull(publishSessionState(session.sessionId, includePositionChange = true))
         }
         return retireSession(session, "idle")
     }
@@ -1283,8 +1309,9 @@ class NativePlaybackService : MediaSessionService() {
         videoOutputs.detachPlayer(session.sessionId)
         if (mediaSessionHost.isAttachedTo(session.playerOrNull())) mediaSessionHost.release("idle_session")
         pendingStateSessions.remove(session.sessionId)
+        pendingPositionSessions.remove(session.sessionId)
         val snapshot = sessionManager.releaseIdleSession(session, statePersistence, processingState) {
-            publishNativePlaybackSessionState(it, stateListeners.values)
+            publishNativePlaybackSessionState(it, stateListeners.values, includePositionChange = true)
         }
         usage.update()
         progressHeartbeat.stopIfUnobserved()
@@ -1566,10 +1593,18 @@ class NativePlaybackService : MediaSessionService() {
     private fun logSecurityEvent(message: String, error: Throwable?) =
         AppFileLogger.warn(applicationContext, LOG_TAG, message, error)
 
-    private fun publishSessionState(sessionId: String): Map<String, Any?>? {
+    private fun publishSessionState(
+        sessionId: String,
+        includePositionChange: Boolean = false
+    ): Map<String, Any?>? {
         pendingStateSessions.remove(sessionId)
+        pendingPositionSessions.remove(sessionId)
         val session = sessionManager.get(sessionId) ?: return null
-        val snapshot = publishNativePlaybackSessionState(session, stateListeners.values)
+        val snapshot = publishNativePlaybackSessionState(
+            session,
+            stateListeners.values,
+            includePositionChange = includePositionChange
+        )
         sessionManager.updateProgressSession(sessionId)
         progressHeartbeat.stopIfUnobserved()
         progressHeartbeat.ensure()
@@ -1577,7 +1612,12 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun publishResumePauseBatch(sessionIds: List<String>) {
-        val snapshots = sessionIds.mapNotNull { sessionManager.get(it)?.snapshot() }
+        publishResumePauseBatchSnapshots(
+            sessionIds.mapNotNull { sessionManager.get(it)?.snapshot() }
+        )
+    }
+
+    private fun publishResumePauseBatchSnapshots(snapshots: List<Map<String, Any?>>) {
         if (snapshots.isEmpty()) return
         val event = mapOf("eventType" to "resumePauseBatch", "sessions" to snapshots)
         stateListeners.values.forEach { it(event) }

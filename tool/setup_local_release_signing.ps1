@@ -39,7 +39,11 @@ if (Test-Path -LiteralPath $propertiesPath -PathType Leaf) {
         throw "$propertiesPath does not define storeFile."
     }
     $configuredStoreFile = ($storeFileLine -split '=', 2)[1].Trim()
-    $configuredStorePath = Join-Path $androidDirectoryPath $configuredStoreFile
+    $configuredStorePath = if ([System.IO.Path]::IsPathRooted($configuredStoreFile)) {
+        $configuredStoreFile
+    } else {
+        Join-Path $androidDirectoryPath $configuredStoreFile
+    }
     if (-not (Test-Path -LiteralPath $configuredStorePath -PathType Leaf)) {
         throw "Configured release keystore does not exist: $configuredStorePath"
     }

@@ -117,7 +117,12 @@ List<Widget> _buildSettingsLanguageSection({
                     : (value) {
                         if (value != null) {
                           unawaited(
-                            controller.setContentLanguagePreference(value),
+                            saveSettingsWithFeedback(
+                              context,
+                              () => controller.setContentLanguagePreference(
+                                value,
+                              ),
+                            ),
                           );
                         }
                       },
@@ -161,18 +166,21 @@ List<Widget> _buildSettingsGeneralSection({
       children: [
         Consumer(
           builder: (context, ref, _) {
-            final settingsValue = ref.watch(settingsStateProvider).value;
-            final showLocal = settingsValue?.showLocalLibrary ?? true;
-            final showAsmr = settingsValue?.showAsmrOne ?? true;
-            final startupPage =
-                settingsValue?.startupPage ?? StartupPage.library;
+            final (showLocal, showAsmr, showMyPage, startupPage) = ref.watch(
+              settingsStateProvider.select(
+                (state) => (
+                  state.value?.showLocalLibrary ?? true,
+                  state.value?.showAsmrOne ?? true,
+                  state.value?.showMyPage ?? true,
+                  state.value?.startupPage ?? StartupPage.library,
+                ),
+              ),
+            );
             final availablePages = StartupPage.values
                 .where((page) {
                   if (page == StartupPage.library) return showLocal;
                   if (page == StartupPage.asmrOne) return showAsmr;
-                  if (page == StartupPage.my) {
-                    return settingsValue?.showMyPage ?? true;
-                  }
+                  if (page == StartupPage.my) return showMyPage;
                   return true;
                 })
                 .toList(growable: false);

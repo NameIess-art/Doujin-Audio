@@ -127,14 +127,7 @@ class AppUpdateService {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw const HttpException('GitHub release request failed.');
     }
-    final decoded = jsonDecode(body);
-    if (decoded is! List) {
-      throw const FormatException('GitHub releases response is not a list.');
-    }
-    final releases = decoded
-        .map(_GitHubRelease.fromJson)
-        .whereType<_GitHubRelease>()
-        .toList(growable: false);
+    final releases = await compute(_decodeGitHubReleases, body);
     final compatibleRelease = _selectCompatibleRelease(
       releases,
       currentVersion,
@@ -322,34 +315,23 @@ class AppUpdateService {
     DateTime? publishedAt,
   }) {
     final latestVersionName = _versionNameFromTag(tagName);
-    final updateAsset = _selectUpdateAsset(assets, currentVersion, tagName);
-    if (updateAsset == null) {
-      return AppUpdateInfo(
-        currentVersion: currentVersion,
-        latestVersionName: latestVersionName,
-        tagName: tagName,
-        releaseName: releaseName,
-        assetName: null,
-        assetUrl: null,
-        checksumAssetUrl: null,
-        releaseUrl: releaseUrl.toString(),
-        publishedAt: publishedAt,
-        isUpdateAvailable: false,
-        status: AppUpdateStatus.missingAsset,
-      );
-    }
-    final assetUrl = updateAsset.browserDownloadUrl.toString();
-    final assetName = updateAsset.name;
-    final checksumAsset = assets.cast<_GitHubAsset?>().firstWhere(
-      (asset) => asset?.name == '$assetName.sha256',
-      orElse: () => null,
-    );
     final newer = _isNewerVersion(
       latestVersionName,
       currentVersion.versionName,
     );
+    final updateAsset = _selectUpdateAsset(assets, currentVersion, tagName);
+    final assetName = updateAsset?.name;
+    final assetUrl = updateAsset?.browserDownloadUrl.toString();
+    final checksumAsset = assetName == null
+        ? null
+        : assets.cast<_GitHubAsset?>().firstWhere(
+            (asset) => asset?.name == '$assetName.sha256',
+            orElse: () => null,
+          );
     final status = !newer
         ? AppUpdateStatus.upToDate
+        : updateAsset == null
+        ? AppUpdateStatus.missingAsset
         : checksumAsset == null
         ? AppUpdateStatus.missingChecksum
         : AppUpdateStatus.updateAvailable;

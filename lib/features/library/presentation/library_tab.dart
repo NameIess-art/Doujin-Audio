@@ -6,6 +6,7 @@ import '../../settings/presentation/settings_providers.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/localization/app_language_provider.dart';
@@ -35,6 +36,7 @@ import '../../../core/widgets/unified_popup_menu.dart';
 import '../../../core/widgets/windows_smooth_scroll_controller.dart';
 import '../../../core/widgets/glass_refresh_indicator.dart';
 import '../../../core/widgets/library_edit_icon.dart';
+import 'audio_detail_sheet.dart' show showAudioDetailEditor;
 import 'dlsite_metadata_batch_page.dart';
 import 'library_scan_feedback.dart';
 import '../../../app/theme/app_styles.dart';
@@ -260,6 +262,18 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     });
   }
 
+  bool _handleHardwareKey(KeyEvent event) {
+    if (!mounted ||
+        !_isSelectionMode ||
+        !_isActive ||
+        event is! KeyDownEvent ||
+        event.logicalKey != LogicalKeyboardKey.escape) {
+      return false;
+    }
+    _exitSelectionMode();
+    return true;
+  }
+
   void _toggleLibrarySelection(LibraryNode node) {
     if (!isSelectableLibraryNode(node)) return;
     final key = selectionKeyForLibraryNode(node);
@@ -268,6 +282,25 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       if (!_selectedLibraryPaths.add(key)) {
         _selectedLibraryPaths.remove(key);
         if (_selectedLibraryPaths.isEmpty) _isSelectionMode = false;
+      }
+    });
+  }
+
+  void _toggleSelectAllLibrary(List<LibraryNode> tree) {
+    final selectableKeys = <String>[
+      for (final node in tree)
+        if (isSelectableLibraryNode(node)) selectionKeyForLibraryNode(node),
+    ];
+    if (selectableKeys.isEmpty) return;
+    final allSelected = selectableKeys.every(_selectedLibraryPaths.contains);
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    setState(() {
+      if (allSelected) {
+        _selectedLibraryPaths.clear();
+      } else {
+        _selectedLibraryPaths
+          ..clear()
+          ..addAll(selectableKeys);
       }
     });
   }
@@ -425,6 +458,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     _wasSelected = _isSelected;
     widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
     widget.activeSectionListenable?.addListener(_handleActiveTabChanged);
@@ -585,6 +619,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     WidgetsBinding.instance.removeObserver(this);
     UiInteractionCoordinator.instance.cancelCommit(_cardSnapshotCommitKey);
     widget.activeTabIndexListenable?.removeListener(_handleActiveTabChanged);
@@ -876,15 +911,40 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 child: _isSelectionMode
                     ? Consumer(
                         builder: (context, ref, _) {
+                          final tree = ref.watch(librarySortedTreeUiProvider);
+                          final selectableCount = tree
+                              .where(isSelectableLibraryNode)
+                              .length;
                           final selectedSelections =
                               selectedLibraryNodeSelections(
-                                ref.watch(librarySortedTreeUiProvider),
+                                tree,
                                 _selectedLibraryPaths,
                               );
+                          final allSelected =
+                              selectableCount > 0 &&
+                              selectedSelections.length >= selectableCount;
                           return LibraryBatchSelectionHeader(
                             keyPrefix: 'library',
                             i18n: i18n,
                             selectedCount: selectedSelections.length,
+                            allSelected: allSelected,
+                            onToggleSelectAll: selectableCount == 0
+                                ? null
+                                : () => _toggleSelectAllLibrary(tree),
+                            onEditInfo: selectedSelections.length == 1
+                                ? () {
+                                    final target =
+                                        selectedSelections.single.target;
+                                    _exitSelectionMode();
+                                    unawaited(
+                                      showAudioDetailEditor(
+                                        context,
+                                        ref,
+                                        target,
+                                      ),
+                                    );
+                                  }
+                                : null,
                             onAddToPlaylist:
                                 selectedSelections.isEmpty ||
                                     !ref.watch(coreRuntimeReadyProvider)
@@ -1045,7 +1105,16 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         _route = ModalRoute.of(context);
         _covered = MainTabVisibility.isCovered(context);
         _handleActivityChanged();
-        return content;
+        final interceptBack = _isSelectionMode && _isActive;
+        return PopScope<void>(
+          canPop: !interceptBack,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop && _isSelectionMode) {
+              _exitSelectionMode();
+            }
+          },
+          child: content,
+        );
       },
     );
   }

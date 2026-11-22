@@ -72,9 +72,13 @@ class AsmrAccountSyncService {
     required AsmrAuthService authService,
     required AsmrApiService apiService,
     required AsmrPreferencesStore preferencesStore,
+    Duration fullPullCooldown = const Duration(minutes: 5),
+    DateTime Function()? now,
   }) : _authService = authService,
        _apiService = apiService,
-       _preferencesStore = preferencesStore;
+       _preferencesStore = preferencesStore,
+       _fullPullCooldown = fullPullCooldown,
+       _now = now ?? DateTime.now;
 
   static const int _historyLimit = 60;
   static const List<String> _protectedFilters = <String>[
@@ -105,24 +109,30 @@ class AsmrAccountSyncService {
   final AsmrAuthService _authService;
   final AsmrApiService _apiService;
   final AsmrPreferencesStore _preferencesStore;
+  final Duration _fullPullCooldown;
+  final DateTime Function() _now;
   AsmrAccountSnapshot _snapshot = AsmrAccountSnapshot();
-  Future<void> _mutationTail = Future<void>.value();
+  DateTime? _lastFullPullAt;
+  Future<void>? _mutationTail;
 
   AsmrAccountSnapshot get snapshot => _snapshot;
 
-  Future<AsmrAccountSnapshot> initialize() async {
-    final normalized = await compute(_normalizeAccountWorks, (
-      favoriteWorks: await _preferencesStore.loadFavoriteWorks(),
-      historyWorks: await _preferencesStore.loadHistoryWorks(),
-    ));
-    _snapshot = AsmrAccountSnapshot(
-      favoriteWorks: normalized.favoriteWorks,
-      historyWorks: normalized.historyWorks,
-      pendingOperations: await _preferencesStore.loadSyncOperations(),
-      lastSyncAt: await _preferencesStore.loadLastSyncAt(),
-    );
-    await _seedOutboxIfNeeded();
-    return _snapshot;
+  Future<AsmrAccountSnapshot> initialize() {
+    return _serialize(() async {
+      final normalized = await compute(_normalizeAccountWorks, (
+        favoriteWorks: await _preferencesStore.loadFavoriteWorks(),
+        historyWorks: await _preferencesStore.loadHistoryWorks(),
+      ));
+      _lastFullPullAt = null;
+      _snapshot = AsmrAccountSnapshot(
+        favoriteWorks: normalized.favoriteWorks,
+        historyWorks: normalized.historyWorks,
+        pendingOperations: await _preferencesStore.loadSyncOperations(),
+        lastSyncAt: await _preferencesStore.loadLastSyncAt(),
+      );
+      await _seedOutboxIfNeeded();
+      return _snapshot;
+    });
   }
 
   Future<AsmrAccountSnapshot> restoreSession() {
@@ -139,7 +149,11 @@ class AsmrAccountSyncService {
   Future<AsmrAccountSnapshot> login(String name, String password) {
     return _serialize(() async {
       final session = await _authService.login(name.trim(), password);
-      _snapshot = _snapshot.copyWith(session: session);
+      _lastFullPullAt = null;
+      _snapshot = _snapshot.copyWith(
+        session: session,
+        remoteProgressByWorkId: const <int, String>{},
+      );
       return _snapshot;
     });
   }
@@ -147,6 +161,7 @@ class AsmrAccountSyncService {
   Future<AsmrAccountSnapshot> logout() {
     return _serialize(() async {
       await _authService.logout();
+      _lastFullPullAt = null;
       _snapshot = _snapshot.copyWith(
         clearSession: true,
         remoteProgressByWorkId: const <int, String>{},
@@ -216,16 +231,17 @@ class AsmrAccountSyncService {
       favorite: favorite,
       operations: newOperations,
     );
-    _snapshot = current.copyWith(
+    final latest = _snapshot;
+    _snapshot = latest.copyWith(
       favoriteWorks: [
         if (favorite) ...changedWorks.reversed,
-        ...current.favoriteWorks.where(
+        ...latest.favoriteWorks.where(
           (work) => !changed.containsKey(work.workKey),
         ),
       ],
       historyWorks:
-          current.historyWorks.any((work) => changed.containsKey(work.workKey))
-          ? current.historyWorks
+          latest.historyWorks.any((work) => changed.containsKey(work.workKey))
+          ? latest.historyWorks
                 .map((work) {
                   if (!changed.containsKey(work.workKey)) return work;
                   // Favorites own shared metadata; removal retains that saved history row.
@@ -234,7 +250,7 @@ class AsmrAccountSyncService {
                       : work.copyWith(isFavorite: false);
                 })
                 .toList(growable: false)
-          : current.historyWorks,
+          : latest.historyWorks,
       pendingOperations: operations,
     );
     return _snapshot;
@@ -274,7 +290,8 @@ class AsmrAccountSyncService {
             .toList(growable: false),
         operation: operation,
       );
-      _snapshot = current.copyWith(
+      final latest = _snapshot;
+      _snapshot = latest.copyWith(
         historyWorks: history,
         pendingOperations: operations,
       );
@@ -282,16 +299,37 @@ class AsmrAccountSyncService {
     });
   }
 
+  static bool _isSameSession(
+    AsmrAuthSession? current,
+    AsmrAuthSession expected,
+  ) =>
+      current != null &&
+      current.token == expected.token &&
+      current.userName == expected.userName;
+
+  Future<void> _clearExpiredSession(AsmrAuthSession failedSession) {
+    return _serialize(() async {
+      if (!_isSameSession(_snapshot.session, failedSession)) return;
+      await _authService.logout();
+      _lastFullPullAt = null;
+      _snapshot = _snapshot.copyWith(
+        clearSession: true,
+        remoteProgressByWorkId: const <int, String>{},
+      );
+    });
+  }
+
   Future<AsmrAccountSyncResult> synchronize({
     required AsmrContentLanguage language,
     required AsmrRequestCancellationToken cancellationToken,
+    bool fullPull = true,
   }) async {
     var session = _snapshot.session;
     if (session == null || !session.isValid) {
       return AsmrAccountSyncResult(snapshot: _snapshot);
     }
     try {
-      await _runSync(session, language, cancellationToken);
+      await _runSync(session, language, cancellationToken, fullPull: fullPull);
     } catch (error) {
       cancellationToken.throwIfCancelled();
       if (!AsmrApiException.isAuthenticationError(error)) {
@@ -302,10 +340,8 @@ class AsmrAccountSyncService {
         recovered = await _authService.refreshSession();
       } catch (recoveryError) {
         cancellationToken.throwIfCancelled();
-        if (AsmrApiException.isAuthenticationError(recoveryError) &&
-            identical(_snapshot.session, session)) {
-          await _authService.logout();
-          _snapshot = _snapshot.copyWith(clearSession: true);
+        if (AsmrApiException.isAuthenticationError(recoveryError)) {
+          await _clearExpiredSession(session);
         }
         return AsmrAccountSyncResult(
           snapshot: _snapshot,
@@ -314,45 +350,85 @@ class AsmrAccountSyncService {
       }
       cancellationToken.throwIfCancelled();
       if (recovered == null || !recovered.isValid) {
-        if (identical(_snapshot.session, session)) {
-          await _authService.logout();
-          _snapshot = _snapshot.copyWith(clearSession: true);
-        }
+        await _clearExpiredSession(session);
         return AsmrAccountSyncResult(snapshot: _snapshot, failure: error);
       }
+      final previousSession = session;
+      final applied = await _serialize(() async {
+        cancellationToken.throwIfCancelled();
+        if (!_isSameSession(_snapshot.session, previousSession)) return false;
+        _snapshot = _snapshot.copyWith(session: recovered);
+        return true;
+      });
+      if (!applied) {
+        return AsmrAccountSyncResult(snapshot: _snapshot);
+      }
       session = recovered;
-      _snapshot = _snapshot.copyWith(session: recovered);
       try {
-        await _runSync(recovered, language, cancellationToken);
+        await _runSync(
+          recovered,
+          language,
+          cancellationToken,
+          fullPull: fullPull,
+        );
       } catch (retryError) {
         cancellationToken.throwIfCancelled();
-        if (AsmrApiException.isAuthenticationError(retryError) &&
-            identical(_snapshot.session, session)) {
-          await _authService.logout();
-          _snapshot = _snapshot.copyWith(clearSession: true);
+        if (AsmrApiException.isAuthenticationError(retryError)) {
+          await _clearExpiredSession(session);
         }
         return AsmrAccountSyncResult(snapshot: _snapshot, failure: retryError);
       }
     }
     cancellationToken.throwIfCancelled();
-    final syncedAt = DateTime.now();
+    final syncedAt = _now();
     await _preferencesStore.saveLastSyncAt(syncedAt);
     cancellationToken.throwIfCancelled();
-    _snapshot = _snapshot.copyWith(lastSyncAt: syncedAt, session: session);
+    final completedSession = session;
+    await _serialize(() async {
+      cancellationToken.throwIfCancelled();
+      if (!_isSameSession(_snapshot.session, completedSession)) return;
+      _snapshot = _snapshot.copyWith(
+        lastSyncAt: syncedAt,
+        session: completedSession,
+      );
+    });
     return AsmrAccountSyncResult(snapshot: _snapshot);
   }
 
   Future<void> _runSync(
     AsmrAuthSession session,
     AsmrContentLanguage language,
-    AsmrRequestCancellationToken token,
-  ) async {
+    AsmrRequestCancellationToken token, {
+    required bool fullPull,
+  }) async {
+    var shouldFullPull =
+        fullPull ||
+        _lastFullPullAt == null ||
+        _now().difference(_lastFullPullAt!) >= _fullPullCooldown;
     do {
       token.throwIfCancelled();
-      final batch = await token.waitFor(
-        compute(_orderedOperations, _snapshot.pendingOperations),
-      );
+      final pending = _snapshot.pendingOperations;
+      final batch = pending.length <= 64
+          ? _orderedOperations(pending)
+          : await token.waitFor(compute(_orderedOperations, pending));
       token.throwIfCancelled();
+      if (!shouldFullPull) {
+        if (batch.isEmpty) break;
+        final flushResult = await _flushOperations(session.token, batch, token);
+        token.throwIfCancelled();
+        await _serialize(() async {
+          token.throwIfCancelled();
+          final uploadedKeys = flushResult.uploaded.map(_operationKey).toSet();
+          final operations = _snapshot.pendingOperations
+              .where((item) => !uploadedKeys.contains(_operationKey(item)))
+              .toList(growable: false);
+          await _preferencesStore.saveSyncOperations(operations);
+          token.throwIfCancelled();
+          _snapshot = _snapshot.copyWith(pendingOperations: operations);
+          return _snapshot;
+        });
+        continue;
+      }
       Map<String, List<AsmrReviewRecord>>? preflightPages;
       if (batch.any(
         (operation) =>
@@ -391,9 +467,12 @@ class AsmrAccountSyncService {
           historyWorks: merged.historyWorks,
           operations: merged.pendingOperations,
         );
+        token.throwIfCancelled();
         _snapshot = merged;
+        _lastFullPullAt = _now();
         return _snapshot;
       });
+      shouldFullPull = false;
     } while (_snapshot.pendingOperations.isNotEmpty);
   }
 
@@ -408,7 +487,7 @@ class AsmrAccountSyncService {
     final mutatedFilters = <String>{};
     Future<void> putAndTrack(int workId, String progress) async {
       final previous = _snapshot.remoteProgressByWorkId[workId];
-      await _putProgress(workId, progress, tokenValue);
+      await _putProgress(workId, progress, tokenValue, token);
       mutatedFilters.add(progress);
       if (previous != null) mutatedFilters.add(previous);
     }
@@ -426,6 +505,16 @@ class AsmrAccountSyncService {
                 workId: operation.workId,
                 token: tokenValue,
               );
+              await _serialize(() async {
+                token.throwIfCancelled();
+                if (_snapshot.session?.token != tokenValue) return;
+                final updatedProgress = Map<int, String>.of(
+                  _snapshot.remoteProgressByWorkId,
+                )..remove(operation.workId);
+                _snapshot = _snapshot.copyWith(
+                  remoteProgressByWorkId: updatedProgress,
+                );
+              });
               mutatedFilters.add('marked');
             }
             if ((progress == 'marked' || !_isProtected(operation.workId)) &&
@@ -445,6 +534,8 @@ class AsmrAccountSyncService {
         }
         token.throwIfCancelled();
         uploaded.add(operation);
+      } on AsmrRequestCancelled {
+        rethrow;
       } catch (error) {
         if (AsmrApiException.isAuthenticationError(error)) rethrow;
         failed.add(operation);
@@ -473,18 +564,27 @@ class AsmrAccountSyncService {
     return (uploaded: uploaded, mutatedFilters: mutatedFilters);
   }
 
-  Future<void> _putProgress(int workId, String progress, String token) async {
+  Future<void> _putProgress(
+    int workId,
+    String progress,
+    String token,
+    AsmrRequestCancellationToken cancellationToken,
+  ) async {
     await _apiService.putReviewProgress(
       workId: workId,
       progress: progress,
       token: token,
     );
-    _snapshot = _snapshot.copyWith(
-      remoteProgressByWorkId: <int, String>{
-        ..._snapshot.remoteProgressByWorkId,
-        workId: progress,
-      },
-    );
+    await _serialize(() async {
+      cancellationToken.throwIfCancelled();
+      if (_snapshot.session?.token != token) return;
+      _snapshot = _snapshot.copyWith(
+        remoteProgressByWorkId: <int, String>{
+          ..._snapshot.remoteProgressByWorkId,
+          workId: progress,
+        },
+      );
+    });
   }
 
   Future<Map<String, List<AsmrReviewRecord>>> _preflightProtectedProgress(
@@ -500,7 +600,11 @@ class AsmrAccountSyncService {
     token.throwIfCancelled();
     final progress = await token.waitFor(compute(_progressByWorkId, pages));
     token.throwIfCancelled();
-    _snapshot = _snapshot.copyWith(remoteProgressByWorkId: progress);
+    await _serialize(() async {
+      token.throwIfCancelled();
+      if (_snapshot.session?.token != tokenValue) return;
+      _snapshot = _snapshot.copyWith(remoteProgressByWorkId: progress);
+    });
     return <String, List<AsmrReviewRecord>>{
       for (var index = 0; index < _protectedFilters.length; index++)
         _protectedFilters[index]: pages[index],
@@ -772,8 +876,17 @@ class AsmrAccountSyncService {
   }
 
   Future<T> _serialize<T>(Future<T> Function() mutation) {
-    final result = _mutationTail.then((_) => mutation());
-    _mutationTail = result.then<void>((_) {}, onError: (_, _) {});
+    final previous = _mutationTail;
+    final result = previous == null
+        ? Future<T>.sync(mutation)
+        : previous.then((_) => mutation());
+    late final Future<void> tail;
+    tail = result.then<void>((_) {}, onError: (_, _) {}).whenComplete(() {
+      if (identical(_mutationTail, tail)) {
+        _mutationTail = null;
+      }
+    });
+    _mutationTail = tail;
     return result;
   }
 }

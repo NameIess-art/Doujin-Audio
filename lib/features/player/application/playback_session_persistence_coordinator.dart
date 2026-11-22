@@ -165,23 +165,32 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
       final queueTracks =
           customQueueTracks ?? item.playbackQueue?.expandedTracks;
       MusicTrack? track = summary.currentTrack;
+      var resolvedQueueIndex = item.currentQueueIndex;
       if (queueTracks != null && queueTracks.isNotEmpty) {
         final index = item.currentQueueIndex;
-        track =
-            index >= 0 &&
-                index < queueTracks.length &&
-                PathMatcher.equalsNormalized(
-                  queueTracks[index].path,
-                  item.trackPath,
-                )
-            ? queueTracks[index]
-            : queueTracks.firstWhere(
-                (candidate) => PathMatcher.equalsNormalized(
-                  candidate.path,
-                  item.trackPath,
-                ),
-                orElse: () => queueTracks.first,
-              );
+        if (index >= 0 &&
+            index < queueTracks.length &&
+            PathMatcher.equalsNormalized(
+              queueTracks[index].path,
+              item.trackPath,
+            )) {
+          track = queueTracks[index];
+          resolvedQueueIndex = index;
+        } else {
+          final matchedIndex = queueTracks.indexWhere(
+            (candidate) => PathMatcher.equalsNormalized(
+              candidate.path,
+              item.trackPath,
+            ),
+          );
+          if (matchedIndex >= 0) {
+            track = queueTracks[matchedIndex];
+            resolvedQueueIndex = matchedIndex;
+          } else {
+            track = queueTracks.first;
+            resolvedQueueIndex = 0;
+          }
+        }
       }
       track ??= _persistedTrackResolver?.call(item.trackPath);
       if (track == null && item.playbackQueue == null) continue;
@@ -216,7 +225,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
         playbackQueue: item.playbackQueue,
         queueLoadingRequired: summary.requiresQueueLoad,
         persistedCurrentTrack: summary.currentTrack,
-        currentQueueIndex: recordProgress ? item.currentQueueIndex : 0,
+        currentQueueIndex: resolvedQueueIndex,
       );
       session
         ..lastKnownPosition = restoredPosition

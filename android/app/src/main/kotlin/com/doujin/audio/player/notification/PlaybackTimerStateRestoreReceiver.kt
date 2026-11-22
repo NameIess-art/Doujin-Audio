@@ -20,9 +20,17 @@ class PlaybackTimerStateRestoreReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action ?: return
         if (!isPlaybackTimerStateRestoreAction(action)) return
-        PlaybackTimerAlarmScheduler.rescheduleFromStoredState(
-            context.applicationContext,
-            reasonAction = action
-        )
+        val appContext = context.applicationContext
+        val pendingResult = goAsync()
+        PlaybackTimerAlarmScheduler.executeOnTimerExecutor {
+            try {
+                PlaybackTimerAlarmScheduler.rescheduleFromStoredState(
+                    appContext,
+                    reasonAction = action
+                )
+            } finally {
+                pendingResult?.finish()
+            }
+        }
     }
 }

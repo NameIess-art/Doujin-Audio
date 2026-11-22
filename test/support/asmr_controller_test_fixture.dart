@@ -146,6 +146,7 @@ AsmrLibraryController createTestAsmrController({
   required AsmrPersistenceRepository persistenceRepository,
   AsmrApiService? apiService,
   AsmrAuthService? authService,
+  Duration backgroundSyncDebounce = Duration.zero,
 }) {
   final services = createTestAsmrServices(
     preferencesStore: preferencesStore,
@@ -157,6 +158,7 @@ AsmrLibraryController createTestAsmrController({
     preferencesStore: services.preferencesStore,
     remoteCatalogService: services.remoteCatalogService,
     accountSyncService: services.accountSyncService,
+    backgroundSyncDebounce: backgroundSyncDebounce,
   );
   addTearDown(controller.dispose);
   return controller;

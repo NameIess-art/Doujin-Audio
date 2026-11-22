@@ -576,4 +576,220 @@ void main() {
       variant: TargetPlatformVariant({platform}),
     );
   }
+
+  testWidgets(
+    'Windows desktop navigation provides collapsed tooltips and shortcuts button',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      await AppPreferences.init();
+      final i18n = AppLanguageProvider();
+      final activePage = ValueNotifier(0);
+      final iconKeys = List.generate(
+        MainDestinationType.values.length,
+        (_) => GlobalKey(),
+      );
+      final destinations = resolveMainDestinations(
+        showLocalLibrary: true,
+        showAsmrOne: true,
+      );
+      var shortcutsOpened = 0;
+      addTearDown(() {
+        i18n.dispose();
+        activePage.dispose();
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DesktopMainNavigation(
+              i18n: i18n,
+              overlaySessions: const [],
+              destinations: destinations,
+              isMenuCollapsed: true,
+              activePageIndex: activePage,
+              menuIconKeys: iconKeys,
+              menuIconLinks: List.generate(
+                MainDestinationType.values.length,
+                (_) => LayerLink(),
+              ),
+              collapseOffset: (_, _) => Offset.zero,
+              onSwitchPage: (index) => activePage.value = index,
+              onToggleMenu: () {},
+              onShowShortcuts: () => shortcutsOpened++,
+              playbackGeometryKey: GlobalKey(),
+              onReportPlaybackRect:
+                  ({
+                    required dockCollapsed,
+                    required dockAreaWidth,
+                    required expandedDockWidth,
+                  }) {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Collapsed destination icon buttons carry localized tooltips.
+      for (final destination in destinations) {
+        expect(find.byTooltip(i18n.tr(destination.labelKey)), findsOneWidget);
+      }
+
+      // Keyboard shortcuts help button is visible and invokes callback.
+      final shortcutsBtn = find.byKey(
+        const ValueKey<String>('desktop_keyboard_shortcuts_button'),
+      );
+      expect(shortcutsBtn, findsOneWidget);
+      await tester.tap(shortcutsBtn);
+      await tester.pump();
+      expect(shortcutsOpened, 1);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'Windows navigation rail clears highlight after clicking and switching tabs',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      await AppPreferences.init();
+      final i18n = AppLanguageProvider();
+      final activePage = ValueNotifier(1);
+      final iconKeys = List.generate(
+        MainDestinationType.values.length,
+        (_) => GlobalKey(),
+      );
+      final destinations = resolveMainDestinations(
+        showLocalLibrary: true,
+        showAsmrOne: true,
+      );
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+        i18n.dispose();
+        activePage.dispose();
+      });
+
+      var collapsed = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StatefulBuilder(
+            builder: (context, setState) => Scaffold(
+              body: DesktopMainNavigation(
+                i18n: i18n,
+                overlaySessions: const [],
+                destinations: destinations,
+                isMenuCollapsed: collapsed,
+                activePageIndex: activePage,
+                menuIconKeys: iconKeys,
+                menuIconLinks: List.generate(
+                  MainDestinationType.values.length,
+                  (_) => LayerLink(),
+                ),
+                collapseOffset: (_, _) => Offset.zero,
+                onSwitchPage: (index) => activePage.value = index,
+                onToggleMenu: () => setState(() => collapsed = !collapsed),
+                playbackGeometryKey: GlobalKey(),
+                onReportPlaybackRect:
+                    ({
+                      required dockCollapsed,
+                      required dockAreaWidth,
+                      required expandedDockWidth,
+                    }) {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      Color playlistColor() {
+        final paint = tester.widget<CustomPaint>(
+          find.descendant(
+            of: find.byType(PlaylistIcon),
+            matching: find.byType(CustomPaint),
+          ),
+        );
+        return (paint.painter! as PlaylistIconPainter).color;
+      }
+
+      Element playlistIconButtonElement() => tester.element(
+        find.ancestor(
+          of: find.byType(PlaylistIcon),
+          matching: find.byType(IconButton),
+        ),
+      );
+
+      final cs = Theme.of(
+        tester.element(find.byType(DesktopMainNavigation)),
+      ).colorScheme;
+      final rail = tester.widget<NavigationRail>(find.byType(NavigationRail));
+      final playlistLabelCenter = tester.getCenter(
+        find.byWidget(rail.destinations[2].label),
+      );
+      final libraryCenter = tester.getCenter(
+        find.byKey(const ValueKey<String>('main_destination_music_library')),
+      );
+      final playlistCenter = tester.getCenter(
+        find.byKey(const ValueKey<String>('main_destination_nav_sessions')),
+      );
+
+      expect(playlistColor(), cs.onSurfaceVariant);
+
+      final mouse = await tester.createGesture(
+        kind: ui.PointerDeviceKind.mouse,
+      );
+      await mouse.addPointer(location: const Offset(600, 400));
+      await tester.pumpAndSettle();
+
+      // Hover expanded label, click it, then collapse the rail and switch back.
+      final initialElement = playlistIconButtonElement();
+      await mouse.moveTo(playlistLabelCenter);
+      await tester.pumpAndSettle();
+      expect(playlistColor(), cs.primary);
+
+      await mouse.down(playlistLabelCenter);
+      await tester.pump();
+      await mouse.up();
+      await tester.pumpAndSettle();
+      expect(activePage.value, 2);
+      expect(playlistIconButtonElement(), same(initialElement));
+
+      await tester.tap(find.byIcon(Icons.menu_open_rounded));
+      await tester.pumpAndSettle();
+      await mouse.moveTo(libraryCenter);
+      await tester.pumpAndSettle();
+      await mouse.down(libraryCenter);
+      await tester.pump();
+      await mouse.up();
+      await tester.pumpAndSettle();
+      expect(activePage.value, 1);
+      expect(playlistColor(), cs.onSurfaceVariant);
+
+      // Collapsed: hover playlist icon, click it, switch to library, move away.
+      await mouse.moveTo(playlistCenter);
+      await tester.pumpAndSettle();
+      expect(playlistColor(), cs.primary);
+
+      await mouse.down(playlistCenter);
+      await tester.pump();
+      await mouse.up();
+      await tester.pump();
+      expect(activePage.value, 2);
+      expect(playlistIconButtonElement(), same(initialElement));
+
+      await mouse.moveTo(libraryCenter);
+      await tester.pumpAndSettle();
+      await mouse.down(libraryCenter);
+      await tester.pump();
+      await mouse.up();
+      await mouse.moveTo(const Offset(600, 400));
+      await tester.pumpAndSettle();
+      expect(activePage.value, 1);
+      expect(playlistColor(), cs.onSurfaceVariant);
+
+      await mouse.removePointer();
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
 }

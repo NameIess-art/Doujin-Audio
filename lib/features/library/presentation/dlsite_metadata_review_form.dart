@@ -42,6 +42,10 @@ class DlsiteMetadataReviewForm extends StatelessWidget {
     this.validate = false,
     this.enabled = true,
     this.isLibraryRootFolder = true,
+    this.folderNameFieldKey,
+    this.releaseDateFieldKey,
+    this.durationFieldKey,
+    this.ratingFieldKey,
   });
   final bool editing;
   final DlsiteMetadata? metadata;
@@ -57,6 +61,10 @@ class DlsiteMetadataReviewForm extends StatelessWidget {
   final bool validate;
   final bool enabled;
   final bool isLibraryRootFolder;
+  final GlobalKey? folderNameFieldKey;
+  final GlobalKey? releaseDateFieldKey;
+  final GlobalKey? durationFieldKey;
+  final GlobalKey? ratingFieldKey;
 
   @override
   Widget build(BuildContext context) {
@@ -68,19 +76,22 @@ class DlsiteMetadataReviewForm extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (editing)
-          _ReviewTextField(
-            key: const ValueKey<String>(
-              'metadata_edit_audio_detail_folder_name',
+          KeyedSubtree(
+            key: folderNameFieldKey,
+            child: _ReviewTextField(
+              key: const ValueKey<String>(
+                'metadata_edit_audio_detail_folder_name',
+              ),
+              controller: folderNameController,
+              label: i18n.tr(
+                isLibraryRootFolder
+                    ? 'audio_detail_folder_name'
+                    : 'audio_detail_file_name',
+              ),
+              errorText: validate && folderNameController.text.trim().isEmpty
+                  ? i18n.tr('metadata_invalid_name')
+                  : null,
             ),
-            controller: folderNameController,
-            label: i18n.tr(
-              isLibraryRootFolder
-                  ? 'audio_detail_folder_name'
-                  : 'audio_detail_file_name',
-            ),
-            errorText: validate && folderNameController.text.trim().isEmpty
-                ? i18n.tr('metadata_invalid_name')
-                : null,
           ),
         _ReviewTextField(
           key: editing
@@ -127,44 +138,53 @@ class DlsiteMetadataReviewForm extends StatelessWidget {
           label: i18n.tr('audio_detail_tags'),
           hint: i18n.tr('audio_detail_multi_hint'),
         ),
-        _ReviewTextField(
-          key: editing
-              ? const ValueKey<String>(
-                  'metadata_edit_audio_detail_release_date',
-                )
-              : null,
-          controller: releaseDateController,
-          label: i18n.tr('audio_detail_release_date'),
-          hint: 'YYYY-MM-DD',
-          errorText:
-              validate &&
-                  metadataDateErrorKey(releaseDateController.text) != null
-              ? i18n.tr('metadata_invalid_date')
-              : null,
+        KeyedSubtree(
+          key: releaseDateFieldKey,
+          child: _ReviewTextField(
+            key: editing
+                ? const ValueKey<String>(
+                    'metadata_edit_audio_detail_release_date',
+                  )
+                : null,
+            controller: releaseDateController,
+            label: i18n.tr('audio_detail_release_date'),
+            hint: 'YYYY-MM-DD',
+            errorText:
+                validate &&
+                    metadataDateErrorKey(releaseDateController.text) != null
+                ? i18n.tr('metadata_invalid_date')
+                : null,
+          ),
         ),
-        _ReviewTextField(
-          key: editing
-              ? const ValueKey<String>('metadata_edit_card_info_duration')
-              : null,
-          controller: durationController,
-          label: i18n.tr('card_info_duration'),
-          hint: 'HH:MM:SS',
-          errorText:
-              validate &&
-                  metadataDurationErrorKey(durationController.text) != null
-              ? i18n.tr('metadata_invalid_duration')
-              : null,
+        KeyedSubtree(
+          key: durationFieldKey,
+          child: _ReviewTextField(
+            key: editing
+                ? const ValueKey<String>('metadata_edit_card_info_duration')
+                : null,
+            controller: durationController,
+            label: i18n.tr('card_info_duration'),
+            hint: 'HH:MM:SS',
+            errorText:
+                validate &&
+                    metadataDurationErrorKey(durationController.text) != null
+                ? i18n.tr('metadata_invalid_duration')
+                : null,
+          ),
         ),
-        _ReviewTextField(
-          key: editing
-              ? const ValueKey<String>('metadata_edit_audio_detail_rating')
-              : null,
-          controller: ratingController,
-          label: i18n.tr('audio_detail_rating'),
-          errorText:
-              validate && metadataRatingErrorKey(ratingController.text) != null
-              ? i18n.tr('metadata_invalid_rating')
-              : null,
+        KeyedSubtree(
+          key: ratingFieldKey,
+          child: _ReviewTextField(
+            key: editing
+                ? const ValueKey<String>('metadata_edit_audio_detail_rating')
+                : null,
+            controller: ratingController,
+            label: i18n.tr('audio_detail_rating'),
+            errorText:
+                validate && metadataRatingErrorKey(ratingController.text) != null
+                ? i18n.tr('metadata_invalid_rating')
+                : null,
+          ),
         ),
       ],
     );

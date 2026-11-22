@@ -58,6 +58,10 @@ object PlaybackTimerAlarmScheduler {
     private const val autoResumeRequestCode = 32002
     private const val autoResumeRetryDelayMs = 30_000L
 
+    internal fun executeOnTimerExecutor(task: () -> Unit) {
+        timerRecoveryExecutor.execute(task)
+    }
+
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
     private val timerRecoveryExecutor by lazy {
         Executors.newSingleThreadExecutor { runnable ->
@@ -102,6 +106,54 @@ object PlaybackTimerAlarmScheduler {
         null
     }
 
+    fun syncAsync(
+        context: Context,
+        timerModeIndex: Int?,
+        durationMs: Long?,
+        waitingForPlayback: Boolean,
+        timerEndsAtWallClockMs: Long?,
+        autoResumeEnabled: Boolean,
+        autoResumeHour: Int,
+        autoResumeMinute: Int,
+        autoResumeAtMs: Long?,
+        pausedSessionIds: List<String>,
+        generation: Int,
+        timerCandidateSessionIds: List<String>,
+        stopAfterCurrentTrack: Boolean,
+        onComplete: (Exception?) -> Unit
+    ) {
+        val shouldCancelTrackStop =
+            timerEndsAtWallClockMs != null || pausedSessionIds.isEmpty() || !stopAfterCurrentTrack
+        if (shouldCancelTrackStop) {
+            NativePlaybackService.controller()?.cancelTimerStopAfterCurrentTrack()
+        }
+        val appContext = context.applicationContext
+        executeOnTimerExecutor {
+            val error = try {
+                sync(
+                    context = appContext,
+                    timerModeIndex = timerModeIndex,
+                    durationMs = durationMs,
+                    waitingForPlayback = waitingForPlayback,
+                    timerEndsAtWallClockMs = timerEndsAtWallClockMs,
+                    autoResumeEnabled = autoResumeEnabled,
+                    autoResumeHour = autoResumeHour,
+                    autoResumeMinute = autoResumeMinute,
+                    autoResumeAtMs = autoResumeAtMs,
+                    pausedSessionIds = pausedSessionIds,
+                    generation = generation,
+                    timerCandidateSessionIds = timerCandidateSessionIds,
+                    stopAfterCurrentTrack = stopAfterCurrentTrack,
+                    cancelTrackStop = false
+                )
+                null
+            } catch (error: Exception) {
+                error
+            }
+            mainHandler.post { onComplete(error) }
+        }
+    }
+
     fun sync(
         context: Context,
         timerModeIndex: Int?,
@@ -115,9 +167,10 @@ object PlaybackTimerAlarmScheduler {
         pausedSessionIds: List<String>,
         generation: Int,
         timerCandidateSessionIds: List<String>,
-        stopAfterCurrentTrack: Boolean
+        stopAfterCurrentTrack: Boolean,
+        cancelTrackStop: Boolean = true
     ) {
-        if (timerEndsAtWallClockMs != null || pausedSessionIds.isEmpty() || !stopAfterCurrentTrack) {
+        if (cancelTrackStop && (timerEndsAtWallClockMs != null || pausedSessionIds.isEmpty() || !stopAfterCurrentTrack)) {
             NativePlaybackService.controller()?.cancelTimerStopAfterCurrentTrack()
         }
         logInfo(
@@ -145,6 +198,11 @@ object PlaybackTimerAlarmScheduler {
             NativePlaybackStateStore.saveTimerRuntimeState(context, runtimeState)
         } else {
             NativePlaybackStateStore.clearTimerRuntimeState(context)
+        }
+        if (pausedSessionIds.isNotEmpty()) {
+            NativePlaybackStateStore.storePausedSessionIds(context, pausedSessionIds)
+        } else {
+            NativePlaybackStateStore.clearPausedSessionIds(context)
         }
 
         if (timerEndsAtWallClockMs != null) {
@@ -308,7 +366,7 @@ object PlaybackTimerAlarmScheduler {
             runtimeState.generation,
             runtimeState.stopAfterCurrentTrack
         )
-        if (runtimeState.stopAfterCurrentTrack || pauseResult.sessionIds.isNotEmpty()) {
+        if (pauseResult.sessionIds.isNotEmpty()) {
             finishTimerExpired(context, runtimeState, pauseResult.sessionIds, pauseResult.waitingForTrackEnd)
             complete(resultExecuted)
             return
@@ -332,17 +390,20 @@ object PlaybackTimerAlarmScheduler {
                 }
                 try {
                     // Sticky recovery may have started playback while the candidate read was queued.
-                    val paused = NativePlaybackService.controller()
-                        ?.pausePlayingSessionsForTimer(runtimeState.generation, false)
-                        ?.sessionIds
-                        .orEmpty()
+                    val recheckPause = NativePlaybackService.controller()
+                        ?.pausePlayingSessionsForTimer(
+                            runtimeState.generation,
+                            currentState.stopAfterCurrentTrack
+                        )
+                    val paused = recheckPause?.sessionIds.orEmpty()
+                    val waitingForTrackEnd = paused.isNotEmpty() && recheckPause?.waitingForTrackEnd == true
                     val ids = paused.ifEmpty {
                         recovered.filter { (id, revision) ->
                             NativePlaybackStateStore.sessionRevision(id) == revision
                         }.keys.toList()
                     }
                         .ifEmpty { NativePlaybackStateStore.loadTimerCandidateSessionIds(context) }
-                    finishTimerExpired(context, currentState, ids)
+                    finishTimerExpired(context, currentState, ids, waitingForTrackEnd)
                 } catch (error: Exception) {
                     logWarn(context, "timer_expiry_failed", error)
                     complete(resultFailed)
@@ -607,35 +668,52 @@ object PlaybackTimerAlarmScheduler {
         PendingIntent.FLAG_IMMUTABLE
     )
 
+    fun onManualPlaybackStoppedAsync(
+        context: Context,
+        sessionId: String,
+        completeTrackStopGeneration: Int? = null
+    ) {
+        if (sessionId.isBlank()) return
+        val appContext = context.applicationContext
+        executeOnTimerExecutor {
+            onManualPlaybackStopped(appContext, sessionId)
+            if (completeTrackStopGeneration != null) {
+                completeTimerStopAfterCurrentTracks(appContext, completeTrackStopGeneration)
+            }
+        }
+    }
+
     fun onManualPlaybackStopped(context: Context, sessionId: String) {
         // An explicit transport command removes a target; buffering and focus recovery do not.
         if (sessionId.isBlank()) return
         NativePlaybackStateStore.removeTimerCandidateSessionId(context, sessionId)
         val pausedSessionIds = NativePlaybackStateStore.loadPausedSessionIds(context)
-        if (sessionId !in pausedSessionIds) return
-        val remainingPausedIds = pausedSessionIds.filterNot { it == sessionId }
-        if (remainingPausedIds.isEmpty()) {
-            NativePlaybackStateStore.clearPausedSessionIds(context)
-        } else {
-            NativePlaybackStateStore.storePausedSessionIds(context, remainingPausedIds)
+        var clearedTimerPause = false
+        if (sessionId in pausedSessionIds) {
+            clearedTimerPause = true
+            val remainingPausedIds = pausedSessionIds.filterNot { it == sessionId }
+            if (remainingPausedIds.isEmpty()) {
+                NativePlaybackStateStore.clearPausedSessionIds(context)
+            } else {
+                NativePlaybackStateStore.storePausedSessionIds(context, remainingPausedIds)
+            }
         }
         NativePlaybackStateStore.loadTimerRuntimeState(context)?.let { stored ->
             if (sessionId !in stored.pausedSessionIds) return@let
-            val remainingRuntimeIds = stored.pausedSessionIds.filterNot { it == sessionId }
-            val updated = stored.copy(
-                autoResumeAtMs = stored.autoResumeAtMs.takeIf { remainingRuntimeIds.isNotEmpty() },
-                pausedSessionIds = remainingRuntimeIds
-            )
+            clearedTimerPause = true
+            val updated = stored.withoutSession(sessionId)
             if (updated.hasRuntime) {
                 NativePlaybackStateStore.saveTimerRuntimeState(context, updated)
             } else {
                 NativePlaybackStateStore.clearTimerRuntimeState(context)
             }
-            if (remainingRuntimeIds.isEmpty()) {
+            if (updated.pausedSessionIds.isEmpty()) {
                 cancelAlarm(context, actionAutoResume, autoResumeRequestCode)
             }
         }
-        logInfo(context, "manual_playback_cleared_timer_pause sessionId=$sessionId")
+        if (clearedTimerPause) {
+            logInfo(context, "manual_playback_cleared_timer_pause sessionId=$sessionId")
+        }
     }
 
     fun logInfo(context: Context, message: String) {

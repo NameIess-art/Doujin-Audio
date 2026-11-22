@@ -12,10 +12,14 @@ import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/dlsite_metadata.dart';
 import 'package:doujin_audio/core/widgets/file_tree_row.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
+import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:doujin_audio/features/library/application/dlsite_metadata_batch_session.dart';
 import 'package:doujin_audio/features/library/application/dlsite_metadata_service.dart';
+import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/domain/audio_library_category.dart';
 import 'package:doujin_audio/features/library/presentation/dlsite_metadata_batch_page.dart';
+
+import 'support/app_runtime_test_fixture.dart';
 
 void main() {
   AudioLibraryCategoryEntry resultEntry(
@@ -42,6 +46,73 @@ void main() {
     circleName: 'Circle',
     voiceActors: const [],
     tags: const [],
+  );
+
+  testWidgets(
+    'batch review restores each confirmed cover choice',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: CoverArtworkCacheService(
+          libraryService: LibraryService(),
+          remoteCoverDownloader: (_) async => null,
+        ),
+      );
+      addTearDown(fixture.dispose);
+      final session = DlsiteMetadataBatchSession(
+        entries: [resultEntry('001'), resultEntry('002')],
+        lookup: (query) async => [
+          resultMetadata(
+            query.rjCode!.substring(5),
+          ).copyWith(coverUrl: 'https://example.com/${query.rjCode}.jpg'),
+        ],
+      );
+      await tester.pumpWidget(
+        fixture.build(DlsiteMetadataBatchResultsPage(session: session)),
+      );
+      await tester.pumpAndSettle();
+
+      final firstResult = find.byKey(
+        const ValueKey<String>('batch_metadata_result_0'),
+      );
+      final saveCover = find.byType(SwitchListTile);
+      final confirm = find.byKey(
+        const ValueKey<String>('dlsite_review_confirm'),
+      );
+
+      await tester.tap(firstResult);
+      await tester.pumpAndSettle();
+      expect(tester.widget<SwitchListTile>(saveCover).value, isTrue);
+      await tester.tap(saveCover);
+      await tester.tap(confirm);
+      await tester.pumpAndSettle();
+      expect(session.items[0].saveCover, isFalse);
+
+      expect(tester.widget<SwitchListTile>(saveCover).value, isFalse);
+      await tester.tap(saveCover);
+      await tester.tap(confirm);
+      await tester.pumpAndSettle();
+      expect(session.items[1].saveCover, isTrue);
+
+      await tester.tap(firstResult);
+      await tester.pumpAndSettle();
+      expect(tester.widget<SwitchListTile>(saveCover).value, isFalse);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('dlsite_review_next_work')),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.widget<SwitchListTile>(saveCover).value, isTrue);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('dlsite_review_previous_work')),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.widget<SwitchListTile>(saveCover).value, isFalse);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets('batch results render and update all lookup status icons', (
@@ -371,9 +442,10 @@ void main() {
     tester,
   ) async {
     final session = DlsiteMetadataBatchSession(
-      entries: [resultEntry('001')],
-      lookup: (_) =>
-          Future<List<DlsiteMetadata>>.value([resultMetadata('001')]),
+      entries: [resultEntry('001'), resultEntry('002')],
+      lookup: (query) => Future<List<DlsiteMetadata>>.value([
+        resultMetadata(query.rjCode!.substring(5)),
+      ]),
       apply: (_) async {},
     );
     final languageProvider = AppLanguageProvider();
@@ -393,6 +465,23 @@ void main() {
     await tester.pump();
     await tester.pump();
 
+    // Tapping Save with 0 confirmed items shows hint instead of popping.
+    await tester.tap(
+      find.byKey(const ValueKey<String>('batch_metadata_results_done')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('batch_metadata_completion_dialog')),
+      findsNothing,
+    );
+    expect(
+      find.text(languageProvider.tr('batch_results_none_confirmed')),
+      findsOneWidget,
+    );
+
+    session.confirm(0, metadata: resultMetadata('001'), saveCover: false);
+    await tester.pump();
+
     await tester.tap(
       find.byKey(const ValueKey<String>('batch_metadata_results_done')),
     );
@@ -404,7 +493,7 @@ void main() {
     );
     expect(
       find.text(
-        languageProvider.tr('batch_metadata_completion_saved', {'count': '0'}),
+        languageProvider.tr('batch_metadata_completion_saved', {'count': '1'}),
       ),
       findsOneWidget,
     );
@@ -420,6 +509,141 @@ void main() {
       find.text(
         languageProvider.tr('batch_metadata_completion_failed', {'count': '0'}),
       ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets(
+    'batch results filter, confirm matched, retry failed, and confirm leave',
+    (tester) async {
+      var failThird = true;
+      final session = DlsiteMetadataBatchSession(
+        entries: [resultEntry('001'), resultEntry('002'), resultEntry('003')],
+        lookup: (query) {
+          if (query.rjCode == 'RJ000003' && failThird) {
+            return Future<List<DlsiteMetadata>>.error(StateError('offline'));
+          }
+          return Future<List<DlsiteMetadata>>.value([
+            resultMetadata(query.rjCode!.substring(5)),
+          ]);
+        },
+        apply: (_) async {},
+      );
+      final languageProvider = AppLanguageProvider();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(
+              languageProvider,
+            ),
+          ],
+          child: MaterialApp(
+            home: Builder(
+              builder: (context) => FilledButton(
+                onPressed: () => Navigator.of(context).push<void>(
+                  MaterialPageRoute<void>(
+                    builder: (_) =>
+                        DlsiteMetadataBatchResultsPage(session: session),
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      // Filter to Failed -> only item 2 visible
+      await tester.tap(
+        find.byKey(const ValueKey<String>('batch_metadata_filter_failed')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('batch_metadata_result_2')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('batch_metadata_result_0')),
+        findsNothing,
+      );
+
+      // Retry failed items
+      failThird = false;
+      await tester.tap(
+        find.byKey(const ValueKey<String>('batch_metadata_retry_failed')),
+      );
+      await tester.pumpAndSettle();
+
+      // Switch back to All and confirm all matched
+      await tester.tap(
+        find.byKey(const ValueKey<String>('batch_metadata_filter_all')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('batch_metadata_confirm_found')),
+      );
+      await tester.pumpAndSettle();
+      expect(session.confirmedCount, 3);
+      expect(
+        find.text(languageProvider.tr('batch_results_save_count', {'count': '3'})),
+        findsOneWidget,
+      );
+
+      // Pressing Back prompts leave confirmation instead of discarding silently
+      await tester.tap(find.byType(AppHeaderBackButton));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(languageProvider.tr('batch_results_leave_title')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text(languageProvider.tr('cancel')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('batch_metadata_results_header')),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('work picker toggles select all and deselect all', (tester) async {
+    final languageProvider = AppLanguageProvider();
+    final entries = [resultEntry('001'), resultEntry('002')];
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            languageProvider,
+          ),
+        ],
+        child: MaterialApp(
+          home: DlsiteMetadataWorkPickerPage(
+            entries: entries,
+            initialSelection: const <AudioLibraryCategoryEntry>[],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final toggle = find.byKey(
+      const ValueKey<String>('batch_metadata_picker_select_all'),
+    );
+    expect(toggle, findsOneWidget);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(
+      find.text(languageProvider.tr('batch_metadata_picker_done', {'count': 2})),
+      findsOneWidget,
+    );
+
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(
+      find.text(languageProvider.tr('batch_metadata_picker_done', {'count': 0})),
       findsOneWidget,
     );
   });

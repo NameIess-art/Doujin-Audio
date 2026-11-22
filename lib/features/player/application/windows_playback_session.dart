@@ -9,8 +9,11 @@ class _WindowsPlaybackSession {
   final subscriptions = <StreamSubscription<dynamic>>[];
   Future<void> serial = Future.value();
   bool retired = false, eventPending = false;
-  bool stopAfterCurrentTrack = false, nativeQueueLimited = false;
+  bool stopAfterCurrentTrack = false,
+      nativeQueueLimited = false,
+      nativeOrderMatchesLogical = false;
   final nativeQueueIndices = <int, int>{};
+  List<Map<String, Object?>>? lastQueueInput;
   Object? lastEventKey;
   int queueRevision = 0,
       externalQueueRevision = 0,
@@ -72,8 +75,13 @@ class _WindowsPlaybackSession {
   String? error;
   // A partially applied native edit can leave the retained decoder off index 0.
   int? retainedCurrentIndex;
-  int commandId = 0, retryAttempt = 0, generation = 0, retryGeneration = 0;
+  int commandId = 0,
+      retryAttempt = 0,
+      generation = 0,
+      retryGeneration = 0,
+      idleReleaseGeneration = 0;
   Timer? retryTimer;
+  Timer? idleReleaseTimer;
   Duration? retryStartedAt;
 
   static PlaybackMediaReference referenceFor(Map<String, Object?> item) {
@@ -154,6 +162,13 @@ class _WindowsPlaybackSession {
   void cancelRetry() {
     retryGeneration++;
     retryTimer?.cancel();
+    retryTimer = null;
+  }
+
+  void cancelIdleRelease() {
+    idleReleaseGeneration++;
+    idleReleaseTimer?.cancel();
+    idleReleaseTimer = null;
   }
 
   NativePlaybackSnapshot snapshot({bool includeRetainedUris = true}) {
@@ -311,7 +326,7 @@ class _WindowsPlaybackSession {
   }) async {
     final previousQueue = this.queue;
     final previous = previousQueue[this.index];
-    final items = queue.map((item) => Map<String, Object?>.from(item)).toList();
+    final items = List<Map<String, Object?>>.of(queue);
     final previousKey = _queueKey(previous);
     var occurrence = previousQueue
         .take(this.index)
@@ -331,7 +346,7 @@ class _WindowsPlaybackSession {
     final retainCurrent = index < 0;
     if (index < 0) {
       // Finish the removed current item with its existing decoder.
-      items.insert(0, Map<String, Object?>.from(previous));
+      items.insert(0, previous);
       index = 0;
     }
     final player = this.player;
@@ -406,94 +421,133 @@ class _WindowsPlaybackSession {
           stationary.add(token);
           token = predecessors[token];
         }
-        for (var i = order.length - 1; i >= 0; i--) {
-          if (!retained.contains(order[i])) {
-            await player.remove(i);
-            if (!isCurrent()) return;
-            order.removeAt(i);
-          }
-        }
-        var newToken = -1;
         final platform = player.platform;
-        if (platform is NativePlayer) {
-          // Batch media_kit's Dart playlist state update once after appending
-          // to avoid O(N^2) list copies from repeated NativePlayer.add calls.
-          final appendedMedias = <Media>[];
-          try {
-            for (var i = 0; i < desired.length; i++) {
-              if (desired[i] == null) {
-                final media = mediaFor(items[i]);
-                await platform.command([
+        final native = platform is NativePlayer ? platform : null;
+        // Batch media_kit's Dart playlist state update once across removals,
+        // appends, and moves to avoid O(K*N) / O(K*N log N) copies in NativePlayer.
+        List<Media>? nativeMedias;
+        var nativeMediasMutated = false;
+        try {
+          for (var i = order.length - 1; i >= 0; i--) {
+            if (!retained.contains(order[i])) {
+              if (native != null) {
+                await native.command(['playlist-remove', '$i']);
+                if (!isCurrent()) return;
+                nativeMedias ??= List<Media>.of(native.current);
+                if (i < nativeMedias.length) nativeMedias.removeAt(i);
+                nativeMediasMutated = true;
+              } else {
+                await player.remove(i);
+                if (!isCurrent()) return;
+              }
+              order.removeAt(i);
+            }
+          }
+          var newToken = -1;
+          for (var i = 0; i < desired.length; i++) {
+            if (desired[i] == null) {
+              final media = mediaFor(items[i]);
+              if (native != null) {
+                await native.command([
                   'loadfile',
                   _nativeMediaPath(media.uri),
                   'append',
                 ]);
-                appendedMedias.add(media);
                 if (!isCurrent()) return;
-                desired[i] = newToken;
-                order.add(newToken--);
-                addedItems.add(items[i]);
+                nativeMedias ??= List<Media>.of(native.current);
+                nativeMedias.add(media);
+                nativeMediasMutated = true;
+              } else {
+                await player.add(media);
+                if (!isCurrent()) return;
               }
-            }
-          } finally {
-            if (appendedMedias.isNotEmpty) {
-              final medias = [...platform.current, ...appendedMedias];
-              platform.current = medias;
-              platform.state = platform.state.copyWith(
-                playlist: platform.state.playlist.copyWith(medias: medias),
-              );
-            }
-          }
-        } else {
-          for (var i = 0; i < desired.length; i++) {
-            if (desired[i] == null) {
-              await player.add(mediaFor(items[i]));
-              if (!isCurrent()) return;
               desired[i] = newToken;
               order.add(newToken--);
               addedItems.add(items[i]);
             }
           }
-        }
-        if (restoreNativeQueue && ids.length == 1) {
-          // Appended entries are already in order. Move the retained decoder
-          // once instead of moving every entry that preceded it.
-          if (index > 0) await player.move(0, index + 1);
-          if (!isCurrent()) return;
-        } else {
-          final positions = <int, int>{
-            for (var i = 0; i < order.length; i++) order[i]: i,
-          };
-          var nextIndex = order.length;
-          for (var i = desired.length - 1; i >= 0; i--) {
-            final token = desired[i]!;
-            if (stationary.contains(token)) {
-              // Read a stationary anchor only when a move precedes it.
-              if (i > 0 && !stationary.contains(desired[i - 1])) {
-                nextIndex = positions[token]!;
-              }
-            } else {
-              final from = positions[token]!;
-              final to = nextIndex;
-              // mpv inserts before the original target index. Passing length
-              // places an entry at the tail even when it moves forward.
-              final destination = from < to ? to - 1 : to;
-              if (from != destination) {
-                await player.move(from, to);
-                order.insert(destination, order.removeAt(from));
-                final start = from < destination ? from : destination;
-                final end = from < destination ? destination : from;
-                for (var pos = start; pos <= end; pos++) {
-                  positions[order[pos]] = pos;
+          if (restoreNativeQueue && ids.length == 1) {
+            // Appended entries are already in order. Move the retained decoder
+            // once instead of moving every entry that preceded it.
+            if (index > 0) {
+              if (native != null) {
+                await native.command(['playlist-move', '0', '${index + 1}']);
+                if (!isCurrent()) return;
+                nativeMedias ??= List<Media>.of(native.current);
+                if (nativeMedias.isNotEmpty && index < nativeMedias.length) {
+                  nativeMedias.insert(index, nativeMedias.removeAt(0));
                 }
+                nativeMediasMutated = true;
+              } else {
+                await player.move(0, index + 1);
+                if (!isCurrent()) return;
               }
-              nextIndex = destination;
+              order.insert(index, order.removeAt(0));
             }
-            if (!isCurrent()) return;
+          } else {
+            final positions = <int, int>{
+              for (var i = 0; i < order.length; i++) order[i]: i,
+            };
+            var nextIndex = order.length;
+            for (var i = desired.length - 1; i >= 0; i--) {
+              final token = desired[i]!;
+              if (stationary.contains(token)) {
+                // Read a stationary anchor only when a move precedes it.
+                if (i > 0 && !stationary.contains(desired[i - 1])) {
+                  nextIndex = positions[token]!;
+                }
+              } else {
+                final from = positions[token]!;
+                final to = nextIndex;
+                // mpv inserts before the original target index. Passing length
+                // places an entry at the tail even when it moves forward.
+                final destination = from < to ? to - 1 : to;
+                if (from != destination) {
+                  if (native != null) {
+                    await native.command(['playlist-move', '$from', '$to']);
+                    if (!isCurrent()) return;
+                    nativeMedias ??= List<Media>.of(native.current);
+                    if (from < nativeMedias.length &&
+                        destination < nativeMedias.length) {
+                      nativeMedias.insert(
+                        destination,
+                        nativeMedias.removeAt(from),
+                      );
+                    }
+                    nativeMediasMutated = true;
+                  } else {
+                    await player.move(from, to);
+                    if (!isCurrent()) return;
+                  }
+                  order.insert(destination, order.removeAt(from));
+                  final start = from < destination ? from : destination;
+                  final end = from < destination ? destination : from;
+                  for (var pos = start; pos <= end; pos++) {
+                    positions[order[pos]] = pos;
+                  }
+                }
+                nextIndex = destination;
+              }
+              if (!isCurrent()) return;
+            }
+          }
+        } finally {
+          if (native != null && nativeMediasMutated && nativeMedias != null) {
+            final currentPos = order.indexOf(currentToken);
+            native.current = nativeMedias;
+            native.state = native.state.copyWith(
+              playlist: native.state.playlist.copyWith(
+                medias: nativeMedias,
+                index: currentPos >= 0
+                    ? currentPos
+                    : native.state.playlist.index,
+              ),
+            );
           }
         }
         // The edited physical order now matches the requested logical order.
         nativeQueueLimited = false;
+        nativeOrderMatchesLogical = !shuffle;
         if (addedItems.isEmpty) {
           _setNativeEntryOrder([for (final token in order) ids[token]]);
         } else {
@@ -502,6 +556,8 @@ class _WindowsPlaybackSession {
       } catch (_) {
         if (isCurrent() && !restoreNativeQueue) {
           // Earlier successful edits remain applied when a later command fails.
+          lastQueueInput = null;
+          nativeOrderMatchesLogical = false;
           this.queue = [
             for (final token in order)
               token >= 0 ? physicalQueue[token] : addedItems[-token - 1],
@@ -521,6 +577,7 @@ class _WindowsPlaybackSession {
             retainedCurrentIndex != null &&
             this.index == retainedCurrentIndex &&
             index == retainedCurrentIndex);
+    lastQueueInput = null;
     this.queue = items;
     this.index = index;
     retainedCurrentIndex = keepRetained ? index : null;
@@ -554,6 +611,7 @@ class _WindowsPlaybackSession {
 
   Future<void> releasePlayer() async {
     cancelRetry();
+    cancelIdleRelease();
     temporarySpeed = null;
     final current = player;
     if (current == null) return;
@@ -563,6 +621,7 @@ class _WindowsPlaybackSession {
     player = null;
     nativeQueueIndices.clear();
     nativeQueueLimited = false;
+    nativeOrderMatchesLogical = false;
     videoController = null;
     pendingStart = null;
     lastProgressPosition = null;

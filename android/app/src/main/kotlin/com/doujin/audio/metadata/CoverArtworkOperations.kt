@@ -34,9 +34,9 @@ internal class CoverArtworkOperations(
                 val candidate = root?.takeIf { it.exists() }?.let(::preferredDocument)
                 if (candidate != null) return cacheCandidate(candidate, "$rootFolder|${candidate.path}")
                 val localRoot = storage.contentUriToFilePath(rootFolder)
-                if (localRoot != null) return preferredFile(localRoot, trackPath)
+                if (localRoot != null) return preferredFile(localRoot)
             } else {
-                val fileCover = preferredFile(rootFolder, trackPath)
+                val fileCover = preferredFile(rootFolder)
                 if (fileCover != null) return fileCover
             }
         }
@@ -82,10 +82,10 @@ internal class CoverArtworkOperations(
                 }
             }
             val localRoot = storage.contentUriToFilePath(documentRoot)
-            if (localRoot != null) return fileImages(localRoot, trackPath, recursive, preferredOnly)
+            if (localRoot != null) return fileImages(localRoot, recursive, preferredOnly)
             throw IOException("Image directory is unavailable: $documentRoot")
         }
-        if (!rootFolder.isNullOrBlank()) return fileImages(rootFolder, trackPath, recursive, preferredOnly)
+        if (!rootFolder.isNullOrBlank()) return fileImages(rootFolder, recursive, preferredOnly)
         return emptyList()
     }
 
@@ -125,7 +125,7 @@ internal class CoverArtworkOperations(
             val written = writeFileAtomically(output) { temp ->
                 context.contentResolver.openInputStream(uri)?.use { input ->
                     FileOutputStream(temp).use { target ->
-                        input.copyTo(target)
+                        input.copyTo(target, bufferSize = SAF_COPY_BUFFER_BYTES)
                         target.flush()
                     }
                     true
@@ -139,43 +139,22 @@ internal class CoverArtworkOperations(
         }
     }
 
-    private fun preferredFile(folderPath: String, cacheKey: String): String? {
+    private fun preferredFile(folderPath: String): String? {
         val root = File(folderPath)
         if (!root.isDirectory) return null
         val rootTopPriority = root.listFiles()
             ?.asSequence()
-            ?.filter { it.isFile && isImage(it.name, null) && priority(it.name) == 0 }
+            ?.filter { it.isFile && it.canRead() && isImage(it.name, null) && priority(it.name) == 0 }
             ?.minWithOrNull(compareBy<File> { it.absolutePath.lowercase(Locale.US) })
         val candidate = rootTopPriority ?: root.walkTopDown()
-            .filter { it.isFile && isImage(it.name, null) }
+            .filter { it.isFile && it.canRead() && isImage(it.name, null) }
             .minWithOrNull(compareBy<File>({ priority(it.name) }, { it.absolutePath.lowercase(Locale.US) }))
             ?: return null
-        val versionedKey = coverBridgeCacheKey(
-            "$cacheKey|${candidate.absolutePath}",
-            candidate.lastModified(),
-            candidate.length()
-        )
-        val output = File(coverDirectory(), artworkCacheFileName(versionedKey.toByteArray(Charsets.UTF_8), "cover", "jpg"))
-        if (output.exists() && output.length() > 0L) {
-            touchCacheFile(output)
-            return output.absolutePath
-        }
-        return try {
-            val written = writeFileAtomically(output) { temp ->
-                candidate.copyTo(temp, overwrite = true)
-                true
-            }
-            if (!written) return null
-            touchCacheFile(output)
-            output.absolutePath
-        } catch (_: Exception) {
-            null
-        }
+        return candidate.absolutePath
     }
 
     private fun fileImages(
         folderPath: String,
-        cacheKey: String,
         recursive: Boolean,
         preferredOnly: Boolean
     ): List<Map<String, String>> {
@@ -185,7 +164,7 @@ internal class CoverArtworkOperations(
             val rootEntries = root.listFiles()
                 ?: throw IOException("Unable to list image directory: $folderPath")
             rootEntries.asSequence()
-                .filter { it.isFile && isImage(it.name, null) && priority(it.name) == 0 }
+                .filter { it.isFile && it.canRead() && isImage(it.name, null) && priority(it.name) == 0 }
                 .minWithOrNull(compareBy<File> { it.absolutePath.lowercase(Locale.US) })
         } else {
             null
@@ -196,32 +175,17 @@ internal class CoverArtworkOperations(
             val files = if (recursive) root.walkTopDown().onFail { _, error -> throw error }
             else (root.listFiles() ?: throw IOException("Unable to list image directory: $folderPath")).asSequence()
             files
-                .filter { it.isFile && isImage(it.name, null) }
+                .filter { it.isFile && it.canRead() && isImage(it.name, null) }
                 .sortedWith(compareBy<File>({ priority(it.name) }, { it.absolutePath.lowercase(Locale.US) }))
                 .let { if (preferredOnly) it.take(1) else it }
         }
         return selected
             .map { file ->
-                val relative = file.relativeToOrNull(root)?.invariantSeparatorsPath ?: file.name
-                val fileSizeBytes = file.length()
-                val versionedKey = coverBridgeCacheKey(
-                    "$cacheKey|$relative",
-                    file.lastModified(),
-                    fileSizeBytes
-                )
-                val output = File(coverDirectory(), artworkCacheFileName(versionedKey.toByteArray(Charsets.UTF_8), "cover", "jpg"))
-                if (!output.exists() || output.length() <= 0L) {
-                    val written = writeFileAtomically(output) { temp ->
-                        file.copyTo(temp, overwrite = true)
-                        true
-                    }
-                    if (!written) throw IOException("Unable to cache image: ${file.absolutePath}")
-                }
-                touchCacheFile(output)
+                val filePath = file.absolutePath
                 mapOf(
-                    "path" to output.absolutePath,
-                    "sourcePath" to file.absolutePath,
-                    "fileSizeBytes" to fileSizeBytes.toString()
+                    "path" to filePath,
+                    "sourcePath" to filePath,
+                    "fileSizeBytes" to file.length().toString()
                 )
             }.toList()
     }
@@ -326,4 +290,8 @@ internal class CoverArtworkOperations(
         val sizeBytes: Long? = null,
         val modifiedAtMs: Long? = null
     )
+
+    private companion object {
+        const val SAF_COPY_BUFFER_BYTES = 64 * 1024
+    }
 }

@@ -126,11 +126,24 @@ class SubtitleGenerationDialog extends ConsumerWidget {
                               job.kind != SubtitleDraftKind.translation)
                       ? null
                       : _service.cancelGeneration,
-                  label: i18n.tr('subtitle_pause_task'),
+                  label: i18n.tr('subtitle_cancel_task'),
                 ),
                 AppPrimaryButton(
                   onPressed: () => Navigator.pop(context),
                   label: i18n.tr('subtitle_run_in_background'),
+                ),
+              ] else if (_service.canRetryGeneration) ...[
+                AppSecondaryButton(
+                  onPressed: () {
+                    _service.clearGenerationJob();
+                    Navigator.pop(context);
+                  },
+                  label: i18n.tr('close'),
+                ),
+                AppPrimaryButton(
+                  key: const ValueKey('subtitle_generation_retry'),
+                  onPressed: _service.retryGeneration,
+                  label: i18n.tr('retry'),
                 ),
               ] else
                 AppPrimaryButton(

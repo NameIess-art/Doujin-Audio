@@ -196,6 +196,7 @@ void main() {
     (tester) async {
       final firstAttempt = Completer<void>();
       var attempts = 0;
+      var attemptsDuringFirstBuild = -1;
       var frameworkBuilds = 0;
       final controller = AppBootstrapController(
         initializer: () {
@@ -213,6 +214,9 @@ void main() {
             showReadyWhileInitializing: true,
             readyBuilder: (_) {
               frameworkBuilds++;
+              if (attemptsDuringFirstBuild == -1) {
+                attemptsDuringFirstBuild = attempts;
+              }
               return const Text('framework');
             },
             loadingBuilder: (_) => const Text('loading'),
@@ -221,9 +225,8 @@ void main() {
         ),
       );
       final framework = tester.element(find.text('framework'));
-      expect(attempts, 0);
+      expect(attemptsDuringFirstBuild, 0);
       expect(find.text('loading'), findsNothing);
-      await tester.pump();
       expect(attempts, 1);
       firstAttempt.completeError(StateError('core unavailable'));
       await tester.pump();
@@ -432,8 +435,53 @@ void main() {
       find.byKey(const ValueKey<String>('app_error_view')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey<String>('error_export_diagnostics_status')),
+      findsOneWidget,
+    );
+    expect(find.text('Failed to export diagnostics report'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'Windows startup failure shell mounts title bar and reports export success',
+    (tester) async {
+      var exportAttempts = 0;
+      final controller = AppBootstrapController(
+        initializer: () async => throw StateError('startup failed'),
+      );
+
+      await tester.pumpWidget(
+        AppBootstrapHost(
+          controller: controller,
+          themeProvider: ThemeProvider(),
+          locale: const Locale('en'),
+          appBuilder: () => const SizedBox(),
+          exportDiagnostics: () async {
+            exportAttempts++;
+          },
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey<String>('app_error_view')),
+        findsOneWidget,
+      );
+      expect(find.byIcon(Icons.close), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('error_export_diagnostics_button')),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(exportAttempts, 1);
+      expect(find.text('Diagnostics report exported'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
 
   testWidgets('startup shell follows dark platform brightness', (tester) async {
     tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;

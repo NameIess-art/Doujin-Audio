@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'app_feedback.dart';
 
@@ -28,8 +29,10 @@ class AppFixedExtentWheel extends StatefulWidget {
 
 class _AppFixedExtentWheelState extends State<AppFixedExtentWheel> {
   late final FixedExtentScrollController _controller;
+  final FocusNode _focusNode = FocusNode();
   int _lastReportedValue = -1;
   int? _wheelTargetItem;
+  bool _focused = false;
 
   @override
   void initState() {
@@ -74,6 +77,68 @@ class _AppFixedExtentWheelState extends State<AppFixedExtentWheel> {
     }
   }
 
+  void _stepBy(int delta) {
+    if (delta == 0 || widget.itemCount <= 0 || !_controller.hasClients) return;
+    final baseItem = _wheelTargetItem ?? _controller.selectedItem;
+    final requestedItem = baseItem + delta;
+    final nextItem = widget.looping
+        ? requestedItem
+        : requestedItem.clamp(0, widget.itemCount - 1);
+    if (nextItem == baseItem) return;
+    _scrollToItem(nextItem, duration: const Duration(milliseconds: 200));
+  }
+
+  void _selectIndex(int index) {
+    if (!_controller.hasClients || widget.itemCount <= 0) return;
+    final currentItem = _wheelTargetItem ?? _controller.selectedItem;
+    var targetItem = index;
+    if (widget.looping) {
+      var delta = index - _valueAt(currentItem);
+      if (delta > widget.itemCount ~/ 2) {
+        delta -= widget.itemCount;
+      } else if (delta < -(widget.itemCount ~/ 2)) {
+        delta += widget.itemCount;
+      }
+      targetItem = currentItem + delta;
+    }
+    if (targetItem == currentItem) return;
+    _scrollToItem(targetItem, duration: const Duration(milliseconds: 220));
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.arrowUp) {
+      _stepBy(-1);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowDown) {
+      _stepBy(1);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.pageUp) {
+      _stepBy(-5);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.pageDown) {
+      _stepBy(5);
+      return KeyEventResult.handled;
+    }
+    if (!widget.looping && widget.itemCount > 0) {
+      if (key == LogicalKeyboardKey.home) {
+        _selectIndex(0);
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.end) {
+        _selectIndex(widget.itemCount - 1);
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
+  }
+
   @override
   void didUpdateWidget(AppFixedExtentWheel oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -113,106 +178,133 @@ class _AppFixedExtentWheelState extends State<AppFixedExtentWheel> {
 
   @override
   void dispose() {
+    _focusNode.dispose();
     _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme.onSurface;
+    final cs = Theme.of(context).colorScheme;
+    final color = cs.onSurface;
     final labels = List<Widget>.generate(
       widget.itemCount,
-      (index) => Center(
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            widget.labelAt(index),
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w700,
-              color: color,
+      (index) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          _focusNode.requestFocus();
+          _selectIndex(index);
+        },
+        child: Center(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              widget.labelAt(index),
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
             ),
           ),
         ),
       ),
     );
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        if (widget.selectionColor case final color?)
-          Container(
-            height: 42,
-            margin: const EdgeInsets.symmetric(horizontal: 8),
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(16),
+    return Focus(
+      focusNode: _focusNode,
+      onFocusChange: (focused) {
+        if (_focused != focused) setState(() => _focused = focused);
+      },
+      onKeyEvent: _handleKeyEvent,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          if (widget.selectionColor case final selectionColor?)
+            Container(
+              height: 42,
+              margin: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: BoxDecoration(
+                color: selectionColor,
+                borderRadius: BorderRadius.circular(16),
+                border: _focused
+                    ? Border.all(
+                        color: cs.primary.withValues(alpha: 0.7),
+                        width: 1.5,
+                      )
+                    : null,
+              ),
+            )
+          else if (_focused)
+            IgnorePointer(
+              child: Container(
+                height: 42,
+                margin: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: cs.primary.withValues(alpha: 0.5),
+                    width: 1.5,
+                  ),
+                ),
+              ),
             ),
-          ),
-        ScrollConfiguration(
-          behavior: ScrollConfiguration.of(context).copyWith(
-            dragDevices: {
-              PointerDeviceKind.touch,
-              PointerDeviceKind.mouse,
-              PointerDeviceKind.trackpad,
-            },
-          ),
-          child: NotificationListener<ScrollEndNotification>(
-            onNotification: (_) {
-              _wheelTargetItem = null;
-              return false;
-            },
-            child: ListWheelScrollView.useDelegate(
-              controller: _controller,
-              itemExtent: 42,
-              perspective: 0.005,
-              diameterRatio: 1.5,
-              physics: const FixedExtentScrollPhysics(),
-              onSelectedItemChanged: (index) {
-                final actualIndex = _valueAt(index);
-                if (actualIndex != _lastReportedValue) {
-                  _lastReportedValue = actualIndex;
-                  AppInteractionFeedback.trigger(
-                    AppInteractionFeedbackType.selection,
-                  );
-                  widget.onChanged(actualIndex);
-                }
-              },
-              childDelegate: widget.looping
-                  ? ListWheelChildLoopingListDelegate(children: labels)
-                  : ListWheelChildListDelegate(children: labels),
-            ),
-          ),
-        ),
-        if (defaultTargetPlatform == TargetPlatform.windows)
-          Positioned.fill(
-            child: Listener(
-              behavior: HitTestBehavior.translucent,
-              onPointerSignal: (signal) {
-                if (signal is PointerScrollEvent) {
-                  GestureBinding.instance.pointerSignalResolver.register(
-                    signal,
-                    (event) {
-                      final scrollEvent = event as PointerScrollEvent;
-                      if (scrollEvent.scrollDelta.dy == 0) return;
-                      final delta = scrollEvent.scrollDelta.dy > 0 ? 1 : -1;
-                      final baseItem =
-                          _wheelTargetItem ?? _controller.selectedItem;
-                      final requestedItem = baseItem + delta;
-                      final nextItem = widget.looping
-                          ? requestedItem
-                          : requestedItem.clamp(0, widget.itemCount - 1);
-                      if (nextItem == baseItem) return;
-                      _scrollToItem(
-                        nextItem,
-                        duration: const Duration(milliseconds: 200),
-                      );
-                    },
-                  );
-                }
+          ScrollConfiguration(
+            behavior: ScrollConfiguration.of(context).copyWith(
+              dragDevices: {
+                PointerDeviceKind.touch,
+                PointerDeviceKind.mouse,
+                PointerDeviceKind.trackpad,
               },
             ),
+            child: NotificationListener<ScrollEndNotification>(
+              onNotification: (_) {
+                _wheelTargetItem = null;
+                return false;
+              },
+              child: ListWheelScrollView.useDelegate(
+                controller: _controller,
+                itemExtent: 42,
+                perspective: 0.005,
+                diameterRatio: 1.5,
+                physics: const FixedExtentScrollPhysics(),
+                onSelectedItemChanged: (index) {
+                  final actualIndex = _valueAt(index);
+                  if (actualIndex != _lastReportedValue) {
+                    _lastReportedValue = actualIndex;
+                    AppInteractionFeedback.trigger(
+                      AppInteractionFeedbackType.selection,
+                    );
+                    widget.onChanged(actualIndex);
+                  }
+                },
+                childDelegate: widget.looping
+                    ? ListWheelChildLoopingListDelegate(children: labels)
+                    : ListWheelChildListDelegate(children: labels),
+              ),
+            ),
           ),
-      ],
+          if (defaultTargetPlatform == TargetPlatform.windows)
+            Positioned.fill(
+              child: Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerSignal: (signal) {
+                  if (signal is PointerScrollEvent) {
+                    GestureBinding.instance.pointerSignalResolver.register(
+                      signal,
+                      (event) {
+                        final scrollEvent = event as PointerScrollEvent;
+                        final dy = scrollEvent.scrollDelta.dy;
+                        if (dy == 0) return;
+                        final steps = (dy.abs() / 100.0).round().clamp(1, 5);
+                        _stepBy(dy > 0 ? steps : -steps);
+                      },
+                    );
+                  }
+                },
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

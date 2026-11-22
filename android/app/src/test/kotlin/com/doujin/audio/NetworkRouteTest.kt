@@ -213,14 +213,90 @@ class NetworkRouteTest {
         }
     }
 
-    private fun dnsAnswer(query: ByteArray, address: ByteArray, ipv6: Boolean): ByteArray =
+    private fun dnsAnswer(query: ByteArray, address: ByteArray, ipv6: Boolean, ttlSeconds: Int = 60): ByteArray =
         ByteArrayOutputStream().also { bytes ->
             DataOutputStream(bytes).apply {
                 write(query.copyOf().also { it[2] = 0x81.toByte(); it[3] = 0x80.toByte(); it[7] = 1 })
                 writeShort(0xC00C); writeShort(if (ipv6) 28 else 1); writeShort(1)
-                writeInt(60); writeShort(address.size); write(address)
+                writeInt(ttlSeconds); writeShort(address.size); write(address)
             }
         }.toByteArray()
+
+    @Test
+    fun customDnsCachesResponsesWithinClampedTtlAndClearsOnRequest() {
+        DatagramSocket(0).use { server ->
+            val executor = Executors.newSingleThreadExecutor()
+            var nowMs = 1_000L
+            val queryCount = java.util.concurrent.atomic.AtomicInteger(0)
+            try {
+                val exchange = executor.submit {
+                    repeat(4) {
+                        val packet = DatagramPacket(ByteArray(512), 512)
+                        server.soTimeout = 3_000
+                        server.receive(packet)
+                        queryCount.incrementAndGet()
+                        val query = packet.data.copyOf(packet.length)
+                        val ipv6 = query[query.size - 3].toInt() == 28
+                        val address = if (ipv6) ByteArray(16).also { it[15] = 1 } else byteArrayOf(127, 0, 0, 9)
+                        // Small TTL (5s) should be clamped to 30s minimum.
+                        val response = dnsAnswer(query, address, ipv6, ttlSeconds = 5)
+                        server.send(DatagramPacket(response, response.size, packet.socketAddress))
+                    }
+                }
+                val dns = NetworkRouteDns("127.0.0.1", server.localPort, clockMs = { nowMs })
+                val first = dns.lookup("cache.example")
+                assertEquals(2, first.size)
+                assertEquals(2, queryCount.get())
+
+                // Within clamped 30s TTL -> cache hit, zero extra UDP queries.
+                nowMs += 25_000L
+                val cached = dns.lookup("cache.example")
+                assertEquals(first, cached)
+                assertEquals(2, queryCount.get())
+
+                // Explicit clearCache() forces re-query.
+                dns.clearCache()
+                val refreshed = dns.lookup("cache.example")
+                assertEquals(2, refreshed.size)
+                assertEquals(4, queryCount.get())
+                exchange.get(3, TimeUnit.SECONDS)
+            } finally {
+                executor.shutdownNow()
+            }
+        }
+    }
+
+    @Test
+    fun customDnsReturnsIpv4PromptlyWhenAaaaTimesOut() {
+        DatagramSocket(0).use { server ->
+            val executor = Executors.newSingleThreadExecutor()
+            try {
+                val exchange = executor.submit {
+                    repeat(2) {
+                        val packet = DatagramPacket(ByteArray(512), 512)
+                        server.soTimeout = 3_000
+                        server.receive(packet)
+                        val query = packet.data.copyOf(packet.length)
+                        val ipv6 = query[query.size - 3].toInt() == 28
+                        if (!ipv6) {
+                            val response = dnsAnswer(query, byteArrayOf(127, 0, 0, 5), ipv6 = false)
+                            server.send(DatagramPacket(response, response.size, packet.socketAddress))
+                        }
+                        // Drop AAAA packet to simulate IPv6 blackhole.
+                    }
+                }
+                val dns = NetworkRouteDns("127.0.0.1", server.localPort, aaaaGraceTimeoutMs = 150L)
+                val startNs = System.nanoTime()
+                val addresses = dns.lookup("ipv4-only.example")
+                val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNs)
+                assertEquals(listOf("127.0.0.5"), addresses.map { it.hostAddress })
+                assertTrue("Expected prompt return under 1500ms, got ${elapsedMs}ms", elapsedMs < 1_500L)
+                exchange.get(3, TimeUnit.SECONDS)
+            } finally {
+                executor.shutdownNow()
+            }
+        }
+    }
 
     @Test
     fun socksAuthenticationSendsCredentialsAndUnresolvedDestination() {
@@ -268,6 +344,45 @@ class NetworkRouteTest {
             } finally {
                 executor.shutdownNow()
             }
+        }
+    }
+
+    @Test
+    fun systemSocksProxyHostsUseSystemDnsAndIgnoreNonInetSocketAddresses() {
+        val customDnsLookups = mutableListOf<String>()
+        val customSocketAddress = object : SocketAddress() {}
+        val selector = object : ProxySelector() {
+            override fun select(uri: URI): List<Proxy> = listOf(
+                Proxy(Proxy.Type.SOCKS, InetSocketAddress.createUnresolved("localhost", 1080)),
+                object : Proxy(Type.SOCKS, InetSocketAddress.createUnresolved("placeholder", 1080)) {
+                    override fun address(): SocketAddress = customSocketAddress
+                },
+            )
+            override fun connectFailed(uri: URI, address: SocketAddress, error: IOException) = Unit
+        }
+        val client = NetworkRoute(mode = "system", dns = "192.0.2.1").createClient(
+            systemProxySelector = selector,
+            directDns = object : Dns {
+                override fun lookup(hostname: String): List<InetAddress> {
+                    customDnsLookups += hostname
+                    return listOf(InetAddress.getByAddress(hostname, byteArrayOf(192.toByte(), 0, 2, 10)))
+                }
+            }
+        )
+        try {
+            val selected = client.proxySelector.select(URI("https://media.example/track.mp3"))
+            assertEquals(2, selected.size)
+
+            val proxyAddresses = client.dns.lookup("localhost")
+            assertTrue(proxyAddresses.isNotEmpty())
+            assertTrue(customDnsLookups.isEmpty())
+
+            val targetAddresses = client.dns.lookup("media.example")
+            assertEquals("192.0.2.10", targetAddresses.single().hostAddress)
+            assertEquals(listOf("media.example"), customDnsLookups)
+        } finally {
+            client.connectionPool.evictAll()
+            client.dispatcher.executorService.shutdownNow()
         }
     }
 }

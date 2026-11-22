@@ -12,9 +12,15 @@ import com.doujin.audio.player.common.NativeUpdateQueueArguments
 import java.util.concurrent.Executors
 
 /** Immutable queue structures are prepared once, independently of player state. */
-internal class NativePlaybackQueue(val descriptors: List<NativeMediaItemDescriptor>) {
-    val mediaItems: List<MediaItem> by lazy {
-        descriptors.map { descriptor ->
+internal class NativePlaybackQueue private constructor(
+    val descriptors: List<NativeMediaItemDescriptor>,
+    private val precomputedMediaItems: List<MediaItem>?,
+    private val precomputedStoredItems: List<StoredNativePlaybackQueueItem>?
+) {
+    constructor(descriptors: List<NativeMediaItemDescriptor>) : this(descriptors, null, null)
+
+    private val mediaItemsLazy = lazy {
+        precomputedMediaItems ?: descriptors.map { descriptor ->
             val metadata = MediaMetadata.Builder()
                 .setTitle(descriptor.title)
                 .setArtist(descriptor.subtitle)
@@ -34,8 +40,10 @@ internal class NativePlaybackQueue(val descriptors: List<NativeMediaItemDescript
                 .setMediaMetadata(metadata.build()).build()
         }
     }
-    val storedItems: List<StoredNativePlaybackQueueItem> by lazy {
-        descriptors.map { descriptor ->
+    val mediaItems: List<MediaItem> by mediaItemsLazy
+
+    private val storedItemsLazy = lazy {
+        precomputedStoredItems ?: descriptors.map { descriptor ->
             StoredNativePlaybackQueueItem(
                 descriptor.path, descriptor.uri, descriptor.title, descriptor.subtitle,
                 descriptor.artUri, descriptor.candidateUris, descriptor.usageDescriptor,
@@ -44,6 +52,8 @@ internal class NativePlaybackQueue(val descriptors: List<NativeMediaItemDescript
             )
         }
     }
+    val storedItems: List<StoredNativePlaybackQueueItem> by storedItemsLazy
+
     val wakeMode: Int by lazy {
         nativePlaybackWakeModeForUris(descriptors.asSequence().flatMap {
             sequenceOf(it.uri) + it.candidateUris.asSequence()
@@ -53,6 +63,26 @@ internal class NativePlaybackQueue(val descriptors: List<NativeMediaItemDescript
         descriptors.asSequence().flatMap { sequenceOf(it.path, it.uri, it.artUri) }
             .filterNotNull().filter { it.startsWith("content://", ignoreCase = true) }
             .map { it.substringBefore("::") }.distinct().toList()
+    }
+
+    fun dropFirst(): NativePlaybackQueue {
+        if (descriptors.isEmpty()) return this
+        val remainingDescriptors = descriptors.subList(1, descriptors.size).toList()
+        val remainingMediaItems = if (mediaItemsLazy.isInitialized()) {
+            mediaItems.subList(1, mediaItems.size).toList()
+        } else {
+            null
+        }
+        val remainingStoredItems = if (storedItemsLazy.isInitialized()) {
+            storedItems.subList(1, storedItems.size).toList()
+        } else {
+            null
+        }
+        return NativePlaybackQueue(
+            descriptors = remainingDescriptors,
+            precomputedMediaItems = remainingMediaItems,
+            precomputedStoredItems = remainingStoredItems
+        )
     }
 
     fun prepare() {

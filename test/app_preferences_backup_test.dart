@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+// ignore: depend_on_referenced_packages
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 
 void main() {
   test(
@@ -54,4 +56,55 @@ void main() {
       expect(preferences.getString('preserved'), 'value');
     },
   );
+
+  test(
+    'snapshot preserves dynamic string lists loaded from disk (Windows JSON)',
+    () async {
+      final previousStore = SharedPreferencesStorePlatform.instance;
+      SharedPreferencesStorePlatform.instance = _DynamicListPreferencesStore({
+        'flutter.subtitle_show_map': <dynamic>['trackA=1', 'trackB=0'],
+        'flutter.mixed_list': <dynamic>['ok', 42],
+        'flutter.name': 'WindowsUser',
+      });
+      addTearDown(() {
+        SharedPreferencesStorePlatform.instance = previousStore;
+      });
+      await (await SharedPreferences.getInstance()).reload();
+      await AppPreferences.init();
+
+      final snapshot = await AppPreferences.snapshot();
+
+      expect(snapshot['subtitle_show_map'], isA<List<String>>());
+      expect(snapshot['subtitle_show_map'], <String>['trackA=1', 'trackB=0']);
+      expect(snapshot.containsKey('mixed_list'), isFalse);
+      expect(snapshot['name'], 'WindowsUser');
+    },
+  );
+}
+
+class _DynamicListPreferencesStore extends SharedPreferencesStorePlatform {
+  _DynamicListPreferencesStore(this._values);
+
+  final Map<String, Object> _values;
+
+  @override
+  Future<Map<String, Object>> getAll() async => Map<String, Object>.of(_values);
+
+  @override
+  Future<bool> clear() async {
+    _values.clear();
+    return true;
+  }
+
+  @override
+  Future<bool> remove(String key) async {
+    _values.remove(key);
+    return true;
+  }
+
+  @override
+  Future<bool> setValue(String valueType, String key, Object value) async {
+    _values[key] = value;
+    return true;
+  }
 }

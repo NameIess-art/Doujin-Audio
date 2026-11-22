@@ -41,6 +41,78 @@ final class AudioDetailJsonCodec {
     );
   }
 
+  /// Decodes one JSON document once for all [targets] sharing that location.
+  List<({AudioDetailJsonDocument? document, String? error})>
+  decodeDocumentsForTargets(Uint8List bytes, List<AudioDetailTarget> targets) {
+    if (targets.isEmpty) return const [];
+    final Object? root;
+    try {
+      root = _decodeRoot(bytes);
+    } on Object catch (error) {
+      final message = error.toString();
+      return List.filled(targets.length, (document: null, error: message));
+    }
+    if (root is Map<Object?, Object?>) {
+      final raw = Map<String, Object?>.from(root);
+      final frozenFields = Map<String, Object?>.unmodifiable(raw);
+      return [
+        for (final target in targets)
+          _decodeEntryForTarget(target, raw, frozenFields),
+      ];
+    }
+    if (root is List<Object?>) {
+      final byKey = <String, Map<String, Object?>>{};
+      for (final item in root) {
+        if (item is! Map) continue;
+        final targetPath = item['targetPath'];
+        if (targetPath is! String) continue;
+        byKey.putIfAbsent(
+          PathMatcher.equivalenceKey(targetPath),
+          () => Map<String, Object?>.from(item),
+        );
+      }
+      return [
+        for (final target in targets)
+          switch (byKey[PathMatcher.equivalenceKey(target.targetPath)]) {
+            final raw? => _decodeEntryForTarget(
+              target,
+              raw,
+              Map<String, Object?>.unmodifiable(raw),
+            ),
+            null => (
+              document: null,
+              error: const FormatException(
+                'Audio detail entry not found',
+              ).toString(),
+            ),
+          },
+      ];
+    }
+    final message = const FormatException(
+      'Unsupported audio detail document',
+    ).toString();
+    return List.filled(targets.length, (document: null, error: message));
+  }
+
+  ({AudioDetailJsonDocument? document, String? error}) _decodeEntryForTarget(
+    AudioDetailTarget target,
+    Map<String, Object?> raw,
+    Map<String, Object?> frozenFields,
+  ) {
+    try {
+      return (
+        document: AudioDetailJsonDocument(
+          detail: _detailFromJson(target, raw),
+          timeSegmentLabels: _labelsFromJson(raw, target),
+          fields: frozenFields,
+        ),
+        error: null,
+      );
+    } on Object catch (error) {
+      return (document: null, error: error.toString());
+    }
+  }
+
   Uint8List encodeNew(
     AudioDetail detail, {
     Map<String, Object?> additionalFields = const <String, Object?>{},

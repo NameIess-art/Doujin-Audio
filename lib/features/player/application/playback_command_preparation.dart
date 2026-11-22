@@ -145,9 +145,11 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
           !await _playbackFacade.ensureSessionQueueLoaded(session.id)) {
         return false;
       }
-      if (session.loadedPath != null ||
+      final hadNativeWork =
+          session.loadedPath != null ||
           session.pendingNativeTrackPath != null ||
-          session.state.playing) {
+          session.state.playing;
+      if (hadNativeWork) {
         if (!await _pauseSessionPlayback(session)) return false;
       } else {
         session.invalidatePreparation();
@@ -161,6 +163,21 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
           ) ||
           (targetQueueIndex != null &&
               targetQueueIndex != session.currentQueueIndex);
+      if (hadNativeWork &&
+          trackChanged &&
+          !_nativePlaybackRepository.handlesQueueCompletion) {
+        final stopGeneration = session.playbackCommandGeneration;
+        await _nativePlaybackRepository.stop(session.id);
+        if (!_isRegisteredSession(session) ||
+            session.playbackCommandGeneration != stopGeneration) {
+          return false;
+        }
+        // Advance past the stop snapshot's command ID so its queued microtask
+        // event cannot overwrite the newly selected paused track.
+        final nextCommandId = _playbackFacade.nextTransportCommandId();
+        session.beginTransportCommand(commandId: nextCommandId, playing: false);
+        session.confirmPaused();
+      }
       session.currentTrackPath = logicalPath;
       if (targetQueueIndex != null) {
         session.currentQueueIndex = targetQueueIndex;
@@ -234,6 +251,10 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
           target,
           generation: generation,
           targetQueueIndex: targetQueueIndex,
+          autoPlay:
+              autoPlay &&
+              !_nativePlaybackRepository.handlesQueueCompletion &&
+              initialFadeMultiplier == null,
         );
         if (!_isSessionLoadCurrent(session, generation)) return false;
         if (!nativeResult.succeeded) {
@@ -468,6 +489,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     _PlaybackPreparationTarget target, {
     required int generation,
     int? targetQueueIndex,
+    bool autoPlay = false,
   }) async {
     const maxAttempts = 2;
     String? lastError;
@@ -509,6 +531,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
           channelSwapEnabled: session.channelSwapEnabled,
         ),
         repeatOne: session.loopMode == SessionLoopMode.single,
+        autoPlay: autoPlay,
         queue: nativeQueue,
         queueStartIndex: _nativePlaybackQueueStartIndexFor(
           session,
@@ -587,6 +610,9 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         restoreTarget,
         generation: generation,
         targetQueueIndex: session.currentQueueIndex,
+        autoPlay:
+            previousWasPlaying &&
+            !_nativePlaybackRepository.handlesQueueCompletion,
       );
       if (!_isSessionLoadCurrent(session, generation)) return false;
       session.markNativePreparation(generation, null);

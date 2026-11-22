@@ -4,6 +4,7 @@ import '../../../../core/widgets/app_transitions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../app/localization/app_language_provider.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
@@ -348,8 +349,24 @@ class SessionLoopModeButton extends ConsumerWidget {
     );
   }
 
+  String _modeSummary(
+    AppLanguageProvider i18n,
+    SessionLoopMode mode,
+  ) {
+    if (mode == SessionLoopMode.single) {
+      return i18n.tr('single_loop');
+    }
+    final parts = <String>[
+      i18n.tr(mode.isShuffle ? 'shuffle_playback' : 'loop_playback'),
+      if (mode.isCrossFolder) i18n.tr('cross_folder'),
+      if (mode.isOneShot) i18n.tr('pause_after_playback'),
+    ];
+    return parts.join(' · ');
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
     final loopMode =
         ref.watch(
           sessionDetailTransportProvider(
@@ -366,7 +383,7 @@ class SessionLoopModeButton extends ConsumerWidget {
       key: const ValueKey('session_loop_button_anchor'),
       constraints: playbackSecondaryControlButtonConstraints,
       padding: EdgeInsets.zero,
-      tooltip: i18n.tr('loop_mode_title'),
+      tooltip: '${i18n.tr('loop_mode_title')}: ${_modeSummary(i18n, loopMode)}',
       style: playbackSecondaryControlButtonStyle(
         foregroundColor: sessionDetailForeground(
           Theme.of(context).colorScheme,

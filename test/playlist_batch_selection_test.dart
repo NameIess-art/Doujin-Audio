@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -399,6 +400,194 @@ void main() {
         } finally {
           debugOnRebuildDirtyWidget = previousHook;
         }
+      },
+    );
+
+    testWidgets(
+      'P1-13: select all, deselect all, long-press toggle, and Back/Escape exit batch selection',
+      (tester) async {
+        SharedPreferences.setMockInitialValues(const <String, Object>{});
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+
+        final tracks = [
+          for (var i = 1; i <= 3; i++)
+            testMusicTrack(
+              name: 'Item $i',
+              path: PathMatcher.normalize('/library/w$i/01.mp3'),
+              groupKey: PathMatcher.normalize('/library/w$i'),
+              groupTitle: 'Work $i',
+            ),
+        ];
+        fixture.runtimeGraph.library.addTracks(tracks, persist: false);
+        final sessions = [
+          for (final track in tracks)
+            fixture.runtimeGraph.playback.createTrackSession(track),
+        ];
+        fixture.playbackService.syncSlice(
+          activeSessions: sessions,
+          playingSessionCount: 0,
+          focusedSessionId: sessions.first.id,
+          coverGeneration: 0,
+          isInitialized: true,
+        );
+
+        await tester.pumpWidget(fixture.build(const PlaylistTab()));
+        await tester.pumpAndSettle();
+
+        // Enter multi-select via long press on Item 1.
+        await tester.longPress(find.text('Item 1'));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('playlist_batch_selection_header')),
+          findsOneWidget,
+        );
+
+        // Long-press Item 2 toggles it into selection without wiping Item 1.
+        await tester.longPress(find.text('Item 2'));
+        await tester.pumpAndSettle();
+        expect(
+          find.bySemanticsLabel(
+            fixture.languageProvider.tr('selected_count', {'count': '2'}),
+          ),
+          findsOneWidget,
+        );
+
+        // Select All selects all 3 sessions.
+        final selectAll = find.byKey(const ValueKey('batch_select_all_button'));
+        expect(selectAll, findsOneWidget);
+        await tester.tap(selectAll);
+        await tester.pumpAndSettle();
+        expect(
+          find.bySemanticsLabel(
+            fixture.languageProvider.tr('selected_count', {'count': '3'}),
+          ),
+          findsOneWidget,
+        );
+
+        // Escape exits multi-select cleanly.
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('playlist_batch_selection_header')),
+          findsNothing,
+        );
+
+        // Re-enter and verify PopScope intercepts system back to exit selection mode.
+        await tester.longPress(find.text('Item 1'));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('playlist_batch_selection_header')),
+          findsOneWidget,
+        );
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('playlist_batch_selection_header')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      'select all is a standalone floating button left of exit and left pill shrinks spacing evenly on narrow portrait',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(340, 800));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final tracks = [
+          for (var i = 1; i <= 2; i++)
+            testMusicTrack(
+              name: 'Item $i',
+              path: PathMatcher.normalize('/library/w$i/01.mp3'),
+              groupKey: PathMatcher.normalize('/library/w$i'),
+              groupTitle: 'Work $i',
+            ),
+        ];
+        fixture.runtimeGraph.library.addTracks(tracks, persist: false);
+        final sessions = [
+          for (final track in tracks)
+            fixture.runtimeGraph.playback.createTrackSession(track),
+        ];
+        fixture.playbackService.syncSlice(
+          activeSessions: sessions,
+          playingSessionCount: 0,
+          focusedSessionId: sessions.first.id,
+          coverGeneration: 0,
+          isInitialized: true,
+        );
+
+        await tester.pumpWidget(fixture.build(const PlaylistTab()));
+        await tester.pumpAndSettle();
+
+        await tester.longPress(find.text('Item 1'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+
+        final header = find.byKey(
+          const ValueKey('playlist_batch_selection_header'),
+        );
+        final pill = find.descendant(
+          of: header,
+          matching: find.byType(HeaderActionPill),
+        );
+        final selectAll = find.byKey(const ValueKey('batch_select_all_button'));
+        final exit = find.byKey(const ValueKey('exit_selection_button'));
+
+        // Select All sits in its own HeaderFloatingButton left of Exit, not in the left pill.
+        expect(
+          find.descendant(of: pill, matching: selectAll),
+          findsNothing,
+        );
+        final selectAllFloating = find.ancestor(
+          of: selectAll,
+          matching: find.byType(HeaderFloatingButton),
+        );
+        final exitFloating = find.ancestor(
+          of: exit,
+          matching: find.byType(HeaderFloatingButton),
+        );
+        expect(selectAllFloating, findsOneWidget);
+        expect(exitFloating, findsOneWidget);
+        final selectAllRect = tester.getRect(selectAllFloating);
+        final exitRect = tester.getRect(exitFloating);
+        expect(exitRect.left - selectAllRect.right, closeTo(8, 0.01));
+
+        // On 340px portrait width, the 5 buttons inside the left pill shrink uniformly
+        // without horizontal scrolling or overflow.
+        expect(
+          find.descendant(
+            of: pill,
+            matching: find.byType(SingleChildScrollView),
+          ),
+          findsNothing,
+        );
+        const buttonKeys = [
+          ValueKey('batch_play_button'),
+          ValueKey('batch_pause_button'),
+          ValueKey('batch_create_queue_button'),
+          ValueKey('batch_pin_button'),
+          ValueKey('batch_remove_button'),
+        ];
+        final rects = [
+          for (final key in buttonKeys) tester.getRect(find.byKey(key)),
+        ];
+        expect(rects.first.width, lessThan(48));
+        expect(rects.first.width, greaterThanOrEqualTo(32));
+        final step = rects[1].center.dx - rects[0].center.dx;
+        for (var i = 1; i < rects.length; i++) {
+          expect(rects[i].width, closeTo(rects[0].width, 0.01));
+          expect(rects[i].center.dx - rects[i - 1].center.dx, closeTo(step, 0.01));
+        }
+        final pillSurface = tester.getRect(
+          find.descendant(
+            of: pill,
+            matching: find.byType(HeaderFloatingSurface),
+          ),
+        );
+        expect(selectAllRect.left - pillSurface.right, closeTo(8, 0.01));
       },
     );
   });

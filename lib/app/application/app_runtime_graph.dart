@@ -460,6 +460,7 @@ ProductionAppRuntime createProductionAppRuntime({
       asmrApiService.close();
       japaneseAsmrApiService.close();
       appUpdateService.dispose();
+      appLanguageProvider.dispose();
     },
     library: libraryFacade,
     playback: playbackFacade,
@@ -490,8 +491,10 @@ ProductionAppRuntime createProductionAppRuntime({
     if (windowsRuntime != null) {
       await windowsRuntime.initializeRuntime(runtimeGraph.runtime.start);
     } else {
-      await configurePlatformAudioSession();
-      await runtimeGraph.runtime.start();
+      await Future.wait<void>([
+        configurePlatformAudioSession(),
+        runtimeGraph.runtime.start(),
+      ]);
     }
   }
 

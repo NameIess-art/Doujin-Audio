@@ -123,7 +123,22 @@ class _GlobalUpdateOperationBanner extends ConsumerWidget {
                     : i18n.tr('download_update'),
                 message: label,
                 trailing: hasError
-                    ? null
+                    ? IconButton(
+                        key: const ValueKey<String>(
+                          'global_update_error_dismiss',
+                        ),
+                        tooltip: i18n.tr('close'),
+                        onPressed: () => ref
+                            .read(uiOperationServiceProvider)
+                            .clear(UiOperationScope.settingsUpdate),
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 36,
+                          height: 36,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                      )
                     : SizedBox(
                         width: 72,
                         child: LinearProgressIndicator(value: progress),

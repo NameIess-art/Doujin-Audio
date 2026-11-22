@@ -21,6 +21,7 @@ import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/dlsite_metadata.dart';
+import '../../../core/media/music_track.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart'
@@ -136,6 +137,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   Rect? _departingSkeletonRect;
   final Map<AnimationController, ({Set<String> ids, Animation<double> opacity})>
   _entryLoadBatches = {};
+  final Set<AnimationController> _pendingDisposeEntryLoadControllers = {};
   // Local state
   AudioDetailTarget? _localTarget;
   AudioDetail? _localDetail;
@@ -177,6 +179,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   // Breadcrumb navigation state
   // Path stack: e.g. [] for root, ['EXデータ'] for subfolder
   final List<String> _currentPathSegments = [];
+  final Map<String, double> _directoryScrollOffsets = <String, double>{};
 
   @override
   void initState() {
@@ -290,7 +293,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     );
   }
 
-  Future<void> _loadLocalData({bool initial = false}) async {
+  Future<void> _loadLocalData({
+    bool initial = false,
+    bool refresh = false,
+  }) async {
     final request = initial ? _localLoadRequest : ++_localLoadRequest;
     if (!initial) _loadingInitialTree = false;
     UiInteractionCoordinator.instance.cancelCommit(_filesCommitKey);
@@ -319,7 +325,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
         commit: () {
           if (mounted && request == _localLoadRequest) {
             if (!initial) unawaited(_loadLocalTree(request, folderPath));
-            unawaited(_loadLocalFiles(request, folderPath));
+            unawaited(
+              _loadLocalFiles(request, folderPath, refresh: refresh),
+            );
           }
         },
       );
@@ -363,7 +371,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     }
   }
 
-  Future<void> _loadLocalFiles(int request, String folderPath) async {
+  Future<void> _loadLocalFiles(
+    int request,
+    String folderPath, {
+    bool refresh = false,
+  }) async {
     final library = ref.read(libraryFacadeProvider);
     final textService = ref.read(workTextServiceProvider);
     final previousCover = _localManualCover;
@@ -392,7 +404,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     await Future.wait<void>([
       () async {
         try {
-          final texts = await textService.refreshWorkTextFiles(folderPath);
+          final texts = refresh
+              ? await textService.refreshWorkTextFiles(folderPath)
+              : await textService.findWorkTextFiles(folderPath);
           if (!isCurrent()) return;
           _publishDataUpdate(() => _localTextFiles = texts, request: request);
         } catch (_) {
@@ -401,9 +415,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       }(),
       () async {
         try {
-          final candidateImages = await textService.refreshWorkImageFiles(
-            folderPath,
-          );
+          final candidateImages = refresh
+              ? await textService.refreshWorkImageFiles(folderPath)
+              : await textService.findWorkImageFiles(folderPath);
           if (!isCurrent()) return;
           _publishDataUpdate(
             () => _localImageReferences = candidateImages,
@@ -537,10 +551,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
               opacity: controller.drive(CurveTween(curve: kAppFadeCurve)),
             );
             controller.addStatusListener((status) {
-              if (status == AnimationStatus.completed) {
-                setState(() => _entryLoadBatches.remove(controller));
-                controller.dispose();
-              }
+              if (status != AnimationStatus.completed || !mounted) return;
+              if (_entryLoadBatches.remove(controller) == null) return;
+              setState(() {});
+              _scheduleDisposeEntryLoadControllers([controller]);
             });
             controller.forward();
           }
@@ -563,6 +577,21 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     );
   }
 
+  void _scheduleDisposeEntryLoadControllers(
+    Iterable<AnimationController> controllers,
+  ) {
+    final toDispose = controllers.toList(growable: false);
+    if (toDispose.isEmpty) return;
+    _pendingDisposeEntryLoadControllers.addAll(toDispose);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final controller in toDispose) {
+        if (_pendingDisposeEntryLoadControllers.remove(controller)) {
+          controller.dispose();
+        }
+      }
+    });
+  }
+
   @override
   void dispose() {
     UiInteractionCoordinator.instance.cancelCommit(_filesCommitKey);
@@ -579,6 +608,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     for (final controller in _entryLoadBatches.keys) {
       controller.dispose();
     }
+    _entryLoadBatches.clear();
+    for (final controller in _pendingDisposeEntryLoadControllers) {
+      controller.dispose();
+    }
+    _pendingDisposeEntryLoadControllers.clear();
     super.dispose();
   }
 
@@ -602,10 +636,14 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       _directoryFade.value = 1;
       _departingSkeletonRect = null;
       _cancelDirectorySlide();
-      for (final controller in _entryLoadBatches.keys) {
-        controller.dispose();
+      if (_entryLoadBatches.isNotEmpty) {
+        final controllers = _entryLoadBatches.keys.toList(growable: false);
+        _entryLoadBatches.clear();
+        for (final controller in controllers) {
+          controller.stop(canceled: false);
+        }
+        _scheduleDisposeEntryLoadControllers(controllers);
       }
-      _entryLoadBatches.clear();
       _directoryWasLoading = isLoading;
       return;
     }
@@ -695,7 +733,26 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
 
   void _switchDirectory(List<String> nextPath) {
     if (listEquals(nextPath, _currentPathSegments)) return;
+    final previousKey = _currentPathSegments.join('/');
+    final nextKey = nextPath.join('/');
+    if (_scrollController.hasClients) {
+      _directoryScrollOffsets[previousKey] = _scrollController.offset;
+    }
     final direction = nextPath.length < _currentPathSegments.length ? -1 : 1;
+    final targetScrollOffset = direction < 0
+        ? (_directoryScrollOffsets[nextKey] ?? 0.0)
+        : 0.0;
+    void restoreScrollOffset() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scrollController.hasClients) return;
+        final maxExtent = _scrollController.position.maxScrollExtent;
+        final clamped = targetScrollOffset.clamp(0.0, maxExtent);
+        if ((_scrollController.offset - clamped).abs() > 0.5) {
+          _scrollController.jumpTo(clamped);
+        }
+      });
+    }
+
     final animate =
         !MediaQuery.disableAnimationsOf(context) &&
         TickerMode.valuesOf(context).enabled &&
@@ -708,6 +765,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           ..clear()
           ..addAll(nextPath);
       });
+      restoreScrollOffset();
       return;
     }
     final currentPath = List<String>.of(_currentPathSegments);
@@ -740,6 +798,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
         ..addAll(nextPath);
     });
     _directorySlide.forward(from: startValue);
+    restoreScrollOffset();
   }
 
   List<WorkEntryItem> _buildCurrentEntries(WidgetRef ref) {
@@ -833,34 +892,51 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     setState(() => _localManualCover = imagePath);
   }
 
+  List<MusicTrack> _collectPlayableLocalTracks() {
+    if (!widget.isLocal) return const [];
+    final library = ref.read(libraryFacadeProvider);
+    final removals = ref.read(undoableRemovalStateProvider);
+    final tree = _localFolderNode;
+    if (tree == null) return const [];
+    final hiddenFolderTracks = <String>{};
+    void collectHiddenFolders(FolderNode folder) {
+      if (removals.isHidden(libraryRemovalKey(folder.path))) {
+        hiddenFolderTracks.addAll(folder.allTracks.map((track) => track.path));
+        return;
+      }
+      for (final child in folder.children.whereType<FolderNode>()) {
+        collectHiddenFolders(child);
+      }
+    }
+
+    if (removals.hiddenKeys.isNotEmpty) {
+      collectHiddenFolders(tree);
+    }
+    return tree.allTracks
+        .where(
+          (track) =>
+              library.trackByPath(track.path) != null &&
+              !hiddenFolderTracks.contains(track.path) &&
+              !removals.isHidden(libraryRemovalKey(track.path)),
+        )
+        .toList(growable: false);
+  }
+
   Future<bool> _playAudioItem(WorkEntryItem item) async {
     if (widget.isLocal && item.track != null) {
       final playback = ref.read(playbackFacadeProvider);
       final library = ref.read(libraryFacadeProvider);
       final removals = ref.read(undoableRemovalStateProvider);
       final tree = _localFolderNode;
-      final hiddenFolderTracks = <String>{};
-      void collectHiddenFolders(FolderNode folder) {
-        if (removals.isHidden(libraryRemovalKey(folder.path))) {
-          hiddenFolderTracks.addAll(folder.allTracks.map((track) => track.path));
-          return;
-        }
-        for (final child in folder.children.whereType<FolderNode>()) {
-          collectHiddenFolders(child);
-        }
-      }
-
-      if (tree != null && removals.hiddenKeys.isNotEmpty) {
-        collectHiddenFolders(tree);
-      }
-      final tracks = (tree?.allTracks ?? [item.track!])
-          .where(
-            (track) =>
-                library.trackByPath(track.path) != null &&
-                !hiddenFolderTracks.contains(track.path) &&
-                !removals.isHidden(libraryRemovalKey(track.path)),
-          )
-          .toList(growable: false);
+      final tracks = tree != null
+          ? _collectPlayableLocalTracks()
+          : [item.track!]
+                .where(
+                  (track) =>
+                      library.trackByPath(track.path) != null &&
+                      !removals.isHidden(libraryRemovalKey(track.path)),
+                )
+                .toList(growable: false);
       final index = tracks.indexWhere(
         (track) => track.path == item.track!.path,
       );
@@ -990,7 +1066,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     if (targetName == null || !mounted) return;
     try {
       final oldPath = sourcePath;
-      final renamedPath = await ref
+      await ref
           .read(audioPathCoordinatorProvider)
           .renameWorkEntryToName(
             libraryRootPath: _localTarget!.targetPath,
@@ -999,13 +1075,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
             isMedia: item.type == WorkEntryType.audio,
             isDirectory: item.type == WorkEntryType.folder,
           );
-      if (item.type != WorkEntryType.folder && _localManualCover == oldPath) {
-        await ref
-            .read(libraryFacadeProvider)
-            .setFolderManualCover(_localTarget!.targetPath, renamedPath);
-      }
       if (!mounted) return;
-      await _loadLocalData();
+      await _loadLocalData(refresh: true);
     } catch (error) {
       if (!mounted) return;
       showAppSnackBar(
@@ -1242,7 +1313,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       ),
     );
     if (mounted) {
-      unawaited(_loadLocalData());
+      unawaited(_loadLocalData(refresh: true));
     }
   }
 
@@ -1261,7 +1332,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       _cancelDirectorySlide();
       _currentPathSegments.clear();
     });
-    await _loadLocalData();
+    await _loadLocalData(refresh: true);
   }
 
   Future<void> _handleLocalDownload() async {
@@ -1439,27 +1510,52 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
               }
             }
             final id = item.id;
+            final menus = interactive
+                ? entryMenus.putIfAbsent((
+                    item.type,
+                    removalLabel,
+                  ), () => _entryMenuItems(item.type, removalLabel))
+                : const <UnifiedMenuEntry<WorkEntryAction>>[];
+            final onAction = interactive
+                ? (WorkEntryAction action) => _handleEntryAction(item, action)
+                : _ignoreEntryAction;
+            Widget entryTile;
+            if (item.type == WorkEntryType.audio) {
+              final trackPath = item.track?.path ?? item.fullPathOrUrl;
+              entryTile = Consumer(
+                builder: (context, tileRef, _) {
+                  final isActiveTrack =
+                      trackPath.isNotEmpty &&
+                      tileRef.watch(isTrackActiveProvider(trackPath));
+                  return WorkDetailEntryTile(
+                    key: ValueKey(id),
+                    item: item,
+                    accentColor: cs.primary,
+                    menuEntries: menus,
+                    moreLabel: moreLabel,
+                    unknownSizeLabel: unknownSizeLabel,
+                    onAction: onAction,
+                    isActiveTrack: isActiveTrack,
+                  );
+                },
+              );
+            } else {
+              entryTile = WorkDetailEntryTile(
+                key: ValueKey(id),
+                item: item,
+                accentColor: cs.primary,
+                menuEntries: menus,
+                moreLabel: moreLabel,
+                unknownSizeLabel: unknownSizeLabel,
+                onAction: onAction,
+              );
+            }
             final tile = FadeTransition(
               key: item.rowKey,
               opacity: interactive
                   ? _entryLoadOpacity(id)
                   : const AlwaysStoppedAnimation<double>(1),
-              child: WorkDetailEntryTile(
-                key: ValueKey(id),
-                item: item,
-                accentColor: cs.primary,
-                menuEntries: interactive
-                    ? entryMenus.putIfAbsent((
-                        item.type,
-                        removalLabel,
-                      ), () => _entryMenuItems(item.type, removalLabel))
-                    : const [],
-                moreLabel: moreLabel,
-                unknownSizeLabel: unknownSizeLabel,
-                onAction: interactive
-                    ? (action) => _handleEntryAction(item, action)
-                    : _ignoreEntryAction,
-              ),
+              child: entryTile,
             );
             return interactive ? tile : ExcludeFocus(child: tile);
           },
@@ -1759,7 +1855,12 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                 // 2. Collapsible Details: Voice Actors, Tags, Action Buttons
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      12,
+                      16,
+                      _currentPathSegments.isEmpty ? 8 : 0,
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
@@ -1779,7 +1880,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                               isLocal: widget.isLocal,
                               isFavorite: isFavorite,
                               accentColor: cs.primary,
-                              onFetchInfo: _handleLocalFetchInfo,
+                              onFetchInfo: widget.isLocal && _localDetail == null
+                                  ? null
+                                  : _handleLocalFetchInfo,
                               onDownload: remote == null
                                   ? _handleLocalDownload
                                   : () => remote.download(context),
@@ -1790,18 +1893,37 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
 
                         const SizedBox(height: 12),
                         const Divider(height: 1),
-                        const SizedBox(height: 8),
-
-                        WorkDetailBreadcrumbs(
-                          segments: List.of(_currentPathSegments),
-                          entryCount: currentEntries.length,
-                          i18n: i18n,
-                          onNavigate: _navigateToBreadcrumbIndex,
-                        ),
+                        if (_currentPathSegments.isEmpty) ...[
+                          const SizedBox(height: 8),
+                          WorkDetailBreadcrumbs(
+                            segments: List.of(_currentPathSegments),
+                            entryCount: currentEntries.length,
+                            i18n: i18n,
+                            onNavigate: _navigateToBreadcrumbIndex,
+                          ),
+                        ],
                       ],
                     ),
                   ),
                 ),
+
+                if (_currentPathSegments.isNotEmpty)
+                  SliverPersistentHeader(
+                    pinned: true,
+                    delegate: _WorkDetailBreadcrumbsHeaderDelegate(
+                      segments: List<String>.unmodifiable(_currentPathSegments),
+                      entryCount: currentEntries.length,
+                      i18n: i18n,
+                      language: i18n.language,
+                      surfaceColor: cs.surface,
+                      borderColor: cs.outlineVariant.withValues(alpha: 0.35),
+                      height: math.max(
+                        44.0,
+                        MediaQuery.textScalerOf(context).scale(20) + 22,
+                      ),
+                      onNavigate: _navigateToBreadcrumbIndex,
+                    ),
+                  ),
 
                 // 4. Directory File Tree List
                 if (_remoteLoadError case final error?)
@@ -1936,7 +2058,14 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       );
     }
 
-    return Scaffold(
+    return PopScope<void>(
+      canPop: _currentPathSegments.isEmpty,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _currentPathSegments.isNotEmpty) {
+          _navigateToBreadcrumbIndex(_currentPathSegments.length - 2);
+        }
+      },
+      child: Scaffold(
       backgroundColor: Colors.transparent,
       body: PageHeaderInset(
         topInset: AppPageHeaderMetrics.contentTopInset(context),
@@ -1976,7 +2105,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                   if (widget.isLocal) ...[
                     AppOverlayIconButton(
                       buttonKey: const ValueKey<String>('work_detail_edit'),
-                      onPressed: _handleLocalEdit,
+                      onPressed: _localDetail == null ? null : _handleLocalEdit,
                       tooltip: i18n.tr('edit'),
                       icon: const Icon(Icons.edit_rounded, size: 20),
                     ),
@@ -2028,6 +2157,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
         ],
       ),
       ),
+    ),
     );
   }
 
@@ -2043,6 +2173,78 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       icon: Icons.content_copy_rounded,
     );
   }
+}
+
+class _WorkDetailBreadcrumbsHeaderDelegate
+    extends SliverPersistentHeaderDelegate {
+  const _WorkDetailBreadcrumbsHeaderDelegate({
+    required this.segments,
+    required this.entryCount,
+    required this.i18n,
+    required this.language,
+    required this.surfaceColor,
+    required this.borderColor,
+    required this.height,
+    required this.onNavigate,
+  });
+
+  final List<String> segments;
+  final int entryCount;
+  final AppLanguageProvider i18n;
+  final AppLanguage language;
+  final Color surfaceColor;
+  final Color borderColor;
+  final double height;
+  final ValueChanged<int> onNavigate;
+
+  @override
+  double get minExtent => height;
+
+  @override
+  double get maxExtent => height;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return DecoratedBox(
+      key: const ValueKey<String>('work_detail_pinned_breadcrumbs'),
+      decoration: BoxDecoration(
+        color: surfaceColor,
+        border: Border(
+          bottom: BorderSide(
+            color: overlapsContent ? borderColor : Colors.transparent,
+            width: 0.8,
+          ),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: WorkDetailBreadcrumbs(
+            segments: segments,
+            entryCount: entryCount,
+            i18n: i18n,
+            onNavigate: onNavigate,
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(
+    covariant _WorkDetailBreadcrumbsHeaderDelegate oldDelegate,
+  ) =>
+      !listEquals(segments, oldDelegate.segments) ||
+      entryCount != oldDelegate.entryCount ||
+      language != oldDelegate.language ||
+      surfaceColor != oldDelegate.surfaceColor ||
+      borderColor != oldDelegate.borderColor ||
+      height != oldDelegate.height;
 }
 
 @immutable

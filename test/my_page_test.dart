@@ -1838,9 +1838,12 @@ void main() {
           await tester.tap(find.byType(AppElementChip));
           await tester.pageBack();
           await pumpAndSettleWithAsync(tester);
+          await tester.tap(find.text(fixture.languageProvider.tr('confirm')).last);
+          await pumpAndSettleWithAsync(tester);
           expect(preferences.excluded, {key});
           await openExcluded();
           await tester.tap(find.byType(AppElementChip));
+          await tester.pump();
           await tester.tap(find.byKey(const ValueKey('my_tags_confirm')));
           await pumpAndSettleWithAsync(tester);
           expect(preferences.excluded, isEmpty);

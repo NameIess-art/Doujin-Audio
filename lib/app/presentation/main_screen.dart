@@ -43,6 +43,7 @@ import 'mobile_dock_capsule_content.dart';
 import 'main_destination.dart';
 import 'my_page.dart';
 import 'desktop_main_navigation.dart';
+import 'global_shortcuts.dart';
 import 'work_detail_navigation.dart';
 export 'main_destination.dart' show MainDestinationType;
 export 'app_dock_panel.dart';
@@ -147,6 +148,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
   static const _mobilePlaybackRaisedKey = 'mobile_playback_raised';
   bool? _mobilePlaybackExpanded;
   final _mobilePlaybackRaised = ValueNotifier<bool?>(null);
+  Listenable? _mobileDockVisibilitySource;
+  Listenable? _mobileDockVisibilityListenable;
   bool get _isMobilePlaybackExpanded => _mobilePlaybackExpanded ?? false;
   bool get _isMobilePlaybackRaised => _mobilePlaybackRaised.value ?? false;
   late final ValueNotifier<int> _activePageIndex;
@@ -1037,7 +1040,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
           : _emptyListenable,
       builder: (context, _) {
         final splitContent = isLandscape && (detailNavigation?.isOpen ?? false);
-        final forcedCollapsed = splitContent && width - 260 < 641;
+        final forcedCollapsed = splitContent && width < 1120;
         final menuCollapsed = _isMenuCollapsed || forcedCollapsed;
         final sidebarWidth = isDesktop
             ? (isLandscape
@@ -1074,8 +1077,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
                               child: LayoutBuilder(
                                 builder: (context, constraints) {
                                   final contentWidth = splitContent
-                                      ? max(0.0, constraints.maxWidth - 1) *
-                                            WorkDetailPane.mainWidthFraction
+                                      ? WorkDetailPane.mainPaneWidthFor(
+                                          constraints.maxWidth,
+                                        )
                                       : constraints.maxWidth;
                                   final navigatorContent =
                                       _wrapMobileOverlayInset(

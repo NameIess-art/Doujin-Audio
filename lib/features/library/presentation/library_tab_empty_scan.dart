@@ -187,14 +187,12 @@ class LibraryEmptyState extends StatelessWidget {
                           children: [
                             SizedBox(
                               width: 220,
-                              child: AppSecondaryButton(
+                              child: AppPrimaryButton(
                                 onPressed: isBusy ? null : onImportFolder,
                                 isLoading:
                                     isBusy &&
-                                    (activeImportScope == null ||
-                                        activeImportScope ==
-                                            UiOperationScope
-                                                .libraryImportFolder),
+                                    activeImportScope ==
+                                        UiOperationScope.libraryImportFolder,
                                 icon: Icons.create_new_folder_rounded,
                                 label: i18n.tr('import_folder'),
                               ),
@@ -260,7 +258,7 @@ class LibraryLoadingSkeleton extends ConsumerWidget {
   }
 }
 
-class LibraryScanProgressCard extends StatelessWidget {
+class LibraryScanProgressCard extends StatefulWidget {
   const LibraryScanProgressCard({
     super.key,
     required this.i18n,
@@ -270,8 +268,37 @@ class LibraryScanProgressCard extends StatelessWidget {
   final AppLanguageProvider i18n;
   final LibraryScanUiState scanState;
   final VoidCallback onCancel;
+
+  @override
+  State<LibraryScanProgressCard> createState() =>
+      _LibraryScanProgressCardState();
+}
+
+class _LibraryScanProgressCardState extends State<LibraryScanProgressCard> {
+  bool _cancelling = false;
+
+  @override
+  void didUpdateWidget(covariant LibraryScanProgressCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_cancelling &&
+        (widget.scanState.stage == FolderScanStage.idle ||
+            (oldWidget.scanState.stage == FolderScanStage.idle &&
+                widget.scanState.stage != FolderScanStage.idle) ||
+            widget.scanState.source != oldWidget.scanState.source)) {
+      _cancelling = false;
+    }
+  }
+
+  void _handleCancel() {
+    if (_cancelling) return;
+    setState(() => _cancelling = true);
+    widget.onCancel();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final i18n = widget.i18n;
+    final scanState = widget.scanState;
     final cs = Theme.of(context).colorScheme;
     final total = scanState.total;
     final progress = total != null && total > 0
@@ -327,12 +354,17 @@ class LibraryScanProgressCard extends StatelessWidget {
                   ),
                   AppLabelledButton(
                     TextButton.icon,
-                    onPressed: onCancel,
-                    icon: Icon(Icons.close_rounded, size: 16, color: cs.error),
+                    key: const ValueKey<String>('library_scan_cancel_button'),
+                    onPressed: _cancelling ? null : _handleCancel,
+                    icon: Icon(
+                      Icons.close_rounded,
+                      size: 16,
+                      color: _cancelling ? cs.onSurfaceVariant : cs.error,
+                    ),
                     label: Text(
                       i18n.tr('scan_cancel'),
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: cs.error,
+                        color: _cancelling ? cs.onSurfaceVariant : cs.error,
                         fontSize: 12,
                       ),
                     ),
@@ -403,9 +435,12 @@ class LibraryScanProgressCard extends StatelessWidget {
                       color: cs.tertiary,
                     ),
                     LibraryScanCountChip(
+                      key: const ValueKey<String>('library_scan_failure_chip'),
                       label: i18n.tr('scan_failure'),
                       count: scanState.failureCount,
-                      color: cs.error,
+                      color: scanState.failureCount > 0
+                          ? cs.error
+                          : cs.onSurfaceVariant,
                     ),
                   ],
                 ),

@@ -9,8 +9,10 @@ import '../../../app/presentation/screen_view_models.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/media/search_query_utils.dart';
+import '../../../core/media/time_text_formatters.dart';
 import '../../player/presentation/playback_providers.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
+import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_search_page.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/library_like_cards.dart';
@@ -41,6 +43,9 @@ class LibrarySearchAllResults extends ConsumerStatefulWidget {
     required this.onEnterSelectionMode,
     required this.onToggleSelection,
     required this.onTreeChanged,
+    this.onFiltersChanged,
+    this.onClearFilters,
+    this.onEditSearch,
   });
 
   final String query;
@@ -56,6 +61,9 @@ class LibrarySearchAllResults extends ConsumerStatefulWidget {
   final ValueChanged<LibraryNode> onEnterSelectionMode;
   final ValueChanged<LibraryNode> onToggleSelection;
   final ValueChanged<List<LibraryNode>> onTreeChanged;
+  final ValueChanged<SearchFilters>? onFiltersChanged;
+  final VoidCallback? onClearFilters;
+  final VoidCallback? onEditSearch;
 
   @override
   ConsumerState<LibrarySearchAllResults> createState() =>
@@ -352,6 +360,8 @@ class _LibrarySearchAllResultsState
         : _visibleSearchResult;
     final tree = result?.tree;
     if (tree != null) widget.onTreeChanged(tree);
+    final hasActiveFilters = widget.filters != emptySearchFilters;
+    final listTopPadding = hasActiveFilters ? 4.0 : topPadding;
     final Widget content;
     if (tree == null && hasCurrentError) {
       content = AppErrorState(
@@ -364,11 +374,58 @@ class _LibrarySearchAllResultsState
     } else if (tree == null) {
       content = const SizedBox.shrink();
     } else if (tree.isEmpty) {
-      content = AppEmptyState(
-        key: const ValueKey<String>('library_search_empty'),
-        icon: Icons.search_off_rounded,
-        title: i18n.tr('no_search_results'),
-        message: i18n.tr('search_try_another_term'),
+      final hasRecoveryActions =
+          (hasActiveFilters && widget.onClearFilters != null) ||
+          widget.onEditSearch != null;
+      content = Center(
+        child: Padding(
+          padding: EdgeInsets.only(top: hasActiveFilters ? 0 : topPadding),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppEmptyState(
+                key: const ValueKey<String>('library_search_empty'),
+                icon: Icons.search_off_rounded,
+                title: i18n.tr('no_search_results'),
+                message: i18n.tr('search_try_another_term'),
+              ),
+              if (hasRecoveryActions) ...[
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    if (hasActiveFilters && widget.onClearFilters != null)
+                      AppPrimaryButton(
+                        key: const ValueKey<String>(
+                          'library_search_clear_filters_button',
+                        ),
+                        onPressed: widget.onClearFilters,
+                        label: i18n.tr('clear_filters'),
+                      ),
+                    if (widget.onEditSearch != null)
+                      AppPillButton(
+                        key: const ValueKey<String>(
+                          'library_search_edit_search_button',
+                        ),
+                        onPressed: widget.onEditSearch,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Theme.of(
+                            context,
+                          ).colorScheme.secondaryContainer,
+                          foregroundColor: Theme.of(
+                            context,
+                          ).colorScheme.onSecondaryContainer,
+                        ),
+                        child: Text(i18n.tr('edit_search')),
+                      ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
       );
     } else {
       final visibleItems = _visibleSearchItems;
@@ -430,7 +487,7 @@ class _LibrarySearchAllResultsState
               controller: widget.scrollController,
               padding: EdgeInsets.fromLTRB(
                 LibraryLikeCardMetrics.listHorizontalPadding,
-                topPadding,
+                listTopPadding,
                 LibraryLikeCardMetrics.listHorizontalPadding,
                 AppSearchPageScaffold.contentBottomInset(context),
               ),
@@ -477,6 +534,27 @@ class _LibrarySearchAllResultsState
         ),
       );
     }
+    final resolvedContent = hasActiveFilters
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  LibraryLikeCardMetrics.listHorizontalPadding,
+                  topPadding,
+                  LibraryLikeCardMetrics.listHorizontalPadding,
+                  4,
+                ),
+                child: _ActiveSearchFiltersSummary(
+                  filters: widget.filters,
+                  translate: i18n.tr,
+                  onFiltersChanged: widget.onFiltersChanged,
+                ),
+              ),
+              Expanded(child: content),
+            ],
+          )
+        : content;
     return NotificationListener<ScrollMetricsNotification>(
       onNotification: (_) {
         ref.read(libraryCoverUiControllerProvider).viewportChanged();
@@ -488,8 +566,124 @@ class _LibrarySearchAllResultsState
           bottomInset: 16,
           topInset: topPadding,
         ),
-        content: content,
+        content: resolvedContent,
       ),
+    );
+  }
+}
+
+class _ActiveSearchFiltersSummary extends StatelessWidget {
+  const _ActiveSearchFiltersSummary({
+    required this.filters,
+    required this.translate,
+    required this.onFiltersChanged,
+  });
+
+  final SearchFilters filters;
+  final String Function(String key, [Map<String, Object?> params]) translate;
+  final ValueChanged<SearchFilters>? onFiltersChanged;
+
+  SearchFilters _copyFilters({
+    (bool?,)? hasSubtitle,
+    (double?,)? minimumRating,
+    (Duration?,)? minimumDuration,
+    (Duration?,)? maximumDuration,
+    (DateTime?,)? firstReleaseDate,
+    (DateTime?,)? lastReleaseDate,
+  }) => (
+    hasSubtitle: hasSubtitle == null ? filters.hasSubtitle : hasSubtitle.$1,
+    minimumRating: minimumRating == null
+        ? filters.minimumRating
+        : minimumRating.$1,
+    minimumDuration: minimumDuration == null
+        ? filters.minimumDuration
+        : minimumDuration.$1,
+    maximumDuration: maximumDuration == null
+        ? filters.maximumDuration
+        : maximumDuration.$1,
+    firstReleaseDate: firstReleaseDate == null
+        ? filters.firstReleaseDate
+        : firstReleaseDate.$1,
+    lastReleaseDate: lastReleaseDate == null
+        ? filters.lastReleaseDate
+        : lastReleaseDate.$1,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final chips = <Widget>[];
+    void addChip(String keyName, String label, VoidCallback? onDeleted) {
+      chips.add(
+        InputChip(
+          key: ValueKey<String>(keyName),
+          label: Text(label),
+          visualDensity: VisualDensity.compact,
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          onDeleted: onDeleted,
+        ),
+      );
+    }
+
+    if (filters.hasSubtitle case final hasSubtitle?) {
+      addChip(
+        'search_active_filter_subtitle',
+        translate(hasSubtitle ? 'search_has_subtitle' : 'search_has_no_subtitle'),
+        onFiltersChanged == null
+            ? null
+            : () => onFiltersChanged!(_copyFilters(hasSubtitle: (null,))),
+      );
+    }
+    if (filters.minimumRating case final rating?) {
+      addChip(
+        'search_active_filter_rating',
+        '${translate('search_minimum_rating')} ≥ ${rating.toStringAsFixed(1)}',
+        onFiltersChanged == null
+            ? null
+            : () => onFiltersChanged!(_copyFilters(minimumRating: (null,))),
+      );
+    }
+    if (filters.minimumDuration case final minDuration?) {
+      addChip(
+        'search_active_filter_min_duration',
+        '${translate('search_filter_minimum')} ${translate('minutes_duration', {'count': minDuration.inMinutes.toString()})}',
+        onFiltersChanged == null
+            ? null
+            : () => onFiltersChanged!(_copyFilters(minimumDuration: (null,))),
+      );
+    }
+    if (filters.maximumDuration case final maxDuration?) {
+      addChip(
+        'search_active_filter_max_duration',
+        '${translate('search_filter_maximum')} ${translate('minutes_duration', {'count': maxDuration.inMinutes.toString()})}',
+        onFiltersChanged == null
+            ? null
+            : () => onFiltersChanged!(_copyFilters(maximumDuration: (null,))),
+      );
+    }
+    if (filters.firstReleaseDate case final firstDate?) {
+      addChip(
+        'search_active_filter_first_release',
+        '${translate('search_filter_earliest')} ${formatDateYmd(firstDate)}',
+        onFiltersChanged == null
+            ? null
+            : () => onFiltersChanged!(_copyFilters(firstReleaseDate: (null,))),
+      );
+    }
+    if (filters.lastReleaseDate case final lastDate?) {
+      addChip(
+        'search_active_filter_last_release',
+        '${translate('search_filter_latest')} ${formatDateYmd(lastDate)}',
+        onFiltersChanged == null
+            ? null
+            : () => onFiltersChanged!(_copyFilters(lastReleaseDate: (null,))),
+      );
+    }
+    if (chips.isEmpty) return const SizedBox.shrink();
+    return Wrap(
+      key: const ValueKey<String>('library_search_active_filters'),
+      spacing: 6,
+      runSpacing: 6,
+      children: chips,
     );
   }
 }

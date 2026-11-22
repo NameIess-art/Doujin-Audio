@@ -234,245 +234,18 @@ extension _MainScreenLayout on _MainScreenState {
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    final cs = Theme.of(context).colorScheme;
-
-    final entries = destinations.asMap().entries.toList();
-    final activeIndex = selectedIndex.clamp(0, destinations.length - 1);
-    // Keep the active destination on top throughout collapsing and expanding,
-    // smoothly folding inactive destinations beneath it.
-    final layeredEntries = [
-      ...entries.where((entry) => entry.key != activeIndex),
-      entries[activeIndex],
-    ];
-
-    const indicatorInset = 6.0;
-    final motionListenable = Listenable.merge([
-      appearance,
-      expansion,
-      rowProgress,
-    ]);
-    final inactiveOpacity = _BottomDestinationOpacityAnimation(
-      expansion,
-      rowProgress,
-    );
-
-    double navigationLeft() =>
-        MobileDockCapsuleContentState.inlinePlaybackWidth(
-          availableWidth,
-          expansion.value,
-        ) *
-        appearance.value *
-        (1 - rowProgress.value);
-
-    Rect destinationRect(int index) {
-      final expand = expansion.value * (1 - rowProgress.value);
-      final progress = index == 0
-          ? kAppSpringCurve.transform((expand / 0.2).clamp(0.0, 1.0))
-          : kAppSpringCurve.transform(((expand - 0.2) / 0.45).clamp(0.0, 1.0));
-      const height = kActiveSessionCarouselDockHeight;
-      final inlineShare = appearance.value * (1 - rowProgress.value);
-      final width = availableWidth - navigationLeft();
-      final innerWidth = (width - indicatorInset * 2).clamp(0.0, width);
-      final slotWidth = innerWidth / destinations.length;
-      // Reserve outer capsule insets so every indicator slot shares the same
-      // width while outer destinations keep full-edge hit targets.
-      final menuInnerWidth =
-          (availableWidth - height * inlineShare - indicatorInset * 2).clamp(
-            0.0,
-            availableWidth,
-          );
-      final isFirst = index == 0;
-      final isLast = index == destinations.length - 1;
-      final outerEdgeInset =
-          (isFirst ? indicatorInset : 0.0) + (isLast ? indicatorInset : 0.0);
-      // Morph from the full menu cell to the single control. The shrinking
-      // viewport would otherwise make the cell narrower than its final size.
-      final menuSlotWidth = menuInnerWidth / destinations.length + outerEdgeInset;
-      final shapeProgress = kAppSpringCurve.transform(
-        ((expand - 0.25) / 0.5).clamp(0.0, 1.0),
-      );
-      final buttonWidth = lerpDouble(menuSlotWidth, height, shapeProgress)!;
-      final distanceFromRight = isLast
-          ? 0.0
-          : indicatorInset + (destinations.length - 1 - index) * slotWidth;
-      return Rect.fromLTWH(
-        availableWidth - buttonWidth - distanceFromRight * (1 - progress),
-        0,
-        buttonWidth,
-        height,
-      );
-    }
-
-    Rect indicatorRect(int index) {
-      final destination = destinationRect(index);
-      final left = navigationLeft() + indicatorInset;
-      final right = availableWidth - indicatorInset;
-      return Rect.fromLTRB(
-        destination.left.clamp(left, right),
-        destination.top + indicatorInset,
-        destination.right.clamp(left, right),
-        destination.bottom - indicatorInset,
-      );
-    }
-
-    Widget buildDestination(MapEntry<int, MainDestination> entry) {
-      final index = entry.key;
-      final item = destinations[index];
-      final selected = index == activeIndex;
-      final label = i18n.tr(item.labelKey);
-      final inactive = cs.onSurfaceVariant.withValues(alpha: 0.6);
-
-      final activeColor = cs.primary;
-
-      final icon = AnimatedSwitcher(
-        duration: MediaQuery.disableAnimationsOf(context)
-            ? Duration.zero
-            : kAppMotionFast,
-        switchInCurve: kAppSpringCurve,
-        switchOutCurve: Curves.easeInCubic,
-        transitionBuilder: (child, animation) =>
-            MediaQuery.disableAnimationsOf(context)
-            ? child
-            : FadeTransition(
-                opacity: animation,
-                child: ScaleTransition(
-                  scale: animation.drive(Tween<double>(begin: 0.85, end: 1)),
-                  child: child,
-                ),
-              ),
-        child: item.buildIcon(
-          key: ValueKey<bool>(selected),
-          selected: selected,
-          size: 28,
-        ),
-      );
-
-      return AnimatedBuilder(
-        key: ValueKey(item.type),
-        animation: motionListenable,
-        child: IgnorePointer(
-          ignoring: isPlaybackExpanded && !selected,
-          child: ExcludeSemantics(
-            excluding: isPlaybackExpanded && !selected,
-            child: Semantics(
-              key: ValueKey<String>('main_destination_${item.labelKey}'),
-              button: true,
-              selected: selected,
-              label: label,
-              child: Material(
-                type: MaterialType.transparency,
-                child: IconTheme.merge(
-                  data: IconThemeData(color: selected ? activeColor : inactive),
-                  child: _BottomDestinationInkResponse(
-                    inkKey: ValueKey<String>(
-                      'main_destination_ink_${item.labelKey}',
-                    ),
-                    onTap: isPlaybackExpanded && selected
-                        ? onCurrentTap
-                        : () => _switchPage(index),
-                    child: AnimatedBuilder(
-                      animation: motionListenable,
-                      child: RepaintBoundary(child: icon),
-                      builder: (context, child) {
-                        final destination = destinationRect(index);
-                        final indicator = indicatorRect(index);
-                        final dx = indicator.width > 0
-                            ? indicator.center.dx - destination.center.dx
-                            : 0.0;
-                        return Transform.translate(
-                          offset: Offset(dx, 0),
-                          child: child,
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-        builder: (context, child) {
-          final fadeProgress = kAppSpringCurve.transform(
-            expansion.value * (1 - rowProgress.value),
-          );
-          if (!selected && fadeProgress == 1) return const SizedBox.shrink();
-          return Positioned.fromRect(
-            rect: destinationRect(index),
-            child: selected
-                ? child!
-                : FadeTransition(
-                    opacity: inactiveOpacity,
-                    child: Transform.scale(
-                      scale: 1 - 0.15 * fadeProgress,
-                      child: child,
-                    ),
-                  ),
-          );
-        },
-      );
-    }
-
-    final layoutKey = Object.hashAll(destinations.map((item) => item.type));
-    final stackChild = Stack(
-      children: [
-        for (final entry in layeredEntries) buildDestination(entry),
-      ],
-    );
-    return Theme(
-      data: Theme.of(context).copyWith(splashFactory: NoSplash.splashFactory),
-      child: _MobileBottomBarDragScrubber(
-        enabled: !isPlaybackExpanded && destinations.length > 1,
-        destinationCount: destinations.length,
-        activeIndex: activeIndex,
-        slotAt: indicatorRect,
-        onSelectIndex: _switchPage,
-        builder: (context, dragPosition) => ValueListenableBuilder<double?>(
-          valueListenable: _pageDragPosition,
-          builder: (context, pageDragPosition, _) => SlidingSelectionIndicator(
-            index: activeIndex,
-            layoutKey: layoutKey,
-            overridePosition: dragPosition ?? pageDragPosition,
-            child: stackChild,
-            builder: (context, position, child) {
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  AnimatedBuilder(
-                    animation: motionListenable,
-                    builder: (context, _) {
-                      final rect = SlidingSelectionIndicator.rectAt(
-                        position,
-                        indicatorRect,
-                      )!;
-                      return Stack(
-                        children: [
-                          Positioned.fromRect(
-                            rect: rect,
-                            child: IgnorePointer(
-                              child: DecoratedBox(
-                                key: const ValueKey(
-                                  'mobile_navigation_indicator',
-                                ),
-                                decoration: ShapeDecoration(
-                                  color: SlidingSelectionIndicator.fill(
-                                    cs.primary,
-                                  ),
-                                  shape: SlidingSelectionIndicator.shape,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                  child!,
-                ],
-              );
-            },
-          ),
-        ),
-      ),
+    return _MobileBottomBarContent(
+      destinations: destinations,
+      selectedIndex: selectedIndex,
+      isPlaybackExpanded: isPlaybackExpanded,
+      appearance: appearance,
+      expansion: expansion,
+      rowProgress: rowProgress,
+      availableWidth: availableWidth,
+      onCurrentTap: onCurrentTap,
+      onSwitchPage: _switchPage,
+      pageDragPosition: _pageDragPosition,
+      i18n: i18n,
     );
   }
 
@@ -485,11 +258,17 @@ extension _MainScreenLayout on _MainScreenState {
     final detailNavigation = WorkDetailNavigationScope.maybeOf(context);
     final isLandscape = WorkDetailNavigationScope.isLandscapeOf(context);
     final routedDockActive = widget.playbackDockGeometry?.routedDockActive;
-    return ListenableBuilder(
-      listenable: Listenable.merge([
-        routedDockActive ?? detailNavigation,
+    final visibilitySource = routedDockActive ?? detailNavigation;
+    if (_mobileDockVisibilityListenable == null ||
+        !identical(_mobileDockVisibilitySource, visibilitySource)) {
+      _mobileDockVisibilitySource = visibilitySource;
+      _mobileDockVisibilityListenable = Listenable.merge([
+        visibilitySource,
         _mobilePlaybackRaised,
-      ]),
+      ]);
+    }
+    return ListenableBuilder(
+      listenable: _mobileDockVisibilityListenable!,
       builder: (context, _) {
         final isPlaybackHidden =
             !isLandscape &&
@@ -611,6 +390,9 @@ extension _MainScreenLayout on _MainScreenState {
       playbackGeometryKey: _desktopPlaybackGeometryKey,
       onReportPlaybackRect: _reportDesktopPlaybackRect,
       pageDragPosition: _pageDragPosition,
+      onShowShortcuts: defaultTargetPlatform == TargetPlatform.windows
+          ? () => unawaited(GlobalShortcuts.showHelp(context, ref))
+          : null,
     );
   }
 
@@ -757,6 +539,393 @@ class _MobileBottomBarDragScrubberState
       onHorizontalDragEnd: widget.enabled ? (_) => _endDrag() : null,
       onHorizontalDragCancel: widget.enabled ? _endDrag : null,
       child: widget.builder(context, _dragPosition),
+    );
+  }
+}
+
+class _MobileBottomBarGeometry {
+  _MobileBottomBarGeometry({
+    required this.availableWidth,
+    required this.destinationCount,
+    required this.appearance,
+    required this.expansion,
+    required this.rowProgress,
+  }) : inlineShare = appearance * (1 - rowProgress),
+       expand = expansion * (1 - rowProgress),
+       navigationLeft =
+           MobileDockCapsuleContentState.inlinePlaybackWidth(
+             availableWidth,
+             expansion,
+           ) *
+           appearance *
+           (1 - rowProgress),
+       _destinationRects = List<Rect?>.filled(destinationCount, null),
+       _indicatorRects = List<Rect?>.filled(destinationCount, null) {
+    final width = availableWidth - navigationLeft;
+    final innerWidth = (width - indicatorInset * 2).clamp(0.0, width);
+    slotWidth = innerWidth / destinationCount;
+    // Reserve outer capsule insets so every indicator slot shares the same
+    // width while outer destinations keep full-edge hit targets.
+    final menuInnerWidth =
+        (availableWidth -
+                kActiveSessionCarouselDockHeight * inlineShare -
+                indicatorInset * 2)
+            .clamp(0.0, availableWidth);
+    menuSlotBaseWidth = menuInnerWidth / destinationCount;
+    shapeProgress = kAppSpringCurve.transform(
+      ((expand - 0.25) / 0.5).clamp(0.0, 1.0),
+    );
+    fadeProgress = kAppSpringCurve.transform(expand);
+    firstProgress = kAppSpringCurve.transform((expand / 0.2).clamp(0.0, 1.0));
+    otherProgress = kAppSpringCurve.transform(
+      ((expand - 0.2) / 0.45).clamp(0.0, 1.0),
+    );
+    indicatorMinLeft = navigationLeft + indicatorInset;
+    indicatorMaxRight = availableWidth - indicatorInset;
+  }
+
+  static const double indicatorInset = 6.0;
+
+  final double availableWidth;
+  final int destinationCount;
+  final double appearance;
+  final double expansion;
+  final double rowProgress;
+  final double inlineShare;
+  final double expand;
+  final double navigationLeft;
+  late final double slotWidth;
+  late final double menuSlotBaseWidth;
+  late final double shapeProgress;
+  late final double fadeProgress;
+  late final double firstProgress;
+  late final double otherProgress;
+  late final double indicatorMinLeft;
+  late final double indicatorMaxRight;
+  final List<Rect?> _destinationRects;
+  final List<Rect?> _indicatorRects;
+
+  bool matches({
+    required double availableWidth,
+    required int destinationCount,
+    required double appearance,
+    required double expansion,
+    required double rowProgress,
+  }) =>
+      this.availableWidth == availableWidth &&
+      this.destinationCount == destinationCount &&
+      this.appearance == appearance &&
+      this.expansion == expansion &&
+      this.rowProgress == rowProgress;
+
+  Rect destinationRect(int index) {
+    final cached = _destinationRects[index];
+    if (cached != null) return cached;
+    const height = kActiveSessionCarouselDockHeight;
+    final isFirst = index == 0;
+    final isLast = index == destinationCount - 1;
+    final outerEdgeInset =
+        (isFirst ? indicatorInset : 0.0) + (isLast ? indicatorInset : 0.0);
+    // Morph from the full menu cell to the single control. The shrinking
+    // viewport would otherwise make the cell narrower than its final size.
+    final menuSlotWidth = menuSlotBaseWidth + outerEdgeInset;
+    final buttonWidth = lerpDouble(menuSlotWidth, height, shapeProgress)!;
+    final progress = isFirst ? firstProgress : otherProgress;
+    final distanceFromRight = isLast
+        ? 0.0
+        : indicatorInset + (destinationCount - 1 - index) * slotWidth;
+    final rect = Rect.fromLTWH(
+      availableWidth - buttonWidth - distanceFromRight * (1 - progress),
+      0,
+      buttonWidth,
+      height,
+    );
+    _destinationRects[index] = rect;
+    return rect;
+  }
+
+  Rect indicatorRect(int index) {
+    final cached = _indicatorRects[index];
+    if (cached != null) return cached;
+    final destination = destinationRect(index);
+    final rect = Rect.fromLTRB(
+      destination.left.clamp(indicatorMinLeft, indicatorMaxRight),
+      destination.top + indicatorInset,
+      destination.right.clamp(indicatorMinLeft, indicatorMaxRight),
+      destination.bottom - indicatorInset,
+    );
+    _indicatorRects[index] = rect;
+    return rect;
+  }
+}
+
+class _MobileBottomBarContent extends StatefulWidget {
+  const _MobileBottomBarContent({
+    required this.destinations,
+    required this.selectedIndex,
+    required this.isPlaybackExpanded,
+    required this.appearance,
+    required this.expansion,
+    required this.rowProgress,
+    required this.availableWidth,
+    required this.onCurrentTap,
+    required this.onSwitchPage,
+    required this.pageDragPosition,
+    required this.i18n,
+  });
+
+  final List<MainDestination> destinations;
+  final int selectedIndex;
+  final bool isPlaybackExpanded;
+  final Animation<double> appearance;
+  final Animation<double> expansion;
+  final Animation<double> rowProgress;
+  final double availableWidth;
+  final VoidCallback onCurrentTap;
+  final ValueChanged<int> onSwitchPage;
+  final ValueListenable<double?> pageDragPosition;
+  final AppLanguageProvider i18n;
+
+  @override
+  State<_MobileBottomBarContent> createState() =>
+      _MobileBottomBarContentState();
+}
+
+class _MobileBottomBarContentState extends State<_MobileBottomBarContent> {
+  late Listenable _motionListenable;
+  late _BottomDestinationOpacityAnimation _inactiveOpacity;
+  _MobileBottomBarGeometry? _cachedGeometry;
+
+  @override
+  void initState() {
+    super.initState();
+    _initMotionListenables();
+  }
+
+  void _initMotionListenables() {
+    _motionListenable = Listenable.merge([
+      widget.appearance,
+      widget.expansion,
+      widget.rowProgress,
+    ]);
+    _inactiveOpacity = _BottomDestinationOpacityAnimation(
+      widget.expansion,
+      widget.rowProgress,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _MobileBottomBarContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.appearance != widget.appearance ||
+        oldWidget.expansion != widget.expansion ||
+        oldWidget.rowProgress != widget.rowProgress) {
+      _initMotionListenables();
+      _cachedGeometry = null;
+    } else if (oldWidget.availableWidth != widget.availableWidth ||
+        oldWidget.destinations.length != widget.destinations.length) {
+      _cachedGeometry = null;
+    }
+  }
+
+  _MobileBottomBarGeometry _geometry() {
+    final appearance = widget.appearance.value;
+    final expansion = widget.expansion.value;
+    final rowProgress = widget.rowProgress.value;
+    final existing = _cachedGeometry;
+    if (existing != null &&
+        existing.matches(
+          availableWidth: widget.availableWidth,
+          destinationCount: widget.destinations.length,
+          appearance: appearance,
+          expansion: expansion,
+          rowProgress: rowProgress,
+        )) {
+      return existing;
+    }
+    return _cachedGeometry = _MobileBottomBarGeometry(
+      availableWidth: widget.availableWidth,
+      destinationCount: widget.destinations.length,
+      appearance: appearance,
+      expansion: expansion,
+      rowProgress: rowProgress,
+    );
+  }
+
+  Rect _indicatorRect(int index) => _geometry().indicatorRect(index);
+
+  @override
+  Widget build(BuildContext context) {
+    final destinations = widget.destinations;
+    final cs = Theme.of(context).colorScheme;
+    final disableAnimations = MediaQuery.disableAnimationsOf(context);
+    final activeIndex = widget.selectedIndex.clamp(0, destinations.length - 1);
+    final entries = destinations.asMap().entries.toList();
+    // Keep the active destination on top throughout collapsing and expanding,
+    // smoothly folding inactive destinations beneath it.
+    final layeredEntries = [
+      ...entries.where((entry) => entry.key != activeIndex),
+      entries[activeIndex],
+    ];
+
+    Widget buildDestination(MapEntry<int, MainDestination> entry) {
+      final index = entry.key;
+      final item = destinations[index];
+      final selected = index == activeIndex;
+      final label = widget.i18n.tr(item.labelKey);
+      final inactive = cs.onSurfaceVariant.withValues(alpha: 0.6);
+      final activeColor = cs.primary;
+
+      final icon = AnimatedSwitcher(
+        duration: disableAnimations ? Duration.zero : kAppMotionFast,
+        switchInCurve: kAppSpringCurve,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (child, animation) => disableAnimations
+            ? child
+            : FadeTransition(
+                opacity: animation,
+                child: ScaleTransition(
+                  scale: animation.drive(Tween<double>(begin: 0.85, end: 1)),
+                  child: child,
+                ),
+              ),
+        child: item.buildIcon(
+          key: ValueKey<bool>(selected),
+          selected: selected,
+          size: 28,
+        ),
+      );
+
+      return AnimatedBuilder(
+        key: ValueKey(item.type),
+        animation: _motionListenable,
+        child: IgnorePointer(
+          ignoring: widget.isPlaybackExpanded && !selected,
+          child: ExcludeSemantics(
+            excluding: widget.isPlaybackExpanded && !selected,
+            child: Semantics(
+              key: ValueKey<String>('main_destination_${item.labelKey}'),
+              button: true,
+              selected: selected,
+              label: label,
+              hint: widget.isPlaybackExpanded && selected
+                  ? widget.i18n.tr('dock_show_navigation')
+                  : null,
+              child: Material(
+                type: MaterialType.transparency,
+                child: IconTheme.merge(
+                  data: IconThemeData(color: selected ? activeColor : inactive),
+                  child: _BottomDestinationInkResponse(
+                    inkKey: ValueKey<String>(
+                      'main_destination_ink_${item.labelKey}',
+                    ),
+                    onTap: widget.isPlaybackExpanded && selected
+                        ? widget.onCurrentTap
+                        : () => widget.onSwitchPage(index),
+                    child: AnimatedBuilder(
+                      animation: _motionListenable,
+                      child: RepaintBoundary(child: icon),
+                      builder: (context, child) {
+                        final geometry = _geometry();
+                        final destination = geometry.destinationRect(index);
+                        final indicator = geometry.indicatorRect(index);
+                        final dx = indicator.width > 0
+                            ? indicator.center.dx - destination.center.dx
+                            : 0.0;
+                        return Transform.translate(
+                          offset: Offset(dx, 0),
+                          child: child,
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        builder: (context, child) {
+          final geometry = _geometry();
+          if (!selected && geometry.fadeProgress == 1) {
+            return const SizedBox.shrink();
+          }
+          return Positioned.fromRect(
+            rect: geometry.destinationRect(index),
+            child: selected
+                ? child!
+                : FadeTransition(
+                    opacity: _inactiveOpacity,
+                    child: Transform.scale(
+                      scale: 1 - 0.15 * geometry.fadeProgress,
+                      child: child,
+                    ),
+                  ),
+          );
+        },
+      );
+    }
+
+    final layoutKey = Object.hashAll(destinations.map((item) => item.type));
+    final stackChild = Stack(
+      children: [
+        for (final entry in layeredEntries) buildDestination(entry),
+      ],
+    );
+    return Theme(
+      data: Theme.of(context).copyWith(splashFactory: NoSplash.splashFactory),
+      child: _MobileBottomBarDragScrubber(
+        enabled: !widget.isPlaybackExpanded && destinations.length > 1,
+        destinationCount: destinations.length,
+        activeIndex: activeIndex,
+        slotAt: _indicatorRect,
+        onSelectIndex: widget.onSwitchPage,
+        builder: (context, dragPosition) => ValueListenableBuilder<double?>(
+          valueListenable: widget.pageDragPosition,
+          builder: (context, pageDragPosition, _) => SlidingSelectionIndicator(
+            index: activeIndex,
+            layoutKey: layoutKey,
+            overridePosition: dragPosition ?? pageDragPosition,
+            child: stackChild,
+            builder: (context, position, child) {
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  AnimatedBuilder(
+                    animation: _motionListenable,
+                    builder: (context, _) {
+                      final rect = SlidingSelectionIndicator.rectAt(
+                        position,
+                        _indicatorRect,
+                      )!;
+                      return Stack(
+                        children: [
+                          Positioned.fromRect(
+                            rect: rect,
+                            child: IgnorePointer(
+                              child: DecoratedBox(
+                                key: const ValueKey(
+                                  'mobile_navigation_indicator',
+                                ),
+                                decoration: ShapeDecoration(
+                                  color: SlidingSelectionIndicator.fill(
+                                    cs.primary,
+                                  ),
+                                  shape: SlidingSelectionIndicator.shape,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  child!,
+                ],
+              );
+            },
+          ),
+        ),
+      ),
     );
   }
 }

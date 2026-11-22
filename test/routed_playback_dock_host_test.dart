@@ -365,13 +365,14 @@ void main() {
         final body = find.byKey(bodyKey, skipOffstage: false);
         final bodyRect = tester.getRect(body);
         double headerOpacity() => tester
-            .widget<Opacity>(
+            .widget<FadeTransition>(
               find.ancestor(
                 of: header,
-                matching: find.byType(Opacity, skipOffstage: false),
+                matching: find.byType(FadeTransition, skipOffstage: false),
               ).first,
             )
-            .opacity;
+            .opacity
+            .value;
         expect(headerOpacity(), 1);
         final playback = buildSessionDetailRoute(sessionId: 'dock_session');
         unawaited(navigator.currentState!.push(playback));

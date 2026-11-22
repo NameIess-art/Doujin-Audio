@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/ui/interaction_deferred_stream.dart';
+import '../application/audio_detail_cache_service.dart'
+    show AudioLibraryDetailKey;
 import '../application/library_facade.dart';
 import '../../../core/media/audio_detail.dart';
 import '../application/library_state_models.dart';
@@ -28,9 +30,10 @@ final libraryStateProvider = StreamProvider<LibraryState>((ref) {
 final libraryDetailTargetRevisionProvider = StreamProvider.autoDispose
     .family<int, AudioDetailTarget>((ref, target) {
       final cache = ref.watch(libraryFacadeProvider).detailCacheService;
+      final targetKey = AudioLibraryDetailKey.forTarget(target);
       final revisions = Stream<int>.multi((events) {
         final subscription = cache.changes
-            .where((change) => change.affects(target))
+            .where((change) => change.affectsKey(targetKey))
             .listen(
               (change) => events.addSync(change.revision),
               onError: events.addErrorSync,

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/media/search_query_utils.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_edit_panel.dart';
@@ -85,6 +86,7 @@ void main() {
         detailRevision: 1,
       );
       final index = LibrarySearchIndex();
+      addTearDown(index.dispose);
       final SearchFilters filters = (
         hasSubtitle: true,
         minimumRating: 4.5,
@@ -236,7 +238,7 @@ void main() {
   });
 
   test('background searches reuse a corpus across different queries', () async {
-    final tree = List<LibraryNode>.generate(
+    final tracks = List<LibraryNode>.generate(
       250,
       (i) => TrackNode(
         testMusicTrack(
@@ -247,12 +249,15 @@ void main() {
         ),
       ),
     );
+    final folder = FolderNode('Collection', '/collection')..addChildren(tracks);
+    final tree = <LibraryNode>[folder];
     final snapshot = AudioLibraryCategorySnapshot(
       entries: const [],
       structureRevision: 1,
       detailRevision: 0,
     );
     final index = LibrarySearchIndex();
+    addTearDown(index.dispose);
     for (final id in [247, 248]) {
       final result = await index.searchInBackground(
         tree: tree,
@@ -262,8 +267,35 @@ void main() {
         categorySnapshot: snapshot,
       );
       expect(result.matchCount, 1);
-      expect(result.initialRows.single.node.path, '/library/$id.mp3');
+      expect(result.expandedFolderPaths, {PathMatcher.normalize(folder.path)});
+      expect(result.initialRows.last.node, same(tracks[id]));
     }
+    final fullFolder = await index.searchInBackground(
+      tree: tree,
+      query: 'Collection',
+      structureRevision: 1,
+      detailRevision: 0,
+      categorySnapshot: snapshot,
+    );
+    expect(fullFolder.initialRows.single.node, same(folder));
+
+    final previous = index.searchInBackground(
+      tree: tree,
+      query: 'Track 247',
+      structureRevision: 1,
+      detailRevision: 0,
+      categorySnapshot: snapshot,
+    );
+    final canceled = expectLater(previous, throwsStateError);
+    final updated = await index.searchInBackground(
+      tree: [tracks.last],
+      query: 'Track 249',
+      structureRevision: 2,
+      detailRevision: 0,
+      categorySnapshot: snapshot,
+    );
+    await canceled;
+    expect(updated.initialRows.single.node, same(tracks.last));
   });
 
   Widget results({

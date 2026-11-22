@@ -43,7 +43,11 @@ List<MusicTrack> _buildPlayableTracks(
   ({AsmrWork work, List<AsmrTrackFile> tree}) input,
 ) => flattenAsmrPlayableTracks(input.work, input.tree);
 
-(AsmrTagPreferences, AsmrTagPreferences, AsmrTagPreferences)
+({
+  AsmrTagPreferences? state,
+  AsmrTagPreferences? voices,
+  AsmrTagPreferences? circles,
+})
 _deriveTagInterests(
   ({
     AsmrTagPreferences state,
@@ -58,6 +62,9 @@ _deriveTagInterests(
   final state = input.state.copy();
   final voices = input.voices.copy();
   final circles = input.circles.copy();
+  final initialTagCount = state.tags.length;
+  final initialVoiceCount = voices.tags.length;
+  final initialCircleCount = circles.tags.length;
   final tagGroups = input.tracks
       .map((track) => track.tags)
       .followedBy(input.favorites.map((work) => work.tags))
@@ -92,7 +99,11 @@ _deriveTagInterests(
   for (final name in circleNames) {
     if (name.trim().isNotEmpty) circles.resolve(name);
   }
-  return (state, voices, circles);
+  return (
+    state: state.tags.length != initialTagCount ? state : null,
+    voices: voices.tags.length != initialVoiceCount ? voices : null,
+    circles: circles.tags.length != initialCircleCount ? circles : null,
+  );
 }
 
 class AsmrLibraryController extends ChangeNotifier
@@ -146,11 +157,13 @@ class AsmrLibraryController extends ChangeNotifier
   final _interestSnapshots = Expando<_InterestSnapshot>();
   final _sortedCatalogs = Expando<List<AsmrTag>>();
 
-  List<AsmrTag> _sortedCatalog(AsmrTagPreferences preferences) =>
-      _sortedCatalogs[preferences] ??= immutableList(
-        preferences.tags.values.toList()
-          ..sort((a, b) => a.name.compareTo(b.name)),
-      );
+  List<AsmrTag> _sortedCatalog(AsmrTagPreferences preferences) {
+    final tags = preferences.tags;
+    return _sortedCatalogs[tags] ??= immutableList(
+      tags.values.toList()..sort((a, b) => a.name.compareTo(b.name)),
+    );
+  }
+
   _InterestSnapshot _interestSnapshot(AsmrTagPreferences preferences) {
     final cached = _interestSnapshots[preferences];
     if (cached != null) return cached;
@@ -621,9 +634,15 @@ class AsmrLibraryController extends ChangeNotifier
               await _remoteCatalogService.loadLocalTracksForInterests();
           await _runStateMutation(() async {
             if (_disposed || epoch != _runtimeCacheEpoch) return;
+            if (tracks.isEmpty &&
+                _favoriteWorks.isEmpty &&
+                _historyWorks.isEmpty) {
+              _tagInterestsReady = true;
+              return;
+            }
             // Serialize against preference edits, but derive the full library's
             // tags away from the UI isolate and reuse recommendation inputs.
-            final state = await compute(_deriveTagInterests, (
+            final derived = await compute(_deriveTagInterests, (
               state: _tagPreferences,
               voices: _voiceActorPreferences,
               circles: _circlePreferences,
@@ -632,16 +651,36 @@ class AsmrLibraryController extends ChangeNotifier
               history: _historyWorks,
             ));
             if (_disposed || epoch != _runtimeCacheEpoch) return;
-            await _preferencesStore.saveTagPreferences(state.$1);
-            await _preferencesStore.saveVoiceActorPreferences(state.$2);
-            await _preferencesStore.saveCirclePreferences(state.$3);
+            if (derived.state != null) {
+              await _preferencesStore.saveTagPreferences(derived.state!);
+            }
+            if (derived.voices != null) {
+              await _preferencesStore.saveVoiceActorPreferences(
+                derived.voices!,
+              );
+            }
+            if (derived.circles != null) {
+              await _preferencesStore.saveCirclePreferences(derived.circles!);
+            }
             if (_disposed || epoch != _runtimeCacheEpoch) return;
-            _tagPreferences = state.$1;
-            _voiceActorPreferences = state.$2;
-            _circlePreferences = state.$3;
+            var changed = false;
+            if (derived.state != null) {
+              _tagPreferences = derived.state!;
+              changed = true;
+            }
+            if (derived.voices != null) {
+              _voiceActorPreferences = derived.voices!;
+              changed = true;
+            }
+            if (derived.circles != null) {
+              _circlePreferences = derived.circles!;
+              changed = true;
+            }
             _tagInterestsReady = true;
-            _bumpGlobalRevision();
-            notifyListeners();
+            if (changed) {
+              _bumpGlobalRevision();
+              notifyListeners();
+            }
           });
         })().whenComplete(() {
           if (identical(_tagInterestsTask, task)) _tagInterestsTask = null;
@@ -946,14 +985,11 @@ class AsmrLibraryController extends ChangeNotifier
     final accountSnapshot = await _accountSyncService.initialize();
     if (_disposed) return;
     _applyAccountSnapshot(accountSnapshot);
-    final tagPreferences = await _preferencesStore.loadTagPreferences();
+    final interests = await _preferencesStore.loadAllInterestPreferences();
     if (_disposed) return;
-    _tagPreferences = tagPreferences;
-    _voiceActorPreferences = await _preferencesStore
-        .loadVoiceActorPreferences();
-    if (_disposed) return;
-    _circlePreferences = await _preferencesStore.loadCirclePreferences();
-    if (_disposed) return;
+    _tagPreferences = interests.tags;
+    _voiceActorPreferences = interests.voiceActors;
+    _circlePreferences = interests.circles;
     _catalog.updateLocalCounts();
     _initialized = true;
     _bumpGlobalRevision();

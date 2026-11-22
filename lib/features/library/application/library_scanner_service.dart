@@ -19,6 +19,7 @@ import 'library_scan_rules.dart';
 import 'library_state_models.dart' show LibraryExclusionSnapshot;
 import 'library_refresh_chunk_planner.dart';
 import 'library_scan_importer.dart';
+import 'library_scanner_isolate.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 
 export 'library_scan_models.dart';
@@ -142,8 +143,8 @@ class LibraryScannerService {
     required LibraryScanLabels labels,
     void Function(int generation)? onScanStarted,
   }) async {
-    final watchedFolders = provider.watchedFolders;
-    final watchedLibraries = provider.watchedLibraries;
+    final watchedFolders = provider.watchedFolders.toList(growable: false);
+    final watchedLibraries = provider.watchedLibraries.toList(growable: false);
     if (watchedFolders.isEmpty && watchedLibraries.isEmpty) {
       return LibraryScanOutcome(
         code: LibraryScanOutcomeCode.noSources,
@@ -183,7 +184,16 @@ class LibraryScannerService {
     var batchStarted = false;
     var wasCancelled = false;
     final deferredCleanupChunks = <LibraryRefreshChunk>[];
+    final staleTrackPaths = <String>{};
     final foldersToPrefill = <String>{};
+    final writeBudget = Stopwatch();
+
+    bool writeBudgetExhausted() {
+      writeBudget.stop();
+      if (writeBudget.elapsed < const Duration(milliseconds: 5)) return false;
+      writeBudget.reset();
+      return true;
+    }
 
     Future<bool> applyRefreshChunk(LibraryRefreshChunk chunk) async {
       if (!provider.isScanGenerationActive(generation) || !batchOpen) {
@@ -198,10 +208,10 @@ class LibraryScannerService {
           chunk.removeTrackPaths.isNotEmpty ||
           chunk.removeEntryPaths.isNotEmpty) {
         deferredCleanupChunks.add(chunk);
+        staleTrackPaths.addAll(chunk.removeTrackPaths);
       }
-      // Entry construction and path-index writes still run on the UI isolate.
-      // Native/legacy chunks can be large; acknowledge only after small writes
-      // have yielded to input and animation events.
+      // Entry construction and path-index writes share the UI isolate.
+      // Measure only synchronous writes, across short scan chunks as well.
       const batchSize = 16;
       final itemCount = [
         chunk.tracks.length,
@@ -213,6 +223,7 @@ class LibraryScannerService {
         List<T> batch<T>(List<T> items) => start >= items.length
             ? <T>[]
             : items.sublist(start, (start + batchSize).clamp(0, items.length));
+        writeBudget.start();
         totalAdded += provider.applyStagedLibraryRefreshChunk(
           sourceFolderPath: chunk.sourceFolderPath,
           libraryRoot: chunk.libraryRoot,
@@ -222,7 +233,7 @@ class LibraryScannerService {
           entrySnapshot: chunk.mergeContext?.entrySnapshot,
           folderPaths: batch(chunk.folderPaths),
         );
-        await Future<void>.delayed(const Duration(milliseconds: 1));
+        if (writeBudgetExhausted()) await Future<void>.delayed(Duration.zero);
       }
       chunkDuplicateCount += chunk.duplicateCount;
       chunkFailureCount += chunk.failureCount;
@@ -233,7 +244,6 @@ class LibraryScannerService {
         failureCount: chunkFailureCount,
         generation: generation,
       );
-      await Future<void>.delayed(const Duration(milliseconds: 1));
       batchOpen = provider.isScanGenerationActive(generation);
       return provider.isScanGenerationActive(generation) && batchOpen;
     }
@@ -246,20 +256,28 @@ class LibraryScannerService {
           source: 'refresh',
         );
       }
-      final foldersToRefresh = LinkedHashSet<String>.from(watchedFolders);
+      final foldersToRefresh = LinkedHashSet<String>.from(watchedFolders)
+        ..removeWhere(
+          (folder) => watchedLibraries.any(
+            (root) => PathMatcher.isWithinOrEqual(folder, root),
+          ),
+        );
+      final removalCandidates = await _refreshPlanner.indexRemovalCandidates(
+        provider.library,
+        [...watchedLibraries, ...foldersToRefresh],
+      );
+      final mergeWorker = LibraryScanMergeWorker();
       try {
         for (final libraryRoot in watchedLibraries) {
           if (!provider.isScanGenerationActive(generation) || !batchOpen) {
             break;
           }
-          foldersToRefresh.removeWhere(
-            (folderPath) =>
-                PathMatcher.isWithinOrEqual(folderPath, libraryRoot),
-          );
           await _refreshPlanner.scanLibraryRoot(
             libraryRoot: libraryRoot,
             provider: provider,
             labels: labels,
+            worker: mergeWorker,
+            removalCandidates: removalCandidates[libraryRoot]!,
             generation: generation,
             onChunk: applyRefreshChunk,
             onProgress: (event) => provider.setScanProgress(
@@ -278,17 +296,13 @@ class LibraryScannerService {
             break;
           }
           processedFolders++;
-          final libraryRoot = watchedLibraries.firstWhere(
-            (root) => PathMatcher.isWithinOrEqual(folderPath, root),
-            orElse: () => '',
-          );
           await _refreshPlanner.scanWatchedFolder(
             folderPath: folderPath,
-            effectiveLibraryRoot: libraryRoot.isEmpty
-                ? folderPath
-                : libraryRoot,
+            effectiveLibraryRoot: folderPath,
             provider: provider,
             labels: labels,
+            worker: mergeWorker,
+            removalCandidates: removalCandidates[folderPath]!,
             progressPrefix: '[$processedFolders/$totalFolders]',
             generation: generation,
             onChunk: applyRefreshChunk,
@@ -301,20 +315,34 @@ class LibraryScannerService {
           );
         }
       } finally {
+        await mergeWorker.dispose();
         if (batchStarted) {
           if (provider.isScanGenerationActive(generation)) {
             for (final chunk in deferredCleanupChunks) {
               if (!provider.isScanGenerationActive(generation)) break;
+              writeBudget.start();
               provider.applyStagedLibraryRefreshChunk(
                 sourceFolderPath: chunk.sourceFolderPath,
                 libraryRoot: chunk.libraryRoot,
                 removeWatchedFolders: chunk.removeWatchedFolders,
                 addWatchedFolders: chunk.addWatchedFolders,
-                removeTrackPaths: chunk.removeTrackPaths,
                 removeEntryPaths: chunk.removeEntryPaths,
               );
               foldersToPrefill.addAll(chunk.addWatchedFolders);
-              await Future<void>.delayed(const Duration(milliseconds: 1));
+              if (writeBudgetExhausted()) {
+                await Future<void>.delayed(Duration.zero);
+              }
+            }
+            if (staleTrackPaths.isNotEmpty &&
+                provider.isScanGenerationActive(generation)) {
+              // Removing rows shifts the active list. Visit it once even when
+              // many separately watched roots had missing tracks.
+              final first = deferredCleanupChunks.first;
+              provider.applyStagedLibraryRefreshChunk(
+                sourceFolderPath: first.sourceFolderPath,
+                libraryRoot: first.libraryRoot,
+                removeTrackPaths: staleTrackPaths,
+              );
             }
           }
           await provider.finishStagedLibraryRefresh(
@@ -527,7 +555,7 @@ class LibraryScannerService {
     var wasCancelled = false;
 
     try {
-      provider.beginLibraryBatch();
+      provider.beginLibraryBatch(snapshotAllEntries: shouldClearExclusions);
       batchStarted = true;
       if (shouldClearExclusions) {
         exclusionSnapshot = provider.snapshotLibraryExclusions(
@@ -737,7 +765,7 @@ class LibraryScannerService {
         .libraryEntriesForLibrary(normalizedFolderPath)
         .map((entry) => PathMatcher.normalize(entry.path))
         .toSet();
-    provider.beginLibraryBatch();
+    provider.beginLibraryBatch(snapshotAllEntries: false);
     var added = 0;
     var completed = false;
     var wasCancelled = false;
@@ -866,7 +894,7 @@ class LibraryScannerService {
         source: 'import_files',
       );
     }
-    provider.beginLibraryBatch();
+    provider.beginLibraryBatch(snapshotAllEntries: false);
 
     var added = 0;
     var fileExists = false;

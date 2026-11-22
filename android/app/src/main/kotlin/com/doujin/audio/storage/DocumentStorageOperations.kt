@@ -313,8 +313,9 @@ internal class DocumentStorageOperations(
             val syntheticIndex = trimmed.indexOf("::")
             val base = trimmed.substring(0, syntheticIndex)
             val relative = trimmed.substring(syntheticIndex + 2).replace("::", "/").trim('/')
-            val root = DocumentFile.fromTreeUri(context, Uri.parse(base)) ?: return false
-            return paths.resolveRelativeDocument(root, relative)?.exists() == true
+            val uri = paths.resolveRelativeDocumentUri(Uri.parse(base), relative, ignoreCase = true)
+                ?: return false
+            return DocumentFile.fromSingleUri(context, uri)?.exists() == true
         }
         val uri = Uri.parse(trimmed)
         return runCatching {
@@ -356,9 +357,9 @@ internal class DocumentStorageOperations(
                 folder = targetFolder,
                 targetName = targetName,
                 mimeType = mimeType
-            ) { target ->
+            ) { targetUri ->
                 java.io.FileInputStream(source).use { input ->
-                    contentResolver.openOutputStream(target.uri, "w")?.use { output ->
+                    contentResolver.openOutputStream(targetUri, "w")?.use { output ->
                         input.copyTo(output)
                         output.flush()
                     } ?: return@writeSafDocumentIfAbsent false
@@ -385,20 +386,18 @@ internal class DocumentStorageOperations(
         isValidCommitted: (DocumentFile) -> Boolean = { true },
         writeTemp: (DocumentFile) -> Boolean
     ): DocumentFile? {
-        val documents = listReadableDirectoryDocuments(context, folder).mapNotNull {
-            DocumentFile.fromSingleUri(context, it.uri)
+        val documents = listReadableDirectoryDocuments(context, folder)
+        fun findFile(name: String, ignoreCase: Boolean = false): DocumentFile? {
+            val document = documents.firstOrNull {
+                it.mime.isNotEmpty() && it.mime != DocumentsContract.Document.MIME_TYPE_DIR &&
+                    paths.normalizeDisplayName(it.name.trim()).equals(name, ignoreCase = ignoreCase)
+            } ?: return null
+            return DocumentFile.fromSingleUri(context, document.uri)
         }
-        val existing = documents.firstOrNull {
-            it.isFile && paths.sameDocumentName(it.name, targetName)
-        }
-        val backupName = "$targetName.doujin.bak"
-        val staleBackup = documents.firstOrNull {
-            it.isFile && paths.normalizeDisplayName(it.name?.trim().orEmpty()) == backupName
-        }
+        val existing = findFile(targetName, ignoreCase = true)
+        val staleBackup = findFile("$targetName.doujin.bak")
         val tempName = "$targetName.doujin.part"
-        val staleTemp = documents.firstOrNull {
-            it.isFile && paths.normalizeDisplayName(it.name?.trim().orEmpty()) == tempName
-        }
+        val staleTemp = findFile(tempName)
         if (staleTemp != null && !runCatching { staleTemp.delete() }.getOrDefault(false)) {
             return null
         }
@@ -440,8 +439,9 @@ internal class DocumentStorageOperations(
             val syntheticIndex = trimmed.indexOf("::")
             val base = trimmed.substring(0, syntheticIndex)
             val relative = trimmed.substring(syntheticIndex + 2).replace("::", "/").trim('/')
-            val root = DocumentFile.fromTreeUri(context, Uri.parse(base)) ?: return false
-            return paths.resolveRelativeDocument(root, relative)?.delete() == true
+            val uri = paths.resolveRelativeDocumentUri(Uri.parse(base), relative, ignoreCase = true)
+                ?: return false
+            return DocumentFile.fromSingleUri(context, uri)?.delete() == true
         }
         val uri = Uri.parse(trimmed)
         val document = DocumentFile.fromSingleUri(context, uri)
@@ -456,44 +456,87 @@ internal class DocumentStorageOperations(
         actualSegments: MutableList<String>? = null
     ): DocumentFile? {
         if (relativeDirectory.isBlank()) return root
-        var current: DocumentFile? = root
+        var currentUri = root.uri
         for (segment in relativeDirectory.split('/')) {
             if (segment.isBlank()) continue
-            val next = current?.listFiles()?.firstOrNull {
-                paths.sameDocumentName(it.name, segment)
-            }
-            current = when {
-                next == null -> current?.createDirectory(segment)
-                next.isDirectory -> next
+            val entries = runCatching {
+                listReadableDirectoryDocuments(context, currentUri)
+            }.getOrNull() ?: return null
+            val next = entries.firstOrNull { paths.sameDocumentName(it.name, segment) }
+            val (nextUri, actualName) = when {
+                next == null -> {
+                    val createdUri = runCatching {
+                        DocumentsContract.createDocument(
+                            contentResolver,
+                            currentUri,
+                            DocumentsContract.Document.MIME_TYPE_DIR,
+                            segment
+                        )
+                    }.getOrNull() ?: return null
+                    val resolvedName = if (actualSegments != null) {
+                        DocumentFile.fromSingleUri(context, createdUri)?.name
+                    } else {
+                        null
+                    }
+                    createdUri to resolvedName
+                }
+                next.mime == DocumentsContract.Document.MIME_TYPE_DIR -> next.uri to next.name
                 segment.substringAfterLast('.', "")
                     .equals("json", ignoreCase = true) -> return null
                 overwrite -> {
-                    if (!next.delete()) return null
-                    current?.createDirectory(segment)
+                    if (!runCatching {
+                            DocumentsContract.deleteDocument(contentResolver, next.uri)
+                        }.getOrDefault(false)
+                    ) {
+                        return null
+                    }
+                    val createdUri = runCatching {
+                        DocumentsContract.createDocument(
+                            contentResolver,
+                            currentUri,
+                            DocumentsContract.Document.MIME_TYPE_DIR,
+                            segment
+                        )
+                    }.getOrNull() ?: return null
+                    val resolvedName = if (actualSegments != null) {
+                        DocumentFile.fromSingleUri(context, createdUri)?.name
+                    } else {
+                        null
+                    }
+                    createdUri to resolvedName
                 }
                 else -> return null
-            } ?: return null
+            }
             // Providers may shorten or otherwise change a requested display name.
             if (actualSegments != null) {
-                actualSegments.add(current.name?.takeIf { it.isNotBlank() } ?: return null)
+                actualSegments.add(actualName?.takeIf { it.isNotBlank() } ?: return null)
             }
+            currentUri = nextUri
         }
-        return current
+        return DocumentFile.fromTreeUri(context, currentUri)?.takeIf { it.uri == currentUri }
+            ?: DocumentFile.fromSingleUri(context, currentUri)
     }
 
     private fun writeSafDocumentIfAbsent(
         folder: DocumentFile,
         targetName: String,
         mimeType: String,
-        write: (DocumentFile) -> Boolean
+        write: (Uri) -> Boolean
     ): Boolean {
         return createSafDocumentIfAbsent(
-            listFiles = { folder.listFiles().toList() },
-            isTarget = { it.isFile && paths.sameDocumentName(it.name, targetName) },
+            listFiles = { listReadableDirectoryDocuments(context, folder.uri) },
+            isTarget = {
+                it.mime.isNotEmpty() &&
+                    it.mime != DocumentsContract.Document.MIME_TYPE_DIR &&
+                    paths.sameDocumentName(it.name, targetName)
+            },
             sameDocument = { first, second -> first.uri == second.uri },
-            create = { folder.createFile(mimeType, targetName) },
-            write = write,
-            delete = { it.delete() }
+            create = {
+                DocumentsContract.createDocument(contentResolver, folder.uri, mimeType, targetName)
+                    ?.let { uri -> DirectoryDocument(uri, targetName, mimeType) }
+            },
+            write = { write(it.uri) },
+            delete = { DocumentsContract.deleteDocument(contentResolver, it.uri) }
         )
     }
 }

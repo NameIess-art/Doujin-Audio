@@ -138,6 +138,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
   var _presentationSettledNotified = false;
   var _secondaryFrameReady = false;
   bool _secondaryInitializationRequested = false;
+  int _systemAccentRequest = 0;
   double _stablePortraitTopPadding = 0;
   double _stableLandscapeTopPadding = 0;
   late final AppOrientationController _orientationController;
@@ -183,17 +184,22 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
             themeMode: next.$2.name,
             pureBlack: next.$3,
             lightWindowBorderColor: windows
-                ? _windowBorderColor(theme.lightTheme.colorScheme)
+                ? theme.windowBorderColorFor(Brightness.light)
                 : null,
             darkWindowBorderColor: windows
-                ? _windowBorderColor(theme.darkTheme.colorScheme)
+                ? theme.windowBorderColorFor(Brightness.dark)
                 : null,
           ),
         );
       },
       fireImmediately: defaultTargetPlatform == TargetPlatform.windows,
     );
-    unawaited(_refreshSystemAccentColor());
+    ref.listenManual(
+      themeProviderInstanceProvider.select((theme) => theme.useSystemAccentColor),
+      (_, enabled) {
+        if (enabled) unawaited(_refreshSystemAccentColor());
+      },
+    );
     _runtime = ref.read(audioRuntimeCoordinatorProvider);
     _orientationController = ref.read(appOrientationControllerProvider);
     WidgetsBinding.instance.addObserver(this);
@@ -243,12 +249,17 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
   }
 
   Future<void> _refreshSystemAccentColor() async {
+    final request = ++_systemAccentRequest;
     try {
       final accent = await ref
           .read(appLifecyclePlatformServiceProvider)
           .getSystemAccentColor();
-      if (!mounted || accent == null) return;
-      ref.read(themeProviderInstanceProvider).setSystemAccentColor(Color(accent));
+      if (!mounted || request != _systemAccentRequest || accent == null) {
+        return;
+      }
+      ref
+          .read(themeProviderInstanceProvider)
+          .setSystemAccentColor(Color(accent));
     } catch (_) {
       // Optional platform accent lookup falls back to the selected preset.
     }
@@ -304,6 +315,9 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
     if (!_presentationSettledNotified) {
       _presentationSettledNotified = true;
       widget.onBootstrapSettled?.call();
+      if (ref.read(themeProviderInstanceProvider).systemAccentColor == null) {
+        unawaited(_refreshSystemAccentColor());
+      }
     }
     if (_presentationBootstrapController.state.phase !=
             AppBootstrapPhase.ready ||
@@ -385,14 +399,10 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
         (MediaQuery.maybeDisableAnimationsOf(context) ?? false);
     final platformBrightness =
         MediaQuery.maybePlatformBrightnessOf(context) ?? Brightness.light;
-    final windowSurface = switch (themeProvider.themeMode) {
-      ThemeMode.dark => themeProvider.darkTheme.colorScheme.surface,
-      ThemeMode.light => themeProvider.lightTheme.colorScheme.surface,
-      ThemeMode.system =>
-        platformBrightness == Brightness.dark
-            ? themeProvider.darkTheme.colorScheme.surface
-            : themeProvider.lightTheme.colorScheme.surface,
-    };
+    final theme = themeProvider.themeFor(
+      platformBrightness,
+      highContrast: MediaQuery.maybeHighContrastOf(context) ?? false,
+    );
     return WorkDetailNavigationScope(
       navigation: _workDetailNavigation,
       child: RoutedPlaybackDockHost(
@@ -417,7 +427,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
                 UiInteractionNavigatorObserver.instance,
                 routeObserver,
               ],
-              color: windowSurface,
+              color: theme.colorScheme.surface,
               locale: languageState.locale,
               supportedLocales: AppLanguageProvider.supportedLocales,
               localizationsDelegates: const [
@@ -425,11 +435,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
                 GlobalCupertinoLocalizations.delegate,
                 GlobalWidgetsLocalizations.delegate,
               ],
-              theme: themeProvider.lightTheme,
-              darkTheme: themeProvider.darkTheme,
-              highContrastTheme: themeProvider.highContrastLightTheme,
-              highContrastDarkTheme: themeProvider.highContrastDarkTheme,
-              themeMode: themeProvider.themeMode,
+              theme: theme,
               // AnimatedTheme interpolates the entire multi-tab widget tree via
               // ThemeData.lerp across every frame; snap theme changes cleanly
               // in one frame so appearance toggles do not drop frames.
@@ -615,14 +621,4 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
       );
     });
   }
-}
-
-int _windowBorderColor(ColorScheme colors) {
-  final border = Color.alphaBlend(
-    colors.outlineVariant.withValues(
-      alpha: colors.brightness == Brightness.dark ? 0.45 : 0.65,
-    ),
-    colors.surface,
-  );
-  return border.toARGB32() & 0xffffff;
 }

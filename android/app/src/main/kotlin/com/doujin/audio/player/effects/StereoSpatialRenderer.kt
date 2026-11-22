@@ -3,6 +3,7 @@ package com.doujin.audio.player.effects
 import android.content.res.AssetManager
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.WeakHashMap
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -70,18 +71,18 @@ internal class StereoSpatialRenderer(
     val responses: StereoSpatialResponses,
     val sampleRate: Int
 ) {
-    // Space the taps farther apart for high-rate audio to preserve the response
-    // in the audible band without increasing the convolution cost per sample.
-    private val tapStride = (sampleRate.toDouble() / responses.sampleRate).roundToInt().coerceAtLeast(1)
-    private val front = prepare(responses.front)
-    private val back = prepare(responses.back)
-    private val frames = (maxOf(front.mid.size, back.mid.size) - 1) * tapStride + 1
+    private val prepared = getOrPrepare(responses, sampleRate)
+    private val tapStride = prepared.tapStride
+    private val front = prepared.front
+    private val back = prepared.back
+    private val frames = prepared.frames
     // Duplicate the ring so each convolution can read contiguous samples across the wrap.
     private val midHistory = FloatArray(frames * 2)
     private val sideHistory = FloatArray(frames * 2)
     private val spatialStep = 100f / sampleRate
     private var cursor = frames - 1
     private var amount = 0f
+    val isNeutral: Boolean get() = amount == 0f
     var left = 0f
         private set
     var right = 0f
@@ -131,37 +132,82 @@ internal class StereoSpatialRenderer(
         cursor = if (cursor == 0) frames - 1 else cursor - 1
     }
 
-    private class Kernels(val mid: FloatArray, val side: FloatArray)
+    internal class Kernels(val mid: FloatArray, val side: FloatArray)
 
-    private fun prepare(channels: Array<FloatArray>): Kernels {
-        val scale = sampleRate.toDouble() / (responses.sampleRate * tapStride)
-        val direct = resample(channels[0], scale)
-        val cross = resample(channels[1], scale)
-        // Symmetric HRTFs reduce the four source-to-ear filters to two filters.
-        return Kernels(
-            FloatArray(direct.size) { direct[it] + cross[it] },
-            FloatArray(direct.size) { direct[it] - cross[it] }
-        )
-    }
+    internal class PreparedResponses(
+        val tapStride: Int,
+        val front: Kernels,
+        val back: Kernels,
+        val frames: Int
+    )
 
-    private fun resample(source: FloatArray, scale: Double): FloatArray {
-        if (scale == 1.0) return source
-        val bandwidth = minOf(scale, 1.0)
-        val radius = RESAMPLE_LOBES / bandwidth
-        return FloatArray(ceil(source.size * scale).toInt()) { tap ->
-            val position = tap / scale
-            val first = maxOf(0, ceil(position - radius).toInt())
-            val last = minOf(source.lastIndex, floor(position + radius).toInt())
-            var coefficient = 0.0
-            // Filter the impulse before downsampling to keep inaudible frequencies
-            // from folding into the audible part of the new response.
-            for (index in first..last) {
-                val angle = PI * (position - index) * bandwidth
-                val sinc = if (angle == 0.0) 1.0 else sin(angle) / angle
-                val window = 0.5 + 0.5 * cos(angle / RESAMPLE_LOBES)
-                coefficient += source[index] * sinc * window
+    companion object {
+        private const val MAX_CACHED_RATES_PER_RESPONSE = 8
+        private val preparedCache = WeakHashMap<StereoSpatialResponses, LinkedHashMap<Int, PreparedResponses>>()
+
+        internal fun getOrPrepare(
+            responses: StereoSpatialResponses,
+            sampleRate: Int
+        ): PreparedResponses {
+            synchronized(preparedCache) {
+                preparedCache[responses]?.get(sampleRate)?.let { return it }
             }
-            (coefficient * bandwidth / scale).toFloat()
+            val computed = buildPrepared(responses, sampleRate)
+            synchronized(preparedCache) {
+                val byRate = preparedCache.getOrPut(responses) { LinkedHashMap() }
+                byRate[sampleRate]?.let { return it }
+                if (byRate.size >= MAX_CACHED_RATES_PER_RESPONSE) {
+                    val oldestKey = byRate.keys.iterator().next()
+                    byRate.remove(oldestKey)
+                }
+                byRate[sampleRate] = computed
+            }
+            return computed
+        }
+
+        private fun buildPrepared(
+            responses: StereoSpatialResponses,
+            sampleRate: Int
+        ): PreparedResponses {
+            // Space the taps farther apart for high-rate audio to preserve the response
+            // in the audible band without increasing the convolution cost per sample.
+            val tapStride = (sampleRate.toDouble() / responses.sampleRate).roundToInt().coerceAtLeast(1)
+            val scale = sampleRate.toDouble() / (responses.sampleRate * tapStride)
+            val front = prepare(responses.front, scale)
+            val back = prepare(responses.back, scale)
+            val frames = (maxOf(front.mid.size, back.mid.size) - 1) * tapStride + 1
+            return PreparedResponses(tapStride, front, back, frames)
+        }
+
+        private fun prepare(channels: Array<FloatArray>, scale: Double): Kernels {
+            val direct = resample(channels[0], scale)
+            val cross = resample(channels[1], scale)
+            // Symmetric HRTFs reduce the four source-to-ear filters to two filters.
+            return Kernels(
+                FloatArray(direct.size) { direct[it] + cross[it] },
+                FloatArray(direct.size) { direct[it] - cross[it] }
+            )
+        }
+
+        private fun resample(source: FloatArray, scale: Double): FloatArray {
+            if (scale == 1.0) return source
+            val bandwidth = minOf(scale, 1.0)
+            val radius = RESAMPLE_LOBES / bandwidth
+            return FloatArray(ceil(source.size * scale).toInt()) { tap ->
+                val position = tap / scale
+                val first = maxOf(0, ceil(position - radius).toInt())
+                val last = minOf(source.lastIndex, floor(position + radius).toInt())
+                var coefficient = 0.0
+                // Filter the impulse before downsampling to keep inaudible frequencies
+                // from folding into the audible part of the new response.
+                for (index in first..last) {
+                    val angle = PI * (position - index) * bandwidth
+                    val sinc = if (angle == 0.0) 1.0 else sin(angle) / angle
+                    val window = 0.5 + 0.5 * cos(angle / RESAMPLE_LOBES)
+                    coefficient += source[index] * sinc * window
+                }
+                (coefficient * bandwidth / scale).toFloat()
+            }
         }
     }
 }

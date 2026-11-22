@@ -63,10 +63,12 @@ void main() {
   for (final count in [1000, 5000, 20000]) {
     test('$count directory entries migrate local aliases in one batch', () {
       final state = AsmrTagPreferences();
+      state.mergeTags([
+        for (var index = 0; index < count; index++)
+          AsmrTag(key: 'local:$index', name: 'Alias $index'),
+      ]);
       for (var index = 0; index < count; index++) {
-        final key = 'local:$index';
-        state.tags[key] = AsmrTag(key: key, name: 'Alias $index');
-        state.learned[key] = index + 1.0;
+        state.learned['local:$index'] = index + 1.0;
       }
       state.mergeTags([
         for (var index = 0; index < count; index++)

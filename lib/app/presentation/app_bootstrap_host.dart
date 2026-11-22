@@ -32,34 +32,23 @@ class AppBootstrapHost extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final locale =
-        this.locale ?? WidgetsBinding.instance.platformDispatcher.locale;
-    return ListenableBuilder(
+    Widget shell(Widget child, {required bool loading}) => ListenableBuilder(
       listenable: themeProvider,
-      builder: (context, _) {
-        final lightTheme = themeProvider.lightTheme;
-        final darkTheme = themeProvider.darkTheme;
-        final themeMode = themeProvider.themeMode;
-        final platformBrightness =
-            WidgetsBinding.instance.platformDispatcher.platformBrightness;
-        final brightness = switch (themeMode) {
-          ThemeMode.dark => Brightness.dark,
-          ThemeMode.light => Brightness.light,
-          ThemeMode.system => platformBrightness,
-        };
-        final windowSurface = brightness == Brightness.dark
-            ? darkTheme.colorScheme.surface
-            : lightTheme.colorScheme.surface;
-        Widget shell(Widget home) => MaterialApp(
+      child: child,
+      builder: (context, child) {
+        final dispatcher = WidgetsBinding.instance.platformDispatcher;
+        final theme = themeProvider.themeFor(
+          MediaQuery.maybePlatformBrightnessOf(context) ??
+              dispatcher.platformBrightness,
+          highContrast: MediaQuery.maybeHighContrastOf(context) ?? false,
+        );
+        if (loading) return Theme(data: theme, child: child!);
+        return MaterialApp(
           debugShowCheckedModeBanner: false,
           scrollBehavior: const AppScrollBehavior(),
-          color: windowSurface,
-          theme: lightTheme,
-          darkTheme: darkTheme,
-          highContrastTheme: themeProvider.highContrastLightTheme,
-          highContrastDarkTheme: themeProvider.highContrastDarkTheme,
-          themeMode: themeMode,
-          locale: locale,
+          color: theme.colorScheme.surface,
+          theme: theme,
+          locale: locale ?? dispatcher.locale,
           supportedLocales: AppLanguageProvider.supportedLocales,
           localizationsDelegates: const [
             GlobalMaterialLocalizations.delegate,
@@ -76,24 +65,25 @@ class AppBootstrapHost extends StatelessWidget {
             }
             return app;
           },
-          home: home,
-        );
-        return AppBootstrapGate(
-          controller: controller,
-          disposeController: disposeController,
-          onBootstrapSettled: onBootstrapSettled,
-          readyBuilder: (_) => appBuilder(),
-          loadingBuilder: (_) => shell(const AppBootstrapLoadingView()),
-          failureBuilder: (_, state) => shell(
-            AppErrorView(
-              error: state.error ?? StateError('Unknown bootstrap failure'),
-              stackTrace: state.stackTrace,
-              onRetry: () => unawaited(controller.retry()),
-              exportDiagnostics: exportDiagnostics,
-            ),
-          ),
+          home: child,
         );
       },
+    );
+    return AppBootstrapGate(
+      controller: controller,
+      disposeController: disposeController,
+      onBootstrapSettled: onBootstrapSettled,
+      readyBuilder: (_) => appBuilder(),
+      loadingBuilder: (_) => shell(const AppBootstrapLoadingView(), loading: true),
+      failureBuilder: (_, state) => shell(
+        AppErrorView(
+          error: state.error ?? StateError('Unknown bootstrap failure'),
+          stackTrace: state.stackTrace,
+          onRetry: () => unawaited(controller.retry()),
+          exportDiagnostics: exportDiagnostics,
+        ),
+        loading: false,
+      ),
     );
   }
 }
@@ -218,6 +208,9 @@ class AppBootstrapLoadingView extends StatelessWidget {
   const AppBootstrapLoadingView({super.key});
 
   @override
-  Widget build(BuildContext context) =>
-      const Scaffold(key: ValueKey<String>('app_bootstrap_loading'));
+  Widget build(BuildContext context) => ColoredBox(
+    key: const ValueKey<String>('app_bootstrap_loading'),
+    color: Theme.of(context).scaffoldBackgroundColor,
+    child: const SizedBox.expand(),
+  );
 }

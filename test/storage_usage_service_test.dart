@@ -179,4 +179,47 @@ void main() {
     expect(snapshot.applicationCacheBytes, 125);
     expect(snapshot.otherUsedBytes, 375);
   });
+
+  test('offloads large track lists to background isolate accurately', () async {
+    const primaryDocuments =
+        'content://com.android.externalstorage.documents/tree/primary%3A';
+    messenger.setMockMethodCallHandler(
+      channel,
+      (_) async => {
+        'ok': true,
+        'value': {
+          'totalBytes': 1000000,
+          'availableBytes': 200000,
+          'storageRoots': ['/audio', primaryDocuments],
+        },
+      },
+    );
+    final tracks = <MusicTrack>[
+      for (var i = 0; i < 600; i++) track('/audio/track_$i.mp3', 100),
+      // Duplicate equivalent path must not be double-counted.
+      track('/audio/./track_0.mp3', 100),
+      // SAF document on primary volume counts.
+      track('$primaryDocuments/document/primary%3AMusic%2Fbonus.mp3', 250),
+      // Out-of-volume and remote tracks must be ignored.
+      track('/other/outside.mp3', 5000),
+      track('https://example.com/remote.mp3', 5000),
+      track('/audio/no_size.mp3', null),
+    ];
+    final service = StorageUsageService(
+      fileCacheGateway: FileCachePlatformGateway(
+        channel: channel,
+        scanEvents: scanEvents,
+        isAndroid: () => true,
+      ),
+      libraryTracks: () => tracks,
+      cacheBytes: () async => 500,
+    );
+
+    final snapshot = await service.load();
+
+    expect(snapshot.isAvailable, isTrue);
+    expect(snapshot.audioLibraryBytes, 600 * 100 + 250);
+    expect(snapshot.applicationCacheBytes, 500);
+    expect(snapshot.otherUsedBytes, 800000 - (600 * 100 + 250) - 500);
+  });
 }

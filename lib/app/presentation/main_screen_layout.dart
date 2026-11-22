@@ -251,6 +251,10 @@ extension _MainScreenLayout on _MainScreenState {
       expansion,
       rowProgress,
     ]);
+    final inactiveOpacity = _BottomDestinationOpacityAnimation(
+      expansion,
+      rowProgress,
+    );
 
     double navigationLeft() =>
         MobileDockCapsuleContentState.inlinePlaybackWidth(
@@ -396,8 +400,8 @@ extension _MainScreenLayout on _MainScreenState {
             rect: destinationRect(index),
             child: selected
                 ? child!
-                : Opacity(
-                    opacity: 1 - fadeProgress,
+                : FadeTransition(
+                    opacity: inactiveOpacity,
                     child: Transform.scale(
                       scale: 1 - 0.15 * fadeProgress,
                       child: child,
@@ -755,4 +759,43 @@ class _MobileBottomBarDragScrubberState
       child: widget.builder(context, _dragPosition),
     );
   }
+}
+
+class _BottomDestinationOpacityAnimation extends Animation<double> {
+  _BottomDestinationOpacityAnimation(this._expansion, this._rowProgress);
+
+  final Animation<double> _expansion;
+  final Animation<double> _rowProgress;
+
+  @override
+  void addListener(VoidCallback listener) {
+    _expansion.addListener(listener);
+    _rowProgress.addListener(listener);
+  }
+
+  @override
+  void removeListener(VoidCallback listener) {
+    _expansion.removeListener(listener);
+    _rowProgress.removeListener(listener);
+  }
+
+  @override
+  void addStatusListener(AnimationStatusListener listener) {
+    _expansion.addStatusListener(listener);
+    _rowProgress.addStatusListener(listener);
+  }
+
+  @override
+  void removeStatusListener(AnimationStatusListener listener) {
+    _expansion.removeStatusListener(listener);
+    _rowProgress.removeStatusListener(listener);
+  }
+
+  @override
+  AnimationStatus get status => _expansion.status;
+
+  @override
+  double get value =>
+      1 -
+      kAppSpringCurve.transform(_expansion.value * (1 - _rowProgress.value));
 }

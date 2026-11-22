@@ -19,7 +19,7 @@ import 'library_sorting.dart';
 class LibraryDerivedSnapshotPayload {
   LibraryDerivedSnapshotPayload({
     required List<MusicTrack> tracks,
-    required List<String> watchedFolders,
+    required Iterable<String> watchedFolders,
     List<String> watchedLibraries = const <String>[],
   }) : tracks = immutableList(tracks),
        watchedFolders = immutableList(watchedFolders),

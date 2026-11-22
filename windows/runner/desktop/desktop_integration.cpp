@@ -11,13 +11,14 @@
 #include <shellapi.h>
 #include <shlobj.h>
 #include <dwmapi.h>
+#include <cwchar>
+#include <deque>
 #include <filesystem>
 #include <iostream>
 #include <mutex>
 #include <set>
 #include <stdexcept>
 #include <system_error>
-#include <thread>
 #include <winternl.h>
 #include <windowsx.h>
 #include <winrt/base.h>
@@ -121,15 +122,98 @@ class ScopedTrayMenuTheme {
 }
 
 struct DesktopIntegration::FolderOpenState {
+  static constexpr int kMaxWorkers = 2;
+
   struct Request {
     std::unique_ptr<Result> result;
+    std::filesystem::path path;
     std::string error;
     std::string error_code = "windows_error";
     bool completed = false;
   };
   std::mutex mutex;
   HWND window = nullptr;
+  int workers = 0;
+  bool reply_posted = false;
+  std::deque<std::shared_ptr<Request>> queued;
   std::vector<std::shared_ptr<Request>> pending;
+
+  static void CALLBACK RunWorker(PTP_CALLBACK_INSTANCE instance, void* context) {
+    CallbackMayRunLong(instance);
+    const std::unique_ptr<std::shared_ptr<FolderOpenState>> owner(
+        static_cast<std::shared_ptr<FolderOpenState>*>(context));
+    (*owner)->RunQueuedRequests();
+  }
+
+  void RunQueuedRequests() {
+    for (;;) {
+      std::shared_ptr<Request> request;
+      {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (!window || queued.empty()) {
+          --workers;
+          return;
+        }
+        request = std::move(queued.front());
+        queued.pop_front();
+      }
+      std::string error, error_code = "windows_error";
+      const HRESULT apartment =
+          CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+      try {
+        if (FAILED(apartment) && apartment != RPC_E_CHANGED_MODE) {
+          winrt::check_hresult(apartment);
+        }
+        const auto status = std::filesystem::status(request->path);
+        const bool directory = std::filesystem::is_directory(status);
+        if (!directory && !std::filesystem::is_regular_file(status)) {
+          throw std::invalid_argument("path");
+        }
+        bool active;
+        {
+          std::lock_guard<std::mutex> lock(mutex);
+          active = window != nullptr;
+        }
+        if (active) {
+          const auto folder = (directory ? request->path : request->path.parent_path()).wstring();
+          SHELLEXECUTEINFOW execute{sizeof(SHELLEXECUTEINFOW)};
+          // The worker has no message loop, so Shell activation must finish here
+          // before its apartment is released. Slow disk/Shell calls stay off the window.
+          execute.fMask = SEE_MASK_NOASYNC;
+          execute.lpVerb = L"open";
+          execute.lpFile = folder.c_str();
+          execute.nShow = SW_SHOWNORMAL;
+          if (!ShellExecuteExW(&execute)) winrt::throw_last_error();
+        }
+      } catch (const std::invalid_argument& e) {
+        error = e.what(); error_code = "invalid_argument";
+      } catch (const winrt::hresult_error& e) {
+        error = winrt::to_string(e.message());
+      } catch (const std::exception& e) {
+        error = e.what();
+      }
+      if (SUCCEEDED(apartment)) CoUninitialize();
+      {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (!window) continue;
+        request->error = std::move(error);
+        request->error_code = std::move(error_code);
+        request->completed = true;
+      }
+      for (int attempt = 0; attempt < 200; ++attempt) {
+        {
+          std::lock_guard<std::mutex> lock(mutex);
+          if (!window || reply_posted) break;
+          if (PostMessage(window, kFolderOpenReply, 0, 0)) {
+            reply_posted = true;
+            break;
+          }
+          if (GetLastError() == ERROR_INVALID_WINDOW_HANDLE) break;
+        }
+        Sleep(10);
+      }
+    }
+  }
 };
 
 DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* messenger) : window_(window) {
@@ -335,6 +419,7 @@ DesktopIntegration::~DesktopIntegration() {
   {
     std::lock_guard<std::mutex> lock(folder_opens_->mutex);
     folder_opens_->window = nullptr;
+    folder_opens_->queued.clear();
     pending.swap(folder_opens_->pending);
   }
   // Network filesystem calls cannot be cancelled reliably. Complete replies on
@@ -356,72 +441,30 @@ void DesktopIntegration::OpenContainingFolder(const Map& args,
   if (!path.is_absolute()) throw std::invalid_argument("path");
   const auto state = folder_opens_;
   const auto request = std::make_shared<FolderOpenState::Request>();
+  request->result = std::move(result);
+  request->path = std::move(path);
   {
     std::lock_guard<std::mutex> lock(state->mutex);
     state->pending.push_back(request);
+    state->queued.push_back(request);
+    if (state->workers == FolderOpenState::kMaxWorkers) return;
+    auto owner = std::make_unique<std::shared_ptr<FolderOpenState>>(state);
+    if (TrySubmitThreadpoolCallback(FolderOpenState::RunWorker, owner.get(), nullptr)) {
+      owner.release();
+      ++state->workers;
+      return;
+    }
+    if (state->workers > 0) return;
+    state->pending.pop_back();
+    state->queued.pop_back();
   }
-  request->result = std::move(result);
-  try {
-    std::thread([state,request,path = std::move(path)] {
-      std::string error, error_code = "windows_error";
-      const auto apartment = CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
-      try {
-        winrt::check_hresult(apartment);
-        const auto status = std::filesystem::status(path);
-        const bool directory = std::filesystem::is_directory(status);
-        if (!directory && !std::filesystem::is_regular_file(status)) throw std::invalid_argument("path");
-        bool active;
-        {
-          std::lock_guard<std::mutex> lock(state->mutex);
-          active = state->window != nullptr;
-        }
-        if (active) {
-          const auto folder = (directory ? path : path.parent_path()).wstring();
-          SHELLEXECUTEINFOW execute{sizeof(SHELLEXECUTEINFOW)};
-          // The worker has no message loop, so Shell activation must finish here
-          // before its STA is released. Slow disk/Shell calls stay off the window.
-          execute.fMask = SEE_MASK_NOASYNC;
-          execute.lpVerb = L"open";
-          execute.lpFile = folder.c_str();
-          execute.nShow = SW_SHOWNORMAL;
-          if (!ShellExecuteExW(&execute)) winrt::throw_last_error();
-        }
-      } catch (const std::invalid_argument& e) {
-        error = e.what(); error_code = "invalid_argument";
-      } catch (const winrt::hresult_error& e) {
-        error = winrt::to_string(e.message());
-      } catch (const std::exception& e) {
-        error = e.what();
-      }
-      if (SUCCEEDED(apartment)) CoUninitialize();
-      {
-        std::lock_guard<std::mutex> lock(state->mutex);
-        if (!state->window) return;
-        request->error = std::move(error);
-        request->error_code = std::move(error_code);
-        request->completed = true;
-      }
-      for (;;) {
-        {
-          std::lock_guard<std::mutex> lock(state->mutex);
-          if (!state->window) return;
-          if (PostMessage(state->window,kFolderOpenReply,0,0)) return;
-        }
-        // A full window queue must not strand the channel result. Back off
-        // without holding the teardown mutex, and stop once the window closes.
-        Sleep(10);
-      }
-    }).detach();
-  } catch (const std::system_error& e) {
-    request->error = e.what();
-    request->completed = true;
-    ReplyFolderOpens();
-  }
+  request->result->Error("windows_error", "Unable to schedule folder open");
 }
 void DesktopIntegration::ReplyFolderOpens() {
   std::vector<std::shared_ptr<FolderOpenState::Request>> replies;
   {
     std::lock_guard<std::mutex> lock(folder_opens_->mutex);
+    folder_opens_->reply_posted = false;
     auto& pending = folder_opens_->pending;
     for (auto it = pending.begin(); it != pending.end();) {
       if ((*it)->completed) { replies.push_back(*it); it = pending.erase(it); }
@@ -495,8 +538,11 @@ bool DesktopIntegration::UsesDarkTheme() const {
   return value == 0;
 }
 void DesktopIntegration::UpdateTheme() {
-  const BOOL dark = UsesDarkTheme();
-  DwmSetWindowAttribute(window_, 20, &dark, sizeof(dark));
+  const BOOL dark = UsesDarkTheme() ? TRUE : FALSE;
+  if (applied_dark_mode_ != dark) {
+    DwmSetWindowAttribute(window_, 20, &dark, sizeof(dark));
+    applied_dark_mode_ = dark;
+  }
   HIGHCONTRASTW contrast{sizeof(contrast)};
   SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0);
   const bool high_contrast = (contrast.dwFlags & HCF_HIGHCONTRASTON) != 0;
@@ -505,7 +551,10 @@ void DesktopIntegration::UpdateTheme() {
   const auto& preferred = dark ? dark_window_border_color_ : light_window_border_color_;
   const COLORREF border_color =
       (!high_contrast && preferred.has_value()) ? *preferred : kDwmwaColorDefault;
-  DwmSetWindowAttribute(window_, kDwmwaBorderColor, &border_color, sizeof(border_color));
+  if (applied_border_color_ != border_color) {
+    DwmSetWindowAttribute(window_, kDwmwaBorderColor, &border_color, sizeof(border_color));
+    applied_border_color_ = border_color;
+  }
 }
 
 void DesktopIntegration::ShowTrayMenu() {
@@ -704,7 +753,12 @@ std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp
   }
   if (message == WM_SIZE) PublishWindowMaximized();
   if (message == WM_DWMCOLORIZATIONCOLORCHANGED) { UpdateTheme(); return 0; }
-  if (message == WM_SETTINGCHANGE && theme_mode_ == "system") UpdateTheme();
+  if (message == WM_SETTINGCHANGE &&
+      (lp == 0 ||
+       (theme_mode_ == "system" &&
+        _wcsicmp(reinterpret_cast<const wchar_t*>(lp), L"ImmersiveColorSet") == 0))) {
+    UpdateTheme();
+  }
   if (message == ScheduledTasks::kReply) { scheduled_tasks_->Reply(); return 0; }
   if (message == NetworkProxy::kReply) { network_proxy_->Reply(); return 0; }
   if (message == kFolderOpenReply) { ReplyFolderOpens(); return 0; }

@@ -87,14 +87,23 @@ class AsmrDownloadTransferService {
     final relativePath = _planner.hlsOutputPath(item.relativePath);
     final targetPath = _planner.joinFolderPath(task.workRootPath, relativePath);
     final current = _store[workId]!;
-    _store[workId] = current.copyWith(
-      actualOutputPaths: {
-        ...current.actualOutputPaths,
-        item.relativePath: relativePath,
-      },
-    );
-    _store.notifyTaskChanged(changedWorkIds: {workId});
-    await _store.flushPersistence();
+    if (current.actualOutputPaths[item.relativePath] != relativePath) {
+      _store[workId] = current.copyWith(
+        actualOutputPaths: {
+          ...current.actualOutputPaths,
+          item.relativePath: relativePath,
+        },
+      );
+      _store.notifyTaskChanged(changedWorkIds: {workId});
+    }
+    if (!_store.isFileOutputPathDurable(
+      workId,
+      item.relativePath,
+      relativePath,
+    )) {
+      await _store.flushPersistence();
+    }
+    throwIfCancelled(workId);
     final exists = await _outputs.outputPathExists(targetPath);
     if (exists && conflictPolicy == AsmrDownloadConflictPolicy.skip) {
       return DownloadWriteResult.skipped(
@@ -819,10 +828,9 @@ class AsmrDownloadTransferService {
       if (responseTotal > 0 && item.size <= 0) {
         _setFileTotalBytes(workId, item, responseTotal);
       }
-      _setFileEntityTag(workId, item.relativePath, responseTag);
       // A durable identity must precede its bytes; otherwise a restart could
       // append a new entity's suffix to an older staging prefix.
-      await _store.flushPersistence();
+      await _persistFileEntityTag(workId, item.relativePath, responseTag);
       throwIfCancelled(workId);
       final sink = stagingFile.openWrite(
         mode: responseStart > 0 ? FileMode.append : FileMode.write,
@@ -897,14 +905,24 @@ class AsmrDownloadTransferService {
     File staging,
   ) async {
     throwIfCancelled(workId);
-    _setFileEntityTag(workId, item.relativePath, null);
     // Clear the old identity before deleting/truncating its bytes, then persist
     // the replacement identity before opening the next response's sink.
-    await _store.flushPersistence();
+    await _persistFileEntityTag(workId, item.relativePath, null);
     throwIfCancelled(workId);
     await _outputs.deleteFileIfPresent(staging);
     if (item.countsTowardByteProgress) {
       _store.reconcileLiveFileProgress(workId, item.relativePath, 0);
+    }
+  }
+
+  Future<void> _persistFileEntityTag(
+    String workId,
+    String relativePath,
+    String? tag,
+  ) async {
+    _setFileEntityTag(workId, relativePath, tag);
+    if (!_store.isFileEntityTagDurable(workId, relativePath, tag)) {
+      await _store.flushPersistence();
     }
   }
 
@@ -923,12 +941,11 @@ class AsmrDownloadTransferService {
 
   void _setFileEntityTag(String workId, String relativePath, String? tag) {
     final task = _store[workId];
-    if (task == null) return;
+    if (task == null || task.fileEntityTags[relativePath] == tag) return;
     final tags = Map<String, String>.from(task.fileEntityTags);
     if (tag == null) {
-      if (tags.remove(relativePath) == null) return;
+      tags.remove(relativePath);
     } else {
-      if (tags[relativePath] == tag) return;
       tags[relativePath] = tag;
     }
     _store[workId] = task.copyWith(fileEntityTags: tags);

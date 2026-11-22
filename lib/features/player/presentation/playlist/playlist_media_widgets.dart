@@ -78,18 +78,21 @@ class SessionHeroArtwork extends ConsumerWidget {
             : kAppMotionFast,
         curve: kAppFadeCurve,
         child: child,
-        builder: (context, opacity, child) => Stack(
-          fit: StackFit.expand,
-          children: [
-            // Keep the thumbnail opaque under the upgrade.
-            if (opacity < 1) preview!,
-            Opacity(
-              key: const ValueKey('session_detail_cover_upgrade'),
-              opacity: opacity,
-              child: child,
-            ),
-          ],
-        ),
+        builder: (context, opacity, child) {
+          if (opacity >= 1) return child!;
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              // Keep the thumbnail opaque under the upgrade.
+              preview!,
+              Opacity(
+                key: const ValueKey('session_detail_cover_upgrade'),
+                opacity: opacity,
+                child: child,
+              ),
+            ],
+          );
+        },
       );
     }
 
@@ -331,6 +334,10 @@ class _CoverRingGeometryCache {
   RRect? rrect;
   Path? basePath;
   ui.PathMetric? firstMetric;
+  final Paint trackPaint = Paint()..style = PaintingStyle.stroke;
+  final Paint progressPaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeCap = StrokeCap.round;
 }
 
 class _SessionCoverProgressRingState
@@ -477,13 +484,11 @@ class _CoverProgressRingPainter extends CustomPainter {
     required this.trackColor,
     required this.strokeWidth,
     this.borderRadius,
-  }) : initialStep = quantizedStep.value,
-       super(repaint: quantizedStep);
+  }) : super(repaint: quantizedStep);
 
   final PlaybackPositionUiGate? positionGate;
   final ValueNotifier<int> quantizedStep;
   final _CoverRingGeometryCache geometryCache;
-  final int initialStep;
   final Color activeColor;
   final Color trackColor;
   final double strokeWidth;
@@ -500,26 +505,23 @@ class _CoverProgressRingPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    final trackPaint = geometryCache.trackPaint
+      ..color = trackColor
+      ..strokeWidth = strokeWidth;
     final br = borderRadius;
     if (br == null) {
       final center = Offset(size.width / 2, size.height / 2);
       final radius = (math.min(size.width, size.height) - strokeWidth) / 2;
       if (radius <= 0) return;
 
-      final trackPaint = Paint()
-        ..color = trackColor
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = strokeWidth;
       canvas.drawCircle(center, radius, trackPaint);
 
       final clamped = fraction.clamp(0.0, 1.0);
       if (clamped <= 0.0) return;
 
-      final progressPaint = Paint()
+      final progressPaint = geometryCache.progressPaint
         ..color = activeColor
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = strokeWidth
-        ..strokeCap = StrokeCap.round;
+        ..strokeWidth = strokeWidth;
 
       if (clamped >= 0.999) {
         canvas.drawCircle(center, radius, progressPaint);
@@ -580,20 +582,14 @@ class _CoverProgressRingPainter extends CustomPainter {
     }
 
     final rrect = geometryCache.rrect!;
-    final trackPaint = Paint()
-      ..color = trackColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth;
     canvas.drawRRect(rrect, trackPaint);
 
     final clamped = fraction.clamp(0.0, 1.0);
     if (clamped <= 0.0) return;
 
-    final progressPaint = Paint()
+    final progressPaint = geometryCache.progressPaint
       ..color = activeColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round;
+      ..strokeWidth = strokeWidth;
 
     if (clamped >= 0.999) {
       canvas.drawRRect(rrect, progressPaint);
@@ -610,7 +606,6 @@ class _CoverProgressRingPainter extends CustomPainter {
   bool shouldRepaint(covariant _CoverProgressRingPainter oldDelegate) {
     return oldDelegate.positionGate != positionGate ||
         oldDelegate.quantizedStep != quantizedStep ||
-        oldDelegate.initialStep != initialStep ||
         oldDelegate.activeColor != activeColor ||
         oldDelegate.trackColor != trackColor ||
         oldDelegate.strokeWidth != strokeWidth ||

@@ -132,7 +132,10 @@ class LibraryExclusionMatcher {
   bool get hasExclusions =>
       _excludedTrackKeys.isNotEmpty || _excludedFolderKeys.isNotEmpty;
 
+  bool get hasExcludedFolders => _excludedFolderKeys.isNotEmpty;
+
   bool isExcluded(String entityPath) {
+    if (!hasExclusions) return false;
     final normalizedPath = PathMatcher.normalize(entityPath);
     if (_excludedTrackKeys.contains(
       PathMatcher.equivalenceKey(normalizedPath),
@@ -152,6 +155,19 @@ class LibraryExclusionMatcher {
     return false;
   }
 
+  bool isInheritedExcluded(String entityPath) {
+    if (_excludedFolderKeys.isEmpty) return false;
+    final normalizedPath = PathMatcher.normalize(entityPath);
+    final entityKey = PathMatcher.equivalenceKey(normalizedPath);
+    for (final folderPath in _candidateFolderPaths(normalizedPath)) {
+      final folderKey = PathMatcher.equivalenceKey(folderPath);
+      if (folderKey != entityKey && _excludedFolderKeys.contains(folderKey)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   bool isEntryExcluded(LibraryEntry? entry, String entityPath) {
     if (isExcluded(entityPath)) return true;
     // Opaque SAF document IDs do not encode their folder. Use the confirmed
@@ -160,6 +176,27 @@ class LibraryExclusionMatcher {
         entry.isTrack &&
         PathMatcher.hasSameContentTree(entry.path, entry.libraryPath) &&
         isExcluded(entry.parentPath ?? entry.libraryPath);
+  }
+
+  bool isEntryInheritedExcluded(LibraryEntry? entry, String entityPath) {
+    if (_excludedFolderKeys.isEmpty) return false;
+    if (isInheritedExcluded(entityPath)) return true;
+    if (entry == null ||
+        !entry.isTrack ||
+        !PathMatcher.hasSameContentTree(entry.path, entry.libraryPath)) {
+      return false;
+    }
+    final parentPath = PathMatcher.normalize(
+      entry.parentPath ?? entry.libraryPath,
+    );
+    final entityKey = PathMatcher.equivalenceKey(entityPath);
+    for (final folderPath in _candidateFolderPaths(parentPath)) {
+      final folderKey = PathMatcher.equivalenceKey(folderPath);
+      if (folderKey != entityKey && _excludedFolderKeys.contains(folderKey)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   Iterable<String> _candidateFolderPaths(String normalizedPath) sync* {
@@ -211,15 +248,10 @@ class LibraryEntrySnapshot {
     required String libraryPath,
     Iterable<LibraryEntry> entries = const <LibraryEntry>[],
   }) : libraryPath = PathMatcher.normalize(libraryPath),
-       _entriesByPath = HashMap<String, LibraryEntry>(
-         equals: (first, second) =>
-             PathMatcher.equivalenceKey(first) ==
-             PathMatcher.equivalenceKey(second),
-         hashCode: (value) => PathMatcher.equivalenceKey(value).hashCode,
-       ) {
-    for (final entry in entries) {
-      _entriesByPath[PathMatcher.normalize(entry.path)] = entry;
-    }
+       _entriesByPath = {
+         for (final entry in entries)
+           PathMatcher.equivalenceKey(entry.path): entry,
+       } {
     entriesByPath = UnmodifiableMapView<String, LibraryEntry>(_entriesByPath);
   }
 
@@ -228,12 +260,12 @@ class LibraryEntrySnapshot {
   late final Map<String, LibraryEntry> entriesByPath;
 
   LibraryEntry? entryForPath(String entryPath) {
-    return _entriesByPath[PathMatcher.normalize(entryPath)];
+    return _entriesByPath[PathMatcher.equivalenceKey(entryPath)];
   }
 
   void remember(Iterable<LibraryEntry> entries) {
     for (final entry in entries) {
-      _entriesByPath[PathMatcher.normalize(entry.path)] = entry;
+      _entriesByPath[PathMatcher.equivalenceKey(entry.path)] = entry;
     }
   }
 

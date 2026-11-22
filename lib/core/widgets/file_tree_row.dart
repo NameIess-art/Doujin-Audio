@@ -264,6 +264,7 @@ class FileTreeSkeleton extends StatelessWidget {
     this.rowPadding = const EdgeInsets.only(left: 16, right: 12),
     this.leadingSize = 22,
     this.leadingGap = 18,
+    this.shimmerEnabled = true,
   });
 
   final double? viewportHeight;
@@ -272,6 +273,7 @@ class FileTreeSkeleton extends StatelessWidget {
   final EdgeInsetsGeometry rowPadding;
   final double leadingSize;
   final double leadingGap;
+  final bool shimmerEnabled;
 
   static const _titleFractions = [0.52, 0.68, 0.44, 0.60, 0.38, 0.55];
 
@@ -287,47 +289,48 @@ class FileTreeSkeleton extends StatelessWidget {
           availableHeight -
           padding.resolve(Directionality.of(context)).vertical;
       final itemCount = math.max(1, (contentHeight / rowHeight).ceil());
-      final rows = ShimmerLoader(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (var i = 0; i < itemCount; i++)
-              SizedBox(
-                height: rowHeight,
-                child: Padding(
-                  padding: rowPadding,
-                  child: Row(
-                    children: [
-                      ShimmerContainer(
-                        width: leadingSize,
-                        height: leadingSize,
-                        borderRadius: 5,
-                      ),
-                      SizedBox(width: leadingGap),
-                      Expanded(
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: FractionallySizedBox(
-                            widthFactor:
-                                _titleFractions[i % _titleFractions.length],
-                            child: const ShimmerContainer(height: 12),
-                          ),
+      final placeholders = Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < itemCount; i++)
+            SizedBox(
+              height: rowHeight,
+              child: Padding(
+                padding: rowPadding,
+                child: Row(
+                  children: [
+                    ShimmerContainer(
+                      width: leadingSize,
+                      height: leadingSize,
+                      borderRadius: 5,
+                    ),
+                    SizedBox(width: leadingGap),
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: FractionallySizedBox(
+                          widthFactor:
+                              _titleFractions[i % _titleFractions.length],
+                          child: const ShimmerContainer(height: 12),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      const ShimmerContainer(
-                        width: 16,
-                        height: 16,
-                        borderRadius: 8,
-                      ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 12),
+                    const ShimmerContainer(
+                      width: 16,
+                      height: 16,
+                      borderRadius: 8,
+                    ),
+                  ],
                 ),
               ),
-          ],
-        ),
+            ),
+        ],
       );
+      final rows = shimmerEnabled
+          ? ShimmerLoader(child: placeholders)
+          : placeholders;
       if (viewportHeight != null) return Padding(padding: padding, child: rows);
       return SingleChildScrollView(
         primary: false,

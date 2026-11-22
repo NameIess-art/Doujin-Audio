@@ -792,6 +792,8 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
   int? _customThemeColorValue;
   bool _useSystemAccentColor = false;
   Color? _systemAccentColor;
+  final ValueNotifier<Color?> _systemAccentColorNotifier =
+      ValueNotifier<Color?>(null);
   late ThemeMode _persistedThemeMode;
   late bool _persistedPureBlackTheme;
   late bool _persistedBarGlassEnabled;
@@ -819,6 +821,8 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
       : Color(_customThemeColorValue!);
   bool get useSystemAccentColor => _useSystemAccentColor;
   Color? get systemAccentColor => _systemAccentColor;
+  ValueListenable<Color?> get systemAccentColorListenable =>
+      _systemAccentColorNotifier;
 
   /// Active non-preset seed color when following system accent or custom color.
   Color? get activeCustomSeedColor {
@@ -847,6 +851,33 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
       _highContrastDarkTheme ??= _buildTheme(
         _colorSchemeFor(Brightness.dark, highContrast: true),
       );
+
+  ThemeData themeFor(Brightness platformBrightness, {required bool highContrast}) {
+    final brightness = switch (_themeMode) {
+      ThemeMode.light => Brightness.light,
+      ThemeMode.dark => Brightness.dark,
+      ThemeMode.system => platformBrightness,
+    };
+    return switch ((brightness, highContrast)) {
+      (Brightness.light, false) => lightTheme,
+      (Brightness.dark, false) => darkTheme,
+      (Brightness.light, true) => highContrastLightTheme,
+      (Brightness.dark, true) => highContrastDarkTheme,
+    };
+  }
+
+  /// Computes the Windows window border RGB value for [brightness] without
+  /// building the full [ThemeData] for an inactive brightness.
+  int windowBorderColorFor(Brightness brightness) {
+    final colors = _colorSchemeFor(brightness);
+    final border = Color.alphaBlend(
+      colors.outlineVariant.withValues(
+        alpha: colors.brightness == Brightness.dark ? 0.45 : 0.65,
+      ),
+      colors.surface,
+    );
+    return border.toARGB32() & 0xffffff;
+  }
 
   ThemeProvider({
     ThemePreferenceWriter? preferenceWriter,
@@ -947,10 +978,16 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
         : Color(color.toARGB32() | 0xFF000000);
     if (_systemAccentColor == normalized) return;
     _systemAccentColor = normalized;
-    if (_useSystemAccentColor) {
-      _rebuildThemes();
-    }
+    _systemAccentColorNotifier.value = normalized;
+    if (!_useSystemAccentColor) return;
+    _rebuildThemes();
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _systemAccentColorNotifier.dispose();
+    super.dispose();
   }
 
   Future<bool> setThemeMode(ThemeMode value) async {

@@ -23,11 +23,26 @@ typedef _ProgressSliderValue = ({
   bool canSeek,
 });
 
-typedef _ProgressTimecodeValue = ({
-  String elapsedText,
-  String remainingText,
-  String widthText,
-});
+typedef _ProgressTimecodeValue = ({int elapsedSeconds, int? durationSeconds});
+
+extension on _ProgressTimecodeValue {
+  String get elapsedText =>
+      formatDurationCompact(Duration(seconds: elapsedSeconds));
+
+  String get remainingText {
+    final duration = durationSeconds;
+    return duration == null
+        ? '--:--'
+        : '-${formatDurationCompact(Duration(seconds: duration - elapsedSeconds))}';
+  }
+
+  String get widthText {
+    final duration = durationSeconds;
+    return duration == null
+        ? '00:00:00'
+        : formatDurationCompact(Duration(seconds: duration));
+  }
+}
 
 double _progressTrackWidth(double sliderWidth) =>
     max(1.0, sliderWidth - 2 * sessionDetailProgressTrackInset);
@@ -221,13 +236,10 @@ class _ProgressSliderAndTimecodesState
     if (force || _sliderValue.value != nextSlider) {
       _sliderValue.value = nextSlider;
     }
-    final nextTimecode = _buildTimecodeValue(
+    _timecodeValue.value = _buildTimecodeValue(
       nextSlider,
       overridePositionMs: _isDragging ? null : _hoverValueMs,
     );
-    if (force || _timecodeValue.value != nextTimecode) {
-      _timecodeValue.value = nextTimecode;
-    }
   }
 
   _ProgressSliderValue _buildSliderValue(PlaybackPositionUiSnapshot snapshot) {
@@ -271,24 +283,11 @@ class _ProgressSliderAndTimecodesState
     _ProgressSliderValue value, {
     double? overridePositionMs,
   }) {
-    final effectiveMillis = (overridePositionMs ?? value.sliderValue).round();
-    final shownSeconds = value.hasKnownDuration
-        ? (effectiveMillis ~/ 1000).clamp(0, value.duration.inSeconds)
-        : (effectiveMillis ~/ 1000);
-    final remainingSeconds = value.hasKnownDuration
-        ? (value.duration.inSeconds - shownSeconds).clamp(
-            0,
-            value.duration.inSeconds,
-          )
-        : 0;
+    final elapsed = (overridePositionMs ?? value.sliderValue).round() ~/ 1000;
+    final duration = value.hasKnownDuration ? value.duration.inSeconds : null;
     return (
-      elapsedText: formatDurationCompact(Duration(seconds: shownSeconds)),
-      widthText: value.hasKnownDuration
-          ? formatDurationCompact(value.duration)
-          : '00:00:00',
-      remainingText: value.hasKnownDuration
-          ? '-${formatDurationCompact(Duration(seconds: remainingSeconds))}'
-          : '--:--',
+      elapsedSeconds: duration == null ? elapsed : elapsed.clamp(0, duration),
+      durationSeconds: duration,
     );
   }
 
@@ -814,22 +813,25 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
           ? ValueListenableBuilder<_ProgressTimecodeValue>(
               valueListenable: widget.timecodeValue,
               child: slider,
-              builder: (context, value, child) => Row(
-                children: [
-                  TimecodeLabel(
-                    text: value.elapsedText,
-                    reserveText: value.widthText,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(child: child!),
-                  const SizedBox(width: 8),
-                  TimecodeLabel(
-                    text: value.remainingText,
-                    reserveText: '-${value.widthText}',
-                    alignEnd: true,
-                  ),
-                ],
-              ),
+              builder: (context, value, child) {
+                final widthText = value.widthText;
+                return Row(
+                  children: [
+                    TimecodeLabel(
+                      text: value.elapsedText,
+                      reserveText: widthText,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(child: child!),
+                    const SizedBox(width: 8),
+                    TimecodeLabel(
+                      text: value.remainingText,
+                      reserveText: '-$widthText',
+                      alignEnd: true,
+                    ),
+                  ],
+                );
+              },
             )
           : Column(
               children: [

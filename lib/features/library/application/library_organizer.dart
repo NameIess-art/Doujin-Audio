@@ -11,6 +11,8 @@ import '../../../core/media/path_display.dart';
 class LibraryOrganizer {
   const LibraryOrganizer();
 
+  static const String singleFilesGroupKey = '__single_files__';
+
   List<LibraryEntry> buildLibraryEntries(
     String libraryPath,
     List<MusicTrack> tracks, {
@@ -110,7 +112,7 @@ class LibraryOrganizer {
   String? folderPathForLibraryTrack(String libraryPath, MusicTrack track) {
     if (!track.isSingle &&
         track.groupKey.isNotEmpty &&
-        track.groupKey != '__single_files__' &&
+        track.groupKey != singleFilesGroupKey &&
         PathMatcher.isWithinOrEqual(track.groupKey, libraryPath) &&
         !PathMatcher.equalsNormalized(track.groupKey, libraryPath)) {
       return canonicalLibraryFolderPath(libraryPath, track.groupKey);
@@ -172,24 +174,36 @@ class LibraryOrganizer {
   /// [rootsAlreadySorted] applies to both lists, in descending path length.
   String rootPathForTrack(
     MusicTrack track,
-    List<String> watchedRoots, {
+    Iterable<String> watchedRoots, {
     List<String> watchedLibraries = const <String>[],
     bool rootsAlreadySorted = false,
   }) {
-    final sortedRoots = rootsAlreadySorted
-        ? watchedRoots
-        : (watchedRoots.toList(growable: false)
-            ..sort((a, b) => b.length.compareTo(a.length)));
-    final sortedLibraries = rootsAlreadySorted
-        ? watchedLibraries
-        : (watchedLibraries.toList(growable: false)
-            ..sort((a, b) => b.length.compareTo(a.length)));
-    return _rootPathForTrack(track, sortedRoots, sortedLibraries);
+    if (rootsAlreadySorted) {
+      return _rootPathForTrack(track, watchedRoots, watchedLibraries);
+    }
+    if (track.isSingle) return track.path;
+    String? longestContainingRoot(Iterable<String> roots) {
+      String? best;
+      for (final root in roots) {
+        if (best != null && root.length <= best.length) continue;
+        if (PathMatcher.isWithinOrEqual(track.groupKey, root) ||
+            PathMatcher.isWithinOrEqual(track.path, root)) {
+          best = root;
+        }
+      }
+      return best;
+    }
+
+    final libraryRoot = longestContainingRoot(watchedLibraries);
+    if (libraryRoot != null) {
+      return workScopeFolderPath(libraryRoot, track.groupKey) ?? libraryRoot;
+    }
+    return longestContainingRoot(watchedRoots) ?? track.groupKey;
   }
 
   String _rootPathForTrack(
     MusicTrack track,
-    List<String> sortedRoots, [
+    Iterable<String> sortedRoots, [
     List<String> sortedLibraries = const <String>[],
   ]) {
     if (track.isSingle) {
@@ -214,34 +228,36 @@ class LibraryOrganizer {
   /// PathMatcher path equivalence and stores normalized root paths.
   String rootFolderPath(
     String folderPath,
-    List<String> watchedFolders, {
+    Iterable<String> watchedFolders, {
     List<String> watchedLibraries = const <String>[],
     bool rootsAlreadySorted = false,
     Map<String, String>? watchedFolderByPath,
   }) {
     final normalizedFolder = PathMatcher.normalize(folderPath);
-    final sortedLibraries = rootsAlreadySorted
-        ? watchedLibraries
-        : (watchedLibraries.toList(growable: false)
-            ..sort((a, b) => b.length.compareTo(a.length)));
-    for (final libraryRoot in sortedLibraries) {
-      if (PathMatcher.isWithinOrEqual(normalizedFolder, libraryRoot)) {
-        return workScopeFolderPath(libraryRoot, normalizedFolder) ??
-            PathMatcher.normalize(libraryRoot);
+    String? longestContainingRoot(Iterable<String> roots) {
+      String? best;
+      for (final root in roots) {
+        if (best != null && root.length <= best.length) continue;
+        if (PathMatcher.isWithinOrEqual(normalizedFolder, root)) {
+          if (rootsAlreadySorted) return root;
+          best = root;
+        }
       }
+      return best;
+    }
+
+    final libraryRoot = longestContainingRoot(watchedLibraries);
+    if (libraryRoot != null) {
+      return workScopeFolderPath(libraryRoot, normalizedFolder) ??
+          PathMatcher.normalize(libraryRoot);
     }
 
     final exactFolder = watchedFolderByPath?[normalizedFolder];
     if (exactFolder != null) return exactFolder;
 
-    final sortedFolders = rootsAlreadySorted
-        ? watchedFolders
-        : (watchedFolders.toList(growable: false)
-            ..sort((a, b) => b.length.compareTo(a.length)));
-    for (final watchedFolder in sortedFolders) {
-      if (PathMatcher.isWithinOrEqual(normalizedFolder, watchedFolder)) {
-        return PathMatcher.normalize(watchedFolder);
-      }
+    final watchedFolder = longestContainingRoot(watchedFolders);
+    if (watchedFolder != null) {
+      return PathMatcher.normalize(watchedFolder);
     }
     return normalizedFolder;
   }

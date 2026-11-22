@@ -191,24 +191,19 @@ class UnifiedPopupMenuButton<T> extends StatefulWidget {
 
 class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
     with SingleTickerProviderStateMixin {
-  final GlobalKey _anchorKey = GlobalKey();
   OverlayEntry? _entry;
   Future<void>? _closing;
-  late final AnimationController _controller;
+  AnimationController? _controller;
   final Object _interactionSource = Object();
   ValueNotifier<VoidCallback?>? _menuDismiss;
   VoidCallback? _dismissCallback;
   VoidCallback? _stopTrackingHover;
 
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: _menuEnterDuration,
-      reverseDuration: _menuExitDuration,
-    )..addStatusListener(_handleAnimationStatus);
-  }
+  AnimationController _ensureController() => _controller ??= AnimationController(
+    vsync: this,
+    duration: _menuEnterDuration,
+    reverseDuration: _menuExitDuration,
+  )..addStatusListener(_handleAnimationStatus);
 
   void _handleAnimationStatus(AnimationStatus status) {
     final interaction = UiInteractionCoordinator.instance;
@@ -235,7 +230,7 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
         // rebuild while the launching button updates dependencies.
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted && _entry != null && _closing == null) {
-            _controller.value = 1;
+            _controller?.value = 1;
           }
         });
       }
@@ -252,7 +247,7 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
   void dispose() {
     _removeOverlay(immediate: true);
     UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
@@ -266,7 +261,7 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
   }
 
   void _showOverlay() {
-    final box = _anchorKey.currentContext?.findRenderObject() as RenderBox?;
+    final box = context.findRenderObject() as RenderBox?;
     final menuOverlay =
         MobileOverlayInset.menuOverlayOf(context) ??
         Overlay.of(context, rootOverlay: true);
@@ -284,11 +279,12 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
         ? null
         : InheritedTheme.capture(from: context, to: null);
 
+    final controller = _ensureController();
     var hoverEnabled = false;
     final entry = OverlayEntry(
       builder: (_) {
         final menu = _UnifiedPopupOverlay<T>(
-          animation: _controller,
+          animation: controller,
           anchorRect: anchorRect,
           menuInsets: menuInsets,
           entries: widget.entries,
@@ -326,10 +322,10 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
     _menuDismiss?.value = _dismissCallback;
     overlay.insert(entry);
     if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) {
-      _controller.value = 1;
+      controller.value = 1;
       UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
     } else {
-      _controller.forward(from: 0);
+      controller.forward(from: 0);
     }
   }
 
@@ -339,7 +335,7 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
     final reduceMotion =
         !immediate && (MediaQuery.maybeOf(context)?.disableAnimations ?? false);
     if (immediate || reduceMotion) {
-      _controller.stop();
+      _controller?.stop();
       _closing = null;
       _detachOverlay(entry);
       UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
@@ -350,7 +346,7 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
 
   Future<void> _animateRemoval(OverlayEntry entry) async {
     try {
-      await _controller.reverse().orCancel;
+      await _controller?.reverse().orCancel;
     } on TickerCanceled {
       // Unmounting also removes the entry while reverse is in progress.
     } finally {
@@ -382,7 +378,6 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
       button: true,
       label: widget.tooltip,
       child: IconButton(
-        key: _anchorKey,
         tooltip: widget.tooltip,
         onPressed: widget.enabled ? _toggle : null,
         iconSize: widget.iconSize,

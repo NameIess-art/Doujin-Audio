@@ -683,7 +683,13 @@ class SessionListCard extends ConsumerWidget {
                 ),
                 color: activeColor,
                 child: IconButton(
-                  tooltip: isPlaying ? i18n.tr('pause') : i18n.tr('play'),
+                  tooltip: i18n.tr(
+                    cardState.playbackError != null
+                        ? 'retry_playback'
+                        : isPlaying
+                        ? 'pause'
+                        : 'play',
+                  ),
                   onPressed: () {
                     AppInteractionFeedback.trigger(
                       AppInteractionFeedbackType.selection,
@@ -720,15 +726,21 @@ class SessionListCard extends ConsumerWidget {
                         ),
                       );
                     },
-                    child:
-                        cardState.isLoading ||
-                            cardState.playbackError != null
+                    child: cardState.playbackError != null
+                        ? const Icon(
+                            Icons.refresh_rounded,
+                            key: ValueKey('retry'),
+                            size: 28,
+                          )
+                        : cardState.isLoading
                         ? const SizedBox(
                             key: ValueKey('loading'),
                             width: 22,
                             height: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.3,
+                            child: RepaintBoundary(
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.3,
+                              ),
                             ),
                           )
                         : Icon(

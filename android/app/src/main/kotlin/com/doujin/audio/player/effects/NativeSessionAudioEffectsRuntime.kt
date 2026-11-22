@@ -23,11 +23,15 @@ internal class NativeSessionAudioEffectsRuntime(
     private var loudnessEnhancerSessionId: Int = C.AUDIO_SESSION_ID_UNSET
     private var equalizer: Equalizer? = null
     private var equalizerSessionId: Int = C.AUDIO_SESSION_ID_UNSET
-    private var equalizerCreateFailed = false
-    private var capabilitiesEqualizer: Equalizer? = null
-    private var cachedEqCapabilities: Map<String, Any?> = mapOf("supported" to false)
+    private var equalizerBands: EqualizerBands? = null
+    private var appliedEqualizerLevels: ShortArray? = null
+    private var appliedEqualizerEnabled: Boolean = false
+    private var appliedEqEnabledInput: Boolean = false
+    private var appliedNoiseReductionInput: Boolean = false
+    private var appliedEqBandLevelsInput: Map<Int, Float>? = null
     private var dynamicsProcessing: DynamicsProcessing? = null
     private var dynamicsProcessingSessionId: Int = C.AUDIO_SESSION_ID_UNSET
+    private var appliedDynamicsProcessingEnabled: Boolean = false
 
     var channelSwapEnabled: Boolean
         get() = controller.channelSwapEnabled
@@ -81,13 +85,8 @@ internal class NativeSessionAudioEffectsRuntime(
 
     fun snapshot(): Map<String, Any?> = controller.snapshot()
 
-    fun eqCapabilitiesSnapshot(): Map<String, Any?> {
-        if (capabilitiesEqualizer !== equalizer) {
-            capabilitiesEqualizer = equalizer
-            cachedEqCapabilities = buildEqCapabilitiesSnapshot()
-        }
-        return cachedEqCapabilities
-    }
+    fun eqCapabilitiesSnapshot(): Map<String, Any?> =
+        equalizerBands?.capabilities ?: UNSUPPORTED_EQ_CAPABILITIES
 
     fun release() {
         controller.release()
@@ -147,69 +146,90 @@ internal class NativeSessionAudioEffectsRuntime(
             releaseEqualizer()
             return
         }
-        val nextEqualizer = if (equalizerSessionId == audioSessionId) {
+        val reused = equalizerSessionId == audioSessionId && equalizer != null
+        val nextEqualizer = if (reused) {
             equalizer
         } else {
             releaseEqualizer()
-            equalizerCreateFailed = false
             try {
                 Equalizer(0, audioSessionId).also {
                     equalizer = it
                     equalizerSessionId = audioSessionId
                 }
             } catch (e: RuntimeException) {
-                equalizerCreateFailed = true
                 logWarn("equalizer_create_failed audioSessionId=$audioSessionId", e)
                 null
             }
         } ?: return
 
+        if (reused &&
+            appliedEqualizerEnabled &&
+            appliedEqEnabledInput == eqEnabled &&
+            appliedNoiseReductionInput == noiseReductionEnabled &&
+            appliedEqBandLevelsInput == eqBandLevels
+        ) {
+            return
+        }
+
         try {
-            applyEqualizerBandLevels(nextEqualizer)
-            nextEqualizer.enabled = true
+            val bands = equalizerBands ?: EqualizerBands(nextEqualizer).also { equalizerBands = it }
+            applyEqualizerBandLevels(nextEqualizer, bands)
+            if (!appliedEqualizerEnabled) {
+                nextEqualizer.enabled = true
+                appliedEqualizerEnabled = true
+            }
+            appliedEqEnabledInput = eqEnabled
+            appliedNoiseReductionInput = noiseReductionEnabled
+            appliedEqBandLevelsInput = eqBandLevels
         } catch (e: RuntimeException) {
             logWarn("equalizer_apply_failed", e)
             releaseEqualizer()
-            equalizerCreateFailed = true
         }
     }
 
-    private fun applyEqualizerBandLevels(eq: Equalizer) {
-        val bandCount = eq.numberOfBands.toInt()
+    private fun applyEqualizerBandLevels(eq: Equalizer, bands: EqualizerBands) {
+        val bandCount = bands.centerFrequencies.size
         if (bandCount <= 0) return
-        val range = eq.bandLevelRange
-        val minDb = range[0] / 100f
-        val maxDb = range[1] / 100f
+        val minDb = bands.minDb
+        val maxDb = bands.maxDb
         val levelsByBand = FloatArray(bandCount)
         if (eqEnabled) {
             eqBandLevels.forEach { (frequencyHz, gainDb) ->
-                val band = nearestEqualizerBand(eq, frequencyHz)
+                val band = nearestEqualizerBand(bands.centerFrequencies, frequencyHz)
                 levelsByBand[band] = (levelsByBand[band] + gainDb).coerceIn(minDb, maxDb)
             }
         }
         if (noiseReductionEnabled) {
             for (band in 0 until bandCount) {
-                val frequencyHz = eq.getCenterFreq(band.toShort()) / 1000
+                val frequencyHz = bands.centerFrequencies[band]
                 val overlay = noiseReductionGainFor(frequencyHz)
                 if (overlay != 0f) {
                     levelsByBand[band] = (levelsByBand[band] + overlay).coerceIn(minDb, maxDb)
                 }
             }
         }
-        for (band in 0 until bandCount) {
-            eq.setBandLevel(
-                band.toShort(),
-                (levelsByBand[band].coerceIn(minDb, maxDb) * 100).roundToInt().toShort()
-            )
+        val previous = appliedEqualizerLevels
+        val updated = if (previous != null && previous.size == bandCount) {
+            previous
+        } else {
+            ShortArray(bandCount)
         }
+        val hadPrevious = previous != null && previous.size == bandCount
+        for (band in 0 until bandCount) {
+            val targetLevel = (levelsByBand[band].coerceIn(minDb, maxDb) * 100).roundToInt().toShort()
+            if (!hadPrevious || updated[band] != targetLevel) {
+                eq.setBandLevel(band.toShort(), targetLevel)
+                updated[band] = targetLevel
+            }
+        }
+        appliedEqualizerLevels = updated
     }
 
-    private fun nearestEqualizerBand(eq: Equalizer, frequencyHz: Int): Int {
+    private fun nearestEqualizerBand(centerFrequencies: IntArray, frequencyHz: Int): Int {
         var bestBand = 0
         var bestDistance = Int.MAX_VALUE
-        for (band in 0 until eq.numberOfBands.toInt()) {
-            val centerHz = eq.getCenterFreq(band.toShort()) / 1000
-            val distance = abs(centerHz - frequencyHz)
+        for (band in centerFrequencies.indices) {
+            val distance = abs(centerFrequencies[band] - frequencyHz)
             if (distance < bestDistance) {
                 bestDistance = distance
                 bestBand = band
@@ -221,7 +241,13 @@ internal class NativeSessionAudioEffectsRuntime(
     private fun releaseEqualizer() {
         val eq = equalizer ?: return
         equalizer = null
+        equalizerBands = null
         equalizerSessionId = C.AUDIO_SESSION_ID_UNSET
+        appliedEqualizerLevels = null
+        appliedEqualizerEnabled = false
+        appliedEqEnabledInput = false
+        appliedNoiseReductionInput = false
+        appliedEqBandLevelsInput = null
         try {
             eq.enabled = false
         } catch (_: RuntimeException) {
@@ -294,8 +320,10 @@ internal class NativeSessionAudioEffectsRuntime(
             }
         } ?: return
 
+        if (appliedDynamicsProcessingEnabled) return
         try {
             dp.enabled = true
+            appliedDynamicsProcessingEnabled = true
         } catch (e: RuntimeException) {
             logWarn("dynamics_processing_apply_failed", e)
             releaseDynamicsProcessing()
@@ -306,6 +334,7 @@ internal class NativeSessionAudioEffectsRuntime(
         val dp = dynamicsProcessing ?: return
         dynamicsProcessing = null
         dynamicsProcessingSessionId = C.AUDIO_SESSION_ID_UNSET
+        appliedDynamicsProcessingEnabled = false
         try {
             dp.enabled = false
         } catch (_: RuntimeException) {
@@ -316,23 +345,22 @@ internal class NativeSessionAudioEffectsRuntime(
         }
     }
 
-    private fun buildEqCapabilitiesSnapshot(): Map<String, Any?> {
-        val eq = equalizer
-        if (eq == null || equalizerCreateFailed) {
-            return mapOf("supported" to false)
-        }
-        return try {
-            val range = eq.bandLevelRange
+    private class EqualizerBands(eq: Equalizer) {
+        private val range = eq.bandLevelRange
+        val minDb = range[0] / 100f
+        val maxDb = range[1] / 100f
+        val centerFrequencies = IntArray(eq.numberOfBands.toInt()) { eq.getCenterFreq(it.toShort()) / 1000 }
+        val capabilities: Map<String, Any?> by lazy {
             mapOf(
                 "supported" to true,
                 "minGainDb" to range[0] / 100.0,
                 "maxGainDb" to range[1] / 100.0,
-                "bands" to (0 until eq.numberOfBands.toInt()).map { band ->
-                    mapOf("frequencyHz" to eq.getCenterFreq(band.toShort()) / 1000)
-                }
+                "bands" to centerFrequencies.map { mapOf("frequencyHz" to it) }
             )
-        } catch (_: RuntimeException) {
-            mapOf("supported" to false)
         }
+    }
+
+    private companion object {
+        val UNSUPPORTED_EQ_CAPABILITIES: Map<String, Any?> = mapOf("supported" to false)
     }
 }

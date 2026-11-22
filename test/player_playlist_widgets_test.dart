@@ -2590,7 +2590,7 @@ void main() {
   }
 
   testWidgets(
-    'mounted playback card refreshes when the cover generation changes',
+    'mounted playback card refreshes only for its cover scopes or a full reset',
     (tester) async {
       final coverCache = _RecordingPlaybackCoverCacheService();
       final fixture = AppRuntimeWidgetTestFixture(
@@ -2639,6 +2639,15 @@ void main() {
           ),
         ),
       );
+      await tester.pumpAndSettle();
+      expect(coverCache.requestedPaths, contains(track.path));
+      coverCache.requestedPaths.clear();
+
+      coverCache.invalidateFolder('/unrelated-work');
+      await tester.pumpAndSettle();
+      expect(coverCache.requestedPaths, isEmpty);
+
+      coverCache.invalidateTrack(track);
       await tester.pumpAndSettle();
       expect(coverCache.requestedPaths, contains(track.path));
       coverCache.requestedPaths.clear();
@@ -10912,7 +10921,7 @@ void main() {
   });
 
   testWidgets(
-    'playlist cards show loading and failure spinners without loading text',
+    'playlist cards switch from loading spinners to static retry icons',
     (tester) async {
       final messenger =
           TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -10996,7 +11005,8 @@ void main() {
         fixture.playback.publishSessionState(session.id);
       }
       await pumpFiniteTransitions(tester);
-      expect(find.byKey(const ValueKey('loading')), findsNWidgets(2));
+      expect(find.byKey(const ValueKey('loading')), findsNothing);
+      expect(find.byKey(const ValueKey('retry')), findsNWidgets(2));
 
       for (final session in [trackSession, queueSession]) {
         session.beginTransportCommand(commandId: 1, playing: false);
@@ -11005,6 +11015,7 @@ void main() {
       }
       await pumpFiniteTransitions(tester);
       expect(find.byKey(const ValueKey('loading')), findsNothing);
+      expect(find.byKey(const ValueKey('retry')), findsNothing);
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
@@ -11016,7 +11027,7 @@ void main() {
   );
 
   testWidgets(
-    'failed playlist item keeps a clickable spinner without retry text',
+    'failed playlist item keeps a clickable retry icon without inline text',
     (tester) async {
       final fixture = AppRuntimeWidgetTestFixture(
         coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
@@ -11054,15 +11065,16 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.byTooltip(fixture.languageProvider.tr('play')),
+        find.byTooltip(fixture.languageProvider.tr('retry_playback')),
         findsOneWidget,
       );
-      expect(find.byKey(const ValueKey('loading')), findsOneWidget);
+      expect(find.byKey(const ValueKey('loading')), findsNothing);
+      expect(find.byKey(const ValueKey('retry')), findsOneWidget);
       expect(
         tester
             .widget<IconButton>(
               find.ancestor(
-                of: find.byKey(const ValueKey('loading')),
+                of: find.byKey(const ValueKey('retry')),
                 matching: find.byType(IconButton),
               ),
             )
@@ -11077,7 +11089,7 @@ void main() {
   );
 
   testWidgets(
-    'detail and carousel show spinners while loading or failed and recover',
+    'detail and carousel switch from loading spinners to static retry icons',
     (tester) async {
       final harness = await _pumpSubtitleDetail(
         tester: tester,
@@ -11111,12 +11123,17 @@ void main() {
           of: controls,
           matching: find.byKey(const ValueKey('loading')),
         );
+        final retry = find.descendant(
+          of: controls,
+          matching: find.byKey(const ValueKey('retry')),
+        );
         expect(spinner, findsNothing);
 
         session.setOptimisticState(processingState: ProcessingState.loading);
         fixture.playback.publishSessionState(session.id);
         await pumpFiniteTransitions(tester);
         expect(spinner, findsNWidgets(carousel ? 3 : 1));
+        expect(retry, findsNothing);
 
         session.finishPreparation(
           session.loadGeneration,
@@ -11127,7 +11144,8 @@ void main() {
         session.setOptimisticState(processingState: ProcessingState.idle);
         fixture.playback.publishSessionState(session.id);
         await pumpFiniteTransitions(tester);
-        expect(spinner, findsNWidgets(carousel ? 3 : 1));
+        expect(spinner, findsNothing);
+        expect(retry, findsNWidgets(carousel ? 3 : 1));
 
         session.beginTransportCommand(
           commandId: session.transportCommandId + 1,
@@ -11137,6 +11155,7 @@ void main() {
         fixture.playback.publishSessionState(session.id);
         await pumpFiniteTransitions(tester);
         expect(spinner, findsNothing);
+        expect(retry, findsNothing);
         expect(tester.takeException(), isNull);
       }
     },

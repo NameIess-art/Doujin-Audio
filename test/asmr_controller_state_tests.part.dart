@@ -9,6 +9,49 @@ void registerAsmrControllerStateTests({
   setUp(() => preferences = preferencesStore());
 
   test(
+    'legacy interest settings split without rewriting a stable catalog',
+    () async {
+      await resetPrefs();
+      final repository = persistenceRepository();
+      const preferencesKey = 'asmr_tag_preferences_v1';
+      const catalogKey = '${preferencesKey}_catalog';
+      final seed = AsmrTagPreferences()
+        ..mergeTags([
+          for (var index = 0; index < 3000; index++)
+            AsmrTag(key: 'online:$index', name: 'Tag $index'),
+        ])
+        ..catalogComplete = true
+        ..setInterested('online:0', true);
+      await repository.saveSetting(preferencesKey, jsonEncode(seed.toJson()));
+
+      final legacy = await preferences.loadTagPreferences();
+      expect(legacy.tags, hasLength(3000));
+      await preferences.saveTagPreferences(legacy);
+      final catalog = (await repository.loadSetting(catalogKey))!;
+      final stored = (await repository.loadSetting(preferencesKey))!;
+      expect(stored.length, lessThan(512));
+      await repository.saveSetting(catalogKey, '$catalog\n');
+
+      final next = legacy.copy();
+      expect(next.tags, same(legacy.tags));
+      next.recordListeningBatch('epoch:1', [
+        (tags: ['Tag 1', 'Local tag'], duration: const Duration(minutes: 1)),
+      ]);
+      expect(legacy.tags, hasLength(3000));
+      await preferences.saveTagPreferences(next);
+      expect(await repository.loadSetting(catalogKey), '$catalog\n');
+      final restored = await preferences.loadTagPreferences();
+      expect(restored.tags, hasLength(3001));
+      expect(restored.catalogComplete, isTrue);
+      expect(restored.manualInterests, {'online:0'});
+      expect(restored.learned, {'online:1': 1, 'local:local tag': 1});
+      expect(restored.recordListeningBatch('epoch:1', []), isFalse);
+
+      expect(restored.resolve('Tag 1'), 'online:1');
+    },
+  );
+
+  test(
     'catalog compute keeps failed saves atomic and rejects a reload during preparation',
     () async {
       await resetPrefs();

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/widgets/app_buttons.dart';
 import 'package:doujin_audio/core/widgets/app_dialog.dart';
 import 'package:doujin_audio/core/widgets/app_glass_surface.dart';
@@ -463,6 +464,7 @@ void main() {
   ) async {
     const radius = BorderRadius.all(Radius.circular(18));
     final theme = ThemeData(
+      extensions: [AppDesignTokens.light.copyWith(barGlassEnabled: true)],
       dialogTheme: const DialogThemeData(
         backgroundColor: Colors.blue,
         elevation: 8,
@@ -736,8 +738,9 @@ void main() {
     expect(glass, findsOneWidget);
     expect(
       find.descendant(of: glass, matching: find.byType(BackdropFilter)),
-      findsOneWidget,
+      findsNothing,
     );
+    expect(find.byType(BackdropFilter), findsOneWidget);
     expect(
       tester.getRect(glass),
       tester.getRect(find.byKey(const ValueKey('app_dialog_surface'))),

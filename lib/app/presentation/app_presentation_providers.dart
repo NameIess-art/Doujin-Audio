@@ -128,35 +128,19 @@ final libraryHeaderUiProvider = Provider<LibraryHeaderState>((ref) {
 
 final libraryListUiProvider = Provider<LibraryListState>((ref) {
   final facade = ref.watch(libraryFacadeProvider);
-  final serviceState = facade.state;
-  final state = ref.watch(libraryStateProvider).value ?? serviceState;
+  final state = ref.watch(libraryStateProvider).value ?? facade.state;
   final refreshOperation = ref.watch(
     uiOperationForScopeProvider(UiOperationScope.libraryRefresh),
   );
-  final showForegroundScan = state.isScanning && !state.isBackgroundScanning;
-  final libraryState = LibraryState(
-    watchedFolderCount: state.watchedFolderCount,
-    watchedLibraryCount: state.watchedLibraryCount,
-    isScanning: showForegroundScan,
-    isBackgroundScanning: state.isBackgroundScanning,
-    scanCurrentFolder: showForegroundScan ? state.scanCurrentFolder : '',
-    scanFoundCount: showForegroundScan ? state.scanFoundCount : 0,
-    scanDuplicateCount: showForegroundScan ? state.scanDuplicateCount : 0,
-    scanFailureCount: showForegroundScan ? state.scanFailureCount : 0,
-    structureRevision: state.treeSnapshotRevision,
-    contentRevision: state.contentRevision,
-    isInitialized: state.isInitialized,
-  );
   return LibraryListState(
     rawTree: facade.libraryCards,
-    watchedFolders: facade.watchedFolders,
     watchedLibraries: facade.watchedLibraries,
-    watchedFolderCount: libraryState.watchedFolderCount,
-    watchedLibraryCount: libraryState.watchedLibraryCount,
-    isScanning: libraryState.isScanning,
-    isBackgroundScanning: libraryState.isBackgroundScanning,
-    structureRevision: libraryState.structureRevision,
-    isInitialized: libraryState.isInitialized,
+    watchedFolderCount: state.watchedFolderCount,
+    watchedLibraryCount: state.watchedLibraryCount,
+    isScanning: state.isScanning && !state.isBackgroundScanning,
+    isBackgroundScanning: state.isBackgroundScanning,
+    structureRevision: state.treeSnapshotRevision,
+    isInitialized: state.isInitialized,
     isRefreshing: refreshOperation.isBusy || state.isScanning,
     operationProgress: refreshOperation.progress,
     operationError: refreshOperation.error,
@@ -186,11 +170,14 @@ class LibrarySortedSnapshotNotifier
   @override
   LibrarySortedSnapshotState build() {
     final libraryFacade = ref.watch(libraryFacadeProvider);
-    final sortedInput = ref.watch(
-      libraryListUiProvider.select(
-        (state) => (nodes: state.rawTree, revision: state.structureRevision),
+    ref.watch(
+      libraryStateProvider.select(
+        (state) =>
+            state.value?.treeSnapshotRevision ??
+            libraryFacade.state.treeSnapshotRevision,
       ),
     );
+    final nodes = libraryFacade.libraryCards;
     final criterion = ref.watch(
       settingsStateProvider.select(
         (state) =>
@@ -226,7 +213,7 @@ class LibrarySortedSnapshotNotifier
         criterion == LibrarySortCriterion.voiceActor ||
         criterion == LibrarySortCriterion.releaseDate ||
         (workNameDisplay == WorkNameDisplay.workTitle &&
-            sortedInput.nodes.any(
+            nodes.any(
               (node) => node is FolderNode && node.isModuleNode,
             ));
     if (needsDetails) {
@@ -254,7 +241,7 @@ class LibrarySortedSnapshotNotifier
       UiInteractionCoordinator.instance.cancelCommit(_commitKey);
     });
     ref.onResume(UiInteractionCoordinator.instance.scheduleCommitFrame);
-    if (sortedInput.nodes.isEmpty) {
+    if (nodes.isEmpty) {
       return _retained = (nodes: const <LibraryNode>[], error: null);
     }
     UiInteractionCoordinator.instance.scheduleCommit(
@@ -269,7 +256,7 @@ class LibrarySortedSnapshotNotifier
           if (needsDetails) {
             final targets = <String, AudioDetailTarget>{};
             final preparation = Stopwatch()..start();
-            for (final node in sortedInput.nodes) {
+            for (final node in nodes) {
               final AudioDetailTarget target;
               if (node is FolderNode) {
                 if (criterion == LibrarySortCriterion.name &&
@@ -310,7 +297,7 @@ class LibrarySortedSnapshotNotifier
           }
           if (!ref.mounted || request != _request) return;
           final input = LibrarySortRequest(
-            nodes: sortedInput.nodes,
+            nodes: nodes,
             criterion: criterion,
             ascending: ascending,
             groupByLibrary: groupByLibrary,

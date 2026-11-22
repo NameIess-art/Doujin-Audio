@@ -102,8 +102,14 @@ class TestPersistenceRepository extends SqliteLibraryRepository
   @override
   Future<String?> loadSetting(String key) => _asmr.loadSetting(key);
   @override
+  Future<Map<String, String?>> loadSettings(List<String> keys) =>
+      _asmr.loadSettings(keys);
+  @override
   Future<void> saveSetting(String key, String? value) =>
       _asmr.saveSetting(key, value);
+  @override
+  Future<void> saveSettings(Map<String, String> values) =>
+      _asmr.saveSettings(values);
   @override
   Future<List<AsmrWork>> loadWorkList(String listType) =>
       _asmr.loadWorkList(listType);

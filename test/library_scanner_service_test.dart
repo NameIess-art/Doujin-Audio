@@ -1083,7 +1083,7 @@ class _RefreshCatalog implements LibraryCatalog {
   }
 
   @override
-  void beginLibraryBatch() {
+  void beginLibraryBatch({bool snapshotAllEntries = true}) {
     rollbackBatchDepth++;
     rollbackBatchBeginCount++;
   }
@@ -1277,7 +1277,7 @@ class _FailingBatchCatalog implements LibraryCatalog {
   }
 
   @override
-  void beginLibraryBatch() {}
+  void beginLibraryBatch({bool snapshotAllEntries = true}) {}
 
   @override
   void addTracks(List<MusicTrack> tracks, {bool persist = true}) {
@@ -1308,8 +1308,8 @@ class _CancelledFilesCatalog extends _RefreshCatalog {
   var addTracksCalls = 0;
 
   @override
-  void beginLibraryBatch() {
-    super.beginLibraryBatch();
+  void beginLibraryBatch({bool snapshotAllEntries = true}) {
+    super.beginLibraryBatch(snapshotAllEntries: snapshotAllEntries);
     scheduleMicrotask(() {
       cancelled = true;
       isScanning = false;

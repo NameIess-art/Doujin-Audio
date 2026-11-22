@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
@@ -48,6 +49,7 @@ class AppUpdateService {
   static const String releasesPage = 'https://github.com/$owner/$repo/releases';
   static const Duration _requestTimeout = Duration(seconds: 15);
   static const Duration _downloadIdleTimeout = Duration(seconds: 30);
+  static const Duration _downloadProgressInterval = Duration(milliseconds: 75);
   final UpdatePlatformService _platform;
   final HttpClient Function() _httpClientFactory;
   final Future<Directory> Function() _temporaryDirectoryProvider;
@@ -488,8 +490,7 @@ class AppUpdateService {
       if (verified?.path == filePath &&
           verified?.checksum == expectedChecksum &&
           await file.exists() &&
-          (await sha256.bind(file.openRead()).first).toString() ==
-              expectedChecksum) {
+          await _fileChecksum(file.path) == expectedChecksum) {
         onProgress(1);
         if (_disposed) throw StateError('Update service has been disposed.');
         final previous = _verifiedDownload;
@@ -524,23 +525,28 @@ class AppUpdateService {
 
       final total = response.contentLength;
       var received = 0;
+      final progressTimer = Stopwatch();
       final sink = partialFile.openWrite();
       try {
+        if (total <= 0) onProgress(null);
         await for (final chunk in response.timeout(_downloadIdleTimeout)) {
           received += chunk.length;
           sink.add(chunk);
-          if (total > 0) {
-            onProgress((received / total).clamp(0.0, 1.0));
-          } else {
-            onProgress(null);
+          if (total > 0 &&
+              received < total &&
+              (!progressTimer.isRunning ||
+                  progressTimer.elapsed >= _downloadProgressInterval)) {
+            progressTimer
+              ..reset()
+              ..start();
+            onProgress(received / total);
           }
         }
         await sink.flush();
       } finally {
         await sink.close();
       }
-      final actualChecksum = await sha256.bind(partialFile.openRead()).first;
-      if (actualChecksum.toString() != expectedChecksum) {
+      if (await _fileChecksum(partialFile.path) != expectedChecksum) {
         throw const FormatException('Update checksum verification failed.');
       }
       await partialFile.rename(file.path);
@@ -575,6 +581,11 @@ class AppUpdateService {
       if (!retained) cacheLease.release();
     }
   }
+
+  static Future<String> _fileChecksum(String filePath) => Isolate.run(() async {
+    final digest = await sha256.bind(File(filePath).openRead()).first;
+    return digest.toString();
+  });
 
   Future<String> _downloadExpectedChecksum(
     HttpClient client,
@@ -678,11 +689,12 @@ class AppUpdateService {
 
   Future<UpdateInstallResult> _launchUpdateInstaller(File file) async {
     final verified = _verifiedDownload;
+    final filePath = path.normalize(file.absolute.path);
+    // A same-size replacement can preserve the original modification time.
     if (verified == null ||
-        verified.path != path.normalize(file.absolute.path) ||
+        verified.path != filePath ||
         !await file.exists() ||
-        (await sha256.bind(file.openRead()).first).toString() !=
-            verified.checksum) {
+        await _fileChecksum(file.path) != verified.checksum) {
       return const UpdateInstallResult(
         ok: false,
         needsPermission: false,

@@ -96,7 +96,7 @@ class _LibraryRepository extends Fake
 
 LibraryFacade _workLibrary(String folderPath, String trackPath) {
   final libraryService = LibraryService()
-    ..watchedFolders.add(folderPath)
+    ..addWatchedFolder(folderPath)
     ..libraryByPath[trackPath] = MusicTrack(
       path: trackPath,
       displayName: 'audio',
@@ -1737,8 +1737,9 @@ void main() {
       expect(dialogFinder, findsOneWidget);
       expect(
         find.descendant(of: dialogFinder, matching: find.byType(BackdropFilter)),
-        findsOneWidget,
+        findsNothing,
       );
+      expect(find.byType(BackdropFilter), findsOneWidget);
       expect(find.byIcon(Icons.translate_rounded), findsNWidgets(2)); // tile + dialog header
       expect(find.text(language.tr('subtitle_choose_language')), findsOneWidget);
       expect(find.text(language.tr('subtitle_translate_hint')), findsOneWidget);

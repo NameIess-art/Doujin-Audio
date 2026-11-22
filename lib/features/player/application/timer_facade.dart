@@ -368,8 +368,18 @@ final class TimerFacade {
         math.min(_fadeMultiplier, multiplier)) {
       return;
     }
+    if (multiplier == 0) {
+      _pendingTrackEndFades.remove(sessionId);
+      _applySessionFadeMultiplier(sessionId, 0);
+      return;
+    }
     _pendingTrackEndFades.add(sessionId);
-    _trackEndFadeTimer ??= Timer(Duration.zero, () {
+    // Windows position events arrive every 32 ms. Coalesce intermediate
+    // multipliers before they enter the serialized native command lane.
+    final interval = _isWindows
+        ? const Duration(milliseconds: 80)
+        : Duration.zero;
+    _trackEndFadeTimer ??= Timer(interval, () {
       _trackEndFadeTimer = null;
       final changed = _pendingTrackEndFades.toList();
       _pendingTrackEndFades.clear();

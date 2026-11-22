@@ -113,8 +113,14 @@ final class PlaybackFacade {
   PlaybackLoopModeSynchronizer? _synchronizeLoopMode;
   bool _sessionObserversAttached = false;
   final Map<String, String> _retargetedPathAliases = <String, String>{};
+  final Map<String, ({String source, String target})> _retargetedForwardIndex =
+      <String, ({String source, String target})>{};
+  final Map<String, ({String source, String target})> _retargetedReverseIndex =
+      <String, ({String source, String target})>{};
+  bool _hasNonRemoteRetargetSources = false;
   int _retargetRevision = 0;
   int get retargetRevision => _retargetRevision;
+  bool get hasRetargetedPaths => _retargetedPathAliases.isNotEmpty;
   final Random _random = Random();
   final Set<String> _deferredVolumeReloadSessionIds = <String>{};
   int _transportCommandSequence = 0;

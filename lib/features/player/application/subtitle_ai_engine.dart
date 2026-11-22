@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:crispasr/crispasr.dart';
 import 'package:crypto/crypto.dart';
@@ -36,6 +35,9 @@ class SubtitleAiEngine {
   final SubtitleModelStore _models;
   final FileCachePlatformGateway _files;
   final TextTranslationService _translations;
+  static final RegExp _lineBreakPattern = RegExp(r'\r?\n');
+  static const int _checkpointBatchInterval = 5;
+  static const Duration _checkpointTimeInterval = Duration(seconds: 10);
 
   SubtitleModelStore get modelStore => _models;
   TextTranslationService get translationService => _translations;
@@ -99,11 +101,12 @@ class SubtitleAiEngine {
               decoded.path,
             );
           }
-          final pcm = Float32List.view(Uint8List.fromList(bytes).buffer);
+          final byteCount = bytes.length;
+          final pcm = TransferableTypedData.fromList([bytes]);
           await worker.feedScriptAlignment(
             pcm,
             chunk * 20.0,
-            bytes.length / (16000 * 4),
+            byteCount / (16000 * 4),
           );
           final fraction = (chunk + 1) / totalChunks;
           onProgress?.call(
@@ -207,6 +210,11 @@ class SubtitleAiEngine {
     final request = _translations.newRequest();
     final cancelled = cancellation?.then<void>((_) => request.cancel());
     final cues = prior.cues.toList();
+    var offset = prior.nextChunk;
+    var lastPersistedOffset = offset;
+    var batchesSinceCheckpoint = 0;
+    final checkpointClock = Stopwatch()..start();
+    var completedNormally = false;
     try {
       final initialFraction = cues.length / source.length;
       onProgress?.call(
@@ -216,7 +224,6 @@ class SubtitleAiEngine {
           '${(initialFraction * 100).round()}%',
         ),
       );
-      var offset = prior.nextChunk;
       while (offset < source.length) {
         _checkCancelled(isCancelled);
         if (request.cancelled) throw const SubtitleTaskCancelled();
@@ -275,7 +282,7 @@ class SubtitleAiEngine {
           final translated = parts[index]
               .map((part) => result.translations[part] ?? part)
               .join()
-              .split(RegExp(r'\r?\n'))
+              .split(_lineBreakPattern)
               .map((line) => line.trim())
               .where((line) => line.isNotEmpty)
               .join('\n');
@@ -288,8 +295,16 @@ class SubtitleAiEngine {
             ),
           );
         }
-        await _writeCheckpoint(checkpoint, end, cues);
         offset = end;
+        batchesSinceCheckpoint++;
+        if (offset >= source.length ||
+            batchesSinceCheckpoint >= _checkpointBatchInterval ||
+            checkpointClock.elapsed >= _checkpointTimeInterval) {
+          await _writeCheckpoint(checkpoint, offset, cues);
+          lastPersistedOffset = offset;
+          batchesSinceCheckpoint = 0;
+          checkpointClock.reset();
+        }
         final fraction = cues.length / source.length;
         onProgress?.call(
           SubtitleTaskProgress(
@@ -299,8 +314,16 @@ class SubtitleAiEngine {
           ),
         );
       }
+      completedNormally = true;
     } finally {
       request.cancel();
+      if (!completedNormally && offset > lastPersistedOffset) {
+        try {
+          await _writeCheckpoint(checkpoint, offset, cues);
+        } catch (_) {
+          // Preserve the original failure or cancellation.
+        }
+      }
     }
     return SubtitleDraft(
       cues: cues,
@@ -540,7 +563,7 @@ class _SubtitleWorker {
   }
 
   Future<void> feedScriptAlignment(
-    Float32List pcm,
+    TransferableTypedData pcm,
     double start,
     double duration,
   ) async {
@@ -613,7 +636,9 @@ Future<void> _workerMain(List<Object> args) async {
             reply!.send([true, null]);
           case 'feedScriptAlignment':
             final data = command[2] as List;
-            final pcm = data[0] as Float32List;
+            final pcm = (data[0] as TransferableTypedData)
+                .materialize()
+                .asFloat32List();
             final start = data[1] as double;
             final duration = data[2] as double;
             final (_, logits) = asr.transcribeWithLogits(pcm);

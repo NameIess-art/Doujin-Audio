@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:path/path.dart' as path;
 
@@ -47,6 +49,7 @@ final class LibraryMetadataCoordinator {
 
   static const _backupRestoreAuthoritativeKey =
       'backup_restore_authoritative_v1';
+  static const _durationDocumentSyncKey = 'audio_detail_duration_document_v1';
 
   final LibraryPersistenceRepository _databaseRepository;
   final AudioDetailCacheService _detailCacheService;
@@ -324,13 +327,50 @@ final class LibraryMetadataCoordinator {
         (await waitForIdle?.call() ?? true) && _isCurrent(epoch);
     if (!await checkpoint()) return;
     final targetsByKey = <String, AudioDetailTarget>{};
-    final tracks = List<MusicTrack>.of(_service.library);
-    for (final track in tracks) {
+    var cachedRootsGeneration = -1;
+    final folderTargetCache =
+        <String, ({AudioDetailTarget target, String key})>{};
+    ({AudioDetailTarget target, String key}) resolveTarget(MusicTrack track) {
+      if (_service.libraryDerivedGeneration != cachedRootsGeneration) {
+        folderTargetCache.clear();
+        cachedRootsGeneration = _service.libraryDerivedGeneration;
+      }
+      final groupKey = track.groupKey;
+      if (!track.isSingle &&
+          groupKey.isNotEmpty &&
+          groupKey != LibraryOrganizer.singleFilesGroupKey) {
+        return folderTargetCache.putIfAbsent(groupKey, () {
+          final target = targetForTrack(track);
+          return (target: target, key: _targetKey(target));
+        });
+      }
       final target = targetForTrack(track);
-      final key = _targetKey(target);
-      targetsByKey.putIfAbsent(key, () => target);
+      return (target: target, key: _targetKey(target));
+    }
+
+    final tracks = List<MusicTrack>.of(_service.library);
+    final slice = Stopwatch()..start();
+    for (final track in tracks) {
+      final resolved = resolveTarget(track);
+      targetsByKey.putIfAbsent(resolved.key, () => resolved.target);
+      if (slice.elapsedMicroseconds >= 4000) {
+        await Future<void>.delayed(Duration.zero);
+        if (!await checkpoint()) return;
+        slice.reset();
+      }
     }
     if (targetsByKey.isEmpty) return;
+    final settings = await _databaseRepository.loadAppSettings([
+      _backupRestoreAuthoritativeKey,
+      _durationDocumentSyncKey,
+    ]);
+    final syncSetting = settings[_durationDocumentSyncKey];
+    final synchronized = syncSetting == null
+        ? <String, int>{}
+        : await _readDurationDocumentSync(syncSetting);
+    final previousSyncCount = synchronized.length;
+    synchronized.removeWhere((key, _) => !targetsByKey.containsKey(key));
+    var syncChanged = synchronized.length != previousSyncCount;
     final targets = targetsByKey.values.toList(growable: false);
     final loadResults = <AudioDetailLoadResult>[];
     for (var start = 0; start < targets.length; start += 64) {
@@ -349,10 +389,7 @@ final class LibraryMetadataCoordinator {
     if (missing.isNotEmpty) {
       if (!await checkpoint()) return;
       final databaseIsAuthoritative =
-          await _databaseRepository.loadAppSetting(
-            _backupRestoreAuthoritativeKey,
-          ) ==
-          '1';
+          settings[_backupRestoreAuthoritativeKey] == '1';
       if (!databaseIsAuthoritative) {
         final importedDetails = <String, AudioDetail>{};
         for (var start = 0; start < missing.length; start += 64) {
@@ -379,30 +416,49 @@ final class LibraryMetadataCoordinator {
       }
       if (!_isCurrent(epoch)) return;
     }
+    var didUpdateTrackDurations = false;
     try {
-      final probe = await _probeDurations(
+      await _probeDurations(
         tracks,
         durationReader,
         epoch: epoch,
         waitForIdle: waitForIdle,
+        commitBatch: (batch) => _commitDurations(
+          batch,
+          epoch,
+          notify: false,
+          invalidateSnapshots: false,
+          onUpdated: () => didUpdateTrackDurations = true,
+        ),
       );
       if (!await checkpoint()) return;
-      if (!await _commitDurations(probe.updatedTracks, epoch, notify: false)) {
-        return;
-      }
+      final currentLibrary = List<MusicTrack>.of(_service.library);
       final tracksByTargetKey = <String, List<MusicTrack>>{};
-      for (final track in _service.library) {
-        final key = _targetKey(targetForTrack(track));
+      slice.reset();
+      for (final track in currentLibrary) {
+        final key = resolveTarget(track).key;
         tracksByTargetKey.putIfAbsent(key, () => <MusicTrack>[]).add(track);
+        if (slice.elapsedMicroseconds >= 4000) {
+          await Future<void>.delayed(Duration.zero);
+          if (!await checkpoint()) return;
+          slice.reset();
+        }
       }
       for (var index = 0; index < targets.length; index++) {
         if (!await checkpoint()) return;
         final detail = loadResults[index].detail;
         final targetKey = _targetKey(detail.target);
+        final latest =
+            _detailCacheService.resolvedDetail(detail.target) ?? detail;
+        if (latest.duration case final known?
+            when synchronized[targetKey] == known.inMilliseconds) {
+          continue;
+        }
+        if (synchronized.remove(targetKey) != null) syncChanged = true;
         final currentTracks = <MusicTrack>[
           for (final track in tracksByTargetKey[targetKey] ?? <MusicTrack>[])
             if (_service.libraryByPath[track.path] case final current?)
-              if (_targetKey(targetForTrack(current)) == targetKey) current,
+              if (resolveTarget(current).key == targetKey) current,
         ];
         if (currentTracks.isEmpty) continue;
         var total = Duration.zero;
@@ -411,22 +467,77 @@ final class LibraryMetadataCoordinator {
           if (track.duration <= Duration.zero) hasUnknown = true;
           total += track.duration;
         }
-        final latest =
-            _detailCacheService.resolvedDetail(detail.target) ?? detail;
         final duration =
             latest.duration ??
             (!hasUnknown && total > Duration.zero ? total : null);
         if (duration != null) {
-          await saveMissingDuration(
+          final result = await saveMissingDuration(
             latest.target,
             duration,
             deferCategoryUpdate: true,
             skipSynchronizedDocument: true,
           );
+          if (!result.documentFailed) {
+            synchronized[targetKey] = result.detail.duration!.inMilliseconds;
+            syncChanged = true;
+          }
         }
       }
     } finally {
-      if (_isCurrent(epoch)) flushMetadataUpdates();
+      if (_isCurrent(epoch)) {
+        if (didUpdateTrackDurations) {
+          _service.markStructureChanged();
+          _snapshotCacheService.markStructureChanged();
+        }
+        flushMetadataUpdates();
+        if (syncChanged) {
+          await _persistDurationDocumentSync(synchronized, epoch);
+        }
+      }
+    }
+  }
+
+  static Future<Map<String, int>> _readDurationDocumentSync(String value) =>
+      Isolate.run(() => _decodeDurationDocumentSync(value));
+
+  static Map<String, int> _decodeDurationDocumentSync(String value) {
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is Map<String, dynamic>) {
+        return {
+          for (final entry in decoded.entries)
+            if (entry.value case final int duration when duration > 0)
+              entry.key: duration,
+        };
+      }
+    } on FormatException {
+      // The marker is an optimization and can be regenerated from source docs.
+    }
+    return {};
+  }
+
+  static Future<String> _encodeDurationDocumentSync(Map<String, int> values) =>
+      Isolate.run(() => jsonEncode(values));
+
+  Future<void> _persistDurationDocumentSync(
+    Map<String, int> synchronized,
+    int epoch,
+  ) async {
+    try {
+      final encoded = synchronized.isEmpty
+          ? null
+          : await _encodeDurationDocumentSync(synchronized);
+      if (!_isCurrent(epoch)) return;
+      await _databaseRepository.saveAppSetting(
+        _durationDocumentSyncKey,
+        encoded,
+      );
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'library_duration_document_checkpoint_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -511,6 +622,7 @@ final class LibraryMetadataCoordinator {
     Future<Duration?> Function(String path)? durationReader, {
     required int epoch,
     Future<bool> Function()? waitForIdle,
+    Future<bool> Function(List<MusicTrack>)? commitBatch,
   }) async {
     if (tracks.isEmpty || !_isCurrent(epoch)) {
       return (totalDuration: null, updatedTracks: const <MusicTrack>[]);
@@ -543,6 +655,7 @@ final class LibraryMetadataCoordinator {
 
     final updated = <MusicTrack>[];
     const concurrency = 2;
+    const commitBatchSize = 64;
     for (var start = 0; start < missing.length; start += concurrency) {
       if (!(await waitForIdle?.call() ?? true) || !_isCurrent(epoch)) {
         return (totalDuration: null, updatedTracks: const <MusicTrack>[]);
@@ -568,6 +681,16 @@ final class LibraryMetadataCoordinator {
           );
         }
       }
+      if (commitBatch != null && updated.length >= commitBatchSize) {
+        if (!await commitBatch(updated)) {
+          return (totalDuration: null, updatedTracks: const <MusicTrack>[]);
+        }
+        updated.clear();
+      }
+    }
+    if (commitBatch != null && updated.isNotEmpty) {
+      await commitBatch(updated);
+      updated.clear();
     }
     return (
       totalDuration: !hasUnknown && total > Duration.zero ? total : null,
@@ -579,38 +702,28 @@ final class LibraryMetadataCoordinator {
     List<MusicTrack> tracks,
     int epoch, {
     bool notify = true,
+    bool invalidateSnapshots = true,
+    void Function()? onUpdated,
   }) async {
     if (!_isCurrent(epoch)) return false;
     if (tracks.isEmpty) return true;
     // Probing is asynchronous; retain edits made to a track while it ran.
-    final updated = <MusicTrack>[
+    final durations = <String, Duration>{
       for (final track in tracks)
         if (_service.libraryByPath[track.path] case final current?)
-          if (current.duration <= Duration.zero)
-            current.copyWith(duration: track.duration),
-    ];
-    if (updated.isEmpty) return true;
-    await _databaseRepository.updateTrackDurations({
-      for (final track in updated) track.path: track.duration,
-    });
+          if (current.duration <= Duration.zero) current.path: track.duration,
+    };
+    if (durations.isEmpty) return true;
+    await _databaseRepository.updateTrackDurations(durations);
     if (!_isCurrent(epoch)) return false;
-    var changed = false;
-    for (final track in updated) {
-      final current = _service.libraryByPath[track.path];
-      final index = _service.libraryIndexByPath[track.path];
-      if (current == null ||
-          index == null ||
-          current.duration > Duration.zero) {
-        continue;
-      }
-      final next = current.copyWith(duration: track.duration);
-      _service.library[index] = next;
-      _service.libraryByPath[track.path] = next;
-      changed = true;
+    if (!_service.fillMissingTrackDurations(
+      durations,
+      notifyStructure: invalidateSnapshots,
+    )) {
+      return true;
     }
-    if (!changed) return true;
-    _service.rebuildLibraryIndexes();
-    _snapshotCacheService.markStructureChanged();
+    onUpdated?.call();
+    if (invalidateSnapshots) _snapshotCacheService.markStructureChanged();
     if (notify) _syncState();
     return true;
   }

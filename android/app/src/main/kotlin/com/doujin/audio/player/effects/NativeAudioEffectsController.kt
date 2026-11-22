@@ -35,7 +35,7 @@ internal class NativeAudioEffectsController(
 
     fun apply(effects: NativeAudioEffects): Boolean {
         val previouslyProcessingStereo = volumeBalanceAudioProcessor.controls.isActive
-        if (effects.frontBack != 0f && spatialResponses == null) {
+        if (shouldProcessFrontBack(effects.frontBack) && spatialResponses == null) {
             spatialResponses = loadSpatialResponses?.invoke()
         }
         channelSwapEnabled = effects.channelSwapEnabled
@@ -54,7 +54,7 @@ internal class NativeAudioEffectsController(
     }
 
     fun release() {
-        if (frontBack == 0f) {
+        if (!shouldProcessFrontBack(frontBack)) {
             spatialResponses = null
             syncProcessors()
         }

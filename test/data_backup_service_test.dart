@@ -62,6 +62,105 @@ void main() {
   });
 
   test(
+    'file-backed snapshot copies only the app schema and keeps the source',
+    () async {
+      await sourceDatabase.rawQuery('PRAGMA journal_mode = WAL');
+      await sourceDatabase.execute('CREATE TABLE unrelated_table(value TEXT)');
+      await sourceDatabase.insert('unrelated_table', {'value': 'source-only'});
+      await appDatabase.saveAppSetting('user_setting', 'keep');
+
+      await expectLater(
+        appDatabase.createPortableSnapshot(sourceDatabase.path),
+        throwsArgumentError,
+      );
+      final file = await appDatabase.createPortableSnapshot(
+        '${temporaryDirectory.path}/portable.db',
+      );
+      final portable = await openDatabase(file.path, readOnly: true);
+      try {
+        expect(await portable.getVersion(), AppDatabase.schemaVersion);
+        expect(
+          await AppDatabase.test(portable).loadAppSetting('user_setting'),
+          'keep',
+        );
+        expect(
+          await portable.query(
+            'sqlite_master',
+            where: 'name = ?',
+            whereArgs: ['unrelated_table'],
+          ),
+          isEmpty,
+        );
+        expect(await sourceDatabase.query('unrelated_table'), [
+          {'value': 'source-only'},
+        ]);
+        expect(
+          (await sourceDatabase.rawQuery(
+            'PRAGMA journal_mode',
+          )).single.values.single,
+          'wal',
+        );
+      } finally {
+        await portable.close();
+      }
+    },
+  );
+
+  test(
+    'file-backed snapshot does not acquire a write lock on the live WAL database',
+    () async {
+      await sourceDatabase.rawQuery('PRAGMA journal_mode = WAL');
+      await appDatabase.saveAppSetting('committed_setting', 'before_txn');
+
+      final writerLocked = Completer<void>();
+      final releaseWriter = Completer<void>();
+      final writerDone = sourceDatabase.transaction((txn) async {
+        await txn.insert('app_kv_settings', {
+          'key': 'uncommitted_setting',
+          'value': 'in_flight',
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+        writerLocked.complete();
+        await releaseWriter.future;
+      });
+      await writerLocked.future;
+
+      late final File snapshot;
+      try {
+        // Under BEGIN IMMEDIATE this would deadlock/block against the live
+        // writer's RESERVED lock until busy_timeout fails.
+        snapshot = await appDatabase
+            .createPortableSnapshot(
+              '${temporaryDirectory.path}/concurrent_portable.db',
+            )
+            .timeout(const Duration(seconds: 3));
+      } finally {
+        releaseWriter.complete();
+        await writerDone;
+      }
+
+      final portable = await openDatabase(
+        snapshot.path,
+        readOnly: true,
+        singleInstance: false,
+      );
+      try {
+        expect(
+          await AppDatabase.test(portable).loadAppSetting('committed_setting'),
+          'before_txn',
+        );
+        expect(
+          await AppDatabase.test(
+            portable,
+          ).loadAppSetting('uncommitted_setting'),
+          isNull,
+        );
+      } finally {
+        await portable.close();
+      }
+    },
+  );
+
+  test(
     'export waits for queued settings and theme before taking preferences',
     () async {
       final settingsGate = Completer<void>();
@@ -580,16 +679,25 @@ void main() {
 
         await seedListening(sourceDatabase, 'backup', backupTime);
         await seedInterest(sourceDatabase, 'tag', {
+          'separateCatalog': true,
           'manualInterests': ['backup'],
           'updatedAtMs': backupTime,
         });
         await seedInterest(sourceDatabase, 'voice_actor', {
+          'separateCatalog': true,
           'excluded': ['backup'],
           'updatedAtMs': backupTime,
         });
         await seedInterest(sourceDatabase, 'circle', {
+          'separateCatalog': true,
           'learned': {'backup': 1},
         });
+        for (final kind in ['tag', 'voice_actor', 'circle']) {
+          await appDatabase.saveAppSetting(
+            'asmr_${kind}_preferences_v1_catalog',
+            jsonEncode({'tags': <Object>[], 'complete': true}),
+          );
+        }
         await appDatabase.saveAppSetting('ordinary_setting', 'backup');
 
         final exporter = DataBackupService(
@@ -615,16 +723,24 @@ void main() {
         await seedListening(local, 'local', localTime);
         final localAppDatabase = AppDatabase.test(local);
         await seedInterest(local, 'tag', {
+          'separateCatalog': true,
           'manualInterests': <String>[],
           'updatedAtMs': backupTime + 1,
         });
         await seedInterest(local, 'voice_actor', {
+          'separateCatalog': true,
           'excluded': ['local'],
           'updatedAtMs': backupTime - 1,
         });
         await seedInterest(local, 'circle', {
           'learned': {'local': 2},
         });
+        for (final kind in ['tag', 'voice_actor']) {
+          await localAppDatabase.saveAppSetting(
+            'asmr_${kind}_preferences_v1_catalog',
+            jsonEncode({'tags': <Object>[], 'complete': false}),
+          );
+        }
         await localAppDatabase.saveAppSetting('ordinary_setting', 'local');
 
         final restorer = DataBackupService(
@@ -687,6 +803,24 @@ void main() {
         expect((await restoredInterest('voice_actor'))['excluded'], ['backup']);
         expect((await restoredInterest('circle'))['learned'], {'local': 2});
         expect(
+          await restoredAppDatabase.loadAppSetting(
+            'asmr_tag_preferences_v1_catalog',
+          ),
+          jsonEncode({'tags': <Object>[], 'complete': false}),
+        );
+        expect(
+          await restoredAppDatabase.loadAppSetting(
+            'asmr_voice_actor_preferences_v1_catalog',
+          ),
+          jsonEncode({'tags': <Object>[], 'complete': true}),
+        );
+        expect(
+          await restoredAppDatabase.loadAppSetting(
+            'asmr_circle_preferences_v1_catalog',
+          ),
+          isNull,
+        );
+        expect(
           await restoredAppDatabase.loadAppSetting('ordinary_setting'),
           'backup',
         );
@@ -694,7 +828,7 @@ void main() {
     );
   }
 
-  for (final schemaVersion in [8, 12, AppDatabase.schemaVersion]) {
+  for (final schemaVersion in [8, 12, 17, 18, AppDatabase.schemaVersion]) {
     test(
       'staged schema $schemaVersion backup restores database, preferences, and account',
       () async {
@@ -731,34 +865,80 @@ void main() {
           final legacyDatabase = await databaseFactoryFfi.openDatabase(
             legacyDatabaseFile.path,
           );
-          for (final table in ['asmr_works', 'asmr_work_lists', 'asmr_work_tags', 'asmr_work_voice_actors']) {
-            var sql = (await legacyDatabase.rawQuery("SELECT sql FROM sqlite_master WHERE name = ?", [table])).single['sql']! as String;
-            if (table == 'asmr_works') {
-              sql = sql.replaceFirst('work_key TEXT PRIMARY KEY,', '').replaceFirst('resources_json TEXT,', '').replaceFirst('id INTEGER NOT NULL,', 'id INTEGER PRIMARY KEY,');
-            } else {
-              sql = sql.replaceFirst('work_id TEXT NOT NULL', 'work_id INTEGER NOT NULL');
+          await legacyDatabase.execute('DROP INDEX idx_queue_work_path_match');
+          await legacyDatabase.execute('DROP INDEX idx_queue_track_path_match');
+          for (final table in [
+            'playback_queue_entries',
+            'playback_queue_entry_tracks',
+          ]) {
+            await legacyDatabase.execute(
+              'ALTER TABLE $table DROP COLUMN path_match_key',
+            );
+          }
+          if (schemaVersion < 15) {
+            for (final table in [
+              'asmr_works',
+              'asmr_work_lists',
+              'asmr_work_tags',
+              'asmr_work_voice_actors',
+            ]) {
+              var sql =
+                  (await legacyDatabase.rawQuery(
+                        "SELECT sql FROM sqlite_master WHERE name = ?",
+                        [table],
+                      )).single['sql']!
+                      as String;
+              if (table == 'asmr_works') {
+                sql = sql
+                    .replaceFirst('work_key TEXT PRIMARY KEY,', '')
+                    .replaceFirst('resources_json TEXT,', '')
+                    .replaceFirst(
+                      'id INTEGER NOT NULL,',
+                      'id INTEGER PRIMARY KEY,',
+                    );
+              } else {
+                sql = sql.replaceFirst(
+                  'work_id TEXT NOT NULL',
+                  'work_id INTEGER NOT NULL',
+                );
+              }
+              await legacyDatabase.execute('DROP TABLE $table');
+              await legacyDatabase.execute(sql);
             }
-            await legacyDatabase.execute('DROP TABLE $table');
-            await legacyDatabase.execute(sql);
+          }
+          if (schemaVersion == 17) {
+            await legacyDatabase.execute('DROP INDEX idx_library_entries_path');
+            await legacyDatabase.execute(
+              'DROP INDEX idx_listening_history_recent',
+            );
+            await legacyDatabase.execute(
+              'CREATE INDEX idx_listening_history_recent '
+              'ON listening_history(last_played_at_ms DESC, work_key)',
+            );
           }
           await legacyDatabase.setVersion(schemaVersion);
-          final legacyIndexes = schemaVersion == 8
-              ? {
-                  'idx_track_scan_generation':
-                      'track_scan_info(scan_generation)',
-                  'idx_track_playback_last_played':
-                      'track_playback_state(last_played_at_ms)',
-                  'idx_track_playback_favorite':
-                      'track_playback_state(is_favorite)',
-                }
-              : {
-                  'idx_session_playback_session':
-                      'session_playback_state(session_id)',
-                  'idx_playback_queue_tracks_entry':
-                      'playback_queue_entry_tracks(session_id, entry_id, sort_order)',
-                  'idx_audio_details_target':
-                      'audio_details(target_type, target_path)',
-                };
+          final legacyIndexes = switch (schemaVersion) {
+            8 => {
+              'idx_track_scan_generation': 'track_scan_info(scan_generation)',
+              'idx_track_playback_last_played':
+                  'track_playback_state(last_played_at_ms)',
+              'idx_track_playback_favorite':
+                  'track_playback_state(is_favorite)',
+            },
+            12 => {
+              'idx_session_playback_session':
+                  'session_playback_state(session_id)',
+              'idx_playback_queue_tracks_entry':
+                  'playback_queue_entry_tracks(session_id, entry_id, sort_order)',
+              'idx_audio_details_target':
+                  'audio_details(target_type, target_path)',
+            },
+            17 => {
+              'idx_library_entries_library': 'library_entries(library_path)',
+              'idx_tracks_favorite': 'track_playback_state(is_favorite)',
+            },
+            _ => <String, String>{},
+          };
           for (final entry in legacyIndexes.entries) {
             await legacyDatabase.execute(
               'CREATE INDEX ${entry.key} ON ${entry.value}',
@@ -850,8 +1030,10 @@ void main() {
           indexes,
           containsAll([
             'idx_tracks_scan_generation',
-            'idx_tracks_last_played_at',
-            'idx_tracks_favorite',
+            'idx_library_entries_path',
+            'idx_listening_history_recent',
+            'idx_queue_track_path_match',
+            'idx_queue_work_path_match',
           ]),
         );
         expect(
@@ -859,6 +1041,8 @@ void main() {
             'idx_track_scan_generation',
             'idx_track_playback_last_played',
             'idx_track_playback_favorite',
+            'idx_tracks_favorite',
+            'idx_library_entries_library',
             'idx_session_playback_session',
             'idx_playback_queue_tracks_entry',
             'idx_audio_details_target',

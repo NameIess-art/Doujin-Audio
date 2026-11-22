@@ -84,12 +84,19 @@ void main() {
           expect(invalid?['ok'], isFalse);
           expect(invalid?['errorCode'], 'invalid_argument');
         }
-        final systemProxy = await network.invokeMapMethod<String, Object?>(
-          'resolveSystemProxy',
-          {'url': 'https://example.com/'},
+        final systemProxies = await Future.wait(
+          List.generate(
+            12,
+            (index) => network.invokeMapMethod<String, Object?>(
+              'resolveSystemProxy',
+              {'url': 'https://example.com/proxy-check/$index'},
+            ),
+          ),
         );
-        expect(systemProxy?['ok'], isTrue);
-        expect(systemProxy?['value'], isA<String>());
+        for (final proxy in systemProxies) {
+          expect(proxy?['ok'], isTrue);
+          expect(proxy?['value'], isA<String>());
+        }
         sqfliteFfiInit();
         final database = await databaseFactoryFfi.openDatabase(
           inMemoryDatabasePath,

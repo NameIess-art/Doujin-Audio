@@ -265,21 +265,21 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
       var sessionChanged = false;
       final customQueueTracks = session.customQueueTracks;
       if (customQueueTracks != null) {
-        var customQueueChanged = false;
-        final tracks = customQueueTracks
-            .map((track) {
-              if (!PathMatcher.equalsNormalized(
-                track.path,
-                updatedTrack.path,
-              )) {
-                return track;
-              }
-              customQueueChanged = true;
-              return updatedTrack;
-            })
-            .toList(growable: false);
-        if (customQueueChanged) {
-          session.customQueueTracks = List<MusicTrack>.unmodifiable(tracks);
+        List<MusicTrack>? nextCustomTracks;
+        for (var i = 0; i < customQueueTracks.length; i++) {
+          if (!PathMatcher.equalsNormalized(
+            customQueueTracks[i].path,
+            updatedTrack.path,
+          )) {
+            continue;
+          }
+          nextCustomTracks ??= List<MusicTrack>.of(customQueueTracks);
+          nextCustomTracks[i] = updatedTrack;
+        }
+        if (nextCustomTracks != null) {
+          session.customQueueTracks = List<MusicTrack>.unmodifiable(
+            nextCustomTracks,
+          );
           changed = true;
           sessionChanged = true;
         }
@@ -292,38 +292,39 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
         }
         continue;
       }
-      var queueChanged = false;
-      final entries = queue.entries
-          .map((entry) {
-            var entryChanged = false;
-            final tracks = entry.tracks
-                .map((track) {
-                  if (!PathMatcher.equalsNormalized(
-                    track.path,
-                    updatedTrack.path,
-                  )) {
-                    return track;
-                  }
-                  entryChanged = true;
-                  queueChanged = true;
-                  return updatedTrack;
-                })
-                .toList(growable: false);
-            if (!entryChanged) return entry;
-            return PlaybackQueueEntry(
-              id: entry.id,
-              kind: entry.kind,
-              title: entry.kind == PlaybackQueueEntryKind.track
-                  ? updatedTrack.displayName
-                  : entry.title,
-              tracks: List<MusicTrack>.unmodifiable(tracks),
-              workRootPath: entry.workRootPath,
-            );
-          })
-          .toList(growable: false);
-      if (queueChanged) {
+      List<PlaybackQueueEntry>? nextEntries;
+      for (var entryIndex = 0; entryIndex < queue.entries.length; entryIndex++) {
+        final entry = queue.entries[entryIndex];
+        List<MusicTrack>? nextEntryTracks;
+        for (
+          var trackIndex = 0;
+          trackIndex < entry.tracks.length;
+          trackIndex++
+        ) {
+          if (!PathMatcher.equalsNormalized(
+            entry.tracks[trackIndex].path,
+            updatedTrack.path,
+          )) {
+            continue;
+          }
+          nextEntryTracks ??= List<MusicTrack>.of(entry.tracks);
+          nextEntryTracks[trackIndex] = updatedTrack;
+        }
+        if (nextEntryTracks == null) continue;
+        nextEntries ??= List<PlaybackQueueEntry>.of(queue.entries);
+        nextEntries[entryIndex] = PlaybackQueueEntry(
+          id: entry.id,
+          kind: entry.kind,
+          title: entry.kind == PlaybackQueueEntryKind.track
+              ? updatedTrack.displayName
+              : entry.title,
+          tracks: List<MusicTrack>.unmodifiable(nextEntryTracks),
+          workRootPath: entry.workRootPath,
+        );
+      }
+      if (nextEntries != null) {
         session.playbackQueue = queue.copyWith(
-          entries: List.unmodifiable(entries),
+          entries: List<PlaybackQueueEntry>.unmodifiable(nextEntries),
         );
         sessionChanged = true;
         changed = true;
@@ -336,10 +337,54 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     return changed;
   }
 
+  void _rebuildRetargetedPathIndexes() {
+    _retargetedForwardIndex.clear();
+    _retargetedReverseIndex.clear();
+    var hasNonRemoteSources = false;
+    for (final entry in _retargetedPathAliases.entries) {
+      final source = entry.key;
+      final target = entry.value;
+      final pair = (source: source, target: target);
+      _retargetedForwardIndex[PathMatcher.equivalenceKey(source)] = pair;
+      if (!PathMatcher.equalsNormalized(source, target)) {
+        if (!PathMatcher.isRemoteUri(source)) {
+          hasNonRemoteSources = true;
+        }
+        _retargetedReverseIndex.putIfAbsent(
+          PathMatcher.equivalenceKey(target),
+          () => pair,
+        );
+      }
+    }
+    _hasNonRemoteRetargetSources = hasNonRemoteSources;
+  }
+
   void rememberRetargetedPath(String oldPath, String newPath) {
     final normalizedOldPath = PathMatcher.normalize(oldPath);
     final normalizedNewPath = PathMatcher.normalize(newPath);
     if (PathMatcher.equalsNormalized(normalizedOldPath, normalizedNewPath)) {
+      return;
+    }
+    final oldKey = PathMatcher.equivalenceKey(normalizedOldPath);
+    final newKey = PathMatcher.equivalenceKey(normalizedNewPath);
+    if (PathMatcher.isRemoteUri(normalizedOldPath) &&
+        !_hasNonRemoteRetargetSources &&
+        !_retargetedForwardIndex.containsKey(oldKey) &&
+        !_retargetedReverseIndex.containsKey(oldKey) &&
+        !_retargetedForwardIndex.containsKey(newKey) &&
+        !_retargetedReverseIndex.containsKey(newKey)) {
+      // Disjoint remote-to-local playback cache aliases cannot intersect any
+      // existing alias prefix, so update the forward and reverse indexes in O(1).
+      _retargetedPathAliases[normalizedOldPath] = normalizedNewPath;
+      _retargetedPathAliases[normalizedNewPath] = normalizedNewPath;
+      final pair = (source: normalizedOldPath, target: normalizedNewPath);
+      _retargetedForwardIndex[oldKey] = pair;
+      _retargetedForwardIndex[newKey] = (
+        source: normalizedNewPath,
+        target: normalizedNewPath,
+      );
+      _retargetedReverseIndex[newKey] = pair;
+      _retargetRevision++;
       return;
     }
     final aliases = <String, String>{};
@@ -368,6 +413,7 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     _retargetedPathAliases
       ..clear()
       ..addAll(aliases);
+    _rebuildRetargetedPathIndexes();
     _retargetRevision++;
   }
 
@@ -376,10 +422,33 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
       return PathMatcher.normalize(value);
     }
     final current = PathMatcher.normalize(value);
+    final exact = _retargetedForwardIndex[PathMatcher.equivalenceKey(current)];
+    if (exact != null) return exact.target;
+    if (PathMatcher.isRemoteUri(current) || !_hasNonRemoteRetargetSources) {
+      return current;
+    }
+    if (!PathMatcher.isContentUri(current)) {
+      var ancestor = PathMatcher.parentPath(current);
+      while (ancestor != null) {
+        final match =
+            _retargetedForwardIndex[PathMatcher.equivalenceKey(ancestor)];
+        if (match != null) {
+          return PathMatcher.normalize(
+            PathMatcher.replaceWithinOrEqual(
+              current,
+              match.source,
+              match.target,
+            ),
+          );
+        }
+        ancestor = PathMatcher.parentPath(ancestor);
+      }
+      return current;
+    }
     String? bestMatch;
     String? nextValue;
     for (final entry in _retargetedPathAliases.entries) {
-      if (!PathMatcher.isWithinOrEqual(current, entry.key)) continue;
+      if (!PathMatcher.isWithinOrEqualNormalized(current, entry.key)) continue;
       if (bestMatch == null || entry.key.length > bestMatch.length) {
         bestMatch = entry.key;
         nextValue = entry.value;
@@ -394,11 +463,34 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
   String? originalPathForRetargeted(String value) {
     if (value.isEmpty || _retargetedPathAliases.isEmpty) return null;
     final current = PathMatcher.normalize(value);
+    final exact = _retargetedReverseIndex[PathMatcher.equivalenceKey(current)];
+    if (exact != null) return exact.source;
+    if (PathMatcher.isRemoteUri(current) || !_hasNonRemoteRetargetSources) {
+      return null;
+    }
+    if (!PathMatcher.isContentUri(current)) {
+      var ancestor = PathMatcher.parentPath(current);
+      while (ancestor != null) {
+        final match =
+            _retargetedReverseIndex[PathMatcher.equivalenceKey(ancestor)];
+        if (match != null && !PathMatcher.isRemoteUri(match.source)) {
+          return PathMatcher.normalize(
+            PathMatcher.replaceWithinOrEqual(
+              current,
+              match.target,
+              match.source,
+            ),
+          );
+        }
+        ancestor = PathMatcher.parentPath(ancestor);
+      }
+      return null;
+    }
     String? bestMatch;
     String? nextValue;
     for (final entry in _retargetedPathAliases.entries) {
       if (PathMatcher.equalsNormalized(entry.key, entry.value) ||
-          !PathMatcher.isWithinOrEqual(current, entry.value)) {
+          !PathMatcher.isWithinOrEqualNormalized(current, entry.value)) {
         continue;
       }
       if (bestMatch == null || entry.value.length > bestMatch.length) {
@@ -413,6 +505,7 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
   }
 
   Future<void> validatePlaybackCachePaths(Iterable<String> paths) async {
+    if (_retargetedPathAliases.isEmpty) return;
     final sources = <String>{};
     for (final value in paths) {
       final source = PathMatcher.isRemoteUri(value)
@@ -422,6 +515,7 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
         sources.add(source);
       }
     }
+    var removedAny = false;
     for (final source in sources) {
       final cached = resolveRetargetedPath(source);
       if (cached.contains('://')) continue;
@@ -438,13 +532,20 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
           )) {
         _retargetedPathAliases.remove(cached);
       }
+      removedAny = true;
       _retargetRevision++;
+    }
+    if (removedAny) {
+      _rebuildRetargetedPathIndexes();
     }
   }
 
   void clearRetargetedPaths() {
     if (_retargetedPathAliases.isEmpty) return;
     _retargetedPathAliases.clear();
+    _retargetedForwardIndex.clear();
+    _retargetedReverseIndex.clear();
+    _hasNonRemoteRetargetSources = false;
     _retargetRevision++;
   }
 
@@ -526,47 +627,69 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
       final previousRetargetedTracks = retargetedTracks;
       final customTracks = session.customQueueTracks;
       if (customTracks != null) {
-        final tracks = customTracks.map(retargetTrack).toList(growable: false);
-        if (retargetedTracks != previousRetargetedTracks) {
-          session.customQueueTracks = List.unmodifiable(tracks);
+        List<MusicTrack>? nextCustomTracks;
+        for (var i = 0; i < customTracks.length; i++) {
+          final track = customTracks[i];
+          final retargeted = retargetTrack(track);
+          if (identical(retargeted, track)) continue;
+          nextCustomTracks ??= List<MusicTrack>.of(customTracks);
+          nextCustomTracks[i] = retargeted;
+        }
+        if (nextCustomTracks != null) {
+          session.customQueueTracks = List<MusicTrack>.unmodifiable(
+            nextCustomTracks,
+          );
         }
       }
       final queue = session.playbackQueue;
       if (queue != null) {
-        final entries = queue.entries
-            .map((entry) {
-              final tracks = entry.tracks
-                  .map(retargetTrack)
-                  .toList(growable: false);
-              final oldRoot = entry.workRootPath;
-              final root = oldRoot == null
-                  ? null
-                  : PathMatcher.replaceWithinOrEqual(oldRoot, oldPath, newPath);
-              final rootChanged = root != oldRoot;
-              final tracksChanged = tracks.indexed.any(
-                (item) => !identical(item.$2, entry.tracks[item.$1]),
-              );
-              if (!rootChanged && !tracksChanged) return entry;
-              changed = true;
-              return PlaybackQueueEntry(
-                id: entry.id,
-                kind: entry.kind,
-                title:
-                    entry.kind == PlaybackQueueEntryKind.track &&
-                        tracks.isNotEmpty
-                    ? tracks.first.displayName
-                    : rootChanged
-                    ? PathDisplay.folderName(root!)
-                    : entry.title,
-                tracks: tracks,
-                workRootPath: root,
-              );
-            })
-            .toList(growable: false);
-        if (entries.indexed.any(
-          (item) => !identical(item.$2, queue.entries[item.$1]),
-        )) {
-          session.playbackQueue = queue.copyWith(entries: entries);
+        List<PlaybackQueueEntry>? nextEntries;
+        for (
+          var entryIndex = 0;
+          entryIndex < queue.entries.length;
+          entryIndex++
+        ) {
+          final entry = queue.entries[entryIndex];
+          List<MusicTrack>? nextEntryTracks;
+          for (
+            var trackIndex = 0;
+            trackIndex < entry.tracks.length;
+            trackIndex++
+          ) {
+            final track = entry.tracks[trackIndex];
+            final retargeted = retargetTrack(track);
+            if (identical(retargeted, track)) continue;
+            nextEntryTracks ??= List<MusicTrack>.of(entry.tracks);
+            nextEntryTracks[trackIndex] = retargeted;
+          }
+          final oldRoot = entry.workRootPath;
+          final root = oldRoot == null
+              ? null
+              : PathMatcher.replaceWithinOrEqual(oldRoot, oldPath, newPath);
+          final rootChanged = root != oldRoot;
+          if (!rootChanged && nextEntryTracks == null) continue;
+          changed = true;
+          final tracks = nextEntryTracks == null
+              ? entry.tracks
+              : List<MusicTrack>.unmodifiable(nextEntryTracks);
+          nextEntries ??= List<PlaybackQueueEntry>.of(queue.entries);
+          nextEntries[entryIndex] = PlaybackQueueEntry(
+            id: entry.id,
+            kind: entry.kind,
+            title:
+                entry.kind == PlaybackQueueEntryKind.track && tracks.isNotEmpty
+                ? tracks.first.displayName
+                : rootChanged
+                ? PathDisplay.folderName(root!)
+                : entry.title,
+            tracks: tracks,
+            workRootPath: root,
+          );
+        }
+        if (nextEntries != null) {
+          session.playbackQueue = queue.copyWith(
+            entries: List<PlaybackQueueEntry>.unmodifiable(nextEntries),
+          );
         }
       }
       final currentTrackRetargeted = PathMatcher.isWithinOrEqual(
@@ -733,8 +856,7 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
         ? SessionLoopMode.folderSequential
         : loopMode;
     session.currentQueueIndex = index;
-    session.nativePlaybackQueueCacheKey = null;
-    session.nativePlaybackQueueCache = null;
+    session.clearNativePlaybackQueueCache();
     session.lastPlayedAt = DateTime.now();
     _service.markActiveSessionsDirty();
     publishSessionActivated(session.id);

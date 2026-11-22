@@ -766,25 +766,23 @@ class _SessionVideoFullscreenPageState
                         return Stack(
                           fit: StackFit.expand,
                           children: [
-                            RepaintBoundary(
-                              child: SessionVideoBlurredBackdrop(
-                                child: AsyncLocalCoverImage(
-                                  onImageError: library
-                                      .coverArtworkCacheService
-                                      .reportArtworkReadFailure,
-                                  future: _coverFuture,
-                                  requestKey: (
-                                    activeSession.currentTrackPath,
-                                    coverRevision,
-                                  ),
-                                  initialPath: library
-                                      .resolvedPlaybackCoverPathForTrack(track),
-                                  retryFutureBuilder: () => library
-                                      .playbackCoverPathFutureForTrack(track),
-                                  cacheWidth: coverCacheWidth,
-                                  useDefaultCacheWidth: coverCacheWidth != null,
-                                  fit: BoxFit.cover,
+                            SessionVideoBlurredBackdrop(
+                              child: AsyncLocalCoverImage(
+                                onImageError: library
+                                    .coverArtworkCacheService
+                                    .reportArtworkReadFailure,
+                                future: _coverFuture,
+                                requestKey: (
+                                  activeSession.currentTrackPath,
+                                  coverRevision,
                                 ),
+                                initialPath: library
+                                    .resolvedPlaybackCoverPathForTrack(track),
+                                retryFutureBuilder: () => library
+                                    .playbackCoverPathFutureForTrack(track),
+                                cacheWidth: coverCacheWidth,
+                                useDefaultCacheWidth: coverCacheWidth != null,
+                                fit: BoxFit.cover,
                               ),
                             ),
                             if (isSessionVideoReady(activeSession, track))

@@ -18,14 +18,32 @@ class TargetCountdownBuilder extends StatefulWidget {
   State<TargetCountdownBuilder> createState() => _TargetCountdownBuilderState();
 }
 
-class _TargetCountdownBuilderState extends State<TargetCountdownBuilder> {
+class _TargetCountdownBuilderState extends State<TargetCountdownBuilder>
+    with WidgetsBindingObserver {
   Timer? _ticker;
   Duration _remaining = Duration.zero;
+  bool _tickerModeEnabled = true;
+  AppLifecycleState? _lifecycleState;
 
   @override
   void initState() {
     super.initState();
+    final binding = WidgetsBinding.instance;
+    _lifecycleState = binding.lifecycleState;
+    binding.addObserver(this);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _tickerModeEnabled = TickerMode.valuesOf(context).enabled;
     _syncTicker();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _lifecycleState = state;
+    _syncTicker(setStateIfChanged: true);
   }
 
   @override
@@ -42,20 +60,27 @@ class _TargetCountdownBuilderState extends State<TargetCountdownBuilder> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _stopTicker();
     super.dispose();
   }
 
-  void _syncTicker() {
-    _updateRemaining(setStateIfChanged: false);
-    if (widget.target == null) {
+  void _syncTicker({bool setStateIfChanged = false}) {
+    final visible =
+        _lifecycleState == null ||
+        _lifecycleState == AppLifecycleState.resumed ||
+        _lifecycleState == AppLifecycleState.inactive;
+    _updateRemaining(
+      setStateIfChanged: setStateIfChanged && _tickerModeEnabled && visible,
+    );
+    if (!_tickerModeEnabled || !visible || _remaining == Duration.zero) {
       _stopTicker();
       return;
     }
     if (_ticker?.isActive == true) return;
     _ticker = Timer.periodic(widget.tickInterval, (_) {
-      if (!mounted) return;
       _updateRemaining();
+      if (_remaining == Duration.zero) _stopTicker();
     });
   }
 
@@ -70,7 +95,7 @@ class _TargetCountdownBuilderState extends State<TargetCountdownBuilder> {
         ? Duration.zero
         : _remainingUntil(target, DateTime.now());
     if (next == _remaining) return;
-    if (setStateIfChanged && mounted) {
+    if (setStateIfChanged) {
       setState(() => _remaining = next);
     } else {
       _remaining = next;

@@ -6,12 +6,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/application/app_bootstrap_controller.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/presentation/app_bootstrap_host.dart';
+import 'package:doujin_audio/app/presentation/music_player_app.dart';
 import 'package:doujin_audio/app/presentation/onboarding_page.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';
+import 'package:doujin_audio/core/platform/app_lifecycle_platform_service.dart';
 import 'package:doujin_audio/core/widgets/app_brand_icon.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
+import 'package:doujin_audio/features/settings/application/app_update_service.dart';
+import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
+import 'package:doujin_audio/features/settings/presentation/settings_tab.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'support/app_runtime_test_fixture.dart';
 
 void main() {
   test('bootstrap attempts are single-flight', () async {
@@ -445,16 +452,13 @@ void main() {
       ),
     );
 
-    final context = tester.element(
-      find.byKey(const ValueKey<String>('app_bootstrap_loading')),
-    );
+    final shell = find.byKey(const ValueKey<String>('app_bootstrap_loading'));
+    final context = tester.element(shell);
     final theme = Theme.of(context);
     expect(theme.brightness, Brightness.dark);
     expect(theme.scaffoldBackgroundColor, const Color(0xFF141112));
-    expect(
-      tester.widget<MaterialApp>(find.byType(MaterialApp)).color,
-      const Color(0xFF141112),
-    );
+    expect(tester.widget<ColoredBox>(shell).color, const Color(0xFF141112));
+    expect(find.byType(MaterialApp), findsNothing);
     expect(find.byType(AppBrandIcon), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(find.text('Starting Doujin Audio…'), findsNothing);
@@ -521,4 +525,163 @@ void main() {
     expect(theme.brightness, Brightness.light);
     expect(theme.scaffoldBackgroundColor, const Color(0xFFF5FFF9));
   });
+
+  group('system accent discovery under default settings', () {
+    AppRuntimeTestFixture.initialize();
+
+    testWidgets(
+      'default settings still discover system accent color after first frame and show option in picker',
+      (tester) async {
+        SharedPreferences.setMockInitialValues(const <String, Object>{});
+        await AppPreferences.init();
+        const systemBlue = Color(0xFF1E88E5);
+        final accentCompleter = Completer<int?>();
+        var accentLookups = 0;
+        final lifecycleService = _FakeSystemAccentLifecycleService(
+          onGetSystemAccentColor: () {
+            accentLookups++;
+            return accentCompleter.future;
+          },
+        );
+        final themeProvider = ThemeProvider();
+        expect(themeProvider.useSystemAccentColor, isFalse);
+        expect(themeProvider.systemAccentColor, isNull);
+
+        final harness = AppRuntimeWidgetTestFixture();
+        addTearDown(harness.dispose);
+        await tester.pumpWidget(
+          harness.build(
+            const SettingsTab(),
+            themeProvider: themeProvider,
+            overrides: [
+              appLifecyclePlatformServiceProvider.overrideWithValue(
+                lifecycleService,
+              ),
+            ],
+          ),
+        );
+        await tester.pump();
+
+        final i18n = harness.languageProvider;
+        await tester.tap(find.text(i18n.tr('section_appearance')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const ValueKey('app_theme_color_tile')));
+        await tester.pumpAndSettle();
+        expect(accentLookups, 1);
+        expect(
+          find.byKey(const ValueKey('theme_color_system_option')),
+          findsNothing,
+        );
+
+        accentCompleter.complete(systemBlue.toARGB32());
+        await tester.pumpAndSettle();
+
+        expect(themeProvider.systemAccentColor, systemBlue);
+        expect(
+          find.byKey(const ValueKey('theme_color_system_option')),
+          findsOneWidget,
+        );
+
+        await tester.tap(
+          find.byKey(const ValueKey('theme_color_system_option')),
+        );
+        await tester.pumpAndSettle();
+        expect(themeProvider.useSystemAccentColor, isTrue);
+      },
+    );
+
+    testWidgets(
+      'MusicPlayerApp populates system accent color after presentation settles under default settings',
+      (tester) async {
+        SharedPreferences.setMockInitialValues(const <String, Object>{});
+        await AppPreferences.init();
+        const systemTeal = Color(0xFF00897B);
+        var accentLookups = 0;
+        final lifecycleService = _FakeSystemAccentLifecycleService(
+          onGetSystemAccentColor: () async {
+            accentLookups++;
+            return systemTeal.toARGB32();
+          },
+        );
+        final themeProvider = ThemeProvider();
+        final harness = AppRuntimeWidgetTestFixture();
+        addTearDown(harness.dispose);
+        var settled = false;
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              ...createAppRuntimeOverrides(
+                persistence: harness.runtimeGraph.persistence,
+                runtime: harness.runtimeGraph.runtime,
+                warmup: harness.runtimeGraph.warmup,
+                playbackCommands: harness.runtimeGraph.playbackCommands,
+                keepAlive: harness.runtimeGraph.keepAlive,
+                library: harness.runtimeGraph.library,
+                playback: harness.runtimeGraph.playback,
+                subtitles: harness.runtimeGraph.subtitles,
+                timer: harness.runtimeGraph.timer,
+                notifications: harness.runtimeGraph.notifications,
+                settings: harness.runtimeGraph.settings,
+              workTexts: harness.runtimeGraph.workTexts,
+            ),
+            appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
+            themeProviderInstanceProvider.overrideWith((ref) => themeProvider),
+            appLanguageProviderInstanceProvider.overrideWithValue(
+              harness.languageProvider,
+            ),
+            appLifecyclePlatformServiceProvider.overrideWithValue(
+              lifecycleService,
+            ),
+          ],
+          child: MusicPlayerApp(
+            shouldShowOnboarding: false,
+            presentationInitializer: () async {},
+            runtimeInitializer: () async {},
+            onBootstrapSettled: () => settled = true,
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+
+      expect(settled, isTrue);
+      expect(accentLookups, 1);
+      expect(themeProvider.useSystemAccentColor, isFalse);
+      expect(themeProvider.systemAccentColor, systemTeal);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    },
+    );
+  });
+}
+
+class _FakeSystemAccentLifecycleService extends AppLifecyclePlatformService {
+  _FakeSystemAccentLifecycleService({required this.onGetSystemAccentColor});
+
+  final Future<int?> Function() onGetSystemAccentColor;
+
+  @override
+  Future<int?> getSystemAccentColor() => onGetSystemAccentColor();
+
+  @override
+  Future<bool> syncAppTheme({
+    required String preset,
+    required String themeMode,
+    bool pureBlack = false,
+    int? lightWindowBorderColor,
+    int? darkWindowBorderColor,
+  }) async => true;
+
+  @override
+  Future<bool> syncTrayMenu({
+    required String open,
+    required String toggle,
+    required String previous,
+    required String next,
+    required String exit,
+  }) async => true;
 }

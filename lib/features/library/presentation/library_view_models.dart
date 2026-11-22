@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:isolate';
+
 import 'package:flutter/foundation.dart';
 
 import '../domain/library_node.dart';
@@ -59,7 +62,6 @@ class LibraryHeaderState {
 class LibraryListState {
   const LibraryListState({
     required this.rawTree,
-    required this.watchedFolders,
     required this.watchedLibraries,
     required this.watchedFolderCount,
     required this.watchedLibraryCount,
@@ -73,7 +75,6 @@ class LibraryListState {
   });
 
   final List<LibraryNode> rawTree;
-  final List<String> watchedFolders;
   final List<String> watchedLibraries;
   final int watchedFolderCount;
   final int watchedLibraryCount;
@@ -85,14 +86,12 @@ class LibraryListState {
   final double? operationProgress;
   final Object? operationError;
 
-  bool get hasLibrary => rawTree.isNotEmpty;
   bool get canPullRefresh => watchedFolderCount > 0 || watchedLibraryCount > 0;
 
   @override
   bool operator ==(Object other) {
     return other is LibraryListState &&
         identical(other.rawTree, rawTree) &&
-        listEquals(other.watchedFolders, watchedFolders) &&
         listEquals(other.watchedLibraries, watchedLibraries) &&
         other.watchedFolderCount == watchedFolderCount &&
         other.watchedLibraryCount == watchedLibraryCount &&
@@ -108,7 +107,6 @@ class LibraryListState {
   @override
   int get hashCode => Object.hash(
     rawTree,
-    Object.hashAll(watchedFolders),
     Object.hashAll(watchedLibraries),
     watchedFolderCount,
     watchedLibraryCount,
@@ -254,6 +252,7 @@ List<LibrarySearchRow> projectLibrarySearchRows(
   void addNode(LibraryNode node, int depth) {
     rows.add((node: node, depth: depth));
     if (node is FolderNode &&
+        expandedPaths.isNotEmpty &&
         expandedPaths.contains(PathMatcher.normalize(node.path))) {
       for (final child in node.children) {
         addNode(child, depth + 1);
@@ -282,7 +281,9 @@ class LibrarySearchIndex {
   static const int _maxEntries = 12;
 
   (List<LibraryNode>, int, int)? _corpusKey;
-  LibrarySearchCorpus? _corpus;
+  _LibrarySearchCorpus? _corpus;
+  (List<LibraryNode>, int, int)? _workerKey;
+  _LibrarySearchWorker? _worker;
 
   Future<FilteredLibraryTreeResult> searchInBackground({
     required List<LibraryNode> tree,
@@ -293,20 +294,24 @@ class LibrarySearchIndex {
     SearchFilters filters = emptySearchFilters,
   }) async {
     final key = (tree, structureRevision, detailRevision);
-    if (_corpusKey != key) {
-      _corpusKey = key;
-      _corpus = null;
+    if (_workerKey != key || _worker?.isClosed != false) {
+      // Only a new snapshot transfers the source tree to the worker.
+      _worker?.dispose();
+      _workerKey = key;
+      _worker = _LibrarySearchWorker(tree, categorySnapshot);
     }
-    final previous = _corpus;
-    final (corpus, result) = await compute(buildFilteredLibraryTreeSnapshot, (
-      previous ?? LibrarySearchCorpus(tree, categorySnapshot),
-      query,
-      filters,
-    ));
-    if (_corpusKey == key && identical(_corpus, previous)) {
-      _corpus = corpus;
-    }
-    return result;
+    final worker = _worker!;
+    final selection = await worker.search(query, filters);
+    return _projectLibrarySearchSelection(tree, selection);
+  }
+
+  void dispose() {
+    _worker?.dispose();
+    _worker = null;
+    _workerKey = null;
+    _corpus = null;
+    _corpusKey = null;
+    _cache.clear();
   }
 
   FilteredLibraryTreeResult resolve({
@@ -327,9 +332,12 @@ class LibrarySearchIndex {
     final key = (tree, structureRevision, detailRevision);
     if (_corpusKey != key || _corpus == null) {
       _corpusKey = key;
-      _corpus = LibrarySearchCorpus(tree, categorySnapshot);
+      _corpus = _LibrarySearchCorpus(tree, categorySnapshot);
     }
-    final result = _corpus!.search(query, filters: filters);
+    final result = _projectLibrarySearchSelection(
+      tree,
+      _corpus!.select(query, filters),
+    );
     storeResult(
       query: query,
       structureRevision: structureRevision,
@@ -385,9 +393,11 @@ class LibrarySearchIndex {
 }
 
 /// Reuses normalized fields for nodes visited across queries of one revision.
-class LibrarySearchCorpus {
-  LibrarySearchCorpus(this.tree, AudioLibraryCategorySnapshot? categorySnapshot)
-    : _categorySnapshot = categorySnapshot;
+class _LibrarySearchCorpus {
+  _LibrarySearchCorpus(
+    this.tree,
+    AudioLibraryCategorySnapshot? categorySnapshot,
+  ) : _categorySnapshot = categorySnapshot;
 
   final List<LibraryNode> tree;
   final AudioLibraryCategorySnapshot? _categorySnapshot;
@@ -451,10 +461,7 @@ class LibrarySearchCorpus {
     );
   }
 
-  FilteredLibraryTreeResult search(
-    String query, {
-    SearchFilters filters = emptySearchFilters,
-  }) {
+  _LibrarySearchSelection select(String query, SearchFilters filters) {
     final elements = parseSearchElements(query) ?? emptySearchElements;
     final terms = (
       all: elements.all.map((term) => term.toLowerCase()).toList(),
@@ -468,50 +475,207 @@ class LibrarySearchCorpus {
         filters.firstReleaseDate != null ||
         filters.lastReleaseDate != null;
     if (!hasText && !hasMetadataFilters) {
-      return FilteredLibraryTreeResult(
-        tree: tree,
-        matchCount: libraryTreeTrackCount(tree),
-      );
+      return (branches: null, matchCount: libraryTreeTrackCount(tree));
     }
 
-    final expandedPaths = <String>{};
+    final branches = <int>[];
     var matchCount = 0;
-    LibraryNode? filter(LibraryNode node) {
+    bool filter(LibraryNode node, int index) {
+      final start = branches.length;
       if (!hasText || matchesNormalizedSearchText(_textFor(node), terms)) {
         matchCount += node is FolderNode ? node.totalTrackCount : 1;
-        return node;
+        branches.add(index);
+        branches.add(0);
+        return true;
       }
-      if (node is! FolderNode) return null;
-      final children = <LibraryNode>[];
-      for (final child in node.children) {
-        final result = filter(child);
-        if (result != null) children.add(result);
+      if (node is! FolderNode) return false;
+      branches.add(index);
+      branches.add(0);
+      var matchedChildren = 0;
+      for (var child = 0; child < node.children.length; child++) {
+        if (filter(node.children[child], child)) matchedChildren++;
       }
-      if (children.isEmpty) return null;
-      expandedPaths.add(PathMatcher.normalize(node.path));
-      return FolderNode.searchResult(node, children);
+      if (matchedChildren == 0) {
+        branches.length = start;
+        return false;
+      }
+      branches[start + 1] = matchedChildren;
+      return true;
     }
 
-    final nodes = <LibraryNode>[];
-    for (final node in tree) {
+    for (var index = 0; index < tree.length; index++) {
+      final node = tree[index];
       if (hasMetadataFilters && !_matchesRootMetadata(node, filters)) {
         continue;
       }
-      final result = filter(node);
-      if (result != null) nodes.add(result);
+      filter(node, index);
     }
-    return FilteredLibraryTreeResult(
-      tree: List.unmodifiable(nodes),
-      matchCount: matchCount,
-      expandedFolderPaths: expandedPaths,
-    );
+    return (branches: branches, matchCount: matchCount);
   }
 }
 
-(LibrarySearchCorpus, FilteredLibraryTreeResult)
-buildFilteredLibraryTreeSnapshot(
-  (LibrarySearchCorpus, String, SearchFilters) input,
-) => (input.$1, input.$1.search(input.$2, filters: input.$3));
+// Each selected branch is a sibling index and a selected-child count.
+// Zero children means the original node matched and can be reused whole.
+typedef _LibrarySearchSelection = ({List<int>? branches, int matchCount});
+
+FilteredLibraryTreeResult _projectLibrarySearchSelection(
+  List<LibraryNode> tree,
+  _LibrarySearchSelection selection,
+) {
+  final branches = selection.branches;
+  if (branches == null) {
+    return FilteredLibraryTreeResult(
+      tree: tree,
+      matchCount: selection.matchCount,
+    );
+  }
+  final expanded = <String>{};
+  var offset = 0;
+  LibraryNode project(List<LibraryNode> siblings) {
+    final node = siblings[branches[offset++]];
+    final count = branches[offset++];
+    if (count == 0) return node;
+    final folder = node as FolderNode;
+    expanded.add(PathMatcher.normalize(folder.path));
+    return FolderNode.searchResult(folder, [
+      for (var child = 0; child < count; child++) project(folder.children),
+    ]);
+  }
+
+  final nodes = <LibraryNode>[];
+  while (offset < branches.length) {
+    nodes.add(project(tree));
+  }
+  return FilteredLibraryTreeResult(
+    tree: List.unmodifiable(nodes),
+    matchCount: selection.matchCount,
+    expandedFolderPaths: expanded,
+  );
+}
+
+final class _LibrarySearchWorker {
+  _LibrarySearchWorker(
+    List<LibraryNode> tree,
+    AudioLibraryCategorySnapshot categorySnapshot,
+  ) {
+    _messages.listen(_receive);
+    unawaited(_start(tree, categorySnapshot));
+  }
+
+  final _messages = ReceivePort();
+  SendPort? _requests;
+  Completer<_LibrarySearchSelection>? _inFlight;
+  ({
+    String query,
+    SearchFilters filters,
+    Completer<_LibrarySearchSelection> completer,
+  })?
+  _queued;
+  Isolate? _isolate;
+  bool isClosed = false;
+
+  Future<void> _start(
+    List<LibraryNode> tree,
+    AudioLibraryCategorySnapshot categorySnapshot,
+  ) async {
+    try {
+      final isolate = await Isolate.spawn(
+        _serveLibrarySearches,
+        (tree, categorySnapshot, _messages.sendPort),
+        onError: _messages.sendPort,
+        onExit: _messages.sendPort,
+        debugName: 'library_search',
+      );
+      if (isClosed) {
+        isolate.kill(priority: Isolate.immediate);
+      } else {
+        _isolate = isolate;
+      }
+    } catch (error, stack) {
+      _close(error, stack);
+    }
+  }
+
+  Future<_LibrarySearchSelection> search(String query, SearchFilters filters) {
+    if (isClosed) {
+      return Future<_LibrarySearchSelection>.error(
+        StateError('Library search was closed.'),
+      );
+    }
+    final superseded = _queued;
+    if (superseded != null) {
+      _queued = null;
+      superseded.completer.completeError(
+        StateError('Library search was superseded.'),
+      );
+    }
+    final response = Completer<_LibrarySearchSelection>();
+    final requests = _requests;
+    if (requests != null && _inFlight == null) {
+      _inFlight = response;
+      requests.send((query, filters));
+    } else {
+      _queued = (query: query, filters: filters, completer: response);
+    }
+    return response.future;
+  }
+
+  void _dispatchNext() {
+    final requests = _requests;
+    final next = _queued;
+    if (isClosed || requests == null || _inFlight != null || next == null) {
+      return;
+    }
+    _queued = null;
+    _inFlight = next.completer;
+    requests.send((next.query, next.filters));
+  }
+
+  void _receive(Object? message) {
+    if (message is SendPort) {
+      _requests = message;
+      _dispatchNext();
+    } else if (message is _LibrarySearchSelection) {
+      final completer = _inFlight;
+      _inFlight = null;
+      completer?.complete(message);
+      _dispatchNext();
+    } else if (message case [final String error, final String stack]) {
+      final remote = RemoteError(error, stack);
+      _close(remote, remote.stackTrace);
+    } else {
+      _close(StateError('Library search isolate stopped.'));
+    }
+  }
+
+  void dispose() => _close(StateError('Library search was closed.'));
+
+  void _close(Object error, [StackTrace? stack]) {
+    if (isClosed) return;
+    isClosed = true;
+    _isolate?.kill(priority: Isolate.immediate);
+    _messages.close();
+    final inFlight = _inFlight;
+    _inFlight = null;
+    inFlight?.completeError(error, stack);
+    final queued = _queued;
+    _queued = null;
+    queued?.completer.completeError(error, stack);
+  }
+}
+
+void _serveLibrarySearches(
+  (List<LibraryNode>, AudioLibraryCategorySnapshot, SendPort) startup,
+) {
+  final (tree, categorySnapshot, responses) = startup;
+  final corpus = _LibrarySearchCorpus(tree, categorySnapshot);
+  final requests = ReceivePort();
+  responses.send(requests.sendPort);
+  requests.listen((message) {
+    final (query, filters) = message as (String, SearchFilters);
+    responses.send(corpus.select(query, filters));
+  });
+}
 
 int libraryTreeTrackCount(List<LibraryNode> tree) {
   var count = 0;

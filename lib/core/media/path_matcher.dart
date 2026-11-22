@@ -2,6 +2,7 @@ import 'package:path/path.dart' as path;
 
 abstract final class PathMatcher {
   static final RegExp _invalidPercentEscape = RegExp(r'%(?![0-9A-Fa-f]{2})');
+  static final RegExp _remoteScheme = RegExp(r'^https?:', caseSensitive: false);
   static final RegExp _windowsAbsolutePath = RegExp(
     r'^(?:[A-Za-z]:[\\/]|\\\\)',
   );
@@ -28,11 +29,8 @@ abstract final class PathMatcher {
         safeDecodeComponent(documentTree) == safeDecodeComponent(rootTree);
   }
 
-  static bool isRemoteUri(String value) {
-    final uri = Uri.tryParse(value);
-    if (uri == null) return false;
-    return uri.scheme == 'http' || uri.scheme == 'https';
-  }
+  static bool isRemoteUri(String value) =>
+      _remoteScheme.hasMatch(value) && Uri.tryParse(value) != null;
 
   static String safeDecodeComponent(String value) {
     final sanitized = value.replaceAll(_invalidPercentEscape, '%25');
@@ -95,15 +93,22 @@ abstract final class PathMatcher {
   }
 
   static String equivalenceKey(String value) {
-    final normalized = normalize(value);
-    if (isRemoteUri(normalized)) return 'remote:$normalized';
+    if (isRemoteUri(value)) return 'remote:${trimRightSlash(value)}';
+
+    final context = isContentUri(value) ? null : _contextFor(value);
+    final normalized = context?.normalize(value) ?? trimRightSlash(value);
     if (isContentUri(normalized)) {
       return 'content:${_contentAuthority(normalized)}:${_documentPath(normalized) ?? normalized}';
     }
+    // Normalizing a relative path can expose a scheme or a drive prefix.
+    if (normalized != value && isRemoteUri(normalized)) {
+      return 'remote:$normalized';
+    }
     final canonical = normalized.replaceAll('\\', '/');
-    return _windowsAbsolutePath.hasMatch(normalized)
-        ? 'windows:${canonical.toLowerCase()}'
-        : 'file:$canonical';
+    final windows = normalized == value
+        ? identical(context, _windowsContext)
+        : _windowsAbsolutePath.hasMatch(normalized);
+    return windows ? 'windows:${canonical.toLowerCase()}' : 'file:$canonical';
   }
 
   static String parentEquivalenceKey(String value) {

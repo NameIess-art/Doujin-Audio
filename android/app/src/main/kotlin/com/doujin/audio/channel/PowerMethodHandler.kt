@@ -25,6 +25,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import java.util.concurrent.atomic.AtomicBoolean
 
 internal data class PlaybackTimerSyncArguments(
     val timerModeIndex: Int?,
@@ -118,6 +119,8 @@ internal class PowerMethodHandler(
     private val taskExecutor: FileCacheTaskExecutor
 ) : MethodChannel.MethodCallHandler {
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
+    private val closed = AtomicBoolean(false)
+    private val appContext: Context get() = activity.applicationContext ?: activity
     private val timerSync = PlaybackTimerSyncCoordinator(
         loadCandidates = { complete ->
             taskExecutor.submit({ NativePlaybackStateStore.loadActiveSessionRevisions(activity.applicationContext) }) {
@@ -159,9 +162,16 @@ internal class PowerMethodHandler(
             PowerMethods.OPEN_NOTIFICATION_SETTINGS -> envelope.success(openNotificationSettings())
             PowerMethods.CAN_SCHEDULE_EXACT_ALARMS -> envelope.success(canScheduleExactAlarms())
             PowerMethods.OPEN_EXACT_ALARM_SETTINGS -> envelope.success(openExactAlarmSettings())
-            PowerMethods.GET_NATIVE_TIMER_RUNTIME_STATE -> envelope.success(getNativeTimerRuntimeState())
-            PowerMethods.GET_BACKGROUND_RUN_DIAGNOSTICS ->
-                envelope.success(getBackgroundRunDiagnostics())
+            PowerMethods.GET_NATIVE_TIMER_RUNTIME_STATE -> runAsync(
+                envelope,
+                errorCode = "timer_runtime_state_failed",
+                block = ::getNativeTimerRuntimeState
+            )
+            PowerMethods.GET_BACKGROUND_RUN_DIAGNOSTICS -> runAsync(
+                envelope,
+                errorCode = "background_diagnostics_failed",
+                block = ::getBackgroundRunDiagnostics
+            )
             PowerMethods.EXECUTE_TIMER_EXPIRED_NOW -> {
                 PlaybackTimerAlarmScheduler.executeNow(
                     activity.applicationContext,
@@ -197,9 +207,38 @@ internal class PowerMethodHandler(
         }
     }
 
+    private fun runAsync(
+        envelope: ChannelEnvelopeResult,
+        errorCode: String,
+        block: () -> Any?
+    ) {
+        if (closed.get()) {
+            envelope.error(errorCode, "Power handler is unavailable.", null)
+            return
+        }
+        val accepted = taskExecutor.submit(block) { taskResult ->
+            if (closed.get()) return@submit
+            mainHandler.post {
+                if (closed.get()) return@post
+                when (taskResult) {
+                    is FileCacheTaskResult.Success -> envelope.success(taskResult.value)
+                    is FileCacheTaskResult.Failure -> envelope.error(
+                        errorCode,
+                        taskResult.exception.message ?: "Unknown error.",
+                        null
+                    )
+                }
+            }
+        }
+        if (!accepted) {
+            envelope.error(errorCode, "Power handler is unavailable.", null)
+        }
+    }
+
     private fun isIgnoringBatteryOptimizations(): Boolean {
-        val manager = activity.getSystemService(Activity.POWER_SERVICE) as? PowerManager
-        return manager?.isIgnoringBatteryOptimizations(activity.packageName) == true
+        val context = appContext
+        val manager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+        return manager?.isIgnoringBatteryOptimizations(context.packageName) == true
     }
 
     private fun canManageAllFilesAccess(): Boolean {
@@ -243,15 +282,16 @@ internal class PowerMethodHandler(
     }
 
     private fun canPostNotifications(): Boolean {
+        val context = appContext
         val enabled = try {
-            NotificationManagerCompat.from(activity).areNotificationsEnabled()
+            NotificationManagerCompat.from(context).areNotificationsEnabled()
         } catch (_: Exception) {
             true
         }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return enabled
         val granted = try {
             ContextCompat.checkSelfPermission(
-                activity,
+                context,
                 Manifest.permission.POST_NOTIFICATIONS
             ) == PackageManager.PERMISSION_GRANTED
         } catch (_: Exception) {
@@ -357,8 +397,9 @@ internal class PowerMethodHandler(
 
     @RequiresApi(Build.VERSION_CODES.R)
     private fun getApplicationExitDiagnostics(): ApplicationExitDiagnostics? {
-        val exit = (activity.getSystemService(Activity.ACTIVITY_SERVICE) as? ActivityManager)
-            ?.getHistoricalProcessExitReasons(activity.packageName, 0, 1)
+        val context = appContext
+        val exit = (context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager)
+            ?.getHistoricalProcessExitReasons(context.packageName, 0, 1)
             ?.firstOrNull()
             ?: return null
         return ApplicationExitDiagnostics(
@@ -376,7 +417,7 @@ internal class PowerMethodHandler(
     }
 
     private fun canOpenSettings(intent: Intent): Boolean {
-        return intent.resolveActivity(activity.packageManager) != null
+        return intent.resolveActivity(appContext.packageManager) != null
     }
 
     private fun openApplicationDetailsSettings(): Boolean {
@@ -415,6 +456,7 @@ internal class PowerMethodHandler(
     }
 
     fun dispose() {
+        closed.set(true)
         timerSync.close()
         try {
             activity.runOnUiThread {

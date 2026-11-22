@@ -344,15 +344,31 @@ class _RenderPageTransitionHost extends RenderProxyBox {
   }
 
   @override
+  void dispose() {
+    for (final header in headers) {
+      header.clearHostLayers();
+    }
+    super.dispose();
+  }
+
+  @override
   void paint(PaintingContext context, Offset offset) {
     super.paint(context, offset);
-    if (!enabled) return;
+    if (!enabled) {
+      for (final header in headers) {
+        header.clearHostLayers();
+      }
+      return;
+    }
     final visibleHeaders =
         <
           ({_RenderPageHeader header, List<RenderObject> path, double opacity})
         >[];
     for (final header in headers) {
-      if (!header.attached || !header.hasSize || header.child == null) continue;
+      if (!header.attached || !header.hasSize || header.child == null) {
+        header.clearHostLayers();
+        continue;
+      }
       final path = <RenderObject>[header];
       final animations = <Animation<double>>{};
       var visible = true;
@@ -377,7 +393,10 @@ class _RenderPageTransitionHost extends RenderProxyBox {
           if (ancestor is _RenderPreparedHeaderOpacity) prepared = true;
         }
       }
-      if (!visible || (opacity == 0 && !prepared)) continue;
+      if (!visible || (opacity == 0 && !prepared)) {
+        header.clearHostLayers();
+        continue;
+      }
       header.updateAncestorAnimations(observed: animations);
       path.add(this);
       visibleHeaders.add((
@@ -395,24 +414,46 @@ class _RenderPageTransitionHost extends RenderProxyBox {
     for (final entry in visibleHeaders) {
       final header = entry.header;
       final viewport = header.viewport.currentContext?.findRenderObject();
-      if (viewport is! RenderBox || !viewport.hasSize) continue;
+      if (viewport is! RenderBox || !viewport.hasSize) {
+        header.clearHostLayers();
+        continue;
+      }
       final clip = MatrixUtils.transformRect(
         viewport.getTransformTo(this),
         Offset.zero & viewport.size,
       );
-      context.pushOpacity(offset, (entry.opacity * 255).round(), (
-        context,
-        offset,
-      ) {
-        context.pushClipRect(needsCompositing, offset, clip, (context, offset) {
-          context.pushTransform(
-            needsCompositing,
-            offset,
-            header.getTransformTo(this),
-            (context, offset) => context.paintChild(header.child!, offset),
-          );
-        });
-      });
+      void paintTransformed(PaintingContext context, Offset offset) {
+        header._transformLayer.layer = context.pushTransform(
+          needsCompositing,
+          offset,
+          header.getTransformTo(this),
+          (context, offset) => context.paintChild(header.child!, offset),
+          oldLayer: header._transformLayer.layer,
+        );
+      }
+
+      void paintClipped(PaintingContext context, Offset offset) {
+        header._clipRectLayer.layer = context.pushClipRect(
+          needsCompositing,
+          offset,
+          clip,
+          paintTransformed,
+          oldLayer: header._clipRectLayer.layer,
+        );
+      }
+
+      final alpha = (entry.opacity * 255).round().clamp(0, 255);
+      if (alpha >= 255) {
+        header.clearOpacityLayer();
+        paintClipped(context, offset);
+      } else {
+        header._opacityLayer.layer = context.pushOpacity(
+          offset,
+          alpha,
+          paintClipped,
+          oldLayer: header._opacityLayer.layer,
+        );
+      }
     }
   }
 }
@@ -449,6 +490,21 @@ class _RenderPageHeader extends RenderProxyBox {
   Listenable animation;
   GlobalKey viewport;
   final Set<Animation<double>> _ancestorAnimations = {};
+  final LayerHandle<OpacityLayer> _opacityLayer = LayerHandle<OpacityLayer>();
+  final LayerHandle<ClipRectLayer> _clipRectLayer =
+      LayerHandle<ClipRectLayer>();
+  final LayerHandle<TransformLayer> _transformLayer =
+      LayerHandle<TransformLayer>();
+
+  void clearOpacityLayer() {
+    _opacityLayer.layer = null;
+  }
+
+  void clearHostLayers() {
+    _opacityLayer.layer = null;
+    _clipRectLayer.layer = null;
+    _transformLayer.layer = null;
+  }
 
   void updateAncestorAnimations({Set<Animation<double>>? observed}) {
     final animations = observed ?? <Animation<double>>{};
@@ -519,7 +575,14 @@ class _RenderPageHeader extends RenderProxyBox {
   @override
   void detach() {
     _unregister();
+    clearHostLayers();
     super.detach();
+  }
+
+  @override
+  void dispose() {
+    clearHostLayers();
+    super.dispose();
   }
 
   @override
@@ -1125,31 +1188,35 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
           ),
         );
       },
-      headerBuilder: (context, header) => AnimatedBuilder(
-        animation: _headerAnimation,
-        child: RepaintBoundary(child: header),
-        builder: (context, header) {
-          final outgoing = kAppFadeCurve.transform(_secondaryAnimation.value);
-          final coveredHeader = Opacity(opacity: 1 - outgoing, child: header);
-          if (!animatePage || (!widget.slide && !widget.separateHeader)) {
-            return coveredHeader;
-          }
-          final fadedHeader = _PreparedHeaderFadeTransition(
-            opacity: _opacity,
-            snapFullOpacity: defaultTargetPlatform == TargetPlatform.windows,
-            child: coveredHeader,
-          );
-          if (widget.separateHeader || !widget.slide) {
-            return fadedHeader;
-          }
-          // Unseparated pages slide as a whole; keep their header in place
-          // while its own opacity follows the route instead of the body.
-          return Transform.translate(
-            offset: Offset(-constraints.maxWidth * _position.value.dx, 0),
-            child: fadedHeader,
-          );
-        },
-      ),
+      headerBuilder: (context, header) {
+        final needsSlideOffset =
+            animatePage && !widget.separateHeader && widget.slide;
+        return AnimatedBuilder(
+          animation: needsSlideOffset ? _headerAnimation : _secondaryAnimation,
+          child: RepaintBoundary(child: header),
+          builder: (context, header) {
+            final outgoing = kAppFadeCurve.transform(_secondaryAnimation.value);
+            final coveredHeader = Opacity(opacity: 1 - outgoing, child: header);
+            if (!animatePage || (!widget.slide && !widget.separateHeader)) {
+              return coveredHeader;
+            }
+            final fadedHeader = _PreparedHeaderFadeTransition(
+              opacity: _opacity,
+              snapFullOpacity: defaultTargetPlatform == TargetPlatform.windows,
+              child: coveredHeader,
+            );
+            if (!needsSlideOffset) {
+              return fadedHeader;
+            }
+            // Unseparated pages slide as a whole; keep their header in place
+            // while its own opacity follows the route instead of the body.
+            return Transform.translate(
+              offset: Offset(-constraints.maxWidth * _position.value.dx, 0),
+              child: fadedHeader,
+            );
+          },
+        );
+      },
       child: ValueListenableBuilder<Widget>(
         valueListenable: _pageChild,
         builder: (_, child, _) => child,
@@ -1583,7 +1650,7 @@ AnimationStyle appExpansionAnimationStyle(BuildContext context) {
   );
 }
 
-class AnimatedTreeReveal extends StatelessWidget {
+class AnimatedTreeReveal extends StatefulWidget {
   const AnimatedTreeReveal({
     super.key,
     required this.visible,
@@ -1596,30 +1663,71 @@ class AnimatedTreeReveal extends StatelessWidget {
   final Widget child;
 
   @override
+  State<AnimatedTreeReveal> createState() => _AnimatedTreeRevealState();
+}
+
+class _AnimatedTreeRevealState extends State<AnimatedTreeReveal>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final CurvedAnimation _curved;
+
+  @override
+  void initState() {
+    super.initState();
+    final initialValue = widget.animateInitial && widget.visible
+        ? 0.0
+        : (widget.visible ? 1.0 : 0.0);
+    _controller = AnimationController(
+      vsync: this,
+      duration: kAppFadeDuration,
+      value: initialValue,
+    );
+    _curved = CurvedAnimation(parent: _controller, curve: kAppFadeCurve);
+    if (widget.animateInitial && widget.visible) {
+      _controller.forward();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant AnimatedTreeReveal oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.visible != oldWidget.visible) {
+      if (MediaQuery.disableAnimationsOf(context)) {
+        _controller.value = widget.visible ? 1.0 : 0.0;
+      } else if (widget.visible) {
+        _controller.forward();
+      } else {
+        _controller.reverse();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _curved.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     if (MediaQuery.disableAnimationsOf(context)) {
-      return visible ? child : const SizedBox.shrink();
+      return widget.visible ? widget.child : const SizedBox.shrink();
     }
-    final target = visible ? 1.0 : 0.0;
     return IgnorePointer(
-      ignoring: !visible,
-      child: TweenAnimationBuilder<double>(
-        tween: Tween<double>(
-          begin: animateInitial && visible ? 0 : target,
-          end: target,
-        ),
-        duration: kAppFadeDuration,
-        curve: kAppFadeCurve,
-        child: child,
-        builder: (context, value, child) {
+      ignoring: !widget.visible,
+      child: AnimatedBuilder(
+        animation: _curved,
+        child: FadeTransition(opacity: _curved, child: widget.child),
+        builder: (context, child) {
           // A non-zero extent keeps lazy lists from building every descendant
           // while the newly inserted rows are still visually collapsed.
-          final heightFactor = 0.2 + (0.8 * value);
+          final heightFactor = 0.2 + (0.8 * _curved.value);
           return ClipRect(
             child: Align(
               alignment: Alignment.topCenter,
               heightFactor: heightFactor,
-              child: Opacity(opacity: value, child: child),
+              child: child,
             ),
           );
         },
@@ -3630,6 +3738,10 @@ class AppRollingNumber extends StatefulWidget {
 class _AppRollingNumberState extends State<AppRollingNumber>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+  late final CurvedAnimation _curved;
+  late final Animation<double> _outgoingOpacity;
+  late Animation<Offset> _outgoingSlide;
+  late Animation<Offset> _incomingSlide;
   late int _currentNumber;
   int? _previousNumber;
   int _direction = 1;
@@ -3638,13 +3750,36 @@ class _AppRollingNumberState extends State<AppRollingNumber>
   void initState() {
     super.initState();
     _currentNumber = widget.number;
-    _controller = AnimationController(vsync: this, duration: widget.duration);
-    _controller.value = 1.0;
+    _controller = AnimationController(vsync: this, duration: widget.duration)
+      ..value = 1.0
+      ..addStatusListener(_handleAnimationStatus);
+    _curved = CurvedAnimation(parent: _controller, curve: widget.curve);
+    _outgoingOpacity = ReverseAnimation(_curved);
+    _updateSlideAnimations();
+  }
+
+  void _handleAnimationStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed && _previousNumber != null) {
+      setState(() => _previousNumber = null);
+    }
+  }
+
+  void _updateSlideAnimations() {
+    final dy = _direction.toDouble();
+    _outgoingSlide = _curved.drive(
+      Tween<Offset>(begin: Offset.zero, end: Offset(0, -dy)),
+    );
+    _incomingSlide = _curved.drive(
+      Tween<Offset>(begin: Offset(0, dy), end: Offset.zero),
+    );
   }
 
   @override
   void didUpdateWidget(covariant AppRollingNumber oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.curve != oldWidget.curve) {
+      _curved.curve = widget.curve;
+    }
     if (widget.number != oldWidget.number) {
       if (MediaQuery.disableAnimationsOf(context)) {
         _currentNumber = widget.number;
@@ -3654,7 +3789,11 @@ class _AppRollingNumberState extends State<AppRollingNumber>
       }
       _previousNumber = _currentNumber;
       _currentNumber = widget.number;
-      _direction = _currentNumber >= (_previousNumber ?? 0) ? 1 : -1;
+      final nextDirection = _currentNumber >= (_previousNumber ?? 0) ? 1 : -1;
+      if (nextDirection != _direction) {
+        _direction = nextDirection;
+        _updateSlideAnimations();
+      }
       _controller.duration = widget.duration;
       _controller.forward(from: 0.0);
     }
@@ -3662,6 +3801,8 @@ class _AppRollingNumberState extends State<AppRollingNumber>
 
   @override
   void dispose() {
+    _controller.removeStatusListener(_handleAnimationStatus);
+    _curved.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -3675,41 +3816,26 @@ class _AppRollingNumberState extends State<AppRollingNumber>
       return Text('$_currentNumber', style: style);
     }
 
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, _) {
-        final progress = widget.curve.transform(_controller.value);
-        if (progress >= 1.0) {
-          return Text('$_currentNumber', style: style);
-        }
-
-        final outgoingOffset = Offset(0, -_direction * progress);
-        final incomingOffset = Offset(0, _direction * (1.0 - progress));
-        final outgoingOpacity = (1.0 - progress).clamp(0.0, 1.0);
-        final incomingOpacity = progress.clamp(0.0, 1.0);
-
-        return ClipRect(
-          child: Stack(
-            alignment: Alignment.centerLeft,
-            children: [
-              FractionalTranslation(
-                translation: outgoingOffset,
-                child: Opacity(
-                  opacity: outgoingOpacity,
-                  child: Text('$_previousNumber', style: style),
-                ),
-              ),
-              FractionalTranslation(
-                translation: incomingOffset,
-                child: Opacity(
-                  opacity: incomingOpacity,
-                  child: Text('$_currentNumber', style: style),
-                ),
-              ),
-            ],
+    return ClipRect(
+      child: Stack(
+        alignment: Alignment.centerLeft,
+        children: [
+          SlideTransition(
+            position: _outgoingSlide,
+            child: FadeTransition(
+              opacity: _outgoingOpacity,
+              child: Text('$_previousNumber', style: style),
+            ),
           ),
-        );
-      },
+          SlideTransition(
+            position: _incomingSlide,
+            child: FadeTransition(
+              opacity: _curved,
+              child: Text('$_currentNumber', style: style),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -32,9 +32,14 @@ class MediaControls {
   std::optional<std::array<bool, 5>> thumbnail_state_;
   bool taskbar_dark_ = false;
   std::vector<DWORD> thumbnail_cover_;
+  std::optional<uint64_t> thumbnail_cover_hash_;
   bool active_ = false;
   bool has_next_ = false;
   bool has_previous_ = false;
+  bool smtc_enabled_ = false;
+  std::optional<bool> smtc_next_enabled_;
+  std::optional<bool> smtc_previous_enabled_;
+  std::optional<winrt::Windows::Media::MediaPlaybackStatus> smtc_status_;
   bool metadata_ready_ = false;
   std::string title_, subtitle_, art_path_;
   std::array<bool, 4> hotkeys_{};

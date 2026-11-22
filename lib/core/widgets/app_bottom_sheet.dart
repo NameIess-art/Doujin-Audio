@@ -180,10 +180,38 @@ class _AppBottomSheetRoute<T> extends ModalBottomSheetRoute<T> {
     super.constraints,
   });
 
-  double _visibleOpacity = 0;
+  final ValueNotifier<double> _visibleOpacity = ValueNotifier<double>(0);
+  Animation<double>? _trackedAnimation;
 
   @override
   Curve get barrierCurve => kAppFadeCurve;
+
+  void _attachAnimation(Animation<double> animation) {
+    if (identical(_trackedAnimation, animation)) return;
+    _trackedAnimation?.removeListener(_syncOpeningOpacity);
+    _trackedAnimation = animation;
+    _syncOpeningOpacity();
+    animation.addListener(_syncOpeningOpacity);
+  }
+
+  void _syncOpeningOpacity() {
+    final animation = _trackedAnimation;
+    if (animation == null) return;
+    // Keep the opening fade, but hold its reached opacity during dragging
+    // and dismissal, including a close that interrupts the entrance.
+    final openingOpacity = kAppSpringCurve.transform(animation.value);
+    if (openingOpacity > _visibleOpacity.value) {
+      _visibleOpacity.value = openingOpacity;
+    }
+  }
+
+  @override
+  void dispose() {
+    _trackedAnimation?.removeListener(_syncOpeningOpacity);
+    _trackedAnimation = null;
+    _visibleOpacity.dispose();
+    super.dispose();
+  }
 
   @override
   Widget buildPage(
@@ -208,16 +236,12 @@ class _AppBottomSheetRoute<T> extends ModalBottomSheetRoute<T> {
         child: page,
       ),
     );
-    return AnimatedBuilder(
-      animation: animation,
+    _attachAnimation(animation);
+    return ValueListenableBuilder<double>(
+      valueListenable: _visibleOpacity,
       child: constrainedPage,
-      builder: (context, child) {
-        // Keep the opening fade, but hold its reached opacity during dragging
-        // and dismissal, including a close that interrupts the entrance.
-        final openingOpacity = kAppSpringCurve.transform(animation.value);
-        if (openingOpacity > _visibleOpacity) _visibleOpacity = openingOpacity;
-        return Opacity(opacity: _visibleOpacity, child: child);
-      },
+      builder: (context, opacity, child) =>
+          Opacity(opacity: opacity, child: child),
     );
   }
 }

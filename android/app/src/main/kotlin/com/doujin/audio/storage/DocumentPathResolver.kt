@@ -161,12 +161,7 @@ internal class DocumentPathResolver(private val context: Context) {
             val base = trimmed.substring(0, syntheticIndex)
             val relative = trimmed.substring(syntheticIndex + 2).trim('/')
             val parentRelative = relative.substringBeforeLast('/', missingDelimiterValue = "")
-            val root = DocumentFile.fromTreeUri(context, Uri.parse(base)) ?: return null
-            return if (parentRelative.isEmpty()) {
-                root
-            } else {
-                resolveRelativeDocumentDirectory(root, parentRelative)
-            }
+            return resolveRelativeDocumentDirectory(Uri.parse(base), parentRelative)
         }
 
         // Standard tree document URI: extract parent document ID from the
@@ -205,8 +200,7 @@ internal class DocumentPathResolver(private val context: Context) {
         if (syntheticIndex >= 0) {
             val base = trimmed.substring(0, syntheticIndex)
             val relative = trimmed.substring(syntheticIndex + 2).replace("::", "/").trim('/')
-            val root = DocumentFile.fromTreeUri(context, Uri.parse(base)) ?: return null
-            return resolveRelativeDocumentDirectory(root, relative)
+            return resolveRelativeDocumentDirectory(Uri.parse(base), relative)
         }
         val uri = Uri.parse(trimmed)
         return DocumentFile.fromTreeUri(context, uri)
@@ -304,16 +298,23 @@ internal class DocumentPathResolver(private val context: Context) {
         }
     }
 
-    internal fun resolveRelativeDocumentUri(rootUri: Uri, relativePath: String): Uri? {
+    internal fun resolveRelativeDocumentUri(
+        rootUri: Uri,
+        relativePath: String,
+        ignoreCase: Boolean = false,
+        directoriesOnly: Boolean = false
+    ): Uri? {
         val startDocumentId = startDocumentIdForTreeUri(rootUri) ?: return null
         var currentDocumentId = startDocumentId
         val segments = relativePath.split('/').filter { it.isNotBlank() }
-        if (segments.isEmpty()) {
-            return DocumentsContract.buildDocumentUriUsingTree(rootUri, currentDocumentId)
-        }
-        for (segment in segments) {
-            val child = findChildDocumentId(rootUri, currentDocumentId, segment) ?: return null
-            currentDocumentId = child
+        for ((index, segment) in segments.withIndex()) {
+            currentDocumentId = findChildDocumentId(
+                rootUri,
+                currentDocumentId,
+                segment,
+                ignoreCase,
+                directoriesOnly || index < segments.lastIndex
+            ) ?: return null
         }
         return DocumentsContract.buildDocumentUriUsingTree(rootUri, currentDocumentId)
     }
@@ -321,7 +322,9 @@ internal class DocumentPathResolver(private val context: Context) {
     private fun findChildDocumentId(
         rootUri: Uri,
         parentDocumentId: String,
-        displayName: String
+        displayName: String,
+        ignoreCase: Boolean,
+        directoryOnly: Boolean
     ): String? {
         val childUri = DocumentsContract.buildChildDocumentsUriUsingTree(
             rootUri,
@@ -329,7 +332,8 @@ internal class DocumentPathResolver(private val context: Context) {
         )
         val projection = arrayOf(
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-            DocumentsContract.Document.COLUMN_DISPLAY_NAME
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE
         )
         return try {
             contentResolver.query(childUri, projection, null, null, null)?.use { cursor ->
@@ -339,10 +343,14 @@ internal class DocumentPathResolver(private val context: Context) {
                 val nameIndex = cursor.getColumnIndex(
                     DocumentsContract.Document.COLUMN_DISPLAY_NAME
                 )
-                if (documentIdIndex < 0 || nameIndex < 0) return null
+                val mimeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                if (documentIdIndex < 0 || nameIndex < 0 || (directoryOnly && mimeIndex < 0)) return null
                 while (cursor.moveToNext()) {
+                    if (directoryOnly &&
+                        cursor.getString(mimeIndex) != DocumentsContract.Document.MIME_TYPE_DIR
+                    ) continue
                     val name = normalizeDisplayName(cursor.getString(nameIndex)?.trim().orEmpty())
-                    if (name != displayName) continue
+                    if (!name.equals(displayName, ignoreCase = ignoreCase)) continue
                     return cursor.getString(documentIdIndex)
                 }
                 null
@@ -413,31 +421,14 @@ internal class DocumentPathResolver(private val context: Context) {
         }
     }
 
-    internal fun resolveRelativeDocumentDirectory(
-        root: DocumentFile,
+    private fun resolveRelativeDocumentDirectory(
+        root: Uri,
         relativePath: String
     ): DocumentFile? {
-        var current: DocumentFile = root
-        for (segment in relativePath.split('/').filter { it.isNotBlank() }) {
-            current = current.listFiles().firstOrNull {
-                it.isDirectory && sameDocumentName(it.name, segment)
-            } ?: return null
-        }
-        return current
-    }
-
-    internal fun resolveRelativeDocument(
-        root: DocumentFile,
-        relativePath: String
-    ): DocumentFile? {
-        if (relativePath.isBlank()) return root
-        var current = root
-        for (segment in relativePath.split('/').filter { it.isNotBlank() }) {
-            current = current.listFiles().firstOrNull {
-                sameDocumentName(it.name, segment)
-            } ?: return null
-        }
-        return current
+        val uri = resolveRelativeDocumentUri(root, relativePath, ignoreCase = true, directoriesOnly = true)
+            ?: return null
+        // AndroidX can otherwise fall back to the grant root if the URI is not recognized.
+        return DocumentFile.fromTreeUri(context, uri)?.takeIf { it.uri == uri }
     }
 
     internal fun normalizeDisplayName(raw: String): String {

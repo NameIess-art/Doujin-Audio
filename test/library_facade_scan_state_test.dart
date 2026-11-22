@@ -24,7 +24,7 @@ void main() {
     final repository = _RestoredLibraryRepository();
     final service = LibraryService();
     addTearDown(service.dispose);
-    service.watchedFolders.addAll([r'C:\Old\Child', r'C:\Old\Child\Nested']);
+    service.replaceWatchedFolders([r'C:\Old\Child', r'C:\Old\Child\Nested']);
     service.watchedLibraries.addAll([r'C:\Old', r'C:\Old\Child']);
     service.retargetLibraryFolder(r'C:\Old', r'C:\New', 'New');
     final persistence = LibraryPersistenceCoordinator(
@@ -266,7 +266,7 @@ void main() {
       );
       final service = LibraryService()
         ..library.add(original)
-        ..watchedFolders.add('/existing');
+        ..addWatchedFolder('/existing');
       service.rebuildLibraryIndexes();
       final facade = LibraryFacade.create(
         databaseRepository: repository,

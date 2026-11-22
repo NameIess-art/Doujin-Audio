@@ -39,6 +39,7 @@ Future<void> main() async {
 
       AppLogService.installFlutterErrorHandler();
       AppLogService.installPlatformErrorHandler();
+      unawaited(AppLogService.initialize());
       ErrorWidget.builder = (details) {
         AppLogService.error(
           'release_error_widget',
@@ -57,28 +58,46 @@ Future<void> main() async {
       await windowsRuntime?.attach();
 
       late final AppBootstrapController appBootstrapController;
-      Future<void> initialize() async {
+      Future<void> loadStartupState() async {
         await Future.wait<void>([
           initializePlatformRuntime(),
           AppPreferences.init(),
-          AppNetwork.instance.install(),
-          AppLogService.initialize(),
         ]);
-        startupRestoreOutcome = await _initializeAudioPlayerApp();
+        startupRestoreOutcome =
+            await _initializeAudioPlayerApp() ?? startupRestoreOutcome;
         await themeProvider.reloadPersistedState();
         final lifecycleService = AppLifecyclePlatformService();
-        final systemAccent = await lifecycleService.getSystemAccentColor();
-        if (systemAccent != null) {
-          themeProvider.setSystemAccentColor(Color(systemAccent));
+        if (themeProvider.useSystemAccentColor) {
+          final systemAccent = await lifecycleService.getSystemAccentColor();
+          if (systemAccent != null) {
+            themeProvider.setSystemAccentColor(Color(systemAccent));
+          }
         }
-        unawaited(
-          lifecycleService.syncAppTheme(
-            preset: themeProvider.effectiveStartupPreset.name,
-            themeMode: themeProvider.themeMode.name,
-            pureBlack: themeProvider.pureBlackTheme,
-          ),
-        );
+        if (windowsRuntime == null) {
+          unawaited(
+            lifecycleService.syncAppTheme(
+              preset: themeProvider.effectiveStartupPreset.name,
+              themeMode: themeProvider.themeMode.name,
+              pureBlack: themeProvider.pureBlackTheme,
+            ),
+          );
+        }
         shouldShowOnboarding = AppPreferences.shouldShowOnboardingSync();
+      }
+
+      Future<void> initialize() async {
+        try {
+          await Future.wait<void>([
+            loadStartupState(),
+            // Production HTTP clients adopt the installed override at creation.
+            AppNetwork.instance.install(),
+          ]);
+        } catch (_) {
+          // Ensure buffered startup logs reach disk before failure recovery
+          // offers diagnostic export.
+          await AppLogService.ensureInitialized();
+          rethrow;
+        }
       }
 
       appBootstrapController = AppBootstrapController(

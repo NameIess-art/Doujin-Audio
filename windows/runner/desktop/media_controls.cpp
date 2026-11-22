@@ -6,6 +6,8 @@
 #include <winrt/Windows.Storage.Streams.h>
 #include <wrl/implements.h>
 #include <algorithm>
+#include <cstdint>
+#include <cwchar>
 #include <iostream>
 #include <mutex>
 #include <utility>
@@ -21,6 +23,15 @@ constexpr const char* kHotkeyActions[] = {"toggle", "previous", "next", "showWin
 // The notification gateway supplies opaque RGBA pixels at this size.
 constexpr int kCoverWidth = 320;
 constexpr int kCoverHeight = 240;
+
+uint64_t HashBytes(const uint8_t* data, size_t size) {
+  uint64_t hash = 14695981039346656037ULL;
+  for (size_t i = 0; i < size; ++i) {
+    hash ^= static_cast<uint64_t>(data[i]);
+    hash *= 1099511628211ULL;
+  }
+  return hash;
+}
 
 BITMAPINFO ThumbnailBitmapInfo(int width, int height) {
   BITMAPINFO info{};
@@ -192,15 +203,23 @@ MediaControls::~MediaControls() {
 }
 void MediaControls::Clear() {
   SetThumbnailCover(nullptr);
-  if (!active_ && !metadata_ready_ && (!controls_ || !controls_.IsEnabled())) return;
+  if (!active_ && !metadata_ready_ && (!controls_ || !smtc_enabled_)) return;
   active_ = false;
   has_next_ = false;
   has_previous_ = false;
   if (controls_) {
     try {
-      controls_.IsEnabled(false);
+      if (smtc_enabled_) {
+        controls_.IsEnabled(false);
+        smtc_enabled_ = false;
+      }
       controls_.DisplayUpdater().ClearAll();
-    } catch (const winrt::hresult_error&) {}
+    } catch (const winrt::hresult_error&) {
+      smtc_enabled_ = false;
+      smtc_next_enabled_.reset();
+      smtc_previous_enabled_.reset();
+      smtc_status_.reset();
+    }
   }
   metadata_ready_ = false;
   title_.clear(); subtitle_.clear(); art_path_.clear();
@@ -234,7 +253,10 @@ std::optional<std::string> MediaControls::HandleMessage(UINT message, WPARAM wp,
     UpdateThumbnailButtons();
     return std::string();
   }
-  if (message == WM_SETTINGCHANGE || message == WM_THEMECHANGED) {
+  if (message == WM_THEMECHANGED ||
+      (message == WM_SETTINGCHANGE &&
+       lp != 0 &&
+       _wcsicmp(reinterpret_cast<const wchar_t*>(lp), L"ImmersiveColorSet") == 0)) {
     const bool dark = TaskbarUsesDarkTheme();
     if (dark != taskbar_dark_) {
       taskbar_dark_ = dark;
@@ -293,13 +315,18 @@ void MediaControls::SetThumbnailCover(const flutter::EncodableValue* cover) {
   const bool had_cover = !thumbnail_cover_.empty();
   const auto bytes = cover ? std::get_if<std::vector<uint8_t>>(cover) : nullptr;
   if (bytes && bytes->size() == kCoverWidth * kCoverHeight * 4) {
+    const uint64_t hash = HashBytes(bytes->data(), bytes->size());
+    if (had_cover && thumbnail_cover_hash_ == hash) return;
     thumbnail_cover_.resize(kCoverWidth * kCoverHeight);
     for (size_t i = 0; i < thumbnail_cover_.size(); ++i) {
       const auto pixel = bytes->data() + 4 * i;
       thumbnail_cover_[i] = 0xff000000 | (DWORD{pixel[0]} << 16) |
                             (DWORD{pixel[1]} << 8) | DWORD{pixel[2]};
     }
+    thumbnail_cover_hash_ = hash;
   } else {
+    thumbnail_cover_hash_.reset();
+    if (!had_cover) return;
     thumbnail_cover_.clear();
   }
   const BOOL has_cover = !thumbnail_cover_.empty();
@@ -374,11 +401,23 @@ void MediaControls::Update(const flutter::EncodableMap& payload) {
   UpdateThumbnailButtons();
   if (!controls_) return;
   try {
-    if (!controls_.IsEnabled()) controls_.IsEnabled(true);
-    if (controls_.IsNextEnabled() != has_next_) controls_.IsNextEnabled(has_next_);
-    if (controls_.IsPreviousEnabled() != has_previous_) controls_.IsPreviousEnabled(has_previous_);
+    if (!smtc_enabled_) {
+      controls_.IsEnabled(true);
+      smtc_enabled_ = true;
+    }
+    if (smtc_next_enabled_ != has_next_) {
+      controls_.IsNextEnabled(has_next_);
+      smtc_next_enabled_ = has_next_;
+    }
+    if (smtc_previous_enabled_ != has_previous_) {
+      controls_.IsPreviousEnabled(has_previous_);
+      smtc_previous_enabled_ = has_previous_;
+    }
     const auto status = Flag(*selected,"playing") ? MediaPlaybackStatus::Playing : MediaPlaybackStatus::Paused;
-    if (controls_.PlaybackStatus() != status) controls_.PlaybackStatus(status);
+    if (smtc_status_ != status) {
+      controls_.PlaybackStatus(status);
+      smtc_status_ = status;
+    }
     const auto title = Text(*selected,"title");
     const auto subtitle = Text(*selected,"subtitle");
     const auto art = Text(*selected,"artPath");

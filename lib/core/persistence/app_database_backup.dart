@@ -7,70 +7,53 @@ const _listeningRestoreColumns = {
   'listening_imports': 'batch_id',
 };
 
+// The portable database contains no external audio detail documents.
+const _localDurationDocumentSyncKey = 'audio_detail_duration_document_v1';
+
 extension AppDatabaseBackup on AppDatabase {
   Future<void> openBeforeRestore() async {
     await _database;
   }
 
   Future<File> createPortableSnapshot(String outputPath) async {
+    final source = await _database;
     final output = File(outputPath);
     await output.parent.create(recursive: true);
-    if (await output.exists()) await output.delete();
+    if (await output.exists()) {
+      if (p.isAbsolute(source.path) &&
+          await FileSystemEntity.identical(source.path, output.path)) {
+        throw ArgumentError.value(
+          outputPath,
+          'outputPath',
+          'Must differ from the live database',
+        );
+      }
+      await output.delete();
+    }
     final target = await openDatabase(
       output.path,
       version: AppDatabase.schemaVersion,
       singleInstance: false,
+      onConfigure: (db) async {
+        // Use rawQuery for PRAGMAs that return a result row on Android SQLite.
+        await db.rawQuery('PRAGMA busy_timeout = 5000');
+        await db.rawQuery('PRAGMA secure_delete = ON');
+        await db.execute('PRAGMA synchronous = NORMAL');
+      },
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
     try {
-      final source = await _database;
-      await source.transaction((sourceTxn) async {
-        final targetTables = await target.rawQuery(
-          "SELECT name FROM sqlite_master "
-          "WHERE type = 'table' AND name NOT LIKE 'sqlite_%' "
-          'ORDER BY name',
-        );
-        await target.transaction((targetTxn) async {
-          for (final row in targetTables) {
-            final table = row['name'] as String;
-            // Every application table is a rowid table, including tables with
-            // text/composite primary keys. Seek instead of rescanning OFFSET
-            // rows on each page; the first page must also include negative IDs.
-            int? lastRowId;
-            while (true) {
-              final values = await sourceTxn.rawQuery(
-                'SELECT rowid AS __snapshot_rowid, * FROM "$table" '
-                '${lastRowId == null ? '' : 'WHERE rowid > ? '}'
-                'ORDER BY rowid LIMIT 500',
-                lastRowId == null ? null : [lastRowId],
-              );
-              if (values.isEmpty) break;
-              final batch = targetTxn.batch();
-              for (final value in values) {
-                batch.insert(
-                  table,
-                  Map<String, Object?>.of(value)..remove('__snapshot_rowid'),
-                  conflictAlgorithm: ConflictAlgorithm.replace,
-                );
-              }
-              await batch.commit(noResult: true);
-              lastRowId = values.last['__snapshot_rowid']! as int;
-            }
-          }
-          await targetTxn.update('track_assets', <String, Object?>{
-            'cover_cache_path': null,
-          });
-          await targetTxn.insert('app_kv_settings', <String, Object?>{
-            'key': 'audio_detail_document_read_only_import_v3',
-            'value': '1',
-          }, conflictAlgorithm: ConflictAlgorithm.replace);
-          await targetTxn.insert('app_kv_settings', <String, Object?>{
-            'key': 'backup_restore_authoritative_v1',
-            'value': '1',
-          }, conflictAlgorithm: ConflictAlgorithm.replace);
-        });
-      });
+      final tables = (await target.rawQuery(
+        "SELECT name FROM sqlite_master "
+        "WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+      )).map((row) => row['name'] as String).toList(growable: false);
+      if (p.isAbsolute(source.path)) {
+        await _copyAttachedSnapshot(source.path, target, tables);
+      } else {
+        await _copyInMemorySnapshot(source, target, tables);
+      }
+      await _writePortableDatabaseFlags(target);
       final integrity = await target.rawQuery('PRAGMA integrity_check');
       if (integrity.singleOrNull?['integrity_check'] != 'ok') {
         throw StateError('database_snapshot_integrity_failed');
@@ -116,17 +99,7 @@ extension AppDatabaseBackup on AppDatabase {
       if (sourceVersion < AppDatabase.schemaVersion) {
         await _validateRestoreSchema(db);
       }
-      await db.update('track_assets', <String, Object?>{
-        'cover_cache_path': null,
-      });
-      await db.insert('app_kv_settings', <String, Object?>{
-        'key': 'audio_detail_document_read_only_import_v3',
-        'value': '1',
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
-      await db.insert('app_kv_settings', <String, Object?>{
-        'key': 'backup_restore_authoritative_v1',
-        'value': '1',
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      await _writePortableDatabaseFlags(db);
       return sourceVersion;
     } finally {
       await db.close();
@@ -136,7 +109,7 @@ extension AppDatabaseBackup on AppDatabase {
   Future<void> preserveNewerListeningData({
     required String localPath,
     required String candidatePath,
-    required List<String> interestKeys,
+    required Map<String, String> interestCatalogKeys,
     required bool Function(String local, String? backup) keepLocalInterest,
   }) async {
     final candidate = await openDatabase(candidatePath, singleInstance: false);
@@ -159,7 +132,8 @@ extension AppDatabaseBackup on AppDatabase {
             );
           }
         }
-        for (final key in interestKeys) {
+        for (final MapEntry(key: key, value: catalogKey)
+            in interestCatalogKeys.entries) {
           final local = await _readRestoreSetting(txn, 'local_restore', key);
           if (local == null) continue;
           final backup = await _readRestoreSetting(txn, 'main', key);
@@ -168,6 +142,23 @@ extension AppDatabaseBackup on AppDatabase {
               'key': key,
               'value': local,
             }, conflictAlgorithm: ConflictAlgorithm.replace);
+            final catalog = await _readRestoreSetting(
+              txn,
+              'local_restore',
+              catalogKey,
+            );
+            if (catalog == null) {
+              await txn.delete(
+                'app_kv_settings',
+                where: 'key = ?',
+                whereArgs: [catalogKey],
+              );
+            } else {
+              await txn.insert('app_kv_settings', {
+                'key': catalogKey,
+                'value': catalog,
+              }, conflictAlgorithm: ConflictAlgorithm.replace);
+            }
           }
         }
       });
@@ -176,6 +167,107 @@ extension AppDatabaseBackup on AppDatabase {
     }
   }
 }
+
+Future<void> _writePortableDatabaseFlags(Database db) =>
+    db.transaction((txn) async {
+      final batch = txn.batch();
+      batch.update(
+        'track_assets',
+        {'cover_cache_path': null},
+        where: 'cover_cache_path IS NOT NULL',
+      );
+      batch.delete(
+        'app_kv_settings',
+        where: 'key = ?',
+        whereArgs: [_localDurationDocumentSyncKey],
+      );
+      for (final key in const [
+        'audio_detail_document_read_only_import_v3',
+        'backup_restore_authoritative_v1',
+      ]) {
+        batch.insert('app_kv_settings', {
+          'key': key,
+          'value': '1',
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+    });
+
+Future<void> _copyAttachedSnapshot(
+  String sourcePath,
+  Database target,
+  List<String> tables,
+) async {
+  final columnsByTable = <String, String>{};
+  for (final table in tables) {
+    final columns = await target.rawQuery('PRAGMA table_info("$table")');
+    columnsByTable[table] = columns.map((row) => '"${row['name']}"').join(', ');
+  }
+  await target.execute('ATTACH DATABASE ? AS snapshot_source', [sourcePath]);
+  var inTransaction = false;
+  try {
+    // Use BEGIN DEFERRED instead of target.transaction() (which emits BEGIN
+    // IMMEDIATE and would take a write lock on the attached live database).
+    // Reading from snapshot_source inside a deferred transaction only takes a
+    // WAL read snapshot while writing to main, keeping all tables consistent
+    // without blocking concurrent live writes.
+    await target.execute('BEGIN DEFERRED');
+    inTransaction = true;
+    final batch = target.batch();
+    for (final MapEntry(key: table, value: columns)
+        in columnsByTable.entries) {
+      batch.execute(
+        'INSERT OR REPLACE INTO main."$table" ($columns) '
+        'SELECT $columns FROM snapshot_source."$table" ORDER BY rowid',
+      );
+    }
+    await batch.apply(noResult: true);
+    await target.execute('COMMIT');
+    inTransaction = false;
+  } catch (_) {
+    if (inTransaction) {
+      try {
+        await target.execute('ROLLBACK');
+      } catch (_) {
+        // SQLite may have already rolled back on certain errors.
+      }
+    }
+    rethrow;
+  } finally {
+    await target.execute('DETACH DATABASE snapshot_source');
+  }
+}
+
+Future<void> _copyInMemorySnapshot(
+  Database source,
+  Database target,
+  List<String> tables,
+) => source.transaction((sourceTxn) async {
+  await target.transaction((targetTxn) async {
+    for (final table in tables) {
+      int? lastRowId;
+      while (true) {
+        final values = await sourceTxn.rawQuery(
+          'SELECT rowid AS __snapshot_rowid, * FROM "$table" '
+          '${lastRowId == null ? '' : 'WHERE rowid > ? '}'
+          'ORDER BY rowid LIMIT 500',
+          lastRowId == null ? null : [lastRowId],
+        );
+        if (values.isEmpty) break;
+        final batch = targetTxn.batch();
+        for (final value in values) {
+          batch.insert(
+            table,
+            Map<String, Object?>.of(value)..remove('__snapshot_rowid'),
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+        await batch.commit(noResult: true);
+        lastRowId = values.last['__snapshot_rowid']! as int;
+      }
+    }
+  });
+});
 
 Future<bool> _attachReadableRestoreSource(
   Database candidate,
@@ -280,6 +372,8 @@ Future<void> _validateRestoreSchema(
           'playback_queues' =>
             version >= 16 ||
                 !const {'entry_count', 'track_count'}.contains(columnName),
+          'playback_queue_entries' || 'playback_queue_entry_tracks' =>
+            version >= 19 || columnName != 'path_match_key',
           'time_segment_labels' =>
             version >= 12 || columnName != 'track_match_key',
           _ => true,

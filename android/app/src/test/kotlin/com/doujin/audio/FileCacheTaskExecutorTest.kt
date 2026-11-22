@@ -194,6 +194,31 @@ class FileCacheTaskExecutorTest {
     }
 
     @Test
+    fun `interactive tasks run while both metadata workers are occupied`() {
+        val executor = FileCacheTaskExecutor()
+        val started = CountDownLatch(2)
+        val release = CountDownLatch(1)
+        val interactive = CountDownLatch(1)
+        try {
+            repeat(2) {
+                assertTrue(executor.submitMetadata(
+                    block = {
+                        started.countDown()
+                        release.await()
+                    },
+                    completion = {}
+                ))
+            }
+            assertTrue(started.await(5, TimeUnit.SECONDS))
+            assertTrue(executor.submit(block = {}, completion = { interactive.countDown() }))
+            assertTrue(interactive.await(5, TimeUnit.SECONDS))
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
     fun `shutdown is idempotent and rejects new tasks`() {
         val executor = FileCacheTaskExecutor()
         executor.shutdownNow()
@@ -201,5 +226,6 @@ class FileCacheTaskExecutorTest {
 
         assertFalse(executor.submit(block = { true }, completion = {}))
         assertFalse(executor.submitTransfer(block = { true }, completion = {}))
+        assertFalse(executor.submitMetadata(block = { true }, completion = {}))
     }
 }

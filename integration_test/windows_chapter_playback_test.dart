@@ -152,10 +152,19 @@ void registerWindowsChapterPlaybackTest() {
             expect(double.parse(await native.getProperty('start')), 7);
             expect(double.parse(await native.getProperty('end')), 9);
             if (mode == 'shuffle') {
+              final playingIndex = await native.getProperty(
+                'playlist-playing-pos',
+              );
+              final playingId = await native.getProperty(
+                'playlist/$playingIndex/id',
+              );
               expect(
                 (await bridge.setStopAfterCurrentTrack('chapters', true)).isOk,
                 true,
               );
+              expect(await native.getProperty('playlist-count'), '1');
+              expect(await native.getProperty('playlist/0/id'), playingId);
+              expect(player.state.playlist.medias, hasLength(1));
             }
             await waitFor((s) => s.processingState == 'completed');
             expect(bridge.playerForSession('chapters'), isNull);
@@ -181,7 +190,11 @@ void registerWindowsChapterPlaybackTest() {
         await bridge.dispose();
         await server.close(force: true);
         await serving.cancel();
-        for (var attempt = 0; attempt < 10 && await directory.exists(); attempt++) {
+        for (
+          var attempt = 0;
+          attempt < 10 && await directory.exists();
+          attempt++
+        ) {
           try {
             await directory.delete(recursive: true);
           } on FileSystemException {

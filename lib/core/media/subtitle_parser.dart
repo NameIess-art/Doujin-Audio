@@ -161,6 +161,28 @@ const Set<String> _subtitleMatchMediaExtensions = {
   '.3gp',
 };
 
+final RegExp _translatedSubtitleFilePattern = RegExp(
+  r'\.translated\.[a-z-]+(?:\.\d+)?\.srt$',
+  caseSensitive: false,
+);
+final RegExp _lrcTimestampPattern = RegExp(
+  r'\[(\d+):(\d{1,2})(?:[.:](\d{1,3}))?\]',
+);
+final RegExp _lrcOffsetPattern = RegExp(
+  r'^\[offset:([+-]?\d+)\]$',
+  caseSensitive: false,
+);
+final RegExp _srtBlockSeparatorPattern = RegExp(r'\n\s*\n');
+final RegExp _assTagPattern = RegExp(r'\{.*?\}');
+final RegExp _whitespacePattern = RegExp(r'\s+');
+final RegExp _genericTimestampPattern = RegExp(
+  r'^(?:(\d+):)?(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?$',
+);
+final RegExp _assTimestampPattern = RegExp(
+  r'^(\d+):(\d{1,2}):(\d{2})[.](\d{1,2})$',
+);
+final RegExp _htmlTagPattern = RegExp(r'<[^>]+>');
+
 Future<SubtitleTrack?> parseSubtitleTrackFromRaw({
   required String sourcePath,
   required String raw,
@@ -168,7 +190,7 @@ Future<SubtitleTrack?> parseSubtitleTrackFromRaw({
 }) async {
   final normalizedExtension = _normalizedSubtitleExtension(extension);
   return Isolate.run(
-    () => _parseSubtitleTrack(
+    () => parseSubtitleTrackSync(
       sourcePath: sourcePath,
       raw: raw,
       extension: normalizedExtension,
@@ -176,12 +198,13 @@ Future<SubtitleTrack?> parseSubtitleTrackFromRaw({
   );
 }
 
-SubtitleTrack? _parseSubtitleTrack({
+SubtitleTrack? parseSubtitleTrackSync({
   required String sourcePath,
   required String raw,
   required String extension,
 }) {
-  final cues = switch (extension) {
+  final normalizedExtension = _normalizedSubtitleExtension(extension);
+  final cues = switch (normalizedExtension) {
     '.lrc' => _parseLrc(raw),
     '.vtt' || '.webvtt' => _parseWebVtt(raw),
     '.srt' => _parseSrt(raw),
@@ -191,7 +214,9 @@ SubtitleTrack? _parseSubtitleTrack({
 
   final resolvedCues =
       cues != null &&
-          (cues.isNotEmpty || extension == '.ass' || extension == '.ssa')
+          (cues.isNotEmpty ||
+              normalizedExtension == '.ass' ||
+              normalizedExtension == '.ssa')
       ? cues
       : _parseSubtitleTrackByContent(raw);
   if (resolvedCues == null) return null;
@@ -226,10 +251,8 @@ Future<File?> findSubtitleFileForAudio(String audioPath) async {
   return candidates.isEmpty ? null : candidates.first;
 }
 
-bool isTranslatedSubtitleFile(String fileName) => RegExp(
-  r'\.translated\.[a-z-]+(?:\.\d+)?\.srt$',
-  caseSensitive: false,
-).hasMatch(fileName);
+bool isTranslatedSubtitleFile(String fileName) =>
+    _translatedSubtitleFilePattern.hasMatch(fileName);
 
 Future<List<File>> findSubtitleFilesForAudio(
   String audioPath, {
@@ -239,9 +262,12 @@ Future<List<File>> findSubtitleFilesForAudio(
   if (!await audioFile.exists()) return const [];
   final directory = audioFile.parent;
   final stem = subtitleMatchStem(audioPath);
+  final stemDot = '$stem.';
+  final stemUnderscore = '${stem}_';
+  final stemSpace = '$stem ';
   final translationPrefix = '${path.basename(audioPath)}.translated.'
       .toLowerCase();
-  final candidates = <File>[];
+  final candidates = <({File file, int rank, String lowerPath})>[];
 
   try {
     await for (final entity in directory.list(followLinks: false)) {
@@ -254,28 +280,32 @@ Future<List<File>> findSubtitleFilesForAudio(
               !name.toLowerCase().startsWith(translationPrefix))) {
         continue;
       }
-      candidates.add(entity);
+      final fileStem = subtitleMatchStem(entity.path);
+      final rank = fileStem == stem
+          ? 0
+          : fileStem.startsWith(stemDot)
+          ? 1
+          : fileStem.startsWith(stemUnderscore)
+          ? 2
+          : fileStem.startsWith(stemSpace)
+          ? 3
+          : 10;
+      if (rank >= 10) continue;
+      candidates.add((
+        file: entity,
+        rank: rank,
+        lowerPath: entity.path.toLowerCase(),
+      ));
     }
   } catch (_) {
     return const [];
   }
 
-  int rank(File file) {
-    final fileStem = subtitleMatchStem(file.path);
-    if (fileStem == stem) return 0;
-    if (fileStem.startsWith('$stem.')) return 1;
-    if (fileStem.startsWith('${stem}_')) return 2;
-    if (fileStem.startsWith('$stem ')) return 3;
-    return 10;
-  }
-
   candidates.sort((a, b) {
-    final rankResult = rank(a).compareTo(rank(b));
-    return rankResult != 0
-        ? rankResult
-        : a.path.toLowerCase().compareTo(b.path.toLowerCase());
+    final rankResult = a.rank.compareTo(b.rank);
+    return rankResult != 0 ? rankResult : a.lowerPath.compareTo(b.lowerPath);
   });
-  return candidates.where((file) => rank(file) < 10).toList(growable: false);
+  return candidates.map((entry) => entry.file).toList(growable: false);
 }
 
 String subtitleMatchStem(String value) {
@@ -297,11 +327,6 @@ String _normalizedSubtitleExtension(String extension) =>
     : '.${extension.toLowerCase()}';
 
 List<SubtitleCue> _parseLrc(String raw) {
-  final timestampPattern = RegExp(r'\[(\d+):(\d{1,2})(?:[.:](\d{1,3}))?\]');
-  final offsetPattern = RegExp(
-    r'^\[offset:([+-]?\d+)\]$',
-    caseSensitive: false,
-  );
   final lineMap = <int, List<String>>{};
   var offsetMs = 0;
 
@@ -310,17 +335,17 @@ List<SubtitleCue> _parseLrc(String raw) {
     final line = rawLine.trim();
     if (line.isEmpty) continue;
 
-    final offsetMatch = offsetPattern.firstMatch(line);
+    final offsetMatch = _lrcOffsetPattern.firstMatch(line);
     if (offsetMatch != null) {
       offsetMs = int.tryParse(offsetMatch.group(1) ?? '') ?? 0;
       continue;
     }
 
-    final matches = timestampPattern.allMatches(line).toList();
+    final matches = _lrcTimestampPattern.allMatches(line).toList();
     if (matches.isEmpty) continue;
 
     final text = _normalizeCueText(
-      line.replaceAll(timestampPattern, '').trim(),
+      line.replaceAll(_lrcTimestampPattern, '').trim(),
     );
     for (final match in matches) {
       final minutes = int.tryParse(match.group(1) ?? '') ?? 0;
@@ -420,7 +445,7 @@ List<SubtitleCue> _parseSrt(String raw) {
   final blocks = raw
       .replaceFirst('\uFEFF', '')
       .replaceAll('\r\n', '\n')
-      .split(RegExp(r'\n\s*\n'));
+      .split(_srtBlockSeparatorPattern);
   final cues = <SubtitleCue>[];
 
   for (final block in blocks) {
@@ -471,6 +496,9 @@ List<SubtitleCue>? _parseAss(String raw) {
   var inEvents = false;
   var hasFormat = false;
   List<String> formatColumns = const <String>[];
+  var startIndex = -1;
+  var endIndex = -1;
+  var textIndex = -1;
 
   for (final (lineIndex, rawLine) in lines.indexed) {
     final line = rawLine.trim();
@@ -488,26 +516,26 @@ List<SubtitleCue>? _parseAss(String raw) {
           .split(',')
           .map((part) => part.trim().toLowerCase())
           .toList();
+      startIndex = formatColumns.indexOf('start');
+      endIndex = formatColumns.indexOf('end');
+      textIndex = formatColumns.indexOf('text');
       hasFormat =
-          hasFormat ||
-          formatColumns.contains('start') &&
-              formatColumns.contains('end') &&
-              formatColumns.contains('text');
+          hasFormat || (startIndex != -1 && endIndex != -1 && textIndex != -1);
       continue;
     }
     if (!lower.startsWith('dialogue:')) continue;
-    if (formatColumns.isEmpty) continue;
+    if (formatColumns.isEmpty ||
+        startIndex == -1 ||
+        endIndex == -1 ||
+        textIndex == -1) {
+      continue;
+    }
 
     final values = _splitAssDialogue(
       line.substring(line.indexOf(':') + 1),
       formatColumns.length,
     );
     if (values.length != formatColumns.length) continue;
-
-    final startIndex = formatColumns.indexOf('start');
-    final endIndex = formatColumns.indexOf('end');
-    final textIndex = formatColumns.indexOf('text');
-    if (startIndex == -1 || endIndex == -1 || textIndex == -1) continue;
 
     final start = _parseAssTimestamp(values[startIndex].trim());
     final end = _parseAssTimestamp(values[endIndex].trim());
@@ -517,7 +545,7 @@ List<SubtitleCue>? _parseAss(String raw) {
       values[textIndex]
           .replaceAll(r'\N', '\n')
           .replaceAll(r'\n', '\n')
-          .replaceAll(RegExp(r'\{.*?\}'), ''),
+          .replaceAll(_assTagPattern, ''),
     );
     if (text.isEmpty) continue;
 
@@ -550,7 +578,7 @@ List<String> _splitAssDialogue(String input, int expectedParts) {
 
   final start = _parseGenericTimestamp(parts[0].trim());
   final end = _parseGenericTimestamp(
-    parts[1].trim().split(RegExp(r'\s+')).first,
+    parts[1].trim().split(_whitespacePattern).first,
   );
   if (start == null || end == null || end <= start) return null;
   return (start, end);
@@ -558,9 +586,7 @@ List<String> _splitAssDialogue(String input, int expectedParts) {
 
 Duration? _parseGenericTimestamp(String input) {
   final cleaned = input.trim().replaceAll(',', '.');
-  final match = RegExp(
-    r'^(?:(\d+):)?(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?$',
-  ).firstMatch(cleaned);
+  final match = _genericTimestampPattern.firstMatch(cleaned);
   if (match == null) return null;
 
   final hours = int.tryParse(match.group(1) ?? '0') ?? 0;
@@ -576,9 +602,7 @@ Duration? _parseGenericTimestamp(String input) {
 }
 
 Duration? _parseAssTimestamp(String input) {
-  final match = RegExp(
-    r'^(\d+):(\d{1,2}):(\d{2})[.](\d{1,2})$',
-  ).firstMatch(input);
+  final match = _assTimestampPattern.firstMatch(input);
   if (match == null) return null;
 
   final hours = int.tryParse(match.group(1) ?? '0') ?? 0;
@@ -603,7 +627,7 @@ int _fractionToMilliseconds(String raw) {
 String _normalizeCueText(String text) {
   return text
       .replaceAll('&nbsp;', ' ')
-      .replaceAll(RegExp(r'<[^>]+>'), '')
+      .replaceAll(_htmlTagPattern, '')
       .split('\n')
       .map((line) => line.trim())
       .where((line) => line.isNotEmpty)

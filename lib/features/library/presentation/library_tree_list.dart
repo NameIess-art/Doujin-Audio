@@ -43,76 +43,48 @@ typedef _ProjectionInput = ({
 });
 
 typedef _LibraryProjection = ({
-  List<
-    ({List<int> indices, int depth, bool revealed, bool animate, bool error})
-  >
-  rows,
   List<String> ids,
   List<String> reorderIds,
   Map<String, int> indices,
-  Set<String> nodeIds,
-  bool uniformRoots,
 });
 
-_LibraryProjection _buildLibraryProjection(_ProjectionInput input) {
-  final rows =
-      <
-        ({
-          List<int> indices,
-          int depth,
-          bool revealed,
-          bool animate,
-          bool error,
-        })
-      >[];
-  final ids = <String>[];
-  final reorderIds = <String>[];
-  final indicesById = <String, int>{};
-  var uniformRoots = true;
-  void addNode(
-    LibraryNode node,
+Iterable<VisibleLibraryItem> _projectLibraryRows(_ProjectionInput input) {
+  final hasOpenFolders = input.expanded.isNotEmpty || input.motions.isNotEmpty;
+  Iterable<VisibleLibraryItem> project(
+    List<LibraryNode> nodes,
     int depth, {
-    required List<int> indices,
-    FolderNode? loaded,
     bool revealed = true,
     bool animate = false,
-  }) {
-    rows.add((
-      indices: indices,
-      depth: depth,
-      revealed: revealed,
-      animate: animate,
-      error: false,
-    ));
-    final id = PathMatcher.equivalenceKey(node.path);
-    indicesById[id] = rows.length - 1;
-    ids.add(id);
-    reorderIds.add(id);
-    uniformRoots = uniformRoots && depth == 0 && isSelectableLibraryNode(node);
-    if (node is! FolderNode) return;
-    final path = PathMatcher.normalize(node.path);
-    final expanded = input.expanded.contains(path);
-    final motion = input.motions[path];
-    if (!expanded && motion != false) return;
-    final showChildren = revealed && expanded;
-    final animateChildren = animate || (showChildren && motion == true);
-    final children = (loaded ?? node).children;
-    if (expanded && children.isEmpty && input.errors.contains(path)) {
-      rows.add((
-        indices: indices,
-        depth: depth + 1,
-        revealed: showChildren,
-        animate: animateChildren,
-        error: true,
-      ));
-      ids.add(id);
-      uniformRoots = false;
-    } else {
-      for (var index = 0; index < children.length; index++) {
-        addNode(
-          children[index],
+  }) sync* {
+    for (final node in nodes) {
+      yield VisibleLibraryItem(
+        node: node,
+        depth: depth,
+        revealed: revealed,
+        animateInitialReveal: animate,
+      );
+      if (!hasOpenFolders || node is! FolderNode) continue;
+      final path = PathMatcher.normalize(node.path);
+      final expanded = input.expanded.contains(path);
+      final motion = input.motions[path];
+      if (!expanded && motion != false) continue;
+      final showChildren = revealed && expanded;
+      final animateChildren = animate || (showChildren && motion == true);
+      final loaded = depth == 0 ? input.loaded[path]?.folder : null;
+      final children = (loaded ?? node).children;
+      if (expanded && children.isEmpty && input.errors.contains(path)) {
+        yield VisibleLibraryItem(
+          node: node,
+          depth: depth + 1,
+          revealed: showChildren,
+          animateInitialReveal: animateChildren,
+          isFolderError: true,
+          errorFolderPath: node.path,
+        );
+      } else if (children.isNotEmpty) {
+        yield* project(
+          children,
           depth + 1,
-          indices: [...indices, index],
           revealed: showChildren,
           animate: animateChildren,
         );
@@ -120,24 +92,30 @@ _LibraryProjection _buildLibraryProjection(_ProjectionInput input) {
     }
   }
 
-  for (var index = 0; index < input.tree.length; index++) {
-    final node = input.tree[index];
-    addNode(
-      node,
-      0,
-      indices: [index],
-      loaded: node is FolderNode
-          ? input.loaded[PathMatcher.normalize(node.path)]?.folder
-          : null,
-    );
+  return project(input.tree, 0);
+}
+
+_LibraryProjection _indexLibraryRows(List<String?> paths) {
+  final ids = <String>[];
+  List<String>? reorderIds;
+  final indicesById = <String, int>{};
+  for (final path in paths) {
+    // A folder error follows its folder and uses the same browse anchor.
+    if (path == null) {
+      reorderIds ??= List.of(ids);
+      ids.add(ids.last);
+      continue;
+    }
+    final id = PathMatcher.equivalenceKey(path);
+    indicesById[id] = ids.length;
+    ids.add(id);
+    reorderIds?.add(id);
   }
+  final visibleIds = immutableList(ids);
   return (
-    rows: List.unmodifiable(rows),
-    ids: immutableList(ids),
-    reorderIds: immutableList(reorderIds),
+    ids: visibleIds,
+    reorderIds: reorderIds == null ? visibleIds : immutableList(reorderIds),
     indices: Map.unmodifiable(indicesById),
-    nodeIds: reorderIds.toSet(),
-    uniformRoots: uniformRoots,
   );
 }
 
@@ -198,7 +176,6 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
   Set<String> _presentedPinnedPaths = const {};
   List<String> _visibleItemIds = const [];
   List<String> _reorderItemIds = const [];
-  Set<String> _visibleNodeIds = const {};
   Map<String, int> _itemIndexById = const {};
   final Map<Key, int> _itemKeyIndices = {};
   int _visibleItemsVersion = 0;
@@ -555,39 +532,28 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
         ref.read(settingsStateProvider).value?.pinnedLibraryPaths.toSet() ??
         const <String>{};
     try {
-      final projection = await compute(_buildLibraryProjection, input);
-      if (!mounted) return;
-      final current = (
-        widget.tree,
-        widget.structureRevision,
-        _visibleItemsVersion,
-      );
-      if (current != request) {
-        _projectionRequest = null;
-        return;
-      }
-      // Workers return row locations, preserving the original node identities
-      // used by selection, undo and retained cards on the UI isolate.
+      // Row construction already runs in short slices. Walk the source nodes
+      // directly so the worker receives only visible paths, without the
+      // parent-linked folder and track graphs.
+      final previousItems = _visibleItemsCache;
       final items = <VisibleLibraryItem>[];
+      final paths = <String?>[];
+      var sameRows = true;
+      var uniformRoots = true;
       final slice = Stopwatch()..start();
-      for (final row in projection.rows) {
-        var node = input.tree[row.indices.first];
-        if (row.indices.length > 1) {
-          node = input.loaded[PathMatcher.normalize(node.path)]?.folder ?? node;
-          for (final index in row.indices.skip(1)) {
-            node = (node as FolderNode).children[index];
-          }
-        }
-        items.add(
-          VisibleLibraryItem(
-            node: node,
-            depth: row.depth,
-            revealed: row.revealed,
-            animateInitialReveal: row.animate,
-            isFolderError: row.error,
-            errorFolderPath: row.error ? node.path : null,
-          ),
-        );
+      for (final item in _projectLibraryRows(input)) {
+        final index = items.length;
+        sameRows =
+            sameRows &&
+            index < previousItems.length &&
+            identical(item.node, previousItems[index].node) &&
+            item.isFolderError == previousItems[index].isFolderError;
+        items.add(item);
+        paths.add(item.isFolderError ? null : item.node.path);
+        uniformRoots =
+            uniformRoots &&
+            item.depth == 0 &&
+            isSelectableLibraryNode(item.node);
         if (slice.elapsedMicroseconds >= 1000) {
           await Future<void>.delayed(Duration.zero);
           if (!mounted) return;
@@ -598,6 +564,27 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
           }
           slice.reset();
         }
+      }
+      // An expansion can finish with all rows still in the same positions.
+      // Its settled rows need only new reveal flags, so keep their indexes.
+      final reuseIndex =
+          sameRows &&
+          previousItems.length == items.length &&
+          identical(previousItems, _visibleItemsCache);
+      final projection = reuseIndex
+          ? (
+              ids: _visibleItemIds,
+              reorderIds: _reorderItemIds,
+              indices: _itemIndexById,
+            )
+          : paths.length < 128
+          ? _indexLibraryRows(paths)
+          : await compute(_indexLibraryRows, paths);
+      if (!mounted) return;
+      if ((widget.tree, widget.structureRevision, _visibleItemsVersion) !=
+          request) {
+        _projectionRequest = null;
+        return;
       }
       _pendingProjectionCommit = () {
         if ((widget.tree, widget.structureRevision, _visibleItemsVersion) !=
@@ -620,7 +607,6 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
           _presentedPinnedPaths = pinnedPaths;
           _visibleItemIds = projection.ids;
           _reorderItemIds = projection.reorderIds;
-          _visibleNodeIds = projection.nodeIds;
           _itemIndexById = projection.indices;
           _itemKeys.removeWhere((id, _) => !_itemIndexById.containsKey(id));
           _itemKeyIndices
@@ -630,9 +616,10 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
                 (entry) => MapEntry(entry.value, _itemIndexById[entry.key]!),
               ),
             );
-          _uniformRoots = projection.uniformRoots;
+          _uniformRoots = uniformRoots;
         });
         widget.onProjectionAvailabilityChanged?.call(items.isNotEmpty);
+        if (_expandedCardPaths.isEmpty) return;
         for (final node in widget.tree.whereType<FolderNode>()) {
           final path = PathMatcher.normalize(node.path);
           if (_expandedCardPaths.contains(path) &&
@@ -686,6 +673,12 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
   void _pruneFolderTreeCaches(List<LibraryNode> tree, int structureRevision) {
     if (_prunedFolderTreeRevision == structureRevision) return;
     _prunedFolderTreeRevision = structureRevision;
+    if (_loadedFolderTrees.isEmpty &&
+        _loadingFolderTreeRevisions.isEmpty &&
+        _folderTreeErrorPaths.isEmpty &&
+        _expandedCardPaths.isEmpty) {
+      return;
+    }
     final rootPaths = tree
         .whereType<FolderNode>()
         .map((folder) => PathMatcher.normalize(folder.path))
@@ -788,7 +781,6 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
       return errorBanner ?? const SizedBox.expand();
     }
     final itemIds = _reorderItemIds;
-    final currentIds = _visibleNodeIds;
     _removingItemIds.addAll(
       ref
           .read(undoableRemovalStateProvider)
@@ -797,9 +789,9 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
           .map((key) => PathMatcher.equivalenceKey(key.id)),
     );
     // Committed rows stay collapsed until the source snapshot removes them.
-    _removingItemIds.retainAll(currentIds);
+    _removingItemIds.retainWhere(_itemIndexById.containsKey);
     _removalKeys.removeWhere(
-      (key) => !currentIds.contains(PathMatcher.equivalenceKey(key.id)),
+      (key) => !_itemIndexById.containsKey(PathMatcher.equivalenceKey(key.id)),
     );
     // Riverpod pauses a hidden row's watch subscriptions with TickerMode. Keep
     // removal streams live through undo so a stale reverse cannot finish first

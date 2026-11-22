@@ -212,8 +212,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
         .where(PathMatcher.isContentUri),
   };
   @override
-  List<String> get watchedFolders =>
-      UnmodifiableListView<String>(_service.watchedFolders);
+  List<String> get watchedFolders => _service.watchedFoldersSnapshot;
   @override
   List<String> get watchedLibraries =>
       UnmodifiableListView<String>(_service.watchedLibraries);
@@ -250,15 +249,15 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
       ..groupOrder.addAll(persisted.groupOrder)
       ..groupOrderSet.clear()
       ..groupOrderSet.addAll(persisted.groupOrder)
-      ..watchedFolders.clear()
-      ..watchedFolders.addAll(persisted.watchedFolders)
+      ..replaceWatchedFolders(persisted.watchedFolders)
       ..watchedLibraries.clear()
       ..watchedLibraries.addAll(persisted.watchedLibraries)
       ..libraryEntriesByLibrary = persisted.entriesByLibrary
       ..excludedLibraryFolders.clear()
       ..excludedLibraryFolders.addAll(persisted.folderExclusions)
       ..excludedLibraryTracks.clear()
-      ..excludedLibraryTracks.addAll(persisted.trackExclusions);
+      ..excludedLibraryTracks.addAll(persisted.trackExclusions)
+      ..invalidateExclusionMatchers();
 
     _catalogWrites.applyDerivedSnapshot(persisted.derived);
     // Startup caches shallow cards; nested trees stay lazy until requested.
@@ -289,10 +288,11 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
       ..tracksByGroup.clear()
       ..groupOrder.clear()
       ..groupOrderSet.clear()
-      ..watchedFolders.clear()
+      ..replaceWatchedFolders(const [])
       ..watchedLibraries.clear()
       ..excludedLibraryFolders.clear()
       ..excludedLibraryTracks.clear()
+      ..invalidateExclusionMatchers()
       ..libraryEntriesByLibrary.clear()
       ..isScanning = false
       ..isBackgroundScanning = false
@@ -887,7 +887,8 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   }
 
   @override
-  void beginLibraryBatch() => _catalogWrites.beginLibraryBatch();
+  void beginLibraryBatch({bool snapshotAllEntries = true}) =>
+      _catalogWrites.beginLibraryBatch(snapshotAllEntries: snapshotAllEntries);
 
   @override
   void beginStagedLibraryRefresh() =>

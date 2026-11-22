@@ -435,11 +435,38 @@ final class CoverArtworkStore {
     }, coalesce: true);
   }
 
+  bool get hasBindings => _bindings.isNotEmpty;
+
   Future<void> invalidate(Iterable<String> logicalKeys) {
     if (!_initialized) return Future<void>.value();
     var changed = false;
     for (final key in logicalKeys) {
       changed = _bindings.remove(_canonicalLogicalKey(key)) != null || changed;
+    }
+    return changed ? _enqueue<void>(_persistIndex) : Future<void>.value();
+  }
+
+  Future<void> invalidateMatching(
+    Iterable<String> logicalKeys, {
+    bool Function(String trackIdentity)? trackIdentityMatches,
+  }) {
+    if (!_initialized || _bindings.isEmpty) return Future<void>.value();
+    var changed = false;
+    for (final key in logicalKeys) {
+      changed = _bindings.remove(_canonicalLogicalKey(key)) != null || changed;
+    }
+    if (trackIdentityMatches != null && _bindings.isNotEmpty) {
+      final matched = <String>[];
+      for (final key in _bindings.keys) {
+        if (!key.startsWith('track:')) continue;
+        final source = key.substring('track:'.length);
+        final pipeAt = source.indexOf('|');
+        final identity = pipeAt < 0 ? source : source.substring(0, pipeAt);
+        if (trackIdentityMatches(identity)) matched.add(key);
+      }
+      for (final key in matched) {
+        changed = _bindings.remove(key) != null || changed;
+      }
     }
     return changed ? _enqueue<void>(_persistIndex) : Future<void>.value();
   }

@@ -129,7 +129,6 @@ List<Widget> _buildSettingsAppearanceSection({
                   t.appThemeColor,
                   t.customThemeColor,
                   t.useSystemAccentColor,
-                  t.systemAccentColor,
                 ),
               ),
             );
@@ -139,18 +138,39 @@ List<Widget> _buildSettingsAppearanceSection({
               indicatorKey: const ValueKey<String>('app_theme_color_indicator'),
               color: Theme.of(context).colorScheme.primary,
               iconColor: cs.primary,
-              onTap: () => _showThemeColorPicker(
-                context: context,
-                i18n: i18n,
-                title: i18n.tr('app_theme_color'),
-                selected: selection.$1,
-                customColor: selection.$2,
-                useSystemAccent: selection.$3,
-                systemAccentColor: selection.$4,
-                onSelected: themeProvider.setAppThemeColor,
-                onCustomColorSelected: themeProvider.setCustomThemeColor,
-                onSystemAccentSelected: themeProvider.setUseSystemAccentColor,
-              ),
+              onTap: () {
+                if (themeProvider.systemAccentColor == null) {
+                  final lifecycleService = ref.read(
+                    appLifecyclePlatformServiceProvider,
+                  );
+                  unawaited(
+                    lifecycleService
+                        .getSystemAccentColor()
+                        .then((accent) {
+                          if (!context.mounted || accent == null) return;
+                          themeProvider.setSystemAccentColor(Color(accent));
+                        })
+                        .catchError((Object error, StackTrace stackTrace) {
+                          debugPrint(
+                            'Failed to load system accent color: $error\n$stackTrace',
+                          );
+                        }),
+                  );
+                }
+                _showThemeColorPicker(
+                  context: context,
+                  i18n: i18n,
+                  title: i18n.tr('app_theme_color'),
+                  selected: selection.$1,
+                  customColor: selection.$2,
+                  useSystemAccent: selection.$3,
+                  systemAccentColorListenable:
+                      themeProvider.systemAccentColorListenable,
+                  onSelected: themeProvider.setAppThemeColor,
+                  onCustomColorSelected: themeProvider.setCustomThemeColor,
+                  onSystemAccentSelected: themeProvider.setUseSystemAccentColor,
+                );
+              },
             );
           },
         ),
@@ -237,7 +257,7 @@ void _showThemeColorPicker({
   required ThemeAccentPreset selected,
   required Color? customColor,
   required bool useSystemAccent,
-  required Color? systemAccentColor,
+  required ValueListenable<Color?> systemAccentColorListenable,
   required Future<bool> Function(ThemeAccentPreset value) onSelected,
   required Future<bool> Function(Color? value) onCustomColorSelected,
   required Future<bool> Function(bool value) onSystemAccentSelected,
@@ -250,7 +270,7 @@ void _showThemeColorPicker({
       selected: selected,
       customColor: customColor,
       useSystemAccent: useSystemAccent,
-      systemAccentColor: systemAccentColor,
+      systemAccentColorListenable: systemAccentColorListenable,
       i18n: i18n,
       onSelected: (value) {
         Navigator.of(dialogContext).pop();
@@ -355,7 +375,7 @@ class _ThemeColorPickerMenu extends StatefulWidget {
     required this.selected,
     required this.customColor,
     required this.useSystemAccent,
-    required this.systemAccentColor,
+    required this.systemAccentColorListenable,
     required this.i18n,
     required this.onSelected,
     required this.onCustomColorSelected,
@@ -366,7 +386,7 @@ class _ThemeColorPickerMenu extends StatefulWidget {
   final ThemeAccentPreset selected;
   final Color? customColor;
   final bool useSystemAccent;
-  final Color? systemAccentColor;
+  final ValueListenable<Color?> systemAccentColorListenable;
   final AppLanguageProvider i18n;
   final ValueChanged<ThemeAccentPreset> onSelected;
   final ValueChanged<Color> onCustomColorSelected;
@@ -401,233 +421,249 @@ class _ThemeColorPickerMenuState extends State<_ThemeColorPickerMenu> {
     final tokens = AppDesignTokens.of(context);
     final hasCustomActive =
         widget.customColor != null && !widget.useSystemAccent;
-    final hasSystemActive =
-        widget.useSystemAccent && widget.systemAccentColor != null;
 
     return AppDialog(
       key: const ValueKey<String>('theme_color_dialog'),
       title: widget.title,
       icon: Icons.palette_outlined,
       scrollable: true,
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          GridView.builder(
-            key: const ValueKey<String>('theme_color_grid'),
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 4,
-              mainAxisExtent: 56,
-              crossAxisSpacing: 8,
-              mainAxisSpacing: 4,
-            ),
-            itemCount: ThemeAccentPreset.values.length,
-            itemBuilder: (context, index) {
-              final preset = ThemeAccentPreset.values[index];
-              final isSelected =
-                  !hasCustomActive &&
-                  !hasSystemActive &&
-                  preset == widget.selected;
-              final label = widget.i18n.tr(preset.labelKey);
-              final color = preset.colorScheme(theme.brightness).primary;
-              final foreground =
-                  ThemeData.estimateBrightnessForColor(color) == Brightness.dark
-                  ? Colors.white
-                  : const Color(0xFF1B1B1F);
-              return Semantics(
-                button: true,
-                selected: isSelected,
-                label: label,
-                child: Tooltip(
-                  message: label,
-                  child: AppEntryInkWell(
-                    key: ValueKey<String>('theme_color_${preset.name}'),
-                    customBorder: const CircleBorder(),
-                    onTap: () => widget.onSelected(preset),
-                    child: Center(
-                      child: AnimatedContainer(
-                        duration: tokens.motionFast,
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: color,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: isSelected
-                                ? cs.onSurface
-                                : cs.outlineVariant.withValues(alpha: 0.7),
-                            width: isSelected ? 3 : 1,
+      content: ValueListenableBuilder<Color?>(
+        valueListenable: widget.systemAccentColorListenable,
+        builder: (context, systemAccentColor, _) {
+          final hasSystemActive =
+              widget.useSystemAccent && systemAccentColor != null;
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              GridView.builder(
+                key: const ValueKey<String>('theme_color_grid'),
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 4,
+                  mainAxisExtent: 56,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 4,
+                ),
+                itemCount: ThemeAccentPreset.values.length,
+                itemBuilder: (context, index) {
+                  final preset = ThemeAccentPreset.values[index];
+                  final isSelected =
+                      !hasCustomActive &&
+                      !hasSystemActive &&
+                      preset == widget.selected;
+                  final label = widget.i18n.tr(preset.labelKey);
+                  final color = preset.colorScheme(theme.brightness).primary;
+                  final foreground =
+                      ThemeData.estimateBrightnessForColor(color) ==
+                          Brightness.dark
+                      ? Colors.white
+                      : const Color(0xFF1B1B1F);
+                  return Semantics(
+                    button: true,
+                    selected: isSelected,
+                    label: label,
+                    child: Tooltip(
+                      message: label,
+                      child: AppEntryInkWell(
+                        key: ValueKey<String>('theme_color_${preset.name}'),
+                        customBorder: const CircleBorder(),
+                        onTap: () => widget.onSelected(preset),
+                        child: Center(
+                          child: AnimatedContainer(
+                            duration: tokens.motionFast,
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: color,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: isSelected
+                                    ? cs.onSurface
+                                    : cs.outlineVariant.withValues(alpha: 0.7),
+                                width: isSelected ? 3 : 1,
+                              ),
+                            ),
+                            child: isSelected
+                                ? Icon(
+                                    Icons.check_rounded,
+                                    color: foreground,
+                                    size: 24,
+                                  )
+                                : null,
                           ),
                         ),
-                        child: isSelected
-                            ? Icon(
-                                Icons.check_rounded,
-                                color: foreground,
-                                size: 24,
-                              )
-                            : null,
                       ),
                     ),
-                  ),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              Divider(
+                height: 1,
+                color: cs.outlineVariant.withValues(
+                  alpha: tokens.subtleBorderAlpha,
                 ),
-              );
-            },
-          ),
-          const SizedBox(height: 12),
-          Divider(
-            height: 1,
-            color: cs.outlineVariant.withValues(
-              alpha: tokens.subtleBorderAlpha,
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (widget.systemAccentColor != null) ...[
-            _ThemeColorOptionRow(
-              key: const ValueKey<String>('theme_color_system_option'),
-              label: widget.i18n.tr('theme_color_system'),
-              previewColor: buildAppColorScheme(
-                seedColor: widget.systemAccentColor!,
-                brightness: theme.brightness,
-              ).primary,
-              selected: hasSystemActive,
-              onTap: widget.onSystemAccentSelected,
-            ),
-            const SizedBox(height: 4),
-          ],
-          ValueListenableBuilder<HSLColor>(
-            valueListenable: _draftHsl,
-            builder: (context, draftHsl, _) {
-              final draftColor = draftHsl.toColor();
-              final draftScheme = buildAppColorScheme(
-                seedColor: draftColor,
-                brightness: theme.brightness,
-              );
-              final hexCode =
-                  '#${(draftColor.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _ThemeColorOptionRow(
-                    key: const ValueKey<String>('theme_color_custom_toggle'),
-                    label: widget.i18n.tr('theme_color_custom'),
-                    previewColor: draftScheme.primary,
-                    selected: hasCustomActive,
-                    trailingIcon: _customExpanded
-                        ? Icons.expand_less_rounded
-                        : Icons.expand_more_rounded,
-                    onTap: () =>
-                        setState(() => _customExpanded = !_customExpanded),
-                  ),
-                  if (_customExpanded) ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      key: const ValueKey<String>('theme_color_custom_editor'),
-                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                      decoration: BoxDecoration(
-                        color: cs.surfaceContainer,
-                        borderRadius: BorderRadius.circular(tokens.radiusCard),
-                        border: Border.all(
-                          color: cs.outlineVariant.withValues(
-                            alpha: tokens.subtleBorderAlpha,
-                          ),
+              ),
+              const SizedBox(height: 8),
+              if (systemAccentColor != null) ...[
+                _ThemeColorOptionRow(
+                  key: const ValueKey<String>('theme_color_system_option'),
+                  label: widget.i18n.tr('theme_color_system'),
+                  previewColor: buildAppColorScheme(
+                    seedColor: systemAccentColor,
+                    brightness: theme.brightness,
+                  ).primary,
+                  selected: hasSystemActive,
+                  onTap: widget.onSystemAccentSelected,
+                ),
+                const SizedBox(height: 4),
+              ],
+              ValueListenableBuilder<HSLColor>(
+                valueListenable: _draftHsl,
+                builder: (context, draftHsl, _) {
+                  final draftColor = draftHsl.toColor();
+                  final draftScheme = buildAppColorScheme(
+                    seedColor: draftColor,
+                    brightness: theme.brightness,
+                  );
+                  final hexCode =
+                      '#${(draftColor.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _ThemeColorOptionRow(
+                        key: const ValueKey<String>(
+                          'theme_color_custom_toggle',
                         ),
+                        label: widget.i18n.tr('theme_color_custom'),
+                        previewColor: draftScheme.primary,
+                        selected: hasCustomActive,
+                        trailingIcon: _customExpanded
+                            ? Icons.expand_less_rounded
+                            : Icons.expand_more_rounded,
+                        onTap: () =>
+                            setState(() => _customExpanded = !_customExpanded),
                       ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Row(
+                      if (_customExpanded) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          key: const ValueKey<String>(
+                            'theme_color_custom_editor',
+                          ),
+                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                          decoration: BoxDecoration(
+                            color: cs.surfaceContainer,
+                            borderRadius: BorderRadius.circular(
+                              tokens.radiusCard,
+                            ),
+                            border: Border.all(
+                              color: cs.outlineVariant.withValues(
+                                alpha: tokens.subtleBorderAlpha,
+                              ),
+                            ),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Container(
-                                width: 28,
-                                height: 28,
-                                decoration: BoxDecoration(
-                                  color: draftScheme.primary,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: cs.outlineVariant.withValues(
-                                      alpha: 0.7,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Text(
-                                hexCode,
-                                style: theme.textTheme.labelLarge?.copyWith(
-                                  color: cs.onSurface,
-                                ),
-                              ),
-                              const Spacer(),
-                              AppSurfaceButtonShell(
-                                enabled: true,
-                                builder: (context, _) => FilledButton(
-                                  key: const ValueKey<String>(
-                                    'theme_color_custom_apply',
-                                  ),
-                                  onPressed: () =>
-                                      widget.onCustomColorSelected(draftColor),
-                                  style: appSurfaceButtonStyle(
-                                    style: FilledButton.styleFrom(
-                                      minimumSize: const Size(72, 36),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 14,
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 28,
+                                    height: 28,
+                                    decoration: BoxDecoration(
+                                      color: draftScheme.primary,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: cs.outlineVariant.withValues(
+                                          alpha: 0.7,
+                                        ),
                                       ),
-                                      backgroundColor: draftScheme.primary,
-                                      foregroundColor: draftScheme.onPrimary,
                                     ),
-                                    colorScheme: draftScheme,
-                                    platform: theme.platform,
-                                    defaultBackgroundColor: draftScheme.primary,
-                                    animationDuration:
-                                        MediaQuery.disableAnimationsOf(context)
-                                        ? Duration.zero
-                                        : const Duration(milliseconds: 130),
                                   ),
-                                  child: Text(widget.i18n.tr('confirm')),
-                                ),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    hexCode,
+                                    style: theme.textTheme.labelLarge?.copyWith(
+                                      color: cs.onSurface,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  AppSurfaceButtonShell(
+                                    enabled: true,
+                                    builder: (context, _) => FilledButton(
+                                      key: const ValueKey<String>(
+                                        'theme_color_custom_apply',
+                                      ),
+                                      onPressed: () => widget
+                                          .onCustomColorSelected(draftColor),
+                                      style: appSurfaceButtonStyle(
+                                        style: FilledButton.styleFrom(
+                                          minimumSize: const Size(72, 36),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 14,
+                                          ),
+                                          backgroundColor: draftScheme.primary,
+                                          foregroundColor:
+                                              draftScheme.onPrimary,
+                                        ),
+                                        colorScheme: draftScheme,
+                                        platform: theme.platform,
+                                        defaultBackgroundColor:
+                                            draftScheme.primary,
+                                        animationDuration:
+                                            MediaQuery.disableAnimationsOf(
+                                              context,
+                                            )
+                                            ? Duration.zero
+                                            : const Duration(milliseconds: 130),
+                                      ),
+                                      child: Text(widget.i18n.tr('confirm')),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              _HslColorSliderRow(
+                                label: widget.i18n.tr('theme_color_hue'),
+                                value: draftHsl.hue,
+                                min: 0,
+                                max: 360,
+                                activeColor: draftScheme.primary,
+                                onChanged: (hue) =>
+                                    _draftHsl.value = draftHsl.withHue(hue),
+                              ),
+                              _HslColorSliderRow(
+                                label: widget.i18n.tr('theme_color_saturation'),
+                                value: draftHsl.saturation,
+                                min: 0.1,
+                                max: 1.0,
+                                activeColor: draftScheme.primary,
+                                onChanged: (sat) => _draftHsl.value = draftHsl
+                                    .withSaturation(sat),
+                              ),
+                              _HslColorSliderRow(
+                                label: widget.i18n.tr('theme_color_lightness'),
+                                value: draftHsl.lightness,
+                                min: 0.25,
+                                max: 0.85,
+                                activeColor: draftScheme.primary,
+                                onChanged: (light) => _draftHsl.value = draftHsl
+                                    .withLightness(light),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 6),
-                          _HslColorSliderRow(
-                            label: widget.i18n.tr('theme_color_hue'),
-                            value: draftHsl.hue,
-                            min: 0,
-                            max: 360,
-                            activeColor: draftScheme.primary,
-                            onChanged: (hue) =>
-                                _draftHsl.value = draftHsl.withHue(hue),
-                          ),
-                          _HslColorSliderRow(
-                            label: widget.i18n.tr('theme_color_saturation'),
-                            value: draftHsl.saturation,
-                            min: 0.1,
-                            max: 1.0,
-                            activeColor: draftScheme.primary,
-                            onChanged: (sat) =>
-                                _draftHsl.value = draftHsl.withSaturation(sat),
-                          ),
-                          _HslColorSliderRow(
-                            label: widget.i18n.tr('theme_color_lightness'),
-                            value: draftHsl.lightness,
-                            min: 0.25,
-                            max: 0.85,
-                            activeColor: draftScheme.primary,
-                            onChanged: (light) =>
-                                _draftHsl.value = draftHsl.withLightness(light),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ],
-              );
-            },
-          ),
-        ],
+                        ),
+                      ],
+                    ],
+                  );
+                },
+              ),
+            ],
+          );
+        },
       ),
     );
   }

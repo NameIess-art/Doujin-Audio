@@ -349,6 +349,11 @@ class _MyPageState extends ConsumerState<MyPage>
     final interestActionStyle = OutlinedButton.styleFrom(
       padding: const EdgeInsets.all(8),
     );
+    const interestLoadingPlaceholder = ShimmerContainer(
+      width: 120,
+      height: 32,
+      borderRadius: 8,
+    );
     Widget interestSection() => section(
       i18n.tr('my_interests'),
       AnimatedSwitcher(
@@ -401,11 +406,7 @@ class _MyPageState extends ConsumerState<MyPage>
                       } else {
                         interestContent = const ShimmerLoader(
                           key: ValueKey('interest-loading'),
-                          child: ShimmerContainer(
-                            width: 120,
-                            height: 32,
-                            borderRadius: 8,
-                          ),
+                          child: interestLoadingPlaceholder,
                         );
                       }
                     } else {
@@ -587,41 +588,7 @@ class _MyPageState extends ConsumerState<MyPage>
     );
     Widget interestSkeleton() => section(
       i18n.tr('my_interests'),
-      Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: List.generate(
-              20,
-              (index) => SizedBox(
-                height: 40,
-                child: Center(
-                  widthFactor: 1,
-                  child: ShimmerContainer(
-                    width: 48.0 + (index % 3) * 24,
-                    height: 28,
-                    borderRadius: 8,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          const Row(
-            spacing: 8,
-            children: [
-              Flexible(
-                child: ShimmerContainer(width: 104, height: 40, borderRadius: 20),
-              ),
-              Flexible(
-                child: ShimmerContainer(width: 128, height: 40, borderRadius: 20),
-              ),
-            ],
-          ),
-        ],
-      ),
+      interestLoadingPlaceholder,
       skeleton: true,
       titleWidget: interestTabs(),
       headerSpacing: 12,
@@ -647,6 +614,7 @@ class _MyPageState extends ConsumerState<MyPage>
                   ),
                   leadingSize: _HistoryWorkRow.coverHeight,
                   leadingGap: 10,
+                  shimmerEnabled: false,
                 ),
                 skeleton: true,
               ),

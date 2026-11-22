@@ -62,11 +62,26 @@ extension AppDatabaseTracks on AppDatabase {
   }
 
   Future<MusicTrack?> loadTrackDetail(String path) async {
+    return (await loadTrackDetails([path]))[path];
+  }
+
+  Future<Map<String, MusicTrack>> loadTrackDetails(
+    Iterable<String> paths,
+  ) async {
+    final uniquePaths = paths.toSet().toList(growable: false);
+    if (uniquePaths.isEmpty) return const <String, MusicTrack>{};
     return _runDatabaseRead((db) async {
-      final rows = await _queryFullTrackRows(db, path: path, limit: 1);
-      if (rows.isEmpty) return null;
-      final tagsByPath = await _loadTrackTags(db, paths: [path]);
-      return _trackFromRow(rows.first, tagsByPath[path]);
+      final tracks = <String, MusicTrack>{};
+      for (final chunk in _stringChunks(uniquePaths)) {
+        final rows = await _queryFullTrackRows(db, paths: chunk);
+        if (rows.isEmpty) continue;
+        final tags = await _loadTrackTags(db, paths: chunk);
+        for (final row in rows) {
+          final path = row['path'] as String;
+          tracks[path] = _trackFromRow(row, tags[path]);
+        }
+      }
+      return tracks;
     });
   }
 

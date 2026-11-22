@@ -822,6 +822,35 @@ void main() {
     );
     expect(await directory.list().isEmpty, isTrue);
   });
+
+  test('subtitle cache evicts least-recently-used track beyond capacity', () async {
+    final service = PlaybackSubtitleService(
+      trackResolver: (_) => null,
+      subtitleLoader: (trackPath, _) async => SubtitleTrack(
+        sourcePath: '$trackPath.srt',
+        cues: const [
+          SubtitleCue(
+            start: Duration(seconds: 1),
+            end: Duration(seconds: 2),
+            text: 'line',
+          ),
+        ],
+      ),
+    );
+    addTearDown(service.dispose);
+
+    for (var i = 0; i < 20; i++) {
+      await service.load('/audio/$i.mp3');
+    }
+    // Touch track 0 so track 1 becomes the least-recently-used entry.
+    expect(service.trackSync('/audio/0.mp3'), isNotNull);
+
+    await service.load('/audio/20.mp3');
+
+    expect(service.hasResult('/audio/0.mp3'), isTrue);
+    expect(service.hasResult('/audio/1.mp3'), isFalse);
+    expect(service.hasResult('/audio/20.mp3'), isTrue);
+  });
 }
 
 MusicTrack _remoteTrack(String path) => MusicTrack(

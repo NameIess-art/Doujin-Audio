@@ -257,7 +257,8 @@ void main() {
         },
       );
       addTearDown(store.shutdown);
-      store[_key(1)] = _task(1);
+      store.restoreTask(_task(1));
+      expect(store.isFileEntityTagDurable(_key(1), 'a.mp3', null), isTrue);
       final first = store.flushPersistence();
       await started[0].future;
       store[_key(1)] = _task(1).copyWith(fileEntityTags: {'a.mp3': '"a"'});
@@ -273,6 +274,8 @@ void main() {
       await first;
       await started[1].future;
       expect(committed, isFalse);
+      expect(store.isFileEntityTagDurable(_key(1), 'a.mp3', null), isFalse);
+      expect(store.isFileEntityTagDurable(_key(1), 'a.mp3', '"a"'), isFalse);
       expect(writes, hasLength(2));
       final captured = decodePersistedDownloadTasks(writes.last!).tasks.single;
       expect(captured.task.fileEntityTags, {'a.mp3': '"a"', 'b.mp3': '"b"'});
@@ -282,6 +285,7 @@ void main() {
       final fourth = store.flushPersistence();
       release[1].complete();
       await Future.wait([second, third, fourth]);
+      expect(store.isFileEntityTagDurable(_key(1), 'a.mp3', '"a"'), isTrue);
       expect(writes, hasLength(3));
       expect(
         decodePersistedDownloadTasks(
@@ -567,6 +571,77 @@ void main() {
     await shuttingDownManager.shutdown();
     expect(shutdownWrites, hasLength(1));
   });
+
+  test(
+    'removing a task invalidates committed and in-flight durability metadata before recreation',
+    () async {
+      final started = Completer<void>();
+      final release = Completer<void>();
+      var writes = 0;
+      final store = AsmrDownloadTaskStore(
+        persistTasks: true,
+        persistenceSnapshot: (task) => PersistedDownloadTask(
+          task: task,
+          createdOutputPaths: const {},
+          createdJsonDocuments: const {},
+        ),
+        persistenceWriter: (_) async {
+          writes++;
+          if (writes == 2) {
+            started.complete();
+            await release.future;
+          }
+        },
+      );
+      addTearDown(store.shutdown);
+
+      final initial = _task(1).copyWith(
+        fileEntityTags: const {'track.mp3': '"v1"'},
+        actualOutputPaths: const {'track.mp3': 'Work 1/track.mp3'},
+      );
+      store[_key(1)] = initial;
+      await store.flushPersistence();
+      expect(store.isFileEntityTagDurable(_key(1), 'track.mp3', '"v1"'), isTrue);
+      expect(
+        store.isFileOutputPathDurable(_key(1), 'track.mp3', 'Work 1/track.mp3'),
+        isTrue,
+      );
+
+      // Start a write that captures task 1, then remove and recreate before commit.
+      final inflight = store.flushPersistence();
+      await started.future;
+      store.remove(_key(1));
+      store[_key(1)] = initial;
+      expect(
+        store.isFileEntityTagDurable(_key(1), 'track.mp3', '"v1"'),
+        isFalse,
+      );
+      expect(store.isFileEntityTagDurable(_key(1), 'track.mp3', null), isFalse);
+      expect(
+        store.isFileOutputPathDurable(_key(1), 'track.mp3', 'Work 1/track.mp3'),
+        isFalse,
+      );
+
+      release.complete();
+      await inflight;
+      // The completed pre-removal write must not resurrect stale metadata.
+      expect(
+        store.isFileEntityTagDurable(_key(1), 'track.mp3', '"v1"'),
+        isFalse,
+      );
+      expect(
+        store.isFileOutputPathDurable(_key(1), 'track.mp3', 'Work 1/track.mp3'),
+        isFalse,
+      );
+
+      await store.flushPersistence();
+      expect(store.isFileEntityTagDurable(_key(1), 'track.mp3', '"v1"'), isTrue);
+      expect(
+        store.isFileOutputPathDurable(_key(1), 'track.mp3', 'Work 1/track.mp3'),
+        isTrue,
+      );
+    },
+  );
 }
 
 String? _persistedMessage(String? payload) {

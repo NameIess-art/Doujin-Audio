@@ -17,6 +17,7 @@ Future<void> _onCreate(Database db, int version) async {
   await _createTrackIndexes(db);
   await _createSessionsTable(db);
   await _createSessionDetailTables(db);
+  await _createQueuePathIndexes(db);
   await _createPlaybackQueueSummary(db);
   await _createAsmrTables(db);
   await _createAudioDetailsTable(db);
@@ -137,6 +138,28 @@ Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
       await db.execute('DROP INDEX IF EXISTS $name');
     }
   }
+  if (oldVersion < 18 && newVersion >= 18) {
+    for (final name in [
+      'idx_tracks_group_key',
+      'idx_tracks_display_name',
+      'idx_tracks_last_played_at',
+      'idx_tracks_favorite',
+      'idx_track_remote_kind',
+      'idx_track_tags_tag',
+      'idx_library_entries_library',
+      'idx_library_entries_state',
+    ]) {
+      await db.execute('DROP INDEX IF EXISTS $name');
+    }
+    if (oldVersion >= 14) {
+      await db.execute('DROP INDEX IF EXISTS idx_listening_history_recent');
+      await _createListeningHistoryIndex(db);
+    }
+  }
+  if (oldVersion < 19 && newVersion >= 19) {
+    await _backfillQueuePathKeys(db);
+    await _createQueuePathIndexes(db);
+  }
 }
 
 Future<void> _createListeningTables(Database db) async {
@@ -154,14 +177,16 @@ Future<void> _createListeningTables(Database db) async {
     'work_key TEXT PRIMARY KEY, track_json TEXT NOT NULL, last_played_at_ms INTEGER NOT NULL, '
     'legacy_order INTEGER NOT NULL DEFAULT 0)',
   );
-  await db.execute(
-    'CREATE INDEX IF NOT EXISTS idx_listening_history_recent '
-    'ON listening_history(last_played_at_ms DESC, work_key)',
-  );
+  await _createListeningHistoryIndex(db);
   await db.execute(
     'CREATE TABLE IF NOT EXISTS listening_imports (batch_id TEXT PRIMARY KEY)',
   );
 }
+
+Future<void> _createListeningHistoryIndex(Database db) => db.execute(
+  'CREATE INDEX IF NOT EXISTS idx_listening_history_recent '
+  'ON listening_history(last_played_at_ms DESC, legacy_order, work_key)',
+);
 
 Future<void> _addColumnIfMissing(
   Database db,
@@ -235,13 +260,6 @@ Future<void> _createTrackDetailTables(Database db) async {
         PRIMARY KEY(path, tag)
       )
     ''');
-  await db.execute(
-    'CREATE INDEX IF NOT EXISTS idx_track_remote_kind '
-    'ON track_remote_metadata(remote_metadata_kind)',
-  );
-  await db.execute(
-    'CREATE INDEX IF NOT EXISTS idx_track_tags_tag ON track_tags(tag)',
-  );
 }
 
 Future<void> _createSessionDetailTables(Database db) async {
@@ -290,6 +308,7 @@ Future<void> _createSessionDetailTables(Database db) async {
         kind TEXT NOT NULL,
         title TEXT NOT NULL DEFAULT '',
         work_root_path TEXT,
+        path_match_key TEXT,
         sort_order INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY(session_id, entry_id)
       )
@@ -299,6 +318,7 @@ Future<void> _createSessionDetailTables(Database db) async {
         session_id TEXT NOT NULL,
         entry_id TEXT NOT NULL,
         track_path TEXT NOT NULL,
+        path_match_key TEXT,
         display_name TEXT NOT NULL DEFAULT '',
         group_key TEXT NOT NULL DEFAULT '',
         group_title TEXT NOT NULL DEFAULT '',
@@ -365,26 +385,10 @@ Future<void> _createPlaybackQueueSummary(Database db) async {
   );
 }
 
-Future<void> _createTrackIndexes(Database db) async {
-  await db.execute(
-    'CREATE INDEX IF NOT EXISTS idx_tracks_group_key ON tracks(group_key)',
-  );
-  await db.execute(
-    'CREATE INDEX IF NOT EXISTS idx_tracks_display_name ON tracks(display_name)',
-  );
-  await db.execute(
-    'CREATE INDEX IF NOT EXISTS idx_tracks_last_played_at '
-    'ON track_playback_state(last_played_at_ms)',
-  );
-  await db.execute(
-    'CREATE INDEX IF NOT EXISTS idx_tracks_favorite '
-    'ON track_playback_state(is_favorite)',
-  );
-  await db.execute(
-    'CREATE INDEX IF NOT EXISTS idx_tracks_scan_generation '
-    'ON track_scan_info(scan_generation)',
-  );
-}
+Future<void> _createTrackIndexes(Database db) => db.execute(
+  'CREATE INDEX IF NOT EXISTS idx_tracks_scan_generation '
+  'ON track_scan_info(scan_generation)',
+);
 
 Future<void> _createAsmrTables(Database db) async {
   await db.execute('''
@@ -613,12 +617,8 @@ Future<void> _createLibraryEntriesTable(Database db) async {
       )
     ''');
   await db.execute(
-    'CREATE INDEX IF NOT EXISTS idx_library_entries_library '
-    'ON library_entries(library_path)',
-  );
-  await db.execute(
-    'CREATE INDEX IF NOT EXISTS idx_library_entries_state '
-    'ON library_entries(library_path, state)',
+    'CREATE INDEX IF NOT EXISTS idx_library_entries_path '
+    'ON library_entries(path)',
   );
   await db.execute(
     'CREATE INDEX IF NOT EXISTS idx_library_entries_scan_generation '
@@ -680,6 +680,53 @@ Future<void> _backfillTimeSegmentMatchKeys(Database db) async {
     }
     await batch.commit(noResult: true);
   }
+}
+
+Future<void> _backfillQueuePathKeys(Database db) async {
+  for (final (table, pathColumn) in const [
+    ('playback_queue_entries', 'work_root_path'),
+    ('playback_queue_entry_tracks', 'track_path'),
+  ]) {
+    await _addColumnIfMissing(db, table, 'path_match_key', 'TEXT');
+    int? lastRow;
+    while (true) {
+      final rows = await db.query(
+        table,
+        columns: ['rowid', pathColumn],
+        where:
+            '$pathColumn IS NOT NULL'
+            '${lastRow == null ? '' : ' AND rowid > ?'}',
+        whereArgs: lastRow == null ? null : [lastRow],
+        orderBy: 'rowid',
+        limit: 500,
+      );
+      if (rows.isEmpty) break;
+      final batch = db.batch();
+      for (final row in rows) {
+        if (_queuePathMatchKey(row[pathColumn] as String) case final key?) {
+          batch.update(
+            table,
+            {'path_match_key': key},
+            where: 'rowid = ?',
+            whereArgs: [row['rowid']],
+          );
+        }
+      }
+      await batch.commit(noResult: true);
+      lastRow = rows.last['rowid'] as int;
+    }
+  }
+}
+
+Future<void> _createQueuePathIndexes(Database db) async {
+  await db.execute(
+    'CREATE INDEX IF NOT EXISTS idx_queue_work_path_match '
+    'ON playback_queue_entries(path_match_key) WHERE work_root_path IS NOT NULL',
+  );
+  await db.execute(
+    'CREATE INDEX IF NOT EXISTS idx_queue_track_path_match '
+    'ON playback_queue_entry_tracks(path_match_key)',
+  );
 }
 
 Future<void> _migrateAsmrIdentity(Database db) async {

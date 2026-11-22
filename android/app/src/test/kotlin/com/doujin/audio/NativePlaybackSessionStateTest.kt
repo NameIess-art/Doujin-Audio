@@ -524,6 +524,38 @@ class NativePlaybackSessionStateTest {
     }
 
     @Test
+    fun `neutral spatial processing passes through exact PCM float samples after fading out`() {
+        val processor = VolumeBalanceAudioProcessor().apply {
+            controls = VolumeBalanceAudioProcessor.Controls(
+                frontBack = 1f,
+                spatialResponses = testSpatialResponses()
+            )
+        }
+        val stereo = AudioProcessor.AudioFormat(48000, 2, C.ENCODING_PCM_FLOAT)
+        assertEquals(stereo, processor.configure(stereo))
+        processor.flush(AudioProcessor.StreamMetadata.DEFAULT)
+
+        fun render(frames: Int, sample: Int): ByteBuffer {
+            val buffer = ByteBuffer.allocateDirect(frames * 8).order(ByteOrder.nativeOrder())
+            repeat(frames) { buffer.putInt(sample).putInt(Int.MIN_VALUE) }
+            buffer.flip()
+            processor.queueInput(buffer)
+            assertEquals(0, buffer.remaining())
+            return processor.output.order(ByteOrder.nativeOrder())
+        }
+
+        render(500, 0.5f.toRawBits())
+        processor.controls = processor.controls.copy(frontBack = 0f)
+        val fade = render(500, 0.5f.toRawBits())
+        assertTrue(fade.float != 0.5f)
+        val dry = render(2, 0x7fc01234)
+        repeat(2) {
+            assertEquals(0x7fc01234, dry.int)
+            assertEquals(Int.MIN_VALUE, dry.int)
+        }
+    }
+
+    @Test
     fun `spatial convolution limits both ears together and clears history on flush`() {
         val direct = floatArrayOf(1f, 1f)
         val cross = floatArrayOf(0.5f, 0.5f)
@@ -630,6 +662,29 @@ class NativePlaybackSessionStateTest {
         )
 
         assertTrue(reached)
+    }
+
+    @Test
+    fun `spatial renderer caches prepared kernels per responses and sample rate and honors frontBack threshold`() {
+        val responses = testSpatialResponses()
+        val first44k = StereoSpatialRenderer.getOrPrepare(responses, 44100)
+        val second44k = StereoSpatialRenderer.getOrPrepare(responses, 44100)
+        val first48k = StereoSpatialRenderer.getOrPrepare(responses, 48000)
+        assertSame(first44k, second44k)
+        assertTrue(first44k !== first48k)
+
+        var loaded = 0
+        val controller = NativeAudioEffectsController {
+            loaded++
+            responses
+        }
+        assertEquals(false, shouldProcessFrontBack(0f))
+        assertEquals(false, shouldProcessFrontBack(0.0005f))
+        assertEquals(true, shouldProcessFrontBack(0.001f))
+        assertEquals(false, controller.apply(NativeAudioEffects(frontBack = 0.0005f)))
+        assertEquals(0, loaded)
+        assertEquals(true, controller.apply(NativeAudioEffects(frontBack = 0.25f)))
+        assertEquals(1, loaded)
     }
 
     private fun progressAnchor(

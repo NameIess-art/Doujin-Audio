@@ -28,6 +28,8 @@ class _WindowsPlaybackSession {
 
   List<Map<String, Object?>> _queue = [];
   List<String>? _cachedRetainedUris;
+  Map<String, Object?>? _referenceItem;
+  PlaybackMediaReference? _reference;
 
   List<Map<String, Object?>> get queue => _queue;
   set queue(List<Map<String, Object?>> items) {
@@ -46,6 +48,9 @@ class _WindowsPlaybackSession {
 
   void invalidateRetainedUris() {
     _cachedRetainedUris = null;
+    // A network retry can replace the URI on the current queue item in place.
+    _referenceItem = null;
+    _reference = null;
     queueRevision++;
   }
 
@@ -83,6 +88,23 @@ class _WindowsPlaybackSession {
     );
   }
 
+  static String _nativeMediaPath(String uri) {
+    if (!Platform.isWindows || uri.isEmpty) return uri;
+    if (uri.startsWith(r'\\?\') || uri.startsWith(r'\\')) return uri;
+    final hasDrivePrefix =
+        uri.length >= 2 &&
+        uri[1] == ':' &&
+        ((uri.codeUnitAt(0) >= 65 && uri.codeUnitAt(0) <= 90) ||
+            (uri.codeUnitAt(0) >= 97 && uri.codeUnitAt(0) <= 122));
+    if (!hasDrivePrefix) return uri;
+    final normalized = p.normalize(uri.replaceAll('/', r'\'));
+    final trimmed =
+        normalized.length > 3 && normalized.endsWith(r'\')
+        ? normalized.substring(0, normalized.length - 1)
+        : normalized;
+    return r'\\?\' + trimmed;
+  }
+
   static Media mediaFor(Map<String, Object?> item) {
     final reference = referenceFor(item);
     return Media(
@@ -97,7 +119,15 @@ class _WindowsPlaybackSession {
     );
   }
 
-  PlaybackMediaReference get reference => referenceFor(queue[index]);
+  PlaybackMediaReference get reference {
+    final item = queue[index];
+    if (!identical(item, _referenceItem)) {
+      _reference = referenceFor(item);
+      _referenceItem = item;
+    }
+    return _reference!;
+  }
+
   Duration absolutePosition(Duration relative) =>
       relative + Duration(milliseconds: reference.startMs);
   Duration clampPosition(Duration position) {
@@ -184,6 +214,11 @@ class _WindowsPlaybackSession {
     final raw = readNativePlaylist != null
         ? await readNativePlaylist!(player)
         : await (platform as NativePlayer).getProperty('playlist');
+    if (raw.length >= 128 * 1024) return compute(_decodeNativeEntryIds, raw);
+    return _decodeNativeEntryIds(raw);
+  }
+
+  static List<int> _decodeNativeEntryIds(String raw) {
     final entries = jsonDecode(raw);
     if (entries is! List) throw FormatException('Invalid native playlist', raw);
     final ids = <int>[];
@@ -222,6 +257,10 @@ class _WindowsPlaybackSession {
         generation != this.generation) {
       return;
     }
+    _setNativeEntryOrder(ids);
+  }
+
+  void _setNativeEntryOrder(List<int> ids) {
     if (ids.isEmpty) throw StateError('Current native playlist is empty');
     nativeQueueIndices
       ..clear()
@@ -229,6 +268,39 @@ class _WindowsPlaybackSession {
         for (var i = 0; i < ids.length; i++)
           ids[i]: nativeQueueLimited ? index : i,
       });
+  }
+
+  Future<void> keepCurrentNativeEntry(Player player) async {
+    final platform = player.platform;
+    final currentId = await currentNativeEntryId(player);
+    final logicalIndex = nativeQueueIndices[currentId];
+    if (currentId == null || logicalIndex == null) {
+      throw StateError('Current native entry is unmapped');
+    }
+    if (platform is NativePlayer) {
+      // mpv keeps the current decoder. Synchronize media_kit's public queue
+      // state once so later edits still operate on the same physical entries.
+      final current = mediaFor(queue[logicalIndex]);
+      final playlist = Playlist([current]);
+      await platform.command(['playlist-clear']);
+      if (await platform.getProperty('playlist-count') != '1' ||
+          int.tryParse(await platform.getProperty('playlist/0/id')) !=
+              currentId) {
+        throw StateError('Current native entry was not retained');
+      }
+      platform.current = playlist.medias;
+      platform.state = platform.state.copyWith(playlist: playlist);
+    } else {
+      final ids = await nativeEntryIds(player);
+      final currentIndex = ids.indexOf(currentId);
+      if (currentIndex < 0) throw StateError('Current native entry is missing');
+      for (var i = ids.length - 1; i >= 0; i--) {
+        if (i != currentIndex) await player.remove(i);
+      }
+    }
+    index = logicalIndex;
+    nativeQueueLimited = true;
+    _setNativeEntryOrder([currentId]);
   }
 
   Future<void> updateQueue(
@@ -276,7 +348,7 @@ class _WindowsPlaybackSession {
       );
       if (currentToken < 0) throw StateError('Current native entry is missing');
       final order = List.generate(physicalQueue.length, (i) => i);
-      final nativeItems = [...physicalQueue];
+      final addedItems = <Map<String, Object?>>[];
       opening = true;
       try {
         final available = <(String, Object?), List<int>>{};
@@ -339,46 +411,101 @@ class _WindowsPlaybackSession {
             await player.remove(i);
             if (!isCurrent()) return;
             order.removeAt(i);
-            nativeItems.removeAt(i);
           }
         }
         var newToken = -1;
-        for (var i = 0; i < desired.length; i++) {
-          if (desired[i] == null) {
-            await player.add(mediaFor(items[i]));
-            if (!isCurrent()) return;
-            desired[i] = newToken;
-            order.add(newToken--);
-            nativeItems.add(items[i]);
-          }
-        }
-        int? nextToken;
-        for (var i = desired.length - 1; i >= 0; i--) {
-          final token = desired[i]!;
-          if (!stationary.contains(token)) {
-            final from = order.indexOf(token);
-            final to = nextToken == null
-                ? order.length
-                : order.indexOf(nextToken);
-            // media_kit/mpv inserts before the original target index, including
-            // when moving forward. Passing length places an entry at the tail.
-            final destination = from < to ? to - 1 : to;
-            if (from != destination) {
-              await player.move(from, to);
-              order.insert(destination, order.removeAt(from));
-              nativeItems.insert(destination, nativeItems.removeAt(from));
+        final platform = player.platform;
+        if (platform is NativePlayer) {
+          // Batch media_kit's Dart playlist state update once after appending
+          // to avoid O(N^2) list copies from repeated NativePlayer.add calls.
+          final appendedMedias = <Media>[];
+          try {
+            for (var i = 0; i < desired.length; i++) {
+              if (desired[i] == null) {
+                final media = mediaFor(items[i]);
+                await platform.command([
+                  'loadfile',
+                  _nativeMediaPath(media.uri),
+                  'append',
+                ]);
+                appendedMedias.add(media);
+                if (!isCurrent()) return;
+                desired[i] = newToken;
+                order.add(newToken--);
+                addedItems.add(items[i]);
+              }
+            }
+          } finally {
+            if (appendedMedias.isNotEmpty) {
+              final medias = [...platform.current, ...appendedMedias];
+              platform.current = medias;
+              platform.state = platform.state.copyWith(
+                playlist: platform.state.playlist.copyWith(medias: medias),
+              );
             }
           }
+        } else {
+          for (var i = 0; i < desired.length; i++) {
+            if (desired[i] == null) {
+              await player.add(mediaFor(items[i]));
+              if (!isCurrent()) return;
+              desired[i] = newToken;
+              order.add(newToken--);
+              addedItems.add(items[i]);
+            }
+          }
+        }
+        if (restoreNativeQueue && ids.length == 1) {
+          // Appended entries are already in order. Move the retained decoder
+          // once instead of moving every entry that preceded it.
+          if (index > 0) await player.move(0, index + 1);
           if (!isCurrent()) return;
-          nextToken = token;
+        } else {
+          final positions = <int, int>{
+            for (var i = 0; i < order.length; i++) order[i]: i,
+          };
+          var nextIndex = order.length;
+          for (var i = desired.length - 1; i >= 0; i--) {
+            final token = desired[i]!;
+            if (stationary.contains(token)) {
+              // Read a stationary anchor only when a move precedes it.
+              if (i > 0 && !stationary.contains(desired[i - 1])) {
+                nextIndex = positions[token]!;
+              }
+            } else {
+              final from = positions[token]!;
+              final to = nextIndex;
+              // mpv inserts before the original target index. Passing length
+              // places an entry at the tail even when it moves forward.
+              final destination = from < to ? to - 1 : to;
+              if (from != destination) {
+                await player.move(from, to);
+                order.insert(destination, order.removeAt(from));
+                final start = from < destination ? from : destination;
+                final end = from < destination ? destination : from;
+                for (var pos = start; pos <= end; pos++) {
+                  positions[order[pos]] = pos;
+                }
+              }
+              nextIndex = destination;
+            }
+            if (!isCurrent()) return;
+          }
         }
         // The edited physical order now matches the requested logical order.
         nativeQueueLimited = false;
-        await mapNativeEntries(player);
+        if (addedItems.isEmpty) {
+          _setNativeEntryOrder([for (final token in order) ids[token]]);
+        } else {
+          await mapNativeEntries(player);
+        }
       } catch (_) {
         if (isCurrent() && !restoreNativeQueue) {
           // Earlier successful edits remain applied when a later command fails.
-          this.queue = nativeItems;
+          this.queue = [
+            for (final token in order)
+              token >= 0 ? physicalQueue[token] : addedItems[-token - 1],
+          ];
           this.index = order.indexOf(currentToken);
           retainedCurrentIndex = retainCurrent ? this.index : null;
           await mapNativeEntries(player);

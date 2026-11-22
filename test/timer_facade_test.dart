@@ -126,8 +126,24 @@ void main() {
           late.requested = true;
           timer.applyTrackEndFade('first', 0.3);
           timer.applyTrackEndFade('late', 0.2);
-          await tester.pump(Duration.zero);
-          expect(trackFade, [('first', 0.3)]);
+          if (platform == TargetPlatform.windows) {
+            await tester.pump(const Duration(milliseconds: 32));
+            timer.applyTrackEndFade('first', 0.25);
+            await tester.pump(const Duration(milliseconds: 32));
+            timer.applyTrackEndFade('first', 0.2);
+            expect(trackFade, isEmpty);
+            await tester.pump(const Duration(milliseconds: 16));
+            expect(trackFade, [('first', 0.2)]);
+          } else {
+            await tester.pump(Duration.zero);
+            expect(trackFade, [('first', 0.3)]);
+          }
+          timer.applyTrackEndFade('first', 0.1);
+          timer.applyTrackEndFade('first', 0.0);
+          expect(trackFade.last, ('first', 0.0));
+          final applied = trackFade.length;
+          await tester.pump(const Duration(milliseconds: 80));
+          expect(trackFade, hasLength(applied));
           timer.applyTrackEndFade('first', 1.0);
           expect(trackFade.last, ('first', 1.0));
 
@@ -832,7 +848,9 @@ void main() {
           final service = TimerService();
           final timer = TimerFacade.create(
             service: service,
-            powerPlatformService: PowerPlatformService(isAndroidOverride: false),
+            powerPlatformService: PowerPlatformService(
+              isAndroidOverride: false,
+            ),
           );
           addTearDown(timer.dispose);
           _attachNoopRuntime(timer, sessions: () => [_TestSession('live')]);

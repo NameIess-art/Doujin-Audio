@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:meta/meta.dart';
@@ -833,13 +834,13 @@ class WindowsPlaybackBridge
         _emit(session);
       }),
       player.stream.position.listen((absolutePosition) {
-        final position = session.relativePosition(absolutePosition);
         if (!_isCurrent(session) ||
             !identical(session.player, player) ||
             session.opening ||
             session.pendingStart != null) {
           return;
         }
+        final position = session.relativePosition(absolutePosition);
         if (position > session.position &&
             player.state.playing &&
             session.error == null) {
@@ -1241,24 +1242,7 @@ class WindowsPlaybackBridge
         session.opening = true;
         try {
           await _applyMode(session);
-          final ids = await session.nativeEntryIds(player);
-          final currentId = await session.currentNativeEntryId(player);
-          final currentIndex = ids.indexOf(currentId ?? -1);
-          if (currentIndex < 0) {
-            throw StateError('Current native entry is missing');
-          }
-          final logicalIndex = session.nativeQueueIndices[currentId];
-          if (logicalIndex == null) {
-            throw StateError('Native entry is unmapped');
-          }
-          session.index = logicalIndex;
-          // Raw mpv playlist-clear leaves media_kit's retained Media list stale.
-          // Use its API so later queue restoration sees the same native entries.
-          for (var i = ids.length - 1; i >= 0; i--) {
-            if (i != currentIndex) await player.remove(i);
-          }
-          session.nativeQueueLimited = true;
-          await session.mapNativeEntries(player);
+          await session.keepCurrentNativeEntry(player);
         } finally {
           session.opening = false;
         }

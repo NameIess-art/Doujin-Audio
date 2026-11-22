@@ -6,6 +6,28 @@ import 'package:path/path.dart' as path;
 
 void main() {
   test(
+    'watched folder snapshots are ordered and update after root changes',
+    () {
+      final service = LibraryService();
+      addTearDown(service.dispose);
+      service.addWatchedFolder(r'C:\Library\First');
+      service.addWatchedFolder(r'C:\Library\Second');
+      final initial = service.watchedFoldersSnapshot;
+
+      expect(service.addWatchedFolder(r'c:\library\FIRST'), isFalse);
+      expect(service.watchedFoldersSnapshot, same(initial));
+      expect(initial[1], r'C:\Library\Second');
+
+      service.removeWatchedFolder(r'c:\library\SECOND');
+      expect(service.watchedFoldersSnapshot, [r'C:\Library\First']);
+      expect(initial, [r'C:\Library\First', r'C:\Library\Second']);
+      expect(() => initial.clear(), throwsUnsupportedError);
+      service.replaceWatchedFolders([r'D:\New']);
+      expect(service.watchedFoldersSnapshot, [r'D:\New']);
+    },
+  );
+
+  test(
     'opaque SAF entries support folder exclusion, restoration and deletion',
     () {
       const root = 'content://provider/tree/root';
@@ -242,7 +264,7 @@ void main() {
   test('retarget moves and deduplicates every watched descendant', () async {
     final service = LibraryService();
     addTearDown(service.dispose);
-    service.watchedFolders.addAll([
+    service.replaceWatchedFolders([
       r'C:\Old\Child',
       r'C:\Old\Child\Nested',
       r'c:\NEW\child',
@@ -341,7 +363,7 @@ void main() {
       );
       service
         ..library.add(track)
-        ..watchedFolders.add(oldRoot)
+        ..addWatchedFolder(oldRoot)
         ..watchedLibraries.add(oldRoot)
         ..groupOrder.add(oldRoot)
         ..replaceLibraryEntries(<LibraryEntry>[
@@ -398,7 +420,7 @@ void main() {
       );
       service
         ..library.add(track)
-        ..watchedFolders.add(libraryRoot)
+        ..addWatchedFolder(libraryRoot)
         ..groupOrder.add(oldFolder)
         ..replaceLibraryEntries(<LibraryEntry>[
           LibraryEntry.folder(

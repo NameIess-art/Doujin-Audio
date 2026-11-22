@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:archive/archive.dart';
 
@@ -69,7 +70,16 @@ class DiagnosticReportService {
       'privacy':
           'Generated locally. Credentials, media files, and URL query parameters are excluded.',
     };
+    final logPaths = [for (final file in await _logFilesProvider()) file.path];
+    await _writeArchive(outputPath, report, logPaths);
+    return File(outputPath);
+  }
 
+  static Future<void> _writeArchive(
+    String outputPath,
+    Map<String, Object?> report,
+    List<String> logPaths,
+  ) => Isolate.run(() async {
     final archive = Archive();
     final reportBytes = utf8.encode(
       const JsonEncoder.withIndent('  ').convert(report),
@@ -77,7 +87,8 @@ class DiagnosticReportService {
     archive.addFile(
       ArchiveFile('diagnostic.json', reportBytes.length, reportBytes),
     );
-    for (final logFile in await _logFilesProvider()) {
+    for (final logPath in logPaths) {
+      final logFile = File(logPath);
       if (!await logFile.exists()) continue;
       final sanitized = AppLogService.sanitize(await logFile.readAsString());
       final bytes = utf8.encode(sanitized);
@@ -93,8 +104,7 @@ class DiagnosticReportService {
     final output = File(outputPath);
     await output.parent.create(recursive: true);
     await output.writeAsBytes(ZipEncoder().encode(archive), flush: true);
-    return output;
-  }
+  });
 
   static Future<List<File>> _defaultLogFiles() async {
     final directoryPath = AppLogService.logDirectoryPath;

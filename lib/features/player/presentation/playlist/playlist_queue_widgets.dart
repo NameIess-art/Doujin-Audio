@@ -135,9 +135,30 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
     );
   }
 
+  static int _coverRevisionForTracks(
+    LibraryFacade library,
+    int count,
+    MusicTrack? Function(int) trackAt,
+  ) {
+    final cache = library.coverArtworkCacheService;
+    var hash = cache.revisionForScope('').epoch;
+    for (var i = 0; i < count; i++) {
+      final track = trackAt(i);
+      if (track == null) continue;
+      final scope = cache.coverSearchKeyForTrack(track) ?? track.path;
+      final scopeRev = cache.revisionForScope(scope);
+      hash = Object.hash(hash, scopeRev.epoch, scopeRev.revision);
+      final folderScope = cache.coverScopeFolderForTrack(track);
+      if (folderScope != null) {
+        final folderRev = cache.revisionForScope(folderScope);
+        hash = Object.hash(hash, folderRev.epoch, folderRev.revision);
+      }
+    }
+    return hash;
+  }
+
   Future<void> _loadCoverPreviews(
     PlaybackQueueDefinition queue,
-    int generation,
   ) async {
     final sessionId = widget.sessionId;
     try {
@@ -154,9 +175,15 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
           )) {
         return;
       }
+      MusicTrack? trackAt(int index) => previews[index].firstTrack;
+      final generation = _coverRevisionForTracks(
+        widget.library,
+        previews.length,
+        trackAt,
+      );
       final selection = _QueueCoverSelection(
         previews.length,
-        (index) => previews[index].firstTrack,
+        trackAt,
         widget.library,
         generation,
       );
@@ -210,12 +237,32 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
-    final coverGeneration = ref.watch(coverGenerationProvider);
+    final coverKey = queueState.requiresLoad ? queue : queue.entries;
+    var selection = _coverSelections[coverKey];
+    final coverGeneration = ref.watch(
+      coverGenerationProvider.select((_) {
+        if (queueState.requiresLoad) {
+          return selection == null
+              ? library.coverArtworkCacheService.revisionForScope('').epoch
+              : _coverRevisionForTracks(
+                  library,
+                  selection.entryCount,
+                  selection.trackAt,
+                );
+        }
+        final limit = selection != null && selection.selected.length == 4
+            ? math.min(selection.selected.last.index + 1, queue.entries.length)
+            : queue.entries.length;
+        return _coverRevisionForTracks(
+          library,
+          limit,
+          (index) => queue.entries[index].tracks.firstOrNull,
+        );
+      }),
+    );
     final coordinator = UiInteractionCoordinator.instance;
     final tickerEnabled = _coverActivityEnabled;
     final isDeferred = coordinator.isVisualUpdateDeferred;
-    final coverKey = queueState.requiresLoad ? queue : queue.entries;
-    var selection = _coverSelections[coverKey];
     final hasFreshSelection =
         selection != null &&
         identical(selection.library, library) &&
@@ -250,7 +297,7 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
       } else if (!identical(_requestedPreviewQueue, queue) &&
           queue.entryCount > 0) {
         _requestedPreviewQueue = queue;
-        unawaited(_loadCoverPreviews(queue, coverGeneration));
+        unawaited(_loadCoverPreviews(queue));
       }
     }
     if (!identical(_coverSelection, selection)) {
@@ -386,7 +433,7 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
     );
     if (currentCoverIndex == -1 &&
         currentTrack != null &&
-        coverItems.isNotEmpty) {
+        coverItems.any((item) => item.coverPath != null)) {
       // A later track can share the first track's artwork even when their
       // cover lookup keys are different.
       final currentArtwork = library.resolvedPlaybackCoverPathForTrack(
@@ -568,9 +615,13 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                       ),
                       color: featureIconColor,
                       child: IconButton(
-                        tooltip: cardState.isPlaying
-                            ? i18n.tr('pause')
-                            : i18n.tr('play'),
+                        tooltip: i18n.tr(
+                          cardState.playbackError != null
+                              ? 'retry_playback'
+                              : cardState.isPlaying
+                              ? 'pause'
+                              : 'play',
+                        ),
                         onPressed: !hasTracks && !isPlaying
                             ? null
                             : () {
@@ -610,15 +661,21 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                               ),
                             );
                           },
-                          child:
-                              cardState.isLoading ||
-                                  cardState.playbackError != null
+                          child: cardState.playbackError != null
+                              ? const Icon(
+                                  Icons.refresh_rounded,
+                                  key: ValueKey('retry'),
+                                  size: 28,
+                                )
+                              : cardState.isLoading
                               ? const SizedBox(
                                   key: ValueKey('loading'),
                                   width: 22,
                                   height: 22,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.3,
+                                  child: RepaintBoundary(
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.3,
+                                    ),
                                   ),
                                 )
                               : Icon(

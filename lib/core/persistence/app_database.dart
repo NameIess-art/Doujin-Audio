@@ -25,7 +25,7 @@ const int _sqliteInClauseBatchSize = 900;
 class AppDatabase {
   AppDatabase._({Future<Database> Function()? opener}) : _opener = opener;
 
-  static const int schemaVersion = 17;
+  static const int schemaVersion = 19;
   static const String fileName = 'audio_player.db';
 
   @visibleForTesting
@@ -72,9 +72,12 @@ class AppDatabase {
   }
 
   Future<void> _onConfigure(Database db) async {
-    // Use rawQuery for journal_mode because Android SQLite returns a result row.
+    // Use rawQuery for PRAGMAs that return a result row on Android SQLite.
+    await db.rawQuery('PRAGMA busy_timeout = 5000');
     await db.rawQuery('PRAGMA journal_mode = WAL');
     await db.execute('PRAGMA synchronous = NORMAL');
+    await db.execute('PRAGMA cache_size = -8192');
+    await db.execute('PRAGMA temp_store = MEMORY');
   }
 
   Future<Database> _openDatabase() async {

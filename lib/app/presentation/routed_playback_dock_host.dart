@@ -56,6 +56,11 @@ class _RoutedPlaybackDockHostState
     extends ConsumerState<RoutedPlaybackDockHost> {
   final _menuOverlayKey = GlobalKey<OverlayState>();
   final ValueNotifier<int> _routeRevision = ValueNotifier(0);
+  final ValueNotifier<({bool isWorkDetailRoute, bool hasPopups})>
+  _navigatorWrapState = ValueNotifier((
+    isWorkDetailRoute: false,
+    hasPopups: false,
+  ));
   late final _RootPageRouteObserver _routeObserver;
   late final PlaybackDockGeometryController _playbackDockGeometry;
   OverlayEntry? _routedPlaybackDockEntry;
@@ -68,7 +73,7 @@ class _RoutedPlaybackDockHostState
       _routeRevision,
       (route) => widget.onTopPageChanged?.call(route),
     );
-    _routeRevision.addListener(_syncRoutedPlaybackDock);
+    _routeRevision.addListener(_handleRouteRevisionChanged);
     _playbackDockGeometry = widget.geometry ?? PlaybackDockGeometryController();
   }
 
@@ -89,9 +94,20 @@ class _RoutedPlaybackDockHostState
     _removeRoutedPlaybackDock();
     _routeObserver.dispose();
     if (widget.geometry == null) _playbackDockGeometry.dispose();
-    _routeRevision.removeListener(_syncRoutedPlaybackDock);
+    _routeRevision.removeListener(_handleRouteRevisionChanged);
     _routeRevision.dispose();
+    _navigatorWrapState.dispose();
     super.dispose();
+  }
+
+  void _handleRouteRevisionChanged() {
+    _navigatorWrapState.value = (
+      isWorkDetailRoute:
+          _routeObserver.topRoute?.settings.name == workDetailRouteName ||
+          _routeObserver.isWorkDetailDeparting,
+      hasPopups: _routeObserver.hasPopups,
+    );
+    _syncRoutedPlaybackDock();
   }
 
   @override
@@ -220,17 +236,14 @@ class _RoutedPlaybackDockHostState
     final hasOverlaySessions = ref.watch(
       mainOverlayUiProvider.select((state) => state.overlaySessions.isNotEmpty),
     );
-    return ValueListenableBuilder<int>(
-      valueListenable: _routeRevision,
+    return ValueListenableBuilder<({bool isWorkDetailRoute, bool hasPopups})>(
+      valueListenable: _navigatorWrapState,
       child: child,
-      builder: (context, revision, navigatorChild) {
-        final isWorkDetailRoute =
-            _routeObserver.topRoute?.settings.name == workDetailRouteName ||
-            _routeObserver.isWorkDetailDeparting;
+      builder: (context, wrapState, navigatorChild) {
         final supportsRoutedDock = size.width >= 300 && size.height >= 300;
         final reserveWorkDetailDockInset =
             widget.enabled &&
-            isWorkDetailRoute &&
+            wrapState.isWorkDetailRoute &&
             supportsRoutedDock &&
             hasOverlaySessions;
         final dockBottom = padding.bottom > kMobileDockBottomMargin
@@ -251,7 +264,7 @@ class _RoutedPlaybackDockHostState
                     widget.backgroundColor ??
                     Theme.of(context).colorScheme.surface,
                 child: AppPageTransitionHost(
-                  enabled: !_routeObserver.hasPopups,
+                  enabled: !wrapState.hasPopups,
                   child: navigatorChild!,
                 ),
               ),
@@ -776,6 +789,24 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
     final portraitContentWidth = widget.geometry.mainDockCollapsed
         ? null
         : width;
+    final raisedBackdrop = isRaised && !widget.geometry.mainDockCollapsed
+        ? FadeTransition(
+            opacity: MediaQuery.disableAnimationsOf(context)
+                ? kAlwaysCompleteAnimation
+                : _MappedDoubleAnimation(
+                    animation,
+                    (value) => const Interval(
+                      0,
+                      0.25,
+                      curve: Curves.easeInOut,
+                    ).transform(Curves.easeInOutCubic.transform(value)),
+                  ),
+            child: const AppDockPanel(
+              showTopHighlight: false,
+              child: SizedBox.expand(),
+            ),
+          )
+        : null;
     final dock = IgnorePointer(
       key: const ValueKey<String>('routed_playback_dock_interaction'),
       ignoring: ignoreInput,
@@ -827,25 +858,12 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
               maxWidth: target.width,
               child: content,
             );
-          } else if (isRaised) {
+          } else if (raisedBackdrop != null) {
             // The home panel is already behind the card as it lands.
             // Fade only the extra surface to keep the cover visible.
             content = Stack(
               fit: StackFit.expand,
-              children: [
-                Opacity(
-                  opacity: const Interval(
-                    0,
-                    0.25,
-                    curve: Curves.easeInOut,
-                  ).transform(progress),
-                  child: const AppDockPanel(
-                    showTopHighlight: false,
-                    child: SizedBox.expand(),
-                  ),
-                ),
-                content,
-              ],
+              children: [raisedBackdrop, content],
             );
           }
           if (isRaised) {
@@ -894,4 +912,16 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
     );
     return reveal(dock);
   }
+}
+
+class _MappedDoubleAnimation extends Animation<double>
+    with AnimationWithParentMixin<double> {
+  _MappedDoubleAnimation(this.parent, this._transform);
+
+  @override
+  final Animation<double> parent;
+  final double Function(double value) _transform;
+
+  @override
+  double get value => _transform(parent.value);
 }

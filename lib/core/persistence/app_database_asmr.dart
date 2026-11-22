@@ -73,6 +73,20 @@ extension AppDatabaseAsmr on AppDatabase {
     });
   }
 
+  Future<void> saveAppSettings(Map<String, String> values) async {
+    if (values.isEmpty) return;
+    await _runDatabaseWrite((db) async {
+      final batch = db.batch();
+      for (final entry in values.entries) {
+        batch.insert('app_kv_settings', {
+          'key': entry.key,
+          'value': entry.value,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
   Future<List<AsmrWorkRecord>> loadAsmrWorkList(String listType) async {
     return _runDatabaseRead((db) async {
       final rows = await db.rawQuery(
@@ -213,9 +227,10 @@ extension AppDatabaseAsmr on AppDatabase {
       await db.transaction((txn) async {
         final previousHistory = await txn.query(
           'asmr_work_lists',
-          columns: ['work_id'],
+          columns: ['work_id', 'sort_order'],
           where: 'list_type = ?',
           whereArgs: ['history'],
+          orderBy: 'sort_order ASC',
         );
         final favorite = await txn.rawQuery(
           'SELECT w.resources_json FROM asmr_works w '
@@ -223,15 +238,6 @@ extension AppDatabaseAsmr on AppDatabase {
           'WHERE l.list_type = ? AND l.work_id = ? LIMIT 1',
           ['favorites', work.workKey],
         );
-        final lastOperation = await txn.query(
-          'asmr_sync_operations',
-          columns: ['sort_order'],
-          orderBy: 'sort_order DESC',
-          limit: 1,
-        );
-        final nextOrder = lastOperation.isEmpty
-            ? 0
-            : (lastOperation.single['sort_order'] as int) + 1;
         final batch = txn.batch();
         // A favorite's saved metadata is authoritative for the shared work row.
         if (favorite.isEmpty) {
@@ -244,16 +250,60 @@ extension AppDatabaseAsmr on AppDatabase {
             whereArgs: [work.workKey],
           );
         }
-        _replaceAsmrWorkListMembershipInBatch(batch, 'history', historyWorkIds);
         final retainedIds = historyWorkIds.toSet();
-        _deleteUnreferencedAsmrWorksInBatch(
-          batch,
-          workIds: previousHistory
-              .map((row) => row['work_id'] as String)
-              .where((id) => !retainedIds.contains(id))
-              .toList(growable: false),
-        );
+        final previousIds = [
+          for (final row in previousHistory) row['work_id'] as String,
+        ];
+        final removedIds = [
+          for (final id in previousIds)
+            if (!retainedIds.contains(id)) id,
+        ];
+        final canMoveToFront =
+            historyWorkIds.firstOrNull == work.workKey &&
+            listEquals(
+              historyWorkIds.skip(1).toList(growable: false),
+              previousIds
+                  .where((id) => id != work.workKey && retainedIds.contains(id))
+                  .toList(growable: false),
+            );
+        final firstOrder =
+            previousHistory.firstOrNull?['sort_order'] as int? ?? 0;
+        if (canMoveToFront && firstOrder > -0x7fffffffffffffff) {
+          // Leave the retained rows in place when play history moves one work
+          // to the front, to avoid updating every item's sort key.
+          for (final chunk in _stringChunks(removedIds)) {
+            final placeholders = List.filled(chunk.length, '?').join(', ');
+            batch.delete(
+              'asmr_work_lists',
+              where: 'list_type = ? AND work_id IN ($placeholders)',
+              whereArgs: ['history', ...chunk],
+            );
+          }
+          if (previousIds.firstOrNull != work.workKey) {
+            batch.insert('asmr_work_lists', {
+              'list_type': 'history',
+              'work_id': work.workKey,
+              'sort_order': firstOrder - 1,
+            }, conflictAlgorithm: ConflictAlgorithm.replace);
+          }
+        } else {
+          _replaceAsmrWorkListMembershipInBatch(
+            batch,
+            'history',
+            historyWorkIds,
+          );
+        }
+        _deleteUnreferencedAsmrWorksInBatch(batch, workIds: removedIds);
         if (operation != null) {
+          final lastOperation = await txn.query(
+            'asmr_sync_operations',
+            columns: ['sort_order'],
+            orderBy: 'sort_order DESC',
+            limit: 1,
+          );
+          final nextOrder = lastOperation.isEmpty
+              ? 0
+              : (lastOperation.single['sort_order'] as int) + 1;
           batch.delete(
             'asmr_sync_operations',
             where: 'type = ? AND work_id = ?',

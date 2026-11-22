@@ -1044,7 +1044,7 @@ class AsmrDownloadManager {
       }
       for (final snapshot in restored.tasks) {
         final workKey = snapshot.task.work.workKey;
-        _store[workKey] = snapshot.task;
+        _store.restoreTask(snapshot.task);
         _outputs.createdOutputPaths[workKey] = snapshot.createdOutputPaths;
         _outputs.createdJsonDocuments[workKey] = snapshot.createdJsonDocuments;
       }

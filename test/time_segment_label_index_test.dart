@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/core/persistence/persistence_records.dart';
@@ -174,4 +176,74 @@ void main() {
       );
     },
   );
+
+  test('SAF volume root checks and retargets only its own documents', () async {
+    const root = 'content://provider/tree/primary%3A';
+    const siblingVolume = 'content://provider/tree/secondary%3A';
+    final actual =
+        '$root/document/${Uri.encodeComponent('primary:Album/01.mp3')}';
+    await database.importAudioDetails([], [
+      label('actual', actual),
+      label('synthetic', '$root::Album/02.mp3'),
+      label('sibling', '$siblingVolume::Album/01.mp3'),
+    ]);
+
+    expect(
+      (await database.loadTimeSegmentLabelsForTarget(
+        root,
+        isFolder: true,
+      )).map((value) => value.id),
+      unorderedEquals(['actual', 'synthetic']),
+    );
+    await database.retargetTimeSegmentLabelsWithinPath(
+      oldRoot: root,
+      newRoot: '$root::Moved',
+    );
+    expect(
+      (await database.loadTimeSegmentLabels(
+        '$root::Moved/Album/01.mp3',
+      )).single.id,
+      'actual',
+    );
+    expect(
+      (await database.loadTimeSegmentLabels(
+        '$root::Moved/Album/02.mp3',
+      )).single.id,
+      'synthetic',
+    );
+    expect(
+      (await database.loadTimeSegmentLabels(
+        '$siblingVolume::Album/01.mp3',
+      )).single.id,
+      'sibling',
+    );
+  });
+
+  test('label import finds previously remapped IDs at each collision', () async {
+    const copiedTrack = '/copied/track.mp3';
+    final suffix =
+        '@${base64Url.encode(utf8.encode(PathMatcher.equivalenceKey(copiedTrack)))}';
+    await database.upsertTimeSegmentLabel(label('one', '/source/track.mp3'));
+    await database.upsertTimeSegmentLabel(
+      label('one$suffix', '/other/track.mp3'),
+    );
+    await database.upsertTimeSegmentLabel(
+      label('one$suffix$suffix', copiedTrack, start: 100),
+    );
+
+    await database.importAudioDetails([], [label('one', copiedTrack)]);
+
+    expect(
+      (await database.loadTimeSegmentLabels(copiedTrack)).single.startMs,
+      100,
+    );
+    expect(
+      (await database.loadTimeSegmentLabels('/source/track.mp3')).single.id,
+      'one',
+    );
+    expect(
+      (await database.loadTimeSegmentLabels('/other/track.mp3')).single.id,
+      'one$suffix',
+    );
+  });
 }

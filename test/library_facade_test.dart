@@ -957,7 +957,7 @@ void main() {
       final track = _localDurationTrack('/library/old');
       final service = LibraryService()
         ..library.add(track)
-        ..watchedFolders.add(track.groupKey);
+        ..addWatchedFolder(track.groupKey);
       final details = AudioDetailCacheService(
         repository: AudioDetailRepository(databaseRepository: repository),
       );
@@ -2472,7 +2472,7 @@ void main() {
   );
 
   test(
-    'duration backfill probes 30 works with global concurrency and commits once',
+    'duration backfill persists bounded batches before probing later works',
     () async {
       final root = await Directory.systemTemp.createTemp('duration_batch_');
       addTearDown(() => root.delete(recursive: true));
@@ -2483,7 +2483,7 @@ void main() {
         ..configurePersistence(enabled: false);
       addTearDown(library.dispose);
       final tracks = <MusicTrack>[];
-      for (var index = 0; index < 30; index++) {
+      for (var index = 0; index < 70; index++) {
         final work = await Directory(
           path.join(root.path, 'work_$index'),
         ).create();
@@ -2500,10 +2500,15 @@ void main() {
       var active = 0;
       var peak = 0;
       var probes = 0;
+      int? persistedBeforeNextBatch;
 
       await library.backfillMissingLibraryDurations(
         durationReader: (_) async {
           probes++;
+          if (probes == 65) {
+            persistedBeforeNextBatch =
+                repository.updatedDurationTrackPaths.length;
+          }
           active++;
           if (active > peak) peak = active;
           await Future<void>.delayed(Duration.zero);
@@ -2513,9 +2518,10 @@ void main() {
       );
       await Future<void>.delayed(Duration.zero);
 
-      expect(probes, 30);
+      expect(probes, 70);
       expect(peak, 2);
-      expect(repository.updateDurationsCallCount, 1);
+      expect(persistedBeforeNextBatch, 64);
+      expect(repository.updateDurationsCallCount, 2);
       expect(
         repository.updatedDurationTrackPaths,
         tracks.map((track) => track.path),
@@ -2850,29 +2856,34 @@ void main() {
   );
 
   test(
-    'repeated duration backfill reuses synchronized detail documents',
+    'duration backfill reuses synchronized documents after reopening the library',
     () async {
       final repository = _CountingTestPersistenceRepository(
         AppDatabase.test(db),
       );
       final documents = _CountingJsonDocumentStore();
-      final library = LibraryFacade.create(
-        databaseRepository: repository,
-        jsonDocumentStore: documents,
-      )..configurePersistence(enabled: false);
-      addTearDown(library.dispose);
       const folder = '/library/complete';
       final track = _localDurationTrack(
         folder,
       ).copyWith(duration: const Duration(minutes: 2));
       final target = AudioDetailTarget.libraryRootFolder(folder);
+      LibraryFacade openLibrary() {
+        final library = LibraryFacade.create(
+          databaseRepository: repository,
+          jsonDocumentStore: documents,
+        )..configurePersistence(enabled: false);
+        addTearDown(library.dispose);
+        library.addWatchedFolder(folder, notify: false);
+        library.addTracks([track], persist: false);
+        return library;
+      }
+
       await repository.upsert(
         AudioDetail.empty(
           target,
         ).copyWith(duration: const Duration(minutes: 3)),
       );
-      library.addWatchedFolder(folder, notify: false);
-      library.addTracks([track], persist: false);
+      final library = openLibrary();
       expect(library.audioDetailTargetForTrack(track), target);
       await library.backfillMissingLibraryDurations();
       expect(repository.detailBatchLoadCount, 1);
@@ -2888,12 +2899,12 @@ void main() {
       expect(documents.readCount, 1);
       expect(documents.writeCount, 1);
 
-      library.detailCacheService.clear();
-      await library.backfillMissingLibraryDurations();
+      final reopened = openLibrary();
+      await reopened.backfillMissingLibraryDurations();
       expect(repository.detailBatchLoadCount, 2);
       expect(repository.detailLoadCount, 0);
       expect(repository.labelLoadCount, 1);
-      expect(documents.readCount, 2);
+      expect(documents.readCount, 1);
       expect(documents.writeCount, 1);
     },
   );
@@ -3928,16 +3939,22 @@ void main() {
 
       test('permanently removes a standalone folder source', () async {
         const folderPath = '/standalone/work';
+        const unrelatedFolder = '/other/work';
         final audio = track(path: '$folderPath/01.mp3', groupKey: folderPath);
         runtimeGraph.library
           ..addWatchedFolder(folderPath, notify: false)
           ..addTracks(<MusicTrack>[audio], persist: false);
+        final covers = runtimeGraph.library.coverArtworkCacheService;
+        final removedRevision = covers.revisionForScope(folderPath);
+        final unrelatedRevision = covers.revisionForScope(unrelatedFolder);
 
         final result = await runtimeGraph.library.removeFolder(folderPath);
 
         expect(result, LibraryRemovalKind.standaloneFolderPermanent);
         expect(runtimeGraph.library.watchedFolders, isEmpty);
         expect(runtimeGraph.library.trackByPath(audio.path), isNull);
+        expect(covers.revisionForScope(folderPath), isNot(removedRevision));
+        expect(covers.revisionForScope(unrelatedFolder), unrelatedRevision);
       });
 
       test('keeps standalone folder audio removed until reimport', () async {
@@ -4920,12 +4937,14 @@ class _BlockingRestoreRepository extends TestPersistenceRepository {
   final release = Completer<void>();
 
   @override
-  Future<MusicTrack?> loadTrackDetail(String path) async {
-    if (path == blockedPath) {
+  Future<Map<String, MusicTrack>> loadTrackDetails(
+    Iterable<String> paths,
+  ) async {
+    if (paths.contains(blockedPath)) {
       if (!started.isCompleted) started.complete();
       await release.future;
     }
-    return super.loadTrackDetail(path);
+    return super.loadTrackDetails(paths);
   }
 }
 

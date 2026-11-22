@@ -6,10 +6,10 @@
 #include <winrt/base.h>
 #include <algorithm>
 #include <cwctype>
+#include <deque>
 #include <mutex>
 #include <stdexcept>
 #include <string>
-#include <thread>
 #include <vector>
 
 namespace {
@@ -164,8 +164,12 @@ std::string Resolve(HINTERNET session, const std::wstring& url, const std::wstri
 }
 
 struct NetworkProxy::State {
+  static constexpr int kMaxWorkers = 4;
+
   struct Request {
     std::unique_ptr<Result> result;
+    std::wstring url, host, scheme;
+    INTERNET_PORT port;
     std::string value, error;
     bool completed = false;
   };
@@ -174,7 +178,66 @@ struct NetworkProxy::State {
   // WinHTTP caches PAC discovery per session. Reuse it across media requests.
   std::unique_ptr<void, decltype(&WinHttpCloseHandle)> session{nullptr, WinHttpCloseHandle};
   HWND window = nullptr;
+  int workers = 0;
+  bool reply_posted = false;
+  std::deque<std::shared_ptr<Request>> queued;
   std::vector<std::shared_ptr<Request>> pending;
+
+  static void CALLBACK RunWorker(PTP_CALLBACK_INSTANCE instance, void* context) {
+    CallbackMayRunLong(instance);
+    const std::unique_ptr<std::shared_ptr<State>> owner(
+        static_cast<std::shared_ptr<State>*>(context));
+    (*owner)->ResolveQueuedRequests();
+  }
+
+  void ResolveQueuedRequests() {
+    for (;;) {
+      std::shared_ptr<Request> request;
+      {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (!window || queued.empty()) {
+          --workers;
+          return;
+        }
+        request = std::move(queued.front());
+        queued.pop_front();
+      }
+      std::string value, error;
+      try {
+        std::call_once(session_once, [&] {
+          auto handle = WinHttpOpen(L"DoujinAudio", WINHTTP_ACCESS_TYPE_NO_PROXY,
+              WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+          if (!handle) winrt::throw_last_error();
+          session.reset(handle);
+          WinHttpSetTimeouts(handle, 10000, 10000, 10000, 10000);
+        });
+        value = Resolve(session.get(), request->url, request->host,
+                        request->scheme, request->port);
+      }
+      catch (const winrt::hresult_error& e) { error = winrt::to_string(e.message()); }
+      catch (const std::exception& e) { error = e.what(); }
+      {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (!window) continue;
+        request->value = std::move(value);
+        request->error = std::move(error);
+        request->completed = true;
+      }
+      // One posted message can deliver all completed requests on the UI thread.
+      for (int attempt = 0; attempt < 200; ++attempt) {
+        {
+          std::lock_guard<std::mutex> lock(mutex);
+          if (!window || reply_posted) break;
+          if (PostMessage(window, kReply, 0, 0)) {
+            reply_posted = true;
+            break;
+          }
+          if (GetLastError() == ERROR_INVALID_WINDOW_HANDLE) break;
+        }
+        Sleep(10);
+      }
+    }
+  }
 };
 
 NetworkProxy::NetworkProxy(HWND window, flutter::BinaryMessenger* messenger)
@@ -204,50 +267,38 @@ NetworkProxy::NetworkProxy(HWND window, flutter::BinaryMessenger* messenger)
     } catch (const std::exception&) { Failure(*result, "invalid_argument", "A valid HTTP(S) url is required"); return; }
     const auto request = std::make_shared<State::Request>();
     request->result = std::move(result);
-    { std::lock_guard<std::mutex> lock(state_->mutex); state_->pending.push_back(request); }
-    const auto state = state_;
-    try {
-      std::thread([state, request, url, host, scheme, port] {
-        std::string value, error;
-        try {
-          std::call_once(state->session_once, [&] {
-            auto session = WinHttpOpen(L"DoujinAudio", WINHTTP_ACCESS_TYPE_NO_PROXY,
-                WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-            if (!session) winrt::throw_last_error();
-            state->session.reset(session);
-            WinHttpSetTimeouts(session, 10000, 10000, 10000, 10000);
-          });
-          value = Resolve(state->session.get(), url, host, scheme, port);
-        }
-        catch (const winrt::hresult_error& e) { error = winrt::to_string(e.message()); }
-        catch (const std::exception& e) { error = e.what(); }
-        {
-          std::lock_guard<std::mutex> lock(state->mutex);
-          if (!state->window) return;
-          request->value = std::move(value);
-          request->error = std::move(error);
-          request->completed = true;
-        }
-        for (int attempt = 0; attempt < 200; ++attempt) {
-          {
-            std::lock_guard<std::mutex> lock(state->mutex);
-            if (!state->window) return;
-            if (PostMessage(state->window, kReply, 0, 0)) return;
-          }
-          if (GetLastError() == ERROR_INVALID_WINDOW_HANDLE) return;
-          Sleep(10);
-        }
-      }).detach();
-    } catch (const std::exception& e) {
-      request->error = e.what(); request->completed = true; Reply();
+    request->url = std::move(url);
+    request->host = std::move(host);
+    request->scheme = std::move(scheme);
+    request->port = port;
+    {
+      std::lock_guard<std::mutex> lock(state_->mutex);
+      state_->pending.push_back(request);
+      state_->queued.push_back(request);
+      if (state_->workers == State::kMaxWorkers) return;
+      auto owner = std::make_unique<std::shared_ptr<State>>(state_);
+      if (TrySubmitThreadpoolCallback(State::RunWorker, owner.get(), nullptr)) {
+        owner.release();
+        ++state_->workers;
+        return;
+      }
+      if (state_->workers > 0) return;
+      state_->pending.pop_back();
+      state_->queued.pop_back();
     }
+    Failure(*request->result, "windows_error", "Unable to schedule proxy resolution");
   });
 }
 
 NetworkProxy::~NetworkProxy() {
   channel_->SetMethodCallHandler(nullptr);
   std::vector<std::shared_ptr<State::Request>> pending;
-  { std::lock_guard<std::mutex> lock(state_->mutex); state_->window = nullptr; pending.swap(state_->pending); }
+  {
+    std::lock_guard<std::mutex> lock(state_->mutex);
+    state_->window = nullptr;
+    state_->queued.clear();
+    pending.swap(state_->pending);
+  }
   // PAC/WPAD can block in Windows; do not stall engine teardown waiting for it.
   for (const auto& request : pending) {
     Failure(*request->result, "windows_error", "Window closed before proxy resolution completed");
@@ -259,10 +310,16 @@ void NetworkProxy::Reply() {
   std::vector<std::shared_ptr<State::Request>> completed;
   {
     std::lock_guard<std::mutex> lock(state_->mutex);
+    state_->reply_posted = false;
     auto& pending = state_->pending;
-    for (auto it = pending.begin(); it != pending.end();) {
-      if ((*it)->completed) { completed.push_back(*it); it = pending.erase(it); }
-      else ++it;
+    for (size_t i = 0; i < pending.size();) {
+      if (!pending[i]->completed) {
+        ++i;
+        continue;
+      }
+      completed.push_back(std::move(pending[i]));
+      if (i != pending.size() - 1) pending[i] = std::move(pending.back());
+      pending.pop_back();
     }
   }
   for (const auto& request : completed) {

@@ -917,6 +917,12 @@ void main() {
     final titleRect = tester.getRect(titleBar);
     expect(titleRect.top, 0);
     expect(mainRect.top, titleRect.bottom);
+    final titleIcon = find.descendant(of: titleBar, matching: find.byType(Image));
+    expect(tester.getSize(titleIcon), const Size.square(16));
+    expect(
+      (tester.widget<Image>(titleIcon).image as ResizeImage).width,
+      (16 * tester.view.devicePixelRatio).round(),
+    );
     final titleSurface = tester.widget<Material>(
       find.descendant(of: titleBar, matching: find.byType(Material)).first,
     );
@@ -6922,8 +6928,9 @@ void main() {
     expect(find.text('network failed'), findsNothing);
     expect(inSessionCard(find.byIcon(Icons.pause_rounded)), findsNothing);
     expect(inSessionCard(find.byIcon(Icons.play_arrow_rounded)), findsNothing);
+    expect(inSessionCard(find.byKey(const ValueKey('loading'))), findsNothing);
     expect(
-      inSessionCard(find.byKey(const ValueKey('loading'))),
+      inSessionCard(find.byKey(const ValueKey('retry'))),
       findsOneWidget,
     );
     expect(find.byType(SessionFeatureBadgeStack), findsNothing);

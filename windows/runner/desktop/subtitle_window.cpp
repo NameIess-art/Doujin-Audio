@@ -4,6 +4,8 @@
 #include <winrt/base.h>
 
 namespace {
+constexpr UINT kTextFlags = DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL | DT_NOPREFIX;
+
 COLORREF ParseColor(const std::string& value, COLORREF previous) {
   try {
     const auto hex = value.empty() || value[0] != '#' ? value : value.substr(1);
@@ -70,6 +72,7 @@ SubtitleWindow::~SubtitleWindow() {
   if (font_) DeleteObject(font_);
 }
 void SubtitleWindow::Show(bool visible) {
+  if (visible && !IsWindowVisible(window_)) FitText();
   ShowWindow(window_, visible ? SW_SHOWNOACTIVATE : SW_HIDE);
   if (visible) { InvalidateRect(window_,nullptr,FALSE); UpdateWindow(window_); }
 }
@@ -77,7 +80,9 @@ void SubtitleWindow::Update(const std::string& text) {
   const std::wstring next(winrt::to_hstring(text));
   if (text_ == next) return;
   text_ = next;
+  measured_text_width_ = 0;
   content_dirty_ = true;
+  if (!IsWindowVisible(window_)) return;
   FitText();
   InvalidateRect(window_, nullptr, FALSE);
 }
@@ -108,6 +113,7 @@ void SubtitleWindow::Style(const flutter::EncodableMap& style) {
   if (!layout_changed && !background_changed && old_text == text_color_) return;
   background_dirty_ = background_dirty_ || background_changed;
   content_dirty_ = true;
+  if (!IsWindowVisible(window_)) return;
   if (layout_changed) FitText();
   InvalidateRect(window_, nullptr, FALSE);
 }
@@ -116,28 +122,31 @@ void SubtitleWindow::FitText() {
   if (!window_ || fitting_text_ || text_.empty()) return;
   fitting_text_ = true;
   RECT bounds{}; GetWindowRect(window_, &bounds);
-  const double scale = GetDpiForWindow(window_) / 96.0;
+  RECT client{}; GetClientRect(window_, &client);
+  const UINT dpi = GetDpiForWindow(window_);
+  const double scale = dpi / 96.0;
   const int padding = static_cast<int>((20 + border_depth_ * 4) * scale);
-  if (!EnsureFont(GetDpiForWindow(window_))) {
+  if (!EnsureFont(dpi)) {
     fitting_text_ = false;
     return;
   }
-  HDC dc = GetDC(window_);
-  if (!dc) {
-    fitting_text_ = false;
-    return;
+  const int text_width = std::max(1L, client.right - 2 * padding);
+  int text_height = measured_text_height_;
+  if (text_width != measured_text_width_) {
+    HDC dc = GetDC(window_);
+    if (!dc) {
+      fitting_text_ = false;
+      return;
+    }
+    text_height = MeasureText(dc, text_width);
+    ReleaseDC(window_, dc);
   }
-  auto previous = SelectObject(dc, font_);
-  RECT text{0, 0, std::max(1L, bounds.right - bounds.left - 2 * padding), 0};
-  DrawTextW(dc, text_.c_str(), -1, &text,
-      DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL | DT_NOPREFIX | DT_CALCRECT);
-  SelectObject(dc, previous); ReleaseDC(window_, dc);
   MONITORINFO monitor{sizeof(MONITORINFO)};
   GetMonitorInfo(MonitorFromWindow(window_, MONITOR_DEFAULTTONEAREST), &monitor);
   const auto& area = monitor.rcWork;
   const int height = std::min<LONG>(area.bottom - area.top,
       std::max<LONG>(static_cast<LONG>(50 * scale),
-          text.bottom + static_cast<LONG>((20 + border_depth_ * 8) * scale)));
+          text_height + static_cast<LONG>((20 + border_depth_ * 8) * scale)));
   const int top = std::clamp<LONG>(bounds.top, area.top, area.bottom - height);
   if (height != bounds.bottom - bounds.top || top != bounds.top) {
     SetWindowPos(window_, nullptr, bounds.left, top, bounds.right - bounds.left,
@@ -145,6 +154,19 @@ void SubtitleWindow::FitText() {
   }
   fitting_text_ = false;
 }
+
+int SubtitleWindow::MeasureText(HDC dc, int width) {
+  if (width != measured_text_width_) {
+    auto previous = SelectObject(dc, font_);
+    RECT measured{0, 0, width, 0};
+    DrawTextW(dc, text_.c_str(), -1, &measured, kTextFlags | DT_CALCRECT);
+    SelectObject(dc, previous);
+    measured_text_width_ = width;
+    measured_text_height_ = measured.bottom;
+  }
+  return measured_text_height_;
+}
+
 bool SubtitleWindow::EnsureFont(UINT dpi) {
   const int height = static_cast<int>(font_size_ * dpi / 96.0);
   if (font_ && height == font_height_ && family_ == font_family_) return true;
@@ -156,6 +178,7 @@ bool SubtitleWindow::EnsureFont(UINT dpi) {
   font_ = font;
   font_height_ = height;
   font_family_ = family_;
+  measured_text_width_ = 0;
   content_dirty_ = true;
   return true;
 }
@@ -286,44 +309,52 @@ void SubtitleWindow::Paint(HDC screen) {
     background_dirty_ = content_dirty_ = true;
   }
   const double scale = dpi / 96.0;
-  if (background_dirty_) PaintBackground(width, rows, scale);
+  const bool background_changed = background_dirty_;
+  if (background_changed) PaintBackground(width, rows, scale);
   if (content_dirty_) {
-    // Cue changes reuse the rounded background; text-only updates do no geometry work.
     const size_t stride = surface_capacity_width_;
-    for (int y = 0; y < rows; ++y) {
-      std::copy_n(background_pixels_.data() + static_cast<size_t>(y) * width,
-          width, pixels_ + y * stride);
+    // Only the previous caption's clipped text and shadow can differ from the
+    // cached background when the window geometry and appearance are unchanged.
+    const RECT restore = background_changed ? rect : painted_text_bounds_;
+    for (LONG y = restore.top; y < restore.bottom; ++y) {
+      const auto* background_row = background_pixels_.data() + static_cast<size_t>(y) * width;
+      std::copy_n(background_row + restore.left, restore.right - restore.left,
+          pixels_ + y * stride + restore.left);
     }
-    if (!text_.empty()) {
-      for (int y = 0; y < rows; ++y) {
-        std::fill_n(coverage_ + y * stride, width, 0);
+    painted_text_bounds_ = {};
+    RECT text_rect = rect;
+    InflateRect(&text_rect, -static_cast<int>((20 + border_depth_ * 4) * scale),
+        -static_cast<int>((10 + border_depth_ * 4) * scale));
+    if (!text_.empty() && !IsRectEmpty(&text_rect)) {
+      const int text_height = MeasureText(mask_dc_, text_rect.right - text_rect.left);
+      const int available_height = text_rect.bottom - text_rect.top;
+      if (text_height > 0 && available_height > text_height) {
+        text_rect.top += (available_height - text_height) / 2;
       }
-      // A separate grayscale mask preserves text opacity on a translucent background.
+      // DrawText clips to this rectangle. The separate grayscale mask keeps
+      // text opacity independent from the translucent background.
+      for (LONG y = text_rect.top; y < text_rect.bottom; ++y) {
+        std::fill_n(coverage_ + y * stride + text_rect.left,
+            text_rect.right - text_rect.left, 0);
+      }
       auto previous = SelectObject(mask_dc_, font_);
       SetBkMode(mask_dc_, TRANSPARENT);
-      InflateRect(&rect, -static_cast<int>((20 + border_depth_ * 4) * scale),
-          -static_cast<int>((10 + border_depth_ * 4) * scale));
-      const auto flags = DT_CENTER | DT_WORDBREAK | DT_EDITCONTROL | DT_NOPREFIX;
-      RECT measured = rect;
-      DrawTextW(mask_dc_, text_.c_str(), -1, &measured, flags | DT_CALCRECT);
-      const int text_height = measured.bottom - measured.top;
-      const int available_height = rect.bottom - rect.top;
-      if (text_height > 0 && available_height > text_height) {
-        rect.top += (available_height - text_height) / 2;
-      }
       SetTextColor(mask_dc_, RGB(255, 255, 255));
-      DrawTextW(mask_dc_, text_.c_str(), -1, &rect, flags);
+      DrawTextW(mask_dc_, text_.c_str(), -1, &text_rect, kTextFlags);
       GdiFlush();
       const DWORD red = GetRValue(text_color_), green = GetGValue(text_color_);
       const DWORD blue = GetBValue(text_color_);
       const int shadow_dy = std::max(1, static_cast<int>(std::lround(2.0 * scale)));
-      for (int y = 0; y < rows; ++y) {
+      painted_text_bounds_ = text_rect;
+      painted_text_bounds_.bottom = std::min<LONG>(rows, text_rect.bottom + shadow_dy);
+      for (LONG y = text_rect.top; y < painted_text_bounds_.bottom; ++y) {
         auto* output_row = pixels_ + y * stride;
-        const auto* text_row = coverage_ + y * stride;
+        const auto* text_row = y < text_rect.bottom ? coverage_ + y * stride : nullptr;
+        const LONG shadow_y = y - shadow_dy;
         const auto* shadow_row =
-            y >= shadow_dy ? coverage_ + (y - shadow_dy) * stride : nullptr;
-        for (int x = 0; x < width; ++x) {
-          const DWORD a = text_row[x] & 255;
+            shadow_y >= text_rect.top ? coverage_ + shadow_y * stride : nullptr;
+        for (LONG x = text_rect.left; x < text_rect.right; ++x) {
+          const DWORD a = text_row ? text_row[x] & 255 : 0;
           const DWORD shadow_src = shadow_row ? shadow_row[x] & 255 : 0;
           const DWORD alpha_s = (shadow_src * 128) / 255;
           if (a == 0 && alpha_s == 0) continue;
@@ -385,6 +416,7 @@ LRESULT CALLBACK SubtitleWindow::WndProc(HWND hwnd, UINT message, WPARAM wp, LPA
   if (message == WM_DPICHANGED) {
     self->background_dirty_ = true;
     self->content_dirty_ = true;
+    self->measured_text_width_ = 0;
     self->dpi_changing_ = true;
     self->sized_during_dpi_change_ = false;
     const auto* suggested = reinterpret_cast<const RECT*>(lp);
@@ -392,7 +424,7 @@ LRESULT CALLBACK SubtitleWindow::WndProc(HWND hwnd, UINT message, WPARAM wp, LPA
         suggested->right - suggested->left, suggested->bottom - suggested->top,
         SWP_NOZORDER | SWP_NOACTIVATE);
     self->dpi_changing_ = false;
-    if (!self->sized_during_dpi_change_) {
+    if (!self->sized_during_dpi_change_ && IsWindowVisible(hwnd)) {
       self->FitText();
       InvalidateRect(hwnd, nullptr, FALSE);
     }
@@ -401,8 +433,10 @@ LRESULT CALLBACK SubtitleWindow::WndProc(HWND hwnd, UINT message, WPARAM wp, LPA
   if (message == WM_SIZE) {
     if (self->dpi_changing_) self->sized_during_dpi_change_ = true;
     self->content_dirty_ = true;
-    self->FitText();
-    InvalidateRect(hwnd, nullptr, FALSE);
+    if (IsWindowVisible(hwnd)) {
+      self->FitText();
+      InvalidateRect(hwnd, nullptr, FALSE);
+    }
   }
   if (message == WM_PAINT) {
     PAINTSTRUCT ps;

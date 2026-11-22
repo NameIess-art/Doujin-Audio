@@ -6,6 +6,7 @@ import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/media/path_display.dart';
+import '../../../core/media/path_matcher.dart';
 import '../../../core/widgets/file_tree_expansion_motion.dart';
 import '../../../core/widgets/file_tree_row.dart';
 import '../../../core/widgets/shimmer_loading.dart';
@@ -16,11 +17,8 @@ import 'library_edit_tree_projection.dart';
 
 const double _libraryEditRowMinHeight = 64;
 
-final _libraryEditTrackViewStateProvider =
-    Provider.family<_LibraryEditTrackViewState, _LibraryEditTrackKey>((
-      ref,
-      key,
-    ) {
+final _libraryEditTrackViewStateProvider = Provider.autoDispose
+    .family<_LibraryEditTrackViewState, _LibraryEditTrackKey>((ref, key) {
       ref.watch(
         libraryStateProvider.select(
           (value) => value.value?.contentRevision ?? 0,
@@ -251,13 +249,21 @@ class _LibraryEditTreeListState extends ConsumerState<LibraryEditTreeList>
       final exclusions = library.libraryExclusionMatcherForLibrary(
         widget.libraryPath,
       );
+      final checkEntry = PathMatcher.isContentUri(widget.libraryPath);
       _includedTrackCounts = LibraryEditTreeProjection(widget.libraryPath)
           .includedTrackCounts(
             widget.nodes,
-            (trackPath) => !exclusions.isEntryExcluded(
-              library.libraryEntryForPath(widget.libraryPath, trackPath),
-              trackPath,
-            ),
+            exclusions.hasExclusions
+                ? (trackPath) => !exclusions.isEntryExcluded(
+                    checkEntry
+                        ? library.libraryEntryForPath(
+                            widget.libraryPath,
+                            trackPath,
+                          )
+                        : null,
+                    trackPath,
+                  )
+                : (_) => true,
           );
       _countedNodes = widget.nodes;
       _countedContentRevision = contentRevision;

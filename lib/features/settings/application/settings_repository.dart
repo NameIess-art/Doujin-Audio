@@ -242,11 +242,13 @@ class SettingsRepository {
           AppCacheService.defaultMaxCacheBytes;
     }
 
-    await AppCacheService.setMaxCacheBytes(
-      maxCacheBytes,
-      enforceImmediately: enforceCacheLimit,
-    );
-    await _applyNetworkRoute();
+    await Future.wait<void>([
+      AppCacheService.setMaxCacheBytes(
+        maxCacheBytes,
+        enforceImmediately: enforceCacheLimit,
+      ),
+      _applyNetworkRoute(),
+    ]);
     syncSlice(isInitialized: true);
   }
 

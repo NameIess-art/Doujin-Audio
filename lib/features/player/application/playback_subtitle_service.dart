@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
@@ -265,6 +266,15 @@ class PlaybackSubtitleService extends ChangeNotifier {
   final Map<String, String> _customPaths = <String, String>{};
   final Map<String, int> _trackRevisions = <String, int>{};
   int _generation = 0;
+  String? _mostRecentTrackPath;
+  static final RegExp _assEventsHeaderPattern = RegExp(
+    r'^\[events\]',
+    caseSensitive: false,
+    multiLine: true,
+  );
+  static final RegExp _lrcTimestampDetectPattern = RegExp(
+    r'\[\d+:\d{1,2}(?:[.:]\d{1,3})?\]',
+  );
 
   bool hasResult(String trackPath) {
     _refreshSubtitleSource(trackPath);
@@ -320,9 +330,9 @@ class PlaybackSubtitleService extends ChangeNotifier {
   Future<bool> isTimedSubtitleFile(String filePath) async {
     final bytes = await _fileCacheGateway.readDocumentBytes(filePath);
     if (bytes == null) return false;
-    final parsed = await parseSubtitleTrackFromRaw(
+    final parsed = await _parseSubtitleBytes(
       sourcePath: filePath,
-      raw: decodeWorkText(bytes).text,
+      bytes: bytes,
       extension: path.extension(filePath).toLowerCase(),
     );
     return parsed != null && parsed.cues.isNotEmpty;
@@ -616,9 +626,9 @@ class PlaybackSubtitleService extends ChangeNotifier {
     final previousPath = _customPaths[trackPath];
     try {
       final extension = path.extension(fileName ?? filePath).toLowerCase();
-      final parsed = await parseSubtitleTrackFromRaw(
+      final parsed = await _parseSubtitleBytes(
         sourcePath: filePath,
-        raw: decodeWorkText(bytes).text,
+        bytes: bytes,
         extension: extension,
       );
       if (parsed == null || parsed.cues.isEmpty) return null;
@@ -721,7 +731,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
     final sourcePath = originalTrack.sourcePath;
     final bytes = await _fileCacheGateway.readDocumentBytes(sourcePath);
     if (bytes == null) throw const SubtitleSourceChanged();
-    final raw = decodeWorkText(bytes).text;
+    final raw = await Isolate.run(() => decodeWorkText(bytes).text);
     final sourceRevision = originalTrack.sourceRevision;
     final isContent = sourcePath.startsWith('content://');
     if (sourceRevision != null &&
@@ -773,10 +783,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
     _automaticRetries.remove(trackPath);
     final edited = subtitle.withOffset(getOffset(trackPath));
     _trackRevisions[trackPath] = (_trackRevisions[trackPath] ?? 0) + 1;
-    _tracks[trackPath] = edited;
-    _resultSources[trackPath] = _subtitleSource(trackPath);
-    _results[trackPath] = SynchronousFuture<SubtitleTrack?>(edited);
-    _trimResults();
+    _putCachedTrack(trackPath, edited, _subtitleSource(trackPath));
     _onTrackLoaded?.call(trackPath, edited);
     notifyListeners();
 
@@ -861,13 +868,9 @@ class PlaybackSubtitleService extends ChangeNotifier {
       final raw = original.trimLeft().replaceFirst('\uFEFF', '');
       if (raw.startsWith('WEBVTT')) {
         extension = '.vtt';
-      } else if (RegExp(
-        r'^\[events\]',
-        caseSensitive: false,
-        multiLine: true,
-      ).hasMatch(raw)) {
+      } else if (_assEventsHeaderPattern.hasMatch(raw)) {
         extension = '.ass';
-      } else if (RegExp(r'\[\d+:\d{1,2}(?:[.:]\d{1,3})?\]').hasMatch(raw)) {
+      } else if (_lrcTimestampDetectPattern.hasMatch(raw)) {
         extension = '.lrc';
       } else {
         extension = '.srt';
@@ -1121,6 +1124,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
   }) {
     var source = validatedSource ?? _refreshSubtitleSource(trackPath);
     if (!reload && _tracks.containsKey(trackPath)) {
+      _touchCachedTrack(trackPath);
       return _results.putIfAbsent(
         trackPath,
         () => SynchronousFuture<SubtitleTrack?>(_tracks[trackPath]),
@@ -1175,12 +1179,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
           return subtitleTrack;
         }
         if (subtitleTrack != null || !_hasRemoteSubtitleUrl(track)) {
-          _tracks[trackPath] = subtitleTrack;
-          _resultSources[trackPath] = source;
-          _results[trackPath] = SynchronousFuture<SubtitleTrack?>(
-            subtitleTrack,
-          );
-          _trimResults();
+          _putCachedTrack(trackPath, subtitleTrack, source);
         } else {
           // Progress-driven consumers may revisit a failed URL every tick.
           // Explicit loads bypass this temporary cooldown.
@@ -1209,6 +1208,8 @@ class PlaybackSubtitleService extends ChangeNotifier {
 
   SubtitleTrack? trackSync(String trackPath) {
     _refreshSubtitleSource(trackPath);
+    if (!_tracks.containsKey(trackPath)) return null;
+    _touchCachedTrack(trackPath);
     return _tracks[trackPath];
   }
 
@@ -1219,6 +1220,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
       _tracks.remove(trackPath);
       unawaited(_results.remove(trackPath));
       _resultSources.remove(trackPath);
+      if (_mostRecentTrackPath == trackPath) _mostRecentTrackPath = null;
     }
     if (_loadingSources.containsKey(trackPath) &&
         _loadingSources[trackPath] != source) {
@@ -1256,13 +1258,13 @@ class PlaybackSubtitleService extends ChangeNotifier {
     bool automatic = true,
   }) {
     final source = _refreshSubtitleSource(trackPath);
-    final track = _tracks[trackPath];
+    final hasCached = _tracks.containsKey(trackPath);
+    if (hasCached) _touchCachedTrack(trackPath);
+    final track = hasCached ? _tracks[trackPath] : null;
     final shouldLoad =
         loadIfMissing &&
         (loadOnTrackChange ||
-            (track == null &&
-                !_tracks.containsKey(trackPath) &&
-                !_loading.containsKey(trackPath)));
+            (track == null && !hasCached && !_loading.containsKey(trackPath)));
     return (
       text: _textAt(track, position, false),
       loading: shouldLoad
@@ -1301,6 +1303,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
     _resultSources.clear();
     _loadingSources.clear();
     _automaticRetries.clear();
+    _mostRecentTrackPath = null;
     _cachedTextTrack = null;
     _cachedTextCue = null;
     _cachedTextValue = null;
@@ -1351,19 +1354,11 @@ class PlaybackSubtitleService extends ChangeNotifier {
     try {
       final bytes = await _fileCacheGateway.readDocumentBytes(filePath);
       if (bytes == null) return null;
-      final raw = decodeWorkText(bytes).text;
-      if (raw.trim().isEmpty || raw.trim() == 'WEBVTT') {
-        return SubtitleTrack(
-          sourcePath: filePath,
-          cues: const [],
-          sourceRevision: subtitleSourceRevision(raw),
-        );
-      }
-      final extension = path.extension(filePath).toLowerCase();
-      return await parseSubtitleTrackFromRaw(
+      return await _parseSubtitleBytes(
         sourcePath: filePath,
-        raw: raw,
-        extension: extension,
+        bytes: bytes,
+        extension: path.extension(filePath).toLowerCase(),
+        allowEmpty: true,
       );
     } catch (error, stackTrace) {
       AppLogService.warning(
@@ -1375,6 +1370,52 @@ class PlaybackSubtitleService extends ChangeNotifier {
     }
   }
 
+  static Future<SubtitleTrack?> _parseSubtitleBytes({
+    required String sourcePath,
+    required Uint8List bytes,
+    required String extension,
+    bool allowEmpty = false,
+  }) => Isolate.run(() {
+    final raw = decodeWorkText(bytes).text;
+    if (allowEmpty) {
+      final trimmed = raw.trim();
+      if (trimmed.isEmpty || trimmed == 'WEBVTT') {
+        return SubtitleTrack(
+          sourcePath: sourcePath,
+          cues: const [],
+          sourceRevision: subtitleSourceRevision(raw),
+        );
+      }
+    }
+    return parseSubtitleTrackSync(
+      sourcePath: sourcePath,
+      raw: raw,
+      extension: extension,
+    );
+  });
+
+  static Future<({String raw, SubtitleTrack? track})>
+  _decodeAndParseSubtitleBytes({
+    required String sourcePath,
+    required Uint8List bytes,
+    required String extension,
+  }) => Isolate.run(() {
+    final raw = decodeWorkText(bytes).text;
+    final trimmed = raw.trim();
+    final track = trimmed.isEmpty || trimmed == 'WEBVTT'
+        ? SubtitleTrack(
+            sourcePath: sourcePath,
+            cues: const [],
+            sourceRevision: subtitleSourceRevision(raw),
+          )
+        : parseSubtitleTrackSync(
+            sourcePath: sourcePath,
+            raw: raw,
+            extension: extension,
+          );
+    return (raw: raw, track: track);
+  });
+
   bool _hasRemoteSubtitleUrl(MusicTrack? track) {
     if (track?.isRemoteAsmr != true) return false;
     return track?.remoteMetadata?['subtitleUrl']
@@ -1384,12 +1425,38 @@ class PlaybackSubtitleService extends ChangeNotifier {
         true;
   }
 
+  void _putCachedTrack(
+    String trackPath,
+    SubtitleTrack? track,
+    _SubtitleSource source,
+  ) {
+    _tracks.remove(trackPath);
+    _tracks[trackPath] = track;
+    _mostRecentTrackPath = trackPath;
+    _resultSources[trackPath] = source;
+    _results[trackPath] = SynchronousFuture<SubtitleTrack?>(track);
+    _trimResults();
+  }
+
+  void _touchCachedTrack(String trackPath) {
+    if (_mostRecentTrackPath == trackPath || !_tracks.containsKey(trackPath)) {
+      return;
+    }
+    final track = _tracks.remove(trackPath);
+    _tracks[trackPath] = track;
+    _mostRecentTrackPath = trackPath;
+  }
+
   void _trimResults() {
-    if (_tracks.length <= 20) return;
-    final oldestKey = _tracks.keys.first;
-    _tracks.remove(oldestKey);
-    _resultSources.remove(oldestKey);
-    unawaited(_results.remove(oldestKey));
+    while (_tracks.length > 20) {
+      final oldestKey = _tracks.keys.first;
+      _tracks.remove(oldestKey);
+      _resultSources.remove(oldestKey);
+      unawaited(_results.remove(oldestKey));
+      if (_mostRecentTrackPath == oldestKey) {
+        _mostRecentTrackPath = null;
+      }
+    }
   }
 
   Future<SubtitleTrack?> _loadContentTrack(
@@ -1494,9 +1561,15 @@ class PlaybackSubtitleService extends ChangeNotifier {
               ),
             );
         if (bytes == null || bytes.isEmpty || !isCurrent()) return null;
-        await _writeSubtitleContent(localFile, decodeWorkText(bytes).text);
+        final decoded = await _decodeAndParseSubtitleBytes(
+          sourcePath: localFile.path,
+          bytes: bytes,
+          extension: path.extension(localFile.path).toLowerCase(),
+        );
+        if (!isCurrent()) return null;
+        await _writeSubtitleContent(localFile, decoded.raw);
         AppCacheService.scheduleEnforce();
-        return await _loadFromFile(localFile.path);
+        return isCurrent() ? decoded.track : null;
       } finally {
         lease.release();
       }

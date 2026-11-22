@@ -100,8 +100,14 @@ class AsmrApiService {
       _fetchInterestCatalog('/api/circles/');
 
   Future<List<AsmrTag>> _fetchInterestCatalog(String path) async {
-    final response = await _send(method: 'GET', path: path);
-    return compute(_decodeInterestCatalog, response);
+    final response = await _send(
+      method: 'GET',
+      path: path,
+      decodeResponse: _decodeInterestCatalog,
+    );
+    if (response is FormatException) throw response;
+    if (response is List<AsmrTag>) return response;
+    throw const FormatException('Expected complete ASMR interest directory');
   }
 
   Future<AsmrAuthSession> login({
@@ -571,50 +577,56 @@ class AsmrApiException extends HttpException {
       error is AsmrApiException && error.isAuthenticationFailure;
 }
 
-List<AsmrTag> _decodeInterestCatalog(Object? response) {
+Object _decodeInterestCatalog(String body) {
+  final response = jsonDecode(body);
   if (response is! List || response.isEmpty) {
-    throw const FormatException('Expected complete ASMR interest directory');
+    return const FormatException('Expected complete ASMR interest directory');
   }
-  return response
-      .map((raw) {
-        final json = Map<String, dynamic>.from(raw as Map);
-        final rawId = json['id'];
-        if (rawId is! num && (rawId is! String || rawId.trim().isEmpty)) {
-          throw const FormatException('Directory entry is missing an ID');
-        }
-        final id = rawId is num ? rawId.toInt() : rawId;
-        final aliases = <String>{};
-        void collect(Object? value) {
-          if (value is String && value.trim().isNotEmpty) {
-            aliases.add(value.trim());
+  try {
+    return response
+        .map((raw) {
+          final json = Map<String, dynamic>.from(raw as Map);
+          final rawId = json['id'];
+          if (rawId is! num && (rawId is! String || rawId.trim().isEmpty)) {
+            throw const FormatException('Directory entry is missing an ID');
           }
-          if (value is Map) {
-            collect(value['name']);
-            for (final language in [
-              'zh-cn',
-              'zh-tw',
-              'zh',
-              'en-us',
-              'en',
-              'ja-jp',
-              'ja',
-            ]) {
-              collect(value[language]);
+          final id = rawId is num ? rawId.toInt() : rawId;
+          final aliases = <String>{};
+          void collect(Object? value) {
+            if (value is String && value.trim().isNotEmpty) {
+              aliases.add(value.trim());
+            }
+            if (value is Map) {
+              collect(value['name']);
+              for (final language in [
+                'zh-cn',
+                'zh-tw',
+                'zh',
+                'en-us',
+                'en',
+                'ja-jp',
+                'ja',
+              ]) {
+                collect(value[language]);
+              }
             }
           }
-        }
 
-        collect(json);
-        collect(json['i18n']);
-        if (aliases.isEmpty) {
-          throw const FormatException('Tag is missing a name');
-        }
-        return AsmrTag(
-          key: 'online:$id',
-          onlineId: id is int ? id : null,
-          name: json['name'] as String? ?? aliases.first,
-          aliases: aliases,
-        );
-      })
-      .toList(growable: false);
+          collect(json);
+          collect(json['i18n']);
+          if (aliases.isEmpty) {
+            throw const FormatException('Tag is missing a name');
+          }
+          return AsmrTag(
+            key: 'online:$id',
+            onlineId: id is int ? id : null,
+            name: json['name'] as String? ?? aliases.first,
+            aliases: aliases,
+          );
+        })
+        .toList(growable: false);
+  } on FormatException catch (error) {
+    // Model validation belongs outside endpoint failover; the server replied.
+    return error;
+  }
 }

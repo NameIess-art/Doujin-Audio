@@ -22,6 +22,10 @@ enum AsmrDownloadStoreOperation {
 
 typedef AsmrDownloadPersistenceSnapshot =
     PersistedDownloadTask Function(AsmrDownloadTaskSnapshot task);
+typedef _ResumableFileMetadata = ({
+  Map<String, String> entityTags,
+  Map<String, String> outputPaths,
+});
 
 /// Owns download task snapshots and every derived/published task state.
 final class AsmrDownloadTaskStore {
@@ -75,6 +79,8 @@ final class AsmrDownloadTaskStore {
   int _persistedUriReferenceRevision = 0;
   Future<void> _persistenceTail = Future<void>.value();
   Future<void>? _queuedPersistence;
+  Map<String, _ResumableFileMetadata> _committedFileMetadata = {};
+  Map<String, _ResumableFileMetadata>? _writingFileMetadata;
   Future<void>? _shutdownFuture;
   Timer? _deferredPersistenceTimer;
   Timer? _progressCheckpointTimer;
@@ -97,6 +103,40 @@ final class AsmrDownloadTaskStore {
     _persistenceReady = true;
   }
 
+  void restoreTask(AsmrDownloadTaskSnapshot task) {
+    final workId = task.work.workKey;
+    this[workId] = task;
+    _committedFileMetadata[workId] = _fileMetadata(task);
+  }
+
+  bool isFileEntityTagDurable(String workId, String relativePath, String? tag) {
+    if (!_persistTasks) return true;
+    final committed = _committedFileMetadata[workId];
+    final writing = _writingFileMetadata;
+    return committed != null &&
+        committed.entityTags[relativePath] == tag &&
+        (writing == null ||
+            (writing.containsKey(workId) &&
+                writing[workId]!.entityTags[relativePath] == tag));
+  }
+
+  bool isFileOutputPathDurable(
+    String workId,
+    String relativePath,
+    String outputPath,
+  ) {
+    if (!_persistTasks) return true;
+    final committed = _committedFileMetadata[workId];
+    final writing = _writingFileMetadata;
+    return committed != null &&
+        committed.outputPaths[relativePath] == outputPath &&
+        (writing == null ||
+            writing[workId]?.outputPaths[relativePath] == outputPath);
+  }
+
+  static _ResumableFileMetadata _fileMetadata(AsmrDownloadTaskSnapshot task) =>
+      (entityTags: task.fileEntityTags, outputPaths: task.actualOutputPaths);
+
   AsmrDownloadTaskSnapshot? operator [](String workId) => _tasks[workId];
 
   void operator []=(String workId, AsmrDownloadTaskSnapshot task) {
@@ -108,6 +148,10 @@ final class AsmrDownloadTaskStore {
     if (_shutdown) return null;
     _liveDownloadedBytes.remove(workId);
     _liveFileDownloadedBytes.remove(workId);
+    // Guard against same-workId recreation before persistence flushes seeing
+    // stale durability metadata from the removed task (or an in-flight write).
+    _committedFileMetadata.remove(workId);
+    _writingFileMetadata?.remove(workId);
     return _tasks.remove(workId);
   }
 
@@ -552,10 +596,20 @@ final class AsmrDownloadTaskStore {
           .where((task) => task.status != AsmrDownloadTaskStatus.completed)
           .map(_persistenceSnapshot)
           .toList(growable: false);
-      final payload = tasks.isEmpty
-          ? null
-          : await compute(encodePersistedDownloadTasks, tasks);
-      await _writePersistedTasks(payload);
+      final fileMetadata = {
+        for (final snapshot in tasks)
+          snapshot.task.work.workKey: _fileMetadata(snapshot.task),
+      };
+      _writingFileMetadata = fileMetadata;
+      try {
+        final payload = tasks.isEmpty
+            ? null
+            : await compute(encodePersistedDownloadTasks, tasks);
+        await _writePersistedTasks(payload);
+        _committedFileMetadata = fileMetadata;
+      } finally {
+        _writingFileMetadata = null;
+      }
     });
     _queuedPersistence = write;
     // Keep background writes and later retries usable after a failed write;

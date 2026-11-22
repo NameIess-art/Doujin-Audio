@@ -6,6 +6,7 @@ abstract interface class LibraryPersistenceRepository {
   Future<List<MusicTrack>> loadTrackSummaries();
   Future<List<MusicTrack>> loadStartupTracks();
   Future<MusicTrack?> loadTrackDetail(String path);
+  Future<Map<String, MusicTrack>> loadTrackDetails(Iterable<String> paths);
 
   /// Replaces the library from complete authoritative records.
   Future<void> saveAllTracks(List<MusicTrack> tracks);

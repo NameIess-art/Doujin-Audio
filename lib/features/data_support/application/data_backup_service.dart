@@ -341,7 +341,7 @@ class DataBackupService {
         await _database.preserveNewerListeningData(
           localPath: rollbackDatabase.path,
           candidatePath: decoded.databaseFile.path,
-          interestKeys: AsmrPreferencesStore.interestSettingKeys,
+          interestCatalogKeys: AsmrPreferencesStore.interestCatalogKeys,
           keepLocalInterest: AsmrPreferencesStore.keepLocalInterestOnRestore,
         );
       }

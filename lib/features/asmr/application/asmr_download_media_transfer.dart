@@ -14,6 +14,12 @@ const japaneseAsmrDownloadUserAgent =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
     '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
+final RegExp _hxGetAttributePattern = RegExp(
+  r'''\bhx-get\s*=\s*["']([^"']+)["']''',
+  caseSensitive: false,
+);
+final RegExp _trailingSlashesPattern = RegExp(r'/+$');
+
 /// The original cannot be transferred; this does not imply it is missing.
 class AsmrOriginalUnavailable implements Exception {
   const AsmrOriginalUnavailable();
@@ -75,10 +81,10 @@ Future<String> resolveAsmrOriginalUrl(HttpClient client, String url) async {
     if (!isBuzzheavier(pageUrl)) {
       throw const FormatException('Original link did not return audio.');
     }
-    final attribute = RegExp(
-      r'''\bhx-get\s*=\s*["']([^"']+)["']''',
-      caseSensitive: false,
-    ).firstMatch(body)?.group(1)?.replaceAll('&amp;', '&');
+    final attribute = _hxGetAttributePattern
+        .firstMatch(body)
+        ?.group(1)
+        ?.replaceAll('&amp;', '&');
     final parsed = attribute == null ? null : pageUrl.resolve(attribute);
     endpoint =
         parsed != null &&
@@ -86,7 +92,7 @@ Future<String> resolveAsmrOriginalUrl(HttpClient client, String url) async {
             const ['http', 'https'].contains(parsed.scheme)
         ? parsed
         : pageUrl.replace(
-            path: '${pageUrl.path.replaceAll(RegExp(r"/+$"), "")}/download',
+            path: '${pageUrl.path.replaceAll(_trailingSlashesPattern, "")}/download',
           );
   }
   final response = await open(

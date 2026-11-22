@@ -15,13 +15,24 @@ class AudioDetailCacheChange {
   // A null set invalidates every target after reset or replacement.
   final Set<String>? targetKeys;
 
-  bool affects(AudioDetailTarget target) =>
-      targetKeys?.contains(AudioLibraryDetailKey.forTarget(target)) ?? true;
+  bool affectsKey(String targetKey) => targetKeys?.contains(targetKey) ?? true;
+
+  bool affects(AudioDetailTarget target) {
+    final keys = targetKeys;
+    if (keys == null) return true;
+    if (keys.isEmpty) return false;
+    return keys.contains(AudioLibraryDetailKey.forTarget(target));
+  }
 }
 
 final class _AudioDetailReadRequest {
-  _AudioDetailReadRequest({required this.target, required this.epoch});
+  _AudioDetailReadRequest({
+    required this.key,
+    required this.target,
+    required this.epoch,
+  });
 
+  final String key;
   final AudioDetailTarget target;
   final int epoch;
   final result = Completer<AudioDetailLoadResult>();
@@ -98,46 +109,36 @@ class AudioDetailCacheService {
       return existing.future;
     }
     final epoch = _cacheEpoch;
-    final request = _AudioDetailReadRequest(target: target, epoch: epoch)
-      ..addRequester(isActive);
+    final request = _AudioDetailReadRequest(
+      key: key,
+      target: target,
+      epoch: epoch,
+    )..addRequester(isActive);
     final future = request.future = _runSerialized<AudioDetailLoadResult>(
       <AudioDetailTarget>[target],
       () async {
         if (epoch != _cacheEpoch || !request.isActive) {
           request.cancelled = true;
+          _releaseLoadFuture(request);
           throw const AudioDetailOperationCancelled();
         }
         final resolved = _takeResolved(key);
-        if (resolved != null) return resolved;
+        if (resolved != null) {
+          _releaseLoadFuture(request);
+          return resolved;
+        }
         _pendingReads.add(request);
         _scheduleReads();
-        final loaded = await request.result.future;
-        if (epoch == _cacheEpoch) {
-          final resultKey = AudioLibraryDetailKey.forTarget(
-            loaded.detail.target,
-          );
-          _storeResolved(resultKey, loaded);
-          if (resultKey != key) {
-            _storeResolved(key, loaded);
-          }
-        }
-        return loaded;
+        return request.result.future;
       },
     );
     request.tail = _operationTails[key]!;
     _loadFutures[key] = request;
     unawaited(
       future.then<void>(
-        (_) {
-          if (identical(_loadFutures[key], request)) {
-            _loadFutures.remove(key);
-          }
-        },
-        onError: (Object error, StackTrace stackTrace) {
-          if (identical(_loadFutures[key], request)) {
-            _loadFutures.remove(key);
-          }
-        },
+        (_) => _releaseLoadFuture(request),
+        onError: (Object error, StackTrace stackTrace) =>
+            _releaseLoadFuture(request),
       ),
     );
     return future;
@@ -146,7 +147,141 @@ class AudioDetailCacheService {
   Future<List<AudioDetailLoadResult>> loadMany(
     Iterable<AudioDetailTarget> targets, {
     bool Function()? isActive,
-  }) => Future.wait(targets.map((target) => load(target, isActive: isActive)));
+  }) {
+    if (_suspended) {
+      return Future<List<AudioDetailLoadResult>>.error(
+        const AudioDetailOperationCancelled(),
+      );
+    }
+    final values = targets.toList(growable: false);
+    if (values.isEmpty) {
+      return Future<List<AudioDetailLoadResult>>.value(
+        const <AudioDetailLoadResult>[],
+      );
+    }
+    if (values.length == 1) {
+      return load(
+        values.first,
+        isActive: isActive,
+      ).then((result) => <AudioDetailLoadResult>[result]);
+    }
+    final requestKeys = <String>[];
+    final resolvedByKey = <String, AudioDetailLoadResult>{};
+    final futuresByKey = <String, Future<AudioDetailLoadResult>>{};
+    final toLoad = <_AudioDetailReadRequest>[];
+    final epoch = _cacheEpoch;
+
+    for (final target in values) {
+      final key = AudioLibraryDetailKey.forTarget(target);
+      requestKeys.add(key);
+      if (resolvedByKey.containsKey(key) || futuresByKey.containsKey(key)) {
+        continue;
+      }
+      final predecessor = _operationTails[key];
+      final cached = predecessor == null ? _takeResolved(key) : null;
+      if (cached != null) {
+        resolvedByKey[key] = cached;
+        continue;
+      }
+      final existing = _loadFutures[key];
+      if (existing != null &&
+          !existing.cancelled &&
+          identical(existing.tail, predecessor)) {
+        existing.addRequester(isActive);
+        futuresByKey[key] = existing.future;
+        continue;
+      }
+      final request = _AudioDetailReadRequest(
+        key: key,
+        target: target,
+        epoch: epoch,
+      )..addRequester(isActive);
+      request.future = request.result.future;
+      futuresByKey[key] = request.future;
+      toLoad.add(request);
+    }
+
+    if (toLoad.isNotEmpty) {
+      final batchTargets = [for (final request in toLoad) request.target];
+      final batchExecution = _runSerialized<void>(batchTargets, () async {
+        final queued = <_AudioDetailReadRequest>[];
+        for (final request in toLoad) {
+          if (epoch != _cacheEpoch || !request.isActive) {
+            request.cancelled = true;
+            _releaseLoadFuture(request);
+            if (!request.result.isCompleted) {
+              request.result.completeError(
+                const AudioDetailOperationCancelled(),
+              );
+            }
+            continue;
+          }
+          final resolved = _takeResolved(request.key);
+          if (resolved != null) {
+            _releaseLoadFuture(request);
+            if (!request.result.isCompleted) {
+              request.result.complete(resolved);
+            }
+            continue;
+          }
+          queued.add(request);
+          _pendingReads.add(request);
+        }
+        if (queued.isEmpty) return;
+        _scheduleReads();
+        await Future.wait<void>(
+          queued.map(
+            (request) =>
+                request.result.future.then<void>((_) {}, onError: (_, _) {}),
+          ),
+        );
+      });
+      final batchTail = _operationTails[toLoad.first.key]!;
+      for (final request in toLoad) {
+        request.tail = batchTail;
+        _loadFutures[request.key] = request;
+      }
+      unawaited(
+        batchExecution.then<void>(
+          (_) {
+            for (final request in toLoad) {
+              _releaseLoadFuture(request);
+            }
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            for (final request in toLoad) {
+              _releaseLoadFuture(request);
+              if (!request.result.isCompleted) {
+                request.cancelled = true;
+                request.result.completeError(error, stackTrace);
+              }
+            }
+          },
+        ),
+      );
+    }
+
+    if (futuresByKey.isEmpty) {
+      return Future<List<AudioDetailLoadResult>>.value([
+        for (final key in requestKeys) resolvedByKey[key]!,
+      ]);
+    }
+    final pendingKeys = futuresByKey.keys.toList(growable: false);
+    return Future.wait(pendingKeys.map((key) => futuresByKey[key]!)).then((
+      loaded,
+    ) {
+      for (var index = 0; index < pendingKeys.length; index++) {
+        resolvedByKey[pendingKeys[index]] = loaded[index];
+      }
+      return [for (final key in requestKeys) resolvedByKey[key]!];
+    });
+  }
+
+  void _releaseLoadFuture(_AudioDetailReadRequest request) {
+    if (identical(_loadFutures[request.key], request)) {
+      _loadFutures.remove(request.key);
+    }
+  }
 
   void _scheduleReads() {
     if (_reading) return;
@@ -168,6 +303,7 @@ class AudioDetailCacheService {
               // Keep shared or unscoped callers, but skip abandoned card reads.
               if (read.epoch != _cacheEpoch || !read.isActive) {
                 read.cancelled = true;
+                _releaseLoadFuture(read);
                 read.result.completeError(
                   const AudioDetailOperationCancelled(),
                 );
@@ -182,16 +318,26 @@ class AudioDetailCacheService {
                 );
                 for (var index = 0; index < active.length; index++) {
                   final read = active[index];
+                  _releaseLoadFuture(read);
                   if (read.epoch != _cacheEpoch) {
                     read.result.completeError(
                       const AudioDetailOperationCancelled(),
                     );
                   } else {
-                    read.result.complete(results[index]);
+                    final loaded = results[index];
+                    final resultKey = AudioLibraryDetailKey.forTarget(
+                      loaded.detail.target,
+                    );
+                    _storeResolved(resultKey, loaded);
+                    if (resultKey != read.key) {
+                      _storeResolved(read.key, loaded);
+                    }
+                    read.result.complete(loaded);
                   }
                 }
               } catch (error, stackTrace) {
                 for (final read in active) {
+                  _releaseLoadFuture(read);
                   if (!read.result.isCompleted) {
                     read.result.completeError(error, stackTrace);
                   }

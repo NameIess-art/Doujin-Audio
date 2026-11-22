@@ -2,11 +2,11 @@ part of 'app_database.dart';
 
 Future<List<Map<String, dynamic>>> _queryFullTrackRows(
   DatabaseExecutor db, {
-  String? path,
-  int? limit,
+  List<String>? paths,
 }) {
-  final where = path == null ? '' : 'WHERE t.path = ?';
-  final limitSql = limit == null ? '' : 'LIMIT $limit';
+  final where = paths == null
+      ? ''
+      : 'WHERE t.path IN (${List.filled(paths.length, '?').join(', ')})';
   return db.rawQuery('''
       SELECT
         t.path,
@@ -36,8 +36,7 @@ Future<List<Map<String, dynamic>>> _queryFullTrackRows(
       LEFT JOIN track_assets assets ON assets.path = t.path
       LEFT JOIN track_remote_metadata remote ON remote.path = t.path
       $where
-      $limitSql
-    ''', path == null ? null : [path]);
+    ''', paths);
 }
 
 Future<List<Map<String, dynamic>>> _queryStartupTrackRows(DatabaseExecutor db) {
@@ -612,6 +611,7 @@ _PlaybackQueueRows _playbackQueueDeltaRows(
           'kind': change.entry.kind,
           'title': change.entry.title,
           'work_root_path': change.entry.workRootPath,
+          'path_match_key': _queuePathMatchKey(change.entry.workRootPath),
           'sort_order': change.position,
         },
     ],
@@ -781,6 +781,7 @@ _PlaybackQueueRows _playbackQueueRows(PlaybackSessionRecord session) {
       'kind': entry.kind,
       'title': entry.title,
       'work_root_path': entry.workRootPath,
+      'path_match_key': _queuePathMatchKey(entry.workRootPath),
       'sort_order': entryIndex,
     });
     for (var trackIndex = 0; trackIndex < entry.tracks.length; trackIndex++) {
@@ -808,6 +809,7 @@ Map<String, dynamic> _queueTrackRow({
   'session_id': sessionId,
   'entry_id': entryId,
   'track_path': track.path,
+  'path_match_key': _queuePathMatchKey(track.path),
   'display_name': track.displayName,
   'group_key': track.groupKey,
   'group_title': track.groupTitle,

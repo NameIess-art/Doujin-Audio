@@ -68,6 +68,8 @@ class DesktopIntegration {
       L"Open", L"Play / pause", L"Previous", L"Next", L"Exit"};
   std::optional<COLORREF> light_window_border_color_;
   std::optional<COLORREF> dark_window_border_color_;
+  std::optional<BOOL> applied_dark_mode_;
+  std::optional<COLORREF> applied_border_color_;
   EXECUTION_STATE power_flags_ = 0;
   int initial_show_command_ = SW_SHOWNORMAL;
   WINDOWPLACEMENT placement_{sizeof(WINDOWPLACEMENT)};

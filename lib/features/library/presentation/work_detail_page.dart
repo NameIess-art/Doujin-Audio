@@ -438,15 +438,30 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
             .toList(growable: false);
         _pendingDataUpdates.clear();
         if (updates.isEmpty) return;
+        final beforeKey = _directorySourceKey;
         setState(() {
           for (final item in updates) {
             item.update();
           }
         });
-        unawaited(_prepareDirectory());
+        if (_directorySourceKey != beforeKey ||
+            (_directory == null && !_preparingDirectory)) {
+          unawaited(_prepareDirectory());
+        }
       },
     );
   }
+
+  Object get _directorySourceKey => widget.isLocal
+      ? (
+          _localFolderNode,
+          _localTextFiles,
+          _localImageReferences,
+          _localTarget?.targetPath,
+          _loadingLocal,
+          _loadingInitialTree,
+        )
+      : (_remoteDirectory, _loadingRemote);
 
   WorkDirectorySource? get _directoryInput {
     if (!widget.isLocal) return _remoteDirectory;
@@ -468,21 +483,22 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   Future<void> _prepareDirectory({
     bool allowInitialDuringNavigation = false,
   }) async {
-    final request = ++_directoryRequest;
-    final localRequest = _localLoadRequest;
     final input = _directoryInput;
     if (input == null) return;
     final cached = input.resolved;
     final loading = widget.isLocal ? _loadingLocal : _loadingRemote;
-    _preparingDirectory = cached != _directory || _directory == null;
     if (cached != null &&
         identical(cached, _directory) &&
         (loading ||
             cached.validDepth(_currentPathSegments) ==
                 _currentPathSegments.length)) {
+      _preparingDirectory = false;
       UiInteractionCoordinator.instance.cancelCommit(_directoryCommitKey);
       return;
     }
+    final request = ++_directoryRequest;
+    final localRequest = _localLoadRequest;
+    _preparingDirectory = cached != _directory || _directory == null;
     final directory = cached ?? await input.load();
     bool isCurrent() =>
         mounted &&
@@ -742,14 +758,25 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     final hidden = library == null || directory == null
         ? const <UndoableRemovalKey>{}
         : ref
-              .watch(undoableRemovalStateProvider)
-              .hiddenKeys
-              .where(
-                (key) =>
-                    key.namespace == 'library' &&
-                    directory.containsRemovalPath(_currentPathSegments, key.id),
+              .watch(
+                undoableRemovalStateProvider.select((state) {
+                  if (state.hiddenKeys.isEmpty) {
+                    return const _HiddenRemovals(<UndoableRemovalKey>{});
+                  }
+                  final matching = <UndoableRemovalKey>{};
+                  for (final key in state.hiddenKeys) {
+                    if (key.namespace == 'library' &&
+                        directory.containsRemovalPath(
+                          _currentPathSegments,
+                          key.id,
+                        )) {
+                      matching.add(key);
+                    }
+                  }
+                  return _HiddenRemovals(matching);
+                }),
               )
-              .toSet();
+              .keys;
     final key = (entries, structureRevision);
     if (_entriesKey == key && setEquals(_hiddenEntries, hidden)) {
       return _currentEntries;
@@ -1368,7 +1395,17 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
         ),
       );
     }
-    final library = ref.read(libraryFacadeProvider);
+    final library = widget.isLocal && interactive
+        ? ref.read(libraryFacadeProvider)
+        : null;
+    final workTargetPath = widget.isLocal ? _localTarget!.targetPath : null;
+    final workRoot = library?.libraryRootForPath(workTargetPath!);
+    final workIsWatchedLibrary =
+        workRoot != null && library!.watchedLibraries.contains(workRoot);
+    final hasWatchedLibraries =
+        library != null && library.watchedLibraries.isNotEmpty;
+    final isContentWork =
+        workTargetPath != null && PathMatcher.isContentUri(workTargetPath);
     return SliverPadding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       sliver: SliverList(
@@ -1377,14 +1414,24 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
             final item = entries[index];
             String? removalLabel;
             if (item.removalPath case final removalPath?
-                when widget.isLocal && interactive) {
+                when library != null) {
               if (item.type == WorkEntryType.folder) {
-                final root = library.libraryRootForPath(removalPath);
-                if (item.localFolder != null || root != null) {
-                  removalLabel = library.watchedLibraries.contains(root)
-                      ? 'exclude'
-                      : 'remove';
+                if (workRoot != null && !isContentWork) {
+                  removalLabel = workIsWatchedLibrary ? 'exclude' : 'remove';
+                } else {
+                  final root = library.libraryRootForPath(removalPath);
+                  if (item.localFolder != null || root != null) {
+                    removalLabel = library.watchedLibraries.contains(root)
+                        ? 'exclude'
+                        : 'remove';
+                  }
                 }
+              } else if (!hasWatchedLibraries) {
+                removalLabel = 'remove';
+              } else if (workRoot != null && !isContentWork) {
+                removalLabel = workIsWatchedLibrary && item.track != null
+                    ? 'exclude'
+                    : 'remove';
               } else {
                 removalLabel = library.isLibraryTrack(removalPath)
                     ? 'exclude'
@@ -1548,13 +1595,16 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           return null;
         }
 
-        final (coverGeneration, resolved, previewPath) = ref.watch(
-          coverGenerationProvider.select((generation) {
+        final (coverRevision, resolved, previewPath) = ref.watch(
+          coverGenerationProvider.select((_) {
             final resolvedPath = library.resolvedCoverPathForRemoteCover(
               remoteUrl,
             );
             final preview = resolvePreviewPath();
-            return (resolvedPath != null ? 0 : generation, resolvedPath, preview);
+            final scopeRevision = resolvedPath != null
+                ? null
+                : library.coverArtworkCacheService.revisionForScope(remoteUrl);
+            return (scopeRevision, resolvedPath, preview);
           }),
         );
         Widget coverPlaceholder(BuildContext context) {
@@ -1576,7 +1626,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           );
         }
 
-        final requestKey = (remoteUrl, resolved, coverGeneration);
+        final requestKey = (remoteUrl, resolved, coverRevision);
         if (_coverRequestKey != requestKey) {
           _coverRequestKey = requestKey;
           _coverFuture = resolved != null
@@ -1605,15 +1655,18 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
         );
       } else if (widget.isLocal) {
         final library = ref.read(libraryFacadeProvider);
-        final (resolved, coverGeneration) = ref.watch(
-          coverGenerationProvider.select((generation) {
+        final (resolved, coverRevision) = ref.watch(
+          coverGenerationProvider.select((_) {
+            final targetPath = _localTarget!.targetPath;
             final resolvedPath =
-                library.resolvedCoverPathForFolder(_localTarget!.targetPath) ??
-                coverPath;
-            return (resolvedPath, resolvedPath != null ? 0 : generation);
+                library.resolvedCoverPathForFolder(targetPath) ?? coverPath;
+            final scopeRevision = resolvedPath != null
+                ? null
+                : library.coverArtworkCacheService.revisionForScope(targetPath);
+            return (resolvedPath, scopeRevision);
           }),
         );
-        final requestKey = (_localTarget, resolved, coverGeneration);
+        final requestKey = (_localTarget, resolved, coverRevision);
         if (_coverRequestKey != requestKey) {
           _coverRequestKey = requestKey;
           _coverFuture = Future.value(resolved);
@@ -1693,7 +1746,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                     rjCode: displayRj,
                     circleName: displayCircle,
                     subtitleStatus: subtitleStatus,
-                    coverWidget: buildCover(context, ref),
+                    coverWidget: Consumer(
+                      builder: (context, coverRef, _) =>
+                          buildCover(context, coverRef),
+                    ),
                     accentColor: cs.primary,
                     surfaceColor: cs.surface,
                     onCopyMetadata: (value) => _copyText(context, value),
@@ -1987,4 +2043,18 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       icon: Icons.content_copy_rounded,
     );
   }
+}
+
+@immutable
+class _HiddenRemovals {
+  const _HiddenRemovals(this.keys);
+
+  final Set<UndoableRemovalKey> keys;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _HiddenRemovals && setEquals(other.keys, keys);
+
+  @override
+  int get hashCode => Object.hashAllUnordered(keys);
 }

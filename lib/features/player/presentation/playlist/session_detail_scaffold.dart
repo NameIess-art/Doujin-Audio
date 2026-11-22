@@ -679,18 +679,20 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                               }
 
                               if (timer.hasTimer) {
-                                return TimerCountdownCapsule(
-                                  key: const ValueKey(
-                                    'session_detail_timer_capsule',
+                                return RepaintBoundary(
+                                  child: TimerCountdownCapsule(
+                                    key: const ValueKey(
+                                      'session_detail_timer_capsule',
+                                    ),
+                                    showBackground: false,
+                                    remaining:
+                                        timer.timerRemaining ??
+                                        timer.timerDuration ??
+                                        Duration.zero,
+                                    active: timer.timerActive,
+                                    autoResumeAt: timer.autoResumeAt,
+                                    onTap: openTimer,
                                   ),
-                                  showBackground: false,
-                                  remaining:
-                                      timer.timerRemaining ??
-                                      timer.timerDuration ??
-                                      Duration.zero,
-                                  active: timer.timerActive,
-                                  autoResumeAt: timer.autoResumeAt,
-                                  onTap: openTimer,
                                 );
                               }
                               return IconButton(
@@ -863,26 +865,28 @@ class _SessionDetailBlurredCoverBackground extends StatelessWidget {
 
     return Positioned.fill(
       child: IgnorePointer(
-        child: AsyncCoverImage(
-          key: ValueKey(requestKey),
-          future: coverPathFuture,
-          requestKey: requestKey,
-          initialPath: initialCoverPath,
-          fallbackBuilder: buildPreview,
-          loadingBuilder: buildPreview,
-          imageBuilder: (_, path) => RetryingFileImage(
-            key: ValueKey(path),
-            path: path,
-            onImageError: onImageError,
-            cacheWidth: 200,
-            useDefaultCacheWidth: false,
-            gaplessPlayback: false,
-            fit: BoxFit.cover,
+        child: RepaintBoundary(
+          child: AsyncCoverImage(
+            key: ValueKey(requestKey),
+            future: coverPathFuture,
+            requestKey: requestKey,
+            initialPath: initialCoverPath,
             fallbackBuilder: buildPreview,
-            resolvedFrameBuilder: (context, image, frame, synchronous) =>
-                frame == null && !synchronous
-                ? buildPreview(context)
-                : buildBackground(image),
+            loadingBuilder: buildPreview,
+            imageBuilder: (_, path) => RetryingFileImage(
+              key: ValueKey(path),
+              path: path,
+              onImageError: onImageError,
+              cacheWidth: 200,
+              useDefaultCacheWidth: false,
+              gaplessPlayback: false,
+              fit: BoxFit.cover,
+              fallbackBuilder: buildPreview,
+              resolvedFrameBuilder: (context, image, frame, synchronous) =>
+                  frame == null && !synchronous
+                  ? buildPreview(context)
+                  : buildBackground(image),
+            ),
           ),
         ),
       ),

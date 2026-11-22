@@ -143,7 +143,7 @@ class WindowsWindowTitleBar extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     child: Row(
                       children: [
-                        Image.asset(appBrandIconAsset, width: 16, height: 16),
+                        const AppBrandIcon(size: 16),
                         const SizedBox(width: 6),
                         Flexible(
                           child: Text(

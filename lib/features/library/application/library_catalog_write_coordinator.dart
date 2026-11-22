@@ -104,6 +104,7 @@ final class LibraryCatalogWriteCoordinator {
           .toList(growable: false);
     }
     if (entries.isEmpty) return;
+    _rememberBatchEntries(libraryPath, entries.map((entry) => entry.path));
     _service.replaceLibraryEntries(entries);
     if (refreshWrite) {
       for (final entry in entries) {
@@ -129,7 +130,9 @@ final class LibraryCatalogWriteCoordinator {
       tracksByLibrary.putIfAbsent(libraryPath, () => <MusicTrack>[]).add(track);
     }
     for (final entry in tracksByLibrary.entries) {
-      entries.addAll(_service.buildLibraryEntries(entry.key, entry.value));
+      final records = _service.buildLibraryEntries(entry.key, entry.value);
+      _rememberBatchEntries(entry.key, records.map((record) => record.path));
+      entries.addAll(records);
     }
     if (entries.isEmpty) return;
     _service.replaceLibraryEntries(entries);
@@ -242,6 +245,7 @@ final class LibraryCatalogWriteCoordinator {
       libraryPath,
       folderPath,
       retainedPaths,
+      onRemoved: (entry) => _rememberRemovedBatchEntry(libraryPath, entry),
     );
     if (removedPaths.isNotEmpty && _persistenceCoordinator.enabled) {
       _persistRemovedEntries(libraryPath, removedPaths);
@@ -252,6 +256,7 @@ final class LibraryCatalogWriteCoordinator {
     String libraryPath,
     Iterable<String> entryPaths,
   ) {
+    _rememberBatchEntries(libraryPath, entryPaths);
     final removedPaths = _service.removeLibraryEntriesByPaths(
       libraryPath,
       entryPaths,
@@ -280,12 +285,57 @@ final class LibraryCatalogWriteCoordinator {
     }
   }
 
-  void beginLibraryBatch() {
+  void beginLibraryBatch({bool snapshotAllEntries = true}) {
     if (_service.libraryBatchDepth == 0) {
-      _batchBefore = _LibraryBatchSnapshot(_service);
+      _batchBefore = _LibraryBatchSnapshot(
+        _service,
+        snapshotAllEntries: snapshotAllEntries,
+      );
       _service.libraryDerivedGeneration++;
+    } else if (snapshotAllEntries && _batchBefore?.snapshotAllEntries == false) {
+      _batchBefore!.captureAllEntries(_service);
     }
     _service.libraryBatchDepth++;
+  }
+
+  void rememberBatchEntriesForLibrary(String libraryPath) {
+    final snapshot = _batchBefore;
+    if (snapshot == null || snapshot.snapshotAllEntries) return;
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final existing = _service.libraryEntriesByLibrary[normalizedLibraryPath];
+    if (existing == null || existing.isEmpty) return;
+    final before = snapshot.entries.putIfAbsent(
+      normalizedLibraryPath,
+      LibraryService.createPathIndex<LibraryEntry?>,
+    );
+    for (final entry in existing.entries) {
+      before.putIfAbsent(entry.key, () => entry.value);
+    }
+  }
+
+  void _rememberRemovedBatchEntry(String libraryPath, LibraryEntry entry) {
+    final snapshot = _batchBefore;
+    if (snapshot == null || snapshot.snapshotAllEntries) return;
+    final before = snapshot.entries.putIfAbsent(
+      libraryPath,
+      LibraryService.createPathIndex<LibraryEntry?>,
+    );
+    before.putIfAbsent(entry.path, () => entry);
+  }
+
+  void _rememberBatchEntries(String libraryPath, Iterable<String> paths) {
+    final snapshot = _batchBefore;
+    if (snapshot == null || snapshot.snapshotAllEntries) return;
+    final before = snapshot.entries.putIfAbsent(
+      libraryPath,
+      LibraryService.createPathIndex<LibraryEntry?>,
+    );
+    for (final path in paths) {
+      before.putIfAbsent(
+        path,
+        () => _service.libraryEntryForPath(libraryPath, path),
+      );
+    }
   }
 
   void queueBatchExclusions(List<LibraryEntry> entries) {
@@ -294,7 +344,7 @@ final class LibraryCatalogWriteCoordinator {
   }
 
   void beginStagedLibraryRefresh() {
-    beginLibraryBatch();
+    beginLibraryBatch(snapshotAllEntries: false);
     _stagedRefresh = true;
   }
 
@@ -542,27 +592,25 @@ final class LibraryCatalogWriteCoordinator {
         if (_service.libraryByPath.containsKey(track.path))
           track.path: _service.libraryByPath[track.path]!,
     }).values.toList(growable: false);
-    final initialPaths = LibraryService.createPathSet(
-      before.tracks.map((track) => track.path),
-    );
     final removedEntries = <String, List<String>>{
       for (final entry in _removedEntryPaths.entries)
         entry.key: <String>[
           for (final path in entry.value)
-            if (before.entries[PathMatcher.normalize(entry.key)]?.containsKey(
-                      PathMatcher.normalize(path),
-                    ) ==
-                    true &&
+            if (before.entries[entry.key]?[path] != null &&
                 _service.libraryEntryForPath(entry.key, path) == null)
               path,
         ],
     };
+    final candidateRemovedTracks = LibraryService.createPathSet({
+      ..._removedTrackPaths,
+      ...removedEntries.values.expand((paths) => paths),
+    });
+    final removedFromBefore = candidateRemovedTracks.isEmpty
+        ? const <String>{}
+        : LibraryService.createPathSet(_diffBatchTracks(before).removedPaths);
     final removedTracks = <String>[
-      for (final path in LibraryService.createPathSet({
-        ..._removedTrackPaths,
-        ...removedEntries.values.expand((paths) => paths),
-      }))
-        if ((initialPaths.contains(path) ||
+      for (final path in candidateRemovedTracks)
+        if ((removedFromBefore.contains(path) ||
                 before.entries.values.any(
                   (entries) => entries[path]?.isTrack == true,
                 )) &&
@@ -599,29 +647,88 @@ final class LibraryCatalogWriteCoordinator {
     _clearBatch();
     if (saveExclusions) await _persistenceCoordinator.saveExclusions();
     if (didChangeLibrary) {
-      final affected = _affectedTracks(before);
-      final removedPaths = before.tracks
-          .where((track) => !_service.libraryByPath.containsKey(track.path))
-          .map((track) => track.path)
-          .toList(growable: false);
+      final diff = _diffBatchTracks(before);
       await rebuildDerivedSnapshot();
-      _coverArtwork()?.invalidateCatalogTracks(affected);
-      if (removedPaths.isNotEmpty) _trackRemovalHandler?.call(removedPaths);
+      _coverArtwork()?.invalidateCatalogTracks(diff.affected);
+      if (diff.removedPaths.isNotEmpty) {
+        _trackRemovalHandler?.call(diff.removedPaths);
+      }
     }
   }
 
-  List<MusicTrack> _affectedTracks(_LibraryBatchSnapshot before) {
-    final previous = LibraryService.createPathIndex<MusicTrack>({
-      for (final track in before.tracks) track.path: track,
-    });
+  List<MusicTrack> _affectedTracks(_LibraryBatchSnapshot before) =>
+      _diffBatchTracks(before).affected;
+
+  ({List<MusicTrack> affected, List<String> removedPaths}) _diffBatchTracks(
+    _LibraryBatchSnapshot before,
+  ) {
+    final beforeTracks = before.tracks;
+    final currentTracks = _service.library;
     final affected = <MusicTrack>[];
-    for (final track in _service.library) {
+    final removedPaths = <String>[];
+    var bi = 0;
+    var ci = 0;
+    var fellBack = false;
+    while (bi < beforeTracks.length && ci < currentTracks.length) {
+      final original = beforeTracks[bi];
+      final current = currentTracks[ci];
+      if (identical(original, current)) {
+        bi++;
+        ci++;
+        continue;
+      }
+      if (original.path == current.path) {
+        affected.add(current);
+        affected.add(original);
+        bi++;
+        ci++;
+        continue;
+      }
+      if (!_service.libraryByPath.containsKey(original.path)) {
+        affected.add(original);
+        removedPaths.add(original.path);
+        bi++;
+        continue;
+      }
+      fellBack = true;
+      break;
+    }
+    if (!fellBack) {
+      for (; bi < beforeTracks.length; bi++) {
+        final original = beforeTracks[bi];
+        if (!_service.libraryByPath.containsKey(original.path)) {
+          affected.add(original);
+          removedPaths.add(original.path);
+        } else {
+          fellBack = true;
+          break;
+        }
+      }
+    }
+    if (!fellBack) {
+      for (; ci < currentTracks.length; ci++) {
+        affected.add(currentTracks[ci]);
+      }
+      return (affected: affected, removedPaths: removedPaths);
+    }
+    final previous = LibraryService.createPathIndex<MusicTrack>({
+      for (var index = bi; index < beforeTracks.length; index++)
+        beforeTracks[index].path: beforeTracks[index],
+    });
+    for (var index = ci; index < currentTracks.length; index++) {
+      final track = currentTracks[index];
       final original = previous.remove(track.path);
       if (identical(original, track)) continue;
       affected.add(track);
       if (original != null) affected.add(original);
     }
-    return affected..addAll(previous.values);
+    for (final remaining in previous.values) {
+      affected.add(remaining);
+      if (!_service.libraryByPath.containsKey(remaining.path)) {
+        removedPaths.add(remaining.path);
+      }
+    }
+    return (affected: affected, removedPaths: removedPaths);
   }
 
   void _clearBatch() {
@@ -672,21 +779,42 @@ final class LibraryCatalogWriteCoordinator {
 
 /// A single batch's original catalog, used only for failure rollback.
 final class _LibraryBatchSnapshot {
-  _LibraryBatchSnapshot(LibraryService service)
-    : tracks = List<MusicTrack>.of(service.library),
-      folders = List<String>.of(service.watchedFolders),
-      libraries = List<String>.of(service.watchedLibraries),
-      order = List<String>.of(service.groupOrder),
-      entries = LibraryService.createPathIndex<Map<String, LibraryEntry>>({
-        for (final entry in service.libraryEntriesByLibrary.entries)
-          entry.key: LibraryService.createPathIndex<LibraryEntry>(entry.value),
-      });
+  _LibraryBatchSnapshot(
+    LibraryService service, {
+    required this.snapshotAllEntries,
+  }) : tracks = List<MusicTrack>.of(service.library),
+       folders = service.watchedFoldersSnapshot,
+       libraries = List<String>.of(service.watchedLibraries),
+       order = List<String>.of(service.groupOrder),
+       entries = LibraryService.createPathIndex<Map<String, LibraryEntry?>>({
+         if (snapshotAllEntries)
+           for (final entry in service.libraryEntriesByLibrary.entries)
+             entry.key: LibraryService.createPathIndex<LibraryEntry?>(
+               entry.value,
+             ),
+       });
 
   final List<MusicTrack> tracks;
   final List<String> folders;
   final List<String> libraries;
   final List<String> order;
-  final Map<String, Map<String, LibraryEntry>> entries;
+  bool snapshotAllEntries;
+  final Map<String, Map<String, LibraryEntry?>> entries;
+
+  void captureAllEntries(LibraryService service) {
+    if (snapshotAllEntries) return;
+    snapshotAllEntries = true;
+    for (final root in service.libraryEntriesByLibrary.entries) {
+      final before = entries.putIfAbsent(
+        root.key,
+        LibraryService.createPathIndex<LibraryEntry?>,
+      );
+      for (final entry in root.value.entries) {
+        // Keep pre-batch state already recorded for earlier mutations in this batch.
+        before.putIfAbsent(entry.key, () => entry.value);
+      }
+    }
+  }
 
   void restore(LibraryService service) {
     service.library = List<MusicTrack>.of(tracks);
@@ -697,9 +825,7 @@ final class _LibraryBatchSnapshot {
       for (var index = 0; index < tracks.length; index++)
         tracks[index].path: index,
     });
-    service.watchedFolders
-      ..clear()
-      ..addAll(folders);
+    service.replaceWatchedFolders(folders);
     service.watchedLibraries
       ..clear()
       ..addAll(libraries);
@@ -709,11 +835,23 @@ final class _LibraryBatchSnapshot {
     service.groupOrderSet
       ..clear()
       ..addAll(order);
-    service.libraryEntriesByLibrary
-      ..clear()
-      ..addAll({
-        for (final entry in entries.entries)
-          entry.key: LibraryService.createPathIndex<LibraryEntry>(entry.value),
-      });
+    if (snapshotAllEntries) service.libraryEntriesByLibrary.clear();
+    for (final root in entries.entries) {
+      final current = service.libraryEntriesByLibrary.putIfAbsent(
+        root.key,
+        LibraryService.createPathIndex<LibraryEntry>,
+      );
+      for (final entry in root.value.entries) {
+        final original = entry.value;
+        if (original == null) {
+          current.remove(entry.key);
+        } else {
+          current[entry.key] = original;
+        }
+      }
+      if (current.isEmpty) {
+        service.libraryEntriesByLibrary.remove(root.key);
+      }
+    }
   }
 }

@@ -108,11 +108,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   void _handleActivityChanged() {
     if (_isActive) {
-      final listState = ref.read(libraryListUiProvider);
-      if (listState.isInitialized) {
+      final libraryFacade = ref.read(libraryFacadeProvider);
+      final state = libraryFacade.state;
+      if (state.isInitialized) {
         _ensureCardSnapshot(
-          libraryFacade: ref.read(libraryFacadeProvider),
-          snapshotRevision: listState.structureRevision,
+          libraryFacade: libraryFacade,
+          snapshotRevision: state.treeSnapshotRevision,
         );
       }
       _ensureStartupRefreshStarted();

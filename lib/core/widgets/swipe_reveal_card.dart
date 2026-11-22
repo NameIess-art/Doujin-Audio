@@ -131,7 +131,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   bool _overscrollHapticFired = false;
   double _displayedWidth = 0;
   VoidCallback? _actionAfterClose;
-  final _contentKey = GlobalKey();
+  late final _contentKey = GlobalKey();
   final Object _interactionSource = Object();
 
   void _beginMotion() {
@@ -176,6 +176,11 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      _tickerModeNotifier?.removeListener(_handleTickerModeChanged);
+      _tickerModeNotifier = null;
+      return;
+    }
     final notifier = TickerMode.getValuesNotifier(context);
     if (!identical(notifier, _tickerModeNotifier)) {
       _tickerModeNotifier?.removeListener(_handleTickerModeChanged);
@@ -443,10 +448,10 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    Widget buildClosedContent(BuildContext context) {
+    Widget buildClosedContent() {
       final content = ColoredBox(
         color: widget.closedColor ?? cs.surface,
-        child: IgnorePointer(ignoring: _isOpen, child: widget.child),
+        child: widget.child,
       );
 
       if (widget.shape.runtimeType == RoundedRectangleBorder) {
@@ -465,11 +470,6 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       );
     }
 
-    // Preserve child animations when the swipe transform is removed on close.
-    final closedContent = Builder(
-      key: _contentKey,
-      builder: buildClosedContent,
-    );
     if (defaultTargetPlatform == TargetPlatform.windows) {
       return Padding(
         padding: widget.margin,
@@ -478,11 +478,16 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
           shape: widget.shape,
           enabled: widget.enabled,
           skipTraversal: true,
-          child: closedContent,
+          child: buildClosedContent(),
         ),
       );
     }
-    if (!widget.swipeEnabled) {
+    // Preserve child animations when the swipe transform is removed on close.
+    final closedContent = KeyedSubtree(
+      key: _contentKey,
+      child: buildClosedContent(),
+    );
+    if (!widget.swipeEnabled || !widget.enabled) {
       return Padding(padding: widget.margin, child: closedContent);
     }
     final actionWidth = _activeActionWidth;
@@ -579,12 +584,15 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                   },
                   builder: (context, value, child) {
                     _displayedWidth = value.clamp(0.0, actionWidth);
-                    return Transform.translate(
-                      offset: Offset(
-                        _revealedFromStart ? _displayedWidth : -_displayedWidth,
-                        0,
+                    return IgnorePointer(
+                      ignoring: _isOpen,
+                      child: Transform.translate(
+                        offset: Offset(
+                          _revealedFromStart ? _displayedWidth : -_displayedWidth,
+                          0,
+                        ),
+                        child: child,
                       ),
-                      child: child,
                     );
                   },
                   child: closedContent,

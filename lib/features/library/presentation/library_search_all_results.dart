@@ -138,6 +138,7 @@ class _LibrarySearchAllResultsState
   @override
   void dispose() {
     UiInteractionCoordinator.instance.cancelCommit(_searchCommitKey);
+    _searchIndex.dispose();
     super.dispose();
   }
 

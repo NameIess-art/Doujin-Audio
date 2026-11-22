@@ -67,10 +67,27 @@ class _ActiveSessionCard extends ConsumerWidget {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final library = ref.read(libraryFacadeProvider);
-    ref.watch(coverGenerationProvider);
     final currentTrack = ref
         .read(audioPathCoordinatorProvider)
         .sessionTrackForPath(session.id, view.trackPath);
+    final coverCache = library.coverArtworkCacheService;
+    final coverScope =
+        coverCache.coverSearchKeyForTrack(
+          currentTrack,
+          trackPath: view.trackPath,
+        ) ??
+        view.trackPath;
+    final folderScope = currentTrack == null
+        ? null
+        : coverCache.coverScopeFolderForTrack(currentTrack);
+    ref.watch(
+      coverGenerationProvider.select(
+        (_) => (
+          coverCache.revisionForScope(coverScope),
+          folderScope == null ? null : coverCache.revisionForScope(folderScope),
+        ),
+      ),
+    );
     final displayName =
         currentTrack?.displayName ??
         path.basenameWithoutExtension(view.trackPath);
@@ -355,15 +372,16 @@ class _ActiveSessionCard extends ConsumerWidget {
                 builder: (context, ref, child) {
                   return _ActiveSessionPlayPauseButton(
                     showPauseIcon: isPlaying,
-                    isLoading: view.loading || view.error != null,
+                    isLoading: view.loading && view.error == null,
+                    hasError: view.error != null,
                     enabled: view.trackPath.isNotEmpty,
                     showTooltip: !embedded,
                     activeColor: activeColor,
                     semanticLabel: i18n.tr(
-                      view.loading
-                          ? 'playback_loading'
-                          : view.error != null
+                      view.error != null
                           ? 'retry_playback'
+                          : view.loading
+                          ? 'playback_loading'
                           : (isPlaying ? 'pause' : 'play'),
                     ),
                     onPressed: () {
@@ -488,6 +506,7 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
   const _ActiveSessionPlayPauseButton({
     required this.showPauseIcon,
     required this.isLoading,
+    required this.hasError,
     required this.enabled,
     required this.showTooltip,
     required this.activeColor,
@@ -497,6 +516,7 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
 
   final bool showPauseIcon;
   final bool isLoading;
+  final bool hasError;
   final bool enabled;
   final bool showTooltip;
   final Color activeColor;
@@ -524,10 +544,18 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
                 key: const ValueKey('loading'),
                 width: 22,
                 height: 22,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.2,
-                  color: activeColor,
+                child: RepaintBoundary(
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.2,
+                    color: activeColor,
+                  ),
                 ),
+              )
+            : hasError
+            ? const Icon(
+                Icons.refresh_rounded,
+                key: ValueKey('retry'),
+                size: 28,
               )
             : Icon(
                 showPauseIcon ? Icons.pause_rounded : Icons.play_arrow_rounded,

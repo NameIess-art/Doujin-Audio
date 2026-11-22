@@ -41,6 +41,81 @@ void main() {
     return client;
   }
 
+  test(
+    'system proxy reuses URL lookups until expiry or route changes',
+    () async {
+      final upstream = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => upstream.close(force: true));
+      upstream.listen((request) => request.response.close());
+      final firstLookup = Completer<void>();
+      final releaseLookup = Completer<void>();
+      final calls = <Uri>[];
+      var elapsed = Duration.zero;
+      await network.close();
+      network = AppNetwork(
+        resolveSystemProxy: (uri) async {
+          calls.add(uri);
+          if (calls.length == 1) firstLookup.complete();
+          await releaseLookup.future;
+          return 'PROXY 127.0.0.1:${upstream.port}';
+        },
+        applyNativeRoute: (_, _) async {},
+        monotonicElapsed: () => elapsed,
+      );
+      await network.ensureStarted();
+      final client = proxiedClient();
+      Future<void> get(Uri url) async {
+        final request = await client.getUrl(url);
+        final response = await request.close();
+        expect(response.statusCode, HttpStatus.ok);
+        await response.drain<void>();
+      }
+
+      final first = Uri.parse('http://example.invalid/first');
+      final second = first.replace(path: '/second');
+      final burst = Future.wait(List.generate(8, (_) => get(first)));
+      await firstLookup.future;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      releaseLookup.complete();
+      await burst;
+      await get(first);
+      await get(second);
+      expect(calls, [first, second]);
+
+      elapsed = const Duration(seconds: 4);
+      await get(first);
+      expect(calls, [first, second, first]);
+
+      await network.configure(const NetworkRouteSettings(), null);
+      await get(first);
+      expect(calls, [first, second, first, first]);
+    },
+  );
+
+  test('a failed system proxy lookup is retryable before the TTL', () async {
+    final upstream = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => upstream.close(force: true));
+    upstream.listen((request) => request.response.close());
+    var lookups = 0;
+    await network.close();
+    network = AppNetwork(
+      resolveSystemProxy: (_) async {
+        if (++lookups == 1) throw const SocketException('Proxy lookup failed');
+        return 'PROXY 127.0.0.1:${upstream.port}';
+      },
+      monotonicElapsed: () => Duration.zero,
+    );
+    await network.ensureStarted();
+    final client = proxiedClient();
+    final url = Uri.parse('http://example.invalid/retry');
+    for (final status in [HttpStatus.badGateway, HttpStatus.ok]) {
+      final response = await (await client.getUrl(url)).close();
+      expect(response.statusCode, status);
+      await response.drain<void>();
+    }
+    expect(lookups, 2);
+  });
+
   Future<NetworkSocket> connectTunnel(String target) async {
     final proxy = Uri.parse(network.proxyUrl);
     final socket = NetworkSocket(await Socket.connect(proxy.host, proxy.port));

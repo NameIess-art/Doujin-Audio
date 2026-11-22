@@ -414,6 +414,7 @@ class AppDialog extends StatelessWidget {
           ],
         ),
         child: AppGlassSurface(
+          enabled: AppDesignTokens.of(context).barGlassEnabled,
           backgroundColor: cs.surfaceContainerHigh,
           borderRadius: AppRadius.borderDialog,
           child: Container(
@@ -544,6 +545,7 @@ Widget _glassMaterialDialog(BuildContext context, Dialog dialog) {
     constraints: dialog.constraints,
     semanticsRole: dialog.semanticsRole,
     child: AppGlassSurface(
+      enabled: AppDesignTokens.of(context).barGlassEnabled,
       backgroundColor: surfaceColor,
       borderRadius: resolvedShape.borderRadius.resolve(
         Directionality.of(context),

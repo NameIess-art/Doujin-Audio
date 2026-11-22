@@ -23,13 +23,15 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
     this.requestTimeout = const Duration(seconds: 15),
     this.downloadIdleTimeout = const Duration(seconds: 30),
     AsmrHlsAudioTransfer? hlsAudioTransfer,
-  }) : _httpClientFactory = httpClientFactory ?? HttpClient.new,
+  }) : _httpClientFactory = httpClientFactory,
        _hlsAudioTransfer = hlsAudioTransfer ?? AsmrHlsAudioTransfer(),
        _temporaryDirectory = temporaryDirectory ?? getTemporaryDirectory;
 
   static const String cacheDirectoryName = 'asmr_playback_cache';
+  static final RegExp _safeExtensionPattern = RegExp(r'^\.[A-Za-z0-9]+$');
 
-  final HttpClient Function() _httpClientFactory;
+  final HttpClient Function()? _httpClientFactory;
+  HttpClient? _sharedHttpClient;
   final AsmrHlsAudioTransfer _hlsAudioTransfer;
   final Future<Directory> Function() _temporaryDirectory;
   final Duration requestTimeout;
@@ -122,8 +124,13 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
       transfer.waiting = null;
       waiting.complete(false);
     }
-    transfer.request?.abort();
-    transfer.client?.close(force: true);
+    transfer.cancelStream?.call();
+    try {
+      transfer.request?.abort();
+    } catch (_) {
+      // Some injected test requests do not implement abort.
+    }
+    transfer.ownedClient?.close(force: true);
   }
 
   Future<String?> _cacheTarget({
@@ -276,7 +283,27 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
   static bool _isSafeExtension(String value) {
     return value.length > 1 &&
         value.length <= 10 &&
-        RegExp(r'^\.[A-Za-z0-9]+$').hasMatch(value);
+        _safeExtensionPattern.hasMatch(value);
+  }
+
+  HttpClient _httpClientForDownload() {
+    final factory = _httpClientFactory;
+    if (factory != null) {
+      final client = factory();
+      client.autoUncompress = false;
+      try {
+        client.connectionTimeout = requestTimeout;
+      } catch (_) {
+        // Some injected clients do not expose socket options.
+      }
+      return client;
+    }
+    final existing = _sharedHttpClient;
+    if (existing != null) return existing;
+    final client = HttpClient()
+      ..autoUncompress = false
+      ..connectionTimeout = requestTimeout;
+    return _sharedHttpClient = client;
   }
 
   Future<void> _download(
@@ -286,69 +313,126 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
     required int? expectedBytes,
   }) async {
     if (!await _acquireTransfer(transfer)) return;
+    final ownsClient = _httpClientFactory != null;
     HttpClient? client;
     HttpClientRequest? request;
     IOSink? sink;
+    StreamSubscription<List<int>>? subscription;
     try {
       if (transfer.cancelled) return;
-      client = _httpClientFactory();
-      client.autoUncompress = false;
-      transfer.client = client;
-      try {
-        client.connectionTimeout = requestTimeout;
-      } catch (_) {
-        // Some injected clients do not expose socket options.
-      }
-      request = await client.getUrl(Uri.parse(source)).timeout(requestTimeout);
+      client = _httpClientForDownload();
+      if (ownsClient) transfer.ownedClient = client;
+      final uri = Uri.parse(source);
+      request = await client.getUrl(uri).timeout(requestTimeout);
       transfer.request = request;
       if (transfer.cancelled) {
         request.abort();
         return;
       }
       request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
-      for (final header in PlaybackMediaReference.requestHeadersForUri(
-        Uri.parse(source),
-      ).entries) {
+      for (final header
+          in PlaybackMediaReference.requestHeadersForUri(uri).entries) {
         request.headers.set(header.key, header.value);
       }
       final response = await request.close().timeout(requestTimeout);
+      if (transfer.cancelled) {
+        await response.listen(null).cancel();
+        return;
+      }
       if (response.statusCode != HttpStatus.ok) {
+        await response.listen(null).cancel();
         throw HttpException(
           'Unexpected ASMR playback cache status ${response.statusCode}',
-          uri: Uri.parse(source),
+          uri: uri,
         );
       }
       final encoding = response.headers.value(
         HttpHeaders.contentEncodingHeader,
       );
       if (encoding != null && encoding.toLowerCase() != 'identity') {
+        await response.listen(null).cancel();
         throw const HttpException('Unsupported ASMR playback cache encoding.');
       }
       final responseBytes = response.contentLength;
       if (expectedBytes != null &&
           responseBytes >= 0 &&
           responseBytes != expectedBytes) {
+        await response.listen(null).cancel();
         throw const HttpException(
           'ASMR playback cache response length mismatch.',
         );
       }
       var receivedBytes = 0;
       sink = target.openWrite();
-      await sink.addStream(
-        response.timeout(downloadIdleTimeout).map((chunk) {
+      final controller = StreamController<List<int>>(sync: true);
+      void cancelStreamWithError(Object error) {
+        final active = subscription;
+        subscription = null;
+        if (active != null) unawaited(active.cancel());
+        if (!controller.isClosed) {
+          controller.addError(error);
+          unawaited(controller.close());
+        }
+      }
+
+      controller
+        ..onListen = () {
           if (transfer.cancelled) {
-            throw StateError('ASMR playback cache cancelled.');
+            cancelStreamWithError(StateError('ASMR playback cache cancelled.'));
+            return;
           }
-          receivedBytes += chunk.length;
-          if ((responseBytes >= 0 && receivedBytes > responseBytes) ||
-              (expectedBytes != null && receivedBytes > expectedBytes)) {
-            throw const HttpException(
-              'ASMR playback cache exceeded expected length.',
-            );
-          }
-          return chunk;
-        }),
+          subscription = response
+              .timeout(downloadIdleTimeout)
+              .listen(
+                (chunk) {
+                  if (transfer.cancelled) {
+                    cancelStreamWithError(
+                      StateError('ASMR playback cache cancelled.'),
+                    );
+                    return;
+                  }
+                  receivedBytes += chunk.length;
+                  if ((responseBytes >= 0 && receivedBytes > responseBytes) ||
+                      (expectedBytes != null &&
+                          receivedBytes > expectedBytes)) {
+                    cancelStreamWithError(
+                      const HttpException(
+                        'ASMR playback cache exceeded expected length.',
+                      ),
+                    );
+                    return;
+                  }
+                  controller.add(chunk);
+                },
+                onError: (Object error, StackTrace stackTrace) {
+                  if (!controller.isClosed) {
+                    controller.addError(error, stackTrace);
+                    unawaited(controller.close());
+                  }
+                },
+                onDone: () {
+                  if (!controller.isClosed) {
+                    unawaited(controller.close());
+                  }
+                },
+                cancelOnError: true,
+              );
+        }
+        ..onPause = () {
+          subscription?.pause();
+        }
+        ..onResume = () {
+          subscription?.resume();
+        }
+        ..onCancel = () {
+          final active = subscription;
+          subscription = null;
+          return active?.cancel();
+        };
+      transfer.cancelStream = () => cancelStreamWithError(
+        StateError('ASMR playback cache cancelled.'),
       );
+      await sink.addStream(controller.stream);
       await sink.flush();
       if (receivedBytes == 0 ||
           (responseBytes >= 0 && receivedBytes != responseBytes) ||
@@ -356,15 +440,24 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
         throw const HttpException('ASMR playback cache incomplete response.');
       }
     } catch (error) {
-      request?.abort(error);
+      try {
+        request?.abort(error);
+      } catch (_) {
+        // Some injected test requests do not implement abort.
+      }
       rethrow;
     } finally {
       try {
+        await subscription?.cancel();
+        subscription = null;
         await sink?.close();
       } finally {
-        client?.close(force: true);
-        transfer.client = null;
+        if (ownsClient) {
+          client?.close(force: true);
+        }
+        transfer.ownedClient = null;
         transfer.request = null;
+        transfer.cancelStream = null;
         _releaseTransfer();
       }
     }
@@ -401,6 +494,8 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
     for (final transfer in transfers) {
       _cancel(transfer);
     }
+    _sharedHttpClient?.close(force: true);
+    _sharedHttpClient = null;
     await Future.wait(transfers.map((transfer) => transfer.result));
     _owners.clear();
     _inFlight.clear();
@@ -421,6 +516,7 @@ final class _PlaybackCacheTransfer {
   bool cancelled = false;
   late final Future<String?> result;
   Completer<bool>? waiting;
-  HttpClient? client;
+  HttpClient? ownedClient;
   HttpClientRequest? request;
+  void Function()? cancelStream;
 }

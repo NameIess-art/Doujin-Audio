@@ -260,6 +260,47 @@ void main() {
     },
   );
 
+  test('chapter retry uses the replacement URI range for progress', () async {
+    final first = Uri.parse(
+      'https://example.com/one.m3u8#eara-chapter=10000,20000',
+    );
+    final mirror = Uri.parse(
+      'https://example.com/two.m3u8#eara-chapter=30000,45000',
+    );
+    final prepared = await bridge.prepareSession(
+      sessionId: 'chapter-retry',
+      title: 'Chapter',
+      uri: first,
+      autoPlay: true,
+      startPosition: const Duration(seconds: 2),
+      candidateUris: [first, mirror],
+    );
+    expect(prepared.valueOrNull?.duration, const Duration(seconds: 10));
+    final player = players.single;
+    player.loaded();
+    await Future<void>.delayed(Duration.zero);
+    await bridge.setVolume('chapter-retry', 1);
+    player.emitError('connection reset');
+    await Future<void>.delayed(const Duration(milliseconds: 550));
+    await bridge.setVolume('chapter-retry', 1);
+    expect(
+      player.state.playlist.medias.single.uri,
+      'https://example.com/two.m3u8',
+    );
+    player.loaded();
+    await Future<void>.delayed(Duration.zero);
+    await bridge.setVolume('chapter-retry', 1);
+    expect(player.seeks.last, const Duration(seconds: 32));
+
+    final progress = <NativePlaybackProgressUpdate>[];
+    final subscription = bridge.progressUpdates.listen(progress.add);
+    addTearDown(subscription.cancel);
+    player.emitPosition(const Duration(seconds: 33));
+    await Future<void>.delayed(Duration.zero);
+    expect(progress.single.position, const Duration(seconds: 3));
+    expect(progress.single.duration, const Duration(seconds: 15));
+  });
+
   test(
     'usage excludes buffering and pause, ignores seeks and speed, and unions sessions',
     () async {
@@ -663,44 +704,53 @@ void main() {
     },
   );
 
-  test(
-    'track stop synchronizes a long queue before a queued seek',
-    () async {
-      final queue = [
-        for (var i = 0; i < 2000; i++)
-          <String, Object?>{
-            'uri': 'https://example.com/$i.wav',
-            'path': '$i.wav',
-          },
-      ];
-      await bridge.prepareSession(
-        sessionId: 'one',
-        uri: Uri.parse(queue[1234]['uri'] as String),
-        title: 'current',
-        queue: queue,
-        queueStartIndex: 1234,
-        autoPlay: true,
-      );
-      final player = players.single;
-      final current = player.state.playlist.medias[1234];
-      player.removeGate = Completer<void>();
-      player.removeStarted = Completer<void>();
-      final stopping = bridge.setStopAfterCurrentTrack('one', true);
-      await player.removeStarted!.future;
-      final seeking = bridge.seek('one', const Duration(seconds: 15));
-      player.removeGate!.complete();
-      expect((await stopping).isOk, isTrue);
-      expect((await seeking).isOk, isTrue);
-      expect(player.removes, queue.length - 1);
-      expect(player.opens, 1);
-      expect(player.state.playlist.medias.single, same(current));
-      expect(player.state.position, const Duration(seconds: 15));
-      final snapshot = (await bridge.snapshot()).valueOrNull!.sessions.single;
-      expect(snapshot.queueIndex, 1234);
-      expect(snapshot.retainedUris, hasLength(2000));
-      expect(snapshot.playWhenReady, isTrue);
-    },
-  );
+  test('track stop synchronizes a long queue before a queued seek', () async {
+    final queue = [
+      for (var i = 0; i < 2000; i++)
+        <String, Object?>{
+          'uri': 'https://example.com/$i.wav',
+          'path': '$i.wav',
+        },
+    ];
+    await bridge.prepareSession(
+      sessionId: 'one',
+      uri: Uri.parse(queue[1234]['uri'] as String),
+      title: 'current',
+      queue: queue,
+      queueStartIndex: 1234,
+      autoPlay: true,
+    );
+    final player = players.single;
+    final current = player.state.playlist.medias[1234];
+    player.removeGate = Completer<void>();
+    player.removeStarted = Completer<void>();
+    final stopping = bridge.setStopAfterCurrentTrack('one', true);
+    await player.removeStarted!.future;
+    final seeking = bridge.seek('one', const Duration(seconds: 15));
+    player.removeGate!.complete();
+    expect((await stopping).isOk, isTrue);
+    expect((await seeking).isOk, isTrue);
+    expect(player.removes, queue.length - 1);
+    expect(player.opens, 1);
+    expect(player.state.playlist.medias.single, same(current));
+    expect(player.state.position, const Duration(seconds: 15));
+    final snapshot = (await bridge.snapshot()).valueOrNull!.sessions.single;
+    expect(snapshot.queueIndex, 1234);
+    expect(snapshot.retainedUris, hasLength(2000));
+    expect(snapshot.playWhenReady, isTrue);
+
+    expect((await bridge.setStopAfterCurrentTrack('one', false)).isOk, true);
+    expect(player.adds, queue.length - 1);
+    expect(player.moves, 1);
+    expect(player.opens, 1);
+    final playlist = player.state.playlist;
+    expect(
+      playlist.medias.map((media) => media.uri),
+      queue.map((item) => item['uri']),
+    );
+    expect(playlist.medias[1234], same(current));
+    expect(player.state.position, const Duration(seconds: 15));
+  });
 
   test(
     'track stop native failure releases the decoder but retains the queue',
@@ -2306,7 +2356,7 @@ void main() {
       expect(player.opens, 1);
       expect(player.removes, 1);
       expect(player.moves, 0);
-      expect(playlistReads, 5);
+      expect(playlistReads, 4);
       expect(
         player.state.playlist.medias.map((item) => item.uri),
         original.map((item) => item['uri']),

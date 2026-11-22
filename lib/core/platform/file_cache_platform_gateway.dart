@@ -294,34 +294,14 @@ class FileCachePlatformGateway {
     bool preferredOnly = false,
   }) async {
     if (_isWindows() && !_isAndroid()) {
-      final images = <CoverImageReference>[];
-      final directory = Directory(rootFolder);
-      if (!await directory.exists()) {
-        throw FileSystemException(
-          'Image directory is unavailable.',
-          rootFolder,
-        );
-      }
-      await for (final entity in directory.list(
-        recursive: recursive,
-        followLinks: false,
-      )) {
-        if (entity is File &&
-            RegExp(
-              r'\.(png|jpe?g|webp|bmp)$',
-              caseSensitive: false,
-            ).hasMatch(entity.path)) {
-          images.add(
-            CoverImageReference(
-              displayPath: entity.path,
-              sourcePath: entity.path,
-              fileSizeBytes: await entity.length(),
-            ),
-          );
-        }
-      }
-      images.sort((a, b) => a.displayPath.compareTo(b.displayPath));
-      return preferredOnly ? images.take(1).toList(growable: false) : images;
+      // File-system overrides are scoped to the calling isolate.
+      return IOOverrides.current == null
+          ? _discoverWindowsImagesInBackground(
+              rootFolder,
+              recursive,
+              preferredOnly,
+            )
+          : _discoverWindowsImages(rootFolder, recursive, preferredOnly);
     }
     if (!_isAndroid()) return const <CoverImageReference>[];
     final result = await _client.invoke<List<Object?>>(
@@ -353,12 +333,18 @@ class FileCachePlatformGateway {
 
   Future<List<Map<String, String>>> discoverWorkTexts(String folderPath) async {
     if (_isWindows() && !_isAndroid()) {
-      const supportedExtensions = {
-        ...supportedSubtitleExtensions,
-        '.md',
-        '.pdf',
-      };
-      final texts = <Map<String, String>>[];
+      if (IOOverrides.current == null) {
+        try {
+          return await _discoverWindowsTextsInBackground(folderPath);
+        } catch (error, stackTrace) {
+          AppLogService.warning(
+            'windows_discover_work_texts_failed',
+            error: error,
+            stackTrace: stackTrace,
+          );
+          rethrow;
+        }
+      }
       final directory = Directory(folderPath);
       if (!await directory.exists()) {
         throw FileSystemException(
@@ -367,25 +353,7 @@ class FileCachePlatformGateway {
         );
       }
       try {
-        await for (final entity in directory.list(
-          recursive: true,
-          followLinks: false,
-        )) {
-          if (entity is File &&
-              supportedExtensions.contains(
-                path.extension(entity.path).toLowerCase(),
-              )) {
-            final rel = path
-                .relative(entity.path, from: folderPath)
-                .replaceAll(r'\', '/');
-            texts.add({
-              'name': path.basename(entity.path),
-              'relativePath': rel,
-              'path': entity.path,
-              'fileSizeBytes': (await entity.length()).toString(),
-            });
-          }
-        }
+        return await _discoverWindowsTexts(directory, folderPath);
       } catch (error, stackTrace) {
         AppLogService.warning(
           'windows_discover_work_texts_failed',
@@ -394,12 +362,6 @@ class FileCachePlatformGateway {
         );
         rethrow;
       }
-      texts.sort(
-        (a, b) => (a['relativePath'] ?? '').toLowerCase().compareTo(
-          (b['relativePath'] ?? '').toLowerCase(),
-        ),
-      );
-      return texts;
     }
     if (!_isAndroid()) return const <Map<String, String>>[];
     final result = await _client.invoke<List<Object?>>(
@@ -426,6 +388,209 @@ class FileCachePlatformGateway {
             .whereType<Map<String, String>>()
             .toList(growable: false) ??
         const <Map<String, String>>[];
+  }
+
+  static final RegExp _windowsImageExtension = RegExp(
+    r'\.(png|jpe?g|webp|bmp)$',
+    caseSensitive: false,
+  );
+
+  static const Set<String> _windowsWorkTextExtensions = {
+    ...supportedSubtitleExtensions,
+    '.md',
+    '.pdf',
+  };
+
+  static Future<List<CoverImageReference>> _discoverWindowsImagesInBackground(
+    String rootFolder,
+    bool recursive,
+    bool preferredOnly,
+  ) => Isolate.run(
+    () => _discoverWindowsImagesSync(rootFolder, recursive, preferredOnly),
+    debugName: 'windows_image_discovery',
+  );
+
+  static List<CoverImageReference> _discoverWindowsImagesSync(
+    String rootFolder,
+    bool recursive,
+    bool preferredOnly,
+  ) {
+    final directory = Directory(rootFolder);
+    if (!directory.existsSync()) {
+      throw FileSystemException('Image directory is unavailable.', rootFolder);
+    }
+    final candidates = <File>[];
+    final pendingDirs = <Directory>[directory];
+    var isRoot = true;
+    while (pendingDirs.isNotEmpty) {
+      final current = pendingDirs.removeLast();
+      final List<FileSystemEntity> entries;
+      try {
+        entries = current.listSync(followLinks: false);
+      } on FileSystemException {
+        if (isRoot) rethrow;
+        continue;
+      }
+      isRoot = false;
+      for (final entity in entries) {
+        if (entity is File && _windowsImageExtension.hasMatch(entity.path)) {
+          candidates.add(entity);
+        } else if (recursive && entity is Directory) {
+          pendingDirs.add(entity);
+        }
+      }
+    }
+    candidates.sort((a, b) => a.path.compareTo(b.path));
+    final images = <CoverImageReference>[];
+    for (final file in candidates) {
+      try {
+        images.add(
+          CoverImageReference(
+            displayPath: file.path,
+            sourcePath: file.path,
+            fileSizeBytes: file.lengthSync(),
+          ),
+        );
+        if (preferredOnly) break;
+      } on FileSystemException {
+        // Skip unreadable or vanished image files.
+      }
+    }
+    return images;
+  }
+
+  static Future<List<CoverImageReference>> _discoverWindowsImages(
+    String rootFolder,
+    bool recursive,
+    bool preferredOnly,
+  ) async {
+    final directory = Directory(rootFolder);
+    if (!await directory.exists()) {
+      throw FileSystemException('Image directory is unavailable.', rootFolder);
+    }
+    final candidates = <File>[];
+    await for (final entity in directory.list(
+      recursive: recursive,
+      followLinks: false,
+    )) {
+      if (entity is File && _windowsImageExtension.hasMatch(entity.path)) {
+        candidates.add(entity);
+      }
+    }
+    candidates.sort((a, b) => a.path.compareTo(b.path));
+    final images = <CoverImageReference>[];
+    for (final file in candidates) {
+      try {
+        images.add(
+          CoverImageReference(
+            displayPath: file.path,
+            sourcePath: file.path,
+            fileSizeBytes: await file.length(),
+          ),
+        );
+        if (preferredOnly) break;
+      } on FileSystemException {
+        // Skip unreadable or vanished image files.
+      }
+    }
+    return images;
+  }
+
+  static Future<List<Map<String, String>>> _discoverWindowsTextsInBackground(
+    String folderPath,
+  ) => Isolate.run(
+    () => _discoverWindowsTextsSync(folderPath),
+    debugName: 'windows_work_text_discovery',
+  );
+
+  static List<Map<String, String>> _discoverWindowsTextsSync(
+    String folderPath,
+  ) {
+    final directory = Directory(folderPath);
+    if (!directory.existsSync()) {
+      throw FileSystemException(
+        'Document directory is unavailable.',
+        folderPath,
+      );
+    }
+    final texts = <Map<String, String>>[];
+    final pendingDirs = <Directory>[directory];
+    var isRoot = true;
+    while (pendingDirs.isNotEmpty) {
+      final current = pendingDirs.removeLast();
+      final List<FileSystemEntity> entries;
+      try {
+        entries = current.listSync(followLinks: false);
+      } on FileSystemException {
+        if (isRoot) rethrow;
+        continue;
+      }
+      isRoot = false;
+      for (final entity in entries) {
+        if (entity is File &&
+            _windowsWorkTextExtensions.contains(
+              path.extension(entity.path).toLowerCase(),
+            )) {
+          try {
+            final relativePath = path
+                .relative(entity.path, from: folderPath)
+                .replaceAll(r'\', '/');
+            texts.add({
+              'name': path.basename(entity.path),
+              'relativePath': relativePath,
+              'path': entity.path,
+              'fileSizeBytes': entity.lengthSync().toString(),
+            });
+          } on FileSystemException {
+            // Skip unreadable or vanished text files.
+          }
+        } else if (entity is Directory) {
+          pendingDirs.add(entity);
+        }
+      }
+    }
+    texts.sort(
+      (a, b) => a['relativePath']!.toLowerCase().compareTo(
+        b['relativePath']!.toLowerCase(),
+      ),
+    );
+    return texts;
+  }
+
+  static Future<List<Map<String, String>>> _discoverWindowsTexts(
+    Directory directory,
+    String folderPath,
+  ) async {
+    final texts = <Map<String, String>>[];
+    await for (final entity in directory.list(
+      recursive: true,
+      followLinks: false,
+    )) {
+      if (entity is File &&
+          _windowsWorkTextExtensions.contains(
+            path.extension(entity.path).toLowerCase(),
+          )) {
+        try {
+          final relativePath = path
+              .relative(entity.path, from: folderPath)
+              .replaceAll(r'\', '/');
+          texts.add({
+            'name': path.basename(entity.path),
+            'relativePath': relativePath,
+            'path': entity.path,
+            'fileSizeBytes': (await entity.length()).toString(),
+          });
+        } on FileSystemException {
+          // Skip unreadable or vanished text files.
+        }
+      }
+    }
+    texts.sort(
+      (a, b) => a['relativePath']!.toLowerCase().compareTo(
+        b['relativePath']!.toLowerCase(),
+      ),
+    );
+    return texts;
   }
 
   Future<Uint8List?> readDocumentBytes(String filePath) async {

@@ -496,6 +496,72 @@ void main() {
     );
     expect((await ranked).map((work) => work.id), [1]);
   });
+
+  test(
+    'rankAsync with external weights filters deduplicated local groups and remote metadata identically to rank',
+    () async {
+      final candidates = <AsmrWork>[
+        work(id: 1, title: 'Owned by folder', sourceId: 'RJ111111', tags: ['a']),
+        work(id: 2, title: 'Owned by metadata', sourceId: 'RJ222222', tags: ['a']),
+        work(id: 3, title: 'Favorite', sourceId: 'RJ333333', tags: ['a']),
+        work(id: 4, title: 'History', sourceId: 'RJ444444', tags: ['a']),
+        work(id: 5, title: 'Unseen match', sourceId: 'RJ555555', tags: ['a']),
+      ];
+      final localTracks = <MusicTrack>[
+        for (var i = 0; i < 10; i++)
+          MusicTrack(
+            path: '/library/RJ111111/track_$i.mp3',
+            displayName: 'track_$i.mp3',
+            groupKey: 'RJ111111',
+            groupTitle: 'Folder 1',
+            groupSubtitle: 'RJ111111',
+            isSingle: false,
+            tags: const ['a'],
+          ),
+        MusicTrack(
+          path: '/library/meta/01.mp3',
+          displayName: '01.mp3',
+          groupKey: 'MetaGroup',
+          groupTitle: 'Meta Group',
+          groupSubtitle: 'MetaGroup',
+          isSingle: false,
+          tags: const ['a'],
+          remoteMetadata: const <String, Object?>{
+            'id': 2,
+            'sourceId': 'RJ222222',
+            'largeUnusedPayload': 'ignored',
+          },
+        ),
+      ];
+      final favorites = <AsmrWork>[candidates[2]];
+      final history = <AsmrWork>[candidates[3]];
+      const tagWeights = <String, double>{'a': 1.0};
+      const voiceWeights = <String, double>{};
+      const circleWeights = <String, double>{};
+
+      final syncResult = engine.rank(
+        candidates: candidates,
+        localTracks: localTracks,
+        favoriteWorks: favorites,
+        historyWorks: history,
+        tagWeights: tagWeights,
+        voiceActorWeights: voiceWeights,
+        circleWeights: circleWeights,
+      );
+      final asyncResult = await engine.rankAsync(
+        candidates: candidates,
+        localTracks: localTracks,
+        favoriteWorks: favorites,
+        historyWorks: history,
+        tagWeights: tagWeights,
+        voiceActorWeights: voiceWeights,
+        circleWeights: circleWeights,
+      );
+
+      expect(syncResult.map((w) => w.id), [5]);
+      expect(asyncResult.map((w) => w.id), [5]);
+    },
+  );
 }
 
 AsmrWork work({

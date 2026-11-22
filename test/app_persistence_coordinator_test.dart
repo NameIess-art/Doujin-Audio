@@ -293,7 +293,7 @@ void main() {
       final repository = _ChangingCatalogPersistenceRepository(
         database: AppDatabase.test(database),
       );
-      final libraryService = LibraryService()..watchedFolders.add('/library');
+      final libraryService = LibraryService()..addWatchedFolder('/library');
       final detailCache = AudioDetailCacheService(
         repository: AudioDetailRepository(databaseRepository: repository),
       );

@@ -73,13 +73,6 @@ final class LibraryMutationCoordinator {
   final LibraryCatalogWriteCoordinator _catalogWrites;
   final Future<void> Function(AudioDetailTarget target) _deleteAudioDetail;
   final void Function() _syncStateSlice;
-  void _markStructureChanged() {
-    _service.markStructureChanged();
-    _coverArtwork().invalidateAll();
-    snapshotCacheService.markStructureChanged();
-    _syncStateSlice();
-  }
-
   Future<void> clearLibraryExclusions(String libraryPath) async {
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
     final result = _service.clearLibraryExclusions(normalizedLibraryPath);
@@ -270,9 +263,7 @@ final class LibraryMutationCoordinator {
 
   Future<bool> _removeFolderPermanently(String folderPath) async {
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
-    final wasWatched = _service.watchedFolders.any(
-      (folder) => PathMatcher.equalsNormalized(folder, normalizedFolderPath),
-    );
+    final wasWatched = _service.watchedFolders.contains(normalizedFolderPath);
     final retainedPaths = _service
         .libraryEntriesForLibrary(normalizedFolderPath)
         .where((entry) => entry.isTrack)
@@ -291,7 +282,10 @@ final class LibraryMutationCoordinator {
     _service.removeWatchedFolder(normalizedFolderPath);
     _service.libraryEntriesByLibrary.remove(normalizedFolderPath);
     _service.syncGroupOrderFromLibrary();
-    _markStructureChanged();
+    _service.markStructureChanged();
+    _coverArtwork().invalidateFolder(normalizedFolderPath);
+    snapshotCacheService.markStructureChanged();
+    _syncStateSlice();
     final persistenceTasks = <Future<void>>[
       _deleteAudioDetail(
         AudioDetailTarget.libraryRootFolder(normalizedFolderPath),
@@ -317,7 +311,8 @@ final class LibraryMutationCoordinator {
         .where((entry) => entry.isTrack)
         .map((entry) => entry.path)
         .toList();
-    _catalogWrites.beginLibraryBatch();
+    _catalogWrites.beginLibraryBatch(snapshotAllEntries: false);
+    _catalogWrites.rememberBatchEntriesForLibrary(normalizedLibraryPath);
     final removal = _service.removeLibrary(normalizedLibraryPath);
     final removedTrackPaths = <String>{
       ...retainedPaths,
@@ -513,7 +508,7 @@ final class LibraryMutationCoordinator {
     if (!_service.isLibraryFolderExplicitlyExcluded(libraryPath, folderPath)) {
       return;
     }
-    _catalogWrites.beginLibraryBatch();
+    _catalogWrites.beginLibraryBatch(snapshotAllEntries: false);
     _catalogWrites.removeTracksMatching(
       (track) =>
           PathMatcher.isWithinOrEqual(track.path, folderPath) ||
@@ -533,7 +528,7 @@ final class LibraryMutationCoordinator {
     if (!_service.isLibraryTrackExplicitlyExcluded(libraryPath, trackPath)) {
       return;
     }
-    _catalogWrites.beginLibraryBatch();
+    _catalogWrites.beginLibraryBatch(snapshotAllEntries: false);
     _catalogWrites.removeTracksMatching(
       (track) => PathMatcher.equalsNormalized(track.path, trackPath),
       persist: !_service.watchedLibraries.any(
@@ -637,21 +632,24 @@ final class LibraryMutationCoordinator {
         .toSet();
     // Exclusion removes only the active catalog projection. SQLite keeps the
     // authored fields and playback state, including across application restarts.
-    final restored = <MusicTrack>[];
-    for (final track in tracks) {
-      final retained = _persistenceCoordinator.enabled
-          ? await databaseRepository.loadTrackDetail(track.path)
-          : null;
-      restored.add(
-        retained == null ? track : mergeLibraryTrackState(retained, track),
-      );
-    }
+    final retained = _persistenceCoordinator.enabled
+        ? await databaseRepository.loadTrackDetails(
+            tracks.map((track) => track.path),
+          )
+        : const <String, MusicTrack>{};
+    final restored = [
+      for (final track in tracks)
+        if (retained[track.path] case final authored?)
+          mergeLibraryTrackState(authored, track)
+        else
+          track,
+    ];
     // All reads must finish before checking the current exclusion state.
     // Another track's read can overlap a new exclusion or removal of the root.
-    if (![
-      ..._service.watchedLibraries,
-      ..._service.watchedFolders,
-    ].any((root) => PathMatcher.equalsNormalized(root, libraryPath))) {
+    if (!_service.watchedLibraries.any(
+          (root) => PathMatcher.equalsNormalized(root, libraryPath),
+        ) &&
+        !_service.watchedFolders.contains(libraryPath)) {
       return;
     }
     final active = restored.where((track) {
@@ -661,7 +659,7 @@ final class LibraryMutationCoordinator {
           !_service.isLibraryPathExcluded(libraryPath, track.path);
     }).toList();
     if (active.isEmpty) return;
-    _catalogWrites.beginLibraryBatch();
+    _catalogWrites.beginLibraryBatch(snapshotAllEntries: false);
     _catalogWrites.addOrReplaceTracks(active);
     await _catalogWrites.endLibraryBatch();
   }

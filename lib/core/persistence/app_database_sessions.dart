@@ -1,5 +1,27 @@
 part of 'app_database.dart';
 
+String? _queuePathMatchKey(String? value) {
+  if (value == null || value.isEmpty) return null;
+  final normalized = PathMatcher.normalize(value);
+  final key = PathMatcher.equivalenceKey(normalized);
+  if (key.startsWith('remote:') || key.startsWith('windows:')) return key;
+  if (PathMatcher.isContentUri(normalized)) {
+    final baseUri = normalized.split('::').first;
+    if (PathMatcher.contentPathSegmentAfter(baseUri, 'document') != null ||
+        PathMatcher.contentPathSegmentAfter(baseUri, 'tree') != null) {
+      return key;
+    }
+    // Opaque content paths can use raw URI ancestry.
+    return null;
+  }
+  // Relative and drive-relative paths can depend on the other operand's
+  // filesystem style, so they cannot be eliminated by the index.
+  return !Platform.isWindows && normalized.startsWith('/') ? key : null;
+}
+
+const int _queuePathFilterIsolateThreshold = 32;
+const int _queueEncodeIsolateThreshold = 32;
+
 typedef _SessionRestoreRows = ({
   List<Map<String, dynamic>> sessions,
   Map<String, Map<int, double>> eqBands,
@@ -235,24 +257,22 @@ extension AppDatabaseSessions on AppDatabase {
   });
 
   Future<Set<String>> findQueuesReferencingPath(String path) async {
-    final rows = await _runDatabaseRead(
-      (db) => db.rawQuery('''
-      SELECT session_id, track_path AS path FROM playback_queue_entry_tracks
-      UNION
-      SELECT session_id, work_root_path AS path FROM playback_queue_entries
-      WHERE work_root_path IS NOT NULL
-    '''),
-    );
+    final (sql, args) = _queuePathReferenceQuery(path);
+    final rows = await _runDatabaseRead((db) => db.rawQuery(sql, args));
+    if (rows.isEmpty) return const <String>{};
+    if (rows.length < _queuePathFilterIsolateThreshold) {
+      return _filterQueuePathReferences((rows, path));
+    }
     return compute(
-      (input) => {
-        for (final row in input.$1)
-          if (PathMatcher.isWithinOrEqual(row['path'] as String, input.$2))
-            row['session_id'] as String,
-      },
+      _filterQueuePathReferences,
       (rows, path),
       debugLabel: 'find_queue_path_references',
     );
   }
+
+  @visibleForTesting
+  (String, List<Object?>) queuePathReferenceQueryForTest(String path) =>
+      _queuePathReferenceQuery(path);
 
   Future<void> updateSessionOrder(List<String> sessionIds) async {
     if (sessionIds.isEmpty) return;
@@ -296,11 +316,18 @@ extension AppDatabaseSessions on AppDatabase {
     assert(!includeQueue || queueEntryPositions == null);
     assert(!includeQueue || queueDelta == null);
     final queueRows = includeQueue
-        ? await compute(_playbackQueueRows, session)
+        ? (_sessionQueueTrackCount(session) < _queueEncodeIsolateThreshold
+              ? _playbackQueueRows(session)
+              : await compute(_playbackQueueRows, session))
         : null;
     final deltaRows = queueDelta == null
         ? null
-        : await compute(_playbackQueueDeltaRows, (session.id, queueDelta));
+        : (_queueDeltaTrackCount(queueDelta) < _queueEncodeIsolateThreshold
+              ? _playbackQueueDeltaRows((session.id, queueDelta))
+              : await compute(_playbackQueueDeltaRows, (
+                  session.id,
+                  queueDelta,
+                )));
     await _runDatabaseWrite((db) async {
       final batch = db.batch();
       if (includeSessionState) {
@@ -416,4 +443,73 @@ PlaybackSessionRecord _restoreSessionFromRows(
       data.eqBands[row['id']] ?? const <int, double>{},
     ),
   );
+}
+
+(String, List<Object?>) _queuePathReferenceQuery(String path) {
+  final key = _queuePathMatchKey(path);
+  if (key == null) {
+    return (
+      '''
+      SELECT session_id, track_path AS path FROM playback_queue_entry_tracks
+      UNION
+      SELECT session_id, work_root_path AS path FROM playback_queue_entries
+      WHERE work_root_path IS NOT NULL
+      ''',
+      const <Object?>[],
+    );
+  }
+  final bounds = _descendantMatchKeyBounds(key);
+  final branches = <String>[
+    'SELECT session_id, track_path AS path FROM playback_queue_entry_tracks '
+        'WHERE path_match_key = ?',
+    if (bounds != null)
+      'SELECT session_id, track_path AS path FROM playback_queue_entry_tracks '
+          'WHERE path_match_key >= ? AND path_match_key < ?',
+    'SELECT session_id, track_path AS path FROM playback_queue_entry_tracks '
+        'WHERE path_match_key IS NULL',
+    'SELECT session_id, work_root_path AS path FROM playback_queue_entries '
+        'WHERE work_root_path IS NOT NULL AND path_match_key = ?',
+    if (bounds != null)
+      'SELECT session_id, work_root_path AS path FROM playback_queue_entries '
+          'WHERE work_root_path IS NOT NULL '
+          'AND path_match_key >= ? AND path_match_key < ?',
+    'SELECT session_id, work_root_path AS path FROM playback_queue_entries '
+        'WHERE work_root_path IS NOT NULL AND path_match_key IS NULL',
+  ];
+  final branchArgs = <Object?>[
+    key,
+    if (bounds != null) ...[bounds.$1, bounds.$2],
+  ];
+  return (branches.join('\nUNION\n'), [...branchArgs, ...branchArgs]);
+}
+
+Set<String> _filterQueuePathReferences(
+  (List<Map<String, Object?>>, String) input,
+) => {
+  for (final row in input.$1)
+    if (PathMatcher.isWithinOrEqual(row['path'] as String, input.$2))
+      row['session_id'] as String,
+};
+
+int _sessionQueueTrackCount(PlaybackSessionRecord session) {
+  final queue = session.playbackQueue;
+  if (queue == null) return session.customQueueTracks?.length ?? 0;
+  var count = 0;
+  for (final entry in queue.entries) {
+    count += entry.tracks.length;
+    if (count >= _queueEncodeIsolateThreshold) return count;
+  }
+  return count + (session.customQueueTracks == null ? 0 : 1);
+}
+
+int _queueDeltaTrackCount(PlaybackQueueDeltaRecord delta) {
+  var count = delta.replaceCustomTracks ? (delta.customTracks?.length ?? 0) : 0;
+  if (count >= _queueEncodeIsolateThreshold) return count;
+  for (final change in delta.upserted) {
+    if (change.writeTracks) {
+      count += change.entry.tracks.length;
+      if (count >= _queueEncodeIsolateThreshold) return count;
+    }
+  }
+  return count;
 }

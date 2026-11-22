@@ -20,8 +20,14 @@ class SqliteAsmrRepository implements AsmrPersistenceRepository {
   @override
   Future<String?> loadSetting(String key) => _database.loadAppSetting(key);
   @override
+  Future<Map<String, String?>> loadSettings(List<String> keys) =>
+      _database.loadAppSettings(keys);
+  @override
   Future<void> saveSetting(String key, String? value) =>
       _database.saveAppSetting(key, value);
+  @override
+  Future<void> saveSettings(Map<String, String> values) =>
+      _database.saveAppSettings(values);
   @override
   Future<List<AsmrWork>> loadWorkList(String listType) async =>
       (await _database.loadAsmrWorkList(

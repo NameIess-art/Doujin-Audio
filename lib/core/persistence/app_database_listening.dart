@@ -15,33 +15,76 @@ extension AppDatabaseListening on AppDatabase {
         await txn.rawQuery('SELECT changes()'),
       );
       if (changes == 0) return false;
+      if (days.isEmpty) return true;
+
+      final dayTotals = <String, int>{};
+      final workDaysByDate = <String, Map<String, int>>{};
+      final pendingHistory =
+          <String, ({ListeningWorkRecord work, int legacyOrder})>{};
       for (final day in days) {
-        final updatedDays = await txn.rawUpdate(
-          'UPDATE listening_days SET milliseconds = milliseconds + ? WHERE date = ?',
-          [day.totalMs, day.date],
+        dayTotals[day.date] = (dayTotals[day.date] ?? 0) + day.totalMs;
+        if (day.works.isEmpty) continue;
+        final workTotals = workDaysByDate.putIfAbsent(
+          day.date,
+          () => <String, int>{},
         );
-        if (updatedDays == 0) {
-          await txn.insert('listening_days', {
-            'date': day.date,
-            'milliseconds': day.totalMs,
-          });
-        }
         for (final work in day.works) {
-          final updatedWorkDays = await txn.rawUpdate(
-            'UPDATE listening_work_days SET milliseconds = milliseconds + ? '
-            'WHERE date = ? AND work_key = ?',
-            [work.milliseconds, day.date, work.workKey],
-          );
-          if (updatedWorkDays == 0) {
-            await txn.insert('listening_work_days', {
-              'date': day.date,
-              'work_key': work.workKey,
-              'milliseconds': work.milliseconds,
-            });
+          workTotals[work.workKey] =
+              (workTotals[work.workKey] ?? 0) + work.milliseconds;
+          final previous = pendingHistory[work.workKey];
+          if (previous == null ||
+              work.lastPlayedAtMs >= previous.work.lastPlayedAtMs) {
+            pendingHistory[work.workKey] = (work: work, legacyOrder: 0);
           }
-          await _upsertListeningHistory(txn, work);
         }
       }
+
+      final existingDays = await _loadExistingListeningDays(
+        txn,
+        dayTotals.keys.toList(growable: false),
+      );
+      final existingWorkDays = await _loadExistingListeningWorkDays(
+        txn,
+        workDaysByDate,
+      );
+
+      final batch = txn.batch();
+      for (final MapEntry(key: date, value: totalMs) in dayTotals.entries) {
+        if (existingDays.contains(date)) {
+          batch.rawUpdate(
+            'UPDATE listening_days SET milliseconds = milliseconds + ? '
+            'WHERE date = ?',
+            [totalMs, date],
+          );
+        } else {
+          batch.insert('listening_days', {
+            'date': date,
+            'milliseconds': totalMs,
+          });
+        }
+      }
+      for (final MapEntry(key: date, value: workTotals)
+          in workDaysByDate.entries) {
+        final existingWorks = existingWorkDays[date];
+        for (final MapEntry(key: workKey, value: milliseconds)
+            in workTotals.entries) {
+          if (existingWorks != null && existingWorks.contains(workKey)) {
+            batch.rawUpdate(
+              'UPDATE listening_work_days SET milliseconds = milliseconds + ? '
+              'WHERE date = ? AND work_key = ?',
+              [milliseconds, date, workKey],
+            );
+          } else {
+            batch.insert('listening_work_days', {
+              'date': date,
+              'work_key': workKey,
+              'milliseconds': milliseconds,
+            });
+          }
+        }
+      }
+      await _enqueueListeningHistoryUpserts(txn, batch, pendingHistory);
+      await batch.commit(noResult: true);
       return true;
     }),
   );
@@ -108,9 +151,23 @@ extension AppDatabaseListening on AppDatabase {
       if (Sqflite.firstIntValue(await txn.rawQuery('SELECT changes()')) == 0) {
         return;
       }
+      if (works.isEmpty) return;
+      final pending = <String, ({ListeningWorkRecord work, int legacyOrder})>{};
       for (var index = 0; index < works.length; index++) {
-        await _upsertListeningHistory(txn, works[index], legacyOrder: index);
+        final work = works[index];
+        final previous = pending[work.workKey];
+        if (previous == null) {
+          pending[work.workKey] = (work: work, legacyOrder: index);
+        } else if (work.lastPlayedAtMs >= previous.work.lastPlayedAtMs) {
+          pending[work.workKey] = (
+            work: work,
+            legacyOrder: previous.legacyOrder,
+          );
+        }
       }
+      final batch = txn.batch();
+      await _enqueueListeningHistoryUpserts(txn, batch, pending);
+      await batch.commit(noResult: true);
     }),
   );
 }
@@ -141,34 +198,92 @@ Future<void> _insertListeningHistory(
   }, conflictAlgorithm: conflictAlgorithm);
 }
 
-Future<void> _upsertListeningHistory(
+Future<Set<String>> _loadExistingListeningDays(
   DatabaseExecutor db,
-  ListeningWorkRecord work, {
-  int legacyOrder = 0,
-}) async {
+  List<String> dates,
+) async {
+  final existing = <String>{};
+  for (final chunk in _stringChunks(dates)) {
+    final placeholders = List.filled(chunk.length, '?').join(', ');
+    final rows = await db.query(
+      'listening_days',
+      columns: const ['date'],
+      where: 'date IN ($placeholders)',
+      whereArgs: chunk,
+    );
+    for (final row in rows) {
+      existing.add(row['date']! as String);
+    }
+  }
+  return existing;
+}
+
+Future<Map<String, Set<String>>> _loadExistingListeningWorkDays(
+  DatabaseExecutor db,
+  Map<String, Map<String, int>> workDaysByDate,
+) async {
+  final existing = <String, Set<String>>{};
+  for (final MapEntry(key: date, value: workTotals) in workDaysByDate.entries) {
+    final keys = workTotals.keys.toList(growable: false);
+    for (final chunk in _stringChunks(keys)) {
+      final placeholders = List.filled(chunk.length, '?').join(', ');
+      final rows = await db.query(
+        'listening_work_days',
+        columns: const ['work_key'],
+        where: 'date = ? AND work_key IN ($placeholders)',
+        whereArgs: <Object?>[date, ...chunk],
+      );
+      if (rows.isEmpty) continue;
+      final dateKeys = existing.putIfAbsent(date, () => <String>{});
+      for (final row in rows) {
+        dateKeys.add(row['work_key']! as String);
+      }
+    }
+  }
+  return existing;
+}
+
+Future<void> _enqueueListeningHistoryUpserts(
+  DatabaseExecutor db,
+  Batch batch,
+  Map<String, ({ListeningWorkRecord work, int legacyOrder})> pending,
+) async {
+  if (pending.isEmpty) return;
   // Query-then-insert/update inside the enclosing transaction avoids SQLite
   // UPSERT syntax (3.24+), which older Android libsqlite builds lack.
-  final existing = await db.query(
-    'listening_history',
-    columns: ['last_played_at_ms'],
-    where: 'work_key = ?',
-    whereArgs: [work.workKey],
-    limit: 1,
-  );
-  if (existing.isEmpty) {
-    await _insertListeningHistory(db, work, legacyOrder);
-    return;
-  }
-  final currentLastPlayed = (existing.single['last_played_at_ms'] as int?) ?? 0;
-  if (work.lastPlayedAtMs >= currentLastPlayed) {
-    await db.update(
+  final existingLastPlayed = <String, int>{};
+  for (final chunk in _stringChunks(pending.keys.toList(growable: false))) {
+    final placeholders = List.filled(chunk.length, '?').join(', ');
+    final rows = await db.query(
       'listening_history',
-      {
-        'track_json': jsonEncode(work.track.toJson()),
-        'last_played_at_ms': work.lastPlayedAtMs,
-      },
-      where: 'work_key = ?',
-      whereArgs: [work.workKey],
+      columns: const ['work_key', 'last_played_at_ms'],
+      where: 'work_key IN ($placeholders)',
+      whereArgs: chunk,
     );
+    for (final row in rows) {
+      existingLastPlayed[row['work_key']! as String] =
+          (row['last_played_at_ms'] as int?) ?? 0;
+    }
+  }
+  for (final MapEntry(key: workKey, value: entry) in pending.entries) {
+    final currentLastPlayed = existingLastPlayed[workKey];
+    if (currentLastPlayed == null) {
+      batch.insert('listening_history', {
+        'work_key': entry.work.workKey,
+        'track_json': jsonEncode(entry.work.track.toJson()),
+        'last_played_at_ms': entry.work.lastPlayedAtMs,
+        'legacy_order': entry.legacyOrder,
+      });
+    } else if (entry.work.lastPlayedAtMs >= currentLastPlayed) {
+      batch.update(
+        'listening_history',
+        {
+          'track_json': jsonEncode(entry.work.track.toJson()),
+          'last_played_at_ms': entry.work.lastPlayedAtMs,
+        },
+        where: 'work_key = ?',
+        whereArgs: [workKey],
+      );
+    }
   }
 }

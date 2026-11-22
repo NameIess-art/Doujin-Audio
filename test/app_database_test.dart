@@ -41,9 +41,342 @@ void main() {
 
   tearDown(() => db.close());
 
-  test('schema starts from version 17', () {
-    expect(AppDatabase.schemaVersion, 17);
+  test('schema starts from version 19', () {
+    expect(AppDatabase.schemaVersion, 19);
   });
+
+  test('v19 queue path indexes keep drive and SAF ancestor matching', () async {
+    await _setRestoreSchemaVersion(db, 18);
+    final tracks = {
+      'windows': r'C:\Music\Work\Disc\01.mp3',
+      'sibling': r'C:\Music\Work 2\01.mp3',
+      'other-drive': r'D:\Music\Work\01.mp3',
+      'saf':
+          'content://provider/tree/primary%3A/document/primary%3AAlbum%2F01.mp3',
+      'saf-other': 'content://elsewhere/tree/primary%3A::Album/01.mp3',
+      'opaque': 'content://provider/opaque/01.mp3',
+      'remote': 'https://example.com/album/01.mp3',
+    };
+    final batch = db.batch();
+    for (final entry in tracks.entries) {
+      batch.insert('playback_queue_entry_tracks', {
+        'session_id': entry.key,
+        'entry_id': 'track',
+        'track_path': entry.value,
+      });
+    }
+    batch.insert('playback_queue_entries', {
+      'session_id': 'work-root',
+      'entry_id': 'empty-work',
+      'kind': 'work',
+      'work_root_path': r'C:\Music\Work',
+    });
+    await batch.commit(noResult: true);
+    await AppDatabase.upgradeSchemaForTest(db, 18, AppDatabase.schemaVersion);
+    expect(await appDatabase.findQueuesReferencingPath('c:/Music/WORK'), {
+      'windows',
+      'work-root',
+    });
+    expect(
+      await appDatabase.findQueuesReferencingPath(
+        'content://provider/tree/primary%3A',
+      ),
+      {'saf'},
+    );
+    expect(
+      await appDatabase.findQueuesReferencingPath('content://provider/opaque'),
+      {'opaque'},
+    );
+    expect(
+      await appDatabase.findQueuesReferencingPath('https://example.com/album'),
+      isEmpty,
+    );
+    expect(await appDatabase.findQueuesReferencingPath(tracks['remote']!), {
+      'remote',
+    });
+    final plan = await db.rawQuery(
+      'EXPLAIN QUERY PLAN SELECT track_path FROM playback_queue_entry_tracks '
+      'WHERE path_match_key >= ? AND path_match_key < ?',
+      ['windows:c:/music/work/', 'windows:c:/music/work0'],
+    );
+    expect(
+      plan.single['detail'],
+      contains('USING INDEX idx_queue_track_path_match'),
+    );
+    expect(
+      (await db.query(
+        'playback_queue_entry_tracks',
+        columns: ['track_path'],
+      )).map((row) => row['track_path']),
+      unorderedEquals(tracks.values),
+    );
+  });
+
+  test(
+    'findQueuesReferencingPath uses index SEARCH instead of SCAN for both tables',
+    () async {
+      for (final target in [
+        r'C:\Music\Work',
+        'content://provider/tree/primary%3A',
+        'https://example.com/album/01.mp3',
+      ]) {
+        final (sql, args) = appDatabase.queuePathReferenceQueryForTest(target);
+        final plan = await db.rawQuery('EXPLAIN QUERY PLAN $sql', args);
+        final details = [for (final row in plan) row['detail']! as String];
+        expect(
+          details.where((d) => d.contains('SCAN')),
+          isEmpty,
+          reason: 'Unexpected SCAN for $target: $details',
+        );
+        expect(
+          details.any(
+            (d) =>
+                d.contains('SEARCH playback_queue_entry_tracks') &&
+                d.contains('idx_queue_track_path_match'),
+          ),
+          isTrue,
+          reason: 'Expected track index SEARCH for $target: $details',
+        );
+        expect(
+          details.any(
+            (d) =>
+                d.contains('SEARCH playback_queue_entries') &&
+                d.contains('idx_queue_work_path_match'),
+          ),
+          isTrue,
+          reason: 'Expected work index SEARCH for $target: $details',
+        );
+      }
+    },
+  );
+
+  test(
+    'configured PRAGMAs match SQLite result-row behavior for execute vs rawQuery',
+    () async {
+      // Non-returning PRAGMAs must produce 0 rows (safe for db.execute).
+      for (final pragma in [
+        'PRAGMA synchronous = NORMAL',
+        'PRAGMA cache_size = -8192',
+        'PRAGMA temp_store = MEMORY',
+      ]) {
+        expect(await db.rawQuery(pragma), isEmpty, reason: pragma);
+      }
+      // Result-returning PRAGMAs return a row and therefore require rawQuery.
+      expect(await db.rawQuery('PRAGMA busy_timeout = 5000'), isNotEmpty);
+      expect(await db.rawQuery('PRAGMA secure_delete = ON'), isNotEmpty);
+      expect(await db.rawQuery('PRAGMA journal_mode = MEMORY'), isNotEmpty);
+    },
+  );
+
+  test(
+    'deleteAudioDetailRecords deletes chunked targets across multiple types',
+    () async {
+      final details = <AudioDetailRecord>[
+        for (var i = 0; i < 950; i++)
+          AudioDetailRecord(
+            targetType: i.isEven ? 'folder' : 'single',
+            targetPath: '/music/work_$i',
+            rjCode: 'RJ$i',
+            workTitle: 'Work $i',
+            circleName: 'Circle',
+            voiceActors: const ['VA'],
+            tags: const ['Tag'],
+            cardCoverSelected: false,
+          ),
+      ];
+      await appDatabase.upsertAudioDetailRecords(details);
+      await appDatabase.deleteAudioDetailRecords([
+        for (var i = 0; i < 940; i++)
+          (i.isEven ? 'folder' : 'single', '/music/work_$i'),
+      ]);
+      final remaining = await db.query('audio_details');
+      expect(remaining, hasLength(10));
+      expect(await db.query('audio_detail_tags'), hasLength(10));
+      expect(await db.query('audio_detail_voice_actors'), hasLength(10));
+    },
+  );
+
+  test(
+    'importListeningBatch and seedListeningHistory batch existing and duplicate keys accurately',
+    () async {
+      MusicTrack sampleTrack(String name) => MusicTrack(
+        path: '/music/$name.mp3',
+        displayName: name,
+        groupKey: '/music',
+        groupTitle: 'Album',
+        groupSubtitle: '',
+        isSingle: false,
+      );
+
+      await appDatabase.seedListeningHistory([
+        ListeningWorkRecord(
+          workKey: 'work-a',
+          track: sampleTrack('seed-a-old'),
+          milliseconds: 0,
+          lastPlayedAtMs: 100,
+        ),
+        ListeningWorkRecord(
+          workKey: 'work-b',
+          track: sampleTrack('seed-b'),
+          milliseconds: 0,
+          lastPlayedAtMs: 500,
+        ),
+        ListeningWorkRecord(
+          workKey: 'work-a',
+          track: sampleTrack('seed-a-newer'),
+          milliseconds: 0,
+          lastPlayedAtMs: 200,
+        ),
+      ]);
+      // Duplicate seed is ignored.
+      await appDatabase.seedListeningHistory([
+        ListeningWorkRecord(
+          workKey: 'work-c',
+          track: sampleTrack('ignored'),
+          milliseconds: 0,
+          lastPlayedAtMs: 999,
+        ),
+      ]);
+
+      final seededA = await appDatabase.findListeningTrack('work-a');
+      expect(seededA?['legacy_order'], 0);
+      expect(seededA?['last_played_at_ms'], 200);
+      expect(seededA?['track_json'], contains('seed-a-newer'));
+      expect(await appDatabase.findListeningTrack('work-c'), isNull);
+
+      final firstImported = await appDatabase.importListeningBatch('batch-1', [
+        ListeningDayRecord(
+          date: '2026-10-20',
+          totalMs: 1000,
+          works: [
+            ListeningWorkRecord(
+              workKey: 'work-a',
+              track: sampleTrack('batch-a-older'),
+              milliseconds: 400,
+              lastPlayedAtMs: 150,
+            ),
+            ListeningWorkRecord(
+              workKey: 'work-b',
+              track: sampleTrack('batch-b-newer'),
+              milliseconds: 600,
+              lastPlayedAtMs: 600,
+            ),
+          ],
+        ),
+        ListeningDayRecord(
+          date: '2026-10-20',
+          totalMs: 500,
+          works: [
+            ListeningWorkRecord(
+              workKey: 'work-a',
+              track: sampleTrack('batch-a-newest'),
+              milliseconds: 500,
+              lastPlayedAtMs: 300,
+            ),
+          ],
+        ),
+      ]);
+      expect(firstImported, isTrue);
+      // Duplicate batch ID returns false without modifying totals.
+      expect(
+        await appDatabase.importListeningBatch('batch-1', const [
+          ListeningDayRecord(date: '2026-10-20', totalMs: 9999, works: []),
+        ]),
+        isFalse,
+      );
+      // Second batch accumulates existing listening_days and listening_work_days.
+      expect(
+        await appDatabase.importListeningBatch('batch-2', [
+          ListeningDayRecord(
+            date: '2026-10-20',
+            totalMs: 250,
+            works: [
+              ListeningWorkRecord(
+                workKey: 'work-b',
+                track: sampleTrack('batch-b-stale'),
+                milliseconds: 250,
+                lastPlayedAtMs: 400,
+              ),
+            ],
+          ),
+        ]),
+        isTrue,
+      );
+
+      final days = await appDatabase.loadListeningDays();
+      expect(days.single['milliseconds'], 1750);
+      final workDays = await db.query(
+        'listening_work_days',
+        orderBy: 'work_key',
+      );
+      expect(workDays, [
+        {'date': '2026-10-20', 'work_key': 'work-a', 'milliseconds': 900},
+        {'date': '2026-10-20', 'work_key': 'work-b', 'milliseconds': 850},
+      ]);
+      final historyA = await appDatabase.findListeningTrack('work-a');
+      expect(historyA?['last_played_at_ms'], 300);
+      expect(historyA?['track_json'], contains('batch-a-newest'));
+      expect(historyA?['legacy_order'], 0);
+      final historyB = await appDatabase.findListeningTrack('work-b');
+      expect(historyB?['last_played_at_ms'], 600);
+      expect(historyB?['track_json'], contains('batch-b-newer'));
+    },
+  );
+
+  test('empty input fast paths short-circuit cleanly', () async {
+    await appDatabase.saveAppSettings(const <String, String>{});
+    expect(await appDatabase.loadTrackDetails(const <String>[]), isEmpty);
+    expect(
+      await appDatabase.loadAudioDetailRecords(const <(String, String)>[]),
+      isEmpty,
+    );
+    expect(
+      await appDatabase.findQueuesReferencingPath(r'C:\Music\NonExistent'),
+      isEmpty,
+    );
+  });
+
+  test(
+    'v18 and fresh installs use the same history and library index plans',
+    () async {
+      await _expectV18Indexes(db);
+      await _restoreV17Indexes(db);
+      for (final (workKey, order) in [('b', 1), ('a', 2), ('c', 1)]) {
+        await db.insert('listening_history', {
+          'work_key': workKey,
+          'track_json': '{}',
+          'last_played_at_ms': 500,
+          'legacy_order': order,
+        });
+      }
+      await db.insert('library_entries', {
+        'library_path': '/library',
+        'path': '/library/track.mp3',
+        'kind': 'track',
+        'state': 'excluded',
+      });
+      final historyBefore = await db.query(
+        'listening_history',
+        orderBy: 'work_key',
+      );
+      final libraryBefore = await db.query('library_entries');
+      await AppDatabase.upgradeSchemaForTest(db, 17, AppDatabase.schemaVersion);
+      await _expectV18Indexes(db);
+      expect(
+        await db.query('listening_history', orderBy: 'work_key'),
+        historyBefore,
+      );
+      expect(await db.query('library_entries'), libraryBefore);
+      expect(
+        (await db.query(
+          'listening_history',
+          orderBy: 'last_played_at_ms DESC, legacy_order, work_key',
+          limit: 2,
+        )).map((row) => row['work_key']),
+        ['b', 'c'],
+      );
+    },
+  );
 
   test(
     'v16 backfills queue summaries and keeps the detached occurrence',
@@ -929,10 +1262,6 @@ void main() {
       for (final query in {
         'SELECT path FROM track_scan_info WHERE scan_generation = 12':
             'idx_tracks_scan_generation',
-        'SELECT path FROM track_playback_state WHERE is_favorite = 1':
-            'idx_tracks_favorite',
-        'SELECT path FROM track_playback_state WHERE last_played_at_ms = 42':
-            'idx_tracks_last_played_at',
       }.entries) {
         final plan = await db.rawQuery('EXPLAIN QUERY PLAN ${query.key}');
         expect(plan.map((row) => row['detail']).join(), contains(query.value));
@@ -965,9 +1294,11 @@ void main() {
   test(
     'portable backups preserve user settings and playback without browser tables',
     () async {
+      const durationSyncKey = 'audio_detail_duration_document_v1';
       final directory = await Directory.systemTemp.createTemp('player_backup_');
       addTearDown(() => directory.delete(recursive: true));
       await appDatabase.saveAppSetting('user_setting', 'keep');
+      await appDatabase.saveAppSetting(durationSyncKey, '{"work":1234}');
       await repository.seedSessions([_playbackSession('kept')]);
       await db.insert('asmr_works', {
         'work_key': 'source:asmrOne:72',
@@ -977,10 +1308,25 @@ void main() {
       final candidate = await appDatabase.createPortableSnapshot(
         '${directory.path}/candidate.db',
       );
+      final portable = await databaseFactoryFfi.openDatabase(
+        candidate.path,
+        options: OpenDatabaseOptions(singleInstance: false),
+      );
+      final portableAppDatabase = AppDatabase.test(portable);
+      expect(await portableAppDatabase.loadAppSetting(durationSyncKey), isNull);
+      await portableAppDatabase.saveAppSetting(
+        durationSyncKey,
+        '{"work":1234}',
+      );
+      await portable.close();
       await appDatabase.validateAndMigrateRestoreCandidate(candidate.path);
       final restored = await databaseFactoryFfi.openDatabase(
         candidate.path,
         options: OpenDatabaseOptions(singleInstance: false),
+      );
+      expect(
+        await AppDatabase.test(restored).loadAppSetting(durationSyncKey),
+        isNull,
       );
       expect(
         await restored.rawQuery(
@@ -1017,6 +1363,8 @@ void main() {
     11,
     12,
     16,
+    17,
+    18,
     AppDatabase.schemaVersion,
   ]) {
     test(
@@ -1042,6 +1390,7 @@ void main() {
         final migrated = await databaseFactoryFfi.openDatabase(candidate.path);
         try {
           expect(await migrated.getVersion(), AppDatabase.schemaVersion);
+          if (version == 17) await _expectV18Indexes(migrated);
           expect(await migrated.query('sessions'), hasLength(1));
           final session = (await SqlitePlaybackRepository(
             database: AppDatabase.test(migrated),
@@ -1475,6 +1824,7 @@ void main() {
         whereArgs: [2000],
         orderBy: 'sort_order',
       );
+      final retainedHistoryKey = initialHistory.first.workKey;
       // Reject even equivalent rewrites; row content equality would miss the hotspot.
       for (final table in [
         'asmr_works',
@@ -1489,7 +1839,9 @@ void main() {
             'asmr_works' => '$row.id <= 1000',
             'asmr_work_voice_actors' || 'asmr_work_tags' =>
               "CAST(SUBSTR($row.work_id, 8) AS INTEGER) <= 1000",
-            'asmr_work_lists' => "$row.list_type = 'favorites'",
+            'asmr_work_lists' =>
+              "$row.list_type = 'favorites' OR "
+                  "($row.list_type = 'history' AND $row.work_id = '$retainedHistoryKey')",
             _ => '$row.work_id NOT IN (2000, 2)',
           };
           await db.execute('''
@@ -2405,15 +2757,15 @@ void main() {
     expect(loaded.single.path, second.path);
   });
 
-  test('schema creates track indexes for query-heavy columns', () async {
+  test('schema keeps the scan index and drops unused track indexes', () async {
     final indexes = await db.rawQuery('PRAGMA index_list(tracks)');
     final indexNames = indexes
         .map((row) => row['name'] as String?)
         .whereType<String>()
         .toSet();
 
-    expect(indexNames, contains('idx_tracks_group_key'));
-    expect(indexNames, contains('idx_tracks_display_name'));
+    expect(indexNames, isNot(contains('idx_tracks_group_key')));
+    expect(indexNames, isNot(contains('idx_tracks_display_name')));
 
     final playbackIndexes = await db.rawQuery(
       'PRAGMA index_list(track_playback_state)',
@@ -2422,8 +2774,8 @@ void main() {
         .map((row) => row['name'] as String?)
         .whereType<String>()
         .toSet();
-    expect(playbackIndexNames, contains('idx_tracks_last_played_at'));
-    expect(playbackIndexNames, contains('idx_tracks_favorite'));
+    expect(playbackIndexNames, isNot(contains('idx_tracks_last_played_at')));
+    expect(playbackIndexNames, isNot(contains('idx_tracks_favorite')));
     expect(
       playbackIndexNames,
       isNot(contains('idx_track_playback_last_played')),
@@ -3428,8 +3780,9 @@ void main() {
         .map((row) => row['name'] as String?)
         .whereType<String>()
         .toSet();
-    expect(indexNames, contains('idx_library_entries_library'));
-    expect(indexNames, contains('idx_library_entries_state'));
+    expect(indexNames, contains('idx_library_entries_path'));
+    expect(indexNames, isNot(contains('idx_library_entries_library')));
+    expect(indexNames, isNot(contains('idx_library_entries_state')));
   });
 
   test('library path changes are scoped to their root across chunks', () async {
@@ -3670,7 +4023,72 @@ void main() {
   );
 }
 
+const _v17RetiredIndexes = {
+  'idx_tracks_group_key': 'tracks(group_key)',
+  'idx_tracks_display_name': 'tracks(display_name)',
+  'idx_tracks_last_played_at': 'track_playback_state(last_played_at_ms)',
+  'idx_tracks_favorite': 'track_playback_state(is_favorite)',
+  'idx_track_remote_kind': 'track_remote_metadata(remote_metadata_kind)',
+  'idx_track_tags_tag': 'track_tags(tag)',
+  'idx_library_entries_library': 'library_entries(library_path)',
+  'idx_library_entries_state': 'library_entries(library_path, state)',
+};
+
+Future<void> _restoreV17Indexes(Database db) async {
+  await db.execute('DROP INDEX idx_library_entries_path');
+  await db.execute('DROP INDEX idx_listening_history_recent');
+  await db.execute(
+    'CREATE INDEX idx_listening_history_recent '
+    'ON listening_history(last_played_at_ms DESC, work_key)',
+  );
+  for (final entry in _v17RetiredIndexes.entries) {
+    await db.execute('CREATE INDEX ${entry.key} ON ${entry.value}');
+  }
+}
+
+Future<void> _expectV18Indexes(Database db) async {
+  final indexes = await db.query(
+    'sqlite_master',
+    columns: ['name'],
+    where: 'type = ?',
+    whereArgs: ['index'],
+  );
+  expect(
+    indexes
+        .map((row) => row['name'])
+        .toSet()
+        .intersection(_v17RetiredIndexes.keys.toSet()),
+    isEmpty,
+  );
+  final historyPlan = await db.rawQuery(
+    'EXPLAIN QUERY PLAN SELECT * FROM listening_history '
+    'ORDER BY last_played_at_ms DESC, legacy_order, work_key LIMIT 50',
+  );
+  final details = historyPlan.map((row) => row['detail']).join(' ');
+  expect(details, contains('idx_listening_history_recent'));
+  expect(details, isNot(contains('TEMP B-TREE')));
+  final libraryPlan = await db.rawQuery(
+    'EXPLAIN QUERY PLAN SELECT * FROM library_entries WHERE path IN (?, ?)',
+    ['/one.mp3', '/two.mp3'],
+  );
+  expect(
+    libraryPlan.map((row) => row['detail']).join(' '),
+    contains('SEARCH library_entries USING INDEX idx_library_entries_path'),
+  );
+}
+
 Future<void> _setRestoreSchemaVersion(Database db, int version) async {
+  if (version < 19) {
+    await db.execute('DROP INDEX idx_queue_work_path_match');
+    await db.execute('DROP INDEX idx_queue_track_path_match');
+    for (final table in [
+      'playback_queue_entries',
+      'playback_queue_entry_tracks',
+    ]) {
+      await db.execute('ALTER TABLE $table DROP COLUMN path_match_key');
+    }
+  }
+  if (version == 17) await _restoreV17Indexes(db);
   if (version < 17) {
     await db.execute(
       'ALTER TABLE session_audio_effects DROP COLUMN front_back',

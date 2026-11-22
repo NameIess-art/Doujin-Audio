@@ -93,20 +93,33 @@ void main() {
   };
 
   test('downloads update only after matching SHA-256 verification', () async {
+    final firstProgress = Completer<void>();
+    final progress = <double?>[];
+    const firstChunkLength = 4;
     server.listen((request) async {
       if (request.uri.path == '/checksum') {
         request.response.write('${sha256.convert(payload)}  $assetName');
       } else {
-        request.response.add(payload);
+        final response = request.response
+          ..bufferOutput = false
+          ..contentLength = payload.length;
+        response.add(payload.sublist(0, firstChunkLength));
+        await response.flush();
+        await firstProgress.future.timeout(const Duration(seconds: 5));
+        response.add(payload.sublist(firstChunkLength));
       }
       await request.response.close();
     });
 
     final file = await service.downloadUpdate(
       info(checksumPath: 'checksum'),
-      onProgress: (_) {},
+      onProgress: (value) {
+        progress.add(value);
+        if (!firstProgress.isCompleted) firstProgress.complete();
+      },
     );
 
+    expect(progress, [firstChunkLength / payload.length, 1]);
     expect(await file.readAsBytes(), payload);
     expect(File('${file.path}.part').existsSync(), isFalse);
   });
@@ -567,7 +580,11 @@ void main() {
       expect(file.path.endsWith('.exe'), true);
       expect((await windowsService.installUpdate(file)).ok, true);
       expect(launches, 1);
-      await file.writeAsString('tampered');
+      final originalStat = await file.stat();
+      await file.writeAsBytes([...payload]..[0] ^= 1);
+      await file.setLastModified(originalStat.modified);
+      expect(await file.length(), originalStat.size);
+      expect(await file.lastModified(), originalStat.modified);
       expect((await windowsService.installUpdate(file)).ok, false);
       expect(launches, 1);
     },
@@ -622,18 +639,22 @@ void main() {
       if (request.uri.path == '/checksum') {
         request.response.write('${'0' * 64}  $assetName');
       } else {
-        request.response.add(payload);
+        request.response
+          ..contentLength = payload.length
+          ..add(payload);
       }
       await request.response.close();
     });
 
+    final progress = <double?>[];
     await expectLater(
       service.downloadUpdate(
         info(checksumPath: 'checksum'),
-        onProgress: (_) {},
+        onProgress: progress.add,
       ),
       throwsFormatException,
     );
+    expect(progress, isNot(contains(1)));
     expect(
       Directory(
         '${tempDir.path}${Platform.pathSeparator}updates',

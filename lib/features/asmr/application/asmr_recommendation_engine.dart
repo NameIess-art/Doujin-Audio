@@ -2,9 +2,13 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
-import '../../../core/media/audio_detail.dart';
 import '../domain/asmr_models.dart';
 import '../../../core/media/music_track.dart';
+
+final RegExp _rjCodePattern = RegExp(r'RJ\d{6,}', caseSensitive: false);
+
+String? _findRjCode(String text) =>
+    _rjCodePattern.firstMatch(text)?.group(0)?.toUpperCase();
 
 class AsmrRecommendationEngine {
   const AsmrRecommendationEngine();
@@ -21,18 +25,37 @@ class AsmrRecommendationEngine {
     Map<String, double>? voiceActorWeights,
     Map<String, double>? circleWeights,
   }) {
-    final request = AsmrRecommendationRankRequest(
-      candidates: candidates,
-      localTracks: localTracks,
-      favoriteWorks: favoriteWorks,
-      historyWorks: historyWorks,
-      refreshSeed: refreshSeed,
-      limit: limit,
-      explorationWorkIds: explorationWorkIds,
-      tagWeights: tagWeights,
-      voiceActorWeights: voiceActorWeights,
-      circleWeights: circleWeights,
-    );
+    final useExternalWeightsOnly =
+        tagWeights != null &&
+        voiceActorWeights != null &&
+        circleWeights != null;
+    final request = useExternalWeightsOnly
+        ? AsmrRecommendationRankRequest(
+            candidates: candidates,
+            localTracks: const <MusicTrack>[],
+            favoriteWorks: const <AsmrWork>[],
+            historyWorks: const <AsmrWork>[],
+            seenTrackSummaries: _summarizeSeenTracks(localTracks),
+            seenWorkSummaries: _summarizeSeenWorks(favoriteWorks, historyWorks),
+            refreshSeed: refreshSeed,
+            limit: limit,
+            explorationWorkIds: explorationWorkIds,
+            tagWeights: tagWeights,
+            voiceActorWeights: voiceActorWeights,
+            circleWeights: circleWeights,
+          )
+        : AsmrRecommendationRankRequest(
+            candidates: candidates,
+            localTracks: localTracks,
+            favoriteWorks: favoriteWorks,
+            historyWorks: historyWorks,
+            refreshSeed: refreshSeed,
+            limit: limit,
+            explorationWorkIds: explorationWorkIds,
+            tagWeights: tagWeights,
+            voiceActorWeights: voiceActorWeights,
+            circleWeights: circleWeights,
+          );
     return compute(rankAsmrRecommendations, request);
   }
 
@@ -47,11 +70,39 @@ class AsmrRecommendationEngine {
     Map<String, double>? tagWeights,
     Map<String, double>? voiceActorWeights,
     Map<String, double>? circleWeights,
+  }) => _rankInternal(
+    candidates: candidates,
+    localTracks: localTracks,
+    favoriteWorks: favoriteWorks,
+    historyWorks: historyWorks,
+    refreshSeed: refreshSeed,
+    limit: limit,
+    explorationWorkIds: explorationWorkIds,
+    tagWeights: tagWeights,
+    voiceActorWeights: voiceActorWeights,
+    circleWeights: circleWeights,
+  );
+
+  List<AsmrWork> _rankInternal({
+    required List<AsmrWork> candidates,
+    required List<MusicTrack> localTracks,
+    required List<AsmrWork> favoriteWorks,
+    required List<AsmrWork> historyWorks,
+    List<AsmrRecommendationSeenTrackSummary> seenTrackSummaries = const [],
+    List<AsmrRecommendationSeenWorkSummary> seenWorkSummaries = const [],
+    int refreshSeed = 0,
+    int? limit,
+    Set<String> explorationWorkIds = const <String>{},
+    Map<String, double>? tagWeights,
+    Map<String, double>? voiceActorWeights,
+    Map<String, double>? circleWeights,
   }) {
     final profile = _RecommendationProfile.build(
       localTracks: localTracks,
       favoriteWorks: favoriteWorks,
       historyWorks: historyWorks,
+      seenTrackSummaries: seenTrackSummaries,
+      seenWorkSummaries: seenWorkSummaries,
       tagWeights: tagWeights,
       voiceActorWeights: voiceActorWeights,
       circleWeights: circleWeights,
@@ -73,6 +124,96 @@ class AsmrRecommendationEngine {
       limit: limit,
       explorationWorkIds: explorationWorkIds,
     );
+  }
+
+  static List<AsmrRecommendationSeenTrackSummary> _summarizeSeenTracks(
+    List<MusicTrack> localTracks,
+  ) {
+    if (localTracks.isEmpty) return const <AsmrRecommendationSeenTrackSummary>[];
+    final seenGroups = <String>{};
+    final seenMetadataGroups = <String>{};
+    final summaries = <AsmrRecommendationSeenTrackSummary>[];
+    for (final track in localTracks) {
+      final canDeduplicateByGroup =
+          !track.isSingle && track.groupKey.isNotEmpty;
+      final isNewGroup =
+          !canDeduplicateByGroup || seenGroups.add(track.groupKey);
+      final metadata = track.remoteMetadata;
+      final hasMetadata = metadata != null;
+      if (!isNewGroup &&
+          (!hasMetadata || !seenMetadataGroups.add(track.groupKey))) {
+        continue;
+      }
+      if (isNewGroup && hasMetadata && canDeduplicateByGroup) {
+        seenMetadataGroups.add(track.groupKey);
+      }
+      String? workKey;
+      List<String> resourceKeys = const <String>[];
+      var sourceId = '';
+      if (metadata != null) {
+        workKey = metadata['workKey'] as String?;
+        final source = track.remoteMetadataKind == 'jp-asmr'
+            ? AsmrCatalogSource.japaneseAsmr
+            : AsmrCatalogSource.asmrOne;
+        final resources = metadata['resources'];
+        if (resources is List && resources.isNotEmpty) {
+          resourceKeys = <String>[
+            for (final raw in resources.whereType<Map<String, dynamic>>())
+              () {
+                final resource = AsmrWorkResource.fromJson(raw);
+                return 'source:${resource.source.name}:${resource.id}';
+              }(),
+          ];
+        } else if (metadata['id'] is num) {
+          resourceKeys = <String>[
+            'source:${source.name}:${(metadata['id'] as num).toInt()}',
+          ];
+        }
+        sourceId = metadata['sourceId']?.toString() ?? '';
+      }
+      summaries.add(
+        AsmrRecommendationSeenTrackSummary(
+          groupSubtitle: isNewGroup ? track.groupSubtitle : '',
+          groupTitle: isNewGroup ? track.groupTitle : '',
+          path: isNewGroup ? track.path : '',
+          displayName: isNewGroup ? track.displayName : '',
+          workKey: workKey,
+          resourceKeys: resourceKeys,
+          sourceId: sourceId,
+        ),
+      );
+    }
+    return summaries;
+  }
+
+  static List<AsmrRecommendationSeenWorkSummary> _summarizeSeenWorks(
+    List<AsmrWork> favoriteWorks,
+    List<AsmrWork> historyWorks,
+  ) {
+    if (favoriteWorks.isEmpty && historyWorks.isEmpty) {
+      return const <AsmrRecommendationSeenWorkSummary>[];
+    }
+    final summaries = <AsmrRecommendationSeenWorkSummary>[];
+    void add(AsmrWork work) {
+      summaries.add(
+        AsmrRecommendationSeenWorkSummary(
+          workKey: work.workKey,
+          resourceKeys: <String>[
+            for (final resource in work.resources)
+              'source:${resource.source.name}:${resource.id}',
+          ],
+          workCode: work.workCode,
+        ),
+      );
+    }
+
+    for (final work in favoriteWorks) {
+      add(work);
+    }
+    for (final work in historyWorks) {
+      add(work);
+    }
+    return summaries;
   }
 
   double _score(
@@ -243,6 +384,40 @@ class AsmrRecommendationEngine {
 }
 
 @immutable
+class AsmrRecommendationSeenTrackSummary {
+  const AsmrRecommendationSeenTrackSummary({
+    required this.groupSubtitle,
+    required this.groupTitle,
+    required this.path,
+    required this.displayName,
+    this.workKey,
+    this.resourceKeys = const <String>[],
+    this.sourceId = '',
+  });
+
+  final String groupSubtitle;
+  final String groupTitle;
+  final String path;
+  final String displayName;
+  final String? workKey;
+  final List<String> resourceKeys;
+  final String sourceId;
+}
+
+@immutable
+class AsmrRecommendationSeenWorkSummary {
+  const AsmrRecommendationSeenWorkSummary({
+    required this.workKey,
+    required this.resourceKeys,
+    required this.workCode,
+  });
+
+  final String workKey;
+  final List<String> resourceKeys;
+  final String workCode;
+}
+
+@immutable
 class AsmrRecommendationRankRequest {
   const AsmrRecommendationRankRequest({
     required this.candidates,
@@ -251,6 +426,8 @@ class AsmrRecommendationRankRequest {
     required this.historyWorks,
     required this.refreshSeed,
     required this.limit,
+    this.seenTrackSummaries = const <AsmrRecommendationSeenTrackSummary>[],
+    this.seenWorkSummaries = const <AsmrRecommendationSeenWorkSummary>[],
     this.explorationWorkIds = const <String>{},
     this.tagWeights,
     this.voiceActorWeights,
@@ -261,6 +438,8 @@ class AsmrRecommendationRankRequest {
   final List<MusicTrack> localTracks;
   final List<AsmrWork> favoriteWorks;
   final List<AsmrWork> historyWorks;
+  final List<AsmrRecommendationSeenTrackSummary> seenTrackSummaries;
+  final List<AsmrRecommendationSeenWorkSummary> seenWorkSummaries;
   final int refreshSeed;
   final int? limit;
   final Set<String> explorationWorkIds;
@@ -270,11 +449,13 @@ class AsmrRecommendationRankRequest {
 }
 
 List<AsmrWork> rankAsmrRecommendations(AsmrRecommendationRankRequest request) {
-  return const AsmrRecommendationEngine().rank(
+  return const AsmrRecommendationEngine()._rankInternal(
     candidates: request.candidates,
     localTracks: request.localTracks,
     favoriteWorks: request.favoriteWorks,
     historyWorks: request.historyWorks,
+    seenTrackSummaries: request.seenTrackSummaries,
+    seenWorkSummaries: request.seenWorkSummaries,
     refreshSeed: request.refreshSeed,
     limit: request.limit,
     explorationWorkIds: request.explorationWorkIds,
@@ -318,11 +499,23 @@ class _RecommendationProfile {
     required List<MusicTrack> localTracks,
     required List<AsmrWork> favoriteWorks,
     required List<AsmrWork> historyWorks,
+    List<AsmrRecommendationSeenTrackSummary> seenTrackSummaries = const [],
+    List<AsmrRecommendationSeenWorkSummary> seenWorkSummaries = const [],
     Map<String, double>? tagWeights,
     Map<String, double>? voiceActorWeights,
     Map<String, double>? circleWeights,
   }) {
-    final builder = _RecommendationProfileBuilder();
+    final builder = _RecommendationProfileBuilder(
+      inferTags: tagWeights == null,
+      inferVoiceActors: voiceActorWeights == null,
+      inferCircles: circleWeights == null,
+    );
+    for (final summary in seenWorkSummaries) {
+      builder.addSeenWorkSummary(summary);
+    }
+    for (final summary in seenTrackSummaries) {
+      builder.addSeenTrackSummary(summary);
+    }
     final favoriteWeight = favoriteWorks.isEmpty
         ? 0.0
         : 0.4 / favoriteWorks.length;
@@ -339,12 +532,11 @@ class _RecommendationProfile {
     for (final track in localTracks) {
       builder.addTrack(track, localWeight);
     }
-    void replaceWeights(
+    void applyWeights(
       Map<String, double> target,
       Map<String, double>? weights,
     ) {
       if (weights == null) return;
-      target.clear();
       for (final entry in weights.entries) {
         final key = _normalizeTerm(entry.key);
         if (key.isEmpty || !entry.value.isFinite || entry.value <= 0) continue;
@@ -352,19 +544,49 @@ class _RecommendationProfile {
       }
     }
 
-    replaceWeights(builder.tagWeights, tagWeights);
-    replaceWeights(builder.voiceActorWeights, voiceActorWeights);
-    replaceWeights(builder.circleWeights, circleWeights);
+    applyWeights(builder.tagWeights, tagWeights);
+    applyWeights(builder.voiceActorWeights, voiceActorWeights);
+    applyWeights(builder.circleWeights, circleWeights);
     return builder.build();
   }
 }
 
 class _RecommendationProfileBuilder {
+  _RecommendationProfileBuilder({
+    required this.inferTags,
+    required this.inferVoiceActors,
+    required this.inferCircles,
+  });
+
+  final bool inferTags;
+  final bool inferVoiceActors;
+  final bool inferCircles;
   final Map<String, double> tagWeights = <String, double>{};
   final Map<String, double> circleWeights = <String, double>{};
   final Map<String, double> voiceActorWeights = <String, double>{};
   final Set<String> seenWorkKeys = <String>{};
   final Set<String> seenRjCodes = <String>{};
+  final Set<String> _seenTrackGroups = <String>{};
+
+  void addSeenWorkSummary(AsmrRecommendationSeenWorkSummary summary) {
+    seenWorkKeys.add(summary.workKey);
+    seenWorkKeys.addAll(summary.resourceKeys);
+    final rj = _normalizeTerm(summary.workCode);
+    if (rj.isNotEmpty) seenRjCodes.add(rj);
+  }
+
+  void addSeenTrackSummary(AsmrRecommendationSeenTrackSummary summary) {
+    if (summary.workKey != null) seenWorkKeys.add(summary.workKey!);
+    seenWorkKeys.addAll(summary.resourceKeys);
+    final sourceId = _normalizeTerm(summary.sourceId);
+    if (sourceId.isNotEmpty) seenRjCodes.add(sourceId);
+    _addSeenTextValues(
+      groupSubtitle: summary.groupSubtitle,
+      path: summary.path,
+      groupTitle: summary.groupTitle,
+      displayName: summary.displayName,
+    );
+  }
 
   void addWork(AsmrWork work, double weight, {required bool seen}) {
     if (seen) {
@@ -375,14 +597,14 @@ class _RecommendationProfileBuilder {
       final rj = _normalizeTerm(work.workCode);
       if (rj.isNotEmpty) seenRjCodes.add(rj);
     }
-    _addAll(tagWeights, work.tags, weight);
-    _add(circleWeights, work.circleName, weight);
-    _addAll(voiceActorWeights, work.voiceActors, weight);
+    if (inferTags) _addAll(tagWeights, work.tags, weight);
+    if (inferCircles) _add(circleWeights, work.circleName, weight);
+    if (inferVoiceActors) _addAll(voiceActorWeights, work.voiceActors, weight);
   }
 
   void addTrack(MusicTrack track, double weight) {
-    _addAll(tagWeights, track.tags, weight);
-    _add(circleWeights, track.groupTitle, weight);
+    if (inferTags) _addAll(tagWeights, track.tags, weight);
+    if (inferCircles) _add(circleWeights, track.groupTitle, weight);
     _addSeenTrack(track);
     final metadata = track.remoteMetadata;
     if (metadata == null) return;
@@ -413,23 +635,51 @@ class _RecommendationProfileBuilder {
         'source:${source.name}:${(metadata['id'] as num).toInt()}',
       );
     }
-    _add(circleWeights, metadata['circleName']?.toString(), weight);
-    _addAll(tagWeights, _stringList(metadata['tags']), weight);
-    _addAll(voiceActorWeights, _stringList(metadata['voiceActors']), weight);
-    _addAll(voiceActorWeights, _stringList(metadata['vas']), weight);
+    if (inferCircles) {
+      _add(circleWeights, metadata['circleName']?.toString(), weight);
+    }
+    if (inferTags) _addAll(tagWeights, _stringList(metadata['tags']), weight);
+    if (inferVoiceActors) {
+      _addAll(voiceActorWeights, _stringList(metadata['voiceActors']), weight);
+      _addAll(voiceActorWeights, _stringList(metadata['vas']), weight);
+    }
     final sourceId = _normalizeTerm(metadata['sourceId']?.toString() ?? '');
     if (sourceId.isNotEmpty) seenRjCodes.add(sourceId);
   }
 
   void _addSeenTrack(MusicTrack track) {
-    for (final value in <String>[
-      track.groupSubtitle,
-      AudioDetail.findRjCodeInText(track.path) ?? '',
-      AudioDetail.findRjCodeInText(track.groupTitle) ?? '',
-      AudioDetail.findRjCodeInText(track.displayName) ?? '',
-    ]) {
-      final rj = _normalizeTerm(value);
-      if (rj.isNotEmpty) seenRjCodes.add(rj);
+    if (!track.isSingle &&
+        track.groupKey.isNotEmpty &&
+        !_seenTrackGroups.add(track.groupKey)) {
+      return;
+    }
+    _addSeenTextValues(
+      groupSubtitle: track.groupSubtitle,
+      path: track.path,
+      groupTitle: track.groupTitle,
+      displayName: track.displayName,
+    );
+  }
+
+  void _addSeenTextValues({
+    required String groupSubtitle,
+    required String path,
+    required String groupTitle,
+    required String displayName,
+  }) {
+    final subtitle = _normalizeTerm(groupSubtitle);
+    if (subtitle.isNotEmpty) seenRjCodes.add(subtitle);
+    if (path.isNotEmpty) {
+      final code = _findRjCode(path);
+      if (code != null) seenRjCodes.add(_normalizeTerm(code));
+    }
+    if (groupTitle.isNotEmpty) {
+      final code = _findRjCode(groupTitle);
+      if (code != null) seenRjCodes.add(_normalizeTerm(code));
+    }
+    if (displayName.isNotEmpty) {
+      final code = _findRjCode(displayName);
+      if (code != null) seenRjCodes.add(_normalizeTerm(code));
     }
   }
 

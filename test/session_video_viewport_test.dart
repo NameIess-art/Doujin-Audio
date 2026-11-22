@@ -192,11 +192,14 @@ void main() {
       ),
     );
 
+    final backdrop = find.byKey(
+      const ValueKey<String>('session_video_blurred_backdrop'),
+    );
+    expect(tester.widget(backdrop), isA<RepaintBoundary>());
     expect(
-      find.byKey(const ValueKey<String>('session_video_blurred_backdrop')),
+      find.descendant(of: backdrop, matching: find.byType(ImageFiltered)),
       findsOneWidget,
     );
-    expect(find.byType(ImageFiltered), findsOneWidget);
   });
 
   testWidgets('tap reveals controls and timeout hides them', (tester) async {

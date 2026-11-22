@@ -361,9 +361,10 @@ void main() {
         isWindows: () => true,
       );
       final files = await windows.discoverWorkTexts(root.path);
-      expect(files.map((file) => file['relativePath']).toSet(), {
-        for (final extension in extensions) 'Extras/字幕/translation.$extension',
-      });
+      expect(files.map((file) => file['relativePath']), [
+        for (final extension in ['ass', 'lrc', 'SRT', 'ssa', 'vtt', 'webvtt'])
+          'Extras/字幕/translation.$extension',
+      ]);
     },
   );
 
@@ -392,6 +393,87 @@ void main() {
     expect(images.single.sourcePath, image.path);
     expect(images.single.fileSizeBytes, 4);
   });
+
+  test(
+    'Windows image discovery sorts recursive and preferred matches',
+    () async {
+      final root = await Directory.systemTemp.createTemp('作品 封面 ');
+      addTearDown(() => root.delete(recursive: true));
+      final separator = Platform.pathSeparator;
+      final nested = await Directory('${root.path}${separator}Extras').create();
+      final last = await File(
+        '${root.path}${separator}second.webp',
+      ).writeAsString('second');
+      final first = await File(
+        '${root.path}${separator}first.PNG',
+      ).writeAsString('first');
+      final nestedImage = await File(
+        '${nested.path}$separator内页.JPG',
+      ).writeAsString('nested');
+      await File('${root.path}${separator}image.png.txt').create();
+      final windows = FileCachePlatformGateway(
+        isAndroid: () => false,
+        isWindows: () => true,
+      );
+
+      Future<List<String>> imagePaths({
+        required bool recursive,
+        bool preferredOnly = false,
+      }) async {
+        final images = await windows.discoverRootImages(
+          path: root.path,
+          rootFolder: root.path,
+          recursive: recursive,
+          preferredOnly: preferredOnly,
+        );
+        return [for (final image in images) image.sourcePath];
+      }
+
+      expect(await imagePaths(recursive: false), [first.path, last.path]);
+      expect(await imagePaths(recursive: true), [
+        nestedImage.path,
+        first.path,
+        last.path,
+      ]);
+      expect(await imagePaths(recursive: true, preferredOnly: true), [
+        nestedImage.path,
+      ]);
+      final preferred = await windows.discoverRootImages(
+        path: root.path,
+        rootFolder: root.path,
+        preferredOnly: true,
+      );
+      expect(preferred.single.sourcePath, nestedImage.path);
+      expect(preferred.single.fileSizeBytes, 'nested'.length);
+    },
+  );
+
+  test(
+    'Windows discovery keeps file-system overrides and allows retries',
+    () async {
+      final folder = await Directory.systemTemp.createTemp('作品 枚举 ');
+      addTearDown(() => folder.delete(recursive: true));
+      await File('${folder.path}/image.png').create();
+      await File('${folder.path}/script.md').create();
+      final failure = FileSystemException('Unable to list files', folder.path);
+      final windows = FileCachePlatformGateway(
+        isAndroid: () => false,
+        isWindows: () => true,
+      );
+      Future<List<CoverImageReference>> discoverImages() => windows
+          .discoverRootImages(path: folder.path, rootFolder: folder.path);
+
+      await IOOverrides.runZoned(() async {
+        await expectLater(discoverImages(), throwsA(same(failure)));
+        await expectLater(
+          windows.discoverWorkTexts(folder.path),
+          throwsA(same(failure)),
+        );
+      }, createDirectory: (_) => _FailingDiscoveryDirectory(failure));
+      expect(await discoverImages(), hasLength(1));
+      expect(await windows.discoverWorkTexts(folder.path), hasLength(1));
+    },
+  );
 
   test('image discovery preserves empty and unknown file sizes', () {
     expect(
@@ -1212,6 +1294,21 @@ void main() {
       );
     },
   );
+}
+
+class _FailingDiscoveryDirectory extends Fake implements Directory {
+  _FailingDiscoveryDirectory(this.failure);
+
+  final FileSystemException failure;
+
+  @override
+  Future<bool> exists() async => true;
+
+  @override
+  Stream<FileSystemEntity> list({
+    bool recursive = false,
+    bool followLinks = true,
+  }) => Stream<FileSystemEntity>.error(failure);
 }
 
 Future<void> _waitForMethodCall(

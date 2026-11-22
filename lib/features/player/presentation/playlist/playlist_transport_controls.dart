@@ -254,16 +254,14 @@ class _PrimaryPlaybackControlsState
       sessionDetailTransportProvider(session.id).select(
         (state) => (
           state?.showPauseIcon,
-          state == null
-              ? null
-              : state.isPlaybackLoading || state.playbackError != null,
+          state?.isPlaybackLoading,
+          state == null ? null : state.playbackError != null,
         ),
       ),
     );
     final showPauseIcon = transport.$1 ?? session.playbackRequested;
-    final isLoading =
-        transport.$2 ??
-        (session.isPlaybackLoading || session.playbackError != null);
+    final isLoading = transport.$2 ?? session.isPlaybackLoading;
+    final hasError = transport.$3 ?? (session.playbackError != null);
     final cs = Theme.of(context).colorScheme;
     final i18n = ProviderScope.containerOf(
       context,
@@ -335,7 +333,13 @@ class _PrimaryPlaybackControlsState
                 ),
                 child: IconButton(
                   key: const ValueKey('session_detail_play_pause_button'),
-                  tooltip: showPauseIcon ? i18n.tr('pause') : i18n.tr('play'),
+                  tooltip: i18n.tr(
+                    hasError
+                        ? 'retry_playback'
+                        : showPauseIcon
+                        ? 'pause'
+                        : 'play',
+                  ),
                   constraints: BoxConstraints.tightFor(
                     width: playButtonSize,
                     height: playButtonSize,
@@ -356,23 +360,29 @@ class _PrimaryPlaybackControlsState
                       : null,
                   iconSize: playIconSize,
                   icon: AppPlaybackIconTransition(
-                    child: isLoading
+                    child: isLoading && !hasError
                         ? SizedBox(
                             key: const ValueKey('loading'),
                             width: playIconSize * 0.48,
                             height: playIconSize * 0.48,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 3,
-                              color: enabled
-                                  ? onPrimaryColor
-                                  : cs.onSurface.withValues(alpha: 0.35),
+                            child: RepaintBoundary(
+                              child: CircularProgressIndicator(
+                                strokeWidth: 3,
+                                color: enabled
+                                    ? onPrimaryColor
+                                    : cs.onSurface.withValues(alpha: 0.35),
+                              ),
                             ),
                           )
                         : Icon(
-                            showPauseIcon
+                            hasError
+                                ? Icons.refresh_rounded
+                                : showPauseIcon
                                 ? Icons.pause_rounded
                                 : Icons.play_arrow_rounded,
-                            key: ValueKey(showPauseIcon),
+                            key: hasError
+                                ? const ValueKey('retry')
+                                : ValueKey(showPauseIcon),
                             size: playIconSize * 0.75,
                             color: enabled
                                 ? onPrimaryColor

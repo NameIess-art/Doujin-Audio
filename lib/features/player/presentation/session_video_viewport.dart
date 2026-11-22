@@ -119,34 +119,30 @@ Duration sessionVideoSkipTarget({
 }
 
 class SessionVideoBlurredBackdrop extends StatelessWidget {
-  const SessionVideoBlurredBackdrop({
-    super.key,
-    required this.child,
-    this.sigma = 20,
-  });
+  const SessionVideoBlurredBackdrop({super.key, required this.child});
+
+  static final _blur = ImageFilter.blur(
+    sigmaX: 20,
+    sigmaY: 20,
+    tileMode: TileMode.clamp,
+  );
 
   final Widget child;
-  final double sigma;
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
+    return RepaintBoundary(
       key: const ValueKey<String>('session_video_blurred_backdrop'),
-      fit: StackFit.expand,
-      children: [
-        Transform.scale(
-          scale: 1.08,
-          child: ImageFiltered(
-            imageFilter: ImageFilter.blur(
-              sigmaX: sigma,
-              sigmaY: sigma,
-              tileMode: TileMode.clamp,
-            ),
-            child: child,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Transform.scale(
+            scale: 1.08,
+            child: ImageFiltered(imageFilter: _blur, child: child),
           ),
-        ),
-        ColoredBox(color: Colors.black.withValues(alpha: 0.26)),
-      ],
+          ColoredBox(color: Colors.black.withValues(alpha: 0.26)),
+        ],
+      ),
     );
   }
 }

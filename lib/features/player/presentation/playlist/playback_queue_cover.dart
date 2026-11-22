@@ -39,17 +39,28 @@ class QueueTrackCoverState extends ConsumerState<QueueTrackCover> {
   @override
   Widget build(BuildContext context) {
     final library = ref.read(libraryFacadeProvider);
+    final cache = library.coverArtworkCacheService;
     final folderPath = widget.folderPath;
     final requestKey = folderPath ?? widget.track.path;
-    final Object coverRevision = folderPath != null
-        ? ref.watch(
-            coverGenerationProvider.select(
-              (_) => library.coverArtworkCacheService.revisionForScope(
-                folderPath,
-              ),
-            ),
-          )
-        : ref.watch(coverGenerationProvider);
+    final Object coverRevision;
+    if (folderPath != null) {
+      coverRevision = ref.watch(
+        coverGenerationProvider.select(
+          (_) => cache.revisionForScope(folderPath),
+        ),
+      );
+    } else {
+      final scope = cache.coverSearchKeyForTrack(widget.track) ?? widget.track.path;
+      final folderScope = cache.coverScopeFolderForTrack(widget.track);
+      coverRevision = ref.watch(
+        coverGenerationProvider.select(
+          (_) => (
+            cache.revisionForScope(scope),
+            folderScope == null ? null : cache.revisionForScope(folderScope),
+          ),
+        ),
+      );
+    }
     if (widget.future != null) {
       _future = widget.future;
     } else if (_future == null ||

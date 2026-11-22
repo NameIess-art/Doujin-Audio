@@ -88,8 +88,7 @@ internal class MediaMetadataOperations(
                 try {
                     retriever = MediaMetadataRetriever()
                     retriever.setDataSource(file.absolutePath)
-                    val result = block(retriever)
-                    if (result != null) return result
+                    return block(retriever)
                 } catch (_: Exception) {
                     // Direct file access failed; continue to content resolver fallback.
                 } finally {
@@ -148,8 +147,7 @@ internal class MediaMetadataOperations(
             if (file.exists() && file.canRead()) {
                 try {
                     FileInputStream(file).use { fis ->
-                        val result = extractPictureFromChannel(fis.channel)
-                        if (result != null) return result
+                        return extractPictureFromChannel(fis.channel)
                     }
                 } catch (_: Exception) {}
             }

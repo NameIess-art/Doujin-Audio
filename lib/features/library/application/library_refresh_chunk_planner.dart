@@ -58,10 +58,21 @@ class LibraryRefreshChunkPlanner {
   LibraryRefreshChunkPlanner({required LibraryScanDataSource dataSource})
     : _dataSource = dataSource;
   final LibraryScanDataSource _dataSource;
+
+  Future<Map<String, List<String>>> indexRemovalCandidates(
+    Iterable<MusicTrack> tracks,
+    Iterable<String> sourceFolders,
+  ) => compute(_indexRefreshRemovalCandidates, (
+    trackPaths: [for (final track in tracks) track.path],
+    sourceFolders: sourceFolders.toList(growable: false),
+  ));
+
   Future<void> scanLibraryRoot({
     required String libraryRoot,
     required LibraryCatalogReader provider,
     required LibraryScanLabels labels,
+    required LibraryScanMergeWorker worker,
+    required List<String> removalCandidates,
     required int generation,
     required Future<bool> Function(LibraryRefreshChunk chunk) onChunk,
     required void Function(FolderScanSessionEvent event) onProgress,
@@ -81,6 +92,8 @@ class LibraryRefreshChunkPlanner {
       libraryRoot: libraryRoot,
       provider: provider,
       labels: labels,
+      worker: worker,
+      removalCandidates: removalCandidates,
       promoteRootTracksToSingles: true,
       folderPaths: childFolders,
       removeWatchedFolders: [libraryRoot],
@@ -98,6 +111,8 @@ class LibraryRefreshChunkPlanner {
     required String effectiveLibraryRoot,
     required LibraryCatalogReader provider,
     required LibraryScanLabels labels,
+    required LibraryScanMergeWorker worker,
+    required List<String> removalCandidates,
     required String progressPrefix,
     required int generation,
     required Future<bool> Function(LibraryRefreshChunk chunk) onChunk,
@@ -108,6 +123,8 @@ class LibraryRefreshChunkPlanner {
       libraryRoot: effectiveLibraryRoot,
       provider: provider,
       labels: labels,
+      worker: worker,
+      removalCandidates: removalCandidates,
       progressPrefix: progressPrefix,
       generation: generation,
       onChunk: onChunk,
@@ -120,6 +137,8 @@ class LibraryRefreshChunkPlanner {
     required String libraryRoot,
     required LibraryCatalogReader provider,
     required LibraryScanLabels labels,
+    required LibraryScanMergeWorker worker,
+    required List<String> removalCandidates,
     bool promoteRootTracksToSingles = false,
     List<String> folderPaths = const <String>[],
     List<String> removeWatchedFolders = const <String>[],
@@ -139,8 +158,6 @@ class LibraryRefreshChunkPlanner {
     final allFolderPaths = LinkedHashSet<String>.from(folderPaths);
     retainedEntryPaths.addAll(allFolderPaths.map(PathMatcher.normalize));
     var processedTracks = 0;
-    final worker = LibraryScanMergeWorker();
-
     Future<bool> mergeChunk(FolderScanChunk chunk) async {
       if (!provider.isScanGenerationActive(generation)) return false;
       retainedTrackPaths.addAll(chunk.paths.map(PathMatcher.normalize));
@@ -192,48 +209,39 @@ class LibraryRefreshChunkPlanner {
       );
     }
 
-    final NativeScanResult scanResult;
-    try {
-      var result = await _dataSource.scanFolderChunked(
-        sourceFolderPath,
-        mergeChunk,
-        onProgress: (event) {
-          if (!provider.isScanGenerationActive(generation)) return;
-          onProgress(event);
-        },
-      );
-      if (result.notSupported) {
-        if (PathMatcher.isContentUri(sourceFolderPath)) {
-          final legacyScan = await _dataSource.scanFolder(sourceFolderPath);
-          if (!legacyScan.ok) {
-            result = legacyScan;
-          } else {
-            if (!await mergeChunk(
-              FolderScanChunk(
-                tracks: legacyScan.tracks,
-                paths: legacyScan.paths,
-              ),
-            )) {
-              return;
-            }
-            result = NativeScanResult.success(
-              const <ScannedTrack>[],
-              legacyScan.paths,
-              failureCount: legacyScan.failureCount,
-              completenessKnown: legacyScan.completenessKnown,
-              wasCancelled: legacyScan.wasCancelled,
-            );
-          }
+    var scanResult = await _dataSource.scanFolderChunked(
+      sourceFolderPath,
+      mergeChunk,
+      onProgress: (event) {
+        if (!provider.isScanGenerationActive(generation)) return;
+        onProgress(event);
+      },
+    );
+    if (scanResult.notSupported) {
+      if (PathMatcher.isContentUri(sourceFolderPath)) {
+        final legacyScan = await _dataSource.scanFolder(sourceFolderPath);
+        if (!legacyScan.ok) {
+          scanResult = legacyScan;
         } else {
-          result = await _dataSource.scanFileSystemFolderChunked(
-            sourceFolderPath,
-            mergeChunk,
+          if (!await mergeChunk(
+            FolderScanChunk(tracks: legacyScan.tracks, paths: legacyScan.paths),
+          )) {
+            return;
+          }
+          scanResult = NativeScanResult.success(
+            const <ScannedTrack>[],
+            legacyScan.paths,
+            failureCount: legacyScan.failureCount,
+            completenessKnown: legacyScan.completenessKnown,
+            wasCancelled: legacyScan.wasCancelled,
           );
         }
+      } else {
+        scanResult = await _dataSource.scanFileSystemFolderChunked(
+          sourceFolderPath,
+          mergeChunk,
+        );
       }
-      scanResult = result;
-    } finally {
-      await worker.dispose();
     }
     if (!provider.isScanGenerationActive(generation) ||
         scanResult.wasCancelled) {
@@ -264,10 +272,14 @@ class LibraryRefreshChunkPlanner {
     retainedTrackPaths.addAll(scanResult.paths.map(PathMatcher.normalize));
     retainedEntryPaths.addAll(retainedTrackPaths);
     final allowRemoval = scanResult.isComplete && additionalFailureCount == 0;
-    final removals = allowRemoval
+    final hasRemovalWork =
+        allowRemoval &&
+        (removalCandidates.isNotEmpty ||
+            mergeContext.entrySnapshot.entriesByPath.isNotEmpty);
+    final removals = hasRemovalWork
         ? await compute(_findRefreshRemovalPaths, (
             sourceFolderPath: sourceFolderPath,
-            library: provider.library,
+            removalCandidates: removalCandidates,
             entrySnapshot: mergeContext.entrySnapshot,
             retainedTrackPaths: retainedTrackPaths,
             retainedEntryPaths: retainedEntryPaths,
@@ -302,10 +314,69 @@ class LibraryRefreshChunkPlanner {
   }
 }
 
+Map<String, List<String>> _indexRefreshRemovalCandidates(
+  ({List<String> trackPaths, List<String> sourceFolders}) payload,
+) {
+  final indexed = [
+    for (final path in payload.trackPaths)
+      (key: PathMatcher.equivalenceKey(path), path: path),
+  ]..sort((a, b) => a.key.compareTo(b.key));
+  return {
+    for (final source in payload.sourceFolders)
+      source: _tracksInRefreshSource(indexed, source),
+  };
+}
+
+List<String> _tracksInRefreshSource(
+  List<({String key, String path})> indexed,
+  String source,
+) {
+  final normalized = PathMatcher.normalize(source);
+  final key = PathMatcher.equivalenceKey(normalized);
+  final isContent = key.startsWith('content:');
+  final prefix = key.endsWith('/') || (isContent && key.endsWith(':'))
+      ? key
+      : '$key/';
+  final paths = <String>[];
+  // For non-document content URIs, PathMatcher can fall back to the raw
+  // URI prefix even when the child has a document ID.
+  if (isContent && key.contains(':content://')) {
+    return [
+      for (final candidate in indexed)
+        if (PathMatcher.isWithinOrEqualNormalized(candidate.path, normalized))
+          candidate.path,
+    ];
+  }
+  void collect(String lowerBound, bool Function(String) matches) {
+    var low = 0;
+    var high = indexed.length;
+    while (low < high) {
+      final mid = (low + high) ~/ 2;
+      if (indexed[mid].key.compareTo(lowerBound) < 0) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
+    }
+    for (var i = low; i < indexed.length && matches(indexed[i].key); i++) {
+      final candidate = indexed[i].path;
+      if (PathMatcher.isWithinOrEqualNormalized(candidate, normalized)) {
+        paths.add(candidate);
+      }
+    }
+  }
+
+  if (prefix != key) collect(key, (candidate) => candidate == key);
+  if (!key.startsWith('remote:')) {
+    collect(prefix, (candidate) => candidate.startsWith(prefix));
+  }
+  return paths;
+}
+
 ({List<String> trackPaths, List<String> entryPaths}) _findRefreshRemovalPaths(
   ({
     String sourceFolderPath,
-    List<MusicTrack> library,
+    List<String> removalCandidates,
     LibraryEntrySnapshot entrySnapshot,
     Set<String> retainedTrackPaths,
     Set<String> retainedEntryPaths,
@@ -315,10 +386,9 @@ class LibraryRefreshChunkPlanner {
   final normalizedSource = PathMatcher.normalize(payload.sourceFolderPath);
   final retainedTrackIndex = PathMembershipIndex(payload.retainedTrackPaths);
   final removedTrackPaths = <String>[];
-  for (final track in payload.library) {
-    if (PathMatcher.isWithinOrEqualNormalized(track.path, normalizedSource) &&
-        !retainedTrackIndex.containsEquivalent(track.path)) {
-      removedTrackPaths.add(track.path);
+  for (final path in payload.removalCandidates) {
+    if (!retainedTrackIndex.containsEquivalent(path)) {
+      removedTrackPaths.add(path);
     }
   }
 

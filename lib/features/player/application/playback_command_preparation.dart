@@ -680,25 +680,55 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
   }) async {
     final logicalCurrentPath =
         _playbackFacade.originalPathForRetargeted(currentPath) ?? currentPath;
-    var paths = _nativePlaybackQueuePathsFor(
+    var scope = _playbackQueueScopeFor(
       session,
       currentPath: logicalCurrentPath,
+      repositionCurrentIndex: false,
     );
-    final lease = AppCacheService.protectPaths(
-      paths.where((value) => !value.contains('://')),
+    var paths = scope.paths;
+    final hasRetargetedPaths = _playbackFacade.hasRetargetedPaths;
+
+    int computeBaseKey() => Object.hash(
+      session.nativePlaybackQueueScopeCacheKey,
+      _libraryFacade.contentRevision,
     );
-    try {
-      await _playbackFacade.validatePlaybackCachePaths(paths);
-      final scope = _playbackQueueScopeFor(
-        session,
-        currentPath: logicalCurrentPath,
-      );
-      paths = scope.paths;
-      final cacheKey = Object.hash(
-        _playbackQueueScopeKey(session, logicalCurrentPath),
-        _libraryFacade.contentRevision,
-        _libraryFacade.coverGeneration,
-      );
+
+    bool cachedQueueCoversMatch(List<Map<String, Object?>> cachedQueue) {
+      if (cachedQueue.length != paths.length) return false;
+      final customTracks =
+          session.isPlaybackQueue && !session.hasDetachedQueueTrack
+          ? session.playbackQueue!.expandedTracks
+          : session.customQueueTracks;
+      String? lastCoverPath;
+      String? lastArtUri;
+      for (var index = 0; index < paths.length; index++) {
+        final track = scope.isCustomQueue && customTracks != null
+            ? customTracks[scope.queueIndices[index]]
+            : _sessionTrackForPath(session, paths[index]);
+        final coverPath = resolvedPlaybackCoverPathForTrack(track);
+        final String? artUri;
+        if (coverPath == null) {
+          artUri = track?.remoteCoverUrl;
+        } else if (coverPath == lastCoverPath) {
+          artUri = lastArtUri;
+        } else {
+          lastCoverPath = coverPath;
+          lastArtUri = Uri.file(coverPath).toString();
+          artUri = lastArtUri;
+        }
+        final expectedArtUri = artUri != null && artUri.isNotEmpty
+            ? artUri
+            : null;
+        if (cachedQueue[index]['artUri'] != expectedArtUri) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    if (!hasRetargetedPaths) {
+      final baseKey = computeBaseKey();
+      final cacheKey = Object.hash(baseKey, _libraryFacade.coverGeneration);
       final cached = session.nativePlaybackQueueCache;
       if (session.nativePlaybackQueueCacheKey == cacheKey) {
         if (cached != null) {
@@ -709,7 +739,55 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         }
         final pending = session.nativePlaybackQueueFuture;
         if (pending != null) return pending;
+      } else if (cached != null &&
+          session.nativePlaybackQueueBaseKey == baseKey &&
+          cachedQueueCoversMatch(cached)) {
+        session.nativePlaybackQueueCacheKey = cacheKey;
+        if (_isRegisteredSession(session)) {
+          _syncActivePlaybackCacheLease(session);
+        }
+        return cached;
       }
+    }
+
+    final lease = AppCacheService.protectPaths(
+      paths.where((value) => !value.contains('://')),
+    );
+    try {
+      if (hasRetargetedPaths) {
+        final retargetRevisionBefore = _playbackFacade.retargetRevision;
+        await _playbackFacade.validatePlaybackCachePaths(paths);
+        if (_playbackFacade.retargetRevision != retargetRevisionBefore) {
+          scope = _playbackQueueScopeFor(
+            session,
+            currentPath: logicalCurrentPath,
+            repositionCurrentIndex: false,
+          );
+          paths = scope.paths;
+        }
+      }
+      final baseKey = computeBaseKey();
+      final cacheKey = Object.hash(baseKey, _libraryFacade.coverGeneration);
+      final cached = session.nativePlaybackQueueCache;
+      if (session.nativePlaybackQueueCacheKey == cacheKey) {
+        if (cached != null) {
+          if (_isRegisteredSession(session)) {
+            _syncActivePlaybackCacheLease(session);
+          }
+          return cached;
+        }
+        final pending = session.nativePlaybackQueueFuture;
+        if (pending != null) return pending;
+      } else if (cached != null &&
+          session.nativePlaybackQueueBaseKey == baseKey &&
+          cachedQueueCoversMatch(cached)) {
+        session.nativePlaybackQueueCacheKey = cacheKey;
+        if (_isRegisteredSession(session)) {
+          _syncActivePlaybackCacheLease(session);
+        }
+        return cached;
+      }
+      session.nativePlaybackQueueBaseKey = baseKey;
       session.nativePlaybackQueueCacheKey = cacheKey;
       session.nativePlaybackQueueCache = null;
       Future<List<Map<String, Object?>>> buildQueue() async {
@@ -783,16 +861,6 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       if (scopedIndex >= 0) return scopedIndex;
     }
     return scope.currentIndex;
-  }
-
-  List<String> _nativePlaybackQueuePathsFor(
-    PlaybackSession session, {
-    required String currentPath,
-  }) {
-    return _playbackQueueScopeFor(
-      session,
-      currentPath: _playbackFacade.resolveRetargetedPath(currentPath),
-    ).paths;
   }
 
   PlaybackQueueScope _playbackQueueScopeFor(

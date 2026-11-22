@@ -116,8 +116,7 @@ class PlaybackSession {
     _customQueueTracks = tracks == null ? null : immutableList(tracks);
     _queueVersion++;
     _trackPathMap = null;
-    nativePlaybackQueueCacheKey = null;
-    nativePlaybackQueueCache = null;
+    clearNativePlaybackQueueCache();
   }
 
   PlaybackQueueDefinition? _playbackQueue;
@@ -129,8 +128,7 @@ class PlaybackSession {
     if (!entriesChanged) return;
     _queueVersion++;
     _trackPathMap = null;
-    nativePlaybackQueueCacheKey = null;
-    nativePlaybackQueueCache = null;
+    clearNativePlaybackQueueCache();
   }
 
   Map<String, MusicTrack> get _trackMap {
@@ -206,11 +204,18 @@ class PlaybackSession {
   bool? _pendingPlayingIntent;
   int _lastHandledCompletionGeneration = -1;
   bool _isAdvancingAfterCompletion = false;
+  int? nativePlaybackQueueBaseKey;
   int? nativePlaybackQueueCacheKey;
   List<Map<String, Object?>>? nativePlaybackQueueCache;
   int? nativePlaybackQueueScopeCacheKey;
   PlaybackQueueScope? nativePlaybackQueueScopeCache;
   Future<List<Map<String, Object?>>>? nativePlaybackQueueFuture;
+
+  void clearNativePlaybackQueueCache() {
+    nativePlaybackQueueBaseKey = null;
+    nativePlaybackQueueCacheKey = null;
+    nativePlaybackQueueCache = null;
+  }
   Duration lastKnownPosition = Duration.zero;
   Duration? duration;
   Duration bufferedPosition = Duration.zero;

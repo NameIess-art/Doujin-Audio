@@ -1078,17 +1078,30 @@ class CoverArtworkCacheService {
     bool affected(String key) =>
         _isCoverIdentityInScopes(_coverIdentity(key), identities);
 
-    // Scan the catalog once, rather than once for every imported track/scope.
-    final storeKeys = <String>{...normalizedScopes.map(_folderStoreKey)};
-    for (final track in _libraryService.library) {
-      if (!affected(track.path) &&
-          (track.groupKey.isEmpty || !affected(track.groupKey))) {
-        continue;
+    // Match canonicalized store bindings directly instead of scanning every
+    // track in the catalog on each scope invalidation.
+    if (_artworkStore.isInitialized && _artworkStore.hasBindings) {
+      final storeKeys = <String>{...normalizedScopes.map(_folderStoreKey)};
+      if (identities.any((id) => id.startsWith('content:'))) {
+        // Opaque SAF track URIs may only match a scope via their groupKey.
+        for (final track in _libraryService.library) {
+          if (track.groupKey.isEmpty ||
+              track.groupKey == LibraryOrganizer.singleFilesGroupKey ||
+              !affected(track.groupKey)) {
+            continue;
+          }
+          final key = coverSearchKeyForTrack(track);
+          if (key != null) storeKeys.add(_trackStoreKey(key, track));
+        }
       }
-      final key = coverSearchKeyForTrack(track);
-      if (key != null) storeKeys.add(_trackStoreKey(key, track));
+      unawaited(
+        _artworkStore.invalidateMatching(
+          storeKeys,
+          trackIdentityMatches: (identity) =>
+              _isCoverIdentityInScopes(identity, identities),
+        ),
+      );
     }
-    unawaited(_artworkStore.invalidate(storeKeys));
 
     final cachedKeys = <String>{
       ...normalizedScopes,

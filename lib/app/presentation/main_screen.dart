@@ -125,6 +125,9 @@ class MainScreen extends ConsumerStatefulWidget {
 class _MainScreenState extends ConsumerState<MainScreen>
     with WidgetsBindingObserver {
   static const double _desktopBreakpoint = 980;
+  static final Listenable _emptyListenable = Listenable.merge(
+    const <Listenable?>[],
+  );
   double _stablePortraitTopPadding = 0;
   bool _isMenuCollapsed = false;
   (bool, bool)? _previousNavigationLayout;
@@ -1029,9 +1032,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
       // Only landscape changes the main layout when a detail pane opens.
       // WorkDetailPane owns route visibility; portrait push/pop must retain
       // the main navigator and dock instead of rebuilding them at both ends.
-      listenable: Listenable.merge([
-        if (isLandscape) detailNavigation?.isOpenListenable,
-      ]),
+      listenable: isLandscape
+          ? (detailNavigation?.isOpenListenable ?? _emptyListenable)
+          : _emptyListenable,
       builder: (context, _) {
         final splitContent = isLandscape && (detailNavigation?.isOpen ?? false);
         final forcedCollapsed = splitContent && width - 260 < 641;

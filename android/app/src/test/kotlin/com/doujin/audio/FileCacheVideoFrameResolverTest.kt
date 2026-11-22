@@ -1,5 +1,7 @@
 package com.doujin.audio
 
+import android.graphics.Bitmap
+import android.graphics.Color
 import com.doujin.audio.metadata.VideoFrameSize
 import com.doujin.audio.metadata.calculateVideoFrameSize
 import com.doujin.audio.metadata.shouldDecodeLegacyVideoFrame
@@ -94,5 +96,27 @@ class FileCacheVideoFrameResolverTest {
             videoFrameCacheKey("/media/work.mp4", 100L) ==
                 videoFrameCacheKey("/media/work.mp4", 101L)
         )
+    }
+
+    @Test
+    fun `blank bitmap detection uses bulk pixel read accurately`() {
+        val resolver = FileCacheVideoFrameResolver(
+            RuntimeEnvironment.getApplication(),
+            temporaryFolder.newFolder(),
+            {},
+            { null }
+        )
+        val dark = Bitmap.createBitmap(20, 20, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLACK) }
+        val bright = Bitmap.createBitmap(20, 20, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) }
+        val mid = Bitmap.createBitmap(20, 20, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.rgb(120, 120, 120)) }
+        try {
+            assertTrue(resolver.isBlankBitmap(dark))
+            assertTrue(resolver.isBlankBitmap(bright))
+            assertFalse(resolver.isBlankBitmap(mid))
+        } finally {
+            dark.recycle()
+            bright.recycle()
+            mid.recycle()
+        }
     }
 }

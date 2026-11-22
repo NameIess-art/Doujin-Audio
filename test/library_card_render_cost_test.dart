@@ -90,9 +90,21 @@ void main() {
         (add, Icons.add_circle_rounded, Icons.play_arrow_rounded),
         (play, Icons.play_arrow_rounded, Icons.add_circle_rounded),
       ]) {
+        await mouse.moveTo(Offset.zero);
+        await tester.pumpAndSettle();
         final center = tester.getCenter(action);
+        final otherAction = find.ancestor(
+          of: find.byIcon(otherIcon),
+          matching: find.byType(InkResponse),
+        );
+        final retainedOtherAction = tester.widget<InkResponse>(otherAction);
         await mouse.moveTo(center);
         await tester.pump();
+        await tester.pump(const Duration(milliseconds: 15));
+        expect(
+          tester.widget<InkResponse>(otherAction),
+          same(retainedOtherAction),
+        );
         for (var frame = 0; frame < 10; frame++) {
           await tester.pump(const Duration(milliseconds: 15));
           expect(scaleOf(tester, activeIcon), 1.0);

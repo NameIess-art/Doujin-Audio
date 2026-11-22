@@ -944,6 +944,82 @@ void main() {
       );
     }
   });
+
+  test(
+    'setSystemAccentColor updates listenable without theme churn when disabled',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      await AppPreferences.init();
+      final provider = ThemeProvider();
+      addTearDown(provider.dispose);
+
+      final initialLight = provider.lightTheme;
+      var providerNotifications = 0;
+      Color? observedAccent;
+      provider.addListener(() => providerNotifications++);
+      provider.systemAccentColorListenable.addListener(
+        () => observedAccent = provider.systemAccentColorListenable.value,
+      );
+
+      expect(provider.useSystemAccentColor, isFalse);
+      provider.setSystemAccentColor(const Color(0xFF1E88E5));
+
+      expect(provider.systemAccentColor, const Color(0xFF1E88E5));
+      expect(observedAccent, const Color(0xFF1E88E5));
+      expect(providerNotifications, 0);
+      expect(provider.lightTheme, same(initialLight));
+
+      expect(await provider.setUseSystemAccentColor(true), isTrue);
+      expect(providerNotifications, 1);
+
+      provider.setSystemAccentColor(const Color(0xFF43A047));
+      expect(provider.systemAccentColor, const Color(0xFF43A047));
+      expect(observedAccent, const Color(0xFF43A047));
+      expect(providerNotifications, 2);
+    },
+  );
+
+  test(
+    'windowBorderColorFor matches light and dark color schemes across modes',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      await AppPreferences.init();
+      final provider = ThemeProvider();
+      addTearDown(provider.dispose);
+
+      int expectedBorder(ColorScheme colors) {
+        final border = Color.alphaBlend(
+          colors.outlineVariant.withValues(
+            alpha: colors.brightness == Brightness.dark ? 0.45 : 0.65,
+          ),
+          colors.surface,
+        );
+        return border.toARGB32() & 0xffffff;
+      }
+
+      for (final pureBlack in [false, true]) {
+        await provider.setPureBlackTheme(pureBlack);
+        expect(
+          provider.windowBorderColorFor(Brightness.light),
+          expectedBorder(provider.lightTheme.colorScheme),
+        );
+        expect(
+          provider.windowBorderColorFor(Brightness.dark),
+          expectedBorder(provider.darkTheme.colorScheme),
+        );
+      }
+
+      await provider.setCustomThemeColor(const Color(0xFF2E9C8B));
+      expect(
+        provider.windowBorderColorFor(Brightness.light),
+        expectedBorder(provider.lightTheme.colorScheme),
+      );
+      expect(
+        provider.windowBorderColorFor(Brightness.dark),
+        expectedBorder(provider.darkTheme.colorScheme),
+      );
+    },
+  );
 }
 
 double _contrastRatio(Color foreground, Color background) {

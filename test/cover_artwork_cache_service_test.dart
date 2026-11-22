@@ -214,7 +214,7 @@ void main() {
             }),
           );
           final library = LibraryService()..library.add(track);
-          if (kind == 'folderCard') library.watchedFolders.add(track.groupKey);
+          if (kind == 'folderCard') library.addWatchedFolder(track.groupKey);
           addTearDown(library.dispose);
           final details = _MemoryAudioDetailCacheService();
           if (kind == 'card' ||
@@ -385,7 +385,7 @@ void main() {
     expect(facade.library, hasLength(360));
   });
 
-  test('catalog invalidation reads the catalog once for a large batch', () {
+  test('catalog invalidation skips scanning the catalog for local batches', () {
     final tracks = [
       for (var index = 0; index < 2000; index++)
         _track(path: '/library/work/$index.mp3', groupKey: '/library/work'),
@@ -398,7 +398,7 @@ void main() {
 
     cache.invalidateCatalogTracks(tracks.sublist(0, 120));
 
-    expect(counted.reads, tracks.length);
+    expect(counted.reads, 0);
     expect(cache.generation, 1);
     expect(cache.revisionForScope('/library/work').revision, 1);
   });
@@ -744,7 +744,7 @@ void main() {
       );
       addTearDown(() => support.delete(recursive: true));
       final folder = '${support.path}${Platform.pathSeparator}work';
-      final library = LibraryService()..watchedFolders.add(folder);
+      final library = LibraryService()..addWatchedFolder(folder);
       final repository = _MemoryTestPersistenceRepository();
       final store = CoverArtworkStore(persistentDirectory: () async => support);
       final source = await store.putBytes(
@@ -788,7 +788,7 @@ void main() {
       ))!;
       final folder = '${support.path}/work';
       final target = AudioDetailTarget.libraryRootFolder(folder);
-      final library = LibraryService()..watchedFolders.add(folder);
+      final library = LibraryService()..addWatchedFolder(folder);
       final details = _MemoryAudioDetailCacheService();
       final cache = CoverArtworkCacheService(
         libraryService: library,
@@ -1014,7 +1014,7 @@ void main() {
       final folder = cover.parent.path;
       final repository = _MemoryTestPersistenceRepository();
       final cache = CoverArtworkCacheService(
-        libraryService: LibraryService()..watchedFolders.add(folder),
+        libraryService: LibraryService()..addWatchedFolder(folder),
         databaseRepository: repository,
         fileCacheGateway: _FakeFileCachePlatformGateway(coversByPath: const {}),
       );
@@ -1183,7 +1183,7 @@ void main() {
     () async {
       final cover = await _temporaryCoverFile('folder_detail_read');
       final folder = cover.parent.path;
-      final library = LibraryService()..watchedFolders.add(folder);
+      final library = LibraryService()..addWatchedFolder(folder);
       addTearDown(library.dispose);
       final details = _MemoryAudioDetailCacheService();
       addTearDown(details.dispose);
@@ -1808,7 +1808,7 @@ void main() {
     final trackPath = '${directory.path}${Platform.pathSeparator}track.flac';
     final track = _track(path: trackPath, groupKey: directory.path);
     final library = LibraryService()
-      ..watchedFolders.add(directory.path)
+      ..addWatchedFolder(directory.path)
       ..library.add(track);
     final gateway = _FakeFileCachePlatformGateway(
       coversByPath: <String, String>{trackPath: cover.path},
@@ -2253,7 +2253,7 @@ void main() {
       await File(folderCover).writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
 
       final library = LibraryService()
-        ..watchedFolders.add(directory.path)
+        ..addWatchedFolder(directory.path)
         ..library.add(
           _track(path: trackPath, groupKey: '__single_files__', isSingle: true),
         );
@@ -2286,7 +2286,7 @@ void main() {
     await File(folderCover).writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
 
     final library = LibraryService()
-      ..watchedFolders.add(directory.path)
+      ..addWatchedFolder(directory.path)
       ..library.add(
         _track(path: trackPath, groupKey: '__single_files__', isSingle: true),
       );
@@ -2332,7 +2332,7 @@ void main() {
 
       final track = _track(path: trackPath, groupKey: directory.path);
       final library = LibraryService()
-        ..watchedFolders.add(directory.path)
+        ..addWatchedFolder(directory.path)
         ..library.add(track);
       final gateway = _FakeFileCachePlatformGateway(coversByPath: const {});
       final cache = CoverArtworkCacheService(
@@ -2380,7 +2380,7 @@ void main() {
 
       final track = _track(path: trackPath, groupKey: directory.path);
       final library = LibraryService()
-        ..watchedFolders.add(directory.path)
+        ..addWatchedFolder(directory.path)
         ..library.add(track);
       var preferEmbedded = true;
       final gateway = _FakeFileCachePlatformGateway(
@@ -2438,7 +2438,7 @@ void main() {
 
       final track = _track(path: trackPath, groupKey: albumDir.path);
       final library = LibraryService()
-        ..watchedFolders.add(rootDir.path)
+        ..addWatchedFolder(rootDir.path)
         ..library.add(track);
       final gateway = _FakeFileCachePlatformGateway(
         coversByPath: const <String, String>{},
@@ -2506,7 +2506,7 @@ void main() {
 
       final track = _track(path: trackPath, groupKey: folderUri);
       final library = LibraryService()
-        ..watchedFolders.add(treeUri)
+        ..addWatchedFolder(treeUri)
         ..library.add(track)
         ..tracksByGroup[folderUri] = <MusicTrack>[track];
 
@@ -2560,7 +2560,7 @@ void main() {
         isVideo: true,
       );
       final library = LibraryService()
-        ..watchedFolders.add(directory.path)
+        ..addWatchedFolder(directory.path)
         ..library.add(track);
       var preferEmbedded = true;
       final gateway = _FakeFileCachePlatformGateway(
@@ -2620,7 +2620,7 @@ void main() {
         isVideo: true,
       );
       final library = LibraryService()
-        ..watchedFolders.add(directory.path)
+        ..addWatchedFolder(directory.path)
         ..library.add(track);
       var preferEmbedded = true;
       final cache = CoverArtworkCacheService(
@@ -2675,7 +2675,7 @@ void main() {
         isVideo: true,
       );
       final library = LibraryService()
-        ..watchedFolders.add(directory.path)
+        ..addWatchedFolder(directory.path)
         ..library.add(track);
       final gateway = _FakeFileCachePlatformGateway(
         coversByPath: const {},
@@ -2981,6 +2981,64 @@ void main() {
         ],
       );
       expect(peak, 4);
+    },
+  );
+
+  test(
+    'large folder cover lookups reuse path and group ranges in catalog order',
+    () async {
+      const windowsScope = r'c:\work\first';
+      const safRoot = 'content://provider/tree/primary%3A';
+      const safScope = '$safRoot::Second';
+      final grouped = _track(
+        path: r'C:\Elsewhere\two.flac',
+        groupKey: r' C:\Work\First\Disc ',
+      );
+      final nested = _track(
+        path: r'C:\Work\First\nested\one.flac',
+        groupKey: r'C:\Elsewhere',
+      );
+      final second = _track(
+        path: '$safRoot/document/primary%3ASecond%2Fthree.flac',
+        groupKey: '$safRoot::Elsewhere',
+      );
+      final tracks = _CountingTrackList([
+        grouped,
+        for (var index = 0; index < 520; index++)
+          _track(
+            path: 'C:/Work/FirstSibling/$index.flac',
+            groupKey: 'C:/Work/FirstSibling',
+          ),
+        second,
+        nested,
+      ]);
+      final library = LibraryService()..library = tracks;
+      addTearDown(library.dispose);
+      final gateway = _FakeFileCachePlatformGateway(coversByPath: {});
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        fileCacheGateway: gateway,
+        filesystemImageScanner: (_, _) async => [],
+      );
+      addTearDown(cache.dispose);
+
+      await cache.discoverCoverCandidatesInFolder(windowsScope);
+      expect(gateway.resolveTrackCoverPaths, [grouped.path, nested.path]);
+
+      tracks.reads = 0;
+      await cache.discoverCoverCandidatesInFolder(safScope);
+      expect(gateway.resolveTrackCoverPaths.last, second.path);
+      expect(tracks.reads, lessThan(8));
+
+      gateway.resolveTrackCoverPaths.clear();
+      expect(await cache.futureForFolder(r'C:\Work'), isNull);
+      expect(gateway.resolveTrackCoverPaths, [tracks[1].path, tracks[2].path]);
+
+      const moved = '$safRoot/document/primary%3AThird%2Fthree.flac';
+      tracks[521] = _track(path: moved, groupKey: second.groupKey);
+      library.markStructureChanged();
+      await cache.discoverCoverCandidatesInFolder('$safRoot::Third');
+      expect(gateway.resolveTrackCoverPaths.last, moved);
     },
   );
 

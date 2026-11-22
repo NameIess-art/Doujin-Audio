@@ -350,13 +350,13 @@ void main() {
       (tester) async {
         final fixture = AppRuntimeWidgetTestFixture();
         final controller = _TagController(createTestAsmrServices(), count: 0);
-        for (var i = 0; i < 5000; i++) {
-          final key = 'online:$i';
-          controller._state.tags[key] = AsmrTag(
-            key: key,
-            name: 'Element ${i.toString().padLeft(4, '0')}',
-          );
-        }
+        controller._state.mergeTags([
+          for (var i = 0; i < 5000; i++)
+            AsmrTag(
+              key: 'online:$i',
+              name: 'Element ${i.toString().padLeft(4, '0')}',
+            ),
+        ]);
         addTearDown(fixture.dispose);
         addTearDown(controller.dispose);
         tester.view.physicalSize = Size(

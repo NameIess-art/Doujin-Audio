@@ -28,6 +28,7 @@ import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/widgets/app_search_suggestions.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/file_tree_row.dart';
+import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:flutter/material.dart';
@@ -298,7 +299,9 @@ void main() {
       final delete = i18n.tr('my_history_delete');
       final isWindows =
           Theme.of(tester.element(entry)).platform == TargetPlatform.windows;
-      final deleteAction = isWindows ? find.text(delete) : find.byTooltip(delete);
+      final deleteAction = isWindows
+          ? find.text(delete)
+          : find.byTooltip(delete);
       if (isWindows) {
         await tester.tap(
           entry,
@@ -542,7 +545,7 @@ void main() {
           isSingle: false,
         );
         final catalog = LibraryService()
-          ..watchedFolders.add(work.path)
+          ..addWatchedFolder(work.path)
           ..library.add(track);
         final cache = (await tester.runAsync(() async {
           final cache = CoverArtworkCacheService(
@@ -565,7 +568,7 @@ void main() {
         addTearDown(fixture.dispose);
         addTearDown(catalog.dispose);
         addTearDown(() => directory.delete(recursive: true));
-        fixture.libraryService.watchedFolders.add(work.path);
+        fixture.libraryService.addWatchedFolder(work.path);
         fixture.libraryService.library.add(track);
         tester.view.physicalSize = const Size(960, 1400);
         tester.view.devicePixelRatio = 1;
@@ -1111,11 +1114,38 @@ void main() {
             );
             final history = find.byKey(const ValueKey('my-skeleton-history'));
             final rows = tester.widget<FileTreeSkeleton>(history);
+            expect(
+              find.descendant(
+                of: skeleton,
+                matching: find.byType(ShimmerLoader),
+              ),
+              findsNothing,
+            );
             expect(rows.rowHeight, greaterThanOrEqualTo(52));
             expect(
               tester.getSize(history).height,
               closeTo(rows.rowHeight * 3, .1),
             );
+            final interestCard = find.ancestor(
+              of: find.byKey(
+                ValueKey(
+                  'my-section-header-${fixture.languageProvider.tr('my_interests')}',
+                ),
+              ),
+              matching: find.byType(Card),
+            );
+            final interestShimmers = tester
+                .widgetList<ShimmerContainer>(
+                  find.descendant(
+                    of: interestCard,
+                    matching: find.byType(ShimmerContainer),
+                  ),
+                )
+                .toList();
+            expect(interestShimmers, hasLength(2));
+            expect(interestShimmers.last.width, 120);
+            expect(interestShimmers.last.height, 32);
+            expect(interestShimmers.last.borderRadius, 8);
             final timeHeader = find.byKey(
               ValueKey(
                 'my-section-header-${fixture.languageProvider.tr('my_listening_time')}',
@@ -1525,10 +1555,12 @@ void main() {
               )
               .where((t) => !t.transformHitTests)
               .fold<double>(1.0, (scale, t) => scale * t.transform.entry(0, 0));
-          final material = find.ancestor(
-            of: ink,
-            matching: find.byType(Material, skipOffstage: false),
-          ).first;
+          final material = find
+              .ancestor(
+                of: ink,
+                matching: find.byType(Material, skipOffstage: false),
+              )
+              .first;
           Color? background() => tester.widget<Material>(material).color;
           final restingBackground = background();
           final gesture = await tester.startGesture(tester.getCenter(entry));
@@ -1822,15 +1854,15 @@ void main() {
           '$type chips keep draft positions and filter exclusions: $excluded on $platform',
           (tester) async {
             final fixture = AppRuntimeWidgetTestFixture();
-            final controller = _InterestController(createTestAsmrServices());
+            final controller = _InterestController(
+              createTestAsmrServices(),
+              seedSleep: false,
+            );
             final preferences = switch (type) {
               MyInterestType.tags => controller.state,
               MyInterestType.voiceActors => controller.voices,
               MyInterestType.circles => controller.circles,
             };
-            preferences.tags.clear();
-            preferences.learned.clear();
-            preferences.manualInterests.clear();
             final alpha = preferences.resolve('Alpha');
             final manual = preferences.resolve('Manual');
             final automatic = preferences.resolve('Z automatic');
@@ -1845,7 +1877,7 @@ void main() {
             preferences.manualInterests.addAll({manual, automatic});
             preferences.excluded.addAll({hidden, hiddenAutomatic});
             for (final key in ['online:1', 'online:2']) {
-              preferences.tags[key] = AsmrTag(key: key, name: 'Same name');
+              preferences.mergeTag(AsmrTag(key: key, name: 'Same name'));
             }
             addTearDown(fixture.dispose);
             addTearDown(controller.dispose);
@@ -2347,12 +2379,13 @@ class _CountingListeningDays extends ListBase<ListeningDay> {
 }
 
 class _InterestController extends AsmrLibraryController {
-  _InterestController(TestAsmrServices services)
+  _InterestController(TestAsmrServices services, {bool seedSleep = true})
     : super(
         preferencesStore: services.preferencesStore,
         remoteCatalogService: services.remoteCatalogService,
         accountSyncService: services.accountSyncService,
       ) {
+    if (!seedSleep) return;
     final sleep = state.resolve('Sleep');
     state.setInterested(sleep, true);
     state.learned[sleep] = 1;

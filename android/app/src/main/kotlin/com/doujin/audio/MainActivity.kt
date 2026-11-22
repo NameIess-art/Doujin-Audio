@@ -60,7 +60,6 @@ open class MainActivity : FlutterFragmentActivity() {
     private val subtitleOverlayCoordinator by lazy { SubtitleOverlayCoordinator(this) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        applyStartupWindowTheme()
         super.onCreate(savedInstanceState)
         applyStartupWindowTheme()
         setupSplashScreenExitAnimation()

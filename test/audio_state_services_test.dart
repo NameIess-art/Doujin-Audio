@@ -1104,7 +1104,7 @@ void main() {
 
       service
         ..watchedLibraries.add(root)
-        ..watchedFolders.add(albumTree)
+        ..addWatchedFolder(albumTree)
         ..excludedLibraryFolders[root] = <String>{albumDocument}
         ..excludedLibraryTracks[root] = <String>{
           '$albumDocument/document/primary%3AMusic%2FAlbum%2F01.mp3',
@@ -1195,7 +1195,7 @@ void main() {
 
       service
         ..library.addAll([])
-        ..watchedFolders.add('/music')
+        ..replaceWatchedFolders(['/music'])
         ..watchedLibraries.add('/library')
         ..isScanning = true
         ..isBackgroundScanning = true

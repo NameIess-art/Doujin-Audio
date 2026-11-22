@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 String normalizeAsmrTag(String value) => value.trim().toLowerCase();
 
 class AsmrTag {
@@ -33,37 +35,116 @@ class AsmrTagInterest {
   final double weight;
 }
 
+class _AsmrInterestDirectory {
+  _AsmrInterestDirectory([this.entries = const {}, this.localKeys = const {}]);
+
+  static final Expando<Map<String, String>> _aliasToKeyCache =
+      Expando<Map<String, String>>('asmr_interest_alias_to_key');
+
+  final Map<String, AsmrTag> entries;
+  final Set<String> localKeys;
+  late final Map<String, AsmrTag> view = UnmodifiableMapView(entries);
+  bool shared = true;
+
+  Map<String, String> get aliasToKey {
+    final cached = _aliasToKeyCache[this];
+    if (cached != null) return cached;
+    final index = <String, String>{};
+    for (final tag in entries.values) {
+      for (final alias in tag.aliases) {
+        index.putIfAbsent(normalizeAsmrTag(alias), () => tag.key);
+      }
+    }
+    return _aliasToKeyCache[this] = index;
+  }
+
+  void clearAliasCache() {
+    _aliasToKeyCache[this] = null;
+  }
+
+  _AsmrInterestDirectory copy() {
+    final copied = _AsmrInterestDirectory(Map.of(entries), Set.of(localKeys))
+      ..shared = false;
+    final cached = _aliasToKeyCache[this];
+    if (cached != null) {
+      _aliasToKeyCache[copied] = Map.of(cached);
+    }
+    return copied;
+  }
+
+  void addLocal(AsmrTag tag, String alias) {
+    entries[tag.key] = tag;
+    localKeys.add(tag.key);
+    if (tag.aliases.isNotEmpty) _aliasToKeyCache[this]?[alias] = tag.key;
+  }
+}
+
 /// Persisted taste signals and directory share stable keys across content languages.
 class AsmrTagPreferences {
   AsmrTagPreferences({this.limit = 20}) : assert(limit > 0);
   static const updatedAtMsKey = 'updatedAtMs';
+  static const _separateCatalogKey = 'separateCatalog';
 
   final int limit;
-  final Map<String, AsmrTag> tags = {};
+  _AsmrInterestDirectory _directory = _AsmrInterestDirectory();
+  Map<String, AsmrTag> get tags => _directory.view;
   final Map<String, double> learned = {};
   final Set<String> manualInterests = {};
   final Set<String> excluded = {};
   final Map<String, int> consumedSequences = {};
-  bool catalogComplete = false;
+  ({Set<String> keys, Set<String> aliases})? _cachedExclusions;
+  bool _catalogComplete = false;
+  bool _catalogChanged = false;
+  String? _storedCatalogKey;
   int? _updatedAtMs;
+
+  bool get catalogComplete => _catalogComplete;
+  set catalogComplete(bool value) {
+    if (value == _catalogComplete) return;
+    _catalogComplete = value;
+    _catalogChanged = true;
+  }
+
+  bool needsCatalogSave(String key) =>
+      _catalogChanged ||
+      (_storedCatalogKey != key &&
+          (catalogComplete ||
+              _directory.entries.length > _directory.localKeys.length));
+
+  void markCatalogSaved(String key) {
+    _storedCatalogKey = key;
+    _catalogChanged = false;
+  }
+
+  _AsmrInterestDirectory get _editableDirectory {
+    if (_directory.shared) _directory = _directory.copy();
+    return _directory;
+  }
 
   String resolve(String name) {
     final normalized = normalizeAsmrTag(name);
-    if (tags.containsKey(name)) return name;
+    if (_directory.entries.containsKey(name)) return name;
     final directLocal = 'local:$normalized';
-    if (tags.containsKey(directLocal)) return directLocal;
-    for (final tag in tags.values) {
-      if (tag.aliases.any((alias) => normalizeAsmrTag(alias) == normalized)) {
-        return tag.key;
-      }
-    }
-    tags.putIfAbsent(directLocal, () => AsmrTag(key: directLocal, name: name.trim()));
+    if (_directory.entries.containsKey(directLocal)) return directLocal;
+    final aliasKey = _directory.aliasToKey[normalized];
+    if (aliasKey != null) return aliasKey;
+    final directory = _editableDirectory;
+    // Keep an already-built index current when a listening batch adds names.
+    directory.addLocal(
+      AsmrTag(key: directLocal, name: name.trim()),
+      normalized,
+    );
     return directLocal;
   }
 
   void mergeTag(AsmrTag tag) => mergeTags([tag]);
 
   void mergeTags(Iterable<AsmrTag> incoming) {
+    if (incoming.isEmpty) return;
+    _cachedExclusions = null;
+    final directory = _editableDirectory;
+    final entries = directory.entries;
+    directory.clearAliasCache();
     final localAliases = <String, Set<String>>{};
     final localOrder = <String, int>{};
     var nextOrder = 0;
@@ -83,8 +164,8 @@ class AsmrTagPreferences {
       }
     }
 
-    for (final tag in tags.values) {
-      index(tag);
+    for (final key in directory.localKeys) {
+      index(entries[key]!);
     }
     for (final tag in incoming) {
       final keys = <String>{
@@ -94,9 +175,10 @@ class AsmrTagPreferences {
       // Match the previous sequential merge order when several locals share aliases.
       final ordered = keys.toList()
         ..sort((a, b) => localOrder[a]!.compareTo(localOrder[b]!));
-      final aliases = {...tag.aliases, ...?tags[tag.key]?.aliases};
+      final aliases = {...tag.aliases, ...?entries[tag.key]?.aliases};
       for (final key in ordered) {
-        final previous = tags.remove(key)!;
+        final previous = entries.remove(key)!;
+        directory.localKeys.remove(key);
         unindex(previous);
         localOrder.remove(key);
         aliases.addAll(previous.aliases);
@@ -110,7 +192,12 @@ class AsmrTagPreferences {
         onlineId: tag.onlineId,
         aliases: aliases,
       );
-      tags[tag.key] = merged;
+      entries[tag.key] = merged;
+      if (tag.key.startsWith('local:')) {
+        directory.localKeys.add(tag.key);
+      } else {
+        _catalogChanged = true;
+      }
       index(merged);
     }
   }
@@ -211,18 +298,25 @@ class AsmrTagPreferences {
   }) {
     if (excluded.isEmpty) return false;
     if (ids.any((id) => excluded.contains('online:$id'))) return true;
-    final normalizedNames = <String>[];
-    for (final name in names) {
-      final normalized = normalizeAsmrTag(name);
-      if (normalized.isNotEmpty) normalizedNames.add(normalized);
+    if (names.isEmpty) return false;
+    final aliases = _exclusionAliases;
+    return names.any((name) => aliases.contains(normalizeAsmrTag(name)));
+  }
+
+  Set<String> get _exclusionAliases {
+    final cached = _cachedExclusions;
+    if (cached != null &&
+        cached.keys.length == excluded.length &&
+        excluded.containsAll(cached.keys)) {
+      return cached.aliases;
     }
-    if (normalizedNames.isEmpty) return false;
     final excludedAliases = <String>{
       for (final key in excluded)
         for (final alias in tags[key]?.aliases ?? const <String>[])
           normalizeAsmrTag(alias),
     };
-    return normalizedNames.any(excludedAliases.contains);
+    _cachedExclusions = (keys: Set.of(excluded), aliases: excludedAliases);
+    return excludedAliases;
   }
 
   Map<String, double> get recommendationWeights =>
@@ -256,34 +350,72 @@ class AsmrTagPreferences {
   }
 
   AsmrTagPreferences copy() {
+    _directory.shared = true;
     final next = AsmrTagPreferences(limit: limit)
-      ..tags.addAll(tags)
+      .._directory = _directory
       ..learned.addAll(learned)
       ..manualInterests.addAll(manualInterests)
       ..excluded.addAll(excluded)
       ..consumedSequences.addAll(consumedSequences)
       .._updatedAtMs = _updatedAtMs
-      ..catalogComplete = catalogComplete;
+      .._catalogComplete = _catalogComplete
+      .._catalogChanged = _catalogChanged
+      .._storedCatalogKey = _storedCatalogKey;
     return next;
   }
 
   Map<String, Object?> toJson() => {
     'tags': tags.values.map((e) => e.toJson()).toList(),
+    'complete': catalogComplete,
+    ..._tasteJson(),
+  };
+
+  Map<String, Object?> toPreferenceJson() => {
+    _separateCatalogKey: true,
+    'tags': [
+      for (final key in _directory.localKeys) _directory.entries[key]!.toJson(),
+    ],
+    ..._tasteJson(),
+  };
+
+  Map<String, Object?> toCatalogJson() => {
+    'tags': [
+      for (final entry in _directory.entries.entries)
+        if (!_directory.localKeys.contains(entry.key)) entry.value.toJson(),
+    ],
+    'complete': catalogComplete,
+  };
+
+  Map<String, Object?> _tasteJson() => {
     'learned': learned,
     'manualInterests': manualInterests.toList(),
     'excluded': excluded.toList(),
     'sequences': consumedSequences,
-    'complete': catalogComplete,
     'limit': limit,
     if (_updatedAtMs != null) updatedAtMsKey: _updatedAtMs,
   };
-  factory AsmrTagPreferences.fromJson(Map<String, dynamic> json) {
+  factory AsmrTagPreferences.fromJson(
+    Map<String, dynamic> json, {
+    Map<String, dynamic>? catalog,
+    int? limit,
+    String? storedCatalogKey,
+  }) {
     final state = AsmrTagPreferences(
-      limit: (json['limit'] as num?)?.toInt() ?? 20,
+      limit: limit ?? (json['limit'] as num?)?.toInt() ?? 20,
     );
+    final directory = state._editableDirectory;
+    final split = json[_separateCatalogKey] == true;
+    final catalogJson = split ? catalog : json;
+    if (split) {
+      for (final raw in catalog?['tags'] as List? ?? []) {
+        final tag = AsmrTag.fromJson(Map<String, dynamic>.from(raw as Map));
+        directory.entries[tag.key] = tag;
+      }
+    }
     for (final raw in json['tags'] as List? ?? []) {
       final tag = AsmrTag.fromJson(Map<String, dynamic>.from(raw as Map));
-      state.tags[tag.key] = tag;
+      directory.entries[tag.key] = tag;
+      if (tag.key.startsWith('local:')) directory.localKeys.add(tag.key);
     }
     state.learned.addAll(
       (json['learned'] as Map? ?? {}).map(
@@ -311,7 +443,8 @@ class AsmrTagPreferences {
         (key, value) => MapEntry(key.toString(), (value as num).toInt()),
       ),
     );
-    state.catalogComplete = json['complete'] == true;
+    state._catalogComplete = catalogJson?['complete'] == true;
+    if (split && catalog != null) state._storedCatalogKey = storedCatalogKey;
     state._updatedAtMs = json[updatedAtMsKey] as int?;
     return state;
   }

@@ -16,19 +16,28 @@ class AppNetwork extends HttpOverrides {
     DnsServerResolver Function(InternetAddress)? createDnsResolver,
     Future<ConnectionTask<Socket>> Function(InternetAddress, int)?
     startSocketConnect,
+    Duration Function()? monotonicElapsed,
   }) : _resolveSystemProxy =
            resolveSystemProxy ?? NetworkPlatformService().resolveSystemProxy,
        _applyNativeRoute =
            applyNativeRoute ?? NetworkPlatformService().applyNetworkRoute,
        _createDnsResolver = createDnsResolver ?? DnsServerResolver.new,
-       _startSocketConnect = startSocketConnect ?? Socket.startConnect;
+       _startSocketConnect = startSocketConnect ?? Socket.startConnect,
+       _elapsed = monotonicElapsed ?? (() => _clock.elapsed);
 
   static final instance = AppNetwork();
+  static final _clock = Stopwatch()..start();
+  static const _systemProxyCacheTtl = Duration(seconds: 4);
+  static const _systemProxyCacheLimit = 128;
   final Future<String> Function(Uri) _resolveSystemProxy;
   final Future<void> Function(NetworkRouteSettings, String?) _applyNativeRoute;
   final DnsServerResolver Function(InternetAddress) _createDnsResolver;
   final Future<ConnectionTask<Socket>> Function(InternetAddress, int)
   _startSocketConnect;
+  final Duration Function() _elapsed;
+  final _pendingSystemProxyRoutes = <Uri, Future<List<_ProxyRoute>>>{};
+  final _cachedSystemProxyRoutes =
+      <Uri, ({List<_ProxyRoute> routes, Duration expiresAt})>{};
   final _connectionAttempts = <ConnectionTask<Socket>>{};
   final _connecting = <Completer<Socket>>{};
   final _retiredDnsResolvers = <_ManagedDnsResolver>{};
@@ -106,6 +115,7 @@ class AppNetwork extends HttpOverrides {
           previous.retire();
         }
       }
+      _clearSystemProxyRoutes();
       _settings = settings;
       _password = password;
     });
@@ -133,6 +143,7 @@ class AppNetwork extends HttpOverrides {
 
   Future<void> close() async {
     _lifecycleGeneration++;
+    _clearSystemProxyRoutes();
     if (_installed) {
       HttpOverrides.global = _previousOverrides;
       _installed = false;
@@ -205,7 +216,7 @@ class AppNetwork extends HttpOverrides {
         final routes = localTarget
             ? [const _ProxyRoute('DIRECT', '', 0)]
             : settings.proxyMode == AppProxyMode.system
-            ? _parsePolicy(await _resolveSystemProxy(uri))
+            ? await _systemProxyRoutes(uri)
             : [
                 _ProxyRoute(
                   settings.proxyMode == AppProxyMode.http ? 'PROXY' : 'SOCKS5',
@@ -213,7 +224,6 @@ class AppNetwork extends HttpOverrides {
                   settings.proxyPort,
                 ),
               ];
-        if (routes.isEmpty) throw const HttpException('Empty proxy policy');
         Object? failure;
         for (final route in routes) {
           try {
@@ -232,6 +242,11 @@ class AppNetwork extends HttpOverrides {
           }
         }
         if (outgoing == null || chosen == null) {
+          // Re-resolve on the next request if a network change invalidated
+          // this route before the short cache lifetime expired.
+          if (identical(_cachedSystemProxyRoutes[uri]?.routes, routes)) {
+            _cachedSystemProxyRoutes.remove(uri);
+          }
           throw failure ?? const SocketException('No route');
         }
       } finally {
@@ -294,6 +309,50 @@ class AppNetwork extends HttpOverrides {
       _sockets.remove(socket);
       socket.destroy();
     }
+  }
+
+  void _clearSystemProxyRoutes() {
+    _pendingSystemProxyRoutes.clear();
+    _cachedSystemProxyRoutes.clear();
+  }
+
+  Future<List<_ProxyRoute>> _systemProxyRoutes(Uri uri) {
+    // PAC can route HTTP requests on the same origin differently by URL.
+    // CONNECT provides only the HTTPS authority.
+    final cached = _cachedSystemProxyRoutes[uri];
+    if (cached != null && _elapsed() < cached.expiresAt) {
+      return Future.value(cached.routes);
+    }
+    _cachedSystemProxyRoutes.remove(uri);
+    final pending = _pendingSystemProxyRoutes[uri];
+    if (pending != null) return pending;
+
+    late final Future<List<_ProxyRoute>> lookup;
+    lookup = Future.sync(() => _resolveSystemProxy(uri))
+        .then((policy) {
+          final routes = _parsePolicy(policy);
+          if (routes.isEmpty) throw const HttpException('Empty proxy policy');
+          // Reconfiguration or close may have started a new lookup meanwhile.
+          if (identical(_pendingSystemProxyRoutes[uri], lookup)) {
+            _cachedSystemProxyRoutes[uri] = (
+              routes: routes,
+              expiresAt: _elapsed() + _systemProxyCacheTtl,
+            );
+            if (_cachedSystemProxyRoutes.length > _systemProxyCacheLimit) {
+              _cachedSystemProxyRoutes.remove(
+                _cachedSystemProxyRoutes.keys.first,
+              );
+            }
+          }
+          return routes;
+        })
+        .whenComplete(() {
+          if (identical(_pendingSystemProxyRoutes[uri], lookup)) {
+            _pendingSystemProxyRoutes.remove(uri);
+          }
+        });
+    _pendingSystemProxyRoutes[uri] = lookup;
+    return lookup;
   }
 
   Future<NetworkSocket> _connect(

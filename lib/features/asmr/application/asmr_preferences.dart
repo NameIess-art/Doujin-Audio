@@ -1,10 +1,26 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+
 import '../domain/asmr_tag_interest.dart';
 import '../domain/asmr_search_suggestions.dart';
 import '../../../core/app_language.dart';
 import '../domain/asmr_models.dart';
 import '../domain/asmr_persistence_repository.dart';
+
+AsmrTagPreferences _decodePreferences(
+  ({String preferences, String? catalog, String catalogKey, int? limit}) input,
+) => AsmrTagPreferences.fromJson(
+  jsonDecode(input.preferences) as Map<String, dynamic>,
+  catalog: input.catalog == null
+      ? null
+      : jsonDecode(input.catalog!) as Map<String, dynamic>,
+  limit: input.limit,
+  storedCatalogKey: input.catalogKey,
+);
+
+String _encodeInterestCatalog(AsmrTagPreferences value) =>
+    jsonEncode(value.toCatalogJson());
 
 class AsmrPreferencesStore {
   AsmrPreferencesStore({required AsmrPersistenceRepository repository})
@@ -14,11 +30,14 @@ class AsmrPreferencesStore {
   static const String _voiceActorPreferencesKey =
       'asmr_voice_actor_preferences_v1';
   static const String _circlePreferencesKey = 'asmr_circle_preferences_v1';
-  static const interestSettingKeys = [
-    _tagPreferencesKey,
-    _voiceActorPreferencesKey,
-    _circlePreferencesKey,
-  ];
+  static final interestCatalogKeys = Map<String, String>.unmodifiable({
+    for (final key in [
+      _tagPreferencesKey,
+      _voiceActorPreferencesKey,
+      _circlePreferencesKey,
+    ])
+      key: '${key}_catalog',
+  });
   static const String _lastSyncAtKey = 'asmr_last_sync_at_v1';
   static const String _syncOutboxSeededKey = 'asmr_sync_outbox_seeded_v2';
   static const String _contentLanguageKey = 'asmr_content_language_v1';
@@ -60,7 +79,8 @@ class AsmrPreferencesStore {
     await _repository.clearForTest();
     for (final key in [
       _contentLanguageKey,
-      ...interestSettingKeys,
+      ...interestCatalogKeys.keys,
+      ...interestCatalogKeys.values,
       _lastSyncAtKey,
       _searchSuggestionsKey,
       _syncOutboxSeededKey,
@@ -91,44 +111,91 @@ class AsmrPreferencesStore {
     }),
   );
 
-  Future<AsmrTagPreferences> loadTagPreferences() async {
-    final raw = await _repository.loadSetting(_tagPreferencesKey);
-    return raw == null
-        ? AsmrTagPreferences()
-        : AsmrTagPreferences.fromJson(jsonDecode(raw) as Map<String, dynamic>);
-  }
+  Future<AsmrTagPreferences> loadTagPreferences() =>
+      _loadInterests(_tagPreferencesKey);
 
   Future<void> saveTagPreferences(AsmrTagPreferences value) =>
-      _repository.saveSetting(_tagPreferencesKey, jsonEncode(value.toJson()));
+      _saveInterests(_tagPreferencesKey, value);
 
-  Future<AsmrTagPreferences> loadVoiceActorPreferences() async {
-    final raw = await _repository.loadSetting(_voiceActorPreferencesKey);
-    return raw == null
-        ? AsmrTagPreferences()
-        : AsmrTagPreferences.fromJson({
-            ...jsonDecode(raw) as Map<String, dynamic>,
-            'limit': 20,
-          });
-  }
+  Future<AsmrTagPreferences> loadVoiceActorPreferences() =>
+      _loadInterests(_voiceActorPreferencesKey, limit: 20);
 
   Future<void> saveVoiceActorPreferences(AsmrTagPreferences value) =>
-      _repository.saveSetting(
-        _voiceActorPreferencesKey,
-        jsonEncode(value.toJson()),
-      );
+      _saveInterests(_voiceActorPreferencesKey, value);
 
-  Future<AsmrTagPreferences> loadCirclePreferences() async {
-    final raw = await _repository.loadSetting(_circlePreferencesKey);
-    return raw == null
-        ? AsmrTagPreferences()
-        : AsmrTagPreferences.fromJson({
-            ...jsonDecode(raw) as Map<String, dynamic>,
-            'limit': 20,
-          });
+  Future<AsmrTagPreferences> loadCirclePreferences() =>
+      _loadInterests(_circlePreferencesKey, limit: 20);
+
+  Future<void> saveCirclePreferences(AsmrTagPreferences value) =>
+      _saveInterests(_circlePreferencesKey, value);
+
+  Future<
+    ({
+      AsmrTagPreferences tags,
+      AsmrTagPreferences voiceActors,
+      AsmrTagPreferences circles,
+    })
+  >
+  loadAllInterestPreferences() async {
+    final keys = <String>[
+      for (final entry in interestCatalogKeys.entries) ...[
+        entry.key,
+        entry.value,
+      ],
+    ];
+    final settings = await _repository.loadSettings(keys);
+    final results = await Future.wait<AsmrTagPreferences>([
+      _decodeInterestsFromSettings(_tagPreferencesKey, settings),
+      _decodeInterestsFromSettings(
+        _voiceActorPreferencesKey,
+        settings,
+        limit: 20,
+      ),
+      _decodeInterestsFromSettings(_circlePreferencesKey, settings, limit: 20),
+    ]);
+    return (tags: results[0], voiceActors: results[1], circles: results[2]);
   }
 
-  Future<void> saveCirclePreferences(AsmrTagPreferences value) => _repository
-      .saveSetting(_circlePreferencesKey, jsonEncode(value.toJson()));
+  Future<AsmrTagPreferences> _loadInterests(String key, {int? limit}) async {
+    final catalogKey = interestCatalogKeys[key]!;
+    final settings = await _repository.loadSettings([key, catalogKey]);
+    return _decodeInterestsFromSettings(key, settings, limit: limit);
+  }
+
+  Future<AsmrTagPreferences> _decodeInterestsFromSettings(
+    String key,
+    Map<String, String?> settings, {
+    int? limit,
+  }) async {
+    final catalogKey = interestCatalogKeys[key]!;
+    final preferences = settings[key];
+    if (preferences == null) return AsmrTagPreferences(limit: limit ?? 20);
+    final catalog = settings[catalogKey];
+    final input = (
+      preferences: preferences,
+      catalog: catalog,
+      catalogKey: catalogKey,
+      limit: limit,
+    );
+    const backgroundDecodeThreshold = 32 * 1024;
+    if (preferences.length + (catalog?.length ?? 0) >
+        backgroundDecodeThreshold) {
+      return compute(_decodePreferences, input);
+    }
+    return _decodePreferences(input);
+  }
+
+  Future<void> _saveInterests(String key, AsmrTagPreferences value) async {
+    final preferences = jsonEncode(value.toPreferenceJson());
+    final catalogKey = interestCatalogKeys[key]!;
+    if (!value.needsCatalogSave(catalogKey)) {
+      await _repository.saveSetting(key, preferences);
+      return;
+    }
+    final catalog = await compute(_encodeInterestCatalog, value);
+    await _repository.saveSettings({key: preferences, catalogKey: catalog});
+    value.markCatalogSaved(catalogKey);
+  }
 
   Future<List<AsmrCategoryType>> loadVisibleCategories() async {
     final stored = await _repository.loadVisibleCategoryNames();

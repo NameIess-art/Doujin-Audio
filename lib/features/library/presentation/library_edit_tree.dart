@@ -341,7 +341,13 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
               top: 0,
               left: 0,
               right: 0,
-              child: widget.headerBuilder(context, _buildSearchBar(i18n)),
+              child: widget.headerBuilder(
+                context,
+                ListenableBuilder(
+                  listenable: _searchController,
+                  builder: (_, _) => _buildSearchBar(i18n),
+                ),
+              ),
             ),
           ],
         ),
@@ -397,7 +403,9 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
                     onPressed: () {
                       _searchController.clear();
                       _searchDebounceTimer?.cancel();
-                      setState(() => _searchQuery = '');
+                      if (_searchQuery.isNotEmpty) {
+                        setState(() => _searchQuery = '');
+                      }
                     },
                     color: cs.onSurfaceVariant,
                     padding: EdgeInsets.zero,
@@ -424,11 +432,12 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
           ),
           onChanged: (value) {
             _searchDebounceTimer?.cancel();
+            final next = value.trim();
+            if (next == _searchQuery) return;
             _searchDebounceTimer = Timer(const Duration(milliseconds: 180), () {
               if (!mounted) return;
-              setState(() => _searchQuery = value.trim());
+              setState(() => _searchQuery = next);
             });
-            setState(() {});
           },
         ),
       ),

@@ -54,8 +54,7 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
     }
     if (!result.isOk) {
       // A failed update must not make the locally built queue look native.
-      session.nativePlaybackQueueCacheKey = null;
-      session.nativePlaybackQueueCache = null;
+      session.clearNativePlaybackQueueCache();
       return false;
     }
     _playbackFacade.updateNativeSessionRetainedContentUris(

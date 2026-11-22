@@ -27,14 +27,7 @@ Future<StartupRestoreOutcome?> initializeAudioPlayerStartup({
 }) async {
   await AppLogService.measureAsync(
     'app_bootstrap_pre_run_app',
-    () => Future.wait([
-      uiInitialization,
-      if (!Platform.isWindows)
-        AudioSession.instance.then(
-          (session) =>
-              session.configure(const AudioSessionConfiguration.music()),
-        ),
-    ]),
+    () => uiInitialization,
   );
   final restoreOutcome = await DataBackupService().applyAtStartup();
   if (restoreOutcome?.succeeded == true) {
@@ -54,4 +47,10 @@ Future<StartupRestoreOutcome?> initializeAudioPlayerStartup({
     );
   }
   return restoreOutcome;
+}
+
+Future<void> configurePlatformAudioSession() async {
+  if (Platform.isWindows) return;
+  final session = await AudioSession.instance;
+  await session.configure(const AudioSessionConfiguration.music());
 }

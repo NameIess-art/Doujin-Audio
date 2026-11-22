@@ -65,6 +65,10 @@ internal class FileCacheTaskExecutor {
             "doujin-file-task-${threadIndex.incrementAndGet()}"
         ).apply { isDaemon = true }
     }
+    // Decoder work and artwork providers can block both interactive workers.
+    private val metadataExecutor = Executors.newFixedThreadPool(2) { runnable ->
+        Thread(runnable, "doujin-file-metadata-${threadIndex.incrementAndGet()}").apply { isDaemon = true }
+    }
     // SAF copies can wait on a slow SD card or remote document provider for
     // minutes. Keep their queue separate from subtitle and artwork requests.
     private val transferExecutor = Executors.newSingleThreadExecutor { runnable ->
@@ -80,6 +84,11 @@ internal class FileCacheTaskExecutor {
         block: () -> T,
         completion: (FileCacheTaskResult<T>) -> Unit
     ): Boolean = submit(transferExecutor, block, completion)
+
+    fun <T> submitMetadata(
+        block: () -> T,
+        completion: (FileCacheTaskResult<T>) -> Unit
+    ): Boolean = submit(metadataExecutor, block, completion)
 
     private fun <T> submit(
         target: ExecutorService,
@@ -105,6 +114,7 @@ internal class FileCacheTaskExecutor {
     fun shutdownNow() {
         if (closed.compareAndSet(false, true)) {
             executor.shutdownNow()
+            metadataExecutor.shutdownNow()
             transferExecutor.shutdownNow()
         }
     }
@@ -331,20 +341,20 @@ internal class FileCacheMethodHandler(
                 val trackPath = arguments.requiredString("path")
                 val groupKey = arguments.optionalString("groupKey")
                 val rootFolder = arguments.optionalString("rootFolder")
-                runAsync(result, errorCode = { "cover_resolve_failed" }) {
+                runAsync(result, errorCode = { "cover_resolve_failed" }, metadata = true) {
                     operations.resolveTrackCover(trackPath, groupKey, rootFolder)
                 }
             }
             FileCacheMethods.RESOLVE_VIDEO_FRAME -> {
                 val trackPath = arguments.requiredString("path")
                 val modifiedAtMs = arguments.optionalLong("modifiedAtMs")
-                runAsync(result, errorCode = { "video_frame_resolve_failed" }) {
+                runAsync(result, errorCode = { "video_frame_resolve_failed" }, metadata = true) {
                     operations.resolveVideoFrame(trackPath, modifiedAtMs)
                 }
             }
             FileCacheMethods.RESOLVE_MEDIA_DURATION -> {
                 val trackPath = arguments.requiredString("path")
-                runAsync(result, errorCode = { "media_duration_resolve_failed" }) {
+                runAsync(result, errorCode = { "media_duration_resolve_failed" }, metadata = true) {
                     operations.resolveMediaDurationMs(trackPath)
                 }
             }
@@ -354,7 +364,7 @@ internal class FileCacheMethodHandler(
                 val rootFolder = arguments.optionalString("rootFolder")
                 val recursive = arguments.optionalBoolean("recursive", true)
                 val preferredOnly = arguments.optionalBoolean("preferredOnly", false)
-                runAsync(result, errorCode = { "cover_discover_failed" }) {
+                runAsync(result, errorCode = { "cover_discover_failed" }, metadata = true) {
                     operations.discoverRootImages(trackPath, groupKey, rootFolder, recursive, preferredOnly)
                 }
             }
@@ -384,7 +394,7 @@ internal class FileCacheMethodHandler(
             FileCacheMethods.PICK_AUDIO_FOLDER -> launchPickAudioFolder(result)
             FileCacheMethods.DISCOVER_WORK_TEXTS -> {
                 val folder = arguments.requiredString("folder")
-                runAsync(result, errorCode = { "discover_texts_failed" }) {
+                runAsync(result, errorCode = { "discover_texts_failed" }, metadata = true) {
                     operations.discoverWorkTexts(folder)
                 }
             }
@@ -402,6 +412,7 @@ internal class FileCacheMethodHandler(
         result: MethodChannel.Result,
         errorCode: (Exception) -> String = { "operation_failed" },
         transfer: Boolean = false,
+        metadata: Boolean = false,
         block: () -> Any?
     ) {
         if (closed.get()) {
@@ -411,10 +422,10 @@ internal class FileCacheMethodHandler(
         val completion: (FileCacheTaskResult<Any?>) -> Unit = { taskResult ->
             deliver(result, errorCode, taskResult)
         }
-        val accepted = if (transfer) {
-            taskExecutor.submitTransfer(block, completion)
-        } else {
-            taskExecutor.submit(block, completion)
+        val accepted = when {
+            transfer -> taskExecutor.submitTransfer(block, completion)
+            metadata -> taskExecutor.submitMetadata(block, completion)
+            else -> taskExecutor.submit(block, completion)
         }
         if (!accepted) {
             result.error("operation_failed", "file operations are unavailable", null)

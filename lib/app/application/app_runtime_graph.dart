@@ -1,6 +1,7 @@
 import '../../features/library/application/work_text_service.dart';
 import '../../core/media/music_track.dart';
 import '../localization/app_language_provider.dart';
+import 'app_startup.dart';
 import 'windows_runtime_binding.dart';
 import '../../features/player/application/listening_activity_service.dart';
 import '../../features/player/domain/listening_activity.dart';
@@ -485,9 +486,14 @@ ProductionAppRuntime createProductionAppRuntime({
     ]);
   }
 
-  Future<void> initializeRuntimeData() =>
-      windowsRuntime?.initializeRuntime(runtimeGraph.runtime.start) ??
-      runtimeGraph.runtime.start();
+  Future<void> initializeRuntimeData() async {
+    if (windowsRuntime != null) {
+      await windowsRuntime.initializeRuntime(runtimeGraph.runtime.start);
+    } else {
+      await configurePlatformAudioSession();
+      await runtimeGraph.runtime.start();
+    }
+  }
 
   return (
     runtimeGraph: runtimeGraph,

@@ -19,6 +19,7 @@ extension AppDatabaseAudioDetails on AppDatabase {
     final normalized = targets
         .map((target) => (target.$1, PathMatcher.normalize(target.$2)))
         .toList(growable: false);
+    if (normalized.isEmpty) return const <AudioDetailRecord>[];
     return _runDatabaseRead((db) => _loadAudioDetailRecords(db, normalized));
   }
 
@@ -51,36 +52,40 @@ extension AppDatabaseAudioDetails on AppDatabase {
   Future<void> deleteAudioDetailRecord({
     required String targetType,
     required String targetPath,
-  }) async {
-    await _runDatabaseWrite((db) async {
-      await db.transaction((transaction) async {
-        await _deleteAudioDetailRows(
-          transaction,
-          targetType,
-          PathMatcher.normalize(targetPath),
-        );
-      });
-    });
-  }
+  }) => deleteAudioDetailRecords([(targetType, targetPath)]);
 
   Future<void> deleteAudioDetailRecords(
     Iterable<(String, String)> targets,
   ) async {
-    final uniqueTargets = <String, (String, String)>{};
-    for (final target in targets) {
-      final normalizedPath = PathMatcher.normalize(target.$2);
-      uniqueTargets['${target.$1}\x1F$normalizedPath'] = (
-        target.$1,
-        normalizedPath,
-      );
+    final pathsByType = <String, Set<String>>{};
+    for (final (type, path) in targets) {
+      pathsByType
+          .putIfAbsent(type, () => <String>{})
+          .add(PathMatcher.normalize(path));
     }
-    if (uniqueTargets.isEmpty) return;
+    if (pathsByType.isEmpty) return;
     await _runDatabaseWrite((db) async {
-      await db.transaction((transaction) async {
-        for (final target in uniqueTargets.values) {
-          await _deleteAudioDetailRows(transaction, target.$1, target.$2);
+      final batch = db.batch();
+      for (final entry in pathsByType.entries) {
+        for (final chunk in _stringChunks(
+          entry.value.toList(growable: false),
+        )) {
+          final placeholders = List.filled(chunk.length, '?').join(', ');
+          final args = <Object?>[entry.key, ...chunk];
+          for (final table in const [
+            'audio_detail_voice_actors',
+            'audio_detail_tags',
+            'audio_details',
+          ]) {
+            batch.delete(
+              table,
+              where: 'target_type = ? AND target_path IN ($placeholders)',
+              whereArgs: args,
+            );
+          }
         }
-      });
+      }
+      await batch.commit(noResult: true);
     });
   }
 
@@ -88,34 +93,13 @@ extension AppDatabaseAudioDetails on AppDatabase {
     String targetPath, {
     required bool isFolder,
   }) => _runDatabaseRead((db) async {
-    final key = PathMatcher.equivalenceKey(targetPath);
-    final prefix = key.endsWith('/') ? key : '$key/';
-    // Binary prefix bounds use the index without LIKE's case folding or
-    // wildcard semantics; PathMatcher still checks directory boundaries below.
-    final rows = await db.query(
-      'time_segment_labels',
-      where: isFolder
-          ? 'track_match_key = ? OR (track_match_key >= ? AND track_match_key < ?)'
-          : 'track_match_key = ?',
-      whereArgs: isFolder
-          ? [key, prefix, '${prefix.substring(0, prefix.length - 1)}0']
-          : [key],
+    final rows = await _queryTimeSegmentLabelRowsForTarget(
+      db,
+      targetPath,
+      isFolder: isFolder,
       orderBy: 'start_ms ASC, created_at_ms ASC',
     );
-    return rows
-        .where(
-          (row) => isFolder
-              ? PathMatcher.isWithinOrEqual(
-                  row['track_key'] as String,
-                  targetPath,
-                )
-              : PathMatcher.equalsNormalized(
-                  row['track_key'] as String,
-                  targetPath,
-                ),
-        )
-        .map(TimeSegmentLabelRecord.fromRow)
-        .toList(growable: false);
+    return rows.map(TimeSegmentLabelRecord.fromRow).toList(growable: false);
   });
 
   Future<void> importAudioDetails(
@@ -128,29 +112,58 @@ extension AppDatabaseAudioDetails on AppDatabase {
         _writeAudioDetailRecordToBatch(batch, detail);
       }
       await batch.commit(noResult: true);
-      final labelList = labels.toList(growable: false);
+      final labelList = [
+        for (final label in labels)
+          (
+            label: label,
+            suffix:
+                '@${base64Url.encode(utf8.encode(PathMatcher.equivalenceKey(label.trackKey)))}',
+          ),
+      ];
       if (labelList.isEmpty) return;
-      final existingRows = await transaction.query(
-        'time_segment_labels',
-        columns: const ['id', 'track_key', 'updated_at_ms'],
-      );
-      final existingById = <String, ({String trackKey, int updatedAtMs})>{
-        for (final row in existingRows)
-          row['id'] as String: (
+      final existingById = <String, ({String trackKey, int updatedAtMs})?>{};
+      Future<void> loadConflicts(List<String> ids) async {
+        final placeholders = List.filled(ids.length, '?').join(', ');
+        final rows = await transaction.query(
+          'time_segment_labels',
+          columns: const ['id', 'track_key', 'updated_at_ms'],
+          where: 'id IN ($placeholders)',
+          whereArgs: ids,
+        );
+        for (final id in ids) {
+          existingById[id] = null;
+        }
+        for (final row in rows) {
+          existingById[row['id'] as String] = (
             trackKey: row['track_key'] as String,
             updatedAtMs: (row['updated_at_ms'] as num).toInt(),
-          ),
-      };
+          );
+        }
+      }
+
+      final ids = {
+        for (final item in labelList) ...[
+          item.label.id,
+          '${item.label.id}${item.suffix}',
+        ],
+      }.toList(growable: false);
+      for (
+        var offset = 0;
+        offset < ids.length;
+        offset += _sqliteInClauseBatchSize
+      ) {
+        final end = (offset + _sqliteInClauseBatchSize).clamp(0, ids.length);
+        await loadConflicts(ids.sublist(offset, end));
+      }
       final labelBatch = transaction.batch();
       var hasLabelWrites = false;
-      for (final label in labelList) {
+      for (final (:label, :suffix) in labelList) {
         var id = label.id;
         var existing = existingById[id];
         // A copied work keeps its remapped ID even after the original label
         // has been deleted from the source work.
         if (existing == null) {
-          final mappedId =
-              '$id@${base64Url.encode(utf8.encode(PathMatcher.equivalenceKey(label.trackKey)))}';
+          final mappedId = '$id$suffix';
           final mappedExisting = existingById[mappedId];
           if (mappedExisting != null) {
             id = mappedId;
@@ -158,12 +171,10 @@ extension AppDatabaseAudioDetails on AppDatabase {
           }
         }
         while (existing != null &&
-            !PathMatcher.equalsNormalized(
-              existing.trackKey,
-              label.trackKey,
-            )) {
-          id =
-              '$id@${base64Url.encode(utf8.encode(PathMatcher.equivalenceKey(label.trackKey)))}';
+            !PathMatcher.equalsNormalized(existing.trackKey, label.trackKey)) {
+          id += suffix;
+          // Imported IDs may themselves contain an earlier collision suffix.
+          if (!existingById.containsKey(id)) await loadConflicts([id]);
           existing = existingById[id];
         }
         if (existing != null && existing.updatedAtMs >= label.updatedAtMs) {
@@ -239,14 +250,18 @@ extension AppDatabaseAudioDetails on AppDatabase {
   Future<void> retargetTimeSegmentLabelsWithinPath({
     required String oldRoot,
     required String newRoot,
-  }) async {
-    await _runDatabaseWrite((db) async {
-      final rows = await db.query('time_segment_labels');
-      final batch = db.batch();
+  }) => _runDatabaseWrite(
+    (db) => db.transaction((txn) async {
+      final rows = await _queryTimeSegmentLabelRowsForTarget(
+        txn,
+        oldRoot,
+        isFolder: true,
+        columns: const ['id', 'track_key'],
+      );
+      final batch = txn.batch();
       for (final row in rows) {
         final id = row['id'] as String;
         final trackKey = row['track_key'] as String;
-        if (!PathMatcher.isWithinOrEqual(trackKey, oldRoot)) continue;
         final nextTrackKey = PathMatcher.replaceWithinOrEqual(
           trackKey,
           oldRoot,
@@ -264,8 +279,48 @@ extension AppDatabaseAudioDetails on AppDatabase {
         );
       }
       await batch.commit(noResult: true);
-    });
-  }
+    }),
+  );
+}
+
+Future<Iterable<Map<String, Object?>>> _queryTimeSegmentLabelRowsForTarget(
+  DatabaseExecutor db,
+  String targetPath, {
+  required bool isFolder,
+  List<String>? columns,
+  String? orderBy,
+}) async {
+  final key = PathMatcher.equivalenceKey(targetPath);
+  final bounds = isFolder ? _descendantMatchKeyBounds(key) : null;
+  final rows = await db.query(
+    'time_segment_labels',
+    columns: columns,
+    where: bounds != null
+        ? 'track_match_key = ? OR (track_match_key >= ? AND track_match_key < ?)'
+        : 'track_match_key = ?',
+    whereArgs: [
+      key,
+      if (bounds != null) ...[bounds.$1, bounds.$2],
+    ],
+    orderBy: orderBy,
+  );
+  return rows.where(
+    (row) => isFolder
+        ? PathMatcher.isWithinOrEqual(row['track_key'] as String, targetPath)
+        : PathMatcher.equalsNormalized(row['track_key'] as String, targetPath),
+  );
+}
+
+(String, String)? _descendantMatchKeyBounds(String key) {
+  if (key.startsWith('remote:')) return null;
+  // Binary prefix bounds keep '%' literal. SAF volume roots join the child
+  // immediately after ':'.
+  final volumeRoot = key.startsWith('content:') && key.endsWith(':');
+  final prefix = key.endsWith('/') || volumeRoot ? key : '$key/';
+  return (
+    prefix,
+    '${prefix.substring(0, prefix.length - 1)}${volumeRoot ? ';' : '0'}',
+  );
 }
 
 Map<String, Object?> _timeSegmentLabelRow(TimeSegmentLabelRecord label) => {
@@ -415,23 +470,5 @@ void _writeAudioDetailRecordToBatch(Batch batch, AudioDetailRecord detail) {
       'tag': detail.tags[index],
       'sort_order': index,
     });
-  }
-}
-
-Future<void> _deleteAudioDetailRows(
-  DatabaseExecutor db,
-  String targetType,
-  String targetPath,
-) async {
-  for (final table in <String>[
-    'audio_detail_voice_actors',
-    'audio_detail_tags',
-    'audio_details',
-  ]) {
-    await db.delete(
-      table,
-      where: 'target_type = ? AND target_path = ?',
-      whereArgs: <Object?>[targetType, targetPath],
-    );
   }
 }

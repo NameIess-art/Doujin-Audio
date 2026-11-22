@@ -168,10 +168,16 @@ internal fun saveLocalTrackSubtitle(
 }
 
 internal class SubtitleOperations(private val context: Context, private val storage: DocumentStorageOperations) {
+    private data class DocumentTrackDirectory(
+        val folder: Uri,
+        val entries: List<DirectoryDocument>,
+        val audioName: String
+    )
+
     fun list(trackPath: String, groupKey: String?): List<HashMap<String, String>> {
         if (!trackPath.startsWith("content://")) return listLocalTrackSubtitles(trackPath)
-        val (folder, audioName) = documentTrackFolder(trackPath, groupKey)
-        return listReadableDirectoryDocuments(context, folder)
+        val (_, entries, audioName) = documentTrackFolder(trackPath, groupKey)
+        return entries
             .filter { it.mime != DocumentsContract.Document.MIME_TYPE_DIR && isTrackSubtitle(audioName, it.name) }
             .sortedWith(compareBy<DirectoryDocument> { subtitleMatchRank(audioName, it.name) }.thenBy { it.name.lowercase(Locale.US) })
             .map { hashMapOf("sourcePath" to it.uri.toString(), "name" to it.name) }
@@ -182,32 +188,44 @@ internal class SubtitleOperations(private val context: Context, private val stor
             ?: storage.contentUriToFilePath(trackPath)?.let(::resolveFile)
     }
 
-    private fun documentTrackFolder(trackPath: String, groupKey: String?): Pair<Uri, String> {
+    private fun documentTrackFolder(trackPath: String, groupKey: String?): DocumentTrackDirectory {
         val trackUri = storage.resolveDocumentUri(trackPath) ?: throw IOException("Cannot resolve audio document")
         val trackId = DocumentsContract.getDocumentId(trackUri)
+        var entries: List<DirectoryDocument> = emptyList()
+        var trackEntry: DirectoryDocument? = null
         val parent = trackDocumentFolder(groupKey, storage::resolveDocumentUri, {
             val rootUri = Uri.parse(trackPath.substringBefore("/document/", trackPath))
             val parentId = trackId.substringBeforeLast('/', DocumentsContract.getTreeDocumentId(rootUri))
             DocumentsContract.buildDocumentUriUsingTree(rootUri, parentId)
         }, { folder ->
-            folder.authority == trackUri.authority &&
-                listReadableDirectoryDocuments(context, folder).any { DocumentsContract.getDocumentId(it.uri) == trackId }
+            if (folder.authority != trackUri.authority) return@trackDocumentFolder false
+            val listed = listReadableDirectoryDocuments(context, folder)
+            val matched = listed.firstOrNull { DocumentsContract.getDocumentId(it.uri) == trackId }
+            if (matched != null) {
+                entries = listed
+                trackEntry = matched
+                true
+            } else {
+                false
+            }
         })
-        val projection = arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-        val name = context.contentResolver.query(trackUri, projection, null, null, null)?.use {
-            if (!it.moveToFirst()) null else it.getString(it.getColumnIndexOrThrow(projection[0]))
-        } ?: throw IOException("Cannot read audio document name")
-        return parent to name
+        val name = trackEntry?.name?.takeIf { it.isNotEmpty() } ?: run {
+            val projection = arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+            context.contentResolver.query(trackUri, projection, null, null, null)?.use {
+                if (!it.moveToFirst()) null else it.getString(it.getColumnIndexOrThrow(projection[0]))
+            } ?: throw IOException("Cannot read audio document name")
+        }
+        return DocumentTrackDirectory(parent, entries, name)
     }
 
-    private fun matches(folder: Uri, audioName: String): List<DirectoryDocument> =
-        listReadableDirectoryDocuments(context, folder)
+    private fun matches(entries: List<DirectoryDocument>, audioName: String): List<DirectoryDocument> =
+        entries
             .filter { it.mime != DocumentsContract.Document.MIME_TYPE_DIR && subtitleMatchRank(audioName, it.name) < 10 }
             .sortedWith(compareBy<DirectoryDocument> { subtitleMatchRank(audioName, it.name) }.thenBy { it.name.lowercase(Locale.US) })
 
     private fun resolveDocument(trackPath: String, groupKey: String?): HashMap<String, String>? {
-        val (folder, audioName) = documentTrackFolder(trackPath, groupKey)
-        val best = matches(folder, audioName).firstOrNull() ?: return null
+        val (_, entries, audioName) = documentTrackFolder(trackPath, groupKey)
+        val best = matches(entries, audioName).firstOrNull() ?: return null
         val text = context.contentResolver.openInputStream(best.uri)
             ?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() } ?: return null
         return result(best.uri.toString(), best.name, text)
@@ -230,13 +248,25 @@ internal class SubtitleOperations(private val context: Context, private val stor
             val suffix = requireNotNull(fileNameSuffix) { "Missing subtitle filename suffix" }
             translatedSubtitleName("track.mp3", suffix, extension)
             if (!trackPath.startsWith("content://")) return saveNewLocalTrackSubtitle(trackPath, extension, bytes, suffix)
-            val (folder, audioName) = documentTrackFolder(trackPath, groupKey)
+            val (folder, initialEntries, audioName) = documentTrackFolder(trackPath, groupKey)
             var version = 1
+            var cachedBefore: List<DirectoryDocument>? = initialEntries
             while (true) {
                 val name = translatedSubtitleName(audioName, suffix, extension, version++)
+                if (cachedBefore != null && cachedBefore.any { it.name.equals(name, ignoreCase = true) }) {
+                    continue
+                }
                 val saved = createNewSubtitleDocument(
                     targetName = name,
-                    listFiles = { listReadableDirectoryDocuments(context, folder) },
+                    listFiles = {
+                        val cached = cachedBefore
+                        if (cached != null) {
+                            cachedBefore = null
+                            cached
+                        } else {
+                            listReadableDirectoryDocuments(context, folder)
+                        }
+                    },
                     name = { it.name }, sameDocument = { first, second -> sameDocument(first.uri.toString(), second.uri.toString()) },
                     create = {
                         DocumentsContract.createDocument(context.contentResolver, folder, "text/plain", name)?.let { uri ->
@@ -259,8 +289,8 @@ internal class SubtitleOperations(private val context: Context, private val stor
         if (!trackPath.startsWith("content://")) {
             return saveLocalTrackSubtitle(trackPath, extension, bytes, sourcePath, overwrite, ::deleteSource, ::sameDocument)
         }
-        val (folder, audioName) = documentTrackFolder(trackPath, groupKey)
-        val matching = matches(folder, audioName)
+        val (folder, entries, audioName) = documentTrackFolder(trackPath, groupKey)
+        val matching = matches(entries, audioName)
         val name = subtitleDestinationName(audioName, extension)
         val existing = matching.firstOrNull { it.name.equals(name, ignoreCase = true) }
         if (sourcePath != null && existing != null && sameDocument(sourcePath, existing.uri.toString())) {

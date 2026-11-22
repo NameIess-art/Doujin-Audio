@@ -98,7 +98,7 @@ void main() {
       const root = '/library/work';
       final library = LibraryService()
         ..library.add(_track(path: '$root/01.mp3', groupKey: root))
-        ..watchedFolders.add(root);
+        ..addWatchedFolder(root);
       addTearDown(library.dispose);
       final result = Completer<LibraryTreeSnapshot>();
       var builds = 0;
@@ -165,9 +165,7 @@ void main() {
 
     coordinator.prepareForReset();
     // Restore replaces roots before the next catalog generation is published.
-    library.watchedFolders
-      ..clear()
-      ..add(work);
+    library.replaceWatchedFolders([work]);
     expect(coordinator.canonicalTarget(target).targetPath, work);
     expect(coordinator.targetForTrack(item).targetPath, work);
   });
@@ -196,14 +194,14 @@ void main() {
     () async {
       const root = '/library/work';
       final library = LibraryService()
-        ..watchedFolders.add(root)
+        ..addWatchedFolder(root)
         ..library.add(_track(path: '$root/old.mp3', groupKey: root))
         ..markStructureChanged();
       final cardBuild = Completer<LibraryTreeSnapshot>();
       final treeBuild = Completer<LibraryTreeSnapshot>();
       final snapshot = const LibraryOrganizer().buildTree(
         tracks: library.library,
-        watchedFolders: library.watchedFolders,
+        watchedFolders: library.watchedFoldersSnapshot,
       );
       final service = LibrarySnapshotCacheService(
         libraryService: library,
@@ -234,7 +232,7 @@ void main() {
     'tree snapshot reuses the in-flight future for the same revision',
     () async {
       final library = LibraryService();
-      library.watchedFolders.add('/library');
+      library.addWatchedFolder('/library');
       library.library.add(
         _track(path: '/library/work/track.mp3', groupKey: '/library/work'),
       );
@@ -258,7 +256,7 @@ void main() {
     'tree snapshot runs every callback attached to an in-flight build',
     () async {
       final library = LibraryService();
-      library.watchedFolders.add('/library');
+      library.addWatchedFolder('/library');
       library.library.add(
         _track(path: '/library/work/track.mp3', groupKey: '/library/work'),
       );
@@ -291,7 +289,7 @@ void main() {
     'tree snapshot builder can be injected and propagates failures',
     () async {
       final library = LibraryService()
-        ..watchedFolders.add('/library')
+        ..addWatchedFolder('/library')
         ..library.add(
           _track(path: '/library/work/track.mp3', groupKey: '/library/work'),
         )
@@ -329,7 +327,7 @@ void main() {
       );
       final detailCache = AudioDetailCacheService(repository: repository);
       final library = LibraryService();
-      library.watchedFolders.add('/library');
+      library.addWatchedFolder('/library');
       library.library.add(
         _track(path: '/library/work/track.mp3', groupKey: '/library/work'),
       );
@@ -365,7 +363,7 @@ void main() {
       final repository = _FakeAudioDetailRepository();
       final detailCache = AudioDetailCacheService(repository: repository);
       final library = LibraryService()
-        ..watchedFolders.add(root)
+        ..addWatchedFolder(root)
         ..library.add(_track(path: '$root/01.mp3', groupKey: root))
         ..markStructureChanged();
       addTearDown(library.dispose);
@@ -432,7 +430,7 @@ void main() {
       final library = LibraryService();
       for (var index = 0; index < 24; index++) {
         final folder = PathMatcher.normalize('C:/library/$index');
-        library.watchedFolders.add(folder);
+        library.addWatchedFolder(folder);
         library.library.add(
           _track(path: '$folder/track.mp3', groupKey: folder),
         );
@@ -627,7 +625,7 @@ void main() {
         details: {AudioLibraryDetailKey.forTarget(target): 'Database detail'},
       );
       final library = LibraryService()
-        ..watchedFolders.add('/library')
+        ..addWatchedFolder('/library')
         ..library.add(
           _track(path: '/library/work/track.mp3', groupKey: '/library/work'),
         )
@@ -665,7 +663,7 @@ void main() {
       );
       final detailCache = AudioDetailCacheService(repository: repository);
       final library = LibraryService()
-        ..watchedFolders.add('/library')
+        ..addWatchedFolder('/library')
         ..library.add(
           _track(path: '/library/work/track.mp3', groupKey: '/library/work'),
         )
@@ -698,7 +696,7 @@ void main() {
         details: {AudioLibraryDetailKey.forTarget(target): 'Database title'},
       );
       final library = LibraryService()
-        ..watchedFolders.add(workRoot)
+        ..addWatchedFolder(workRoot)
         ..library.add(
           _track(path: '$workRoot/disc/track.mp3', groupKey: '$workRoot/disc'),
         )
@@ -733,7 +731,7 @@ void main() {
       failBatchLoad: true,
     );
     final library = LibraryService()
-      ..watchedFolders.addAll(<String>['/library/first', '/library/second'])
+      ..replaceWatchedFolders(<String>['/library/first', '/library/second'])
       ..library.addAll(<MusicTrack>[
         _track(path: '/library/first/track.mp3', groupKey: '/library/first'),
         _track(path: '/library/second/track.mp3', groupKey: '/library/second'),
@@ -755,7 +753,7 @@ void main() {
 
   test('first category snapshot commits without a presentation gate', () async {
     final library = LibraryService()
-      ..watchedFolders.add('/library')
+      ..addWatchedFolder('/library')
       ..library.add(
         _track(path: '/library/work/track.mp3', groupKey: '/library/work'),
       )
@@ -785,7 +783,7 @@ void main() {
       'category completion cannot repopulate after ${dispose ? 'dispose' : 'clear'}',
       () async {
         final library = LibraryService()
-          ..watchedFolders.add('/library')
+          ..addWatchedFolder('/library')
           ..library.add(
             _track(path: '/library/work/01.mp3', groupKey: '/library/work'),
           )
@@ -813,7 +811,7 @@ void main() {
         ready.complete(
           const LibraryOrganizer().buildCardTree(
             tracks: library.library,
-            watchedFolders: library.watchedFolders,
+            watchedFolders: library.watchedFoldersSnapshot,
           ),
         );
         await pending;
@@ -828,7 +826,7 @@ void main() {
     final library = LibraryService();
     for (var index = 0; index < 30; index++) {
       final folderPath = '/library_$index';
-      library.watchedFolders.add(folderPath);
+      library.addWatchedFolder(folderPath);
       library.library.add(
         _track(path: '$folderPath/track.mp3', groupKey: folderPath),
       );
@@ -870,7 +868,7 @@ void main() {
         final library = LibraryService();
         for (var index = 0; index < 130; index++) {
           final folderPath = '/library_$index';
-          library.watchedFolders.add(folderPath);
+          library.addWatchedFolder(folderPath);
           library.library.add(
             _track(path: '$folderPath/track.mp3', groupKey: folderPath),
           );
@@ -946,7 +944,7 @@ void main() {
 
   test('tree cache updates only after async snapshot commits', () async {
     final library = LibraryService();
-    library.watchedFolders.add('/library');
+    library.addWatchedFolder('/library');
     final service = LibrarySnapshotCacheService(
       libraryService: library,
       detailCacheService: AudioDetailCacheService(
@@ -978,7 +976,7 @@ void main() {
 
   test('an older in-flight tree cannot overwrite a newer revision', () async {
     final library = LibraryService()
-      ..watchedFolders.add('/library')
+      ..addWatchedFolder('/library')
       ..library.add(_track(path: '/library/old.mp3', groupKey: '/library'))
       ..markStructureChanged();
     final builders = <Completer<LibraryTreeSnapshot>>[];
@@ -1034,7 +1032,7 @@ void main() {
     'card snapshot keeps folder tracks without building child nodes',
     () async {
       final library = LibraryService()
-        ..watchedFolders.add('/library')
+        ..addWatchedFolder('/library')
         ..library.addAll(<MusicTrack>[
           _track(path: '/library/work/disc/01.mp3', groupKey: '/library/work'),
           _track(path: '/library/work/disc/02.mp3', groupKey: '/library/work'),
@@ -1077,7 +1075,7 @@ void main() {
         )..adoptCardSnapshot(
           const LibraryOrganizer().buildCardTree(
             tracks: library.library,
-            watchedFolders: library.watchedFolders,
+            watchedFolders: library.watchedFoldersSnapshot,
             watchedLibraries: library.watchedLibraries,
           ),
         );
@@ -1325,7 +1323,7 @@ void main() {
     () async {
       const root = '/library/work';
       final library = LibraryService()
-        ..watchedFolders.add(root)
+        ..addWatchedFolder(root)
         ..library.add(_track(path: '$root/old.mp3', groupKey: root))
         ..markStructureChanged();
       final service = LibrarySnapshotCacheService(
@@ -1365,7 +1363,7 @@ void main() {
     () async {
       const root = r'E:\作品 空格\Work';
       final library = LibraryService()
-        ..watchedFolders.add(root)
+        ..addWatchedFolder(root)
         ..library.add(
           _track(path: '$root\\Disc\\01.mp3', groupKey: '$root\\Disc'),
         )
@@ -1430,7 +1428,7 @@ void main() {
 
   test('card snapshot propagates one failure and can retry', () async {
     final library = LibraryService()
-      ..watchedFolders.add('/library')
+      ..addWatchedFolder('/library')
       ..markStructureChanged();
     var buildCount = 0;
     var commitCount = 0;

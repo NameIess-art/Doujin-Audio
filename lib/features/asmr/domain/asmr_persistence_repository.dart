@@ -5,7 +5,9 @@ abstract interface class AsmrPersistenceRepository {
   Future<List<String>> loadVisibleCategoryNames();
   Future<void> saveVisibleCategoryNames(List<String> categories);
   Future<String?> loadSetting(String key);
+  Future<Map<String, String?>> loadSettings(List<String> keys);
   Future<void> saveSetting(String key, String? value);
+  Future<void> saveSettings(Map<String, String> values);
   Future<List<AsmrWork>> loadWorkList(String listType);
   Future<void> saveWorkList(String listType, List<AsmrWork> works);
   Future<List<AsmrSyncOperation>> loadSyncOperations();

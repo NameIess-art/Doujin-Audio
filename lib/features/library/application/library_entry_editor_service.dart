@@ -1,5 +1,6 @@
 import 'dart:collection';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:path/path.dart' as path;
 
@@ -36,7 +37,7 @@ class LibraryEntryDiskSnapshot {
   final bool authoritative;
   final Map<String, String> trackParentPaths;
 
-  Set<String> get audioFilePathSet => immutableSet(audioFilePaths);
+  late final Set<String> audioFilePathSet = immutableSet(audioFilePaths);
 }
 
 class LibraryEntryEditorService {
@@ -193,31 +194,49 @@ class LibraryEntryEditorService {
     }
   }
 
-  Future<LibraryEntryDiskSnapshot> _loadFileSystemSnapshot(
+  static Future<LibraryEntryDiskSnapshot> _loadFileSystemSnapshot(
     String libraryPath,
   ) async {
+    // Zone-scoped file system overrides cannot be shared with another isolate.
+    final (snapshot, failure) = IOOverrides.current == null
+        ? await _scanFileSystemInBackground(libraryPath)
+        : await _scanFileSystem(libraryPath);
+    if (failure != null) {
+      AppLogService.warning(
+        'library_entry_directory_scan_failed',
+        error: failure.$1,
+        stackTrace: failure.$2,
+      );
+    }
+    return snapshot;
+  }
+
+  static Future<(LibraryEntryDiskSnapshot, (String, StackTrace)?)>
+  _scanFileSystemInBackground(String libraryPath) =>
+      Isolate.run(() => _scanFileSystem(libraryPath));
+
+  static Future<(LibraryEntryDiskSnapshot, (String, StackTrace)?)>
+  _scanFileSystem(String libraryPath) async {
     final directory = Directory(libraryPath);
     if (!await directory.exists()) {
-      return LibraryEntryDiskSnapshot(
-        audioFilePaths: <String>[],
-        scannedFolderPaths: <String>{},
-        authoritative: false,
+      return (
+        LibraryEntryDiskSnapshot(
+          audioFilePaths: const [],
+          scannedFolderPaths: const {},
+          authoritative: false,
+        ),
+        null,
       );
     }
 
     final audioFiles = <String>{};
     final folderPaths = <String>{};
     final pendingDirectories = Queue<Directory>()..add(directory);
-    var processedEntities = 0;
-    var scanFailed = false;
+    (String, StackTrace)? failure;
     while (pendingDirectories.isNotEmpty) {
       final currentDirectory = pendingDirectories.removeFirst();
       try {
         await for (final entity in currentDirectory.list(followLinks: false)) {
-          processedEntities++;
-          if (processedEntities % 200 == 0) {
-            await Future<void>.delayed(Duration.zero);
-          }
           final normalizedPath = PathMatcher.normalize(entity.path);
           if (entity is Directory) {
             folderPaths.add(normalizedPath);
@@ -226,23 +245,14 @@ class LibraryEntryEditorService {
             audioFiles.add(normalizedPath);
           }
         }
-      } on FileSystemException catch (error, stackTrace) {
-        scanFailed = true;
-        AppLogService.warning(
-          'library_entry_directory_scan_failed',
-          error: error,
-          stackTrace: stackTrace,
-        );
       } catch (error, stackTrace) {
-        scanFailed = true;
-        AppLogService.warning(
-          'library_entry_directory_scan_failed',
-          error: error,
-          stackTrace: stackTrace,
-        );
+        failure ??= (error.toString(), stackTrace);
       }
     }
-    return _snapshot(audioFiles, folderPaths, authoritative: !scanFailed);
+    return (
+      _snapshot(audioFiles, folderPaths, authoritative: failure == null),
+      failure,
+    );
   }
 
   Future<LibraryEntryDiskSnapshot> _loadNativeSnapshot(
@@ -311,21 +321,18 @@ class LibraryEntryEditorService {
     }
   }
 
-  LibraryEntryDiskSnapshot _snapshot(
+  static LibraryEntryDiskSnapshot _snapshot(
     Set<String> audioFiles,
     Set<String> folderPaths, {
     required bool authoritative,
     Map<String, String> trackParentPaths = const <String, String>{},
   }) {
-    final sortedAudioFiles = audioFiles.toList(growable: false)
-      ..sort(
-        (first, second) => compareNatural(
-          path.basenameWithoutExtension(first),
-          path.basenameWithoutExtension(second),
-        ),
-      );
+    final sortedAudioFiles = [
+      for (final file in audioFiles)
+        (file, path.basenameWithoutExtension(file)),
+    ]..sort((first, second) => compareNatural(first.$2, second.$2));
     return LibraryEntryDiskSnapshot(
-      audioFilePaths: sortedAudioFiles,
+      audioFilePaths: [for (final file in sortedAudioFiles) file.$1],
       scannedFolderPaths: Set<String>.unmodifiable(folderPaths),
       authoritative: authoritative,
       trackParentPaths: trackParentPaths,

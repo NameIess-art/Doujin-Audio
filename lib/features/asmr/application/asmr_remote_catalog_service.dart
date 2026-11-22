@@ -191,12 +191,12 @@ class AsmrRemoteCatalogService {
       }
       return tracks ?? const <MusicTrack>[];
     })();
+    final searchBranches = searchElementBranches(searchQuery);
     final groups = await Future.wait([
       _loadRecommendationRequests(
         [
           for (final category in _recommendationSources)
-            for (final branch in searchElementBranches(searchQuery))
-              (category, branch),
+            for (final branch in searchBranches) (category, branch),
         ],
         language: language,
         token: token,
@@ -279,7 +279,7 @@ class AsmrRemoteCatalogService {
     }
     if (candidates.isEmpty && firstError != null) throw firstError;
     onSourceTotalCount?.call(
-      searchElementBranches(searchQuery).length == 1 ? sourceTotalCount : null,
+      searchBranches.length == 1 ? sourceTotalCount : null,
     );
     final failedSources = <AsmrCatalogSource>{
       for (final result in results)

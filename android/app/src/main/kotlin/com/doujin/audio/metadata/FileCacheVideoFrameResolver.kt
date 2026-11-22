@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import java.io.File
 import java.io.FileOutputStream
+import java.util.concurrent.locks.ReentrantLock
 import kotlin.math.roundToInt
 
 internal const val VIDEO_FRAME_MAX_EDGE_PX = 1200
@@ -63,12 +64,27 @@ internal class FileCacheVideoFrameResolver(
             coverCacheDir,
             artworkCacheFileName(cacheKey.toByteArray(Charsets.UTF_8), "video_frame", "jpg")
         )
-        if (outputFile.exists() && outputFile.length() > 0) {
+        if (outputFile.exists() && outputFile.length() > 0L) {
             touchCacheFile(outputFile)
             return outputFile.absolutePath
         }
 
+        return withKeyLock(outputFile.absolutePath) {
+            if (outputFile.exists() && outputFile.length() > 0L) {
+                touchCacheFile(outputFile)
+                return@withKeyLock outputFile.absolutePath
+            }
+            extractAndCache(trackPath, coverCacheDir, outputFile)
+        }
+    }
+
+    private fun extractAndCache(
+        trackPath: String,
+        coverCacheDir: File,
+        outputFile: File
+    ): String? {
         var retriever: MediaMetadataRetriever? = null
+        var tempFile: File? = null
         try {
             retriever = MediaMetadataRetriever()
             if (trackPath.startsWith("content://")) {
@@ -111,25 +127,38 @@ internal class FileCacheVideoFrameResolver(
 
             val bitmap = selectFrame(retriever, durationMs, frameSize) ?: return null
             try {
-                FileOutputStream(outputFile).use { output ->
+                tempFile = File.createTempFile("video_frame_", ".tmp", coverCacheDir)
+                FileOutputStream(tempFile).use { output ->
                     check(bitmap.compress(Bitmap.CompressFormat.JPEG, 88, output)) {
                         "Video frame compression failed."
                     }
                     output.flush()
                 }
-                check(outputFile.length() > 0L) { "Video frame cache is empty." }
+                check(tempFile.length() > 0L) { "Video frame cache is empty." }
+                if (!tempFile.renameTo(outputFile)) {
+                    if (outputFile.exists() && outputFile.length() > 0L) {
+                        tempFile.delete()
+                    } else {
+                        outputFile.delete()
+                        check(tempFile.renameTo(outputFile)) {
+                            "Video frame cache commit failed."
+                        }
+                    }
+                }
+                tempFile = null
                 touchCacheFile(outputFile)
                 return outputFile.absolutePath
             } finally {
                 bitmap.recycle()
             }
         } catch (_: OutOfMemoryError) {
-            outputFile.delete()
+            tempFile?.delete()
             return null
         } catch (_: Exception) {
-            outputFile.delete()
+            tempFile?.delete()
             return null
         } finally {
+            tempFile?.delete()
             try {
                 retriever?.release()
             } catch (_: Exception) {
@@ -150,17 +179,18 @@ internal class FileCacheVideoFrameResolver(
                 durationMs * 700L,
                 durationMs * 150L
             )
-            for (timestampUs in timestampsUs) {
-                val frame = frameAtTime(
-                    retriever,
-                    timestampUs,
-                    MediaMetadataRetriever.OPTION_CLOSEST,
-                    frameSize
-                ) ?: continue
-                if (!isBlankBitmap(frame)) {
-                    return frame
+            // Prefer keyframe seeks first to avoid decoding full GOPs on long videos.
+            for (option in intArrayOf(
+                MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                MediaMetadataRetriever.OPTION_CLOSEST
+            )) {
+                for (timestampUs in timestampsUs) {
+                    val frame = frameAtTime(retriever, timestampUs, option, frameSize) ?: continue
+                    if (!isBlankBitmap(frame)) {
+                        return frame
+                    }
+                    frame.recycle()
                 }
-                frame.recycle()
             }
         }
 
@@ -195,10 +225,13 @@ internal class FileCacheVideoFrameResolver(
         }
     }
 
-    private fun isBlankBitmap(bitmap: Bitmap): Boolean {
+    internal fun isBlankBitmap(bitmap: Bitmap): Boolean {
         val width = bitmap.width
         val height = bitmap.height
         if (width == 0 || height == 0) return true
+
+        val pixels = IntArray(width * height)
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
 
         val stepX = (width / 10).coerceAtLeast(1)
         val stepY = (height / 10).coerceAtLeast(1)
@@ -207,8 +240,9 @@ internal class FileCacheVideoFrameResolver(
         var totalSamples = 0
 
         for (y in 0 until height step stepY) {
+            val rowOffset = y * width
             for (x in 0 until width step stepX) {
-                val pixel = bitmap.getPixel(x, y)
+                val pixel = pixels[rowOffset + x]
                 val red = (pixel shr 16) and 0xFF
                 val green = (pixel shr 8) and 0xFF
                 val blue = pixel and 0xFF
@@ -222,5 +256,33 @@ internal class FileCacheVideoFrameResolver(
         return totalSamples == 0 ||
             darkPixels > totalSamples * 0.95 ||
             lightPixels > totalSamples * 0.95
+    }
+
+    private companion object {
+        private class LockEntry(
+            val lock: ReentrantLock = ReentrantLock(),
+            var references: Int = 0
+        )
+
+        private val lockMonitor = Any()
+        private val keyLocks = mutableMapOf<String, LockEntry>()
+
+        private fun <T> withKeyLock(key: String, action: () -> T): T {
+            val entry = synchronized(lockMonitor) {
+                keyLocks.getOrPut(key) { LockEntry() }.also { it.references++ }
+            }
+            entry.lock.lock()
+            try {
+                return action()
+            } finally {
+                entry.lock.unlock()
+                synchronized(lockMonitor) {
+                    entry.references--
+                    if (entry.references == 0 && keyLocks[key] === entry) {
+                        keyLocks.remove(key)
+                    }
+                }
+            }
+        }
     }
 }

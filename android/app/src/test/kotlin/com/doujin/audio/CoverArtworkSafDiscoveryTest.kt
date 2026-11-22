@@ -2,7 +2,6 @@ package com.doujin.audio
 
 import android.content.ContentProvider
 import android.content.ContentValues
-import android.content.pm.ProviderInfo
 import android.database.MatrixCursor
 import android.net.Uri
 import android.os.ParcelFileDescriptor
@@ -19,7 +18,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
-import org.robolectric.shadows.ShadowContentResolver
 import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
@@ -54,25 +52,46 @@ class CoverArtworkSafDiscoveryTest {
         assertEquals(images.first(), all.first())
     }
 
-    private fun setup(): Pair<CoverArtworkOperations, ImagesProvider> {
+    @Test
+    fun `given root has top priority cover when resolving or discovering preferred then subdirectories are skipped`() {
+        val (artwork, provider) = setup(extraFiles = listOf("work/sub/extra.jpg"))
+        val resolved = artwork.resolve("content://covers.test/document/voice", "$root::work", null)
+        assertEquals("cover bytes", File(requireNotNull(resolved)).readText())
+        assertFalse(provider.directories.contains("work/sub"))
+
+        provider.directories.clear()
+        val preferred = artwork.discover(root, null, "$root::work", recursive = true, preferredOnly = true)
+        assertEquals(1, preferred.size)
+        assertFalse(provider.directories.contains("work/sub"))
+
+        provider.directories.clear()
+        val all = artwork.discover(root, null, "$root::work", recursive = true, preferredOnly = false)
+        assertEquals(42, all.size)
+        assertEquals(listOf("root", "work", "work/sub"), provider.directories)
+    }
+
+    private fun setup(extraFiles: List<String> = emptyList()): Pair<CoverArtworkOperations, ImagesProvider> {
         val context = RuntimeEnvironment.getApplication()
-        val provider = ImagesProvider(temporary.newFolder())
-        provider.attachInfo(context, ProviderInfo().apply { authority = "covers.test" })
-        ShadowContentResolver.registerProviderInternal("covers.test", provider)
+        val provider = ImagesProvider(temporary.newFolder(), extraFiles)
+        registerTestDocumentProvider(context, "covers.test", provider)
         val storage = DocumentStorageOperations(context)
         return CoverArtworkOperations(context, storage, MediaMetadataOperations(context, storage)) to provider
     }
 
     private companion object { const val root = "content://covers.test/tree/root" }
 
-    private class ImagesProvider(folder: File) : ContentProvider() {
+    private class ImagesProvider(folder: File, extraFiles: List<String> = emptyList()) : ContentProvider() {
         val directories = mutableListOf<String>()
         val documents = mutableListOf<String>()
         val opened = mutableListOf<String>()
         private val files = (listOf("work/cover.jpg", "other/cover.jpg") +
-            (0 until 40).map { "work/image$it.jpg" }).associateWith { id ->
+            (0 until 40).map { "work/image$it.jpg" } + extraFiles).associateWith { id ->
             File(folder, id.replace('/', '_')).apply { writeText(if (id == "work/cover.jpg") "cover bytes" else id) }
         }
+        private val subdirectories = files.keys
+            .map { it.substringBeforeLast('/') }
+            .filter { it.contains('/') }
+            .distinct()
 
         override fun onCreate() = true
         override fun getType(uri: Uri) = "image/jpeg"
@@ -91,7 +110,8 @@ class CoverArtworkSafDiscoveryTest {
             val children = uri.lastPathSegment == "children"
             if (children) directories += id else documents += id
             val ids = if (!children) listOf(id) else if (id == "root") listOf("work", "other")
-                else files.keys.filter { it.substringBeforeLast('/') == id }
+                else subdirectories.filter { it.substringBeforeLast('/') == id } +
+                    files.keys.filter { it.substringBeforeLast('/') == id }
             val columns = projection ?: arrayOf("document_id", "_display_name", "mime_type", "_size", "last_modified", "flags")
             return MatrixCursor(columns).apply {
                 for (entry in ids) addRow(columns.map { column ->

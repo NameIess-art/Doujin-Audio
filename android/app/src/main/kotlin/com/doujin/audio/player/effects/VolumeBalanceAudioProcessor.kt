@@ -10,6 +10,8 @@ import kotlin.math.abs
 
 internal fun shouldProcessVolumeBalance(panning: Float): Boolean = abs(panning) >= 0.001f
 
+internal fun shouldProcessFrontBack(frontBack: Float): Boolean = abs(frontBack) >= 0.001f
+
 internal class VolumeBalanceAudioProcessor : BaseAudioProcessor() {
     data class Controls(
         val panning: Float = 0f,
@@ -51,7 +53,10 @@ internal class VolumeBalanceAudioProcessor : BaseAudioProcessor() {
         val outputBuffer = replaceOutputBuffer(inputBuffer.remaining())
         outputBuffer.order(inputBuffer.order())
 
-        if (!state.isActive) {
+        val targetFrontBack = if (shouldProcessFrontBack(state.frontBack)) state.frontBack else 0f
+        val spatialActive = state.spatialResponses != null &&
+            (targetFrontBack != 0f || spatialRenderer?.isNeutral == false)
+        if (!spatialActive && !shouldProcessVolumeBalance(state.panning) && !state.channelSwapEnabled) {
             outputBuffer.put(inputBuffer)
             outputBuffer.flip()
             return
@@ -63,7 +68,7 @@ internal class VolumeBalanceAudioProcessor : BaseAudioProcessor() {
         val isPcm16 = inputAudioFormat.encoding == C.ENCODING_PCM_16BIT
         val fullScale = if (isPcm16) 32768f else 1f
         val sampleRate = inputAudioFormat.sampleRate
-        val renderer = state.spatialResponses?.let { responses ->
+        val renderer = state.spatialResponses?.takeIf { spatialActive }?.let { responses ->
             spatialRenderer?.takeIf { it.responses === responses && it.sampleRate == sampleRate }
                 ?: StereoSpatialRenderer(responses, sampleRate).also { spatialRenderer = it }
         }
@@ -75,7 +80,7 @@ internal class VolumeBalanceAudioProcessor : BaseAudioProcessor() {
             var left = if (state.channelSwapEnabled) second else first
             var right = if (state.channelSwapEnabled) first else second
             if (renderer != null) {
-                renderer.process(left, right, state.frontBack, fullScale)
+                renderer.process(left, right, targetFrontBack, fullScale)
                 left = renderer.left
                 right = renderer.right
             }
@@ -89,6 +94,8 @@ internal class VolumeBalanceAudioProcessor : BaseAudioProcessor() {
         }
 
         inputBuffer.position(inputBuffer.limit())
+        // Finish the wet-to-dry ramp before bypassing convolution and history.
+        if (targetFrontBack == 0f && renderer?.isNeutral == true) renderer.clear()
         outputBuffer.flip()
     }
 

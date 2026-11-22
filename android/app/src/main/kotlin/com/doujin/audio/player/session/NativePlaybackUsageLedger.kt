@@ -8,6 +8,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Calendar
 import java.util.Locale
+import java.util.TimeZone
 import java.util.UUID
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
@@ -77,7 +78,11 @@ internal class NativePlaybackUsageLedger(
         Thread(runnable, "NativePlaybackUsageStore").apply { isDaemon = true }
     }
 ) {
-    private val preferences = context.getSharedPreferences("playback_usage", Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext ?: context
+    private val preferences by lazy {
+        appContext.getSharedPreferences("playback_usage", Context.MODE_PRIVATE)
+    }
+    private var loaded = false
     private var epoch = "android:${UUID.randomUUID()}"
     private var sequence = 0L
     private fun newBatchId() = "$epoch:${++sequence}"
@@ -90,8 +95,15 @@ internal class NativePlaybackUsageLedger(
     private var active = emptyMap<String, Map<String, Any?>>()
     private var queuedCheckpoint: UsageCheckpoint? = null
     private var writing = false
+    private var cachedCalendar: Calendar? = null
+    private var cachedTimeZoneId: String? = null
+    private var cachedDayStartMs = Long.MIN_VALUE
+    private var cachedDayEndMs = Long.MIN_VALUE
+    private var cachedDate = ""
 
-    init {
+    private fun ensureLoaded() {
+        if (loaded) return
+        loaded = true
         preferences.getString("ledger", null)?.let { encoded ->
             try {
                 val state = JSONObject(encoded)
@@ -123,6 +135,7 @@ internal class NativePlaybackUsageLedger(
 
     @Synchronized
     fun update(items: List<Map<String, Any?>>) {
+        ensureLoaded()
         if (items == activeItems) return
         val changed = settle()
         activeItems = items
@@ -132,6 +145,7 @@ internal class NativePlaybackUsageLedger(
 
     @Synchronized
     fun checkpoint() {
+        ensureLoaded()
         if (settle()) persist() else scheduleWrite()
     }
 
@@ -142,20 +156,34 @@ internal class NativePlaybackUsageLedger(
         elapsed = tick
         wall = wallNow()
         if (active.isEmpty() || remaining == 0L) return false
-        val calendar = Calendar.getInstance()
+        val currentTz = TimeZone.getDefault()
+        val currentTzId = currentTz.id
         while (remaining > 0L) {
-            calendar.timeInMillis = start
-            val year = calendar.get(Calendar.YEAR).toString().padStart(4, '0')
-            val month = (calendar.get(Calendar.MONTH) + 1).toString().padStart(2, '0')
-            val dayOfMonth = calendar.get(Calendar.DAY_OF_MONTH).toString().padStart(2, '0')
-            val date = "$year-$month-$dayOfMonth"
-            calendar.add(Calendar.DAY_OF_MONTH, 1)
-            calendar.set(Calendar.HOUR_OF_DAY, 0)
-            calendar.set(Calendar.MINUTE, 0)
-            calendar.set(Calendar.SECOND, 0)
-            calendar.set(Calendar.MILLISECOND, 0)
-            val span = minOf(remaining, (calendar.timeInMillis - start).coerceAtLeast(1L))
-            val day = days.getOrPut(date, ::UsageDay)
+            if (start < cachedDayStartMs || start >= cachedDayEndMs || currentTzId != cachedTimeZoneId) {
+                val calendar = cachedCalendar?.takeIf { cachedTimeZoneId == currentTzId }
+                    ?: Calendar.getInstance(currentTz).also {
+                        cachedCalendar = it
+                        cachedTimeZoneId = currentTzId
+                    }
+                calendar.timeInMillis = start
+                val year = calendar.get(Calendar.YEAR).toString().padStart(4, '0')
+                val month = (calendar.get(Calendar.MONTH) + 1).toString().padStart(2, '0')
+                val dayOfMonth = calendar.get(Calendar.DAY_OF_MONTH).toString().padStart(2, '0')
+                cachedDate = "$year-$month-$dayOfMonth"
+                calendar.set(Calendar.HOUR_OF_DAY, 0)
+                calendar.set(Calendar.MINUTE, 0)
+                calendar.set(Calendar.SECOND, 0)
+                calendar.set(Calendar.MILLISECOND, 0)
+                cachedDayStartMs = calendar.timeInMillis
+                calendar.add(Calendar.DAY_OF_MONTH, 1)
+                calendar.set(Calendar.HOUR_OF_DAY, 0)
+                calendar.set(Calendar.MINUTE, 0)
+                calendar.set(Calendar.SECOND, 0)
+                calendar.set(Calendar.MILLISECOND, 0)
+                cachedDayEndMs = calendar.timeInMillis
+            }
+            val span = minOf(remaining, (cachedDayEndMs - start).coerceAtLeast(1L))
+            val day = days.getOrPut(cachedDate, ::UsageDay)
             day.totalMs += span
             for ((key, item) in active) {
                 val work = day.works.getOrPut(key, ::UsageWork)
@@ -165,13 +193,14 @@ internal class NativePlaybackUsageLedger(
                 (item["usageDescriptor"] as? Map<*, *>)?.let { work.descriptor = it }
             }
             remaining -= span
-            start = calendar.timeInMillis
+            start = cachedDayEndMs
         }
         return true
     }
 
     @Synchronized
     fun read(): List<Map<String, Any?>> {
+        ensureLoaded()
         settle()
         if (days.isNotEmpty()) {
             pending += currentBatch()
@@ -184,11 +213,13 @@ internal class NativePlaybackUsageLedger(
 
     @Synchronized
     fun acknowledge(ids: Set<String>) {
+        ensureLoaded()
         if (pending.removeAll { it.id in ids }) persist()
     }
 
     @Synchronized
     fun reset() {
+        loaded = true
         pending.clear()
         days.clear()
         currentId = newBatchId()

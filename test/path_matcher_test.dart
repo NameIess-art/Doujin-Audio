@@ -145,6 +145,34 @@ void main() {
     );
   });
 
+  test('remote detection preserves HTTP URI and file path classification', () {
+    for (final value in [
+      'http://example.com/audio',
+      'hTtPs://example.com/audio#fragment',
+      'http:relative-to-scheme',
+      'https://example.com:bad/audio',
+      'file:///library/audio.mp3',
+      'content://provider/tree/primary%3AMusic',
+      r'C:\Music\Track.mp3',
+      '/library/http:track.mp3',
+      'sftp://example.com/audio',
+    ]) {
+      final scheme = Uri.tryParse(value)?.scheme;
+      expect(
+        PathMatcher.isRemoteUri(value),
+        scheme == 'http' || scheme == 'https',
+      );
+    }
+    expect(
+      PathMatcher.equivalenceKey('HTTPS://example.com/audio///'),
+      'remote:HTTPS://example.com/audio',
+    );
+    expect(
+      PathMatcher.equivalenceKey(r'C:\Music\Album\..\Track.mp3'),
+      PathMatcher.equivalenceKey('c:/music/track.mp3'),
+    );
+  });
+
   test('trimRightSlash removes trailing slashes and trims whitespace', () {
     expect(PathMatcher.trimRightSlash('foo/bar///'), 'foo/bar');
     expect(PathMatcher.trimRightSlash('  foo/bar/  '), 'foo/bar');

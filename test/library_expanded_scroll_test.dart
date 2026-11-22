@@ -3,6 +3,7 @@ import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/animated_reorder.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_tree_widgets.dart';
@@ -259,6 +260,27 @@ void main() {
         } finally {
           UiInteractionCoordinator.instance.cancelInteraction(interaction);
         }
+        final tracks = find.byWidgetPredicate(
+          (widget) => widget is LibraryTreeItem && widget.node is TrackNode,
+        );
+        await pumpUntilNotFound(tester, tracks);
+        folderItem.onFolderExpansionChanged!(child, true);
+        final revealing = find.byWidgetPredicate(
+          (widget) =>
+              widget is AnimatedTreeReveal &&
+              widget.visible &&
+              widget.animateInitial,
+        );
+        await pumpUntilFound(tester, revealing);
+        final revealOrder = tester
+            .widget<AnimatedReorder>(find.byType(AnimatedReorder))
+            .order;
+        await pumpUntilNotFound(tester, revealing);
+        expect(tracks, findsWidgets);
+        expect(
+          tester.widget<AnimatedReorder>(find.byType(AnimatedReorder)).order,
+          same(revealOrder),
+        );
         await tester.pumpWidget(const SizedBox.shrink());
 
         // Measure the same long jump with Flutter's stock varied-extent sliver.

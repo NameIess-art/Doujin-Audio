@@ -25,6 +25,9 @@ class SqliteLibraryRepository
   Future<MusicTrack?> loadTrackDetail(String path) =>
       _database.loadTrackDetail(path);
   @override
+  Future<Map<String, MusicTrack>> loadTrackDetails(Iterable<String> paths) =>
+      _database.loadTrackDetails(paths);
+  @override
   Future<void> saveAllTracks(List<MusicTrack> tracks) =>
       _database.saveAllTracks(tracks);
   @override

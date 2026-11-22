@@ -11,7 +11,12 @@ import '../../features/settings/application/settings_state.dart';
 import 'runtime_binding.dart';
 
 final class AsmrDownloadRuntimeBinding implements RuntimeBinding {
-  AsmrDownloadRuntimeBinding._(this._library, this._scanLabels, this._scans);
+  AsmrDownloadRuntimeBinding._(
+    this._library,
+    this._scanLabels,
+    this._scans, {
+    required bool ownsScans,
+  }) : _ownsScans = ownsScans;
 
   factory AsmrDownloadRuntimeBinding.attach({
     required AsmrDownloadManager downloads,
@@ -24,6 +29,7 @@ final class AsmrDownloadRuntimeBinding implements RuntimeBinding {
       library,
       scanLabels,
       scanCoordinator ?? LibraryScanCoordinator(),
+      ownsScans: scanCoordinator == null,
     );
     void syncConcurrency() =>
         downloads.setMaxConcurrentDownloads(settings.asmrDownloadThreadCount);
@@ -44,6 +50,7 @@ final class AsmrDownloadRuntimeBinding implements RuntimeBinding {
   final LibraryFacade _library;
   final LibraryScanLabels Function() _scanLabels;
   final LibraryScanCoordinator _scans;
+  final bool _ownsScans;
   final _stopping = Completer<void>();
   late final StreamSubscription<SettingsState> _settingsSubscription;
   late final StreamSubscription<AsmrDownloadTaskSnapshot>
@@ -128,6 +135,6 @@ final class AsmrDownloadRuntimeBinding implements RuntimeBinding {
       _scans.cancel(_library);
     }
     await _refreshFuture;
-    _scans.dispose();
+    if (_ownsScans) _scans.dispose();
   }
 }

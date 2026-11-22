@@ -51,9 +51,11 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     required this.snapshotCacheService,
     LibraryEntryEditorService? entryEditorService,
     CoverArtworkCacheService? coverArtworkCacheService,
+    FileCachePlatformGateway? fileCacheGateway,
   }) : _service = service,
        entryEditorService = entryEditorService ?? LibraryEntryEditorService(),
-       _coverArtworkCacheService = coverArtworkCacheService;
+       _coverArtworkCacheService = coverArtworkCacheService,
+       _fileCacheGateway = fileCacheGateway ?? FileCachePlatformGateway.instance;
 
   factory LibraryFacade.create({
     required LibraryPersistenceRepository databaseRepository,
@@ -68,6 +70,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     LibrarySnapshotCacheService? snapshotCacheService,
     LibraryEntryEditorService? entryEditorService,
     CoverArtworkCacheService? coverArtworkCacheService,
+    FileCachePlatformGateway? fileCacheGateway,
   }) {
     final resolvedAudioDetailStore =
         audioDetailStore ??
@@ -104,6 +107,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
           ),
       entryEditorService: entryEditorService ?? LibraryEntryEditorService(),
       coverArtworkCacheService: coverArtworkCacheService,
+      fileCacheGateway: fileCacheGateway,
     );
   }
 
@@ -115,6 +119,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   final LibraryService _service;
   final LibrarySnapshotCacheService snapshotCacheService;
   final LibraryEntryEditorService entryEditorService;
+  final FileCachePlatformGateway _fileCacheGateway;
   late final LibraryPersistenceCoordinator _persistenceCoordinator =
       LibraryPersistenceCoordinator(
         repository: databaseRepository,
@@ -954,11 +959,14 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     return generation;
   }
 
+  Future<bool> openContainingFolder(String targetPath) =>
+      _fileCacheGateway.openContainingFolder(targetPath);
+
   @override
   void cancelScan() {
     if (!_service.isScanning) return;
     _setScanning(false);
-    unawaited(FileCachePlatformGateway.instance.cancelActiveFolderScan());
+    unawaited(_fileCacheGateway.cancelActiveFolderScan());
   }
 
   @override

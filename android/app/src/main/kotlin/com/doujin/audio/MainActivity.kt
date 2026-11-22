@@ -57,7 +57,7 @@ open class MainActivity : FlutterFragmentActivity() {
     private var powerMethodChannel: MethodChannel? = null
     private var powerMethodHandler: PowerMethodHandler? = null
     private var fileCacheScanEventChannel: EventChannel? = null
-    private val subtitleOverlayCoordinator by lazy { SubtitleOverlayCoordinator(this) }
+    private val subtitleOverlayCoordinator by lazy { SubtitleOverlayCoordinator(applicationContext) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

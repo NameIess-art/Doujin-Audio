@@ -1,14 +1,25 @@
 package com.doujin.audio
 
+import android.content.ContentResolver
+import android.content.Intent
+import android.net.Uri
+import com.doujin.audio.storage.PersistedUriPermissionOperations
 import com.doujin.audio.storage.persistedGrantCoversReference
 import com.doujin.audio.storage.pendingPickerGrantIsActive
 import com.doujin.audio.storage.permissionModesCover
 import com.doujin.audio.storage.permissionMigrationRequired
 import com.doujin.audio.storage.shouldMigratePermissionAfterRename
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33], manifest = Config.NONE)
 class PersistedUriPermissionPolicyTest {
     @Test
     fun `tree grant covers tree documents and synthetic children`() {
@@ -200,5 +211,38 @@ class PersistedUriPermissionPolicyTest {
                 "content://com.android.externalstorage.documents/document/primary%3ADownload%2FASMR"
             )
         )
+    }
+
+    @Test
+    fun `pending transition grants expire based on monotonic elapsedRealtime clock`() {
+        val resolver: ContentResolver = RuntimeEnvironment.getApplication().contentResolver
+        val uri = Uri.parse("content://com.android.externalstorage.documents/tree/primary%3ATestMonotonic")
+        var monotonicMs = 10_000L
+        val previousClock = PersistedUriPermissionOperations.elapsedRealtimeClock
+        PersistedUriPermissionOperations.elapsedRealtimeClock = { monotonicMs }
+        PersistedUriPermissionOperations.clearPendingTransitionGrantsForTest()
+        try {
+            PersistedUriPermissionOperations.takeForPicker(
+                resolver = resolver,
+                uri = uri,
+                intentFlags = Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+            // Within 2-minute TTL -> retained even if retainedUris does not include it yet.
+            monotonicMs += 60_000L
+            val retainedResult = PersistedUriPermissionOperations.reconcile(resolver, emptySet())
+            assertEquals(1, retainedResult.retainedCount)
+            assertEquals(0, retainedResult.releasedCount)
+
+            // Past 2-minute TTL -> expired and released.
+            monotonicMs += 60_000L
+            val expiredResult = PersistedUriPermissionOperations.reconcile(resolver, emptySet())
+            assertEquals(0, expiredResult.retainedCount)
+            assertEquals(1, expiredResult.releasedCount)
+            assertTrue(resolver.persistedUriPermissions.none { it.uri == uri })
+        } finally {
+            PersistedUriPermissionOperations.elapsedRealtimeClock = previousClock
+            PersistedUriPermissionOperations.clearPendingTransitionGrantsForTest()
+        }
     }
 }

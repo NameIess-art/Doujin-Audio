@@ -9,10 +9,78 @@ const _listeningRestoreColumns = {
 
 // The portable database contains no external audio detail documents.
 const _localDurationDocumentSyncKey = 'audio_detail_duration_document_v1';
+const _databaseFileSuffixes = <String>['', '-wal', '-shm', '-journal'];
 
 extension AppDatabaseBackup on AppDatabase {
   Future<void> openBeforeRestore() async {
     await _database;
+  }
+
+  Future<File> resolveDatabaseFile({
+    Future<String> Function()? databasesPathProvider,
+  }) async {
+    final directory = Directory(
+      await (databasesPathProvider ?? getDatabasesPath)(),
+    );
+    await directory.create(recursive: true);
+    return File(p.join(directory.path, AppDatabase.fileName));
+  }
+
+  Future<void> backupDatabaseFiles({
+    required File source,
+    required File destination,
+  }) async {
+    await destination.parent.create(recursive: true);
+    await deleteDatabaseFiles(destination);
+    for (final suffix in _databaseFileSuffixes) {
+      final file = File('${source.path}$suffix');
+      if (await file.exists()) {
+        await file.copy('${destination.path}$suffix');
+      }
+    }
+  }
+
+  Future<void> deleteDatabaseFiles(File database) async {
+    for (final suffix in _databaseFileSuffixes) {
+      final file = File('${database.path}$suffix');
+      if (await file.exists()) await file.delete();
+    }
+  }
+
+  Future<void> replaceDatabaseFile({
+    required File candidate,
+    required File target,
+    @visibleForTesting
+    Future<File> Function(File source, String newPath)? renameFile,
+  }) async {
+    await target.parent.create(recursive: true);
+    await deleteDatabaseFiles(target);
+    final doRename =
+        renameFile ?? (File source, String newPath) => source.rename(newPath);
+    try {
+      await doRename(candidate, target.path);
+    } on FileSystemException {
+      // Cross-volume renames (e.g. EXDEV / ERROR_NOT_SAME_DEVICE) fail on
+      // Windows and Android; stage on the destination volume then swap.
+      final staged = File('${target.path}.restore.part');
+      if (await staged.exists()) await staged.delete();
+      try {
+        await candidate.copy(staged.path);
+        await staged.rename(target.path);
+      } catch (_) {
+        if (await staged.exists()) await staged.delete();
+        rethrow;
+      }
+      try {
+        if (await candidate.exists()) await candidate.delete();
+      } on FileSystemException catch (error, stackTrace) {
+        AppLogService.warning(
+          'backup_restore_candidate_cleanup_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+    }
   }
 
   Future<File> createPortableSnapshot(String outputPath) async {

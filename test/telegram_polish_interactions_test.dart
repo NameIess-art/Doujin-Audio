@@ -682,6 +682,67 @@ void main() {
     );
 
     testWidgets(
+      'AppPlaybackIconTransition crossfades without scale or rotation on Windows',
+      (tester) async {
+        var playing = false;
+        late StateSetter setPlaying;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(platform: TargetPlatform.windows),
+            home: Scaffold(
+              body: Center(
+                child: StatefulBuilder(
+                  builder: (context, setState) {
+                    setPlaying = setState;
+                    return AppPlaybackIconTransition(
+                      child: Icon(
+                        playing
+                            ? Icons.pause_rounded
+                            : Icons.play_arrow_rounded,
+                        key: ValueKey<bool>(playing),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        setPlaying(() => playing = true);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 60));
+
+        expect(
+          find.descendant(
+            of: find.byType(AppPlaybackIconTransition),
+            matching: find.byType(ScaleTransition),
+          ),
+          findsNothing,
+        );
+        expect(
+          find.descendant(
+            of: find.byType(AppPlaybackIconTransition),
+            matching: find.byType(Transform),
+          ),
+          findsNothing,
+        );
+        expect(
+          find.descendant(
+            of: find.byType(AppPlaybackIconTransition),
+            matching: find.byType(FadeTransition),
+          ),
+          findsNWidgets(2),
+        );
+
+        await tester.pumpAndSettle();
+        expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
+      },
+    );
+
+    testWidgets(
       'buildAppSearchPageRoute configures non-sliding fade route with appSearchRouteName',
       (tester) async {
         late PageRoute<void> searchRoute;

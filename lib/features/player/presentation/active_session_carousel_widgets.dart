@@ -774,7 +774,7 @@ class _ActiveSessionTitleSubtitleState
   }
 }
 
-class _ActiveSessionCover extends ConsumerWidget {
+class _ActiveSessionCover extends ConsumerStatefulWidget {
   const _ActiveSessionCover({
     required this.sessionId,
     this.session,
@@ -793,33 +793,101 @@ class _ActiveSessionCover extends ConsumerWidget {
   final Color? activeColor;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ActiveSessionCover> createState() =>
+      _ActiveSessionCoverState();
+}
+
+class _ActiveSessionCoverState extends ConsumerState<_ActiveSessionCover> {
+  bool _tickerEnabled = true;
+  (String, Object)? _lastPrewarmKey;
+  Future<String?>? _observedCoverFuture;
+  int _coverFutureGeneration = 0;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _tickerEnabled = TickerMode.valuesOf(context).enabled;
+  }
+
+  @override
+  void dispose() {
+    cancelDetailCoverPrewarm(this);
+    super.dispose();
+  }
+
+  void _schedulePrewarmIfNeeded({
+    required String? initialPath,
+    required Future<String?> coverFuture,
+    required CoverImageResolution resolution,
+  }) {
+    if (widget.track?.isVideo == true) {
+      cancelDetailCoverPrewarm(this);
+      _lastPrewarmKey = null;
+      return;
+    }
+    void scheduleForPath(String? resolvedPath) {
+      if (!mounted || resolvedPath == null || resolvedPath.isEmpty) return;
+      final key = (resolvedPath, resolution);
+      if (_lastPrewarmKey == key) return;
+      _lastPrewarmKey = key;
+      scheduleDetailCoverPrewarm(
+        ownerKey: this,
+        coverPath: resolvedPath,
+        resolution: resolution,
+        isStillValid: () => mounted && _tickerEnabled,
+      );
+    }
+
+    if (initialPath != null && initialPath.isNotEmpty) {
+      scheduleForPath(initialPath);
+      return;
+    }
+    if (identical(_observedCoverFuture, coverFuture)) return;
+    _observedCoverFuture = coverFuture;
+    final generation = ++_coverFutureGeneration;
+    unawaited(
+      coverFuture.then((resolvedPath) {
+        if (!mounted || generation != _coverFutureGeneration) return;
+        scheduleForPath(resolvedPath);
+      }, onError: (_, _) {}),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final library = ref.read(libraryFacadeProvider);
     final cs = Theme.of(context).colorScheme;
-    final effectiveColor = activeColor ?? cs.primary;
-    final d = dimension ?? 48.0;
+    final effectiveColor = widget.activeColor ?? cs.primary;
+    final d = widget.dimension ?? 48.0;
     final innerD = coverProgressInnerDimension(d);
+    final resolution = ref.watch(coverImageResolutionProvider);
+    final initialPath = library.resolvedPlaybackCoverPathForTrack(widget.track);
     final coverFuture = ref
         .read(libraryCoverUiControllerProvider)
-        .deferredPlaybackCover(track, context: context);
+        .deferredPlaybackCover(widget.track, context: context);
+    _schedulePrewarmIfNeeded(
+      initialPath: initialPath,
+      coverFuture: coverFuture,
+      resolution: resolution,
+    );
     final coverCacheWidth = coverThumbnailCacheWidth(
       logicalWidth: d,
       devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-      resolution: ref.watch(coverImageResolutionProvider),
+      resolution: resolution,
     );
 
     return SizedBox.square(
-      key: ValueKey<String>('active_session_cover_$sessionId'),
+      key: ValueKey<String>('active_session_cover_${widget.sessionId}'),
       dimension: d,
       child: SessionCoverProgressRing(
-        session: session,
-        sessionId: sessionId,
+        session: widget.session,
+        sessionId: widget.sessionId,
         activeColor: effectiveColor,
         size: d,
         child: SessionCoverAnchor(
-          sessionId: sessionId,
+          sessionId: widget.sessionId,
           radius: innerD / 2,
-          location: isRoutedDock
+          location: widget.isRoutedDock
               ? SessionCoverLocation.routedDock
               : SessionCoverLocation.dock,
           child: CoverArtworkFrame(
@@ -828,10 +896,10 @@ class _ActiveSessionCover extends ConsumerWidget {
               onImageError:
                   library.coverArtworkCacheService.reportArtworkReadFailure,
               future: coverFuture,
-              requestKey: (sessionId, track?.path),
-              initialPath: library.resolvedPlaybackCoverPathForTrack(track),
+              requestKey: (widget.sessionId, widget.track?.path),
+              initialPath: initialPath,
               retryFutureBuilder: () =>
-                  library.playbackCoverPathFutureForTrack(track),
+                  library.playbackCoverPathFutureForTrack(widget.track),
               cacheWidth: coverCacheWidth,
               useDefaultCacheWidth: false,
               deferLoadDuringInteraction: true,

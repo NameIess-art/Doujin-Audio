@@ -186,7 +186,7 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
       _nativeRetainedContentUrisBySession[sessionId] = Set.unmodifiable(next);
     }
     _nativePersistedUriReferenceRevision += 1;
-    _persistedUriReferenceRevisionController.add(persistedUriReferenceRevision);
+    _emitPersistedUriReferenceRevision();
   }
 
   void replaceNativeRetainedContentUris(
@@ -221,7 +221,7 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
         next.map((key, value) => MapEntry(key, Set.unmodifiable(value))),
       );
     _nativePersistedUriReferenceRevision += 1;
-    _persistedUriReferenceRevisionController.add(persistedUriReferenceRevision);
+    _emitPersistedUriReferenceRevision();
   }
 
   Future<bool> refreshNativeRetainedContentUriInventory() async {
@@ -241,7 +241,7 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
     }
     if (!changed) return;
     _nativePersistedUriReferenceRevision += 1;
-    _persistedUriReferenceRevisionController.add(persistedUriReferenceRevision);
+    _emitPersistedUriReferenceRevision();
   }
 
   void forgetNativeSessionRetainedContentUris(String sessionId) {
@@ -256,7 +256,7 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
     _nativeRetainedContentUrisBySession.clear();
     if (!changed) return;
     _nativePersistedUriReferenceRevision += 1;
-    _persistedUriReferenceRevisionController.add(persistedUriReferenceRevision);
+    _emitPersistedUriReferenceRevision();
   }
 
   Future<void> get pendingSessionPreparation =>
@@ -470,7 +470,7 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
   }
 
   void publishSessionActivated(String sessionId) {
-    if (sessionId.isEmpty || _sessionActivations.isClosed) return;
+    if (sessionId.isEmpty || _disposed || _sessionActivations.isClosed) return;
     _sessionActivations.add(sessionId);
   }
 

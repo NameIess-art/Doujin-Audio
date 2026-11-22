@@ -2,9 +2,11 @@
 
 #include <flutter_windows.h>
 #include <io.h>
+#include <shellapi.h>
 #include <stdio.h>
 #include <windows.h>
 
+#include <cwchar>
 #include <iostream>
 
 void CreateAndAttachConsole() {
@@ -39,6 +41,26 @@ std::vector<std::string> GetCommandLineArguments() {
   ::LocalFree(argv);
 
   return command_line_arguments;
+}
+
+bool HasCommandLineFlag(const wchar_t* flag) {
+  if (flag == nullptr || *flag == L'\0') {
+    return false;
+  }
+  int argc = 0;
+  wchar_t** argv = ::CommandLineToArgvW(::GetCommandLineW(), &argc);
+  if (argv == nullptr) {
+    return false;
+  }
+  bool found = false;
+  for (int i = 1; i < argc; ++i) {
+    if (std::wcscmp(argv[i], flag) == 0) {
+      found = true;
+      break;
+    }
+  }
+  ::LocalFree(argv);
+  return found;
 }
 
 std::string Utf8FromUtf16(const wchar_t* utf16_string) {

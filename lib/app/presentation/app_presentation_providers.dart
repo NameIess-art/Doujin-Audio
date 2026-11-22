@@ -455,12 +455,9 @@ final class _LibraryDetailReadGate {
 }
 
 final libraryCoverForTrackProvider = FutureProvider.autoDispose
-    .family<String?, ({String trackPath, BuildContext context})>((
-      ref,
-      request,
-    ) {
+    .family<String?, String>((ref, trackPath) {
       final facade = ref.read(libraryFacadeProvider);
-      final track = facade.trackByPath(request.trackPath);
+      final track = facade.trackByPath(trackPath);
       if (track == null || track.isVideo) return null;
       final cache = facade.coverArtworkCacheService;
       final coverKey = cache.coverSearchKeyForTrack(track) ?? track.path;
@@ -469,9 +466,10 @@ final libraryCoverForTrackProvider = FutureProvider.autoDispose
       );
       final resolved = facade.resolvedCoverPathForTrack(track);
       if (resolved != null && resolved.isNotEmpty) return resolved;
-      return ref
-          .read(libraryCoverUiControllerProvider)
-          .deferredTrackCover(track, context: request.context);
+      final controller = ref.read(libraryCoverUiControllerProvider);
+      final cancelToken = Object();
+      ref.onDispose(() => controller.cancelDeferredLookup(cancelToken));
+      return controller.deferredTrackCover(track, cancelToken: cancelToken);
     });
 
 final playlistResumeBatchProvider = StreamProvider<int>(

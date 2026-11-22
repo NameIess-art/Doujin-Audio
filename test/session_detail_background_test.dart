@@ -9,6 +9,7 @@ import 'package:doujin_audio/core/media/cover_image_resolution.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/core/platform/notifications_platform_service.dart';
+import 'package:doujin_audio/core/ui/cover_image_retention.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
@@ -408,35 +409,39 @@ void main() {
         }
         await tester.pump(const Duration(milliseconds: 240));
         await tester.pump();
+        if (entry != 'routed dock') {
+          // Extended 450ms transition is still in flight at 340ms.
+          expect(flightFinder, findsOneWidget);
+        }
+        await tester.pump(const Duration(milliseconds: 120));
+        await tester.pump();
         expect(flightFinder, findsNothing);
-        final verifyUpgrade = entry == 'dock' && exitToDock;
+        final verifyPrewarmedDock = entry == 'dock' && exitToDock;
         final previewFinder = find.byKey(
           const ValueKey('session_detail_cover_preview'),
         );
         final upgradeFinder = find.byKey(
           const ValueKey('session_detail_cover_upgrade'),
         );
-        if (verifyUpgrade) {
-          expect(enter.image.width, lessThan(192));
-          expect(previewFinder, findsOneWidget);
-          expect(tester.widget<Opacity>(upgradeFinder).opacity, 0);
+        if (verifyPrewarmedDock) {
+          expect(enter.image.width, 192);
+          expect(previewFinder, findsNothing);
+          expect(upgradeFinder, findsNothing);
+          expect(tester.widget<RawImage>(detailImage).image!.width, 192);
         }
         for (final name in ['close', 'title']) {
           expect(overlayOpacity(name), 0);
         }
         await tester.pump(const Duration(milliseconds: 150));
-        if (verifyUpgrade) {
-          expect(previewFinder, findsOneWidget);
-          expect(
-            tester.widget<Opacity>(upgradeFinder).opacity,
-            inExclusiveRange(0, 1),
-          );
+        if (verifyPrewarmedDock) {
+          expect(previewFinder, findsNothing);
+          expect(upgradeFinder, findsNothing);
         }
         for (final name in ['close', 'title']) {
           expect(overlayOpacity(name), inExclusiveRange(0, 1));
         }
         await tester.pumpAndSettle();
-        if (verifyUpgrade) {
+        if (verifyPrewarmedDock) {
           expect(previewFinder, findsNothing);
           expect(tester.widget<RawImage>(detailImage).image!.width, 192);
         }
@@ -523,6 +528,291 @@ void main() {
       }),
     );
   }
+
+  testWidgets(
+    'dock prewarms detail cover during idle so opening flies sharp in one step',
+    (tester) async {
+      tester.view.physicalSize = defaultTargetPlatform == TargetPlatform.android
+          ? const Size(390, 820)
+          : const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      UiInteractionCoordinator.instance.resetForTest();
+      releaseRetainedCoverImages();
+      final directory = (await tester.runAsync(
+        () => Directory.systemTemp.createTemp('cover-prewarm-'),
+      ))!;
+      addTearDown(() async {
+        releaseRetainedCoverImages();
+        PaintingBinding.instance.imageCache.clear();
+        PaintingBinding.instance.imageCache.clearLiveImages();
+        if (directory.existsSync()) {
+          await directory.delete(recursive: true);
+        }
+      });
+      addTearDown(UiInteractionCoordinator.instance.resetForTest);
+      final cover = (await tester.runAsync<File>(() async {
+        final recorder = ui.PictureRecorder();
+        ui.Canvas(recorder).drawColor(const Color(0xFF3366AA), ui.BlendMode.src);
+        final picture = recorder.endRecording();
+        final image = await picture.toImage(192, 144);
+        final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+        image.dispose();
+        picture.dispose();
+        return File('${directory.path}/cover.png')
+          ..writeAsBytesSync(bytes!.buffer.asUint8List());
+      }))!;
+      final cache = _ResolvedCoverCache(cover.path);
+      final fixture = AppRuntimeWidgetTestFixture(
+        providedNotificationService: PlaybackNotificationService(
+          notificationsPlatformService: NotificationsPlatformService(
+            isWindowsOverride: false,
+          ),
+        ),
+        coverArtworkCacheService: cache,
+        configureSettingsRepository: (settings) {
+          settings.coverImageResolution = CoverImageResolution.original;
+          settings.syncSlice();
+        },
+      );
+      addTearDown(fixture.dispose);
+      final track = testMusicTrack(
+        name: 'Prewarm',
+        path: '/music/prewarm.mp3',
+        groupKey: '/music/prewarm',
+        groupTitle: 'Prewarm',
+      );
+      fixture.library.addTracks([track], persist: false);
+      final session = fixture.playback.createTrackSession(track);
+      addTearDown(session.shutdown);
+      fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      await tester.pumpWidget(
+        fixture.build(
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: SizedBox(
+              width: 300,
+              child: ActiveSessionCarousel(
+                sessions: [fixture.playback.sessionSnapshotById(session.id)!],
+                viewportFraction: 1,
+                presentation: ActiveSessionCarouselPresentation.embedded,
+              ),
+            ),
+          ),
+        ),
+      );
+      // Precache only the small dock thumbnail; let idle prewarm decode 192px.
+      await tester.runAsync(() async {
+        final context = tester.element(find.byType(ActiveSessionCarousel));
+        await precacheImage(
+          resizeFileImageIfNeeded(path: cover.path, cacheWidth: 64),
+          context,
+        );
+      });
+      await pumpAndSettleWithAsync(tester);
+      for (var i = 0; i < 20; i++) {
+        if (retainedCoverImageFor(FileImage(cover))?.isAdequate == true) {
+          break;
+        }
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      expect(
+        retainedCoverImageFor(FileImage(cover))?.isAdequate,
+        isTrue,
+      );
+
+      final source = find.byWidgetPredicate(
+        (widget) =>
+            widget is SessionCoverAnchor &&
+            widget.sessionId == session.id &&
+            widget.isDock,
+      );
+      expect(source, findsOneWidget);
+      await tester.tap(source);
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final flightFinder = find.byKey(
+        const ValueKey('session_detail_cover_flight'),
+      );
+      expect(flightFinder, findsOneWidget);
+      final enter =
+          tester.widget<CustomPaint>(flightFinder).painter!
+              as SessionCoverFlight;
+      expect(enter.image.width, 192);
+      expect(enter.upgradedImage, isNull);
+
+      await tester.pump(const Duration(milliseconds: 360));
+      await tester.pump();
+      expect(flightFinder, findsNothing);
+      expect(
+        find.byKey(const ValueKey('session_detail_cover_preview')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('session_detail_cover_upgrade')),
+        findsNothing,
+      );
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 6));
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'cold playlist cover upgrades mid-flight and lands without a second fade',
+    (tester) async {
+      tester.view.physicalSize = defaultTargetPlatform == TargetPlatform.android
+          ? const Size(390, 820)
+          : const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      UiInteractionCoordinator.instance.resetForTest();
+      releaseRetainedCoverImages();
+      final directory = (await tester.runAsync(
+        () => Directory.systemTemp.createTemp('cover-midflight-'),
+      ))!;
+      addTearDown(() async {
+        releaseRetainedCoverImages();
+        PaintingBinding.instance.imageCache.clear();
+        PaintingBinding.instance.imageCache.clearLiveImages();
+        if (directory.existsSync()) {
+          await directory.delete(recursive: true);
+        }
+      });
+      addTearDown(UiInteractionCoordinator.instance.resetForTest);
+      final cover = (await tester.runAsync<File>(() async {
+        final recorder = ui.PictureRecorder();
+        ui.Canvas(recorder).drawColor(const Color(0xFFAA5533), ui.BlendMode.src);
+        final picture = recorder.endRecording();
+        final image = await picture.toImage(192, 144);
+        final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+        image.dispose();
+        picture.dispose();
+        return File('${directory.path}/cover.png')
+          ..writeAsBytesSync(bytes!.buffer.asUint8List());
+      }))!;
+      final cache = _ResolvedCoverCache(cover.path);
+      final fixture = AppRuntimeWidgetTestFixture(
+        providedNotificationService: PlaybackNotificationService(
+          notificationsPlatformService: NotificationsPlatformService(
+            isWindowsOverride: false,
+          ),
+        ),
+        coverArtworkCacheService: cache,
+        configureSettingsRepository: (settings) {
+          settings.coverImageResolution = CoverImageResolution.original;
+          settings.syncSlice();
+        },
+      );
+      addTearDown(fixture.dispose);
+      final track = testMusicTrack(
+        name: 'ColdEntry',
+        path: '/music/cold_entry.mp3',
+        groupKey: '/music/cold_entry',
+        groupTitle: 'ColdEntry',
+      );
+      fixture.library.addTracks([track], persist: false);
+      final session = fixture.playback.createTrackSession(track);
+      addTearDown(session.shutdown);
+      fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      // Render PlaylistTab without a dock so the detail cover is not prewarmed.
+      await tester.pumpWidget(fixture.build(const PlaylistTab()));
+      // Precache only the small list thumbnail; keep the 192px detail cold.
+      await tester.runAsync(() async {
+        final context = tester.element(find.byType(PlaylistTab));
+        await precacheImage(
+          resizeFileImageIfNeeded(path: cover.path, cacheWidth: 64),
+          context,
+        );
+        await FileImage(cover).evict();
+      });
+      await pumpAndSettleWithAsync(tester);
+      expect(
+        retainedCoverImageFor(FileImage(cover))?.isAdequate,
+        isNot(isTrue),
+      );
+
+      final source = find.byWidgetPredicate(
+        (widget) =>
+            widget is SessionCoverAnchor &&
+            widget.sessionId == session.id &&
+            widget.location == SessionCoverLocation.playlist,
+      );
+      expect(source, findsOneWidget);
+      final anchor = tester.state<SessionCoverAnchorState>(source);
+      expect(anchor.decodedImage, isNotNull);
+      expect(anchor.decodedImage!.width, lessThan(192));
+
+      await tester.tap(source);
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      final flightFinder = find.byKey(
+        const ValueKey('session_detail_cover_flight'),
+      );
+      expect(flightFinder, findsOneWidget);
+      // Allow background codec decode to complete mid-flight.
+      for (var i = 0; i < 15; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump(const Duration(milliseconds: 16));
+        final current =
+            tester.widget<CustomPaint>(flightFinder).painter!
+                as SessionCoverFlight;
+        if (current.upgradedImage != null || current.image.width == 192) {
+          break;
+        }
+      }
+      final midFlight =
+          tester.widget<CustomPaint>(flightFinder).painter!
+              as SessionCoverFlight;
+      final highResWidth =
+          midFlight.upgradedImage?.width ?? midFlight.image.width;
+      expect(highResWidth, 192);
+
+      await tester.pump(const Duration(milliseconds: 450));
+      await tester.pump();
+      expect(flightFinder, findsNothing);
+      expect(
+        find.byKey(const ValueKey('session_detail_cover_preview')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('session_detail_cover_upgrade')),
+        findsNothing,
+      );
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 6));
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets(
     'detail retains its cover request when another cover scope changes',

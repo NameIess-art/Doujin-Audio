@@ -2,17 +2,22 @@ import 'dart:io';
 
 import 'package:doujin_audio/app/presentation/app_orientation_controller.dart';
 import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
+import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/core/widgets/app_entry_ink_well.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
+import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/presentation/bedtime_canvas_page.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_audio_features.dart';
+import 'package:doujin_audio/features/player/presentation/playlist/playlist_list_view.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_progress_widgets.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_subtitle_panel.dart';
+import 'package:doujin_audio/features/player/presentation/playlist/playlist_transport_controls.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_video_widgets.dart';
 import 'package:doujin_audio/features/player/presentation/session_video_surface.dart';
 import 'package:doujin_audio/features/player/presentation/timer_tab.dart';
@@ -866,4 +871,137 @@ Dialogue: 0,0:00:10.00,0:00:14.00,Default,,0,0,0,,Middle line
       },
     );
   });
+
+  group('Windows playback icon transitions', () {
+    testWidgets(
+      'playlist play/pause and detail volume mute crossfade without scale or rotation on Windows',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture(
+          providedNativePlaybackRepository: _AcceptingPlaybackRepository(),
+        );
+        addTearDown(fixture.dispose);
+        final track = testMusicTrack(
+          name: 'Windows Icon Track',
+          path: '/music/windows_icon.mp3',
+          groupKey: '/music',
+          groupTitle: 'Music',
+        );
+        fixture.library.addTracks([track], persist: false);
+        final session = fixture.playback.createTrackSession(track)
+          ..loadedPath = track.path;
+        fixture.playbackService.syncSlice(
+          activeSessions: [session],
+          playingSessionCount: 0,
+          focusedSessionId: session.id,
+          coverGeneration: 0,
+          isInitialized: true,
+        );
+        final volumePreview = ValueNotifier<double?>(null);
+        addTearDown(volumePreview.dispose);
+
+        await tester.pumpWidget(
+          fixture.build(
+            Theme(
+              data: ThemeData(platform: TargetPlatform.windows),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SessionListCard(
+                    sessionId: session.id,
+                    session: fixture.playback.sessionSnapshotById(session.id),
+                    track: track,
+                    coverCacheWidth: 100,
+                    library: fixture.library,
+                    playback: fixture.playback,
+                    isTemporary: false,
+                    onOpen: (_) {},
+                  ),
+                  SizedBox(
+                    width: playbackSecondaryControlsWidth,
+                    child: PlaybackSecondaryControlSurface(
+                      child: SessionVolumeControls(
+                        session: fixture.playback.sessionSnapshotById(
+                          session.id,
+                        )!,
+                        playback: fixture.playback,
+                        volumePreview: volumePreview,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final playButton = find.ancestor(
+          of: find.byIcon(Icons.play_arrow_rounded),
+          matching: find.byType(IconButton),
+        );
+        expect(
+          find.descendant(
+            of: playButton,
+            matching: find.byType(AppPlaybackIconTransition),
+          ),
+          findsOneWidget,
+        );
+
+        await tester.tap(playButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 60));
+        expect(
+          find.descendant(
+            of: find.byType(SessionListCard),
+            matching: find.byType(ScaleTransition),
+          ),
+          findsNothing,
+        );
+        expect(
+          find.descendant(
+            of: find.byType(AppPlaybackIconTransition),
+            matching: find.byType(Transform),
+          ),
+          findsNothing,
+        );
+        await tester.pump(kAppPlaybackIconDuration);
+        expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
+
+        final muteButton = find.byKey(
+          const ValueKey('session_volume_mute_button'),
+        );
+        await tester.tap(muteButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 60));
+        expect(
+          find.descendant(
+            of: muteButton,
+            matching: find.byType(ScaleTransition),
+          ),
+          findsNothing,
+        );
+        expect(
+          find.descendant(
+            of: muteButton,
+            matching: find.byType(Transform),
+          ),
+          findsNothing,
+        );
+        await tester.pump(kAppPlaybackIconDuration);
+        expect(find.byIcon(Icons.volume_off_rounded), findsOneWidget);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 200));
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    );
+  });
+}
+
+class _AcceptingPlaybackRepository extends NativePlaybackRepository {
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> setVolume(
+    String sessionId,
+    double volume,
+  ) async => const NativeSuccess();
 }

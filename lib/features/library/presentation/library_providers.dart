@@ -4,6 +4,7 @@ import '../../../core/ui/interaction_deferred_stream.dart';
 import '../application/audio_detail_cache_service.dart'
     show AudioLibraryDetailKey;
 import '../application/library_facade.dart';
+import '../application/library_scan_coordinator.dart';
 import '../../../core/media/audio_detail.dart';
 import '../application/library_state_models.dart';
 import '../application/work_text_service.dart';
@@ -12,6 +13,12 @@ final libraryFacadeProvider = Provider<LibraryFacade>((ref) {
   throw UnimplementedError(
     'libraryFacadeProvider must be overridden in ProviderScope.',
   );
+});
+
+final libraryScanCoordinatorProvider = Provider<LibraryScanCoordinator>((ref) {
+  final coordinator = LibraryScanCoordinator();
+  ref.onDispose(coordinator.dispose);
+  return coordinator;
 });
 
 final libraryStateProvider = StreamProvider<LibraryState>((ref) {

@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -19,7 +20,8 @@ internal class FileCacheScanStreamHandler(
     private val operations: FileCacheOperations,
     private val executor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "doujin-folder-scan").apply { isDaemon = true }
-    }
+    },
+    private val chunkAckTimeoutMs: Long = FolderScanTask.DEFAULT_ACK_TIMEOUT_MS
 ) : EventChannel.StreamHandler {
     companion object {
         private const val progressIntervalMs = 160L
@@ -57,7 +59,7 @@ internal class FileCacheScanStreamHandler(
         if (closed.get() || tasks.isNotEmpty() || sink == null) return false
         if (listenerGenerationId != generationId) return false
         val safeChunkSize = chunkSize.coerceIn(20, 500)
-        val task = FolderScanTask(generationId)
+        val task = FolderScanTask(generationId, ackTimeoutMs = chunkAckTimeoutMs)
         if (tasks.putIfAbsent(taskId, task) != null) return false
 
         return try {
@@ -147,7 +149,14 @@ internal class FileCacheScanStreamHandler(
             paths.clear()
             // The worker waits for Dart to finish merging, so platform messages
             // cannot grow into an unbounded backlog on the UI isolate.
-            task.awaitChunkAcknowledgement()
+            if (!task.awaitChunkAcknowledgement() && task.timedOut) {
+                val timeoutEvent = baseEvent("failed")
+                timeoutEvent["errorCode"] = "scan_ack_timeout"
+                timeoutEvent["error"] = "Timed out waiting for scan chunk acknowledgement."
+                timeoutEvent["details"] = mapOf("chunkSequence" to sequence)
+                timeoutEvent["failureCount"] = 1
+                send(taskId, generationId, task, timeoutEvent, allowWhenTimedOut = true)
+            }
         }
 
         val observer = object : FolderScanObserver {
@@ -219,9 +228,10 @@ internal class FileCacheScanStreamHandler(
         taskId: String,
         generationId: String,
         task: FolderScanTask,
-        event: HashMap<String, Any?>
+        event: HashMap<String, Any?>,
+        allowWhenTimedOut: Boolean = false
     ) {
-        if (!canPublish(taskId, generationId, task)) {
+        if (isActivityUnavailable() || !canPublish(taskId, generationId, task, allowWhenTimedOut)) {
             task.cancel()
             return
         }
@@ -229,28 +239,43 @@ internal class FileCacheScanStreamHandler(
             task.cancel()
             return
         }
-        activity.runOnUiThread {
-            if (shouldDeliverQueuedFolderScanEvent(
-                    closed = closed.get(),
-                    cancelled = task.cancelled,
-                    listenerGenerationId = listenerGenerationId,
-                    eventGenerationId = generationId,
-                    listenerStillCurrent = sink === scheduledSink
-                )
-            ) {
-                scheduledSink.success(event)
-            } else {
-                task.cancel()
+        try {
+            activity.runOnUiThread {
+                if (isActivityUnavailable()) {
+                    task.cancel()
+                    return@runOnUiThread
+                }
+                if (shouldDeliverQueuedFolderScanEvent(
+                        closed = closed.get(),
+                        cancelled = task.cancelled && !(allowWhenTimedOut && task.timedOut),
+                        listenerGenerationId = listenerGenerationId,
+                        eventGenerationId = generationId,
+                        listenerStillCurrent = sink === scheduledSink
+                    )
+                ) {
+                    try {
+                        scheduledSink.success(event)
+                    } catch (_: Exception) {
+                        task.cancel()
+                    }
+                } else {
+                    task.cancel()
+                }
             }
+        } catch (_: Exception) {
+            task.cancel()
         }
     }
+
+    private fun isActivityUnavailable(): Boolean = activity.isFinishing || activity.isDestroyed
 
     private fun canPublish(
         taskId: String,
         generationId: String,
-        task: FolderScanTask
+        task: FolderScanTask,
+        allowWhenTimedOut: Boolean = false
     ): Boolean = !closed.get() &&
-        !task.cancelled &&
+        (!task.cancelled || (allowWhenTimedOut && task.timedOut)) &&
         tasks[taskId] === task &&
         task.generationId == generationId &&
         listenerGenerationId == generationId &&
@@ -265,7 +290,14 @@ internal class FileCacheScanStreamHandler(
     }
 }
 
-internal class FolderScanTask(val generationId: String) {
+internal class FolderScanTask(
+    val generationId: String,
+    private val ackTimeoutMs: Long = DEFAULT_ACK_TIMEOUT_MS
+) {
+    companion object {
+        internal const val DEFAULT_ACK_TIMEOUT_MS = 30_000L
+    }
+
     private val lock = ReentrantLock()
     private val acknowledged = lock.newCondition()
     private var chunkSequence = 0L
@@ -275,14 +307,40 @@ internal class FolderScanTask(val generationId: String) {
     var cancelled = false
         private set
 
+    @Volatile
+    var timedOut = false
+        private set
+
     fun beginChunk(): Long? = lock.withLock {
         if (cancelled) return null
         check(pendingSequence == null) { "Previous scan chunk has not been acknowledged" }
         (++chunkSequence).also { pendingSequence = it }
     }
 
-    fun awaitChunkAcknowledgement() = lock.withLock {
-        while (pendingSequence != null && !cancelled) acknowledged.await()
+    fun awaitChunkAcknowledgement(timeoutMs: Long = ackTimeoutMs): Boolean = lock.withLock {
+        val safeTimeoutMs = timeoutMs.coerceAtLeast(1L)
+        val deadlineNs = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(safeTimeoutMs)
+        while (pendingSequence != null && !cancelled) {
+            val remainingNs = deadlineNs - System.nanoTime()
+            if (remainingNs <= 0L) {
+                timedOut = true
+                cancelled = true
+                acknowledged.signalAll()
+                return false
+            }
+            val waitMs = (remainingNs + 999_999L) / 1_000_000L
+            if (!acknowledged.await(waitMs, TimeUnit.MILLISECONDS) &&
+                pendingSequence != null &&
+                !cancelled &&
+                System.nanoTime() >= deadlineNs
+            ) {
+                timedOut = true
+                cancelled = true
+                acknowledged.signalAll()
+                return false
+            }
+        }
+        !timedOut && !cancelled
     }
 
     fun acknowledgeChunk(sequence: Long): Boolean = lock.withLock {

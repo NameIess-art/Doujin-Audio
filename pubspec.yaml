@@ -43,9 +43,10 @@ dependencies:
   charset: ^2.0.1
   characters: ^1.4.1
   pub_semver: ^2.2.0
-  media_kit: ^1.2.6
-  media_kit_video: ^2.0.1
-  media_kit_libs_windows_video: ^1.0.11
+  # Exact pins required: WindowsPlaybackBridge relies on media_kit NativePlayer internals.
+  media_kit: 1.2.6
+  media_kit_video: 2.0.1
+  media_kit_libs_windows_video: 1.0.11
   sqflite_common_ffi: ^2.4.0+3
   flutter_markdown_plus: ^1.0.12
   markdown: ^7.3.1

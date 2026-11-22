@@ -3,7 +3,7 @@ import 'dart:async';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/persistence/json_document_store.dart';
-import '../../player/domain/time_segment_label.dart';
+import '../../../core/media/time_segment_label.dart';
 import '../domain/audio_detail_store.dart';
 import '../data/audio_detail_cover_store.dart';
 import 'audio_detail_document_repository.dart';

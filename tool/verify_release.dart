@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 void main(List<String> args) {
@@ -146,6 +147,8 @@ void main(List<String> args) {
     }
   }
 
+  _verifyWindowsThirdPartyMetadata();
+
   if (printTag) {
     stdout.writeln(expectedTag);
     return;
@@ -155,6 +158,113 @@ void main(List<String> args) {
     'Release metadata verified: version=$expectedVersion tag=$expectedTag '
     'assets=${documentedAssets.length * 2}',
   );
+}
+
+void _verifyWindowsThirdPartyMetadata() {
+  final thirdParty = File('tool/windows_third_party.txt').readAsStringSync();
+  if (thirdParty.contains('\uFFFD')) {
+    _fail('tool/windows_third_party.txt contains invalid replacement characters.');
+  }
+
+  final dependenciesRaw = File(
+    'tool/windows_dependencies.json',
+  ).readAsStringSync();
+  final dependencies = jsonDecode(dependenciesRaw) as Map<String, dynamic>;
+  final sha256Pattern = RegExp(r'^[0-9a-f]{64}$');
+
+  Map<String, dynamic> requireSection(String name) {
+    final section = dependencies[name];
+    if (section is! Map<String, dynamic>) {
+      _fail('tool/windows_dependencies.json is missing object section: $name');
+    }
+    final sha = section['sha256'];
+    if (sha is! String || !sha256Pattern.hasMatch(sha)) {
+      _fail('tool/windows_dependencies.json has invalid sha256 for $name');
+    }
+    return section;
+  }
+
+  final mpv = requireSection('mpv');
+  final ffmpeg = requireSection('ffmpeg');
+  requireSection('sqlite');
+  requireSection('inno');
+
+  final nativeArchives = dependencies['nativeArchives'];
+  if (nativeArchives is! List || nativeArchives.isEmpty) {
+    _fail('tool/windows_dependencies.json is missing nativeArchives entries.');
+  }
+  for (final entry in nativeArchives) {
+    if (entry is! Map<String, dynamic>) {
+      _fail('tool/windows_dependencies.json contains invalid nativeArchives item.');
+    }
+    final name = entry['name'];
+    final sha = entry['sha256'];
+    if (name is! String || name.isEmpty) {
+      _fail('tool/windows_dependencies.json nativeArchives entry missing name.');
+    }
+    if (sha is! String || !sha256Pattern.hasMatch(sha)) {
+      _fail('tool/windows_dependencies.json has invalid sha256 for $name');
+    }
+  }
+
+  final mpvVersion = mpv['version'] as String?;
+  final mpvUrl = mpv['url'] as String?;
+  final ffmpegVersion = ffmpeg['version'] as String?;
+  if (mpvVersion == null ||
+      mpvVersion.isEmpty ||
+      mpvUrl == null ||
+      mpvUrl.isEmpty ||
+      ffmpegVersion == null ||
+      ffmpegVersion.isEmpty) {
+    _fail('tool/windows_dependencies.json is missing mpv or ffmpeg version/url.');
+  }
+
+  final mpvArchiveName = Uri.parse(mpvUrl).pathSegments.last;
+  for (final expected in <String>[
+    'libmpv Windows runtime $mpvVersion:',
+    mpvArchiveName,
+    'FFmpeg $ffmpegVersion essentials:',
+    'ffmpeg-$ffmpegVersion.tar.xz',
+  ]) {
+    if (!thirdParty.contains(expected)) {
+      _fail(
+        'tool/windows_third_party.txt does not match tool/windows_dependencies.json '
+        '(missing: $expected).',
+      );
+    }
+  }
+
+  final subtitleScript = File(
+    'tool/build_subtitle_native.dart',
+  ).readAsStringSync();
+
+  String requireScriptConst(String name, String valuePattern) {
+    final match = RegExp(
+      "const\\s+$name\\s*=\\s*'($valuePattern)'\\s*;",
+    ).firstMatch(subtitleScript);
+    if (match == null) {
+      _fail('tool/build_subtitle_native.dart is missing constant $name.');
+    }
+    return match.group(1)!;
+  }
+
+  final crispAsrTag = requireScriptConst('_sourceTag', r"[^']+");
+  final crispAsrCommit = requireScriptConst('_sourceCommit', r'[0-9a-f]{40}');
+  final ggmlCommit = requireScriptConst('_ggmlCommit', r'[0-9a-f]{40}');
+  final c2paCommit = requireScriptConst('_c2paCommit', r'[0-9a-f]{40}');
+
+  for (final expected in <String>[
+    'CrispASR $crispAsrTag (source commit $crispAsrCommit)',
+    'ggml (source commit $ggmlCommit)',
+    'CrispASR c2pa-audio (source commit $c2paCommit)',
+  ]) {
+    if (!thirdParty.contains(expected)) {
+      _fail(
+        'tool/windows_third_party.txt does not match tool/build_subtitle_native.dart '
+        '(missing: $expected).',
+      );
+    }
+  }
 }
 
 String? _argumentValue(List<String> args, String name) {

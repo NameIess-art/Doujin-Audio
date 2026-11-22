@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/widgets/app_buttons.dart';
 import '../../core/logging/app_log_service.dart';
 import '../../core/platform/platform_channels.dart';
-import '../../core/platform/windows_desktop_service.dart';
 import '../state/app_runtime_providers.dart';
 import '../../core/widgets/app_brand_icon.dart';
 import '../localization/app_language_en.dart';
@@ -94,7 +93,7 @@ class WindowsWindowTitleBar extends StatelessWidget {
         },
       );
     }
-    final desktop = WindowsDesktopService.instance;
+    final controls = defaultWindowsWindowControls();
     final languageCode = Localizations.maybeLocaleOf(context)?.languageCode;
     final strings = switch (languageCode) {
       'zh' => appLanguageZh,
@@ -104,8 +103,8 @@ class WindowsWindowTitleBar extends StatelessWidget {
     return _buildBar(
       context,
       translate: (key) => strings[key] ?? appLanguageEn[key] ?? key,
-      runCommand: desktop.runWindowCommand,
-      maximized: desktop.maximized,
+      runCommand: controls.runCommand,
+      maximized: controls.maximized,
     );
   }
 

@@ -5,6 +5,7 @@
 #include "network_proxy.h"
 #include "../resource.h"
 #include "../win32_window.h"
+#include <flutter_windows.h>
 #include <flutter/standard_method_codec.h>
 #include <flutter/method_result_functions.h>
 #include <commctrl.h>
@@ -53,6 +54,22 @@ bool RequiredBool(const Map& map, const char* key) {
   const auto flag = value ? std::get_if<bool>(value) : nullptr;
   if (!flag) throw std::invalid_argument(key);
   return *flag;
+}
+int64_t RequiredInt(const Map& map, const char* key) {
+  const auto value = Find(map, key);
+  if (!value) throw std::invalid_argument(key);
+  if (const auto number = std::get_if<int64_t>(value)) return *number;
+  if (const auto number = std::get_if<int32_t>(value)) return *number;
+  throw std::invalid_argument(key);
+}
+UINT SafeWindowDpi(HWND window) {
+  const UINT dpi = window ? GetDpiForWindow(window) : 0;
+  return dpi > 0 ? dpi : 96;
+}
+UINT SafeMonitorDpi(HMONITOR monitor, HWND fallback_window = nullptr) {
+  UINT dpi = monitor ? FlutterDesktopGetDpiForMonitor(monitor) : 0;
+  if (dpi == 0 && fallback_window) dpi = GetDpiForWindow(fallback_window);
+  return dpi > 0 ? dpi : 96;
 }
 const Map& Arguments(const flutter::MethodCall<Value>& call) {
   static const Map empty;
@@ -148,7 +165,7 @@ struct DesktopIntegration::AsyncIoState {
     std::wstring target;
     Value value;
     std::string error;
-    std::string error_code = "windows_error";
+    std::string error_code = "platform_error";
     bool completed = false;
   };
   std::mutex mutex;
@@ -175,7 +192,7 @@ struct DesktopIntegration::AsyncIoState {
       state->pending.pop_back();
       state->queued.pop_back();
     }
-    request->result->Error("windows_error", "Unable to schedule desktop operation");
+    request->result->Error("platform_error", "Unable to schedule desktop operation");
   }
 
   static void CALLBACK RunWorker(PTP_CALLBACK_INSTANCE instance, void* context) {
@@ -209,7 +226,7 @@ struct DesktopIntegration::AsyncIoState {
         queued.pop_front();
       }
       Value value;
-      std::string error, error_code = "windows_error";
+      std::string error, error_code = "platform_error";
       const HRESULT apartment =
           CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
       try {
@@ -302,17 +319,30 @@ struct DesktopIntegration::AsyncIoState {
         request->error_code = std::move(error_code);
         request->completed = true;
       }
+      bool posted = false;
+      bool aborted = false;
       for (int attempt = 0; attempt < 200; ++attempt) {
         {
           std::lock_guard<std::mutex> lock(mutex);
-          if (!window || reply_posted) break;
-          if (PostMessage(window, kAsyncIoReply, 0, 0)) {
-            reply_posted = true;
+          if (!window || reply_posted) {
+            aborted = true;
             break;
           }
-          if (GetLastError() == ERROR_INVALID_WINDOW_HANDLE) break;
+          if (PostMessage(window, kAsyncIoReply, 0, 0)) {
+            reply_posted = true;
+            posted = true;
+            break;
+          }
+          if (GetLastError() == ERROR_INVALID_WINDOW_HANDLE) {
+            aborted = true;
+            break;
+          }
         }
         Sleep(10);
+      }
+      if (!posted && !aborted) {
+        OutputDebugStringW(
+            L"DoujinAudio: AsyncIoState failed to post reply message after 200 attempts\n");
       }
     }
   }
@@ -324,7 +354,9 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
   WINDOWPLACEMENT saved{sizeof(WINDOWPLACEMENT)};
   DWORD bytes = sizeof(saved);
   if (RegGetValueW(HKEY_CURRENT_USER,kSettingsKey,L"WindowPlacement",RRF_RT_REG_BINARY,nullptr,&saved,&bytes) == ERROR_SUCCESS && bytes == sizeof(saved)) {
-    const auto dpi = GetDpiForWindow(window_);
+    HMONITOR target_monitor =
+        MonitorFromRect(&saved.rcNormalPosition, MONITOR_DEFAULTTONEAREST);
+    const UINT dpi = SafeMonitorDpi(target_monitor, window_);
     DWORD saved_dpi = dpi, dpi_bytes = sizeof(saved_dpi);
     RegGetValueW(HKEY_CURRENT_USER,kSettingsKey,L"WindowDpi",RRF_RT_REG_DWORD,nullptr,&saved_dpi,&dpi_bytes);
     if (saved_dpi == 0) saved_dpi = dpi;
@@ -376,8 +408,8 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
     channel->SetMethodCallHandler([handler](const auto& call, auto result) {
       try { handler(call,*result); }
       catch (const std::invalid_argument& e) { result->Error("invalid_argument",e.what()); }
-      catch (const winrt::hresult_error& e) { result->Error("windows_error",winrt::to_string(e.message())); }
-      catch (const std::exception& e) { result->Error("windows_error",e.what()); }
+      catch (const winrt::hresult_error& e) { result->Error("platform_error",winrt::to_string(e.message())); }
+      catch (const std::exception& e) { result->Error("platform_error",e.what()); }
     });
     channels_.push_back(std::move(channel));
   };
@@ -473,8 +505,8 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
         result->NotImplemented();
       }
     } catch (const std::invalid_argument& e) { result->Error("invalid_argument",e.what()); }
-      catch (const winrt::hresult_error& e) { result->Error("windows_error",winrt::to_string(e.message())); }
-      catch (const std::exception& e) { result->Error("windows_error",e.what()); }
+      catch (const winrt::hresult_error& e) { result->Error("platform_error",winrt::to_string(e.message())); }
+      catch (const std::exception& e) { result->Error("platform_error",e.what()); }
   });
   channels_.push_back(std::move(update));
   auto power = std::make_unique<Channel>(messenger,"doujin_audio/power",&flutter::StandardMethodCodec::GetInstance());
@@ -482,17 +514,20 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
     try {
     const auto& name = call.method_name(); const auto& args = Arguments(call);
     if (name == "syncPlaybackTimerAlarms") {
-      RequiredBool(args,"timerWaitingForPlayback"); RequiredBool(args,"autoResumeEnabled");
-      if (!Find(args,"generation") || !Find(args,"autoResumeHour") || !Find(args,"autoResumeMinute")) throw std::invalid_argument("timer arguments");
-      scheduled_tasks_->Sync(args,result);
+      RequiredBool(args, "timerWaitingForPlayback");
+      RequiredBool(args, "autoResumeEnabled");
+      RequiredInt(args, "generation");
+      RequiredInt(args, "autoResumeHour");
+      RequiredInt(args, "autoResumeMinute");
+      scheduled_tasks_->Sync(args, result);
     }
     else if (name == "setKeepScreenOn") {
       screen_on_ = RequiredBool(args,"enabled");
       RefreshPower(); Success(*result,Value(true));
     } else result->NotImplemented();
     } catch (const std::invalid_argument& e) { result->Error("invalid_argument",e.what()); }
-      catch (const winrt::hresult_error& e) { result->Error("windows_error",winrt::to_string(e.message())); }
-      catch (const std::exception& e) { result->Error("windows_error",e.what()); }
+      catch (const winrt::hresult_error& e) { result->Error("platform_error",winrt::to_string(e.message())); }
+      catch (const std::exception& e) { result->Error("platform_error",e.what()); }
   });
   channels_.push_back(std::move(power));
   auto file_cache = std::make_unique<Channel>(messenger,"doujin_audio/file_cache",&flutter::StandardMethodCodec::GetInstance());
@@ -508,8 +543,8 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
     }
     result->NotImplemented();
     } catch (const std::invalid_argument& e) { result->Error("invalid_argument",e.what()); }
-      catch (const winrt::hresult_error& e) { result->Error("windows_error",winrt::to_string(e.message())); }
-      catch (const std::exception& e) { result->Error("windows_error",e.what()); }
+      catch (const winrt::hresult_error& e) { result->Error("platform_error",winrt::to_string(e.message())); }
+      catch (const std::exception& e) { result->Error("platform_error",e.what()); }
   });
   channels_.push_back(std::move(file_cache));
 }
@@ -534,7 +569,7 @@ DesktopIntegration::~DesktopIntegration() {
   // Shell/filesystem calls cannot be cancelled reliably. Complete replies on
   // the platform thread without waiting for those workers during engine teardown.
   for (const auto& request : pending) {
-    request->result->Error("windows_error","Window closed before desktop operation completed");
+    request->result->Error("platform_error","Window closed before desktop operation completed");
     request->result.reset();
   }
   scheduled_tasks_.reset();
@@ -580,7 +615,9 @@ void DesktopIntegration::InstallWindowsUpdate(const Map& args,
   const auto raw_path = RequiredText(args,"path");
   if (raw_path.find('\0') != std::string::npos) throw std::invalid_argument("path");
   std::filesystem::path path(winrt::to_hstring(raw_path).c_str());
-  if (!path.is_absolute() || path.extension() != L".exe") throw std::invalid_argument("path");
+  if (!path.is_absolute() || _wcsicmp(path.extension().c_str(), L".exe") != 0) {
+    throw std::invalid_argument("path");
+  }
   const auto request = std::make_shared<AsyncIoState::Request>();
   request->op = AsyncIoState::Op::kInstallUpdate;
   request->result = std::move(result);
@@ -619,13 +656,29 @@ void DesktopIntegration::AddTray() {
 }
 void DesktopIntegration::Action(const std::string& action) {
   if (ending_session_) return;
-  if (!ready_) { pending_.push_back(action); return; }
+  if (!ready_) {
+    if (action == "exit") {
+      if (!quitting_) {
+        quitting_ = true;
+        SavePlacement();
+        PostMessage(window_, WM_CLOSE, 0, 0);
+      }
+      return;
+    }
+    pending_.push_back(action);
+    return;
+  }
   desktop_->InvokeMethod("action",std::make_unique<Value>(action));
 }
 void DesktopIntegration::EndSession() {
   if (ending_session_) return;
   ending_session_ = true;
+  if (tray_menu_open_) {
+    tray_menu_open_ = false;
+    EndMenu();
+  }
   SavePlacement();
+  if (subtitles_) subtitles_->SavePlacement();
   struct Completion { bool finished = false; bool success = false; };
   // A reply may arrive after the deadline, so it must not capture stack state.
   const auto completion = std::make_shared<Completion>();
@@ -660,6 +713,21 @@ void DesktopIntegration::EndSession() {
         QS_ALLINPUT,MWMO_INPUTAVAILABLE);
     }
   }
+  if (tray_menu_open_) {
+    tray_menu_open_ = false;
+    EndMenu();
+  }
+  if (subtitles_) subtitles_->SavePlacement();
+  if (tray_added_) {
+    NOTIFYICONDATAW icon{};
+    icon.cbSize = sizeof(icon);
+    icon.hWnd = window_;
+    icon.uID = 1;
+    Shell_NotifyIconW(NIM_DELETE, &icon);
+    tray_added_ = false;
+  }
+  SetThreadExecutionState(ES_CONTINUOUS);
+  power_flags_ = ES_CONTINUOUS;
   const char* status = !completion->finished ? "DoujinAudio: endSession timed out after 4 seconds\n"
     : completion->success ? "DoujinAudio: endSession completed\n" : "DoujinAudio: endSession failed\n";
   OutputDebugStringA(status);
@@ -692,7 +760,7 @@ void DesktopIntegration::UpdateTheme() {
 }
 
 void DesktopIntegration::ShowTrayMenu() {
-  if (tray_menu_open_) return;
+  if (tray_menu_open_ || ending_session_ || quitting_) return;
   const HMENU menu = CreatePopupMenu();
   if (!menu) return;
 
@@ -728,6 +796,7 @@ void DesktopIntegration::ShowTrayMenu() {
 }
 
 void DesktopIntegration::Show() {
+  if (quitting_ || ending_session_) return;
   if (!first_frame_ready_) {
     Activate(true);
     return;
@@ -757,6 +826,7 @@ void DesktopIntegration::OnFirstFrame(bool show_initially) {
   }
 }
 void DesktopIntegration::Activate(bool show_window) {
+  if (quitting_ || ending_session_) return;
   if (!first_frame_ready_) {
     pending_activate_ = true;
     if (show_window) pending_activate_show_ = true;
@@ -783,7 +853,7 @@ void DesktopIntegration::UpdateHitTestMetrics() {
     return;
   }
   MapWindowPoints(window_, nullptr, reinterpret_cast<POINT*>(&client), 2);
-  const UINT dpi = GetDpiForWindow(window_);
+  const UINT dpi = SafeWindowDpi(window_);
   const int padding = GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
   client_screen_rect_ = client;
   resize_border_y_ = GetSystemMetricsForDpi(SM_CYFRAME, dpi) + padding;
@@ -852,7 +922,7 @@ void DesktopIntegration::SavePlacement() {
   HKEY key;
   if (RegCreateKeyExW(HKEY_CURRENT_USER,kSettingsKey,0,nullptr,0,KEY_SET_VALUE,nullptr,&key,nullptr) == ERROR_SUCCESS) {
     RegSetValueExW(key,L"WindowPlacement",0,REG_BINARY,reinterpret_cast<const BYTE*>(&placement),sizeof(placement));
-    const DWORD dpi = GetDpiForWindow(window_);
+    const DWORD dpi = SafeWindowDpi(window_);
     RegSetValueExW(key,L"WindowDpi",0,REG_DWORD,reinterpret_cast<const BYTE*>(&dpi),sizeof(dpi));
     RegCloseKey(key);
   }
@@ -919,7 +989,7 @@ std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp
     DefWindowProc(window_, message, wp, lp);
     // Drop the system caption but keep native side and bottom frames. A
     // maximized window extends past the monitor by its frame on every side.
-    const UINT dpi = GetDpiForWindow(window_);
+    const UINT dpi = SafeWindowDpi(window_);
     client.top = top + (IsZoomed(window_)
         ? GetSystemMetricsForDpi(SM_CYFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi)
         : 0);
@@ -956,14 +1026,28 @@ std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp
     return 0;
   }
   if (message == kTaskbarCreated) { AddTray(); return 0; }
-  if (message == kActivate) { Activate(wp == 0); return 0; }
+  if (message == kActivate) {
+    if (quitting_ || ending_session_) return 0;
+    Activate(wp == 0);
+    return kActivateAccepted;
+  }
   if (message == WM_EXITSIZEMOVE) {
     UpdateHitTestMetrics();
     SavePlacement();
   }
   // A previously queued tray exit must not destroy the engine during the reply wait.
   if (message == WM_CLOSE && ending_session_) return 0;
-  if (message == WM_CLOSE && !quitting_) { SavePlacement(); ShowWindow(window_,SW_HIDE); Action("background"); return 0; }
+  if (message == WM_CLOSE && !quitting_) {
+    if (!ready_) {
+      quitting_ = true;
+      SavePlacement();
+      return std::nullopt;
+    }
+    SavePlacement();
+    ShowWindow(window_, SW_HIDE);
+    Action("background");
+    return 0;
+  }
   if (message == WM_QUERYENDSESSION) return TRUE;
   if (message == WM_ENDSESSION) {
     if (wp) EndSession();
@@ -971,7 +1055,7 @@ std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp
   }
   if (message == kExit) { Action("exit"); return 0; }
   if (message == WM_GETMINMAXINFO && !fullscreen_) {
-    const auto dpi = GetDpiForWindow(window_);
+    const auto dpi = SafeWindowDpi(window_);
     RECT rect{0,0,MulDiv(960,dpi,96),MulDiv(600,dpi,96)};
     Win32Window::AdjustFrameRect(rect, dpi);
     auto info = reinterpret_cast<MINMAXINFO*>(lp);

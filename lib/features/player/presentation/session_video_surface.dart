@@ -29,6 +29,8 @@ class NativeSessionVideoSurface extends StatefulWidget {
 class _NativeSessionVideoSurfaceState extends State<NativeSessionVideoSurface> {
   StreamSubscription<NativePlaybackSnapshot>? _subscription;
   VideoController? _controller;
+  String? _attachedSessionId;
+  NativePlaybackRepository? _attachedRepository;
 
   @override
   void initState() {
@@ -38,6 +40,9 @@ class _NativeSessionVideoSurfaceState extends State<NativeSessionVideoSurface> {
 
   void _subscribeToRuntime() {
     if (!Platform.isWindows) return;
+    _attachedSessionId = widget.sessionId;
+    _attachedRepository = widget.nativeRepository;
+    widget.nativeRepository.attachVideoSurface(widget.sessionId);
     _controller = widget.nativeRepository.videoControllerForSession(
       widget.sessionId,
     );
@@ -55,6 +60,13 @@ class _NativeSessionVideoSurfaceState extends State<NativeSessionVideoSurface> {
   void _unsubscribeFromRuntime() {
     unawaited(_subscription?.cancel());
     _subscription = null;
+    final attachedId = _attachedSessionId;
+    final attachedRepo = _attachedRepository;
+    _attachedSessionId = null;
+    _attachedRepository = null;
+    if (attachedId != null && attachedRepo != null) {
+      attachedRepo.detachVideoSurface(attachedId);
+    }
   }
 
   @override

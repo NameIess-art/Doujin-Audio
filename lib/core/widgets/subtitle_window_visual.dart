@@ -1,6 +1,37 @@
 import 'package:flutter/material.dart';
 
-import '../../app/state/subtitle_settings_provider.dart';
+abstract interface class SubtitleWindowVisualStyle {
+  String get fontFamily;
+  Color? get fontColor;
+  double get backgroundOpacity;
+  Color? get backgroundColor;
+  double get borderDepth;
+  double get fontSize;
+}
+
+class SubtitleWindowStyle implements SubtitleWindowVisualStyle {
+  const SubtitleWindowStyle({
+    this.fontFamily = '',
+    this.fontColor,
+    this.backgroundOpacity = 0.2,
+    this.backgroundColor,
+    this.borderDepth = 0.5,
+    this.fontSize = 16,
+  });
+
+  @override
+  final String fontFamily;
+  @override
+  final Color? fontColor;
+  @override
+  final double backgroundOpacity;
+  @override
+  final Color? backgroundColor;
+  @override
+  final double borderDepth;
+  @override
+  final double fontSize;
+}
 
 class SubtitleWindowVisual extends StatelessWidget {
   const SubtitleWindowVisual({
@@ -12,7 +43,7 @@ class SubtitleWindowVisual extends StatelessWidget {
     this.fallbackBackgroundColor,
   });
 
-  final SubtitleSettingsState settings;
+  final SubtitleWindowVisualStyle settings;
   final String text;
   final double maxTextWidth;
   final EdgeInsetsGeometry padding;

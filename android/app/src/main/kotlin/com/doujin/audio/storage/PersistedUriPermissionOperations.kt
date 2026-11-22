@@ -3,6 +3,7 @@ package com.doujin.audio.storage
 import android.content.ContentResolver
 import android.content.Intent
 import android.net.Uri
+import android.os.SystemClock
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.locks.ReentrantLock
@@ -30,6 +31,13 @@ internal object PersistedUriPermissionOperations {
     private val permissionLock = ReentrantLock()
     private val pendingTransitionGrants = linkedMapOf<String, Long>()
 
+    @Volatile
+    internal var elapsedRealtimeClock: () -> Long = SystemClock::elapsedRealtime
+
+    internal fun clearPendingTransitionGrantsForTest() = withPermissionLock {
+        pendingTransitionGrants.clear()
+    }
+
     fun <T> withPermissionLock(block: () -> T): T = permissionLock.withLock(block)
 
     fun takeForPicker(
@@ -56,7 +64,7 @@ internal object PersistedUriPermissionOperations {
                 hasWrite = coveringPermissions.any { it.isWritePermission }
             )
         ) {
-            pendingTransitionGrants[rawUri] = System.currentTimeMillis()
+            pendingTransitionGrants[rawUri] = elapsedRealtimeClock()
             return@withPermissionLock NewlyPersistedUriPermission(uri, 0)
         }
         val existingExact = existingPermissions.firstOrNull { it.uri == uri }
@@ -83,7 +91,7 @@ internal object PersistedUriPermissionOperations {
             }
             throw SecurityException("The selected URI permission was not persisted.")
         }
-        pendingTransitionGrants[rawUri] = System.currentTimeMillis()
+        pendingTransitionGrants[rawUri] = elapsedRealtimeClock()
         NewlyPersistedUriPermission(uri, addedModeFlags)
     }
 
@@ -142,14 +150,14 @@ internal object PersistedUriPermissionOperations {
             }
             throw SecurityException("Unable to release permission for the previous document.", error)
         }
-        pendingTransitionGrants[newUri.toString()] = System.currentTimeMillis()
+        pendingTransitionGrants[newUri.toString()] = elapsedRealtimeClock()
     }
 
     fun reconcile(
         resolver: ContentResolver,
         retainedUris: Set<String>
     ): PersistedUriPermissionReconcileResult = withPermissionLock {
-        val nowMs = System.currentTimeMillis()
+        val nowMs = elapsedRealtimeClock()
         pendingTransitionGrants.entries.removeAll { (_, acquiredAtMs) ->
             !pendingPickerGrantIsActive(
                 acquiredAtMs = acquiredAtMs,
@@ -166,7 +174,7 @@ internal object PersistedUriPermissionOperations {
         var retainedCount = 0
         var releasedCount = 0
         val failedUris = mutableListOf<String>()
-        resolver.persistedUriPermissions.forEach { permission ->
+        resolver.persistedUriPermissions.toList().forEach { permission ->
             val persistedUri = permission.uri.toString()
             if (retainedUris.any { persistedGrantCoversReference(persistedUri, it) } ||
                 pendingTransitionGrants.keys.any {

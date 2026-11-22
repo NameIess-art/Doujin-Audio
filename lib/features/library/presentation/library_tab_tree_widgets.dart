@@ -806,10 +806,7 @@ class _TrackNodeWidget extends ConsumerWidget {
         track.isVideo ||
         (track.isSingle &&
             ref.watch(
-              libraryCoverForTrackProvider((
-                trackPath: track.path,
-                context: context,
-              )).select(
+              libraryCoverForTrackProvider(track.path).select(
                 (state) => hasDisplayableCoverArtwork(
                   track,
                   state.value ?? library.resolvedCoverPathForTrack(track),

@@ -10,7 +10,6 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
-import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -49,6 +48,7 @@ class SubtitleOverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        ensureOverlayAttached()
         return START_NOT_STICKY
     }
 
@@ -72,7 +72,7 @@ class SubtitleOverlayService : Service() {
     @SuppressLint("ClickableViewAccessibility")
     private fun createOverlay(): Boolean {
         if (subtitleTextView != null) return true
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+        if (!canDrawSubtitleOverlays(this)) {
             stopSelf()
             return false
         }
@@ -135,7 +135,7 @@ class SubtitleOverlayService : Service() {
                             params.x = nextX
                             params.y = nextY
                             if (subtitleTextView === textView) {
-                                windowManager.updateViewLayout(textView, params)
+                                updateOverlayLayout(textView)
                             }
                         }
                         return true
@@ -181,7 +181,15 @@ class SubtitleOverlayService : Service() {
                 params.width = WindowManager.LayoutParams.WRAP_CONTENT
                 params.height = WindowManager.LayoutParams.WRAP_CONTENT
             }
+            updateOverlayLayout(view)
+        }
+    }
+
+    private fun updateOverlayLayout(view: View) {
+        try {
             windowManager.updateViewLayout(view, params)
+        } catch (_: IllegalArgumentException) {
+            // Overlay view was already detached concurrently.
         }
     }
 

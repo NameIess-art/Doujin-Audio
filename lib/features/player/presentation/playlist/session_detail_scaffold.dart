@@ -533,6 +533,16 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                             : headerTop + AppPageHeaderMetrics.buttonSize + 8,
                         child: Consumer(
                           builder: (context, ref, child) {
+                            final effectiveCoverPreview =
+                                _detailRoute?.coverPreviewFor(
+                                  session.currentTrackPath,
+                                ) ??
+                                widget.coverPreview;
+                            final coverPreviewHighRes =
+                                _detailRoute?.hasHighResCoverPreview(
+                                  session.currentTrackPath,
+                                ) ??
+                                false;
                             final artworkWidget = SessionHeroArtwork(
                               key: ValueKey('artwork_${session.id}'),
                               session: session,
@@ -541,7 +551,8 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                               coverPathFuture: coverPathFuture,
                               initialCoverPath: widget.initialCoverPath,
                               coverAnchorKey: widget.detailCoverKey,
-                              coverPreview: widget.coverPreview,
+                              coverPreview: effectiveCoverPreview,
+                              coverPreviewHighRes: coverPreviewHighRes,
                               coverLanded: _coverOverlaysVisible,
                               // Creating the Android platform view can contend
                               // with the entrance. Retain it for the exit.

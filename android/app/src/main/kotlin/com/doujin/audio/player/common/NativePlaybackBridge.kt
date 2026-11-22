@@ -15,9 +15,14 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.util.UUID
+import java.util.concurrent.Executor
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 
 class NativePlaybackBridge(
-    private val context: Context
+    private val context: Context,
+    private val inactiveExecutor: Executor? = null
 ) : MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
     private var events: EventChannel.EventSink? = null
     private var listening = false
@@ -27,6 +32,13 @@ class NativePlaybackBridge(
     private val listenerId = "flutter-${UUID.randomUUID()}"
     private val mainHandler = Handler(Looper.getMainLooper())
     private val pendingCalls = linkedSetOf<PendingServiceCall>()
+    private val ownedInactiveExecutor: ExecutorService? = if (inactiveExecutor == null) {
+        Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "doujin-playback-inactive").apply { isDaemon = true }
+        }
+    } else null
+    private val offMainExecutor: Executor
+        get() = inactiveExecutor ?: checkNotNull(ownedInactiveExecutor)
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         if (disposed) {
@@ -49,19 +61,9 @@ class NativePlaybackBridge(
             )
             return
         }
-        command.dispatchBackground?.let { dispatch ->
-            // The serial channel TaskQueue owns cold definition I/O. It must
-            // never attach to a service running for another session.
-            result.success(dispatchStoredPlayback(call.method) { dispatch(context) })
-            return
-        }
-        val inactiveResponse = if (!command.canStartService && NativePlaybackService.controller() == null) {
-            command.dispatchInactive?.let { dispatch ->
-                dispatchStoredPlayback(call.method) { dispatch(context) }
-            } ?: serviceUnavailable(call.method)
-        } else null
         // Codec decoding and large queue validation run on the channel's serial
-        // background TaskQueue. Player and service ownership stays on main.
+        // background TaskQueue. Live vs inactive routing is decided once on main
+        // so a command cannot execute both on cold storage and on a starting service.
         mainHandler.post {
             if (disposed) {
                 result.success(serviceUnavailable(call.method))
@@ -73,19 +75,64 @@ class NativePlaybackBridge(
             }
             if (command.cancelAllPendingStarts) pendingCalls.toList()
                 .filter { it.isPlaybackStart() }.forEach(PendingServiceCall::cancel)
-            if (inactiveResponse != null && NativePlaybackService.controller() == null) {
-                result.success(inactiveResponse)
+            val liveService = NativePlaybackService.controller()
+            val backgroundDispatch = command.dispatchBackground
+            if (backgroundDispatch != null) {
+                val targetSessionId = command.sessionId
+                if (liveService != null && targetSessionId != null && liveService.hasSession(targetSessionId)) {
+                    enqueuePendingCall(call.method, result, command)
+                    return@post
+                }
+                command.prepareBackground?.invoke()
+                dispatchOffMain(call.method, result, backgroundDispatch)
                 return@post
             }
-            val pendingCall = PendingServiceCall(
-                method = call.method, result = result,
-                sessionId = command.sessionId,
-                canStartService = command.canStartService,
-                requireForegroundBootstrap = command.requireForegroundBootstrap,
-                dispatchAsync = command.dispatchAsync, dispatch = command.dispatch
-            )
-            pendingCalls += pendingCall
-            pendingCall.run()
+            if (!command.canStartService && liveService == null) {
+                val inactiveDispatch = command.dispatchInactive
+                if (inactiveDispatch != null) {
+                    dispatchOffMain(call.method, result, inactiveDispatch)
+                } else {
+                    result.success(serviceUnavailable(call.method))
+                }
+                return@post
+            }
+            enqueuePendingCall(call.method, result, command)
+        }
+    }
+
+    private fun enqueuePendingCall(
+        method: String,
+        result: MethodChannel.Result,
+        command: ParsedPlaybackCommand
+    ) {
+        command.prepareForLive?.invoke()
+        val pendingCall = PendingServiceCall(
+            method = method,
+            result = result,
+            sessionId = command.sessionId,
+            canStartService = command.canStartService,
+            requireForegroundBootstrap = command.requireForegroundBootstrap,
+            dispatchAsync = command.dispatchAsync,
+            dispatch = command.dispatch
+        )
+        pendingCalls += pendingCall
+        pendingCall.run()
+    }
+
+    private fun dispatchOffMain(
+        method: String,
+        result: MethodChannel.Result,
+        dispatch: (Context) -> Map<String, Any?>
+    ) {
+        try {
+            offMainExecutor.execute {
+                val response = dispatchStoredPlayback(method) { dispatch(context) }
+                mainHandler.post {
+                    result.success(response)
+                }
+            }
+        } catch (_: RejectedExecutionException) {
+            result.success(serviceUnavailable(method))
         }
     }
 
@@ -116,6 +163,7 @@ class NativePlaybackBridge(
         attachedService?.removeStateListener(listenerId)
         attachedService = null
         events = null
+        ownedInactiveExecutor?.shutdown()
     }
 
     private fun syncControllerListenerRegistration() {
@@ -155,6 +203,15 @@ class NativePlaybackBridge(
     }
 
     private fun handleControllerChanged(service: NativePlaybackService?) {
+        if (disposed) return
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { handleControllerChangedOnMain(service) }
+            return
+        }
+        handleControllerChangedOnMain(service)
+    }
+
+    private fun handleControllerChangedOnMain(service: NativePlaybackService?) {
         if (disposed) return
         if (service == null) {
             if (listening) {
@@ -299,7 +356,9 @@ private inline fun dispatchStoredPlayback(
 }
 
 internal fun isSupportedNativePlaybackMethod(method: String): Boolean = method in setOf(
-    "readUsage", "acknowledgeUsage", "resetUsage",
+    NativePlaybackMethods.READ_USAGE,
+    NativePlaybackMethods.ACKNOWLEDGE_USAGE,
+    NativePlaybackMethods.RESET_USAGE,
     NativePlaybackMethods.PREPARE_SESSION,
     NativePlaybackMethods.PLAY,
     NativePlaybackMethods.PAUSE,
@@ -326,6 +385,8 @@ internal class ParsedPlaybackCommand(
     val cancelAllPendingStarts: Boolean = false,
     val canStartService: Boolean = false,
     val requireForegroundBootstrap: Boolean = false,
+    val prepareBackground: (() -> Unit)? = null,
+    val prepareForLive: (() -> Unit)? = null,
     val dispatchBackground: ((Context) -> Map<String, Any?>)? = null,
     val dispatchInactive: ((Context) -> Map<String, Any?>)? = null,
     val dispatchAsync: ((NativePlaybackService, (Map<String, Any?>) -> Unit) -> Unit)? = null,
@@ -342,10 +403,10 @@ internal fun parsePlaybackCommand(call: MethodCall): ParsedPlaybackCommand {
         return value.toFloat()
     }
     return when (call.method) {
-        "readUsage" -> ParsedPlaybackCommand(dispatchInactive = { context ->
+        NativePlaybackMethods.READ_USAGE -> ParsedPlaybackCommand(dispatchInactive = { context ->
             channelSuccess(NativePlaybackUsageLedger.get(context).read())
         }) { service -> service.readUsage() }
-        "acknowledgeUsage" -> {
+        NativePlaybackMethods.ACKNOWLEDGE_USAGE -> {
             val ids = arguments.requiredList("batchIds")
             require(ids.all { it is String && it.isNotEmpty() }) { "batchIds is required." }
             val batchIds = ids.map { it as String }.toSet()
@@ -354,26 +415,68 @@ internal fun parsePlaybackCommand(call: MethodCall): ParsedPlaybackCommand {
                 channelSuccess(null)
             }) { service -> service.acknowledgeUsage(batchIds) }
         }
-        "resetUsage" -> ParsedPlaybackCommand(dispatchInactive = { context ->
+        NativePlaybackMethods.RESET_USAGE -> ParsedPlaybackCommand(dispatchInactive = { context ->
             NativePlaybackUsageLedger.get(context).reset()
             channelSuccess(null)
         }) { service -> service.resetUsage() }
 
         NativePlaybackMethods.PREPARE_SESSION -> {
             val prepared = NativePlaybackCommandPayloads.parsePrepareSession(call.argumentsMap())
-            if (prepared.deferPlayerCreation && !prepared.autoPlay) {
-                return ParsedPlaybackCommand(dispatchBackground = { context ->
-                    NativePlaybackStateStore.saveColdSession(context, prepared.storedDefinition())
-                    channelSuccess(null)
-                }) { channelSuccess(null) }
+            var liveRevision: Long? = null
+            fun versionedForLive(): NativePrepareSessionArguments {
+                val revision = liveRevision ?: NativePlaybackStateStore.invalidateSession(prepared.sessionId)
+                    .also { liveRevision = it }
+                return prepared.copy(definitionRevision = revision)
             }
-            val versioned = prepared.copy(definitionRevision = NativePlaybackStateStore.invalidateSession(prepared.sessionId))
-            ParsedPlaybackCommand(sessionId = prepared.sessionId,
+            if (prepared.deferPlayerCreation && !prepared.autoPlay) {
+                val stored = prepared.storedDefinition()
+                var stagedRevision: Long? = null
+                return ParsedPlaybackCommand(
+                    sessionId = prepared.sessionId,
+                    canStartService = false,
+                    prepareBackground = {
+                        val revision = NativePlaybackStateStore.invalidateSession(prepared.sessionId)
+                        stagedRevision = revision
+                        NativePlaybackStateStore.stageSessions(
+                            listOf(stored),
+                            mapOf(prepared.sessionId to revision)
+                        )
+                    },
+                    prepareForLive = {
+                        liveRevision = NativePlaybackStateStore.invalidateSession(prepared.sessionId)
+                    },
+                    dispatchBackground = { context ->
+                        val revision = stagedRevision
+                        if (revision != null) {
+                            NativePlaybackStateStore.upsertSessions(
+                                context,
+                                listOf(stored),
+                                mapOf(prepared.sessionId to revision)
+                            )
+                        } else {
+                            NativePlaybackStateStore.saveColdSession(context, stored)
+                        }
+                        channelSuccess(null)
+                    },
+                    dispatchAsync = { service, complete ->
+                        service.prepareSessionAsync(versionedForLive(), complete)
+                    }
+                ) { service ->
+                    service.prepareSession(versionedForLive())
+                }
+            }
+            ParsedPlaybackCommand(
+                sessionId = prepared.sessionId,
                 canStartService = prepared.autoPlay || !prepared.deferPlayerCreation,
                 requireForegroundBootstrap = prepared.autoPlay,
-                dispatchAsync = { service, complete -> service.prepareSessionAsync(versioned, complete) }
+                prepareForLive = {
+                    liveRevision = NativePlaybackStateStore.invalidateSession(prepared.sessionId)
+                },
+                dispatchAsync = { service, complete ->
+                    service.prepareSessionAsync(versionedForLive(), complete)
+                }
             ) { service ->
-                service.prepareSession(versioned)
+                service.prepareSession(versionedForLive())
             }
         }
         NativePlaybackMethods.PLAY -> {
@@ -479,6 +582,7 @@ internal fun parsePlaybackCommand(call: MethodCall): ParsedPlaybackCommand {
             NativePlaybackStateStore.clearPausedSessionIds(context)
             NativePlaybackStateStore.clearTimerCandidateSessionIds(context)
             NativePlaybackStateStore.clearTimerRuntimeState(context)
+            PlaybackTimerAlarmScheduler.rescheduleFromStoredState(context)
             channelSuccess(null)
         }) { service -> service.clearAll() }
         NativePlaybackMethods.SET_PLAYBACK_BEHAVIOR -> {

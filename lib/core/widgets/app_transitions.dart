@@ -1931,10 +1931,15 @@ class AppPlaybackIconTransition extends StatelessWidget {
         !TickerMode.valuesOf(context).enabled) {
       return child;
     }
+    // Windows buttons avoid scaling or rotating glyphs to prevent Skia raster jitter.
+    final isWindows = Theme.of(context).platform == TargetPlatform.windows;
     return AnimatedSwitcher(
       duration: kAppPlaybackIconDuration,
-      switchOutCurve: Curves.easeInCubic,
-      transitionBuilder: _buildTransition,
+      switchInCurve: isWindows ? kAppFadeCurve : Curves.linear,
+      switchOutCurve: isWindows ? kAppFadeCurve : Curves.easeInCubic,
+      transitionBuilder: isWindows
+          ? AnimatedSwitcher.defaultTransitionBuilder
+          : _buildTransition,
       child: child,
     );
   }

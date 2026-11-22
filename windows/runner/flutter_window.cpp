@@ -3,6 +3,7 @@
 #include <optional>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "utils.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -39,7 +40,7 @@ bool FlutterWindow::OnCreate() {
   }
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
-    if (std::wstring(GetCommandLineW()).find(L"--background") == std::wstring::npos) {
+    if (!HasCommandLineFlag(L"--background")) {
       if (desktop_) desktop_->OnFirstFrame(true);
     } else if (desktop_) {
       desktop_->OnFirstFrame(false);
@@ -55,6 +56,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  destroying_ = true;
   desktop_.reset();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
@@ -70,11 +72,12 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   if (desktop_) {
     if (auto handled = desktop_->HandleMessage(message,wparam,lparam)) return *handled;
   } else if (message == DesktopIntegration::kActivate) {
+    if (destroying_) return 0;
     pending_activation_ = true;
     if (wparam == 0) pending_activation_show_ = true;
-    return 0;
+    return DesktopIntegration::kActivateAccepted;
   } else if (message == DesktopIntegration::kExit) {
-    pending_exit_ = true;
+    if (!destroying_) pending_exit_ = true;
     return 0;
   }
   // Give Flutter, including plugins, an opportunity to handle window messages.

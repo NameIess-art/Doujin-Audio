@@ -59,6 +59,10 @@ abstract final class VideoDisplayChannel {
   static const String name = 'doujin_audio/video_display';
 }
 
+abstract final class WindowsDesktopChannel {
+  static const String name = 'doujin_audio/windows_desktop';
+}
+
 // ---------------------------------------------------------------------------
 // Method names — native_playback
 // ---------------------------------------------------------------------------
@@ -182,4 +186,5 @@ abstract final class UpdateMethod {
       'openInstallPermissionSettings';
   static const String openReleasePage = 'openReleasePage';
   static const String installApk = 'installApk';
+  static const String installWindowsUpdate = 'installWindowsUpdate';
 }

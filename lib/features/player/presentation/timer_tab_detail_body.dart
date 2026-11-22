@@ -109,7 +109,7 @@ extension _TimerTabDetailBody on _TimerTabState {
                           child: Padding(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 12,
-                              vertical: 10,
+                              vertical: 8,
                             ),
                             child: Row(
                               children: [
@@ -142,6 +142,8 @@ extension _TimerTabDetailBody on _TimerTabState {
                                   ),
                                 ),
                                 Switch.adaptive(
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
                                   value: timerState.autoResumeEnabled,
                                   onChanged: (value) {
                                     AppInteractionFeedback.trigger(
@@ -283,6 +285,8 @@ extension _TimerTabDetailBody on _TimerTabState {
                                     ),
                                   ),
                                   Switch.adaptive(
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
                                     value: timerState.stopAfterCurrentTrack,
                                     onChanged: (value) {
                                       AppInteractionFeedback.trigger(

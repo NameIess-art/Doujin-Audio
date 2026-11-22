@@ -4,7 +4,75 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/media/cover_image_resolution.dart';
+import '../../../../core/ui/cover_image_retention.dart';
+import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/async_cover_image.dart';
+
+ImageProvider<Object> detailCoverImageProvider({
+  required String coverPath,
+  required CoverImageResolution resolution,
+  bool isVideoBackdrop = false,
+}) => resizeFileImageIfNeeded(
+  path: coverPath,
+  cacheWidth: isVideoBackdrop ? 200 : coverCacheWidthForResolution(resolution),
+  useDefaultCacheWidth: false,
+);
+
+String _detailCoverPrewarmKey(Object ownerKey) =>
+    'detail_cover_prewarm_${identityHashCode(ownerKey)}';
+
+void cancelDetailCoverPrewarm(Object ownerKey) {
+  UiInteractionCoordinator.instance.cancelCommit(
+    _detailCoverPrewarmKey(ownerKey),
+  );
+}
+
+/// Decodes one active session's detail-resolution cover during idle time so
+/// opening playback detail can fly with the crisp image from the first frame.
+void scheduleDetailCoverPrewarm({
+  required Object ownerKey,
+  required String coverPath,
+  required CoverImageResolution resolution,
+  bool isVideoBackdrop = false,
+  required bool Function() isStillValid,
+}) {
+  if (coverPath.isEmpty) return;
+  final provider = detailCoverImageProvider(
+    coverPath: coverPath,
+    resolution: resolution,
+    isVideoBackdrop: isVideoBackdrop,
+  );
+  if (retainedCoverImageFor(provider)?.isAdequate == true) return;
+  UiInteractionCoordinator.instance.scheduleCommit(
+    key: _detailCoverPrewarmKey(ownerKey),
+    priority: 40,
+    canRun: isStillValid,
+    commit: () {
+      if (!isStillValid()) return;
+      if (retainedCoverImageFor(provider)?.isAdequate == true) return;
+      restoreRetainedCoverImage(provider);
+      final stream = provider.resolve(ImageConfiguration.empty);
+      late final ImageStreamListener listener;
+      listener = ImageStreamListener(
+        (info, _) {
+          retainCoverImage(
+            provider,
+            ImageConfiguration.empty,
+            stream: stream,
+            info: info,
+          );
+          info.dispose();
+          stream.removeListener(listener);
+        },
+        onError: (_, _) {
+          stream.removeListener(listener);
+        },
+      );
+      stream.addListener(listener);
+    },
+  );
+}
 
 final sessionCoverTargetsProvider = Provider(
   (ref) => <SessionCoverAnchorState>{},
@@ -189,15 +257,23 @@ class _CoverAnchorBox extends RenderProxyBox {
 class SessionCoverFlight extends CustomPainter {
   SessionCoverFlight({
     required this.image,
+    this.upgradedImage,
+    this.upgradeOpacity,
     required this.from,
     required this.to,
     required this.fromRadius,
     required this.toRadius,
     required this.progress,
     required this.reverse,
-  }) : super(repaint: progress);
+  }) : super(
+         repaint: upgradeOpacity == null
+             ? progress
+             : Listenable.merge([progress, upgradeOpacity]),
+       );
 
   final ui.Image image;
+  final ui.Image? upgradedImage;
+  final Animation<double>? upgradeOpacity;
   final Rect from;
   final Rect to;
   final double fromRadius;
@@ -212,13 +288,33 @@ class SessionCoverFlight extends CustomPainter {
     final radius = ui.lerpDouble(fromRadius, toRadius, t)!;
     canvas.save();
     canvas.clipRRect(RRect.fromRectAndRadius(bounds, Radius.circular(radius)));
-    paintImage(canvas: canvas, rect: bounds, image: image, fit: BoxFit.cover);
+    final upgraded = upgradedImage;
+    final blend = upgraded == null ? 0.0 : (upgradeOpacity?.value ?? 1.0);
+    if (upgraded == null || blend < 1.0) {
+      paintImage(
+        canvas: canvas,
+        rect: bounds,
+        image: image,
+        fit: BoxFit.cover,
+      );
+    }
+    if (upgraded != null && blend > 0.0) {
+      paintImage(
+        canvas: canvas,
+        rect: bounds,
+        image: upgraded,
+        fit: BoxFit.cover,
+        opacity: blend,
+      );
+    }
     canvas.restore();
   }
 
   @override
   bool shouldRepaint(SessionCoverFlight oldDelegate) =>
       oldDelegate.image != image ||
+      oldDelegate.upgradedImage != upgradedImage ||
+      oldDelegate.upgradeOpacity != upgradeOpacity ||
       oldDelegate.from != from ||
       oldDelegate.to != to ||
       oldDelegate.fromRadius != fromRadius ||

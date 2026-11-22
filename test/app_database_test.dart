@@ -45,6 +45,38 @@ void main() {
     expect(AppDatabase.schemaVersion, 19);
   });
 
+  test('clearAsmrTablesForTest removes all ASMR persistence rows', () async {
+    final asmrRepo = SqliteAsmrRepository(database: appDatabase);
+    await asmrRepo.saveVisibleCategoryNames(const <String>['release']);
+    await asmrRepo.saveWorkList('favorites', <AsmrWork>[
+      _asmrWork(1, 'Work 1', isFavorite: true, voiceActors: const ['VA'], tags: const ['Tag']),
+    ]);
+    await asmrRepo.saveSyncOperations(<AsmrSyncOperation>[
+      AsmrSyncOperation(
+        type: AsmrSyncOperationType.favoriteAdd,
+        workId: 1,
+        sourceId: 'RJ000001',
+        createdAt: DateTime.utc(2026),
+      ),
+    ]);
+
+    await asmrRepo.clearForTest();
+
+    expect(await asmrRepo.loadVisibleCategoryNames(), isEmpty);
+    expect(await asmrRepo.loadWorkList('favorites'), isEmpty);
+    expect(await asmrRepo.loadSyncOperations(), isEmpty);
+    for (final table in const <String>[
+      'asmr_sync_operations',
+      'asmr_visible_categories',
+      'asmr_work_lists',
+      'asmr_work_tags',
+      'asmr_work_voice_actors',
+      'asmr_works',
+    ]) {
+      expect(await db.query(table), isEmpty, reason: table);
+    }
+  });
+
   test('v19 queue path indexes keep drive and SAF ancestor matching', () async {
     await _setRestoreSchemaVersion(db, 18);
     final tracks = {

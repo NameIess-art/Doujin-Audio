@@ -1,3 +1,9 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/painting.dart' show PaintingBinding;
+
+import '../../core/platform/platform_channels.dart' show WindowsWindowCommand;
 import '../../features/library/application/work_text_service.dart';
 import 'listening_activity_provider.dart';
 import '../../features/asmr/presentation/asmr_providers.dart';
@@ -19,6 +25,7 @@ import '../application/audio_ui_warmup_coordinator.dart';
 import '../../features/player/application/playback_command_coordinator.dart';
 import '../application/playback_keep_alive_coordinator.dart';
 import '../../features/library/application/library_facade.dart';
+import '../../features/library/application/library_scan_coordinator.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
 import '../../features/player/application/playback_subtitle_service.dart';
@@ -79,10 +86,12 @@ final permissionStatusServiceProvider = Provider<PermissionStatusService>((
 ) {
   final overlay = ref.watch(subtitleOverlayControllerProvider);
   final updates = ref.watch(appUpdateServiceProvider);
-  return PermissionStatusService(
+  final service = PermissionStatusService(
     subtitleOverlayController: overlay,
     appUpdateService: updates,
   );
+  ref.onDispose(() => unawaited(service.dispose()));
+  return service;
 });
 
 final appPersistenceCoordinatorProvider = Provider<AppPersistenceCoordinator>((
@@ -204,6 +213,7 @@ final settingsCommandControllerProvider = Provider<SettingsCommandController>((
     playback: ref.watch(playbackFacadeProvider),
     library: ref.watch(libraryFacadeProvider),
     waitForRuntime: ref.watch(audioRuntimeCoordinatorProvider).start,
+    clearImageCache: () => PaintingBinding.instance.imageCache.clearLiveImages(),
     clearBrowseCaches: () async {
       ref.read(browsePageStateStoreProvider).clear();
       ref.read(asmrLibraryControllerProvider)?.clearRuntimeCaches();
@@ -265,10 +275,17 @@ final windowsHotkeyStatusProvider = FutureProvider<Map<String, bool>>((ref) {
   return WindowsDesktopService.instance.getHotkeyStatus();
 });
 
-final windowsWindowControlsProvider = Provider((ref) {
+({
+  Future<void> Function(WindowsWindowCommand) runCommand,
+  ValueListenable<bool> maximized,
+}) defaultWindowsWindowControls() {
   final desktop = WindowsDesktopService.instance;
   return (runCommand: desktop.runWindowCommand, maximized: desktop.maximized);
-});
+}
+
+final windowsWindowControlsProvider = Provider(
+  (ref) => defaultWindowsWindowControls(),
+);
 
 List<Override> createAppRuntimeOverrides({
   required AppPersistenceCoordinator persistence,
@@ -287,11 +304,17 @@ List<Override> createAppRuntimeOverrides({
   PowerPlatformGateway? powerPlatformGateway,
   BrowsePageStateStore? browsePageStates,
   WorkTextService? workTexts,
+  AudioPathCoordinator? audioPaths,
+  LibraryScanCoordinator? libraryScans,
 }) {
   return <Override>[
     if (workTexts != null) workTextServiceProvider.overrideWithValue(workTexts),
     if (browsePageStates != null)
       browsePageStateStoreProvider.overrideWithValue(browsePageStates),
+    if (audioPaths != null)
+      audioPathCoordinatorProvider.overrideWithValue(audioPaths),
+    if (libraryScans != null)
+      libraryScanCoordinatorProvider.overrideWithValue(libraryScans),
     appPersistenceCoordinatorProvider.overrideWithValue(persistence),
     audioRuntimeCoordinatorProvider.overrideWithValue(runtime),
     audioUiWarmupCoordinatorProvider.overrideWithValue(warmup),

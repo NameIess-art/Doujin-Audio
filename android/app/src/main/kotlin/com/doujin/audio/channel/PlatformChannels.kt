@@ -14,6 +14,9 @@ internal object PlatformChannelNames {
 }
 
 internal object NativePlaybackMethods {
+    const val READ_USAGE = "readUsage"
+    const val ACKNOWLEDGE_USAGE = "acknowledgeUsage"
+    const val RESET_USAGE = "resetUsage"
     const val PREPARE_SESSION = "prepareSession"
     const val PLAY = "play"
     const val PAUSE = "pause"
@@ -32,6 +35,11 @@ internal object NativePlaybackMethods {
     const val CLEAR_ALL = "clearAll"
     const val SET_PLAYBACK_BEHAVIOR = "setPlaybackBehavior"
     const val SNAPSHOT = "snapshot"
+}
+
+internal object NetworkMethods {
+    const val RESOLVE_SYSTEM_PROXY = "resolveSystemProxy"
+    const val APPLY_NETWORK_ROUTE = "applyNetworkRoute"
 }
 
 internal object AppLifecycleMethods {

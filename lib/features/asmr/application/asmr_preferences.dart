@@ -75,7 +75,9 @@ class AsmrPreferencesStore {
     }
   }
 
+  @visibleForTesting
   Future<void> clearForTest() async {
+    // ignore: invalid_use_of_visible_for_testing_member
     await _repository.clearForTest();
     for (final key in [
       _contentLanguageKey,

@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:doujin_audio/core/network/network_route_settings.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
+import 'package:doujin_audio/core/platform/power_platform_service.dart';
 import 'package:doujin_audio/core/ui/app_interaction_feedback_settings.dart';
 import 'package:doujin_audio/features/player/domain/audio_effects.dart';
+import 'package:doujin_audio/features/settings/application/permission_status_service.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:flutter/services.dart';
@@ -392,4 +395,107 @@ void main() {
       expect(routeNotifications, 1);
     },
   );
+
+  test(
+    'disabling proxy authentication deletes stored proxy password and rolls back on failure',
+    () async {
+      String? secret;
+      final applied = <(NetworkRouteSettings, String?)>[];
+      final repo = SettingsRepository(
+        readProxyPassword: () async => secret,
+        writeProxyPassword: (value) async => secret = value,
+        onNetworkRouteChanged: (route, password) async =>
+            applied.add((route, password)),
+      );
+      addTearDown(repo.dispose);
+      const authRoute = NetworkRouteSettings(
+        proxyMode: AppProxyMode.http,
+        proxyHost: '127.0.0.1',
+        proxyPort: 8080,
+        proxyAuthenticationEnabled: true,
+        proxyUsername: 'alice',
+      );
+      await repo.setNetworkRouteSettings(authRoute, password: 'top-secret');
+      expect(secret, 'top-secret');
+      expect(repo.networkRouteSettings.proxyPasswordConfigured, isTrue);
+
+      // Failed persistence while disabling auth must restore the secret.
+      preferences.beforeSave = () async => false;
+      await expectLater(
+        repo.setNetworkRouteSettings(
+          authRoute.copyWith(proxyAuthenticationEnabled: false),
+        ),
+        throwsStateError,
+      );
+      expect(secret, 'top-secret');
+      expect(repo.networkRouteSettings.proxyAuthenticationEnabled, isTrue);
+      expect(repo.networkRouteSettings.proxyPasswordConfigured, isTrue);
+
+      // Succeeding persistence clears the secret and marks password unconfigured.
+      preferences.beforeSave = null;
+      await repo.setNetworkRouteSettings(
+        authRoute.copyWith(proxyAuthenticationEnabled: false),
+      );
+      expect(secret, isNull);
+      expect(repo.networkRouteSettings.proxyAuthenticationEnabled, isFalse);
+      expect(repo.networkRouteSettings.proxyPasswordConfigured, isFalse);
+      expect(applied.last.$2, isNull);
+    },
+  );
+
+  test(
+    'loadPersistedPresentationStateSync refuses to race with an active write queue',
+    () async {
+      await AppPreferences.init();
+      final gate = Completer<bool>();
+      preferences.beforeSave = () => gate.future;
+      final write = settings.setAllowVideoPlayback(false);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(settings.loadPersistedPresentationStateSync(), isFalse);
+      expect(settings.allowVideoPlayback, isFalse);
+
+      gate.complete(true);
+      await write;
+      expect(settings.slice.state.allowVideoPlayback, isFalse);
+      expect(settings.loadPersistedPresentationStateSync(), isTrue);
+      expect(settings.slice.state.allowVideoPlayback, isFalse);
+    },
+  );
+
+  test(
+    'PermissionStatusService guards Android-only power actions and disposes cleanly',
+    () async {
+      final power = _TrackingPowerPlatformService();
+      final service = PermissionStatusService(
+        isAndroidOverride: false,
+        powerService: power,
+      );
+
+      expect(await service.loadBackgroundRunDiagnostics(), isNull);
+      expect(await service.openBatteryOptimizationSettings(), isFalse);
+      expect(power.diagnosticsCalls, 0);
+      expect(power.batterySettingsCalls, 0);
+      await service.dispose();
+    },
+  );
+}
+
+final class _TrackingPowerPlatformService extends PowerPlatformService {
+  _TrackingPowerPlatformService() : super(isAndroidOverride: true);
+
+  int diagnosticsCalls = 0;
+  int batterySettingsCalls = 0;
+
+  @override
+  Future<BackgroundRunDiagnostics?> getBackgroundRunDiagnostics() async {
+    diagnosticsCalls++;
+    return null;
+  }
+
+  @override
+  Future<bool> openBatteryOptimizationSettings() async {
+    batterySettingsCalls++;
+    return true;
+  }
 }

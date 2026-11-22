@@ -13,8 +13,11 @@ class DnsServerResolver {
     this.timeout = const Duration(seconds: 3),
     this.cacheCapacity = 256,
     DateTime Function()? now,
+    Future<ConnectionTask<Socket>> Function(InternetAddress, int)?
+    startSocketConnect,
   }) : assert(cacheCapacity > 0),
-       _now = now ?? DateTime.now;
+       _now = now ?? DateTime.now,
+       _startSocketConnect = startSocketConnect ?? Socket.startConnect;
 
   final InternetAddress server;
   final int port;
@@ -22,6 +25,8 @@ class DnsServerResolver {
   final int cacheCapacity;
   final _random = Random.secure();
   final DateTime Function() _now;
+  final Future<ConnectionTask<Socket>> Function(InternetAddress, int)
+  _startSocketConnect;
   final _cache =
       <(String, int), ({List<InternetAddress> addresses, DateTime expires})>{};
   final _pending = <(String, int), Future<List<InternetAddress>>>{};
@@ -288,7 +293,7 @@ class DnsServerResolver {
   }
 
   Future<Uint8List> _tcp(Uint8List query) async {
-    final task = await Socket.startConnect(server, port);
+    final task = await _startSocketConnect(server, port);
     if (_closed) {
       task.cancel();
       // Cancellation completes task.socket with an error; always consume it.
@@ -301,12 +306,11 @@ class DnsServerResolver {
     _cancelQueries.add(task.cancel);
     late Socket socket;
     try {
-      socket = await task.socket.timeout(
-        timeout,
-        onTimeout: () {
-          task.cancel();
-          throw TimeoutException('DNS TCP connection timed out', timeout);
-        },
+      socket = await awaitCancellableSocket(
+        task.socket,
+        cancel: task.cancel,
+        timeout: timeout,
+        timeoutMessage: 'DNS TCP connection timed out',
       );
     } finally {
       _cancelQueries.remove(task.cancel);

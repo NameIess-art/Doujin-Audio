@@ -136,13 +136,13 @@ class PlaybackSession {
     if (existing != null) return existing;
     final map = <String, MusicTrack>{};
     for (final track in _customQueueTracks ?? const <MusicTrack>[]) {
-      map[PathMatcher.normalize(track.path)] = track;
+      map[PathMatcher.equivalenceKey(track.path)] = track;
     }
     final queue = _playbackQueue;
     if (queue != null) {
       for (final entry in queue.entries) {
         for (final track in entry.tracks) {
-          map.putIfAbsent(PathMatcher.normalize(track.path), () => track);
+          map.putIfAbsent(PathMatcher.equivalenceKey(track.path), () => track);
         }
       }
     }
@@ -166,14 +166,12 @@ class PlaybackSession {
       return current;
     }
     final map = _trackMap;
-    final normalized = PathMatcher.normalize(trackPath);
-    final direct = map[normalized];
+    final direct = map[PathMatcher.equivalenceKey(trackPath)];
     if (direct != null) return direct;
     if (resolvedPath != null &&
         resolvedPath.isNotEmpty &&
         resolvedPath != trackPath) {
-      final resolvedNormalized = PathMatcher.normalize(resolvedPath);
-      final resolved = map[resolvedNormalized];
+      final resolved = map[PathMatcher.equivalenceKey(resolvedPath)];
       if (resolved != null) return resolved;
     }
     return null;
@@ -193,7 +191,6 @@ class PlaybackSession {
   int volumeCommandGeneration = 0;
   Future<void>? volumeCommandCompletion;
   double? confirmedVolume;
-  bool confirmedVolumeNeedsReload = false;
   double? pendingVolume;
   bool channelSwapEnabled = false;
   bool _isLoading = false;

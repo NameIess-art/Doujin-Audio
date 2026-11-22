@@ -8,6 +8,7 @@ import 'asmr_download_internal_models.dart';
 import 'asmr_download_task_store.dart';
 import 'asmr_download_transfer_service.dart';
 import 'asmr_download_cleanup.dart';
+import 'asmr_request_cancellation.dart';
 
 /// Owns active transfers and their interruption/waiting lifetime.
 class AsmrDownloadTransferExecutor {
@@ -24,6 +25,7 @@ class AsmrDownloadTransferExecutor {
       isDisposed: () => _disposed,
       isPaused: isPaused,
       throwIfCancelled: throwIfCancelled,
+      cancellationTokenFor: _cancellationTokenFor,
     );
   }
   static const int _maxConcurrentFilesPerTask = 3;
@@ -34,6 +36,7 @@ class AsmrDownloadTransferExecutor {
   final Map<String, void Function(PlannedDownloadFile)>
   _activeFileRetryDispatchers = {};
   final Map<String, Completer<void>> _completions = {};
+  final Map<String, AsmrRequestCancellationToken> _cancellationTokens = {};
   final Set<String> _cancelled = {};
   final Set<String> _paused = {};
   final Set<String> _stopped = {};
@@ -43,6 +46,23 @@ class AsmrDownloadTransferExecutor {
     _completions[workId] = Completer<void>();
     _cancelled.remove(workId);
     _stopped.remove(workId);
+    _cancellationTokens.remove(workId)?.cancel();
+    _cancellationTokens[workId] = AsmrRequestCancellationToken();
+  }
+
+  AsmrRequestCancellationToken _cancellationTokenFor(String workId) {
+    final existing = _cancellationTokens[workId];
+    if (existing != null) return existing;
+    final token = AsmrRequestCancellationToken();
+    if (_disposed ||
+        isCancelled(workId) ||
+        isPaused(workId) ||
+        _stopped.contains(workId)) {
+      token.cancel();
+    } else {
+      _cancellationTokens[workId] = token;
+    }
+    return token;
   }
 
   bool isCancelled(String workId) => _cancelled.contains(workId);
@@ -61,34 +81,37 @@ class AsmrDownloadTransferExecutor {
     Future<T> Function() operation,
   ) async {
     throwIfCancelled(workId);
+    final token = _cancellationTokenFor(workId);
     final interrupted = Completer<T>();
     // Shared clients outlive this task; interrupt its wait without closing them.
-    final timer = Timer.periodic(const Duration(milliseconds: 100), (_) {
-      try {
-        throwIfCancelled(workId);
-      } on DownloadCancelled catch (error, stackTrace) {
-        if (!interrupted.isCompleted) {
-          interrupted.completeError(error, stackTrace);
-        }
+    final removeListener = token.addListener(() {
+      if (!interrupted.isCompleted) {
+        interrupted.completeError(const DownloadCancelled());
       }
     });
+    final pending = operation();
+    unawaited(
+      pending.then<void>((_) {}, onError: (Object _, StackTrace _) {}),
+    );
     try {
-      final result = await Future.any([operation(), interrupted.future]);
+      final result = await Future.any<T>([pending, interrupted.future]);
       throwIfCancelled(workId);
       return result;
     } finally {
-      timer.cancel();
+      removeListener();
     }
   }
 
   void pause(String workId) {
     _paused.add(workId);
+    _cancellationTokens[workId]?.cancel();
     _activeHttpClients[workId]?.close(force: true);
   }
 
   void cancel(String workId) {
     _paused.remove(workId);
     _cancelled.add(workId);
+    _cancellationTokens[workId]?.cancel();
     _activeHttpClients[workId]?.close(force: true);
   }
 
@@ -105,6 +128,7 @@ class AsmrDownloadTransferExecutor {
     _cancelled.remove(workId);
     _paused.remove(workId);
     _stopped.remove(workId);
+    _cancellationTokens.remove(workId);
     final completion = _completions.remove(workId);
     if (completion != null && !completion.isCompleted) completion.complete();
   }
@@ -114,6 +138,9 @@ class AsmrDownloadTransferExecutor {
     _activeFileRetryDispatchers.clear();
     // Exit preserves resumable work; an earlier cancel must still clean output.
     _paused.addAll(_completions.keys.where((workId) => !isCancelled(workId)));
+    for (final token in _cancellationTokens.values) {
+      token.cancel();
+    }
     for (final client in _activeHttpClients.values) {
       client.close(force: true);
     }
@@ -270,6 +297,7 @@ class AsmrDownloadTransferExecutor {
                   firstErrorStack = stackTrace;
                   transfersStopped = true;
                   _stopped.add(workId);
+                  _cancellationTokens[workId]?.cancel();
                   pendingFiles.clear();
                   client.close(force: true);
                 }

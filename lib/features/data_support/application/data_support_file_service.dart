@@ -35,30 +35,48 @@ class DataSupportFileService {
   final DataBackupService _backupService;
 
   Future<String?> exportDiagnostics({required String dialogTitle}) =>
-      _withTemporaryFile('DoujinAudio-diagnostic-${_timestamp()}.zip', (
-        temporary,
-      ) async {
-        final report = await _diagnosticService.exportReport(temporary.path);
-        return await _saveGeneratedFile(
-          source: report,
-          dialogTitle: dialogTitle,
-          allowedExtensions: const <String>['zip'],
-          mimeType: 'application/zip',
-        );
-      });
+      exportDiagnosticReport(
+        reportService: _diagnosticService,
+        fileCacheGateway: _fileCacheGateway,
+        isAndroid: _isAndroid,
+        dialogTitle: dialogTitle,
+      );
+
+  static Future<String?> exportDiagnosticReport({
+    required DiagnosticReportService reportService,
+    required FileCachePlatformGateway fileCacheGateway,
+    required bool Function() isAndroid,
+    required String dialogTitle,
+  }) => _withProtectedTemporaryFile(
+    'DoujinAudio-diagnostic-${_exportTimestamp()}.zip',
+    (temporary) async {
+      final report = await reportService.exportReport(temporary.path);
+      return await _saveGeneratedExportFile(
+        source: report,
+        dialogTitle: dialogTitle,
+        allowedExtensions: const <String>['zip'],
+        mimeType: 'application/zip',
+        fileCacheGateway: fileCacheGateway,
+        isAndroid: isAndroid,
+      );
+    },
+  );
 
   Future<String?> exportBackup({required String dialogTitle}) =>
-      _withTemporaryFile('DoujinAudio-backup-${_timestamp()}.dabackup', (
-        temporary,
-      ) async {
-        final backup = await _backupService.exportBackup(temporary.path);
-        return await _saveGeneratedFile(
-          source: backup,
-          dialogTitle: dialogTitle,
-          allowedExtensions: const <String>['dabackup'],
-          mimeType: 'application/zip',
-        );
-      });
+      _withProtectedTemporaryFile(
+        'DoujinAudio-backup-${_exportTimestamp()}.dabackup',
+        (temporary) async {
+          final backup = await _backupService.exportBackup(temporary.path);
+          return await _saveGeneratedExportFile(
+            source: backup,
+            dialogTitle: dialogTitle,
+            allowedExtensions: const <String>['dabackup'],
+            mimeType: 'application/zip',
+            fileCacheGateway: _fileCacheGateway,
+            isAndroid: _isAndroid,
+          );
+        },
+      );
 
   Future<PlatformFile?> pickBackupFile({required String dialogTitle}) async {
     final result = await FilePicker.pickFiles(
@@ -78,8 +96,27 @@ class DataSupportFileService {
     }
     final stream = selected.readStream;
     if (stream == null) return null;
-    return _withTemporaryFile('selected-backup.dabackup', (temporary) async {
-      await stream.pipe(temporary.openWrite());
+    final maxBytes = _backupService.maximumArchiveBytes;
+    if (selected.size > maxBytes) {
+      throw const FormatException('backup_too_large');
+    }
+    return _withProtectedTemporaryFile('selected-backup.dabackup', (
+      temporary,
+    ) async {
+      final sink = temporary.openWrite();
+      var writtenBytes = 0;
+      try {
+        await for (final chunk in stream) {
+          writtenBytes += chunk.length;
+          if (writtenBytes > maxBytes) {
+            throw const FormatException('backup_too_large');
+          }
+          sink.add(chunk);
+        }
+        await sink.flush();
+      } finally {
+        await sink.close();
+      }
       return await _backupService.inspectAndStageRestore(temporary.path);
     });
   }
@@ -92,7 +129,7 @@ class DataSupportFileService {
     return stageBackupFile(selected);
   }
 
-  Future<T> _withTemporaryFile<T>(
+  static Future<T> _withProtectedTemporaryFile<T>(
     String name,
     Future<T> Function(File file) operation,
   ) async {
@@ -101,32 +138,34 @@ class DataSupportFileService {
     });
     File? temporary;
     try {
-      temporary = await _temporaryFile(name);
+      temporary = await _temporaryExportFile(name);
       return await operation(temporary);
     } finally {
       try {
-        if (temporary != null) await _deleteTemporaryFile(temporary);
+        if (temporary != null) await _deleteTemporaryExportFile(temporary);
       } finally {
         lease.release();
       }
     }
   }
 
-  Future<File> _temporaryFile(String name) async {
+  static Future<File> _temporaryExportFile(String name) async {
     final directory = await getTemporaryDirectory();
     final exportDirectory = Directory(path.join(directory.path, 'exports'));
     await exportDirectory.create(recursive: true);
     return File(path.join(exportDirectory.path, name));
   }
 
-  Future<String?> _saveGeneratedFile({
+  static Future<String?> _saveGeneratedExportFile({
     required File source,
     required String dialogTitle,
     required List<String> allowedExtensions,
     required String mimeType,
+    required FileCachePlatformGateway fileCacheGateway,
+    required bool Function() isAndroid,
   }) async {
-    if (_isAndroid()) {
-      return _fileCacheGateway.exportFile(
+    if (isAndroid()) {
+      return fileCacheGateway.exportFile(
         sourcePath: source.path,
         fileName: path.basename(source.path),
         mimeType: mimeType,
@@ -154,12 +193,12 @@ class DataSupportFileService {
       }
       await stagedFile.rename(destination.path);
     } finally {
-      await _deleteTemporaryFile(stagedFile);
+      await _deleteTemporaryExportFile(stagedFile);
     }
     return savedPath;
   }
 
-  Future<void> _deleteTemporaryFile(File file) async {
+  static Future<void> _deleteTemporaryExportFile(File file) async {
     try {
       if (await file.exists()) await file.delete();
       final parent = file.parent;
@@ -175,7 +214,7 @@ class DataSupportFileService {
     }
   }
 
-  String _timestamp() {
+  static String _exportTimestamp() {
     final now = DateTime.now();
     String two(int value) => value.toString().padLeft(2, '0');
     return '${now.year}${two(now.month)}${two(now.day)}-'

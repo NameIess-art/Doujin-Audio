@@ -14,6 +14,7 @@ import 'package:doujin_audio/features/asmr/application/asmr_download_serializati
 import 'package:doujin_audio/features/asmr/application/asmr_download_task_store.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_transfer_executor.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_transfer_service.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_request_cancellation.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_download.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -815,6 +816,45 @@ void main() {
     },
   );
 
+  test(
+    'HLS FFmpeg invocation kills running process immediately via cancellationToken',
+    () async {
+      final root = await Directory.systemTemp.createTemp('hls_token_cancel_');
+      final output = File(path.join(root.path, 'audio.part'));
+      final process = _Process(null);
+      final started = Completer<void>();
+      final token = AsmrRequestCancellationToken();
+      final transfer = AsmrHlsAudioTransfer(
+        startProcess: (_) async {
+          await output.writeAsBytes(_audio);
+          started.complete();
+          return process;
+        },
+      );
+      try {
+        final saving = transfer.save(
+          reference: const PlaybackMediaReference(
+            streamUrl: 'https://media.test/file.m3u8',
+          ),
+          output: output,
+          cancellationToken: token,
+        );
+        final expectFailed = expectLater(
+          saving,
+          throwsA(isA<DownloadCancelled>()),
+        );
+        await started.future;
+        expect(process.killed, isFalse);
+        token.cancel();
+        expect(process.killed, isTrue);
+        await expectFailed;
+        expect(await output.exists(), isFalse);
+      } finally {
+        await root.delete(recursive: true);
+      }
+    },
+  );
+
   test('HLS validation rejects HTML and removes partial output', () async {
     final root = await Directory.systemTemp.createTemp('hls_invalid_');
     final output = File(path.join(root.path, 'audio.part'));
@@ -1164,7 +1204,8 @@ class _HlsTransfer extends AsmrHlsAudioTransfer {
   Future<void> save({
     required PlaybackMediaReference reference,
     required File output,
-    required bool Function() isCancelled,
+    AsmrRequestCancellationToken? cancellationToken,
+    bool Function()? isCancelled,
     void Function(double fraction)? onProgress,
     void Function(int bytes)? onBytes,
   }) async {

@@ -868,6 +868,16 @@ class AsmrLibraryController extends ChangeNotifier
   List<AsmrTrackFile>? trackTreeFor(String workKey) =>
       _workContent.cachedTrackTree(workKey);
 
+  static const int _maxEpochRetries = 4;
+
+  /// Whether view-version tokens ([globalRevision], [authViewVersion],
+  /// [syncViewVersion], [interestViewVersion], [categoryViewVersion]) reflect
+  /// every mutation published by this controller.
+  ///
+  /// Subclasses that override snapshot getters without maintaining the
+  /// corresponding revision counters default to `false` unless they opt in.
+  bool get supportsVersionedSnapshots => runtimeType == AsmrLibraryController;
+
   int get globalRevision => _globalRevision;
   Object get authViewVersion => (_globalRevision, _authRestoreTask != null);
   Object get syncViewVersion => (
@@ -1489,17 +1499,29 @@ class AsmrLibraryController extends ChangeNotifier
   }
 
   @override
-  Future<List<MusicTrack>> loadPlayableTracks(AsmrWork work) async {
+  Future<List<MusicTrack>> loadPlayableTracks(AsmrWork work) =>
+      _loadPlayableTracks(work, remainingRetries: _maxEpochRetries);
+
+  Future<List<MusicTrack>> _loadPlayableTracks(
+    AsmrWork work, {
+    required int remainingRetries,
+  }) async {
     await initializeForVisiblePage();
     final key = _workRequestKey(work.workKey);
     if (_disposed) throw StateError('asmr_content_invalidated');
-    final tree = await ensureTrackTree(work);
+    final tree = await _ensureTrackTree(
+      work,
+      remainingRetries: remainingRetries,
+    );
     if (_disposed || key.runtimeCacheEpoch != _runtimeCacheEpoch) {
       throw StateError('asmr_content_invalidated');
     }
     if (!_isWorkRequestCurrent(key) ||
         !identical(tree, _workContent.cachedTrackTree(work.workKey))) {
-      return loadPlayableTracks(work);
+      if (remainingRetries <= 0) {
+        throw StateError('asmr_content_invalidated');
+      }
+      return _loadPlayableTracks(work, remainingRetries: remainingRetries - 1);
     }
     final cached = _workContent.cachedPlayableTracks(work);
     if (cached != null) return cached;
@@ -1507,15 +1529,21 @@ class AsmrLibraryController extends ChangeNotifier
       key,
       work,
       tree,
-      () => _loadPlayableTracksOnce(work, tree, key),
+      () => _loadPlayableTracksOnce(
+        work,
+        tree,
+        key,
+        remainingRetries: remainingRetries,
+      ),
     );
   }
 
   Future<List<MusicTrack>> _loadPlayableTracksOnce(
     AsmrWork work,
     List<AsmrTrackFile> tree,
-    AsmrWorkRequestKey key,
-  ) async {
+    AsmrWorkRequestKey key, {
+    required int remainingRetries,
+  }) async {
     final tracks = await compute(_buildPlayableTracks, (
       work: work,
       tree: tree,
@@ -1526,7 +1554,10 @@ class AsmrLibraryController extends ChangeNotifier
     // Conversion can outlive an account/language change or a tree refresh.
     if (!_isWorkRequestCurrent(key) ||
         !identical(tree, _workContent.cachedTrackTree(work.workKey))) {
-      return loadPlayableTracks(work);
+      if (remainingRetries <= 0) {
+        throw StateError('asmr_content_invalidated');
+      }
+      return _loadPlayableTracks(work, remainingRetries: remainingRetries - 1);
     }
     return _workContent.storePlayableTracks(work, tracks);
   }
@@ -1584,6 +1615,16 @@ class AsmrLibraryController extends ChangeNotifier
   Future<List<AsmrTrackFile>> ensureTrackTree(
     AsmrWork work, {
     bool forceRefresh = false,
+  }) => _ensureTrackTree(
+    work,
+    forceRefresh: forceRefresh,
+    remainingRetries: _maxEpochRetries,
+  );
+
+  Future<List<AsmrTrackFile>> _ensureTrackTree(
+    AsmrWork work, {
+    bool forceRefresh = false,
+    required int remainingRetries,
   }) {
     final cached = _workContent.cachedTrackTree(work.workKey);
     if (!forceRefresh && cached != null) {
@@ -1592,15 +1633,21 @@ class AsmrLibraryController extends ChangeNotifier
     final key = _workRequestKey(work.workKey);
     return _workContent.requestTrackTree(
       key,
-      (cancellationToken) => _loadTrackTreeOnce(work, key, cancellationToken),
+      (cancellationToken) => _loadTrackTreeOnce(
+        work,
+        key,
+        cancellationToken,
+        remainingRetries: remainingRetries,
+      ),
     );
   }
 
   Future<List<AsmrTrackFile>> _loadTrackTreeOnce(
     AsmrWork work,
     AsmrWorkRequestKey key,
-    AsmrRequestCancellationToken cancellationToken,
-  ) async {
+    AsmrRequestCancellationToken cancellationToken, {
+    required int remainingRetries,
+  }) async {
     try {
       final tree = await cancellationToken.waitFor(
         _remoteCatalogService.loadTrackTree(
@@ -1622,16 +1669,21 @@ class AsmrLibraryController extends ChangeNotifier
           return storedTree;
         }
       }
-      if (_disposed || key.runtimeCacheEpoch != _runtimeCacheEpoch) {
+      if (_disposed ||
+          key.runtimeCacheEpoch != _runtimeCacheEpoch ||
+          remainingRetries <= 0) {
         throw StateError('asmr_content_invalidated');
       }
-      return ensureTrackTree(work);
+      return _ensureTrackTree(work, remainingRetries: remainingRetries - 1);
     } on AsmrRequestCancelled {
       if (_disposed || key.runtimeCacheEpoch != _runtimeCacheEpoch) {
         throw StateError('asmr_content_invalidated');
       }
       if (_isWorkRequestCurrent(key)) rethrow;
-      return ensureTrackTree(work);
+      if (remainingRetries <= 0) {
+        throw StateError('asmr_content_invalidated');
+      }
+      return _ensureTrackTree(work, remainingRetries: remainingRetries - 1);
     } catch (error) {
       if (_isWorkRequestCurrent(key)) {
         _workContent.setTrackTreeError(work.workKey, error);

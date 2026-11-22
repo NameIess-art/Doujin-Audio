@@ -1271,6 +1271,56 @@ void main() {
       expect(await AppPreferences.getString('themeMode'), 'dark');
     },
   );
+
+  test(
+    'AppDatabaseBackup handles -journal companions and cross-volume replace fallback',
+    () async {
+      final sourceDir = Directory('${temporaryDirectory.path}/db_src');
+      final backupDir = Directory('${temporaryDirectory.path}/db_bak');
+      final targetDir = Directory('${temporaryDirectory.path}/db_dst');
+      await sourceDir.create(recursive: true);
+      await targetDir.create(recursive: true);
+
+      final sourceDb = File('${sourceDir.path}/${AppDatabase.fileName}');
+      final backupDb = File('${backupDir.path}/${AppDatabase.fileName}');
+      for (final suffix in const <String>['', '-wal', '-shm', '-journal']) {
+        await File('${sourceDb.path}$suffix').writeAsString('src$suffix');
+      }
+
+      await appDatabase.backupDatabaseFiles(
+        source: sourceDb,
+        destination: backupDb,
+      );
+      for (final suffix in const <String>['', '-wal', '-shm', '-journal']) {
+        expect(
+          await File('${backupDb.path}$suffix').readAsString(),
+          'src$suffix',
+        );
+      }
+
+      final targetDb = File('${targetDir.path}/${AppDatabase.fileName}');
+      for (final suffix in const <String>['', '-wal', '-shm', '-journal']) {
+        await File('${targetDb.path}$suffix').writeAsString('old$suffix');
+      }
+      final candidateDb = File('${sourceDir.path}/candidate.sqlite');
+      await candidateDb.writeAsString('new-db-bytes');
+
+      await appDatabase.replaceDatabaseFile(
+        candidate: candidateDb,
+        target: targetDb,
+        renameFile: (_, _) => Future<File>.error(
+          const FileSystemException('Cross-device link (EXDEV)'),
+        ),
+      );
+
+      expect(await targetDb.readAsString(), 'new-db-bytes');
+      expect(await candidateDb.exists(), isFalse);
+      for (final suffix in const <String>['-wal', '-shm', '-journal']) {
+        expect(await File('${targetDb.path}$suffix').exists(), isFalse);
+      }
+      expect(await File('${targetDb.path}.restore.part').exists(), isFalse);
+    },
+  );
 }
 
 class _FailingDeleteDirectory implements Directory {

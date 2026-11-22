@@ -513,7 +513,6 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
         stackTrace: stackTrace,
       );
     }
-    clearDeferredVolumeReloads();
     clearRetargetedPaths();
     _onPersistenceFocusChanged?.call(null);
   }

@@ -1,4 +1,5 @@
 #include "subtitle_window.h"
+#include <flutter_windows.h>
 #include <algorithm>
 #include <cmath>
 #include <winrt/base.h>
@@ -20,6 +21,17 @@ struct SubtitleWindowPlacement {
 
 // Exact integer division by 255 for all x in [0, 65534].
 inline DWORD Div255(DWORD x) { return (x + 1 + (x >> 8)) >> 8; }
+
+UINT SafeWindowDpi(HWND window) {
+  const UINT dpi = window ? GetDpiForWindow(window) : 0;
+  return dpi > 0 ? dpi : 96;
+}
+
+UINT SafeMonitorDpi(HMONITOR monitor) {
+  UINT dpi = monitor ? FlutterDesktopGetDpiForMonitor(monitor) : 0;
+  if (dpi == 0) dpi = GetDpiForSystem();
+  return dpi > 0 ? dpi : 96;
+}
 
 COLORREF ParseColor(const std::string& value, COLORREF previous) {
   try {
@@ -64,8 +76,9 @@ SubtitleWindow::SubtitleWindow(HINSTANCE instance) {
   RegisterClassW(&wc);
   RECT area{};
   SystemParametersInfo(SPI_GETWORKAREA, 0, &area, 0);
-  const UINT system_dpi = GetDpiForSystem();
-  const double scale = (system_dpi > 0 ? system_dpi : 96) / 96.0;
+  const UINT default_dpi = SafeMonitorDpi(
+      MonitorFromRect(&area, MONITOR_DEFAULTTONEAREST));
+  const double scale = default_dpi / 96.0;
   const LONG margin_x = static_cast<LONG>(std::lround(80 * scale));
   const LONG margin_bottom = static_cast<LONG>(std::lround(180 * scale));
   const LONG margin_total = static_cast<LONG>(std::lround(100 * scale));
@@ -73,10 +86,10 @@ SubtitleWindow::SubtitleWindow(HINSTANCE instance) {
   const LONG max_width = static_cast<LONG>(std::lround(800 * scale));
   LONG initial_width = std::max<LONG>(min_width,
       std::min<LONG>(max_width, area.right - area.left - margin_total));
-  const LONG initial_height = static_cast<LONG>(std::lround(110 * scale));
+  LONG initial_height = static_cast<LONG>(std::lround(110 * scale));
   LONG initial_x = area.left + margin_x;
   LONG initial_y = std::max<LONG>(area.top, area.bottom - margin_bottom);
-  LoadPlacement(initial_x, initial_y, initial_width, min_width);
+  LoadPlacement(initial_x, initial_y, initial_width, initial_height);
   window_ = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED,
       wc.lpszClassName, L"Doujin Audio subtitles", WS_POPUP,
       initial_x, initial_y, initial_width, initial_height,
@@ -98,8 +111,7 @@ void SubtitleWindow::SavePlacement() const {
   placement.x = bounds.left;
   placement.y = bounds.top;
   placement.width = bounds.right - bounds.left;
-  const UINT dpi = GetDpiForWindow(window_);
-  placement.dpi = dpi > 0 ? dpi : 96;
+  placement.dpi = SafeWindowDpi(window_);
   HKEY key = nullptr;
   if (RegCreateKeyExW(HKEY_CURRENT_USER, kSubtitleSettingsKey, 0, nullptr, 0,
                       KEY_SET_VALUE, nullptr, &key, nullptr) == ERROR_SUCCESS) {
@@ -108,7 +120,7 @@ void SubtitleWindow::SavePlacement() const {
     RegCloseKey(key);
   }
 }
-void SubtitleWindow::LoadPlacement(LONG& x, LONG& y, LONG& width, LONG min_width) const {
+void SubtitleWindow::LoadPlacement(LONG& x, LONG& y, LONG& width, LONG& height) const {
   SubtitleWindowPlacement saved{};
   DWORD bytes = sizeof(saved);
   if (RegGetValueW(HKEY_CURRENT_USER, kSubtitleSettingsKey,
@@ -122,17 +134,22 @@ void SubtitleWindow::LoadPlacement(LONG& x, LONG& y, LONG& width, LONG min_width
   HMONITOR target_monitor = MonitorFromPoint(anchor, MONITOR_DEFAULTTONEAREST);
   if (!target_monitor || !GetMonitorInfo(target_monitor, &monitor)) return;
   const auto& area = monitor.rcWork;
-  const UINT current_dpi = GetDpiForSystem();
+  const UINT target_dpi = SafeMonitorDpi(target_monitor);
+  const double target_scale = target_dpi / 96.0;
   const UINT saved_dpi = saved.dpi > 0 ? saved.dpi : 96;
-  const LONG scaled_width = MulDiv(saved.width, current_dpi > 0 ? current_dpi : 96, saved_dpi);
-  const LONG work_width = std::max<LONG>(min_width, area.right - area.left);
-  width = std::clamp<LONG>(scaled_width, min_width, work_width);
+  const LONG target_min_width = static_cast<LONG>(std::lround(160 * target_scale));
+  const LONG scaled_width = MulDiv(saved.width, target_dpi, saved_dpi);
+  const LONG work_width = std::max<LONG>(target_min_width, area.right - area.left);
+  width = std::clamp<LONG>(scaled_width, target_min_width, work_width);
+  height = static_cast<LONG>(std::lround(110 * target_scale));
   const LONG max_x = std::max<LONG>(area.left, area.right - width);
-  const LONG max_y = std::max<LONG>(area.top, area.bottom - static_cast<LONG>(std::lround(50.0 * (current_dpi > 0 ? current_dpi : 96) / 96.0)));
+  const LONG max_y = std::max<LONG>(
+      area.top, area.bottom - static_cast<LONG>(std::lround(50.0 * target_scale)));
   x = std::clamp<LONG>(saved.x, area.left, max_x);
   y = std::clamp<LONG>(saved.y, area.top, max_y);
 }
 void SubtitleWindow::Show(bool visible) {
+  if (!window_) return;
   if (visible && !IsWindowVisible(window_)) FitText();
   ShowWindow(window_, visible ? SW_SHOWNOACTIVATE : SW_HIDE);
   if (visible) {
@@ -148,6 +165,7 @@ void SubtitleWindow::Show(bool visible) {
   }
 }
 void SubtitleWindow::Update(const std::string& text) {
+  if (!window_) return;
   const std::wstring next(winrt::to_hstring(text));
   if (text_ == next) return;
   text_ = next;
@@ -158,6 +176,7 @@ void SubtitleWindow::Update(const std::string& text) {
   InvalidateRect(window_, nullptr, FALSE);
 }
 void SubtitleWindow::Style(const flutter::EncodableMap& style) {
+  if (!window_) return;
   const auto old_family = family_;
   const auto old_size = font_size_, old_border = border_depth_;
   const auto old_text = text_color_, old_background = background_;
@@ -194,7 +213,7 @@ void SubtitleWindow::FitText() {
   fitting_text_ = true;
   RECT bounds{}; GetWindowRect(window_, &bounds);
   RECT client{}; GetClientRect(window_, &client);
-  const UINT dpi = GetDpiForWindow(window_);
+  const UINT dpi = SafeWindowDpi(window_);
   const double scale = dpi / 96.0;
   const int padding = static_cast<int>((20 + border_depth_ * 4) * scale);
   if (!EnsureFont(dpi)) {
@@ -446,9 +465,10 @@ void SubtitleWindow::PaintBackground(int width, int rows, double scale) {
   background_dirty_ = false;
 }
 void SubtitleWindow::Paint(HDC screen) {
+  if (!window_) return;
   RECT rect; GetClientRect(window_, &rect);
   const int width = rect.right, rows = rect.bottom;
-  const UINT dpi = GetDpiForWindow(window_);
+  const UINT dpi = SafeWindowDpi(window_);
   if (width <= 0 || rows <= 0 || !EnsureFont(dpi)
       || !EnsureSurface(screen, width, rows)) return;
   if (surface_dpi_ != dpi) {
@@ -560,7 +580,7 @@ LRESULT CALLBACK SubtitleWindow::WndProc(HWND hwnd, UINT message, WPARAM wp, LPA
   if (message == WM_NCHITTEST) {
     RECT rect; GetWindowRect(hwnd, &rect);
     const int hit_border =
-        std::max(4, static_cast<int>(std::lround(8.0 * GetDpiForWindow(hwnd) / 96.0)));
+        std::max(4, static_cast<int>(std::lround(8.0 * SafeWindowDpi(hwnd) / 96.0)));
     const int x = static_cast<short>(LOWORD(lp));
     // Vertical height auto-fits subtitle text, so expose horizontal resize only.
     if (x < rect.left + hit_border) return HTLEFT;
@@ -590,7 +610,7 @@ LRESULT CALLBACK SubtitleWindow::WndProc(HWND hwnd, UINT message, WPARAM wp, LPA
     }
   }
   if (message == WM_GETMINMAXINFO) {
-    const double scale = GetDpiForWindow(hwnd) / 96.0;
+    const double scale = SafeWindowDpi(hwnd) / 96.0;
     reinterpret_cast<MINMAXINFO*>(lp)->ptMinTrackSize = {
         static_cast<LONG>(std::lround(160 * scale)),
         static_cast<LONG>(std::lround(50 * scale))};

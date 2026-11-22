@@ -4,22 +4,29 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/immutable_collections.dart';
 import '../../core/persistence/persisted_state_reloader.dart';
 import '../../core/persistence/app_preferences.dart';
+import '../../core/widgets/subtitle_window_visual.dart';
 
 final subtitleSettingsProvider =
     NotifierProvider<SubtitleSettingsNotifier, SubtitleSettingsState>(
       SubtitleSettingsNotifier.new,
     );
 
-class SubtitleSettingsState {
+class SubtitleSettingsState implements SubtitleWindowVisualStyle {
   final Map<String, bool> showSubtitlesMap;
   final Map<String, bool> globalSubtitlesMap;
   final Map<String, double> positions;
 
+  @override
   final String fontFamily;
+  @override
   final Color? fontColor;
+  @override
   final double backgroundOpacity;
+  @override
   final Color? backgroundColor;
+  @override
   final double borderDepth;
+  @override
   final double fontSize;
   final bool appearanceSaveFailed;
 

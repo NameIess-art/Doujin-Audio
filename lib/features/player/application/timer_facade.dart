@@ -148,6 +148,7 @@ final class TimerFacade {
     _applyFadeMultiplier = _noopFade;
     _applySessionFadeMultiplier = _noopSessionFade;
     _flushSessionPersistence = _noopSessionPersistence;
+    _setNativeTrackStop = _noopTrackStop;
   }
 
   void configureTimer(TimerMode mode, Duration duration) {

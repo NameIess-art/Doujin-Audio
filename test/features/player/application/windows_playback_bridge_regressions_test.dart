@@ -197,6 +197,125 @@ void main() {
         expect(resumedWithoutId.valueOrNull!.transportCommandId, 7);
       },
     );
+
+    test(
+      'onLoadHooks resets chapter start/end to none on normal tracks and guards out-of-bounds index',
+      () async {
+        final nativePlayers = <_FakeNativePlatformPlayer>[];
+        final nativeBridge = WindowsPlaybackBridge(
+          idleReleaseDelay: Duration.zero,
+          readNativePlaylist: (player) async => jsonEncode([
+            for (final media in player.state.playlist.medias)
+              {'id': identityHashCode(media), 'filename': media.uri},
+          ]),
+          createPlayer: () {
+            final platform = _FakeNativePlatformPlayer();
+            nativePlayers.add(platform);
+            return Player(platformPlayer: platform);
+          },
+        )..startListening();
+        addTearDown(nativeBridge.dispose);
+
+        final queue = <Map<String, Object?>>[
+          {
+            'uri': 'https://example.com/album.m3u8',
+            'path': 'https://example.com/album.m3u8#eara-chapter=10000,25000',
+            'title': 'Chapter 1',
+            'clipStartMs': 10000,
+            'clipEndMs': 25000,
+          },
+          {
+            'uri': 'https://example.com/album.m3u8',
+            'path': 'https://example.com/album.m3u8#eara-chapter=30000',
+            'title': 'Open-ended Chapter',
+            'clipStartMs': 30000,
+          },
+          {
+            'uri': 'https://example.com/normal.wav',
+            'path': '/normal.wav',
+            'title': 'Normal Track',
+          },
+        ];
+        final prepared = await nativeBridge.prepareSession(
+          sessionId: 'hooks',
+          uri: Uri.parse('https://example.com/album.m3u8'),
+          title: 'Chapter 1',
+          queue: queue,
+          autoPlay: true,
+        );
+        expect(prepared.isOk, isTrue, reason: prepared.errorOrNull);
+        final platform = nativePlayers.single;
+        expect(platform.onLoadHooks, isNotEmpty);
+
+        // Chapter 0 sets both start and end.
+        platform.playlistPos = '0';
+        for (final hook in platform.onLoadHooks) {
+          await hook();
+        }
+        expect(platform.properties['start'], '10.0');
+        expect(platform.properties['end'], '25.0');
+
+        // Chapter 1 with null endMs sets start and explicitly resets end to none.
+        platform.playlistPos = '1';
+        for (final hook in platform.onLoadHooks) {
+          await hook();
+        }
+        expect(platform.properties['start'], '30.0');
+        expect(platform.properties['end'], 'none');
+
+        // Normal track 2 explicitly resets both start and end to none.
+        platform.playlistPos = '2';
+        for (final hook in platform.onLoadHooks) {
+          await hook();
+        }
+        expect(platform.properties['start'], 'none');
+        expect(platform.properties['end'], 'none');
+
+        // Out-of-bounds playlist-pos must return cleanly without RangeError.
+        platform.playlistPos = '99';
+        for (final hook in platform.onLoadHooks) {
+          await hook();
+        }
+      },
+    );
+
+    test(
+      'detaching mounted video surface while paused releases video player and video init error does not mark audio error',
+      () async {
+        final prepared = await bridge.prepareSession(
+          sessionId: 'video',
+          uri: Uri.parse('https://example.com/clip.mp4'),
+          title: 'Clip',
+          autoPlay: true,
+        );
+        expect(prepared.isOk, isTrue, reason: prepared.errorOrNull);
+        final platform = players.single;
+
+        bridge.attachVideoSurface('video');
+        final controller = bridge.videoControllerForSession('video');
+        expect(controller, isNotNull);
+        // Simulate video controller initialization failure; audio session error must stay null.
+        platform.videoControllerCompleter.completeError(
+          StateError('texture init failed'),
+        );
+        await bridge.setVolume('video', 1.0);
+        expect(
+          (await bridge.snapshot()).valueOrNull!.sessions.single.error,
+          isNull,
+        );
+
+        // Pausing while surface is mounted keeps the video player alive.
+        expect((await bridge.pause('video')).isOk, isTrue);
+        expect(bridge.playerForSession('video'), isNotNull);
+        expect(platform.disposed, isFalse);
+
+        // Detaching the mounted surface while paused allows idle release.
+        bridge.detachVideoSurface('video');
+        await bridge.setVolume('video', 1.0);
+        expect(bridge.playerForSession('video'), isNull);
+        expect(platform.disposed, isTrue);
+      },
+    );
   });
 }
 
@@ -204,8 +323,18 @@ class _FakePlatformPlayer extends PlatformPlayer {
   _FakePlatformPlayer() : super(configuration: const PlayerConfiguration());
 
   int opens = 0;
+  bool disposed = false;
   Completer<void>? pauseStarted;
   Completer<void>? pauseGate;
+
+  @override
+  Future<void> dispose() async {
+    disposed = true;
+    if (!videoControllerCompleter.isCompleted) {
+      videoControllerCompleter.complete();
+    }
+    await super.dispose();
+  }
 
   @override
   Future<void> open(Playable playable, {bool play = true}) async {
@@ -260,4 +389,106 @@ class _FakePlatformPlayer extends PlatformPlayer {
   Future<void> setShuffle(bool shuffle) async {
     state = state.copyWith(shuffle: shuffle);
   }
+}
+
+class _FakeNativePlatformPlayer extends Fake implements NativePlayer {
+  final _delegate = _FakePlatformPlayer();
+
+  @override
+  final List<Future<void> Function()> onLoadHooks = <Future<void> Function()>[];
+
+  @override
+  List<Media> current = <Media>[];
+
+  final Map<String, String> properties = <String, String>{};
+  String playlistPos = '0';
+
+  @override
+  PlayerState get state => _delegate.state;
+
+  @override
+  set state(PlayerState value) => _delegate.state = value;
+
+  @override
+  PlayerStream get stream => _delegate.stream;
+
+  @override
+  Future<void> get waitForVideoControllerInitializationIfAttached =>
+      _delegate.waitForVideoControllerInitializationIfAttached;
+
+  @override
+  Future<void> open(
+    Playable playable, {
+    bool play = true,
+    bool synchronized = true,
+  }) => _delegate.open(playable, play: play);
+
+  @override
+  Future<void> play({bool synchronized = true}) => _delegate.play();
+
+  @override
+  Future<void> pause({bool synchronized = true}) => _delegate.pause();
+
+  @override
+  Future<void> seek(Duration duration, {bool synchronized = true}) =>
+      _delegate.seek(duration);
+
+  @override
+  Future<void> setVolume(double volume, {bool synchronized = true}) =>
+      _delegate.setVolume(volume);
+
+  @override
+  Future<void> setRate(double rate, {bool synchronized = true}) =>
+      _delegate.setRate(rate);
+
+  @override
+  Future<void> setPlaylistMode(
+    PlaylistMode playlistMode, {
+    bool synchronized = true,
+  }) => _delegate.setPlaylistMode(playlistMode);
+
+  @override
+  Future<void> setShuffle(bool shuffle, {bool synchronized = true}) =>
+      _delegate.setShuffle(shuffle);
+
+  @override
+  Future<void> dispose({bool synchronized = true}) => _delegate.dispose();
+
+  @override
+  Future<String> getProperty(
+    String property, {
+    bool waitForInitialization = true,
+  }) async {
+    if (property == 'playlist-pos') return playlistPos;
+    if (property.startsWith('playlist/') && property.endsWith('/id')) {
+      final rawIdx = property.substring('playlist/'.length, property.length - 3);
+      final idx = int.tryParse(rawIdx) ?? -1;
+      if (idx >= 0 && idx < state.playlist.medias.length) {
+        return '${identityHashCode(state.playlist.medias[idx])}';
+      }
+      return '-1';
+    }
+    if (property == 'playlist') {
+      return jsonEncode([
+        for (final media in state.playlist.medias)
+          {'id': identityHashCode(media), 'filename': media.uri},
+      ]);
+    }
+    return properties[property] ?? '';
+  }
+
+  @override
+  Future<void> setProperty(
+    String property,
+    String value, {
+    bool waitForInitialization = true,
+  }) async {
+    properties[property] = value;
+  }
+
+  @override
+  Future<void> command(
+    List<String> command, {
+    bool waitForInitialization = true,
+  }) async {}
 }

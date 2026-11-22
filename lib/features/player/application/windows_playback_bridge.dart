@@ -200,11 +200,50 @@ class WindowsPlaybackBridge
   bool _pauseOnDisconnect = true;
   bool _disposed = false;
 
+  @override
+  bool get handlesQueueCompletion => false;
+
   Player? playerForSession(String sessionId) => _sessions[sessionId]?.player;
+
+  @override
+  void attachVideoSurface(String sessionId) {
+    final session = _sessions[sessionId];
+    if (_disposed || session == null || session.retired) return;
+    session.mountedVideoSurfaces++;
+    session.hadVideoSurfaceAttached = true;
+    session.cancelIdleRelease();
+  }
+
+  @override
+  void detachVideoSurface(String sessionId) {
+    final session = _sessions[sessionId];
+    if (session == null) return;
+    if (session.mountedVideoSurfaces > 0) {
+      session.mountedVideoSurfaces--;
+    }
+    if (_disposed ||
+        session.retired ||
+        session.mountedVideoSurfaces > 0 ||
+        session.wantsPlay ||
+        session.player == null) {
+      return;
+    }
+    if (_idleReleaseDelay <= Duration.zero) {
+      unawaited(
+        _change(sessionId, _releaseIfIdle, markPlaybackError: false),
+      );
+    } else {
+      _scheduleIdleRelease(session);
+    }
+  }
+
+  @override
   VideoController? videoControllerForSession(String sessionId) {
     final session = _sessions[sessionId];
     final player = session?.player;
-    if (session == null || player == null) return null;
+    if (_disposed || session == null || session.retired || player == null) {
+      return null;
+    }
     if (session.videoController == null) {
       final generation = session.generation;
       final position = session.position;
@@ -271,7 +310,7 @@ class WindowsPlaybackBridge
           } finally {
             current.opening = false;
           }
-        }),
+        }, markPlaybackError: false),
       );
     }
     return session.videoController;
@@ -367,6 +406,11 @@ class WindowsPlaybackBridge
 
   bool _shouldRetainPausedPlayer(_WindowsPlaybackSession session) {
     if (session.error != null || session.queue.isEmpty) return false;
+    // Once mounted video surfaces have all unmounted, do not retain the paused
+    // decoder indefinitely; let the normal idle release policy free libmpv.
+    if (session.hadVideoSurfaceAttached && session.mountedVideoSurfaces <= 0) {
+      return false;
+    }
     final video = session.player?.state.videoParams;
     // Demuxed tracks identify video before its decoder produces dimensions.
     final hasVideoTrack =
@@ -583,7 +627,9 @@ class WindowsPlaybackBridge
         session.retryStartedAt = null;
         session.retainedCurrentIndex = null;
         session.externalQueueRevision = 0;
-        if (session.wantsPlay || session.videoController != null) {
+        session.isTemporary = isTemporary;
+        if (!deferPlayerCreation &&
+            (session.wantsPlay || session.videoController != null)) {
           if (!sameTrack) session.duration = null;
           final player = session.player;
           final canJump =
@@ -788,22 +834,31 @@ class WindowsPlaybackBridge
     if (platform is NativePlayer) {
       platform.onLoadHooks.add(() async {
         if (!_isCurrent(session) || !identical(session.player, player)) return;
-        final index = int.parse(await platform.getProperty('playlist-pos'));
-        if (index < 0) return;
-        final id = int.parse(await platform.getProperty('playlist/$index/id'));
+        final index = int.tryParse(await platform.getProperty('playlist-pos'));
+        if (index == null || index < 0) return;
+        final id = int.tryParse(
+          await platform.getProperty('playlist/$index/id'),
+        );
         final queueIndex =
-            session.nativeQueueIndices[id] ??
+            (id != null ? session.nativeQueueIndices[id] : null) ??
             (session.stopAfterCurrentTrack ? session.index : index);
+        if (queueIndex < 0 || queueIndex >= session.queue.length) return;
         final reference = _WindowsPlaybackSession.referenceFor(
           session.queue[queueIndex],
         );
-        if (!reference.isChapter) return;
         // media_kit rebuilds Media objects from URLs when shuffling, dropping
-        // their clipping fields. Reapply bounds before mpv opens each entry.
-        await platform.setProperty('start', '${reference.startMs / 1000}');
-        if (reference.endMs != null) {
-          await platform.setProperty('end', '${reference.endMs! / 1000}');
+        // their clipping fields. Reapply or clear bounds before mpv opens each
+        // entry so chapter clipping never leaks to subsequent normal tracks.
+        if (!reference.isChapter) {
+          await platform.setProperty('start', 'none');
+          await platform.setProperty('end', 'none');
+          return;
         }
+        await platform.setProperty('start', '${reference.startMs / 1000}');
+        await platform.setProperty(
+          'end',
+          reference.endMs != null ? '${reference.endMs! / 1000}' : 'none',
+        );
       });
     }
     session.subscriptions.addAll([
@@ -1292,9 +1347,8 @@ class WindowsPlaybackBridge
   @override
   Future<NativeResult<NativePlaybackSnapshot>> setVolume(
     String sessionId,
-    double volume, {
-    bool reloadSource = true,
-  }) => _change(sessionId, (session) async {
+    double volume,
+  ) => _change(sessionId, (session) async {
     session.volume = _finite(volume, 0, 3);
     await session.player?.setVolume(session.volume * session.fade * 100);
   });
@@ -1512,10 +1566,14 @@ class WindowsPlaybackBridge
   @override
   Future<NativeResult<NativePlaybackBundleSnapshot>> snapshot() => _run(
     () async => NativePlaybackBundleSnapshot(
-      sessions: _sessions.values
-          .where((s) => s.queue.isNotEmpty)
-          .map((s) => s.snapshot())
-          .toList(),
+      sessions: [
+        for (final session in _sessions.values)
+          if (!session.retired &&
+              session.queue.isNotEmpty &&
+              session.index >= 0 &&
+              session.index < session.queue.length)
+            session.snapshot(),
+      ],
       focusedSessionId: _focusedSessionId,
     ),
   );
@@ -1531,6 +1589,7 @@ class WindowsPlaybackBridge
   }
 
   /// Called by the Windows endpoint notification, sharing the saved preference.
+  @override
   Future<bool> handleDeviceDisconnected() async {
     return _pauseOnDisconnect && (await pauseAll()).isOk;
   }

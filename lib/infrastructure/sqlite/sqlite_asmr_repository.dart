@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:meta/meta.dart';
+
 import '../../core/media/music_track.dart';
 import '../../core/persistence/app_database.dart';
 import '../../core/persistence/persistence_records.dart';
@@ -83,16 +85,10 @@ class SqliteAsmrRepository implements AsmrPersistenceRepository {
   Future<List<MusicTrack>> loadTracksForRecommendations() =>
       _database.loadTracksForRecommendations();
   @override
-  Future<void> clearForTest() async {
-    final db = await _database.databaseForTest;
-    final batch = db.batch();
-    batch.delete('asmr_sync_operations');
-    batch.delete('asmr_visible_categories');
-    batch.delete('asmr_work_lists');
-    batch.delete('asmr_work_tags');
-    batch.delete('asmr_work_voice_actors');
-    batch.delete('asmr_works');
-    await batch.commit(noResult: true);
+  @visibleForTesting
+  Future<void> clearForTest() {
+    // ignore: invalid_use_of_visible_for_testing_member
+    return _database.clearAsmrTablesForTest();
   }
 }
 

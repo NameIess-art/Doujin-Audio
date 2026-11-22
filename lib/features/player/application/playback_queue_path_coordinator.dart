@@ -256,7 +256,7 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
 
   void _publishQueueReferencesChanged() {
     _service.markSessionStateDirty();
-    _persistedUriReferenceRevisionController.add(persistedUriReferenceRevision);
+    _emitPersistedUriReferenceRevision();
   }
 
   bool replaceSessionTrackSnapshots(MusicTrack updatedTrack) {

@@ -16,6 +16,7 @@ import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/presentation/audio_ui_controllers.dart';
+import '../../../core/media/cover_image_resolution.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/subtitle_parser.dart';
 import '../../../core/ui/visual_settings_providers.dart';

@@ -31,6 +31,7 @@ class SessionHeroArtwork extends ConsumerWidget {
     this.initialCoverPath,
     this.coverAnchorKey,
     this.coverPreview,
+    this.coverPreviewHighRes = false,
     this.coverLanded = true,
     this.mountVideoSurface = true,
   });
@@ -42,6 +43,7 @@ class SessionHeroArtwork extends ConsumerWidget {
   final String? initialCoverPath;
   final GlobalKey<SessionCoverAnchorState>? coverAnchorKey;
   final ui.Image? coverPreview;
+  final bool coverPreviewHighRes;
   final bool coverLanded;
   final bool mountVideoSurface;
 
@@ -71,6 +73,7 @@ class SessionHeroArtwork extends ConsumerWidget {
       bool synchronous,
     ) {
       final ready = coverLanded && (synchronous || frame != null);
+      if (ready && coverPreviewHighRes) return child;
       return TweenAnimationBuilder<double>(
         tween: Tween(begin: 0, end: ready ? 1 : 0),
         duration: MediaQuery.disableAnimationsOf(context)

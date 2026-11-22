@@ -924,10 +924,12 @@ void main() {
       buildNumber: 1204,
       androidAssetVariant: 'arm64',
     );
+    const releaseUrl =
+        'https://github.com/${AppUpdateService.owner}/${AppUpdateService.repo}/releases/tag/v0.13.0';
     final noAsset = AppUpdateService.buildUpdateInfoForTesting(
       currentVersion: current,
       tagName: 'v0.13.0',
-      releaseUrl: 'https://example.test/release',
+      releaseUrl: releaseUrl,
       assets: const <Map<String, dynamic>>[],
     );
     expect(noAsset.status, AppUpdateStatus.missingAsset);
@@ -937,11 +939,12 @@ void main() {
     final missingChecksum = AppUpdateService.buildUpdateInfoForTesting(
       currentVersion: current,
       tagName: 'v0.13.0',
-      releaseUrl: 'https://example.test/release',
+      releaseUrl: releaseUrl,
       assets: <Map<String, dynamic>>[
         {
           'name': platformAssetName,
-          'browser_download_url': 'https://example.test/$platformAssetName',
+          'browser_download_url':
+              'https://github.com/${AppUpdateService.owner}/${AppUpdateService.repo}/releases/download/v0.13.0/$platformAssetName',
         },
       ],
     );
@@ -956,7 +959,7 @@ void main() {
           androidAssetVariant: 'arm64',
         ),
         tagName: 'v0.13.0',
-        releaseUrl: 'https://example.test/release',
+        releaseUrl: releaseUrl,
         assets: const <Map<String, dynamic>>[],
       );
       expect(upToDateWithoutAssets.status, AppUpdateStatus.upToDate);
@@ -966,21 +969,166 @@ void main() {
     final ready = AppUpdateService.buildUpdateInfoForTesting(
       currentVersion: current,
       tagName: 'v0.13.0',
-      releaseUrl: 'https://example.test/release',
+      releaseUrl: releaseUrl,
       assets: <Map<String, dynamic>>[
         {
           'name': platformAssetName,
-          'browser_download_url': 'https://example.test/$platformAssetName',
+          'browser_download_url':
+              'https://objects.githubusercontent.com/assets/$platformAssetName',
         },
         {
           'name': '$platformAssetName.sha256',
           'browser_download_url':
-              'https://example.test/$platformAssetName.sha256',
+              'https://release-assets.githubusercontent.com/assets/$platformAssetName.sha256',
         },
       ],
     );
     expect(ready.status, AppUpdateStatus.updateAvailable);
     expect(ready.canDownload, isTrue);
+  });
+
+  test('GitHub URL validation enforces HTTPS and trusted GitHub hosts', () {
+    final selected = AppUpdateService.selectApkAssetForTesting(
+      <Map<String, dynamic>>[
+        {
+          'name': 'DoujinAudio-android-universal-v0.13.4.apk',
+          'browser_download_url':
+              'http://github.com/example/releases/download/v0.13.4/a.apk',
+        },
+        {
+          'name': 'DoujinAudio-android-universal-v0.13.3.apk',
+          'browser_download_url':
+              'https://evil.example/releases/download/v0.13.3/a.apk',
+        },
+        {
+          'name': 'DoujinAudio-android-universal-v0.13.2.apk',
+          'browser_download_url':
+              'https://github.com.evil.example/releases/download/v0.13.2/a.apk',
+        },
+        {
+          'name': 'DoujinAudio-android-universal-v0.13.1.apk',
+          'browser_download_url':
+              'https://user:pass@github.com/example/releases/download/v0.13.1/a.apk',
+        },
+        {
+          'name': 'DoujinAudio-android-universal-v0.13.0.apk',
+          'browser_download_url':
+              'https://objects.githubusercontent.com/release/DoujinAudio-android-universal-v0.13.0.apk',
+        },
+      ],
+    );
+    expect(selected?['name'], 'DoujinAudio-android-universal-v0.13.0.apk');
+
+    expect(
+      () => AppUpdateService.buildUpdateInfoForTesting(
+        currentVersion: const AppVersionInfo(
+          versionName: '0.12.4',
+          buildNumber: 1204,
+        ),
+        tagName: 'v0.13.0',
+        releaseUrl: 'https://evil.example/releases/tag/v0.13.0',
+        assets: const <Map<String, dynamic>>[],
+      ),
+      throwsArgumentError,
+    );
+
+    final expanded = AppUpdateService.parseExpandedReleaseAssetsForTesting('''
+      <a href="https://evil.example/foo/releases/download/v0.13.0/bad.apk">bad</a>
+      <a href="http://github.com/foo/releases/download/v0.13.0/insecure.apk">insecure</a>
+      <a href="/${AppUpdateService.owner}/${AppUpdateService.repo}/releases/download/v0.13.0/good.apk">good</a>
+    ''');
+    expect(expanded.map((asset) => asset['name']), <String>['good.apk']);
+  });
+
+  test(
+    'latest release redirect rejects targets outside the configured repository',
+    () async {
+      final origin = Uri.parse('http://${server.address.host}:${server.port}');
+      HttpOverrides.global = _RewritingHttpOverrides(origin);
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(updateChannel, (call) async {
+            return <String, Object?>{
+              'ok': true,
+              'value': <String, Object?>{
+                'versionName': '0.12.4',
+                'buildNumber': 1204,
+              },
+            };
+          });
+      var redirectTarget = 'https://evil.example/releases/tag/v9.9.9';
+      server.listen((request) async {
+        switch (request.uri.path) {
+          case '/repos/${AppUpdateService.owner}/${AppUpdateService.repo}/releases':
+            request.response.statusCode = HttpStatus.internalServerError;
+          case '/${AppUpdateService.owner}/${AppUpdateService.repo}/releases/latest':
+            request.response.statusCode = HttpStatus.found;
+            request.response.headers.set(
+              HttpHeaders.locationHeader,
+              redirectTarget,
+            );
+          default:
+            request.response.statusCode = HttpStatus.notFound;
+        }
+        await request.response.close();
+      });
+
+      await expectLater(service.checkLatest(), throwsA(isA<HttpException>()));
+
+      redirectTarget = 'https://github.com/other/repo/releases/tag/v9.9.9';
+      await expectLater(service.checkLatest(), throwsA(isA<HttpException>()));
+
+      redirectTarget =
+          'http://github.com/${AppUpdateService.owner}/${AppUpdateService.repo}/releases/tag/v9.9.9';
+      await expectLater(service.checkLatest(), throwsA(isA<HttpException>()));
+    },
+  );
+
+  test(
+    'downloadUpdate aborts and cleans up when payload exceeds maximum byte limit',
+    () async {
+      final oversized = List<int>.filled(64, 0x41);
+      final limitedService = AppUpdateService(
+        temporaryDirectoryProvider: () async => tempDir,
+        maxDownloadBytes: 16,
+      );
+      addTearDown(limitedService.dispose);
+      server.listen((request) async {
+        if (request.uri.path == '/checksum') {
+          request.response.write('${sha256.convert(oversized)}  $assetName');
+        } else {
+          // Omit Content-Length to exercise streaming byte limit enforcement.
+          request.response.bufferOutput = false;
+          request.response.add(oversized.sublist(0, 10));
+          await request.response.flush();
+          request.response.add(oversized.sublist(10));
+        }
+        await request.response.close();
+      });
+
+      await expectLater(
+        limitedService.downloadUpdate(
+          info(checksumPath: 'checksum'),
+          onProgress: (_) {},
+        ),
+        throwsA(isA<HttpException>()),
+      );
+      expect(
+        Directory('${tempDir.path}${Platform.pathSeparator}updates').listSync(),
+        isEmpty,
+      );
+    },
+  );
+
+  test('canInstallUnknownApps fails closed on native Android errors', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(updateChannel, (call) async {
+          expect(call.method, UpdateMethod.canInstallUnknownApps);
+          return <String, Object?>{'ok': false, 'code': 'failed'};
+        });
+    final androidService = AppUpdateService(isAndroid: true, isWindows: false);
+    addTearDown(androidService.dispose);
+
+    expect(await androidService.canInstallUnknownApps(), isFalse);
   });
 }
 

@@ -17,7 +17,7 @@ class NativePlaybackRepository {
 
   final NativePlaybackBridgeBase _bridge;
 
-  bool get handlesQueueCompletion => _bridge is NativePlaybackBridge;
+  bool get handlesQueueCompletion => _bridge.handlesQueueCompletion;
 
   Future<List<PlaybackUsageBatch>> readUsage() async {
     final source = _bridge;
@@ -127,10 +127,9 @@ class NativePlaybackRepository {
 
   Future<NativeResult<NativePlaybackSnapshot>> setVolume(
     String sessionId,
-    double volume, {
-    bool reloadSource = true,
-  }) {
-    return _bridge.setVolume(sessionId, volume, reloadSource: reloadSource);
+    double volume,
+  ) {
+    return _bridge.setVolume(sessionId, volume);
   }
 
   Future<NativeResult<NativePlaybackSnapshot>> setSpeed(
@@ -208,18 +207,16 @@ class NativePlaybackRepository {
 
   Future<NativeResult<void>> pauseAll() => _bridge.pauseAll();
 
-  Future<bool> handleDeviceDisconnected() async {
-    final bridge = _bridge;
-    return bridge is WindowsPlaybackBridge &&
-        await bridge.handleDeviceDisconnected();
-  }
+  Future<bool> handleDeviceDisconnected() => _bridge.handleDeviceDisconnected();
 
-  VideoController? videoControllerForSession(String sessionId) {
-    final bridge = _bridge;
-    return bridge is WindowsPlaybackBridge
-        ? bridge.videoControllerForSession(sessionId)
-        : null;
-  }
+  VideoController? videoControllerForSession(String sessionId) =>
+      _bridge.videoControllerForSession(sessionId);
+
+  void attachVideoSurface(String sessionId) =>
+      _bridge.attachVideoSurface(sessionId);
+
+  void detachVideoSurface(String sessionId) =>
+      _bridge.detachVideoSurface(sessionId);
 
   Future<NativeResult<void>> clearAll() => _bridge.clearAll();
 

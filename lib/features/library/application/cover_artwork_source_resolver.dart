@@ -4,13 +4,13 @@ import 'dart:io';
 import 'dart:isolate';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
 import '../../../core/cache/app_cache_service.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/media_file_support.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import 'cover_artwork_store.dart';
 import 'cover_image_cache_policy.dart';
@@ -350,6 +350,15 @@ final class CoverArtworkSourceResolver {
         : _computeLocalCoverContentKey(coverPath);
   }
 
+  bool get _supportsPlatformMediaLookup =>
+      AppPlatform.isAndroid ||
+      AppPlatform.isWindows ||
+      !identical(_fileCacheGateway, FileCachePlatformGateway.instance);
+
+  bool get _supportsContentUriLookup =>
+      AppPlatform.isAndroid ||
+      !identical(_fileCacheGateway, FileCachePlatformGateway.instance);
+
   Future<String?> resolveVideoFramePathForTrack(MusicTrack track) async {
     final lease = await AppCacheService.protectTemporaryDirectories({
       'video_frames',
@@ -361,26 +370,26 @@ final class CoverArtworkSourceResolver {
           '${track.modifiedAt?.millisecondsSinceEpoch ?? 0}:v3';
       final storedFrame = await _artworkStore.validatedPath(logicalKey);
       if (storedFrame != null) return storedFrame;
-      try {
-        final nativeFrame = await _fileCacheGateway.resolveVideoFrame(
-          path: track.path,
-          modifiedAtMs: track.modifiedAt?.millisecondsSinceEpoch,
-        );
-        if (nativeFrame != null && nativeFrame.isNotEmpty) {
-          return await persistBridgeCover(
-            logicalKey: logicalKey,
-            sourcePath: nativeFrame,
-            namespace: CoverArtworkNamespace.generated,
+      if (_supportsPlatformMediaLookup) {
+        try {
+          final nativeFrame = await _fileCacheGateway.resolveVideoFrame(
+            path: track.path,
+            modifiedAtMs: track.modifiedAt?.millisecondsSinceEpoch,
+          );
+          if (nativeFrame != null && nativeFrame.isNotEmpty) {
+            return await persistBridgeCover(
+              logicalKey: logicalKey,
+              sourcePath: nativeFrame,
+              namespace: CoverArtworkNamespace.generated,
+            );
+          }
+        } catch (e, stackTrace) {
+          AppLogService.warning(
+            'CoverArtworkCacheService.resolveVideoFramePathForTrack error',
+            error: e,
+            stackTrace: stackTrace,
           );
         }
-      } on MissingPluginException {
-        return null;
-      } catch (e, stackTrace) {
-        AppLogService.warning(
-          'CoverArtworkCacheService.resolveVideoFramePathForTrack error',
-          error: e,
-          stackTrace: stackTrace,
-        );
       }
       return null;
     } finally {
@@ -462,28 +471,27 @@ final class CoverArtworkSourceResolver {
           final images = await discoverFolderImages(scope, preferredOnly: true);
           if (images.isNotEmpty) return images.first;
         }
-        final nativeCover = await _fileCacheGateway.resolveTrackCover(
-          path: track.path,
-          // SAF folder discovery is shared by scope above; probing each track
-          // must not repeat that directory walk when the folder has no image.
-          groupKey: includeGroupCoverFallback && !sharedSafFolder
-              ? track.groupKey
-              : null,
-          rootFolder: sharedSafFolder ? null : rootFolder,
-          propagateFailure: true,
-        );
-        if (nativeCover != null && nativeCover.isNotEmpty) {
-          return await persistBridgeCover(
-            logicalKey: nativeKey,
-            sourcePath: nativeCover,
-            namespace: includeGroupCoverFallback
-                ? CoverArtworkNamespace.generated
-                : CoverArtworkNamespace.embedded,
+        if (_supportsPlatformMediaLookup) {
+          final nativeCover = await _fileCacheGateway.resolveTrackCover(
+            path: track.path,
+            // SAF folder discovery is shared by scope above; probing each track
+            // must not repeat that directory walk when the folder has no image.
+            groupKey: includeGroupCoverFallback && !sharedSafFolder
+                ? track.groupKey
+                : null,
+            rootFolder: sharedSafFolder ? null : rootFolder,
+            propagateFailure: true,
           );
+          if (nativeCover != null && nativeCover.isNotEmpty) {
+            return await persistBridgeCover(
+              logicalKey: nativeKey,
+              sourcePath: nativeCover,
+              namespace: includeGroupCoverFallback
+                  ? CoverArtworkNamespace.generated
+                  : CoverArtworkNamespace.embedded,
+            );
+          }
         }
-      } on MissingPluginException {
-        onFailure();
-        // Continue with the Dart fallback below.
       } catch (e, stackTrace) {
         onFailure();
         AppLogService.warning(
@@ -542,25 +550,25 @@ final class CoverArtworkSourceResolver {
       'doujin_audio_covers',
     });
     try {
-      try {
-        final nativeCover = await _fileCacheGateway.resolveTrackCover(
-          path: filePath,
-        );
-        if (nativeCover != null && nativeCover.isNotEmpty) {
-          return await persistBridgeCover(
-            logicalKey: 'native:${PathMatcher.normalize(filePath)}',
-            sourcePath: nativeCover,
-            namespace: CoverArtworkNamespace.embedded,
+      if (_supportsPlatformMediaLookup) {
+        try {
+          final nativeCover = await _fileCacheGateway.resolveTrackCover(
+            path: filePath,
+          );
+          if (nativeCover != null && nativeCover.isNotEmpty) {
+            return await persistBridgeCover(
+              logicalKey: 'native:${PathMatcher.normalize(filePath)}',
+              sourcePath: nativeCover,
+              namespace: CoverArtworkNamespace.embedded,
+            );
+          }
+        } catch (e, stackTrace) {
+          AppLogService.warning(
+            'CoverArtworkCacheService.resolveEmbeddedCoverForPath native error',
+            error: e,
+            stackTrace: stackTrace,
           );
         }
-      } on MissingPluginException {
-        // Continue with the Dart fallback below.
-      } catch (e, stackTrace) {
-        AppLogService.warning(
-          'CoverArtworkCacheService.resolveEmbeddedCoverForPath native error',
-          error: e,
-          stackTrace: stackTrace,
-        );
       }
 
       String? embeddedCover;
@@ -924,13 +932,11 @@ final class CoverArtworkSourceResolver {
           if (identical(_folderImageIndexFutures[key], index)) {
             _folderImageIndexFutures.remove(key);
           }
-          if (error is! MissingPluginException) {
-            AppLogService.warning(
-              'Unable to discover folder cover images.',
-              error: error,
-              stackTrace: stackTrace,
-            );
-          }
+          AppLogService.warning(
+            'Unable to discover folder cover images.',
+            error: error,
+            stackTrace: stackTrace,
+          );
           Error.throwWithStackTrace(error, stackTrace);
         });
     return index;
@@ -1026,6 +1032,7 @@ final class CoverArtworkSourceResolver {
     required bool Function() isCurrent,
   }) async {
     if (PathMatcher.isContentUri(rootPath)) {
+      if (!_supportsContentUriLookup) return const [];
       final lease = await AppCacheService.protectTemporaryDirectories({
         'doujin_audio_covers',
       });

@@ -1,3 +1,5 @@
+import 'package:meta/meta.dart';
+
 import '../../../core/media/music_track.dart';
 import 'asmr_models.dart';
 
@@ -28,5 +30,6 @@ abstract interface class AsmrPersistenceRepository {
     required List<AsmrSyncOperation> operations,
   });
   Future<List<MusicTrack>> loadTracksForRecommendations();
+  @visibleForTesting
   Future<void> clearForTest();
 }

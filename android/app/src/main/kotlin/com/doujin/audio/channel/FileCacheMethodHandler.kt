@@ -146,6 +146,12 @@ internal class FileCacheMethodHandler(
                 exception.message ?: "Invalid channel arguments",
                 mapOf("method" to call.method)
             )
+        } catch (exception: Exception) {
+            envelopeResult.error(
+                ChannelErrorCodes.PLATFORM_ERROR,
+                exception.message ?: "File operation failed",
+                mapOf("method" to call.method)
+            )
         }
     }
 
@@ -200,6 +206,7 @@ internal class FileCacheMethodHandler(
                 val generationId = arguments.requiredString("generationId")
                 val folder = arguments.requiredString("folder")
                 val chunkSize = arguments.requiredInt("chunkSize")
+                require(chunkSize > 0) { "chunkSize must be positive" }
                 result.success(
                     scanStreamHandler.startFolderScan(taskId, generationId, folder, chunkSize)
                 )
@@ -454,9 +461,15 @@ internal class FileCacheMethodHandler(
         errorCode: (Exception) -> String,
         taskResult: FileCacheTaskResult<Any?>
     ) {
-        if (closed.get()) return
         mainHandler.post {
-            if (closed.get()) return@post
+            if (closed.get()) {
+                result.error(
+                    ChannelErrorCodes.SERVICE_UNAVAILABLE,
+                    "File operations are unavailable",
+                    null
+                )
+                return@post
+            }
             when (taskResult) {
                 is FileCacheTaskResult.Success -> result.success(taskResult.value)
                 is FileCacheTaskResult.Failure -> {

@@ -410,13 +410,14 @@ void main() {
         clears.add('files');
         return 17;
       },
+      clearImageCache: () => clears.add('images'),
     );
     addTearDown(settings.dispose);
     addTearDown(playback.dispose);
     addTearDown(notifications.dispose);
 
     expect(await controller.clearApplicationCache(), 17);
-    expect(clears, ['runtime', 'files']);
+    expect(clears, ['runtime', 'files', 'images']);
   });
 
   test(

@@ -1,5 +1,5 @@
 import '../../../core/media/audio_detail.dart';
-import '../../player/domain/time_segment_label.dart';
+import '../../../core/media/time_segment_label.dart';
 
 abstract interface class AudioDetailStore {
   Future<AudioDetail?> load(AudioDetailTarget target);

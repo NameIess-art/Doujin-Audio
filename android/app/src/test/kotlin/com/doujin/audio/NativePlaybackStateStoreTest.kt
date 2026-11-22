@@ -270,6 +270,38 @@ class NativePlaybackStateStoreTest {
         }
     }
 
+    @Test
+    fun `recovery database configures WAL busy timeout and safely rebuilds on upgrade`() {
+        NativePlaybackRecoveryDatabase(context).use { database ->
+            val db = database.writableDatabase
+            val journalMode = db.rawQuery("PRAGMA journal_mode", null).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                cursor.getString(0)
+            }
+            assertEquals("wal", journalMode.lowercase())
+            val busyTimeout = run {
+                db.beginTransaction()
+                try {
+                    db.rawQuery("PRAGMA busy_timeout", null).use { cursor ->
+                        assertTrue(cursor.moveToFirst())
+                        cursor.getInt(0)
+                    }
+                } finally {
+                    db.endTransaction()
+                }
+            }
+            assertEquals(5000, busyTimeout)
+
+            database.upsertDefinitions(listOf(session("before-upgrade", 1_000L)))
+            assertEquals(listOf("before-upgrade"), database.sessionIds())
+
+            database.onUpgrade(db, 1, 2)
+            assertTrue(database.sessionIds().isEmpty())
+            database.upsertDefinitions(listOf(session("after-upgrade", 2_000L)))
+            assertEquals(listOf("after-upgrade"), database.sessionIds())
+        }
+    }
+
     private fun seedLegacy(session: StoredNativePlaybackSession, value: StoredNativePlaybackProgress) {
         definitions.edit().putLong(generationKey, 3L)
             .putString("sessions", JSONArray().put(session.encodeDefinition()).toString())

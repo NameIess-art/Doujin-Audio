@@ -36,6 +36,7 @@ import '../../core/platform/file_cache_platform_gateway.dart';
 import '../../features/asmr/application/asmr_download_manager.dart';
 import '../../features/asmr/application/asmr_playback_cache_service.dart';
 import '../../features/library/application/library_facade.dart';
+import '../../features/library/application/library_scan_coordinator.dart';
 import '../../features/library/application/library_scan_models.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
@@ -77,6 +78,7 @@ typedef AppRuntimeGraph = ({
   WorkTextService workTexts,
   BrowsePageStateStore browsePageStates,
   AudioPathCoordinator audioPaths,
+  LibraryScanCoordinator libraryScans,
   AppRuntimeLifecycle runtime,
   AudioUiWarmupCoordinator warmup,
   AppPersistenceCoordinator persistence,
@@ -98,6 +100,8 @@ AppRuntimeGraph createAppRuntimeGraph({
   required NotificationFacade notifications,
   required SettingsRepository settings,
   AsmrDownloadManager? asmrDownloads,
+  AsmrPlaybackSource? asmrPlaybackSource,
+  LibraryScanCoordinator? libraryScans,
   LibraryScanLabels Function()? libraryScanLabels,
   PlaybackTrackCache? asmrPlaybackCacheService,
   FileCachePlatformGateway? fileCacheGateway,
@@ -107,6 +111,7 @@ AppRuntimeGraph createAppRuntimeGraph({
   Future<void> Function()? initializeSecondaryData,
   Future<void> Function()? initializeListeningHistory,
   void Function()? disposeSecondaryData,
+  Future<void> Function()? closeDatabase,
 }) {
   if (asmrDownloads != null && libraryScanLabels == null) {
     throw ArgumentError('ASMR downloads require libraryScanLabels.');
@@ -116,7 +121,12 @@ AppRuntimeGraph createAppRuntimeGraph({
     discoverImages: (folder) =>
         library.discoverCoverImageReferencesInFolder(folder, refresh: true),
   );
-  final audioPaths = AudioPathCoordinator(library: library, playback: playback);
+  final audioPaths = AudioPathCoordinator(
+    library: library,
+    playback: playback,
+    asmrPlaybackSource: asmrPlaybackSource,
+  );
+  final resolvedLibraryScans = libraryScans ?? LibraryScanCoordinator();
   final subtitles = PlaybackSubtitleService(
     trackResolver: audioPaths.trackByPath,
     onTrackLoaded: notifications.handleSubtitleTrackLoaded,
@@ -227,6 +237,7 @@ AppRuntimeGraph createAppRuntimeGraph({
         settings: settings,
         library: library,
         scanLabels: libraryScanLabels!,
+        scanCoordinator: resolvedLibraryScans,
       ),
     );
   }
@@ -265,6 +276,8 @@ AppRuntimeGraph createAppRuntimeGraph({
     playbackCommands: playbackCommands,
     asmrDownloads: asmrDownloads,
     disposeWorkTexts: workTexts.dispose,
+    disposeLibraryScans: resolvedLibraryScans.dispose,
+    closeDatabase: closeDatabase,
     bindings: bindings,
     listeningActivity: listeningActivity,
     initializeSecondaryData: initializeSecondaryData,
@@ -289,6 +302,7 @@ AppRuntimeGraph createAppRuntimeGraph({
     browsePageStates: browsePageStates,
     workTexts: workTexts,
     audioPaths: audioPaths,
+    libraryScans: resolvedLibraryScans,
     runtime: runtime,
     warmup: warmup,
     persistence: persistence,
@@ -448,6 +462,7 @@ ProductionAppRuntime createProductionAppRuntime({
       settings: settingsRepository,
       api: asmrApiService,
     ),
+    asmrPlaybackSource: asmrLibraryController,
     listeningActivity: listeningActivity,
     initializeSecondaryData: () => asmrLibraryController.initialize(
       defaultLanguage: AsmrContentLanguage.fromAppLanguage(
@@ -462,6 +477,7 @@ ProductionAppRuntime createProductionAppRuntime({
       appUpdateService.dispose();
       appLanguageProvider.dispose();
     },
+    closeDatabase: database.close,
     library: libraryFacade,
     playback: playbackFacade,
     timer: timerFacade,

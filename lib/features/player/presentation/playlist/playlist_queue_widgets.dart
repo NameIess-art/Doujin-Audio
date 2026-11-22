@@ -690,27 +690,7 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                             padding: EdgeInsets.zero,
                           ),
                         ),
-                        icon: AnimatedSwitcher(
-                          switchOutCurve: kAppFadeCurve,
-                          switchInCurve: kAppFadeCurve,
-                          duration: MediaQuery.disableAnimationsOf(context)
-                              ? Duration.zero
-                              : kAppFadeDuration,
-                          transitionBuilder: (child, animation) {
-                            return ScaleTransition(
-                              scale: Tween<double>(begin: 0.4, end: 1.0)
-                                  .animate(
-                                    CurvedAnimation(
-                                      parent: animation,
-                                      curve: Curves.easeOutBack,
-                                    ),
-                                  ),
-                              child: FadeTransition(
-                                opacity: animation,
-                                child: child,
-                              ),
-                            );
-                          },
+                        icon: AppPlaybackIconTransition(
                           child: cardState.playbackError != null
                               ? const Icon(
                                   Icons.refresh_rounded,

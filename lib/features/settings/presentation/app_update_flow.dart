@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../core/logging/app_log_service.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/ui/permission_action_controller.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/widgets/app_buttons.dart';
@@ -163,7 +164,7 @@ class AppUpdateFlow {
     if (shouldDownload != true || !context.mounted || !info.canDownload) {
       return;
     }
-    if (Platform.isAndroid) {
+    if (AppPlatform.isAndroid) {
       await _ensureInstallPermission(
         context,
         () => _downloadAndInstall(context, operations, info),

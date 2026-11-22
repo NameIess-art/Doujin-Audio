@@ -135,8 +135,10 @@ internal class PowerMethodHandler(
     private val appContext: Context get() = activity.applicationContext ?: activity
     private val timerSync = PlaybackTimerSyncCoordinator(
         loadCandidates = { complete ->
-            taskExecutor.submit({ NativePlaybackStateStore.loadActiveSessionRevisions(activity.applicationContext) }) {
-                result -> mainHandler.post { complete(result) }
+            taskExecutor.submit({ NativePlaybackStateStore.loadActiveSessionRevisions(activity.applicationContext) }) { result ->
+                if (!closed.get()) {
+                    mainHandler.post { if (!closed.get()) complete(result) }
+                }
             }
         },
         isSessionCurrent = { id, revision -> NativePlaybackStateStore.sessionRevision(id) == revision },
@@ -186,24 +188,43 @@ internal class PowerMethodHandler(
                 block = ::getBackgroundRunDiagnostics
             )
             PowerMethods.EXECUTE_TIMER_EXPIRED_NOW -> {
+                val generation = call.argumentReader().requiredIntInRange("generation", 0..Int.MAX_VALUE)
+                if (closed.get()) {
+                    envelope.error(ChannelErrorCodes.SERVICE_UNAVAILABLE, "Power handler is unavailable.", null)
+                    return
+                }
                 PlaybackTimerAlarmScheduler.executeNow(
                     activity.applicationContext,
                     PlaybackTimerAlarmScheduler.actionTimerExpired,
-                    call.argumentReader().requiredIntInRange("generation", 0..Int.MAX_VALUE),
-                    onComplete = envelope::success
+                    generation,
+                    onComplete = { executed ->
+                        if (!closed.get()) envelope.success(executed)
+                    }
                 )
             }
             PowerMethods.EXECUTE_AUTO_RESUME_NOW -> {
+                val generation = call.argumentReader().requiredIntInRange("generation", 0..Int.MAX_VALUE)
+                if (closed.get()) {
+                    envelope.error(ChannelErrorCodes.SERVICE_UNAVAILABLE, "Power handler is unavailable.", null)
+                    return
+                }
                 PlaybackTimerAlarmScheduler.executeNow(
                     activity.applicationContext,
                     PlaybackTimerAlarmScheduler.actionAutoResume,
-                    call.argumentReader().requiredIntInRange("generation", 0..Int.MAX_VALUE),
-                    onComplete = envelope::success
+                    generation,
+                    onComplete = { executed ->
+                        if (!closed.get()) envelope.success(executed)
+                    }
                 )
             }
             PowerMethods.SYNC_PLAYBACK_TIMER_ALARMS -> {
                 val arguments = parsePlaybackTimerSyncArguments(call)
+                if (closed.get()) {
+                    envelope.error(ChannelErrorCodes.SERVICE_UNAVAILABLE, "Power handler is unavailable.", null)
+                    return
+                }
                 timerSync.sync(arguments) { error ->
+                    if (closed.get()) return@sync
                     if (error == null) envelope.success(null)
                     else envelope.error("timer_sync_failed", error.message, null)
                 }
@@ -215,6 +236,12 @@ internal class PowerMethodHandler(
             envelope.error(
                 ChannelErrorCodes.INVALID_ARGUMENT,
                 error.message ?: "Invalid arguments.",
+                mapOf("method" to call.method)
+            )
+        } catch (error: Exception) {
+            envelope.error(
+                ChannelErrorCodes.PLATFORM_ERROR,
+                error.message ?: "Power operation failed.",
                 mapOf("method" to call.method)
             )
         }

@@ -4,7 +4,10 @@
 #include <comdef.h>
 #include <winrt/base.h>
 #include <algorithm>
+#include <condition_variable>
+#include <cstdint>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <sddl.h>
@@ -191,22 +194,125 @@ void SyncScheduledTasks(const flutter::EncodableMap& payload) {
   session.Sync(end, resume);
 }
 
-ScheduledTasks::ScheduledTasks(HWND window) : window_(window) {}
+struct ScheduledTasks::State {
+  struct Request {
+    int64_t end_ms = 0;
+    int64_t resume_ms = 0;
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result;
+    std::string error;
+    std::string error_code = "platform_error";
+    bool completed = false;
+  };
+
+  std::mutex mutex;
+  std::condition_variable changed;
+  HWND window = nullptr;
+  std::shared_ptr<Request> queued;
+  std::vector<std::shared_ptr<Request>> pending;
+  bool stopping = false;
+  bool reply_posted = false;
+
+  static void Run(const std::shared_ptr<State>& state) {
+    const auto apartment = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    {
+      TaskSchedulerSession session;
+      for (;;) {
+        std::shared_ptr<Request> request;
+        {
+          std::unique_lock<std::mutex> lock(state->mutex);
+          state->changed.wait(lock, [&] {
+            return state->stopping || state->queued != nullptr;
+          });
+          if (state->stopping || !state->queued) break;
+          request = std::move(state->queued);
+        }
+        std::string error;
+        std::string error_code = "platform_error";
+        try {
+          if (FAILED(apartment) && apartment != RPC_E_CHANGED_MODE) {
+            winrt::check_hresult(apartment);
+          }
+          session.Sync(request->end_ms, request->resume_ms);
+        } catch (const std::invalid_argument& e) {
+          error = e.what();
+          error_code = "invalid_argument";
+        } catch (const winrt::hresult_error& e) {
+          error = winrt::to_string(e.message());
+        } catch (const _com_error& e) {
+          error = winrt::to_string(e.ErrorMessage());
+        } catch (const std::exception& e) {
+          error = e.what();
+        }
+        {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          if (state->stopping || !state->window) break;
+          request->error = std::move(error);
+          request->error_code = std::move(error_code);
+          request->completed = true;
+        }
+        bool posted = false;
+        bool aborted = false;
+        for (int attempt = 0; attempt < 200; ++attempt) {
+          {
+            std::lock_guard<std::mutex> lock(state->mutex);
+            if (state->stopping || !state->window || state->reply_posted) {
+              aborted = true;
+              break;
+            }
+            if (PostMessage(state->window, kReply, 0, 0)) {
+              state->reply_posted = true;
+              posted = true;
+              break;
+            }
+            if (GetLastError() == ERROR_INVALID_WINDOW_HANDLE) {
+              aborted = true;
+              break;
+            }
+          }
+          Sleep(10);
+        }
+        if (!posted && !aborted) {
+          OutputDebugStringW(
+              L"DoujinAudio: ScheduledTasks failed to post reply message after 200 attempts\n");
+        }
+      }
+    }
+    if (SUCCEEDED(apartment)) CoUninitialize();
+  }
+};
+
+ScheduledTasks::ScheduledTasks(HWND window) : state_(std::make_shared<State>()) {
+  state_->window = window;
+}
 
 ScheduledTasks::~ScheduledTasks() {
+  std::vector<std::shared_ptr<State::Request>> pending;
   {
-    std::lock_guard<std::mutex> lock(mutex_);
-    stopping_ = true;
-    if (pending_) {
-      pending_->error = "Window closed before scheduled task sync completed";
-      completed_.push_back(std::move(*pending_));
-      pending_.reset();
-    }
+    std::lock_guard<std::mutex> lock(state_->mutex);
+    state_->stopping = true;
+    state_->window = nullptr;
+    state_->queued.reset();
+    pending.swap(state_->pending);
   }
-  changed_.notify_one();
-  if (worker_.joinable()) worker_.join();
-  // The engine is still alive; finish channel replies on its platform thread.
-  Reply();
+  state_->changed.notify_one();
+  // Task Scheduler COM calls cannot be cancelled reliably; detach the worker
+  // and complete pending channel replies on the platform thread immediately.
+  if (worker_.joinable()) worker_.detach();
+  for (const auto& request : pending) {
+    if (!request->result) continue;
+    if (request->completed) {
+      if (request->error.empty()) {
+        ReplySuccess(*request->result);
+      } else {
+        request->result->Error(request->error_code, request->error);
+      }
+    } else {
+      request->result->Error(
+          "platform_error",
+          "Window closed before scheduled task sync completed");
+    }
+    request->result.reset();
+  }
 }
 
 void ScheduledTasks::Sync(const flutter::EncodableMap& payload,
@@ -215,81 +321,67 @@ void ScheduledTasks::Sync(const flutter::EncodableMap& payload,
   // spawning the worker thread or displacing a valid queued sync.
   const auto end_ms = Millis(payload, "timerEndsAtWallClockMs");
   const auto resume_ms = Millis(payload, "autoResumeAtMs");
-  std::optional<Request> superseded;
+  std::shared_ptr<State::Request> superseded;
   bool rejected = false;
   {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (stopping_) {
+    std::lock_guard<std::mutex> lock(state_->mutex);
+    if (state_->stopping || !state_->window) {
       rejected = true;
     } else {
-      if (pending_) superseded = std::move(pending_);
-      pending_.emplace(Request{end_ms, resume_ms, std::move(result), {}});
       if (!worker_.joinable()) {
-        worker_ = std::thread([this] { Run(); });
+        auto worker_state = state_;
+        worker_ = std::thread([worker_state = std::move(worker_state)] {
+          State::Run(worker_state);
+        });
       }
+      const auto request = std::make_shared<State::Request>();
+      request->end_ms = end_ms;
+      request->resume_ms = resume_ms;
+      request->result = std::move(result);
+      if (state_->queued) {
+        superseded = std::move(state_->queued);
+        auto& pending = state_->pending;
+        pending.erase(std::remove(pending.begin(), pending.end(), superseded),
+                      pending.end());
+      }
+      state_->queued = request;
+      state_->pending.push_back(request);
     }
   }
   if (rejected) {
-    result->Error("windows_error", "Window closed before scheduled task sync completed");
+    result->Error("platform_error", "Window closed before scheduled task sync completed");
     result.reset();
     return;
   }
-  changed_.notify_one();
+  state_->changed.notify_one();
   if (superseded && superseded->result) {
     ReplySuccess(*superseded->result);
+    superseded->result.reset();
   }
-}
-
-void ScheduledTasks::Run() {
-  const auto apartment = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-  {
-    TaskSchedulerSession session;
-    for (;;) {
-      Request request;
-      {
-        std::unique_lock<std::mutex> lock(mutex_);
-        changed_.wait(lock, [this] { return stopping_ || pending_.has_value(); });
-        if (stopping_ || !pending_.has_value()) break;
-        request = std::move(*pending_);
-        pending_.reset();
-      }
-      try {
-        if (FAILED(apartment) && apartment != RPC_E_CHANGED_MODE) {
-          winrt::check_hresult(apartment);
-        }
-        session.Sync(request.end_ms, request.resume_ms);
-      } catch (const std::invalid_argument& e) {
-        request.error = e.what();
-        request.error_code = "invalid_argument";
-      } catch (const winrt::hresult_error& e) {
-        request.error = winrt::to_string(e.message());
-      } catch (const _com_error& e) {
-        request.error = winrt::to_string(e.ErrorMessage());
-      } catch (const std::exception& e) {
-        request.error = e.what();
-      }
-      {
-        std::lock_guard<std::mutex> lock(mutex_);
-        completed_.push_back(std::move(request));
-      }
-      PostMessage(window_, kReply, 0, 0);
-    }
-  }
-  if (SUCCEEDED(apartment)) CoUninitialize();
 }
 
 void ScheduledTasks::Reply() {
-  std::deque<Request> replies;
+  std::vector<std::shared_ptr<State::Request>> replies;
   {
-    std::lock_guard<std::mutex> lock(mutex_);
-    replies.swap(completed_);
-  }
-  for (auto& reply : replies) {
-    if (!reply.result) continue;
-    if (reply.error.empty()) {
-      ReplySuccess(*reply.result);
-    } else {
-      reply.result->Error(reply.error_code, reply.error);
+    std::lock_guard<std::mutex> lock(state_->mutex);
+    state_->reply_posted = false;
+    auto& pending = state_->pending;
+    for (auto it = pending.begin(); it != pending.end();) {
+      if ((*it)->completed) {
+        replies.push_back(std::move(*it));
+        it = pending.erase(it);
+      } else {
+        ++it;
+      }
     }
+  }
+  for (const auto& reply : replies) {
+    if (!reply->result) continue;
+    if (reply->error.empty()) {
+      ReplySuccess(*reply->result);
+    } else {
+      reply->result->Error(reply->error_code, reply->error);
+    }
+    reply->result.reset();
   }
 }

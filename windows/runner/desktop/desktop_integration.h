@@ -25,6 +25,7 @@ class DesktopIntegration {
   void OnFirstFrame(bool show_initially);
   void Activate(bool show_window);
   static constexpr UINT kActivate = WM_APP + 40;
+  static constexpr LRESULT kActivateAccepted = 1;
   static constexpr UINT kMediaAction = WM_APP + 41;
   static constexpr UINT kExit = WM_APP + 43;
 

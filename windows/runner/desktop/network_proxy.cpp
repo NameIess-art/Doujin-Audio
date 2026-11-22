@@ -386,17 +386,30 @@ struct NetworkProxy::State {
         request->completed = true;
       }
       // One posted message can deliver all completed requests on the UI thread.
+      bool posted = false;
+      bool aborted = false;
       for (int attempt = 0; attempt < 200; ++attempt) {
         {
           std::lock_guard<std::mutex> lock(mutex);
-          if (!window || reply_posted) break;
-          if (PostMessage(window, kReply, 0, 0)) {
-            reply_posted = true;
+          if (!window || reply_posted) {
+            aborted = true;
             break;
           }
-          if (GetLastError() == ERROR_INVALID_WINDOW_HANDLE) break;
+          if (PostMessage(window, kReply, 0, 0)) {
+            reply_posted = true;
+            posted = true;
+            break;
+          }
+          if (GetLastError() == ERROR_INVALID_WINDOW_HANDLE) {
+            aborted = true;
+            break;
+          }
         }
         Sleep(10);
+      }
+      if (!posted && !aborted) {
+        OutputDebugStringW(
+            L"DoujinAudio: NetworkProxy failed to post reply message after 200 attempts\n");
       }
     }
   }
@@ -448,7 +461,7 @@ NetworkProxy::NetworkProxy(HWND window, flutter::BinaryMessenger* messenger)
       state_->pending.pop_back();
       state_->queued.pop_back();
     }
-    Failure(*request->result, "windows_error", "Unable to schedule proxy resolution");
+    Failure(*request->result, "platform_error", "Unable to schedule proxy resolution");
   });
 }
 
@@ -468,7 +481,7 @@ NetworkProxy::~NetworkProxy() {
   state_->wpad_cv.notify_all();
   // PAC/WPAD can block in Windows; do not stall engine teardown waiting for it.
   for (const auto& request : pending) {
-    Failure(*request->result, "windows_error", "Window closed before proxy resolution completed");
+    Failure(*request->result, "platform_error", "Window closed before proxy resolution completed");
     request->result.reset();
   }
 }
@@ -490,7 +503,7 @@ void NetworkProxy::Reply() {
     }
   }
   for (const auto& request : completed) {
-    if (!request->error.empty()) Failure(*request->result, "windows_error", request->error);
+    if (!request->error.empty()) Failure(*request->result, "platform_error", request->error);
     else request->result->Success(Value(Map{{Value("ok"), Value(true)},
         {Value("value"), Value(request->value)}}));
     request->result.reset();

@@ -14,6 +14,7 @@ import 'asmr_download_planner.dart';
 import 'asmr_download_task_store.dart';
 import 'asmr_download_io.dart';
 import 'asmr_download_media_transfer.dart';
+import 'asmr_request_cancellation.dart';
 
 class AsmrDownloadTransferService {
   AsmrDownloadTransferService({
@@ -23,13 +24,17 @@ class AsmrDownloadTransferService {
     required this.isDisposed,
     required this.isPaused,
     required this.throwIfCancelled,
+    AsmrRequestCancellationToken? Function(String workId)? cancellationTokenFor,
     AsmrHlsAudioTransfer? hlsAudioTransfer,
   }) : _store = store,
        _outputs = outputs,
+       _cancellationTokenFor = cancellationTokenFor,
        _hlsAudioTransfer = hlsAudioTransfer ?? AsmrHlsAudioTransfer(),
        _automaticFileRetryDelay = automaticFileRetryDelay;
   final AsmrDownloadTaskStore _store;
   final AsmrDownloadOutputStore _outputs;
+  final AsmrRequestCancellationToken? Function(String workId)?
+  _cancellationTokenFor;
   final AsmrHlsAudioTransfer _hlsAudioTransfer;
   final Duration _automaticFileRetryDelay;
   final bool Function() isDisposed;
@@ -163,6 +168,7 @@ class AsmrDownloadTransferService {
           await _hlsAudioTransfer.save(
             reference: item.mediaReference!,
             output: staging,
+            cancellationToken: _cancellationTokenFor?.call(workId),
             onBytes: (bytes) => _store.reconcileLiveFileProgress(
               workId,
               item.relativePath,
@@ -219,12 +225,10 @@ class AsmrDownloadTransferService {
       } else {
         final targetFile = localDownloadFile(targetPath);
         await targetFile.parent.create(recursive: true);
-        if (!await commitLocalDownloadedFile(
+        await commitLocalDownloadedFile(
           staging: staging,
           target: targetFile,
-        )) {
-          return const DownloadWriteResult.failure(bytesDownloaded: 0);
-        }
+        );
       }
       if (!exists) _outputs.createdOutputPaths[workId]?.add(targetPath);
       final finished = _store[workId]!;
@@ -426,15 +430,10 @@ class AsmrDownloadTransferService {
           return DownloadWriteResult.skipped(bytesDownloaded: item.size);
         }
       }
-      final committed = await commitLocalDownloadedFile(
+      await commitLocalDownloadedFile(
         staging: tempResult.file,
         target: targetFile,
       );
-      if (!committed) {
-        return DownloadWriteResult.skipped(
-          bytesDownloaded: tempResult.bytesDownloaded,
-        );
-      }
       if (!targetExisted) {
         _outputs.createdOutputPaths[workId]?.add(localTargetPath!);
       }
@@ -545,13 +544,10 @@ class AsmrDownloadTransferService {
       } else {
         final targetFile = localDownloadFile(targetPath);
         await targetFile.parent.create(recursive: true);
-        final committed = await commitLocalDownloadedFile(
+        await commitLocalDownloadedFile(
           staging: tempResult.file,
           target: targetFile,
         );
-        if (!committed) {
-          return const DownloadWriteResult.failure(bytesDownloaded: 0);
-        }
       }
 
       if (!targetExisted) _outputs.createdOutputPaths[workId]?.add(targetPath);
@@ -692,6 +688,7 @@ class AsmrDownloadTransferService {
     var received = 0;
     HttpClientRequest? openedRequest;
     HttpClientResponse? unconsumedResponse;
+    var responseConsumed = false;
     try {
       try {
         received = await stagingFile.length();
@@ -923,6 +920,7 @@ class AsmrDownloadTransferService {
         );
       }
       if (item.size <= 0) _setFileTotalBytes(workId, item, received);
+      responseConsumed = true;
       return _TemporaryDownloadAttempt.success(
         received,
         mimeType: response.headers.contentType?.mimeType,
@@ -942,7 +940,9 @@ class AsmrDownloadTransferService {
       // Header validation or persistence can fail before subscribing to the
       // body. Retire that response as well as any interrupted stream.
       await unconsumedResponse?.listen(null).cancel();
-      openedRequest?.abort();
+      if (!responseConsumed) {
+        openedRequest?.abort();
+      }
     }
   }
 
@@ -1083,6 +1083,16 @@ class AsmrDownloadTransferService {
     _setFileRetryAttempt(workId, relativePath, attempt);
     try {
       final delay = _automaticFileRetryDelay * attempt;
+      final token = _cancellationTokenFor?.call(workId);
+      if (token != null) {
+        try {
+          await token.delay(delay);
+        } on AsmrRequestCancelled {
+          throw const DownloadCancelled();
+        }
+        throwIfCancelled(workId);
+        return;
+      }
       final elapsed = Stopwatch()..start();
       // Longer backoffs must not hold up pause, cancel or shutdown.
       const cancellationCheckInterval = Duration(milliseconds: 100);

@@ -75,7 +75,7 @@ class UpdatePlatformService {
   Future<NativeResult<PlatformUpdateInstallResult>> installWindowsUpdate(
     String path,
   ) {
-    return _install('installWindowsUpdate', path);
+    return _install(UpdateMethod.installWindowsUpdate, path);
   }
 
   Future<NativeResult<PlatformUpdateInstallResult>> _install(

@@ -93,4 +93,23 @@ class FolderScanBackpressureTest {
             executor.shutdownNow()
         }
     }
+
+    @Test
+    fun `unacknowledged chunk times out and cancels task instead of deadlocking`() {
+        val task = FolderScanTask("generation-1", ackTimeoutMs = 40L)
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            assertEquals(1L, task.beginChunk())
+            val acknowledged = executor.submit<Boolean> {
+                task.awaitChunkAcknowledgement()
+            }.get(2, TimeUnit.SECONDS)
+            assertFalse(acknowledged)
+            assertTrue(task.timedOut)
+            assertTrue(task.cancelled)
+            assertNull(task.beginChunk())
+        } finally {
+            task.cancel()
+            executor.shutdownNow()
+        }
+    }
 }

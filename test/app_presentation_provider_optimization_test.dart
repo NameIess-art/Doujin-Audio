@@ -123,10 +123,7 @@ void main() {
       await tester.pumpWidget(
         fixture.build(
           Consumer(builder: (context, ref, _) {
-            final cover = ref.watch(libraryCoverForTrackProvider((
-              trackPath: track.path,
-              context: context,
-            )));
+            final cover = ref.watch(libraryCoverForTrackProvider(track.path));
             expect(cover.isLoading, isFalse);
             expect(cover.requireValue, '/cover/cached.png');
             return const SizedBox.shrink();

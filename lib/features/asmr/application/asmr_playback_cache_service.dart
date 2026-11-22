@@ -15,6 +15,7 @@ import '../../player/domain/playback_track_cache.dart';
 import '../domain/asmr_media_sources.dart';
 import '../../../core/media/playback_media_reference.dart';
 import 'asmr_download_media_transfer.dart';
+import 'asmr_request_cancellation.dart';
 
 class AsmrPlaybackCacheService implements PlaybackTrackCache {
   AsmrPlaybackCacheService({
@@ -119,6 +120,7 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
 
   void _cancel(_PlaybackCacheTransfer transfer) {
     transfer.cancelled = true;
+    transfer.cancellationToken.cancel();
     final waiting = transfer.waiting;
     if (waiting != null && _waitingTransfers.remove(transfer)) {
       transfer.waiting = null;
@@ -181,6 +183,7 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
           await _hlsAudioTransfer.save(
             reference: reference,
             output: temp,
+            cancellationToken: transfer.cancellationToken,
             isCancelled: () => transfer.cancelled,
           );
         } finally {
@@ -512,6 +515,8 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
 
 final class _PlaybackCacheTransfer {
   final Set<String> owners = {};
+  final AsmrRequestCancellationToken cancellationToken =
+      AsmrRequestCancellationToken();
   bool unowned = false;
   bool cancelled = false;
   late final Future<String?> result;

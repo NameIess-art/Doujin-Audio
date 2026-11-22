@@ -6,7 +6,6 @@ import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
-import 'package:sqflite/sqflite.dart';
 
 import '../../../core/persistence/app_database.dart';
 import '../../../core/media/path_matcher.dart';
@@ -143,6 +142,8 @@ class StartupRestoreOutcome {
 
 class DataBackupService {
   static final Map<String, Future<void>> _workDirectoryCleanup = {};
+  static const int defaultMaximumArchiveBytes =
+      _defaultMaximumBackupArchiveBytes;
 
   DataBackupService({
     AppDatabase? database,
@@ -164,7 +165,7 @@ class DataBackupService {
            (appUpdateService ?? AppUpdateService()).currentAppVersion,
        _supportDirectoryProvider =
            supportDirectoryProvider ?? getApplicationSupportDirectory,
-       _databasesPathProvider = databasesPathProvider ?? getDatabasesPath,
+       _databasesPathProvider = databasesPathProvider,
        _beforeExport = beforeExport,
        _clock = clock ?? DateTime.now,
        _platformName = platformName ?? Platform.operatingSystem,
@@ -178,7 +179,7 @@ class DataBackupService {
   final SecureAsmrTokenStore _accountStore;
   final Future<AppVersionInfo> Function() _appVersionProvider;
   final Future<Directory> Function() _supportDirectoryProvider;
-  final Future<String> Function() _databasesPathProvider;
+  final Future<String> Function()? _databasesPathProvider;
   final Future<void> Function()? _beforeExport;
   final DateTime Function() _clock;
   final String _platformName;
@@ -187,6 +188,8 @@ class DataBackupService {
   final int _maximumManifestBytes;
   final int _maximumPreferencesBytes;
   final int _maximumAccountBytes;
+
+  int get maximumArchiveBytes => _maximumArchiveBytes;
 
   Future<File> exportBackup(String outputPath) async {
     await _beforeExport?.call();
@@ -291,10 +294,8 @@ class DataBackupService {
         pending,
         Directory(path.join(restoreDirectory.path, 'decoded')),
       );
-      final databaseDirectory = Directory(await _databasesPathProvider());
-      await databaseDirectory.create(recursive: true);
-      final currentDatabase = File(
-        path.join(databaseDirectory.path, AppDatabase.fileName),
+      final currentDatabase = await _database.resolveDatabaseFile(
+        databasesPathProvider: _databasesPathProvider,
       );
       final rollbackDatabase = File(
         path.join(rollbackDirectory.path, AppDatabase.fileName),
@@ -332,7 +333,10 @@ class DataBackupService {
           }
         }
         if (await currentDatabase.exists()) {
-          await _copyDatabaseFiles(currentDatabase, rollbackDatabase);
+          await _database.backupDatabaseFiles(
+            source: currentDatabase,
+            destination: rollbackDatabase,
+          );
         }
       }
 
@@ -350,8 +354,10 @@ class DataBackupService {
         PendingRestoreJournal(phase: 'committing', createdAt: _clock()),
       );
       commitStarted = true;
-      await _deleteDatabaseFiles(currentDatabase);
-      await decoded.databaseFile.rename(currentDatabase.path);
+      await _database.replaceDatabaseFile(
+        candidate: decoded.databaseFile,
+        target: currentDatabase,
+      );
       await AppPreferences.replaceSnapshot(decoded.preferences);
       await _accountStore.replaceFromBackup(decoded.account);
 
@@ -424,19 +430,20 @@ class DataBackupService {
     if (!await preferencesFile.exists() || !await accountFile.exists()) {
       throw StateError('restore_rollback_missing');
     }
-    final databaseDirectory = Directory(await _databasesPathProvider());
-    final currentDatabase = File(
-      path.join(databaseDirectory.path, AppDatabase.fileName),
+    final currentDatabase = await _database.resolveDatabaseFile(
+      databasesPathProvider: _databasesPathProvider,
     );
     final rollbackDatabase = File(
       path.join(rollbackDirectory.path, AppDatabase.fileName),
     );
     await _database.close();
     if (await rollbackDatabase.exists()) {
-      await _deleteDatabaseFiles(currentDatabase);
-      await _copyDatabaseFiles(rollbackDatabase, currentDatabase);
+      await _database.backupDatabaseFiles(
+        source: rollbackDatabase,
+        destination: currentDatabase,
+      );
     } else {
-      await _deleteDatabaseFiles(currentDatabase);
+      await _database.deleteDatabaseFiles(currentDatabase);
     }
     await AppPreferences.replaceSnapshot(
       Map<String, Object?>.from(
@@ -545,22 +552,6 @@ class DataBackupService {
   Future<void> _deleteDirectory(Directory directory) async {
     if (await directory.exists()) await directory.delete(recursive: true);
   }
-
-  Future<void> _copyDatabaseFiles(File source, File destination) async {
-    for (final suffix in const <String>['', '-wal', '-shm']) {
-      final file = File('${source.path}$suffix');
-      if (await file.exists()) {
-        await file.copy('${destination.path}$suffix');
-      }
-    }
-  }
-
-  Future<void> _deleteDatabaseFiles(File database) async {
-    for (final suffix in const <String>['', '-wal', '-shm']) {
-      final file = File('${database.path}$suffix');
-      if (await file.exists()) await file.delete();
-    }
-  }
 }
 
 Future<void> _exportBackupArchive(Map<String, Object?> request) async {
@@ -619,6 +610,7 @@ Future<void> _exportBackupArchive(Map<String, Object?> request) async {
   );
 
   final outputStream = OutputFileStream(temporaryOutput.path);
+  final inputStreams = <InputFileStream>[];
   try {
     final encoder = ZipEncoder()..startEncode(outputStream);
     encoder.add(ArchiveFile.bytes(_manifestName, manifestBytes));
@@ -626,12 +618,26 @@ Future<void> _exportBackupArchive(Map<String, Object?> request) async {
       encoder,
       databaseFile,
       _databaseName,
+      inputStreams: inputStreams,
       compression: CompressionType.none,
     );
-    _addBackupFileToArchive(encoder, preferencesFile, _preferencesName);
-    _addBackupFileToArchive(encoder, accountFile, _accountName);
+    _addBackupFileToArchive(
+      encoder,
+      preferencesFile,
+      _preferencesName,
+      inputStreams: inputStreams,
+    );
+    _addBackupFileToArchive(
+      encoder,
+      accountFile,
+      _accountName,
+      inputStreams: inputStreams,
+    );
     encoder.endEncode();
   } finally {
+    for (final stream in inputStreams) {
+      stream.closeSync();
+    }
     await outputStream.close();
   }
   if (await temporaryOutput.length() > maximumArchiveBytes) {
@@ -864,10 +870,12 @@ void _addBackupFileToArchive(
   ZipEncoder encoder,
   File file,
   String name, {
+  required List<InputFileStream> inputStreams,
   CompressionType? compression,
 }) {
-  final entry = ArchiveFile.stream(name, InputFileStream(file.path))
-    ..compression = compression;
+  final input = InputFileStream(file.path);
+  inputStreams.add(input);
+  final entry = ArchiveFile.stream(name, input)..compression = compression;
   encoder.add(entry);
 }
 

@@ -14,7 +14,13 @@ export '../domain/asmr_search_suggestions.dart';
 class JapaneseAsmrApiService {
   JapaneseAsmrApiService({HttpClient? httpClient, Uri? baseUri})
     : _client = httpClient ?? HttpClient(),
-      _baseUri = baseUri ?? Uri.parse('https://earaasmr.com/');
+      _baseUri = baseUri ?? Uri.parse('https://earaasmr.com/') {
+    try {
+      _client.connectionTimeout = _timeout;
+    } catch (_) {
+      // Test doubles and platform clients may not expose socket settings.
+    }
+  }
 
   final HttpClient _client;
   final Uri _baseUri;
@@ -94,6 +100,7 @@ class JapaneseAsmrApiService {
     HttpClientRequest? request;
     StreamSubscription<String>? subscription;
     var retired = false;
+    var responseConsumed = false;
     final removeListener = cancellationToken?.addListener(() {
       request?.abort(const AsmrRequestCancelled());
       unawaited(subscription?.cancel());
@@ -136,13 +143,18 @@ class JapaneseAsmrApiService {
                 completed.completeError(error, stack),
             cancelOnError: true,
           );
-      return await (cancellationToken?.waitFor(completed.future) ??
-              completed.future)
-          .timeout(_timeout);
+      final body =
+          await (cancellationToken?.waitFor(completed.future) ??
+                  completed.future)
+              .timeout(_timeout);
+      responseConsumed = true;
+      return body;
     } finally {
       retired = true;
       removeListener?.call();
-      request?.abort();
+      if (!responseConsumed) {
+        request?.abort();
+      }
       await subscription?.cancel();
     }
   }

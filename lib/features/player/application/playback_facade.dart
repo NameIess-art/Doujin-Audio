@@ -122,7 +122,6 @@ final class PlaybackFacade {
   int get retargetRevision => _retargetRevision;
   bool get hasRetargetedPaths => _retargetedPathAliases.isNotEmpty;
   final Random _random = Random();
-  final Set<String> _deferredVolumeReloadSessionIds = <String>{};
   int _transportCommandSequence = 0;
   int _sessionSeed = 0;
   int _directPlayRevision = 0;
@@ -623,7 +622,6 @@ final class PlaybackFacade {
     _removeNativeRetainedContentUris(removedSessionIds);
     if (removedSessions.isEmpty) return allSucceeded;
     for (final session in removedSessions) {
-      _deferredVolumeReloadSessionIds.remove(session.id);
       _seekDispatcher.forgetSession(session.id);
     }
     await Future.wait(removedSessions.map((session) => session.shutdown()));
@@ -660,7 +658,6 @@ final class PlaybackFacade {
     if (removedSessions.isEmpty) return true;
     for (final session in removedSessions) {
       session.cancelPlaybackStart(session.loadGeneration);
-      _deferredVolumeReloadSessionIds.remove(session.id);
       _seekDispatcher.forgetSession(session.id);
     }
     _onSessionsRemoved?.call(removedSessions);
@@ -989,8 +986,11 @@ final class PlaybackFacade {
       ).setSessionTemporarySpeed(sessionId, speed);
   double nearestPlaybackSpeed(double speed) =>
       PlaybackEffectsCoordinator(this).nearestPlaybackSpeed(speed);
-  void clearDeferredVolumeReloads() =>
-      PlaybackEffectsCoordinator(this).clearDeferredVolumeReloads();
+
+  void _emitPersistedUriReferenceRevision() {
+    if (_disposed || _persistedUriReferenceRevisionController.isClosed) return;
+    _persistedUriReferenceRevisionController.add(persistedUriReferenceRevision);
+  }
 
   Future<void> get pendingSessionPreparation =>
       PlaybackNativeStateCoordinator(this).pendingSessionPreparation;
@@ -1272,13 +1272,6 @@ final class PlaybackFacade {
     if (persistenceTail != null) {
       await attempt(() => persistenceTail);
     }
-    // Riverpod can pause this UI-only subscription while the playlist is offstage.
-    // Waiting for it to receive the done event would block native player disposal.
-    unawaited(_resumeBatchChanges.close());
-    await Future.wait(<Future<void>>[
-      attempt(_sessionActivations.close),
-      attempt(_persistedUriReferenceRevisionController.close),
-    ]);
     final sessionsToDispose = _service.sessions.values.toList(growable: false);
     _service.sessions.clear();
     await Future.wait(
@@ -1286,6 +1279,13 @@ final class PlaybackFacade {
     );
     await attempt(nativeRepository.dispose);
     await attempt(_service.dispose);
+    // Riverpod can pause this UI-only subscription while the playlist is offstage.
+    // Waiting for it to receive the done event would block native player disposal.
+    unawaited(_resumeBatchChanges.close());
+    await Future.wait(<Future<void>>[
+      attempt(_sessionActivations.close),
+      attempt(_persistedUriReferenceRevisionController.close),
+    ]);
     if (firstError != null) {
       Error.throwWithStackTrace(firstError!, firstStackTrace!);
     }

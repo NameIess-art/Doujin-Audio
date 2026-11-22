@@ -52,6 +52,9 @@ Filename: "{app}\doujin_audio.exe"; Description: "Open Doujin Audio"; Flags: now
 [UninstallRun]
 Filename: "{app}\doujin_audio.exe"; Parameters: "--remove-timers"; Flags: runhidden; RunOnceId: "RemoveTimer"
 
+[Registry]
+Root: HKCU; Subkey: "Software\DoujinAudio"; Flags: dontcreatekey uninsdeletekey
+
 [Code]
 const
   SYNCHRONIZE = $00100000;

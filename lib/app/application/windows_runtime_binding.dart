@@ -8,10 +8,16 @@ import 'app_runtime_lifecycle.dart';
 
 /// Owns desktop commands from bootstrap through runtime shutdown.
 class WindowsRuntimeBinding {
-  WindowsRuntimeBinding({WindowsDesktopService? desktop})
-    : _desktop = desktop ?? WindowsDesktopService.instance;
+  static const defaultEndSessionDrainBudget = Duration(milliseconds: 800);
+
+  WindowsRuntimeBinding({
+    WindowsDesktopService? desktop,
+    Duration endSessionDrainBudget = defaultEndSessionDrainBudget,
+  }) : _desktop = desktop ?? WindowsDesktopService.instance,
+       _endSessionDrainBudget = endSessionDrainBudget;
 
   final WindowsDesktopService _desktop;
+  final Duration _endSessionDrainBudget;
   AppRuntimeLifecycle? _runtime;
   PlaybackFacade? _playback;
   NotificationFacade? _notifications;
@@ -137,18 +143,55 @@ class WindowsRuntimeBinding {
     if (initialization != null) {
       // The bootstrap caller receives the error; shutdown still drains its work.
       try {
-        await initialization;
+        if (_endingSession) {
+          await initialization.timeout(
+            _endSessionDrainBudget,
+            onTimeout: () {},
+          );
+        } else {
+          await initialization;
+        }
       } catch (_) {
         // Initialization errors are reported by AppBootstrapController; cleanup
         // must still release the partially created runtime.
       }
     }
-    while (_inFlightActions.isNotEmpty) {
-      for (final action in _inFlightActions.toList()) {
+    if (_endingSession) {
+      final deadline = Stopwatch()..start();
+      while (_inFlightActions.isNotEmpty) {
+        final remaining = _endSessionDrainBudget - deadline.elapsed;
+        if (remaining <= Duration.zero) break;
+        final batch = _inFlightActions.toList();
+        var timedOut = false;
         try {
-          await action;
+          await Future.wait<void>(
+            batch.map<Future<void>>((action) async {
+              try {
+                await action;
+              } catch (_) {
+                // Action errors are returned to their caller; shutdown still drains.
+              }
+            }),
+          ).timeout(
+            remaining,
+            onTimeout: () {
+              timedOut = true;
+              return const <void>[];
+            },
+          );
         } catch (_) {
           // Action errors are returned to their caller; shutdown still drains.
+        }
+        if (timedOut) break;
+      }
+    } else {
+      while (_inFlightActions.isNotEmpty) {
+        for (final action in _inFlightActions.toList()) {
+          try {
+            await action;
+          } catch (_) {
+            // Action errors are returned to their caller; shutdown still drains.
+          }
         }
       }
     }

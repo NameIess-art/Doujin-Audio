@@ -361,13 +361,48 @@ void main() {
       final result = await exporter.export(dialogTitle: 'Export diagnostics');
 
       expect(result, 'content://downloads/DoujinAudio-diagnostic.zip');
-      expect(exportedFileName, 'DoujinAudio-diagnostic.zip');
+      expect(
+        exportedFileName,
+        matches(r'^DoujinAudio-diagnostic-\d{8}-\d{6}\.zip$'),
+      );
       expect(exportedMimeType, 'application/zip');
       expect(exportedBytes, _TestDiagnosticReportService.contents);
       expect(
-        File(
-          path.join(temporaryDirectory.path, 'DoujinAudio-diagnostic.zip'),
-        ).existsSync(),
+        Directory(path.join(temporaryDirectory.path, 'exports')).existsSync(),
+        isFalse,
+      );
+    },
+  );
+
+  test(
+    'stageBackupFile enforces maximumArchiveBytes while streaming and cleans up',
+    () async {
+      var inspectCalls = 0;
+      final service = DataSupportFileService(
+        backupService: _TestBackupService(
+          maximumArchiveBytes: 8,
+          inspect: (inputPath) async {
+            inspectCalls++;
+            throw StateError('should not inspect oversized stream');
+          },
+        ),
+      );
+      final selected = PlatformFile(
+        name: 'oversized.dabackup',
+        size: 0, // Unknown/under-reported picker size.
+        readStream: Stream<List<int>>.fromIterable(<List<int>>[
+          <int>[1, 2, 3, 4, 5],
+          <int>[6, 7, 8, 9, 10],
+        ]),
+      );
+
+      await expectLater(
+        service.stageBackupFile(selected),
+        throwsFormatException,
+      );
+      expect(inspectCalls, 0);
+      expect(
+        Directory(path.join(temporaryDirectory.path, 'exports')).existsSync(),
         isFalse,
       );
     },
@@ -406,7 +441,11 @@ final class _TestDiagnosticReportService extends DiagnosticReportService {
 }
 
 final class _TestBackupService extends DataBackupService {
-  _TestBackupService({this.generate, this.inspect});
+  _TestBackupService({
+    this.generate,
+    this.inspect,
+    super.maximumArchiveBytes,
+  });
   final Future<File> Function(String)? generate;
   final Future<BackupValidationResult> Function(String)? inspect;
 

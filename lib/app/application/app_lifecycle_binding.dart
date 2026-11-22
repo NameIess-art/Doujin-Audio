@@ -36,6 +36,8 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
     AsmrDownloadManager? asmrDownloads,
     required List<RuntimeBinding> bindings,
     Future<void> Function()? disposeWorkTexts,
+    void Function()? disposeLibraryScans,
+    Future<void> Function()? closeDatabase,
     ListeningActivityService? listeningActivity,
     Future<void> Function()? initializeSecondaryData,
     Future<void> Function()? initializeListeningHistory,
@@ -51,6 +53,8 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
        _playbackCommands = playbackCommands,
        _asmrDownloads = asmrDownloads,
        _disposeWorkTexts = disposeWorkTexts,
+       _disposeLibraryScans = disposeLibraryScans,
+       _closeDatabase = closeDatabase,
        _listeningActivity = listeningActivity,
        _initializeSecondaryData = initializeSecondaryData,
        _initializeListeningHistory = initializeListeningHistory,
@@ -87,6 +91,8 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
     AsmrDownloadManager? asmrDownloads,
     required List<RuntimeBinding> bindings,
     Future<void> Function()? disposeWorkTexts,
+    void Function()? disposeLibraryScans,
+    Future<void> Function()? closeDatabase,
     ListeningActivityService? listeningActivity,
     Future<void> Function()? initializeSecondaryData,
     Future<void> Function()? initializeListeningHistory,
@@ -105,6 +111,8 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
       asmrDownloads: asmrDownloads,
       bindings: bindings,
       disposeWorkTexts: disposeWorkTexts,
+      disposeLibraryScans: disposeLibraryScans,
+      closeDatabase: closeDatabase,
       listeningActivity: listeningActivity,
       initializeSecondaryData: initializeSecondaryData,
       initializeListeningHistory: initializeListeningHistory,
@@ -136,6 +144,8 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
   bool _bindingsDisposed = false;
   Future<void>? _disposeFuture;
   final Future<void> Function()? _disposeWorkTexts;
+  final void Function()? _disposeLibraryScans;
+  final Future<void> Function()? _closeDatabase;
 
   @override
   Future<void> start() => _closing
@@ -310,13 +320,16 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
     }
     await attempt(() => _asmrDownloads?.shutdown());
     if (_disposeSecondaryData != null) await attempt(_disposeSecondaryData);
+    if (_disposeLibraryScans != null) await attempt(_disposeLibraryScans);
     await attempt(_library.dispose);
+    // Abort any proxy-backed remote requests before releasing libmpv players.
+    await attempt(AppNetwork.instance.close);
     await attempt(_playback.dispose);
     await attempt(_playbackCommands.dispose);
     await attempt(_timer.dispose);
     await attempt(_notifications.dispose);
     await attempt(_settings.dispose);
-    await attempt(AppNetwork.instance.close);
+    if (_closeDatabase != null) await attempt(_closeDatabase);
     if (firstError != null) {
       Error.throwWithStackTrace(firstError!, firstStackTrace!);
     }

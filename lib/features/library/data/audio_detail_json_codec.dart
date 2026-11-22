@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/path_matcher.dart';
-import '../../player/domain/time_segment_label.dart';
+import '../../../core/media/time_segment_label.dart';
 
 final class AudioDetailJsonDocument {
   const AudioDetailJsonDocument({

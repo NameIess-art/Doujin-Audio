@@ -37,6 +37,12 @@ internal class UpdateMethodHandler(
                 error.message ?: "Invalid arguments.",
                 mapOf("method" to call.method)
             )
+        } catch (error: Exception) {
+            envelope.error(
+                ChannelErrorCodes.PLATFORM_ERROR,
+                error.message ?: "Update operation failed.",
+                mapOf("method" to call.method)
+            )
         }
     }
 
@@ -68,8 +74,16 @@ internal class UpdateMethodHandler(
         if (!canInstallUnknownApps()) {
             return installResult(false, true, "Install permission is required.")
         }
-        val apkFile = File(apkPath)
-        if (!apkFile.exists() || apkFile.length() <= 0) {
+        val updatesDir = File(activity.cacheDir, "updates").canonicalFile
+        val apkFile = File(apkPath).canonicalFile
+        val updatesPrefix = updatesDir.path.trimEnd(File.separatorChar) + File.separatorChar
+        require(
+            apkFile.path.startsWith(updatesPrefix) &&
+                apkFile.name.endsWith(".apk", ignoreCase = true)
+        ) {
+            "APK path must be an .apk file inside the updates cache directory."
+        }
+        if (!apkFile.isFile || apkFile.length() <= 0) {
             return installResult(false, false, "APK file does not exist.")
         }
 

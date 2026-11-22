@@ -77,6 +77,8 @@ Widget createAudioPlayerApp({
         settings: runtimeGraph.settings,
         browsePageStates: runtimeGraph.browsePageStates,
         workTexts: runtimeGraph.workTexts,
+        audioPaths: runtimeGraph.audioPaths,
+        libraryScans: runtimeGraph.libraryScans,
       ),
       themeProviderInstanceProvider.overrideWith((ref) => themeProvider),
       appLanguageProviderInstanceProvider.overrideWithValue(

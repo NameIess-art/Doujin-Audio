@@ -57,7 +57,12 @@ class PlatformChannelsTest {
     @Test
     fun `critical method names remain protocol compatible`() {
         assertEquals("prepareSession", NativePlaybackMethods.PREPARE_SESSION)
+        assertEquals("readUsage", NativePlaybackMethods.READ_USAGE)
+        assertEquals("acknowledgeUsage", NativePlaybackMethods.ACKNOWLEDGE_USAGE)
+        assertEquals("resetUsage", NativePlaybackMethods.RESET_USAGE)
         assertEquals("snapshot", NativePlaybackMethods.SNAPSHOT)
+        assertEquals("resolveSystemProxy", NetworkMethods.RESOLVE_SYSTEM_PROXY)
+        assertEquals("applyNetworkRoute", NetworkMethods.APPLY_NETWORK_ROUTE)
         assertEquals("startFolderScan", FileCacheMethods.START_FOLDER_SCAN)
         assertEquals("cancelFolderScan", FileCacheMethods.CANCEL_FOLDER_SCAN)
         assertEquals("acknowledgeFolderScanChunk", FileCacheMethods.ACKNOWLEDGE_FOLDER_SCAN_CHUNK)

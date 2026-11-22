@@ -85,7 +85,9 @@ internal class NativePlaybackUsageLedger(
     }
     @Volatile
     private var loaded = false
+    private val loadLock = Any()
     private val preloadSubmitted = AtomicBoolean(false)
+    private var pendingPersistBeforeLoad = false
     private var epoch = "android:${UUID.randomUUID()}"
     private var sequence = 0L
     private fun newBatchId() = "$epoch:${++sequence}"
@@ -107,58 +109,72 @@ internal class NativePlaybackUsageLedger(
     fun preloadAsync() {
         if (loaded || !preloadSubmitted.compareAndSet(false, true)) return
         writer.execute {
-            synchronized(this) {
-                ensureLoaded()
-            }
+            loadFromDiskIfNeeded()
         }
     }
 
-    private fun ensureLoaded() {
-        if (loaded) return
-        loaded = true
-        preferences.getString("ledger", null)?.let { encoded ->
-            try {
-                val state = JSONObject(encoded)
-                val restoredEpoch = state.getString("epoch")
-                val restoredSequence = state.getLong("sequence")
-                val stored = state.getJSONArray("batches")
-                val restoredBatches = buildList {
-                    for (index in 0 until stored.length()) {
-                        val batch = stored.getJSONObject(index)
-                        val storedDays = batch.getJSONArray("days")
-                        add(
-                            UsageBatch(
-                                batch.getString("id"),
-                                List(storedDays.length()) { jsonMap(storedDays.getJSONObject(it)) }
-                            )
+    private fun readPersistedState(): RestoredLedgerState? {
+        val encoded = preferences.getString("ledger", null) ?: return null
+        return try {
+            val state = JSONObject(encoded)
+            val restoredEpoch = state.getString("epoch")
+            val restoredSequence = state.getLong("sequence")
+            val stored = state.getJSONArray("batches")
+            val restoredBatches = buildList {
+                for (index in 0 until stored.length()) {
+                    val batch = stored.getJSONObject(index)
+                    val storedDays = batch.getJSONArray("days")
+                    add(
+                        UsageBatch(
+                            batch.getString("id"),
+                            List(storedDays.length()) { jsonMap(storedDays.getJSONObject(it)) }
                         )
-                    }
+                    )
                 }
-                epoch = restoredEpoch
-                sequence = restoredSequence
-                pending += restoredBatches
-                currentId = newBatchId()
-            } catch (error: Exception) {
-                Log.w("NativePlaybackUsage", "Could not restore playback usage ledger; starting empty", error)
-                pending.clear()
+            }
+            RestoredLedgerState(restoredEpoch, restoredSequence, restoredBatches)
+        } catch (error: Exception) {
+            Log.w("NativePlaybackUsage", "Could not restore playback usage ledger; starting empty", error)
+            null
+        }
+    }
+
+    private fun loadFromDiskIfNeeded() {
+        if (loaded) return
+        val restored = synchronized(loadLock) {
+            if (loaded) return
+            readPersistedState()
+        }
+        synchronized(this) {
+            if (loaded) return
+            if (restored != null) {
+                if (pending.isEmpty() && days.isEmpty()) {
+                    epoch = restored.epoch
+                    sequence = restored.sequence
+                    currentId = newBatchId()
+                }
+                pending.addAll(0, restored.batches)
+            }
+            loaded = true
+            if (pendingPersistBeforeLoad) {
+                pendingPersistBeforeLoad = false
+                persist()
             }
         }
     }
 
     @Synchronized
     fun update(items: List<Map<String, Any?>>) {
-        ensureLoaded()
         if (items == activeItems) return
         val changed = settle()
         activeItems = items
         active = items.associateBy(::workKey)
-        if (changed) persist()
+        if (changed) persistOrDefer()
     }
 
     @Synchronized
     fun checkpoint() {
-        ensureLoaded()
-        if (settle()) persist() else scheduleWrite()
+        if (settle()) persistOrDefer() else scheduleWrite()
     }
 
     private fun settle(): Boolean {
@@ -210,28 +226,31 @@ internal class NativePlaybackUsageLedger(
         return true
     }
 
-    @Synchronized
     fun read(): List<Map<String, Any?>> {
-        ensureLoaded()
-        settle()
-        if (days.isNotEmpty()) {
-            pending += currentBatch()
-            days.clear()
-            currentId = newBatchId()
-            persist()
+        loadFromDiskIfNeeded()
+        return synchronized(this) {
+            settle()
+            if (days.isNotEmpty()) {
+                pending += currentBatch()
+                days.clear()
+                currentId = newBatchId()
+                persist()
+            }
+            pending.map(UsageBatch::toMap)
         }
-        return pending.map(UsageBatch::toMap)
     }
 
-    @Synchronized
     fun acknowledge(ids: Set<String>) {
-        ensureLoaded()
-        if (pending.removeAll { it.id in ids }) persist()
+        loadFromDiskIfNeeded()
+        synchronized(this) {
+            if (pending.removeAll { it.id in ids }) persist()
+        }
     }
 
     @Synchronized
     fun reset() {
         loaded = true
+        pendingPersistBeforeLoad = false
         pending.clear()
         days.clear()
         currentId = newBatchId()
@@ -251,6 +270,15 @@ internal class NativePlaybackUsageLedger(
         }
     )
 
+    private fun persistOrDefer() {
+        if (loaded) {
+            persist()
+        } else {
+            pendingPersistBeforeLoad = true
+            scheduleWrite()
+        }
+    }
+
     private fun persist() {
         val batches = pending.toMutableList()
         if (days.isNotEmpty()) batches += currentBatch()
@@ -259,12 +287,21 @@ internal class NativePlaybackUsageLedger(
     }
 
     private fun scheduleWrite() {
-        if (writing || queuedCheckpoint == null) return
+        if (writing || (queuedCheckpoint == null && !pendingPersistBeforeLoad)) return
         writing = true
         writer.execute(::writeCheckpoints)
     }
 
     private fun writeCheckpoints() {
+        try {
+            loadFromDiskIfNeeded()
+        } catch (error: Exception) {
+            Log.e("NativePlaybackUsage", "Could not load playback usage before write", error)
+            synchronized(this) {
+                writing = false
+            }
+            return
+        }
         // One writer drains the latest immutable snapshot. A slow write can
         // never land after a newer acknowledgement or reset.
         while (true) {
@@ -296,6 +333,12 @@ internal class NativePlaybackUsageLedger(
             }
         }
     }
+
+    private data class RestoredLedgerState(
+        val epoch: String,
+        val sequence: Long,
+        val batches: List<UsageBatch>
+    )
 
     private data class UsageBatch(val id: String, val days: List<Map<String, Any?>>) {
         fun toMap(): Map<String, Any?> = mapOf("id" to id, "days" to days)

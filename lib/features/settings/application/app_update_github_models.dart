@@ -120,13 +120,23 @@ class _GitHubAsset {
   };
 }
 
+const Set<String> _trustedGitHubHosts = <String>{
+  'github.com',
+  'www.github.com',
+  'api.github.com',
+  'objects.githubusercontent.com',
+  'release-assets.githubusercontent.com',
+  'github-releases.githubusercontent.com',
+};
+
 Uri? _parseGitHubWebUri(Object? value) {
   if (value is! String || value.isEmpty || value.trim() != value) return null;
   final uri = Uri.tryParse(value);
   if (uri == null ||
-      !uri.hasScheme ||
+      uri.scheme != 'https' ||
       uri.host.isEmpty ||
-      (uri.scheme != 'https' && uri.scheme != 'http')) {
+      uri.userInfo.isNotEmpty ||
+      !_trustedGitHubHosts.contains(uri.host.toLowerCase())) {
     return null;
   }
   return uri;

@@ -130,4 +130,25 @@ class SubtitleOverlayServiceTest {
             ShadowSettings.setCanDrawOverlays(false)
         }
     }
+
+    @Test
+    fun `updateSubtitle ignores IllegalArgumentException when overlay view is already detached`() {
+        ShadowSettings.setCanDrawOverlays(true)
+        val controller = Robolectric.buildService(SubtitleOverlayService::class.java).create()
+        try {
+            val service = controller.get()
+            val manager = service.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            val window = Shadow.extract<ShadowWindowManagerImpl>(manager).views.single() as TextView
+            val looper = shadowOf(Looper.getMainLooper())
+
+            // Detach the view behind the service's back so updateViewLayout throws IllegalArgumentException.
+            manager.removeView(window)
+            service.updateSubtitle("Detached update")
+            looper.idle()
+            assertEquals("Detached update", window.text.toString())
+        } finally {
+            controller.destroy()
+            ShadowSettings.setCanDrawOverlays(false)
+        }
+    }
 }

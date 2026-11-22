@@ -10,6 +10,8 @@ import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
+import 'package:doujin_audio/features/player/application/subtitle_ai_engine.dart';
+import 'package:doujin_audio/features/player/application/subtitle_generation.dart';
 import 'package:doujin_audio/features/player/presentation/playback_position_ui_gate.dart';
 
 void main() {
@@ -868,6 +870,116 @@ void main() {
       '$audioPath|300',
     ]);
   });
+
+  test(
+    'PlaybackSubtitleService normalizes Windows path case and separators for offsets and cache',
+    () async {
+      const canonical = r'C:\Media\WorkA\Track01.mp3';
+      const lowerSlash = 'c:/media/worka/track01.mp3';
+      const upperBackslash = r'C:\MEDIA\WORKA\TRACK01.MP3';
+      var loads = 0;
+      final service = PlaybackSubtitleService(
+        trackResolver: (_) => null,
+        subtitleLoader: (trackPath, _) async {
+          loads++;
+          return SubtitleTrack(
+            sourcePath: r'C:\Media\WorkA\Track01.lrc',
+            cues: const <SubtitleCue>[
+              SubtitleCue(
+                start: Duration(seconds: 1),
+                end: Duration(seconds: 3),
+                text: 'hello',
+              ),
+            ],
+          );
+        },
+      );
+      addTearDown(service.dispose);
+
+      await service.setTrackOffset(
+        canonical,
+        const Duration(milliseconds: 250),
+      );
+      expect(service.getOffset(lowerSlash), const Duration(milliseconds: 250));
+      expect(
+        service.getOffset(upperBackslash),
+        const Duration(milliseconds: 250),
+      );
+
+      final loaded = await service.load(canonical);
+      expect(loaded, isNotNull);
+      expect(loads, 1);
+      expect(service.hasResult(lowerSlash), isTrue);
+      expect(service.trackSync(upperBackslash), same(loaded));
+      expect(await service.load(lowerSlash), same(loaded));
+      expect(loads, 1);
+    },
+  );
+
+  test(
+    'PlaybackSubtitleService.dispose cancels running generation job without throwing after dispose',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('sub_dispose_gen_');
+      addTearDown(() async {
+        if (await dir.exists()) await dir.delete(recursive: true);
+      });
+      final audioFile = File('${dir.path}/track.mp3');
+      await audioFile.writeAsBytes(const <int>[0]);
+      final scriptFile = File('${dir.path}/script.txt');
+      await scriptFile.writeAsString('line one\nline two');
+
+      final started = Completer<void>();
+      final release = Completer<void>();
+      void Function(SubtitleTaskProgress)? capturedProgress;
+      Future<void>? capturedCancellation;
+      final aiEngine = _BlockingSubtitleAiEngine(
+        onGenerate: (onProgress, cancellation) async {
+          capturedProgress = onProgress;
+          capturedCancellation = cancellation;
+          if (!started.isCompleted) started.complete();
+          await release.future;
+          return const SubtitleDraft(
+            kind: SubtitleDraftKind.script,
+            sourceLanguage: 'ja',
+            cues: <SubtitleCue>[
+              SubtitleCue(
+                start: Duration(seconds: 1),
+                end: Duration(seconds: 2),
+                text: 'line one',
+              ),
+            ],
+          );
+        },
+      );
+      final service = PlaybackSubtitleService(
+        trackResolver: (_) => null,
+        aiEngine: aiEngine,
+      );
+      final startedOk = service.startScriptGeneration(
+        audioFile.path,
+        scriptFile.path,
+      );
+      expect(startedOk, isTrue);
+      await started.future;
+      expect(service.generationJob?.status, SubtitleGenerationStatus.running);
+
+      service.dispose();
+
+      // Cancellation signal should fire immediately on dispose.
+      await capturedCancellation!.timeout(const Duration(seconds: 1));
+      expect(service.generationJob?.cancellationRequested, isTrue);
+      // Late progress & completion callbacks must not throw FlutterError.
+      expect(
+        () => capturedProgress?.call(
+          const SubtitleTaskProgress('aligning', 0.5, ''),
+        ),
+        returnsNormally,
+      );
+      release.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(service.generationJob?.status, SubtitleGenerationStatus.cancelled);
+    },
+  );
 }
 
 MusicTrack _remoteTrack(String path) => MusicTrack(
@@ -919,4 +1031,23 @@ class _ContentSubtitleGateway extends FileCachePlatformGateway {
     text = utf8.decode(bytes);
     return true;
   }
+}
+
+final class _BlockingSubtitleAiEngine extends SubtitleAiEngine {
+  _BlockingSubtitleAiEngine({required this.onGenerate});
+
+  final Future<SubtitleDraft?> Function(
+    void Function(SubtitleTaskProgress)? onProgress,
+    Future<void>? cancellation,
+  )
+  onGenerate;
+
+  @override
+  Future<SubtitleDraft?> prepareScript(
+    String trackPath,
+    String scriptPath, {
+    SubtitleProgressCallback? onProgress,
+    bool Function()? isCancelled,
+    Future<void>? cancellation,
+  }) => onGenerate(onProgress, cancellation);
 }

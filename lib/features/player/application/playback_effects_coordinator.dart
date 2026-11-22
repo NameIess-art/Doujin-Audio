@@ -11,36 +11,23 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
     if (session == null || !isRegisteredSession(session)) return false;
     final nextVolume = volume.clamp(0.0, PlaybackFacade.maxSessionVolume);
     final changed = (session.volume - nextVolume).abs() >= 0.001;
-    final hasDeferredReload = _deferredVolumeReloadSessionIds.contains(
-      session.id,
-    );
     if (!changed &&
         session.pendingVolume == null &&
-        session.volumeCommandCompletion == null &&
-        !(persist && hasDeferredReload)) {
+        session.volumeCommandCompletion == null) {
       if (persist) await flushSessionStatePersistence(sessionId: session.id);
       return true;
     }
-    if (session.confirmedVolume == null) {
-      session.confirmedVolume = session.volume;
-      session.confirmedVolumeNeedsReload = hasDeferredReload;
-    }
+    session.confirmedVolume ??= session.volume;
     final generation = ++session.volumeCommandGeneration;
     final previousCommand = session.volumeCommandCompletion;
     session.volume = nextVolume;
     session.pendingVolume = nextVolume;
-    if (persist) {
-      _deferredVolumeReloadSessionIds.remove(session.id);
-    } else {
-      _deferredVolumeReloadSessionIds.add(session.id);
-    }
     if (changed && notify) _notifySessionStateChanged(session);
     if (previousCommand == null &&
         session.loadedPath == null &&
         !session.effectivePlaying) {
       session.pendingVolume = null;
       session.confirmedVolume = nextVolume;
-      session.confirmedVolumeNeedsReload = !persist;
       if (persist) await flushSessionStatePersistence(sessionId: session.id);
       return true;
     }
@@ -51,14 +38,9 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
       if (!isRegisteredSession(session)) {
         return const NativeFailure('Session removed');
       }
-      final response = await nativeRepository.setVolume(
-        session.id,
-        nextVolume,
-        reloadSource: persist,
-      );
+      final response = await nativeRepository.setVolume(session.id, nextVolume);
       if (isRegisteredSession(session) && response.isOk) {
         session.confirmedVolume = response.valueOrNull?.volume ?? nextVolume;
-        session.confirmedVolumeNeedsReload = !persist;
       }
       return response;
     }
@@ -77,11 +59,6 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
     if (response.isFailure) {
       session.volume = session.confirmedVolume!;
       session.pendingVolume = null;
-      if (session.confirmedVolumeNeedsReload) {
-        _deferredVolumeReloadSessionIds.add(session.id);
-      } else {
-        _deferredVolumeReloadSessionIds.remove(session.id);
-      }
       if (notify) _notifySessionStateChanged(session);
       _logNativeCommandFailure(
         'setSessionVolume',
@@ -196,10 +173,6 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
       final candidateDistance = (candidate - speed).abs();
       return candidateDistance < bestDistance ? candidate : best;
     });
-  }
-
-  void clearDeferredVolumeReloads() {
-    _deferredVolumeReloadSessionIds.clear();
   }
 
   Future<void> setSessionChannelSwap(String sessionId, bool enabled) {

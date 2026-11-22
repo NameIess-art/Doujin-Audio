@@ -127,4 +127,32 @@ class NativePlaybackUsageLedgerTest {
         assertEquals(expectedId, restored["id"])
         assertTrue(tasks.isEmpty())
     }
+
+    @Test fun `update before preload finishes stays pure in-memory and merges with persisted batches`() {
+        val seed = ledger()
+        seed.update(listOf(work))
+        advance(1_000)
+        seed.update(emptyList())
+        val persistedId = seed.read().single()["id"]
+
+        val tasks = ArrayDeque<Runnable>()
+        val fresh = ledger(Executor { tasks.addLast(it) })
+        fresh.preloadAsync()
+        assertEquals(1, tasks.size)
+
+        // Caller thread updates before background preload runs; must not load synchronously or lose time.
+        val otherWork = mapOf<String, Any?>("uri" to "file:///RJ654321/b.mp3", "title" to "RJ654321")
+        fresh.update(listOf(otherWork))
+        advance(750)
+        fresh.update(emptyList())
+
+        // Drain queued preload + deferred write tasks.
+        while (tasks.isNotEmpty()) tasks.removeFirst().run()
+
+        val batches = fresh.read()
+        assertEquals(2, batches.size)
+        assertEquals(persistedId, batches[0]["id"])
+        val secondDays = batches[1]["days"] as List<*>
+        assertEquals(750L, ((secondDays.single() as Map<*, *>)["totalMs"] as Number).toLong())
+    }
 }

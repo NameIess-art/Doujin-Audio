@@ -10,6 +10,7 @@ import 'package:doujin_audio/core/media/playback_media_reference.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_media_transfer.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_internal_models.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_playback_cache_service.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_request_cancellation.dart';
 
 void main() {
   test(
@@ -841,7 +842,8 @@ class _HlsCacheTransfer extends AsmrHlsAudioTransfer {
   Future<void> save({
     required PlaybackMediaReference reference,
     required File output,
-    required bool Function() isCancelled,
+    AsmrRequestCancellationToken? cancellationToken,
+    bool Function()? isCancelled,
     void Function(double fraction)? onProgress,
     void Function(int bytes)? onBytes,
   }) async {
@@ -849,8 +851,20 @@ class _HlsCacheTransfer extends AsmrHlsAudioTransfer {
     await output.writeAsBytes(_hlsAudio);
     if (started != null) {
       started!.complete();
-      while (!isCancelled()) {
-        await Future<void>.delayed(const Duration(milliseconds: 5));
+      final wait = Completer<void>();
+      final remove = cancellationToken?.addListener(() {
+        if (!wait.isCompleted) wait.complete();
+      });
+      try {
+        if (cancellationToken != null) {
+          await wait.future;
+        } else {
+          while (!(isCancelled?.call() ?? false)) {
+            await Future<void>.delayed(const Duration(milliseconds: 5));
+          }
+        }
+      } finally {
+        remove?.call();
       }
       cancelled = true;
       throw const DownloadCancelled();

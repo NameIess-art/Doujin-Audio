@@ -4,15 +4,20 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/application/app_runtime_graph.dart';
+import 'package:doujin_audio/app/application/windows_runtime_binding.dart';
+import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
+import 'package:doujin_audio/core/platform/windows_desktop_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_playback_cache_service.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/application/library_scan_models.dart';
+import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:doujin_audio/features/player/application/notification_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_facade.dart';
 import 'package:doujin_audio/features/player/domain/playback_persistence_repository.dart';
@@ -610,6 +615,128 @@ void main() {
       );
     },
   );
+
+  test(
+    'runtime graph exposes single shared LibraryScanCoordinator & AudioPathCoordinator and closes database on dispose',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final library = _createLibraryFacade();
+      final playback = PlaybackFacade.create(
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
+      );
+      final timer = TimerFacade.create();
+      final notifications = NotificationFacade.create(
+        service: PlaybackNotificationService(),
+      );
+      final settings = SettingsRepository();
+      final downloads = AsmrDownloadManager(persistTasks: false);
+      var closeDatabaseCalls = 0;
+
+      final graph = createAppRuntimeGraph(
+        library: library,
+        playback: playback,
+        timer: timer,
+        notifications: notifications,
+        settings: settings,
+        asmrDownloads: downloads,
+        libraryScanLabels: () => const LibraryScanLabels(
+          chooseMusicFolder: 'Choose music folder',
+          chooseLibraryFolder: 'Choose library folder',
+          chooseAudioFiles: 'Choose audio files',
+          importedFiles: 'Imported files',
+          manuallySelectedFiles: 'Selected files',
+        ),
+        closeDatabase: () async => closeDatabaseCalls++,
+        persistenceEnabled: false,
+      );
+
+      final container = ProviderContainer(
+        overrides: createAppRuntimeOverrides(
+          persistence: graph.persistence,
+          runtime: graph.runtime,
+          warmup: graph.warmup,
+          playbackCommands: graph.playbackCommands,
+          keepAlive: graph.keepAlive,
+          library: graph.library,
+          playback: graph.playback,
+          subtitles: graph.subtitles,
+          timer: graph.timer,
+          notifications: graph.notifications,
+          settings: graph.settings,
+          audioPaths: graph.audioPaths,
+          libraryScans: graph.libraryScans,
+        ),
+      );
+      addTearDown(container.dispose);
+
+      expect(container.read(audioPathCoordinatorProvider), same(graph.audioPaths));
+      expect(
+        container.read(libraryScanCoordinatorProvider),
+        same(graph.libraryScans),
+      );
+
+      await graph.runtime.dispose();
+
+      expect(closeDatabaseCalls, 1);
+      expect(
+        () => graph.libraryScans.addListener(() {}),
+        throwsFlutterError,
+      );
+    },
+  );
+
+  test(
+    'WindowsRuntimeBinding enforces endSession drain budget when initialization is blocked',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final desktop = _ManualWindowsDesktopService();
+      final binding = WindowsRuntimeBinding(
+        desktop: desktop,
+        endSessionDrainBudget: const Duration(milliseconds: 40),
+      );
+      await binding.attach();
+
+      final library = _createLibraryFacade();
+      final playback = PlaybackFacade.create(
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
+      );
+      final timer = TimerFacade.create();
+      final notifications = NotificationFacade.create(
+        service: PlaybackNotificationService(),
+      );
+      final settings = SettingsRepository();
+      final graph = createAppRuntimeGraph(
+        library: library,
+        playback: playback,
+        timer: timer,
+        notifications: notifications,
+        settings: settings,
+        persistenceEnabled: false,
+      );
+      binding.bindRuntime(
+        runtime: graph.runtime,
+        playback: playback,
+        notifications: notifications,
+        timer: timer,
+      );
+
+      // Start an initialization that never completes.
+      final neverCompletes = Completer<void>();
+      unawaited(
+        binding.initializeRuntime(() => neverCompletes.future).catchError((_) {}),
+      );
+
+      final watch = Stopwatch()..start();
+      await desktop.dispatch('endSession');
+      watch.stop();
+
+      // Must finish promptly after the 40ms drain budget rather than hanging forever.
+      expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
+      expect(desktop.exitCalls, 0);
+    },
+  );
 }
 
 LibraryFacade _createLibraryFacade({LibraryService? service}) {
@@ -706,4 +833,21 @@ final class _RecordingFileCachePlatformGateway
   }
 
   Future<void> dispose() => _calls.close();
+}
+
+final class _ManualWindowsDesktopService extends WindowsDesktopService {
+  Future<void> Function(String action)? _onAction;
+  int exitCalls = 0;
+
+  @override
+  Future<void> attach(Future<void> Function(String action) onAction) async {
+    _onAction = onAction;
+  }
+
+  Future<void> dispatch(String action) => _onAction!(action);
+
+  @override
+  Future<void> exit() async {
+    exitCalls++;
+  }
 }

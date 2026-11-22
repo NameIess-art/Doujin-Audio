@@ -9,6 +9,9 @@ class _WindowsPlaybackSession {
   final subscriptions = <StreamSubscription<dynamic>>[];
   Future<void> serial = Future.value();
   bool retired = false, eventPending = false;
+  bool isTemporary = false;
+  int mountedVideoSurfaces = 0;
+  bool hadVideoSurfaceAttached = false;
   bool stopAfterCurrentTrack = false,
       nativeQueueLimited = false,
       nativeOrderMatchesLogical = false;
@@ -172,8 +175,13 @@ class _WindowsPlaybackSession {
   }
 
   NativePlaybackSnapshot snapshot({bool includeRetainedUris = true}) {
-    final item = queue[index];
+    final currentQueue = queue;
+    final currentIndex = index.clamp(0, currentQueue.length - 1);
+    final item = currentQueue[currentIndex];
     final state = player?.state;
+    final itemReference = currentIndex == index
+        ? reference
+        : referenceFor(item);
     return NativePlaybackSnapshot(
       sessionId: id,
       uri: item['uri'] as String?,
@@ -189,7 +197,7 @@ class _WindowsPlaybackSession {
           ? completed
                 ? 'completed'
                 : 'idle'
-          : completed || (!reference.isChapter && state.completed)
+          : completed || (!itemReference.isChapter && state.completed)
           ? 'completed'
           : state.buffering
           ? 'buffering'
@@ -204,10 +212,10 @@ class _WindowsPlaybackSession {
       audioEffects: effects.state,
       eqCapabilities: windowsEqCapabilities,
       error: error,
-      queueIndex: index,
+      queueIndex: currentIndex,
       retainedUris: includeRetainedUris
           ? (_cachedRetainedUris ??= immutableList(
-              queue.map((i) => i['uri'] as String),
+              currentQueue.map((i) => i['uri'] as String),
             ))
           : const [],
       hasRetainedUrisPayload: includeRetainedUris,
@@ -618,11 +626,13 @@ class _WindowsPlaybackSession {
     if (current.state.duration > Duration.zero) {
       duration = relativeDuration(current.state.duration);
     }
+    final hadVideoController = videoController != null;
     player = null;
     nativeQueueIndices.clear();
     nativeQueueLimited = false;
     nativeOrderMatchesLogical = false;
     videoController = null;
+    hadVideoSurfaceAttached = mountedVideoSurfaces > 0;
     pendingStart = null;
     lastProgressPosition = null;
     lastProgressElapsed = null;
@@ -630,6 +640,19 @@ class _WindowsPlaybackSession {
       await subscription.cancel();
     }
     subscriptions.clear();
+    if (hadVideoController) {
+      final platform = current.platform;
+      if (platform != null) {
+        try {
+          await platform.waitForVideoControllerInitializationIfAttached.timeout(
+            const Duration(seconds: 2),
+            onTimeout: () {},
+          );
+        } catch (_) {
+          // Ignore video controller init failures while tearing down the player.
+        }
+      }
+    }
     await current.dispose();
   }
 }

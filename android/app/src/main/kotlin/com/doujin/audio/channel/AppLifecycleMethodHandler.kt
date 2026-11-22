@@ -5,30 +5,22 @@ import io.flutter.plugin.common.MethodChannel
 
 internal class AppLifecycleMethodHandler(
     private val terminateForPendingRestore: () -> Unit,
-    private val syncAppTheme: (String, String, Boolean) -> Unit,
+    private val syncAppTheme: (String, String, Boolean) -> Unit = { _, _, _ -> },
     private val getSystemAccentColor: () -> Int? = { null },
 ) : MethodChannel.MethodCallHandler {
-    constructor(terminateForPendingRestore: () -> Unit) : this(
-        terminateForPendingRestore,
-        { _, _, _ -> },
-    )
-
-    constructor(
-        terminateForPendingRestore: () -> Unit,
-        syncAppTheme: (String, String) -> Unit,
-    ) : this(
-        terminateForPendingRestore,
-        { preset, themeMode, _ -> syncAppTheme(preset, themeMode) },
-    )
-
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
-        when (call.method) {
-            AppLifecycleMethods.TERMINATE_FOR_PENDING_RESTORE -> {
-                result.success(channelSuccess(null))
-                terminateForPendingRestore()
-            }
-            AppLifecycleMethods.SYNC_APP_THEME -> {
-                try {
+        val envelope = ChannelEnvelopeResult(result)
+        try {
+            when (call.method) {
+                AppLifecycleMethods.TERMINATE_FOR_PENDING_RESTORE -> {
+                    envelope.success(null)
+                    try {
+                        terminateForPendingRestore()
+                    } catch (_: Exception) {
+                        // Response already sent; termination is best-effort.
+                    }
+                }
+                AppLifecycleMethods.SYNC_APP_THEME -> {
                     val preset = call.requiredString("preset")
                     val themeMode = call.requiredString("themeMode")
                     val pureBlackRaw = call.argument<Any?>("pureBlack")
@@ -38,20 +30,25 @@ internal class AppLifecycleMethodHandler(
                         else -> throw IllegalArgumentException("pureBlack must be a boolean")
                     }
                     syncAppTheme(preset, themeMode, pureBlack)
-                    result.success(channelSuccess(null))
-                } catch (error: IllegalArgumentException) {
-                    result.success(
-                        channelFailure(
-                            ChannelErrorCodes.INVALID_ARGUMENT,
-                            error.message ?: "Invalid app theme payload",
-                        )
-                    )
+                    envelope.success(null)
                 }
+                AppLifecycleMethods.GET_SYSTEM_ACCENT_COLOR -> {
+                    envelope.success(getSystemAccentColor())
+                }
+                else -> result.notImplemented()
             }
-            AppLifecycleMethods.GET_SYSTEM_ACCENT_COLOR -> {
-                result.success(channelSuccess(getSystemAccentColor()))
-            }
-            else -> result.notImplemented()
+        } catch (error: IllegalArgumentException) {
+            envelope.error(
+                ChannelErrorCodes.INVALID_ARGUMENT,
+                error.message ?: "Invalid app theme payload",
+                mapOf("method" to call.method)
+            )
+        } catch (error: Exception) {
+            envelope.error(
+                ChannelErrorCodes.PLATFORM_ERROR,
+                error.message ?: "App lifecycle operation failed.",
+                mapOf("method" to call.method)
+            )
         }
     }
 }

@@ -481,10 +481,7 @@ void main() {
                 itemBuilder: (_, index) => Consumer(
                   builder: (context, ref, _) {
                     final cover = ref.watch(
-                      libraryCoverForTrackProvider((
-                        trackPath: _track(index).path,
-                        context: context,
-                      )),
+                      libraryCoverForTrackProvider(_track(index).path),
                     );
                     return SizedBox(
                       height: 100,

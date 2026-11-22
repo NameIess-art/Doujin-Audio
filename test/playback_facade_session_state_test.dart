@@ -499,7 +499,7 @@ void main() {
     await playback.setSessionSpeed(first.id, 1.6, persist: false);
 
     expect(first.volume, 1.75);
-    expect(native.volumeUpdates, <(double, bool)>[(1.75, false), (1.75, true)]);
+    expect(native.volumeUpdates, <double>[1.75, 1.75]);
     expect(first.speed, 1.5);
     expect(native.speedUpdates, <double>[1.5]);
     expect(settingsChanges, 1);
@@ -575,7 +575,7 @@ void main() {
 
     expect(changed, isFalse);
     expect(session.volume, 1.0);
-    expect(native.volumeUpdates, <(double, bool)>[(1.8, true)]);
+    expect(native.volumeUpdates, <double>[1.8]);
   });
 
   test(
@@ -602,77 +602,16 @@ void main() {
       native.volumeGate = null;
       final secondChange = playback.setSessionVolume(session.id, 0.8);
       expect(session.volume, 0.8);
-      expect(native.volumeUpdates, [(0.7, true)]);
+      expect(native.volumeUpdates, <double>[0.7]);
 
       firstResponse.complete(
         const NativeFailure<NativePlaybackSnapshot>('older request failed'),
       );
       expect(await firstChange, isFalse);
       expect(await secondChange, isTrue);
-      expect(native.volumeUpdates, <(double, bool)>[(0.7, true), (0.8, true)]);
+      expect(native.volumeUpdates, <double>[0.7, 0.8]);
       expect(session.volume, 0.8);
       expect(session.pendingVolume, 0.8);
-    },
-  );
-
-  test(
-    'older volume commit cannot clear a newer deferred source reload',
-    () async {
-      final library = _createLibraryFacade();
-      final native = _RecordingNativePlaybackRepository();
-      final playback = PlaybackFacade.create(
-        databaseRepository:
-            library.databaseRepository as PlaybackPersistenceRepository,
-        nativeRepository: native,
-      )..configurePersistence(enabled: false);
-      final session = _session('volume-deferred-race')
-        ..loadedPath = '/tracks/volume-deferred-race.mp3';
-      playback.registerSession(session);
-      addTearDown(() async {
-        await playback.dispose();
-        await library.dispose();
-      });
-
-      await playback.setSessionVolume(session.id, 0.7, persist: false);
-      final oldCommitResponse =
-          Completer<NativeResult<NativePlaybackSnapshot>>();
-      native.volumeGate = oldCommitResponse;
-      final oldCommit = playback.setSessionVolume(session.id, 0.7);
-      native.volumeGate = null;
-      final preview = playback.setSessionVolume(
-        session.id,
-        0.8,
-        persist: false,
-      );
-      oldCommitResponse.complete(const NativeSuccess<NativePlaybackSnapshot>());
-      expect(await oldCommit, isTrue);
-      expect(await preview, isTrue);
-      // A matching snapshot clears the pending value, so the final command
-      // depends on retaining the newer preview's deferred source reload.
-      playback.applyNativeSnapshot(
-        NativePlaybackSnapshot(
-          sessionId: session.id,
-          playing: false,
-          playWhenReady: false,
-          processingState: 'ready',
-          position: Duration.zero,
-          bufferedPosition: Duration.zero,
-          volume: 0.8,
-          boostGain: 1,
-          channelSwapEnabled: false,
-        ),
-        hasLibraryTrack: (_) => false,
-      );
-      expect(session.pendingVolume, isNull);
-      await playback.setSessionVolume(session.id, 0.8);
-
-      expect(native.volumeUpdates, <(double, bool)>[
-        (0.7, false),
-        (0.7, true),
-        (0.8, false),
-        (0.8, true),
-      ]);
-      expect(session.volume, 0.8);
     },
   );
 
@@ -780,13 +719,6 @@ void main() {
               volume ? session.pendingVolume : session.pendingSpeed,
               isNull,
             );
-          }
-          // A failed final commit must retain the successful preview's reload.
-          if (volume && firstSucceeds && !secondSucceeds) {
-            native.failVolume = false;
-            await playback.setSessionVolume(session.id, expected);
-            expect(native.volumeUpdates.last, (0.6, true));
-            expect(native.volumeUpdates.length, 3);
           }
         });
       }
@@ -3140,6 +3072,90 @@ void _backgroundBucketTests() {
       97 ~/ PlaybackFacade.foregroundPositionBucketSeconds,
     );
   });
+
+  test(
+    'PlaybackSession.trackForPath matches Windows paths case-insensitively across slashes',
+    () {
+      final first = MusicTrack(
+        path: r'C:\Audio\WorkA\Track01.mp3',
+        displayName: 'Track01',
+        groupKey: r'C:\Audio\WorkA',
+        groupTitle: 'WorkA',
+        groupSubtitle: '',
+        isSingle: false,
+      );
+      final second = MusicTrack(
+        path: r'D:\Library\SubDir\Track02.FLAC',
+        displayName: 'Track02',
+        groupKey: r'D:\Library\SubDir',
+        groupTitle: 'SubDir',
+        groupSubtitle: '',
+        isSingle: false,
+      );
+      final session = PlaybackSession(
+        id: 'win-case',
+        currentTrackPath: first.path,
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.folderSequential,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(false, ProcessingState.idle),
+        customQueueTracks: <MusicTrack>[first, second],
+      );
+
+      expect(session.trackForPath('c:/audio/worka/track01.mp3'), same(first));
+      expect(
+        session.trackForPath(r'D:\LIBRARY\SUBDIR\track02.flac'),
+        same(second),
+      );
+      expect(
+        session.trackForPath('d:/library/subdir/Track02.flac'),
+        same(second),
+      );
+    },
+  );
+
+  test(
+    'PlaybackFacade.dispose disposes nativeRepository before closing revision stream and ignores late updates',
+    () async {
+      final library = _createLibraryFacade();
+      final native = _RecordingNativePlaybackRepository();
+      final playback = PlaybackFacade.create(
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
+        nativeRepository: native,
+      )..configurePersistence(enabled: false);
+      addTearDown(library.dispose);
+
+      var revisionStreamClosed = false;
+      final sub = playback.persistedUriReferenceRevisions.listen(
+        (_) {},
+        onDone: () => revisionStreamClosed = true,
+      );
+      addTearDown(sub.cancel);
+
+      var sawOpenDuringNativeDispose = false;
+      native.onDispose = () {
+        sawOpenDuringNativeDispose = !revisionStreamClosed;
+        // Late retained URI emission during/after disposal must not throw.
+        playback.updateNativeSessionRetainedContentUris('s1', const [
+          'content://provider/doc/1',
+        ]);
+      };
+
+      await playback.dispose();
+
+      expect(native.disposeCount, 1);
+      expect(sawOpenDuringNativeDispose, isTrue);
+      expect(revisionStreamClosed, isTrue);
+      expect(
+        () => playback.updateNativeSessionRetainedContentUris('s1', const [
+          'content://provider/doc/2',
+        ]),
+        returnsNormally,
+      );
+    },
+  );
 }
 
 PlaybackSession _session(String id) {
@@ -3160,7 +3176,7 @@ final class _RecordingNativePlaybackRepository
   int clearAllCount = 0;
   final List<String> removedSessionIds = <String>[];
   final List<Duration> seekPositions = <Duration>[];
-  final List<(double, bool)> volumeUpdates = <(double, bool)>[];
+  final List<double> volumeUpdates = <double>[];
   final List<double> speedUpdates = <double>[];
   bool failSpeed = false;
   bool failVolume = false;
@@ -3179,6 +3195,7 @@ final class _RecordingNativePlaybackRepository
   int audioEffectsCalls = 0;
   bool failAudioEffects = false;
   int disposeCount = 0;
+  void Function()? onDispose;
 
   @override
   Future<NativeResult<void>> pauseAll() async {
@@ -3233,10 +3250,9 @@ final class _RecordingNativePlaybackRepository
   @override
   Future<NativeResult<NativePlaybackSnapshot>> setVolume(
     String sessionId,
-    double volume, {
-    bool reloadSource = true,
-  }) async {
-    volumeUpdates.add((volume, reloadSource));
+    double volume,
+  ) async {
+    volumeUpdates.add(volume);
     final gate = volumeGate;
     if (gate != null) return gate.future;
     if (failVolume) {
@@ -3274,6 +3290,7 @@ final class _RecordingNativePlaybackRepository
   @override
   Future<void> dispose() async {
     disposeCount++;
+    onDispose?.call();
   }
 }
 

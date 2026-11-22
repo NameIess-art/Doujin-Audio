@@ -577,6 +577,7 @@ class NativePlaybackService : MediaSessionService() {
             publishController(this)
         }
         if (startDecision.source == NativePlaybackStartSource.TRANSPORT) {
+            super.onStartCommand(intent, flags, startId)
             handleNotificationTransportCommand(startDecision.transportCommand.orEmpty())
             return finishStartWithoutRestore(startId)
         }
@@ -698,9 +699,13 @@ class NativePlaybackService : MediaSessionService() {
         } catch (error: Throwable) {
             if (firstFailure == null) firstFailure = error
         }
+        firstFailure?.let { error ->
+            logWarn("on_destroy_failed error=${error.javaClass.simpleName}", error = error)
+        }
         logInfo("on_destroy_end")
-        firstFailure?.let { throw it }
     }
+
+    internal fun hasSession(sessionId: String): Boolean = sessionManager.contains(sessionId)
 
     fun addStateListener(ownerId: String, listener: (Map<String, Any?>) -> Unit) {
         stateListeners[ownerId] = listener
@@ -1144,6 +1149,7 @@ class NativePlaybackService : MediaSessionService() {
         NativePlaybackStateStore.clearPausedSessionIds(this)
         NativePlaybackStateStore.clearTimerCandidateSessionIds(this)
         NativePlaybackStateStore.clearTimerRuntimeState(this)
+        PlaybackTimerAlarmScheduler.rescheduleFromStoredState(this)
         focusRecovery.abandon(reason = "clear_all")
         foregroundCoordinator.stop(reason = "clear_all")
         stopServiceForIdleExit("clear_all")

@@ -3,6 +3,7 @@
 import 'dart:async';
 
 import 'package:flutter/services.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../../core/errors/native_result.dart';
 import '../../../core/immutable_collections.dart';
@@ -330,9 +331,8 @@ abstract interface class NativePlaybackBridgeBase {
 
   Future<NativeResult<NativePlaybackSnapshot>> setVolume(
     String sessionId,
-    double volume, {
-    bool reloadSource = true,
-  });
+    double volume,
+  );
 
   Future<NativeResult<NativePlaybackSnapshot>> setSpeed(
     String sessionId,
@@ -391,6 +391,16 @@ abstract interface class NativePlaybackBridgeBase {
     required bool resumeAfterTransientAudioFocusGain,
   });
 
+  bool get handlesQueueCompletion;
+
+  Future<bool> handleDeviceDisconnected();
+
+  VideoController? videoControllerForSession(String sessionId);
+
+  void attachVideoSurface(String sessionId);
+
+  void detachVideoSurface(String sessionId);
+
   Future<NativeResult<NativePlaybackBundleSnapshot>> snapshot();
 }
 
@@ -399,6 +409,21 @@ class NativePlaybackBridge
   NativePlaybackBridge._();
 
   static final NativePlaybackBridge instance = NativePlaybackBridge._();
+
+  @override
+  bool get handlesQueueCompletion => true;
+
+  @override
+  Future<bool> handleDeviceDisconnected() async => false;
+
+  @override
+  VideoController? videoControllerForSession(String sessionId) => null;
+
+  @override
+  void attachVideoSurface(String sessionId) {}
+
+  @override
+  void detachVideoSurface(String sessionId) {}
 
   static const MethodChannel _methods = MethodChannel(
     NativePlaybackChannel.name,
@@ -685,9 +710,8 @@ class NativePlaybackBridge
   @override
   Future<NativeResult<NativePlaybackSnapshot>> setVolume(
     String sessionId,
-    double volume, {
-    bool reloadSource = true,
-  }) {
+    double volume,
+  ) {
     return _invokeSnapshot(NativePlaybackMethod.setVolume, {
       'sessionId': sessionId,
       'volume': volume,

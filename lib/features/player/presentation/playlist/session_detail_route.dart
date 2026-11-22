@@ -8,7 +8,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/presentation/app_orientation_controller.dart';
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/presentation/audio_ui_controllers.dart';
+import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../core/ui/cover_image_retention.dart';
+import '../../../../core/ui/visual_settings_providers.dart';
 import '../../../../core/widgets/app_transitions.dart';
+import '../../../library/presentation/library_providers.dart';
+import '../../../settings/presentation/settings_providers.dart';
 import '../playback_providers.dart';
 import 'session_cover_transition.dart';
 import 'session_detail_page.dart';
@@ -21,26 +26,50 @@ PageRoute<void> buildSessionDetailRoute({
       coverOrigin == null || MediaQuery.disableAnimationsOf(coverOrigin)
       ? null
       : findSessionCoverAnchor(coverOrigin, sessionId);
+  String? sourceTrackPath;
+  ImageProvider<Object>? detailCoverProvider;
+  if (source != null) {
+    final container = ProviderScope.containerOf(source.context, listen: false);
+    sourceTrackPath = container
+        .read(playbackFacadeProvider)
+        .sessionById(sessionId)
+        ?.currentTrackPath;
+    if (sourceTrackPath != null) {
+      final track = container
+          .read(audioPathCoordinatorProvider)
+          .trackByPath(sourceTrackPath);
+      final coverPath = container
+          .read(libraryFacadeProvider)
+          .resolvedPlaybackCoverPathForTrack(track);
+      if (coverPath != null && coverPath.isNotEmpty) {
+        final allowVideo =
+            container.read(settingsStateProvider).value?.allowVideoPlayback ??
+            true;
+        detailCoverProvider = detailCoverImageProvider(
+          coverPath: coverPath,
+          resolution: container.read(coverImageResolutionProvider),
+          isVideoBackdrop: allowVideo && track?.isVideo == true,
+        );
+      }
+    }
+  }
   return SessionDetailRoute(
     sessionId: sessionId,
     source: source,
-    sourceTrackPath: source == null
-        ? null
-        : ProviderScope.containerOf(source.context, listen: false)
-              .read(playbackFacadeProvider)
-              .sessionById(sessionId)
-              ?.currentTrackPath,
+    sourceTrackPath: sourceTrackPath,
+    detailCoverProvider: detailCoverProvider,
   );
 }
 
 class SessionDetailRoute extends AppPreparedPageRoute<void> {
   static const _portraitRestoreTimeout = Duration(milliseconds: 500);
-  static const _coverDuration = Duration(milliseconds: 320);
+  static const _coverDuration = Duration(milliseconds: 450);
 
   SessionDetailRoute({
     required this.sessionId,
     SessionCoverAnchorState? source,
     String? sourceTrackPath,
+    ImageProvider<Object>? detailCoverProvider,
   }) : _source = source,
        _sourceTrackPath = sourceTrackPath,
        _sourceBounds = source?.bounds(),
@@ -52,6 +81,9 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
          transitionsBuilder: (_, animation, secondaryAnimation, child) => child,
        ) {
     _sourceImage = _sourceBounds == null ? null : source?.decodedImage?.clone();
+    if (_sourceBounds != null && detailCoverProvider != null) {
+      _startDetailCoverResolution(detailCoverProvider);
+    }
   }
 
   final String sessionId;
@@ -59,6 +91,10 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
   final String? _sourceTrackPath;
   Rect? _sourceBounds;
   late final ui.Image? _sourceImage;
+  ui.Image? _detailHighResImage;
+  ImageStream? _detailCoverStream;
+  ImageStreamListener? _detailCoverListener;
+  bool _disposed = false;
   final detailCoverKey = GlobalKey<SessionCoverAnchorState>();
   final _viewportKey = GlobalKey();
   final _fadeKey = GlobalKey();
@@ -85,7 +121,97 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
   bool _popPending = false;
 
   ui.Image? coverPreviewFor(String trackPath) =>
-      _sourceTrackPath == trackPath ? _sourceImage : null;
+      _sourceTrackPath == trackPath ? (_detailHighResImage ?? _sourceImage) : null;
+
+  bool hasHighResCoverPreview(String trackPath) =>
+      _sourceTrackPath == trackPath && _detailHighResImage != null;
+
+  void _startDetailCoverResolution(ImageProvider<Object> requested) {
+    final retained = retainedCoverImageFor(requested);
+    final provider = retained != null && retained.isAdequate
+        ? retained.provider
+        : requested;
+    restoreRetainedCoverImage(provider);
+    final stream = provider.resolve(ImageConfiguration.empty);
+    var resolvedSynchronously = false;
+    late final ImageStreamListener listener;
+    listener = ImageStreamListener(
+      (info, synchronousCall) {
+        retainCoverImage(
+          provider,
+          ImageConfiguration.empty,
+          stream: stream,
+          info: info,
+        );
+        final decoded = info.image.clone();
+        info.dispose();
+        stream.removeListener(listener);
+        if (identical(_detailCoverStream, stream)) {
+          _detailCoverStream = null;
+          _detailCoverListener = null;
+        }
+        if (synchronousCall) {
+          resolvedSynchronously = true;
+          if (_detailHighResImage == null && !_disposed) {
+            _detailHighResImage = decoded;
+          } else {
+            decoded.dispose();
+          }
+          return;
+        }
+        _applyMidFlightHighResCover(decoded);
+      },
+      onError: (_, _) {
+        stream.removeListener(listener);
+        if (identical(_detailCoverStream, stream)) {
+          _detailCoverStream = null;
+          _detailCoverListener = null;
+        }
+      },
+    );
+    _detailCoverStream = stream;
+    _detailCoverListener = listener;
+    stream.addListener(listener);
+    if (resolvedSynchronously) {
+      _detailCoverStream = null;
+      _detailCoverListener = null;
+    }
+  }
+
+  void _applyMidFlightHighResCover(ui.Image decoded) {
+    if (_disposed || _detailHighResImage != null) {
+      decoded.dispose();
+      return;
+    }
+    _detailHighResImage = decoded;
+    final flight = _flight.value;
+    if (flight == null || flight.reverse) return;
+    final start = animation?.value ?? 0.0;
+    final span = (120 / _coverDuration.inMilliseconds).clamp(0.0, 1.0 - start);
+    final upgradeOpacity = _reducedMotion || span <= 0.02
+        ? kAlwaysCompleteAnimation
+        : animation!.drive(
+            CurveTween(
+              curve: Interval(
+                start,
+                (start + span).clamp(start, 1.0),
+                curve: kAppFadeCurve,
+              ),
+            ),
+          );
+    flight.upgradedImage?.dispose();
+    _flight.value = SessionCoverFlight(
+      image: flight.image,
+      upgradedImage: decoded.clone(),
+      upgradeOpacity: upgradeOpacity,
+      from: flight.from,
+      to: flight.to,
+      fromRadius: flight.fromRadius,
+      toRadius: flight.toRadius,
+      progress: flight.progress,
+      reverse: false,
+    );
+  }
 
   bool get preparingForExit => _exitPreparation != null;
 
@@ -394,6 +520,7 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
     _flightEnd = null;
     _flight.value = null;
     flight.image.dispose();
+    flight.upgradedImage?.dispose();
   }
 
   void beginInteractiveDismiss() {
@@ -417,10 +544,20 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
 
   @override
   void dispose() {
+    _disposed = true;
+    final detailStream = _detailCoverStream;
+    final detailListener = _detailCoverListener;
+    if (detailStream != null && detailListener != null) {
+      detailStream.removeListener(detailListener);
+    }
+    _detailCoverStream = null;
+    _detailCoverListener = null;
     final ready = _portraitReady;
     if (ready != null && !ready.isCompleted) ready.complete();
     animation?.removeStatusListener(_handleFlightStatus);
     _sourceImage?.dispose();
+    _detailHighResImage?.dispose();
+    _detailHighResImage = null;
     _clearFlight();
     _flight.dispose();
     unawaited(_orientationController?.setPlaybackDetailVisible(false));

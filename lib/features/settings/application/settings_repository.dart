@@ -90,7 +90,7 @@ class SettingsRepository {
   );
 
   bool loadPersistedPresentationStateSync() {
-    if (!AppPreferences.isInitialized) return false;
+    if (!AppPreferences.isInitialized || _activeQueueCount > 0) return false;
     _resetValues();
     final playback = AppPreferences.readJsonSync<Map<String, dynamic>>(
       _playbackSettingsKey,
@@ -333,9 +333,12 @@ class SettingsRepository {
     if (!saved) throw StateError('settings_write_failed');
   }
 
-  Future<void> _applyNetworkRoute() async {
-    String? secret;
-    if (networkRouteSettings.proxyPasswordConfigured) {
+  Future<void> _applyNetworkRoute({
+    String? resolvedSecret,
+    bool hasResolvedSecret = false,
+  }) async {
+    String? secret = hasResolvedSecret ? resolvedSecret : null;
+    if (!hasResolvedSecret && networkRouteSettings.proxyPasswordConfigured) {
       try {
         secret = await _readProxyPassword();
         networkRouteSettings = networkRouteSettings.copyWith(
@@ -358,8 +361,11 @@ class SettingsRepository {
     String? password,
   }) {
     String? previousPassword;
+    String? committedSecret;
     var secretChanged = false;
     final hasNewPassword = password != null && password.isNotEmpty;
+    final clearStoredPassword =
+        !value.proxyAuthenticationEnabled && !hasNewPassword;
     return _change(
       () async {
         previousPassword =
@@ -377,7 +383,8 @@ class SettingsRepository {
               NetworkRouteSettings.normalizeDns(value.customDnsServer) ??
               value.customDnsServer.trim(),
           proxyPasswordConfigured:
-              hasNewPassword || previousPassword?.isNotEmpty == true,
+              !clearStoredPassword &&
+              (hasNewPassword || previousPassword?.isNotEmpty == true),
         );
         committed.validate();
         if (committed.proxyMode == AppProxyMode.socks5 &&
@@ -391,15 +398,36 @@ class SettingsRepository {
         if (hasNewPassword) {
           await _writeProxyPassword(password);
           secretChanged = true;
+          committedSecret = password;
+        } else if (clearStoredPassword &&
+            (previousPassword != null ||
+                networkRouteSettings.proxyPasswordConfigured)) {
+          await _writeProxyPassword(null);
+          secretChanged = true;
+          committedSecret = null;
+        } else {
+          committedSecret = previousPassword;
         }
         networkRouteSettings = committed;
       },
       // An explicit apply also retries a previous native synchronization error.
       forceSave: true,
       onFailure: () async {
-        if (secretChanged) await _writeProxyPassword(previousPassword);
+        if (!secretChanged) return;
+        try {
+          await _writeProxyPassword(previousPassword);
+        } catch (error, stackTrace) {
+          AppLogService.warning(
+            'settings_rollback_proxy_password_failed',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
       },
-      afterSave: (_) => _applyNetworkRoute(),
+      afterSave: (_) => _applyNetworkRoute(
+        resolvedSecret: committedSecret,
+        hasResolvedSecret: true,
+      ),
     );
   }
 
@@ -793,6 +821,7 @@ class SettingsRepository {
 
   Future<void> _writeTail = Future<void>.value();
   final _pendingWrites = <Future<void>>{};
+  int _activeQueueCount = 0;
 
   /// Waits for writes already submitted, preserving their failure results.
   Future<void> flushPendingWrites() => Future.wait(_pendingWrites.toList());
@@ -801,13 +830,16 @@ class SettingsRepository {
     Future<void> Function() action, {
     bool trackPendingWrite = false,
   }) {
+    _activeQueueCount++;
     final operation = _writeTail.then((_) => action());
     if (trackPendingWrite) _pendingWrites.add(operation);
     _writeTail = operation.then<void>(
       (_) {
+        _activeQueueCount--;
         if (trackPendingWrite) _pendingWrites.remove(operation);
       },
       onError: (Object _, StackTrace _) {
+        _activeQueueCount--;
         if (trackPendingWrite) _pendingWrites.remove(operation);
       },
     );

@@ -48,31 +48,85 @@ class PermissionStatusService {
     AppUpdateService? appUpdateService,
     bool? isAndroidOverride,
   }) : _powerService = powerService ?? PowerPlatformService(),
-       _overlayCheck =
-           overlayCheck ??
-           (subtitleOverlayController ?? SubtitleOverlayController())
-               .canDrawOverlays,
-       _overlayOpen =
-           overlayOpen ??
-           (subtitleOverlayController ?? SubtitleOverlayController())
-               .openOverlaySettings,
-       _updateInstallCheck =
-           updateInstallCheck ??
-           (appUpdateService ?? AppUpdateService()).canInstallUnknownApps,
-       _updateInstallOpen =
-           updateInstallOpen ??
-           (appUpdateService ?? AppUpdateService())
-               .openInstallPermissionSettings,
+       _overlayCheckOverride = overlayCheck,
+       _overlayOpenOverride = overlayOpen,
+       _subtitleOverlayController = subtitleOverlayController,
+       _updateInstallCheckOverride = updateInstallCheck,
+       _updateInstallOpenOverride = updateInstallOpen,
+       _appUpdateService = appUpdateService,
        _isAndroidOverride = isAndroidOverride;
 
   final PowerPlatformService _powerService;
-  final Future<bool> Function() _overlayCheck;
-  final Future<bool> Function() _overlayOpen;
-  final Future<bool> Function() _updateInstallCheck;
-  final Future<bool> Function() _updateInstallOpen;
+  final Future<bool> Function()? _overlayCheckOverride;
+  final Future<bool> Function()? _overlayOpenOverride;
+  final Future<bool> Function()? _updateInstallCheckOverride;
+  final Future<bool> Function()? _updateInstallOpenOverride;
+  SubtitleOverlayController? _subtitleOverlayController;
+  bool _ownsSubtitleOverlayController = false;
+  AppUpdateService? _appUpdateService;
+  bool _ownsAppUpdateService = false;
   final bool? _isAndroidOverride;
 
   bool get _isAndroid => _isAndroidOverride ?? AppPlatform.isAndroid;
+
+  SubtitleOverlayController _requireSubtitleOverlayController() {
+    final existing = _subtitleOverlayController;
+    if (existing != null) return existing;
+    final created = SubtitleOverlayController();
+    _subtitleOverlayController = created;
+    _ownsSubtitleOverlayController = true;
+    return created;
+  }
+
+  AppUpdateService _requireAppUpdateService() {
+    final existing = _appUpdateService;
+    if (existing != null) return existing;
+    final created = AppUpdateService();
+    _appUpdateService = created;
+    _ownsAppUpdateService = true;
+    return created;
+  }
+
+  Future<bool> _checkOverlay() {
+    final override = _overlayCheckOverride;
+    if (override != null) return override();
+    return _requireSubtitleOverlayController().canDrawOverlays();
+  }
+
+  Future<bool> _openOverlay() {
+    final override = _overlayOpenOverride;
+    if (override != null) return override();
+    return _requireSubtitleOverlayController().openOverlaySettings();
+  }
+
+  Future<bool> _checkUpdateInstall() {
+    final override = _updateInstallCheckOverride;
+    if (override != null) return override();
+    return _requireAppUpdateService().canInstallUnknownApps();
+  }
+
+  Future<bool> _openUpdateInstall() {
+    final override = _updateInstallOpenOverride;
+    if (override != null) return override();
+    return _requireAppUpdateService().openInstallPermissionSettings();
+  }
+
+  Future<void> dispose() async {
+    if (_ownsSubtitleOverlayController) {
+      final controller = _subtitleOverlayController;
+      _subtitleOverlayController = null;
+      _ownsSubtitleOverlayController = false;
+      if (controller != null) {
+        await controller.dispose();
+      }
+    }
+    if (_ownsAppUpdateService) {
+      final service = _appUpdateService;
+      _appUpdateService = null;
+      _ownsAppUpdateService = false;
+      service?.dispose();
+    }
+  }
 
   Future<bool> isGranted(
     PermissionCapability capability, {
@@ -98,10 +152,10 @@ class PermissionStatusService {
         'manage_files',
         _powerService.canManageAllFilesAccess,
       ),
-      PermissionCapability.overlay => _check('overlay', _overlayCheck),
+      PermissionCapability.overlay => _check('overlay', _checkOverlay),
       PermissionCapability.updateInstalls => _check(
         'update_installs',
-        _updateInstallCheck,
+        _checkUpdateInstall,
       ),
     };
   }
@@ -125,21 +179,26 @@ class PermissionStatusService {
         'manage_files',
         _powerService.openManageAllFilesAccessSettings,
       ),
-      PermissionCapability.overlay => _open('overlay', _overlayOpen),
+      PermissionCapability.overlay => _open('overlay', _openOverlay),
       PermissionCapability.updateInstalls => _open(
         'update_installs',
-        _updateInstallOpen,
+        _openUpdateInstall,
       ),
     };
   }
 
-  Future<BackgroundRunDiagnostics?> loadBackgroundRunDiagnostics() =>
-      _powerService.getBackgroundRunDiagnostics();
+  Future<BackgroundRunDiagnostics?> loadBackgroundRunDiagnostics() {
+    if (!_isAndroid) return Future<BackgroundRunDiagnostics?>.value();
+    return _powerService.getBackgroundRunDiagnostics();
+  }
 
-  Future<bool> openBatteryOptimizationSettings() => _open(
-    'battery_optimization',
-    _powerService.openBatteryOptimizationSettings,
-  );
+  Future<bool> openBatteryOptimizationSettings() {
+    if (!_isAndroid) return Future<bool>.value(false);
+    return _open(
+      'battery_optimization',
+      _powerService.openBatteryOptimizationSettings,
+    );
+  }
 
   Future<PermissionStatusSnapshot> load() async {
     if (!_isAndroid) {

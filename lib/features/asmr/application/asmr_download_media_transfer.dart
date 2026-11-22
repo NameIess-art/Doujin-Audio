@@ -9,6 +9,7 @@ import '../../../core/media/playback_media_reference.dart';
 import '../../../core/network/app_network.dart';
 import '../../../core/platform/windows_media_tools.dart';
 import 'asmr_download_internal_models.dart';
+import 'asmr_request_cancellation.dart';
 
 const japaneseAsmrDownloadUserAgent =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
@@ -154,26 +155,31 @@ class AsmrHlsAudioTransfer {
   Future<void> save({
     required PlaybackMediaReference reference,
     required File output,
-    required bool Function() isCancelled,
+    AsmrRequestCancellationToken? cancellationToken,
+    bool Function()? isCancelled,
     void Function(double fraction)? onProgress,
     void Function(int bytes)? onBytes,
   }) async {
+    bool checkCancelled() =>
+        (cancellationToken?.isCancelled ?? false) || (isCancelled?.call() ?? false);
     if (!reference.isHls) throw ArgumentError('HLS stream required.');
-    if (isCancelled()) throw const DownloadCancelled();
+    if (checkCancelled()) throw const DownloadCancelled();
     await output.parent.create(recursive: true);
     await AppNetwork.instance.ensureStarted();
     try {
-      await _run(_arguments(reference, output.path), isCancelled, (
-        timeMs,
-        bytes,
-      ) {
-        if (bytes >= 0) onBytes?.call(bytes);
-        final duration = reference.durationMs;
-        if (duration != null && duration > 0) {
-          onProgress?.call((timeMs / duration).clamp(0, 1));
-        }
-      });
-      if (isCancelled()) throw const DownloadCancelled();
+      await _run(
+        _arguments(reference, output.path),
+        cancellationToken: cancellationToken,
+        cancelled: checkCancelled,
+        progress: (timeMs, bytes) {
+          if (bytes >= 0) onBytes?.call(bytes);
+          final duration = reference.durationMs;
+          if (duration != null && duration > 0) {
+            onProgress?.call((timeMs / duration).clamp(0, 1));
+          }
+        },
+      );
+      if (checkCancelled()) throw const DownloadCancelled();
       await validateAsmrAudioFile(output);
       // Decode the first audio frame before committing a remotely generated file.
       await _run(
@@ -191,8 +197,9 @@ class AsmrHlsAudioTransfer {
           'null',
           '-',
         ],
-        isCancelled,
-        (_, _) {},
+        cancellationToken: cancellationToken,
+        cancelled: checkCancelled,
+        progress: (_, _) {},
       );
       onBytes?.call(await output.length());
       onProgress?.call(1);
@@ -249,10 +256,11 @@ class AsmrHlsAudioTransfer {
   ];
 
   Future<void> _run(
-    List<String> arguments,
-    bool Function() cancelled,
-    void Function(int timeMs, int bytes) progress,
-  ) async {
+    List<String> arguments, {
+    required AsmrRequestCancellationToken? cancellationToken,
+    required bool Function() cancelled,
+    required void Function(int timeMs, int bytes) progress,
+  }) async {
     if (cancelled()) throw const DownloadCancelled();
     if (Platform.isWindows || _startProcess != null) {
       final process =
@@ -276,9 +284,10 @@ class AsmrHlsAudioTransfer {
               progress(timeMs, bytes);
             }
           });
-      final timer = Timer.periodic(const Duration(milliseconds: 150), (_) {
-        if (cancelled()) process.kill();
-      });
+      if (cancelled()) {
+        process.kill();
+      }
+      final removeListener = cancellationToken?.addListener(process.kill);
       try {
         final code = await process.exitCode;
         await output;
@@ -286,7 +295,7 @@ class AsmrHlsAudioTransfer {
         if (cancelled()) throw const DownloadCancelled();
         if (code != 0) throw ProcessException('ffmpeg', arguments, error, code);
       } finally {
-        timer.cancel();
+        removeListener?.call();
       }
     } else if (Platform.isAndroid) {
       final completion = Completer<int>();
@@ -302,9 +311,12 @@ class AsmrHlsAudioTransfer {
         (statistics) =>
             progress(statistics.getTime().round(), statistics.getSize()),
       );
-      final timer = Timer.periodic(const Duration(milliseconds: 150), (_) {
-        if (cancelled()) unawaited(FFmpegKit.cancel(session.getSessionId()));
-      });
+      if (cancelled()) {
+        unawaited(FFmpegKit.cancel(session.getSessionId()));
+      }
+      final removeListener = cancellationToken?.addListener(
+        () => unawaited(FFmpegKit.cancel(session.getSessionId())),
+      );
       try {
         final code = await completion.future;
         if (cancelled()) throw const DownloadCancelled();
@@ -315,7 +327,7 @@ class AsmrHlsAudioTransfer {
           );
         }
       } finally {
-        timer.cancel();
+        removeListener?.call();
       }
     } else {
       throw UnsupportedError('HLS audio saving requires Android or Windows.');

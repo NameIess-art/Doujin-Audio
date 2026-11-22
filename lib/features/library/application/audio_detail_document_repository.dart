@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import '../../../core/media/audio_detail.dart';
 import '../../../core/persistence/json_document_store.dart';
-import '../../player/domain/time_segment_label.dart';
+import '../../../core/media/time_segment_label.dart';
 import '../data/audio_detail_cover_store.dart';
 import '../data/audio_detail_json_codec.dart';
 

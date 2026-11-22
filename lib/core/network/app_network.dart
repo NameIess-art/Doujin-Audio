@@ -17,13 +17,15 @@ class AppNetwork extends HttpOverrides {
     Future<ConnectionTask<Socket>> Function(InternetAddress, int)?
     startSocketConnect,
     Duration Function()? monotonicElapsed,
+    Duration addressConnectTimeout = const Duration(seconds: 8),
   }) : _resolveSystemProxy =
            resolveSystemProxy ?? NetworkPlatformService().resolveSystemProxy,
        _applyNativeRoute =
            applyNativeRoute ?? NetworkPlatformService().applyNetworkRoute,
        _createDnsResolver = createDnsResolver ?? DnsServerResolver.new,
        _startSocketConnect = startSocketConnect ?? Socket.startConnect,
-       _elapsed = monotonicElapsed ?? (() => _clock.elapsed);
+       _elapsed = monotonicElapsed ?? (() => _clock.elapsed),
+       _addressConnectTimeout = addressConnectTimeout;
 
   static final instance = AppNetwork();
   static final _clock = Stopwatch()..start();
@@ -35,6 +37,7 @@ class AppNetwork extends HttpOverrides {
   final Future<ConnectionTask<Socket>> Function(InternetAddress, int)
   _startSocketConnect;
   final Duration Function() _elapsed;
+  final Duration _addressConnectTimeout;
   final _pendingSystemProxyRoutes = <Uri, Future<List<_ProxyRoute>>>{};
   final _cachedSystemProxyRoutes =
       <Uri, ({List<_ProxyRoute> routes, Duration expiresAt})>{};
@@ -418,18 +421,19 @@ class AppNetwork extends HttpOverrides {
             task = await _startSocketConnect(address, port);
             if (connected.isCompleted) {
               task.cancel();
-              final abandoned = await task.socket;
-              abandoned.destroy();
+              await task.socket.then<void>(
+                (abandoned) => abandoned.destroy(),
+                onError: (Object _, StackTrace _) {},
+              );
               return;
             }
             attempts.add(task);
             _connectionAttempts.add(task);
-            final candidate = await task.socket.timeout(
-              const Duration(seconds: 8),
-              onTimeout: () {
-                task!.cancel();
-                throw TimeoutException('Address connection timed out');
-              },
+            final candidate = await awaitCancellableSocket(
+              task.socket,
+              cancel: task.cancel,
+              timeout: _addressConnectTimeout,
+              timeoutMessage: 'Address connection timed out',
             );
             if (connected.isCompleted) {
               candidate.destroy();

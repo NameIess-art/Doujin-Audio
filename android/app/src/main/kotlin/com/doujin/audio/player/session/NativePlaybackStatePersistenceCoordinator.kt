@@ -228,6 +228,7 @@ internal class NativePlaybackStatePersistenceCoordinator(
     }
 
     fun persistSession(session: StoredNativePlaybackSession, revision: Long) {
+        generation.incrementAndGet()
         environment.stageSessions(listOf(session), mapOf(session.sessionId to revision))
         environment.execute {
             environment.saveSessions(listOf(session), mapOf(session.sessionId to revision))
@@ -237,6 +238,7 @@ internal class NativePlaybackStatePersistenceCoordinator(
     }
 
     fun removeSession(sessionId: String) {
+        generation.incrementAndGet()
         val revision = NativePlaybackStateStore.invalidateSession(sessionId)
         environment.execute {
             environment.removeSession(sessionId, revision)
@@ -255,12 +257,30 @@ internal class NativePlaybackStatePersistenceCoordinator(
         }
     }
 
-    fun shutdown() {
+    fun shutdown() = shutdown(SHUTDOWN_AWAIT_TIMEOUT_MS)
+
+    fun shutdown(awaitTimeoutMs: Long) {
         stopTicker()
         persistNow()
         environment.shutdown()
+        if (awaitTimeoutMs > 0L) {
+            try {
+                if (!environment.awaitTermination(awaitTimeoutMs)) {
+                    Log.w(
+                        "PlaybackRecovery",
+                        "Timed out waiting ${awaitTimeoutMs}ms for playback state persistence shutdown"
+                    )
+                }
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
     }
 
     fun awaitTermination(timeoutMs: Long = 10_000L): Boolean =
         environment.awaitTermination(timeoutMs)
+
+    companion object {
+        internal const val SHUTDOWN_AWAIT_TIMEOUT_MS = 1_500L
+    }
 }

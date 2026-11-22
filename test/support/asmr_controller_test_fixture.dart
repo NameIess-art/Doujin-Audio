@@ -27,6 +27,9 @@ class LoadedEmptyAsmrLibraryController extends AsmrLibraryController {
       );
 
   @override
+  bool get supportsVersionedSnapshots => false;
+
+  @override
   bool get initialized => true;
 
   @override
@@ -85,6 +88,9 @@ class LoadedEmptyAsmrLibraryController extends AsmrLibraryController {
 
 /// Resolves category reads from the snapshots supplied by widget test doubles.
 mixin TestAsmrCategoryViewOverrides on AsmrLibraryController {
+  @override
+  bool get supportsVersionedSnapshots => false;
+
   @override
   List<AsmrWork> filteredWorksFor(
     AsmrCategoryType category, {

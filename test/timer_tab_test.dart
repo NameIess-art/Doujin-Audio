@@ -581,6 +581,31 @@ void main() {
         find.text(fixture.languageProvider.tr('stop_after_current_track')),
         findsOneWidget,
       );
+      fixture.timer.setAutoResume(true, 7, 0);
+      await tester.pump();
+      await tester.pump();
+      Finder rowCard(String text) => find
+          .ancestor(of: find.text(text), matching: find.byType(Material))
+          .first;
+      final autoResumeHeight = tester
+          .getRect(
+            rowCard(fixture.languageProvider.tr('auto_resume_after_timer')),
+          )
+          .height;
+      final resumeTimeHeight = tester
+          .getRect(
+            rowCard(
+              fixture.languageProvider.tr('resume_time', {'time': '07:00'}),
+            ),
+          )
+          .height;
+      final stopAfterTrackHeight = tester
+          .getRect(
+            rowCard(fixture.languageProvider.tr('stop_after_current_track')),
+          )
+          .height;
+      expect(autoResumeHeight, closeTo(resumeTimeHeight, 0.01));
+      expect(stopAfterTrackHeight, closeTo(resumeTimeHeight, 0.01));
       final trackEndToggle = find
           .byWidgetPredicate(
             (widget) => widget is Switch && widget.value == false,

@@ -16,4 +16,8 @@ std::string Utf8FromUtf16(const wchar_t* utf16_string);
 // encoded in UTF-8. Returns an empty std::vector<std::string> on failure.
 std::vector<std::string> GetCommandLineArguments();
 
+// Returns true if the current process command line contains an argument
+// strictly equal to |flag| (excluding argv[0]).
+bool HasCommandLineFlag(const wchar_t* flag);
+
 #endif  // RUNNER_UTILS_H_

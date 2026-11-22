@@ -3,6 +3,7 @@ package com.doujin.audio.player.session
 import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteException
 import android.database.sqlite.SQLiteOpenHelper
 import android.util.Log
 import java.io.ByteArrayOutputStream
@@ -26,9 +27,36 @@ internal class NativePlaybackRecoveryDatabase(val owner: Context) :
 
     override fun onConfigure(db: SQLiteDatabase) {
         db.setForeignKeyConstraintsEnabled(true)
+        try {
+            db.enableWriteAheadLogging()
+        } catch (error: SQLiteException) {
+            Log.w("PlaybackRecovery", "Unable to enable WAL mode; using default journal mode", error)
+        }
+        db.rawQuery("PRAGMA busy_timeout = 5000", null).use { it.moveToFirst() }
     }
 
     override fun onCreate(db: SQLiteDatabase) {
+        createSchema(db)
+        migrateLegacyDefinitions(db)
+    }
+
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        Log.w(
+            "PlaybackRecovery",
+            "Rebuilding native playback recovery schema from v$oldVersion to v$newVersion"
+        )
+        rebuildSchema(db)
+    }
+
+    override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        Log.w(
+            "PlaybackRecovery",
+            "Rebuilding native playback recovery schema from v$oldVersion to v$newVersion"
+        )
+        rebuildSchema(db)
+    }
+
+    private fun createSchema(db: SQLiteDatabase) {
         db.execSQL(
             """
             CREATE TABLE sessions (
@@ -58,11 +86,13 @@ internal class NativePlaybackRecoveryDatabase(val owner: Context) :
             ) WITHOUT ROWID
             """.trimIndent()
         )
-        migrateLegacyDefinitions(db)
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        error("Unsupported native playback recovery schema upgrade: ${oldVersion} to ${newVersion}")
+    private fun rebuildSchema(db: SQLiteDatabase) {
+        db.execSQL("DROP TABLE IF EXISTS retained_uris")
+        db.execSQL("DROP TABLE IF EXISTS definition_chunks")
+        db.execSQL("DROP TABLE IF EXISTS sessions")
+        createSchema(db)
     }
 
     override fun onOpen(db: SQLiteDatabase) {

@@ -11,9 +11,9 @@ class SubtitleWindow {
   void Show(bool visible);
   void Update(const std::string& text);
   void Style(const flutter::EncodableMap& style);
- private:
   void SavePlacement() const;
-  void LoadPlacement(LONG& x, LONG& y, LONG& width, LONG min_width) const;
+ private:
+  void LoadPlacement(LONG& x, LONG& y, LONG& width, LONG& height) const;
   void FitText();
   int MeasureText(HDC dc, int width);
   bool EnsureFont(UINT dpi);

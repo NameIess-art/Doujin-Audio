@@ -13,6 +13,7 @@ import 'package:doujin_audio/features/asmr/domain/asmr_download.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_internal_models.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_media_transfer.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_request_cancellation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
 
@@ -223,7 +224,6 @@ void main() {
       final root = await Directory.systemTemp.createTemp('hls_interrupt_');
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       final started = Completer<void>();
-      var cancelled = false;
       server.listen((request) async {
         if (request.uri.path.endsWith('.m3u8')) {
           request.response.write(
@@ -237,6 +237,7 @@ void main() {
         }
       });
       try {
+        final cancellationToken = AsmrRequestCancellationToken();
         final transfer = AsmrHlsAudioTransfer(
           startProcess: (args) => tools.start('ffmpeg', args),
         );
@@ -247,15 +248,14 @@ void main() {
             endMs: 1000,
           ),
           output: output,
-          isCancelled: () => cancelled,
+          cancellationToken: cancellationToken,
         );
         final failed = expectLater(saving, throwsA(isA<DownloadCancelled>()));
         await started.future.timeout(const Duration(seconds: 5));
-        cancelled = true;
+        cancellationToken.cancel();
         await failed.timeout(const Duration(seconds: 3));
         expect(await output.exists(), isFalse);
       } finally {
-        cancelled = true;
         await server.close(force: true);
         await root.delete(recursive: true);
       }

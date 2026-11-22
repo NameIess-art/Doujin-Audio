@@ -3,17 +3,22 @@ import 'dart:async';
 import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/core/immutable_collections.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_api_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_playback_coordinator.dart';
+import 'package:doujin_audio/features/asmr/application/japanese_asmr_api_service.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:doujin_audio/features/player/application/playback_session_launcher.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
+import 'package:doujin_audio/infrastructure/sqlite/sqlite_asmr_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../../support/app_runtime_test_fixture.dart';
 import '../../support/asmr_controller_test_fixture.dart';
@@ -342,4 +347,67 @@ void main() {
       await tester.pump();
     },
   );
+
+  test(
+    'ensureTrackTree caps repeated epoch-change retries instead of recursing forever',
+    () async {
+      sqfliteFfiInit();
+      final db = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
+      await AppDatabase.createSchemaForTest(db);
+      addTearDown(db.close);
+      late AsmrLibraryController controller;
+      var fetchCalls = 0;
+      final jpApi = _EpochBumpingJapaneseApi(
+        onFetchTree: () {
+          fetchCalls++;
+          // Flip page language on every fetch so _contentEpoch advances mid-flight.
+          controller.setPageLanguage(
+            fetchCalls.isOdd ? AppLanguage.ja : AppLanguage.zh,
+          );
+        },
+      );
+      final services = createTestAsmrServices(
+        persistenceRepository: SqliteAsmrRepository(
+          database: AppDatabase.test(db),
+        ),
+        japaneseApiService: jpApi,
+      );
+      controller = AsmrLibraryController(
+        preferencesStore: services.preferencesStore,
+        remoteCatalogService: services.remoteCatalogService,
+        accountSyncService: services.accountSyncService,
+      );
+      addTearDown(controller.dispose);
+      await controller.initializeForVisiblePage();
+      expect(controller.supportsVersionedSnapshots, isTrue);
+
+      await expectLater(
+        controller.ensureTrackTree(_work(99)),
+        throwsA(isA<StateError>()),
+      );
+      // Initial attempt + 4 retries = 5 total fetches, then bounded failure.
+      expect(fetchCalls, 5);
+    },
+  );
+}
+
+final class _EpochBumpingJapaneseApi extends JapaneseAsmrApiService {
+  _EpochBumpingJapaneseApi({required this.onFetchTree});
+
+  final void Function() onFetchTree;
+
+  @override
+  Future<List<AsmrTrackFile>> fetchTrackTree(
+    AsmrWork work, {
+    AsmrRequestCancellationToken? cancellationToken,
+  }) async {
+    onFetchTree();
+    return <AsmrTrackFile>[
+      AsmrTrackFile.fromJson(const <String, dynamic>{
+        'type': 'audio',
+        'title': '01.mp3',
+        'mediaStreamUrl': 'https://example.test/01.mp3',
+      }),
+    ];
+  }
 }

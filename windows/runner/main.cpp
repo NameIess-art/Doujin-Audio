@@ -8,7 +8,7 @@
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
-  if (std::wstring(command_line) == L"--remove-timers") {
+  if (HasCommandLineFlag(L"--remove-timers")) {
     const HRESULT com_init = CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
     int result = EXIT_SUCCESS;
     try { SyncScheduledTasks(flutter::EncodableMap{}); } catch (...) { result = EXIT_FAILURE; }
@@ -25,6 +25,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   HANDLE singleton = CreateMutexW(nullptr,TRUE,mutex_name);
   if (!singleton) return EXIT_FAILURE;
   if (GetLastError() == ERROR_ALREADY_EXISTS) {
+    const WPARAM background = HasCommandLineFlag(L"--background") ? 1 : 0;
     const auto deadline = GetTickCount64() + 5000;
     while (true) {
       const auto ownership = WaitForSingleObject(singleton,0);
@@ -33,14 +34,17 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
       if (ownership == WAIT_OBJECT_0 || ownership == WAIT_ABANDONED) break;
       if (ownership == WAIT_FAILED) { CloseHandle(singleton); return EXIT_FAILURE; }
       if (auto existing = FindWindowW(window_class,nullptr)) {
-        const WPARAM background =
-            std::wstring(command_line).find(L"--background") != std::wstring::npos ? 1 : 0;
         if (background == 0) {
           DWORD pid = 0;
           GetWindowThreadProcessId(existing, &pid);
           if (pid != 0) AllowSetForegroundWindow(pid);
         }
-        if (PostMessage(existing,DesktopIntegration::kActivate,background,0)) {
+        DWORD_PTR accepted = 0;
+        if (SendMessageTimeoutW(existing, DesktopIntegration::kActivate,
+                                background, 0,
+                                SMTO_ABORTIFHUNG | SMTO_NORMAL, 2000,
+                                &accepted) != 0 &&
+            accepted == static_cast<DWORD_PTR>(DesktopIntegration::kActivateAccepted)) {
           CloseHandle(singleton); return EXIT_SUCCESS;
         }
       }

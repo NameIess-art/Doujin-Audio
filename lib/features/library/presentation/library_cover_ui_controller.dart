@@ -28,6 +28,7 @@ final class LibraryCoverUiController {
   final LibraryFacade _library;
   final WarmupScheduler _scheduler;
   final Map<String, _DeferredCoverLookup> _deferredLookups = {};
+  final Map<Object, String> _tokenKeys = {};
   final Set<ScrollPosition> _scrollPositions = {};
   final Map<Object, _BrowseCoverPrefetch> _browsePrefetches = {};
   bool _scheduleBatchPending = false;
@@ -264,6 +265,7 @@ final class LibraryCoverUiController {
   Future<String?> deferredTrackCover(
     MusicTrack track, {
     BuildContext? context,
+    Object? cancelToken,
   }) {
     final coverKey =
         _library.coverArtworkCacheService.coverSearchKeyForTrack(track) ??
@@ -275,6 +277,7 @@ final class LibraryCoverUiController {
       key: 'track:$coverKey:$revision',
       cached: _library.coverArtworkCacheService.cachedFutureForTrack(track),
       context: context,
+      cancelToken: cancelToken,
       lookup: () => _library.coverPathFutureForTrack(track),
     );
   }
@@ -310,10 +313,27 @@ final class LibraryCoverUiController {
     );
   }
 
+  void cancelDeferredLookup(Object token) {
+    final key = _tokenKeys.remove(token);
+    if (key == null) return;
+    final request = _deferredLookups[key];
+    if (request == null) return;
+    request.activeTokens.remove(token);
+    if (!request.submitted &&
+        !request.started &&
+        !request.hasUnscopedRequest &&
+        request.activeTokens.isEmpty &&
+        !request.contexts.any((context) => context.mounted)) {
+      _deferredLookups.remove(key);
+      if (!request.result.isCompleted) request.result.complete(null);
+    }
+  }
+
   Future<String?> _deferredLookup({
     required String key,
     required Future<String?>? cached,
     required BuildContext? context,
+    Object? cancelToken,
     required Future<String?> Function() lookup,
   }) {
     if (_disposed) return Future<String?>.value();
@@ -322,14 +342,17 @@ final class LibraryCoverUiController {
       key,
       () => _DeferredCoverLookup(lookup),
     );
-    if (context == null) {
-      request.hasUnscopedRequest = true;
-    } else {
+    if (context != null) {
       request.contexts.add(context);
       final position = Scrollable.maybeOf(context)?.position;
       if (position != null && _scrollPositions.add(position)) {
         position.addListener(viewportChanged);
       }
+    } else if (cancelToken != null) {
+      request.activeTokens.add(cancelToken);
+      _tokenKeys[cancelToken] = key;
+    } else {
+      request.hasUnscopedRequest = true;
     }
     _schedulePendingLookups();
     return request.result.future;
@@ -385,6 +408,7 @@ final class LibraryCoverUiController {
         if (request.submitted ||
             request.started ||
             request.hasUnscopedRequest ||
+            request.activeTokens.isNotEmpty ||
             request.contexts.isNotEmpty) {
           return false;
         }
@@ -400,7 +424,9 @@ final class LibraryCoverUiController {
               .where(
                 (entry) =>
                     !entry.value.submitted &&
-                    (entry.value.hasUnscopedRequest || !_scrollUpdateScheduled),
+                    (entry.value.hasUnscopedRequest ||
+                        entry.value.activeTokens.isNotEmpty ||
+                        !_scrollUpdateScheduled),
               )
               .map(
                 (entry) => (
@@ -453,6 +479,7 @@ final class LibraryCoverUiController {
     try {
       final hasMountedRequester =
           request.hasUnscopedRequest ||
+          request.activeTokens.isNotEmpty ||
           request.contexts.any((context) => context.mounted);
       final value = !_disposed && hasMountedRequester
           ? await request.lookup()
@@ -463,6 +490,9 @@ final class LibraryCoverUiController {
     } finally {
       if (identical(_deferredLookups[key], request)) {
         _deferredLookups.remove(key);
+        for (final token in request.activeTokens) {
+          _tokenKeys.remove(token);
+        }
       }
       _pruneScrollPositions();
     }
@@ -470,11 +500,15 @@ final class LibraryCoverUiController {
 
   bool _canRunLookup(_DeferredCoverLookup request) =>
       request.hasUnscopedRequest ||
+      request.activeTokens.isNotEmpty ||
       !request.contexts.any((context) => context.mounted) ||
       (!_scrollUpdateScheduled && _priorityForRequest(request) < 0);
 
   int _priorityForRequest(_DeferredCoverLookup request) {
-    var priority = request.hasUnscopedRequest ? -2000 : 1 << 30;
+    var priority =
+        (request.hasUnscopedRequest || request.activeTokens.isNotEmpty)
+        ? -2000
+        : 1 << 30;
     for (final context in request.contexts) {
       if (!context.mounted ||
           !TickerMode.getValuesNotifier(context).value.enabled) {
@@ -532,6 +566,7 @@ final class LibraryCoverUiController {
       if (!completer.isCompleted) completer.complete(null);
     }
     _deferredLookups.clear();
+    _tokenKeys.clear();
     await _scheduler.shutdown();
   }
 }
@@ -577,6 +612,7 @@ final class _DeferredCoverLookup {
   final Future<String?> Function() lookup;
   final result = Completer<String?>();
   final contexts = <BuildContext>{};
+  final activeTokens = <Object>{};
   bool hasUnscopedRequest = false;
   bool submitted = false;
   bool started = false;

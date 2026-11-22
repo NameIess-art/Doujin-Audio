@@ -845,9 +845,8 @@ class _RecordingRepository extends NativePlaybackRepository {
   @override
   Future<NativeResult<NativePlaybackSnapshot>> setVolume(
     String sessionId,
-    double volume, {
-    bool reloadSource = true,
-  }) async {
+    double volume,
+  ) async {
     volumes.add((sessionId, volume));
     return const NativeSuccess();
   }

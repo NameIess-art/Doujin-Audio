@@ -32,6 +32,74 @@ function Remove-StagingDirectory([string]$Directory) {
     if (Test-Path -LiteralPath $resolved) { Remove-Item -LiteralPath $resolved -Recurse -Force }
 }
 
+$innoRequiredFiles = @('ISCC.exe','ISCmplr.dll','ISPP.dll','Setup.e32','SetupLdr.e32','SetupLdr.e64','islzma64.exe')
+
+function Test-InnoCompilerIntegrity([string]$CompilerRoot, [string]$ExpectedInstallerSha256) {
+    $markerPath = Join-Path $CompilerRoot '.verified-inno.json'
+    if (!(Test-Path -LiteralPath $markerPath)) { return $false }
+    try {
+        $marker = Get-Content -LiteralPath $markerPath -Raw | ConvertFrom-Json
+    } catch {
+        return $false
+    }
+    if ($marker.installerSha256 -ne $ExpectedInstallerSha256) { return $false }
+    foreach ($fileName in $innoRequiredFiles) {
+        $filePath = Join-Path $CompilerRoot $fileName
+        if (!(Test-Path -LiteralPath $filePath)) { return $false }
+        $expectedHash = $marker.files.$fileName
+        if (!$expectedHash) { return $false }
+        $actualHash = (Get-FileHash -LiteralPath $filePath -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actualHash -ne $expectedHash) { return $false }
+    }
+    return $true
+}
+
+function Write-InnoCompilerMarker([string]$CompilerRoot, [string]$InstallerSha256) {
+    $files = [ordered]@{}
+    foreach ($fileName in $innoRequiredFiles) {
+        $filePath = Join-Path $CompilerRoot $fileName
+        if (!(Test-Path -LiteralPath $filePath)) {
+            throw "Inno Setup installation is missing required binary: $fileName"
+        }
+        $files[$fileName] = (Get-FileHash -LiteralPath $filePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
+    $marker = [ordered]@{
+        installerSha256 = $InstallerSha256
+        files = $files
+    }
+    [IO.File]::WriteAllText((Join-Path $CompilerRoot '.verified-inno.json'), ($marker | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false))
+}
+
+function Assert-NativeArchivesVerified($NativeArchives, [string]$BuildRoot, [switch]$AllowStage) {
+    foreach ($native in $NativeArchives) {
+        $nativeArchive = Join-Path $BuildRoot $native.name
+        if ($AllowStage) {
+            $cached = Join-Path $dependencyRoot $native.name
+            if (!(Test-Path -LiteralPath $cached) -and (Test-Path -LiteralPath $nativeArchive)) {
+                $existingHash = (Get-FileHash -LiteralPath $nativeArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+                if ($existingHash -eq $native.sha256) {
+                    Copy-Item -LiteralPath $nativeArchive -Destination $cached -Force
+                }
+            }
+            if ($native.PSObject.Properties['url'] -and $native.url) {
+                $verified = Get-VerifiedDependency $native $native.name
+                $null = New-Item -ItemType Directory -Path $BuildRoot -Force
+                $needsCopy = !(Test-Path -LiteralPath $nativeArchive)
+                if (!$needsCopy) {
+                    $currentHash = (Get-FileHash -LiteralPath $nativeArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+                    $needsCopy = ($currentHash -ne $native.sha256)
+                }
+                if ($needsCopy) {
+                    Copy-Item -LiteralPath $verified -Destination $nativeArchive -Force
+                }
+            }
+        }
+        if (!(Test-Path -LiteralPath $nativeArchive) -or (Get-FileHash -LiteralPath $nativeArchive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $native.sha256) {
+            throw "Native dependency integrity check failed: $($native.name)"
+        }
+    }
+}
+
 $pushed = $false
 try {
     if ($InnoCompiler) {
@@ -39,6 +107,10 @@ try {
             throw "Inno Setup compiler not found: $InnoCompiler"
         }
         $InnoCompiler = (Resolve-Path -LiteralPath $InnoCompiler).ProviderPath
+        $innoCompilerDir = Split-Path -Parent $InnoCompiler
+        if (!(Test-Path -LiteralPath (Join-Path $innoCompilerDir 'ISCmplr.dll'))) {
+            throw "Inno Setup compiler directory is missing ISCmplr.dll: $innoCompilerDir"
+        }
     }
     Push-Location -LiteralPath $projectRoot
     $pushed = $true
@@ -53,7 +125,9 @@ try {
     if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne $tag) { throw 'Git tag does not match pubspec.yaml.' }
     $archive = Get-VerifiedDependency $manifest.ffmpeg "ffmpeg-$($manifest.ffmpeg.version).zip"
     $null = Get-VerifiedDependency $manifest.sqlite "sqlite3-$($manifest.sqlite.version).dll"
-    $null = Get-VerifiedDependency $manifest.mpv "mpv-full-$($manifest.mpv.version).7z"
+    $mpvArchive = Get-VerifiedDependency $manifest.mpv "mpv-full-$($manifest.mpv.version).7z"
+    $windowsBuildRoot = Join-Path $projectRoot 'build/windows/x64'
+    Assert-NativeArchivesVerified $manifest.nativeArchives $windowsBuildRoot -AllowStage
     $ffmpegRoot = Join-Path $dependencyRoot "ffmpeg-$($manifest.ffmpeg.version)-essentials_build"
     # Re-extract verified input so modified cached binaries cannot enter a package.
     Expand-Archive -LiteralPath $archive -DestinationPath $dependencyRoot -Force
@@ -62,10 +136,11 @@ try {
     if (!$InnoCompiler) {
         $compilerRoot = Join-Path $dependencyRoot "inno-$($manifest.inno.version)"
         $InnoCompiler = Join-Path $compilerRoot 'ISCC.exe'
-        if (!(Test-Path -LiteralPath $InnoCompiler)) {
-            $installer = Get-VerifiedDependency $manifest.inno "inno-$($manifest.inno.version).exe"
+        $installer = Get-VerifiedDependency $manifest.inno "inno-$($manifest.inno.version).exe"
+        if (!(Test-InnoCompilerIntegrity $compilerRoot $manifest.inno.sha256)) {
             $process = Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-','/CURRENTUSER','/NOICONS',('/DIR="' + $compilerRoot + '"')) -WindowStyle Hidden -PassThru -Wait
             if ($process.ExitCode -ne 0) { throw "Inno Setup preparation failed: $($process.ExitCode)" }
+            Write-InnoCompilerMarker $compilerRoot $manifest.inno.sha256
         }
     }
     if (!(Test-Path -LiteralPath $InnoCompiler)) { throw "Inno Setup compiler not found: $InnoCompiler" }
@@ -75,15 +150,49 @@ try {
         & flutter build windows --release
         if ($LASTEXITCODE -ne 0) { throw 'Windows Release build failed.' }
     }
+    Assert-NativeArchivesVerified $manifest.nativeArchives $windowsBuildRoot
     $release = Join-Path $projectRoot 'build/windows/x64/runner/Release'
-    foreach ($native in $manifest.nativeArchives) {
-        $nativeArchive = Join-Path $projectRoot "build/windows/x64/$($native.name)"
-        if (!(Test-Path -LiteralPath $nativeArchive) -or (Get-FileHash -LiteralPath $nativeArchive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $native.sha256) {
-            throw "Native dependency integrity check failed: $($native.name)"
-        }
-    }
-    foreach ($required in @('doujin_audio.exe','flutter_windows.dll','data/app.so','crispasr.dll','ggml.dll','ggml-base.dll','ggml-cpu.dll')) {
+    $requiredFiles = @(
+        'doujin_audio.exe',
+        'flutter_windows.dll',
+        'data/app.so',
+        'crispasr.dll',
+        'ggml.dll',
+        'ggml-base.dll',
+        'ggml-cpu.dll',
+        'libmpv-2.dll',
+        'sqlite3.dll',
+        'libEGL.dll',
+        'libGLESv2.dll',
+        'd3dcompiler_47.dll',
+        'vk_swiftshader.dll',
+        'vulkan-1.dll',
+        'zlib.dll',
+        'tools/ffmpeg.exe',
+        'tools/ffprobe.exe'
+    )
+    foreach ($required in $requiredFiles) {
         if (!(Test-Path -LiteralPath (Join-Path $release $required))) { throw "Missing Release file: $required" }
+    }
+    $mpvVerifyDir = Join-Path $dependencyRoot "mpv-verify-$($manifest.mpv.version)"
+    if (Test-Path -LiteralPath $mpvVerifyDir) { Remove-Item -LiteralPath $mpvVerifyDir -Recurse -Force }
+    $null = New-Item -ItemType Directory -Path $mpvVerifyDir -Force
+    try {
+        & tar.exe -xf $mpvArchive -C $mpvVerifyDir libmpv-2.dll
+        if ($LASTEXITCODE -ne 0) { throw "Failed to extract libmpv-2.dll from verified archive: $mpvArchive" }
+        $expectedMpvDll = Join-Path $mpvVerifyDir 'libmpv-2.dll'
+        if (!(Test-Path -LiteralPath $expectedMpvDll)) { throw "Verified mpv archive missing libmpv-2.dll: $mpvArchive" }
+        $expectedMpvHash = (Get-FileHash -LiteralPath $expectedMpvDll -Algorithm SHA256).Hash.ToLowerInvariant()
+    } finally {
+        if (Test-Path -LiteralPath $mpvVerifyDir) { Remove-Item -LiteralPath $mpvVerifyDir -Recurse -Force }
+    }
+    $actualMpvHash = (Get-FileHash -LiteralPath (Join-Path $release 'libmpv-2.dll') -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualMpvHash -ne $expectedMpvHash) {
+        throw "Release libmpv-2.dll SHA256 mismatch (expected complete build $expectedMpvHash, got $actualMpvHash)."
+    }
+    $actualSqliteHash = (Get-FileHash -LiteralPath (Join-Path $release 'sqlite3.dll') -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualSqliteHash -ne $manifest.sqlite.sha256) {
+        throw "Release sqlite3.dll SHA256 mismatch (expected $($manifest.sqlite.sha256), got $actualSqliteHash)."
     }
     $appRoot = Join-Path $distRoot 'app'
     Remove-StagingDirectory $appRoot

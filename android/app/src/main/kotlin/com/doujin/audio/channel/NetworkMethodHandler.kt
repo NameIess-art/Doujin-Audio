@@ -13,8 +13,8 @@ internal class NetworkMethodHandler(private val context: Context) : MethodChanne
         try {
             val args = call.argumentReader()
             when (call.method) {
-                "resolveSystemProxy" -> reply.success(NetworkRouteRuntime.systemProxy(args.requiredString("url")))
-                "applyNetworkRoute" -> {
+                NetworkMethods.RESOLVE_SYSTEM_PROXY -> reply.success(NetworkRouteRuntime.systemProxy(args.requiredString("url")))
+                NetworkMethods.APPLY_NETWORK_ROUTE -> {
                     val mode = args.requiredString("proxyMode")
                     val host = args.requiredString("proxyHost", allowBlank = true)
                     val port = args.requiredInt("proxyPort")

@@ -79,13 +79,13 @@ class NativePlaybackCommandPayloadsTest {
             mapOf("enabled" to true)))
     }
     @Test
-    fun `deferred prepare uses only the background file command even when another service exists`() {
+    fun `deferred prepare supports cold background storage and live routing when session is active`() {
         val command = parsePlaybackCommand(MethodCall(NativePlaybackMethods.PREPARE_SESSION,
             validPreparePayload() + ("deferPlayerCreation" to true)))
         assertFalse(command.canStartService)
         assertTrue(command.dispatchBackground != null)
-        assertNull(command.dispatchAsync)
-        assertNull(command.sessionId)
+        assertTrue(command.dispatchAsync != null)
+        assertEquals("session-1", command.sessionId)
         val stored = NativePlaybackCommandPayloads.parsePrepareSession(
             validPreparePayload() + ("deferPlayerCreation" to true) + ("startPositionMs" to 22_000L)).storedDefinition()
         assertEquals(22_000L, stored.positionMs)

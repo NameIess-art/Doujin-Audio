@@ -705,4 +705,54 @@ void main() {
       expect(appliedSettings?.customDnsServer, '::1');
     },
   );
+
+  test(
+    'awaitCancellableSocket cancels on timeout and destroys late-completing sockets',
+    () async {
+      final socketCompleter = Completer<Socket>();
+      var cancelCalls = 0;
+
+      await expectLater(
+        awaitCancellableSocket(
+          socketCompleter.future,
+          cancel: () => cancelCalls++,
+          timeout: const Duration(milliseconds: 20),
+          timeoutMessage: 'Timed out',
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
+      expect(cancelCalls, 1);
+
+      // Simulate a socket racing past cancel() and completing late.
+      final lateSocket = _TrackingSocket();
+      socketCompleter.complete(lateSocket);
+      await Future<void>.delayed(Duration.zero);
+      expect(lateSocket.destroyed, isTrue);
+
+      // Late error after timeout must also be observed without unhandled error.
+      final errorCompleter = Completer<Socket>();
+      var errorCancelCalls = 0;
+      await expectLater(
+        awaitCancellableSocket(
+          errorCompleter.future,
+          cancel: () => errorCancelCalls++,
+          timeout: const Duration(milliseconds: 20),
+          timeoutMessage: 'Timed out',
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
+      expect(errorCancelCalls, 1);
+      errorCompleter.completeError(const SocketException('late failure'));
+      await Future<void>.delayed(Duration.zero);
+    },
+  );
+}
+
+final class _TrackingSocket extends Fake implements Socket {
+  bool destroyed = false;
+
+  @override
+  void destroy() {
+    destroyed = true;
+  }
 }

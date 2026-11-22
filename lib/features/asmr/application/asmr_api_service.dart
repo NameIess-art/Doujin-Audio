@@ -300,6 +300,7 @@ class AsmrApiService {
     HttpClientRequest? request;
     StreamSubscription<List<int>>? subscription;
     var retired = false;
+    var completedNormally = false;
     final removeListener = cancellationToken?.addListener(() {
       request?.abort(const AsmrRequestCancelled());
       unawaited(subscription?.cancel());
@@ -348,10 +349,13 @@ class AsmrApiService {
       );
       await (cancellationToken?.waitFor(received.future) ?? received.future)
           .timeout(remainingTimeout());
+      completedNormally = true;
     } finally {
       retired = true;
       removeListener?.call();
-      request?.abort();
+      if (!completedNormally) {
+        request?.abort();
+      }
       await subscription?.cancel();
     }
   }
@@ -387,22 +391,25 @@ class AsmrApiService {
     ComputeCallback<String, Object?> decodeResponse = jsonDecode,
     AsmrRequestCancellationToken? cancellationToken,
   }) async {
-    final startDomainIndex = _currentDomainIndex;
+    final domains = List<String>.of(_candidateDomains, growable: false);
+    final startDomainIndex = domains.isEmpty
+        ? 0
+        : _currentDomainIndex % domains.length;
     int attempt = 0;
     Object? lastError;
     StackTrace? lastStackTrace;
 
-    while (attempt < _candidateDomains.length) {
+    while (attempt < domains.length) {
       cancellationToken?.throwIfCancelled();
-      final domainIndex =
-          (startDomainIndex + attempt) % _candidateDomains.length;
-      final domain = _candidateDomains[domainIndex];
+      final domainIndex = (startDomainIndex + attempt) % domains.length;
+      final domain = domains[domainIndex];
       final baseUri = Uri.parse(domain);
       final uri = baseUri.replace(path: path, queryParameters: queryParameters);
 
       void Function()? removeAbortListener;
       HttpClientRequest? openedRequest;
       var attemptRetired = false;
+      var responseConsumed = false;
       try {
         final opening = _httpClient.openUrl(method, uri).then((request) {
           // openUrl may finish after the caller has already been cancelled.
@@ -445,6 +452,7 @@ class AsmrApiService {
           response,
           cancellationToken,
         );
+        responseConsumed = true;
         cancellationToken?.throwIfCancelled();
         if (response.statusCode >= 500 && response.statusCode <= 599) {
           throw AsmrApiException(
@@ -461,7 +469,10 @@ class AsmrApiService {
           );
         }
 
-        _currentDomainIndex = domainIndex;
+        final activeIndex = _candidateDomains.indexOf(domain);
+        if (activeIndex >= 0) {
+          _currentDomainIndex = activeIndex;
+        }
 
         if (responseBody.isEmpty) {
           return null;
@@ -486,7 +497,9 @@ class AsmrApiService {
         // after failover has moved on and detached its cancellation listener.
         attemptRetired = true;
         removeAbortListener?.call();
-        openedRequest?.abort();
+        if (!responseConsumed) {
+          openedRequest?.abort();
+        }
       }
       attempt++;
     }

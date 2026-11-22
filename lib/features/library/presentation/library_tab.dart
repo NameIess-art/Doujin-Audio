@@ -73,7 +73,8 @@ class LibraryTab extends ConsumerStatefulWidget {
 
 class _LibraryTabState extends ConsumerState<LibraryTab>
     with WidgetsBindingObserver, MainTabStateMixin<LibraryTab> {
-  final _scanCoordinator = LibraryScanCoordinator();
+  LibraryScanCoordinator get _scanCoordinator =>
+      ref.read(libraryScanCoordinatorProvider);
 
   @override
   double get defaultHeaderHeight => AppPageHeaderMetrics.expandedToolbarHeight;
@@ -629,7 +630,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     );
     _startupRefreshIdleTimer?.cancel();
     disposeTabState();
-    _scanCoordinator.dispose();
     _scrollController.dispose();
     super.dispose();
   }

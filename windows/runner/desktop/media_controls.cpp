@@ -2,6 +2,7 @@
 #include "desktop_integration.h"
 #include <SystemMediaTransportControlsInterop.h>
 #include <dwmapi.h>
+#include <shlwapi.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Storage.Streams.h>
 #include <wrl/implements.h>
@@ -80,6 +81,27 @@ HICON ButtonIcon(int button, bool playing, bool dark) {
   if (color) DeleteObject(color);
   if (mask) DeleteObject(mask);
   return icon;
+}
+
+std::optional<std::wstring> LocalPathToFileUri(const std::string& utf8_path) {
+  std::wstring path(winrt::to_hstring(utf8_path));
+  if (path.empty()) return std::nullopt;
+  // UrlCreateFromPathW does not strip extended-length prefixes (\\?\ or \\?\UNC\).
+  if (path.size() >= 8 && _wcsnicmp(path.c_str(), L"\\\\?\\UNC\\", 8) == 0) {
+    path = L"\\\\" + path.substr(8);
+  } else if (path.size() >= 4 && path.compare(0, 4, L"\\\\?\\") == 0) {
+    path = path.substr(4);
+  }
+  DWORD length = std::max<DWORD>(2084, static_cast<DWORD>(path.size() * 3 + 32));
+  std::wstring uri(length, L'\0');
+  HRESULT hr = UrlCreateFromPathW(path.c_str(), uri.data(), &length, 0);
+  if (hr == E_POINTER && length > 0) {
+    uri.resize(length);
+    hr = UrlCreateFromPathW(path.c_str(), uri.data(), &length, 0);
+  }
+  if (FAILED(hr) || length == 0) return std::nullopt;
+  uri.resize(length);
+  return uri;
 }
 }  // namespace
 
@@ -451,18 +473,20 @@ void MediaControls::Update(const flutter::EncodableMap& payload) {
     if (!metadata_ready_ || subtitle_ != subtitle) updater.MusicProperties().Artist(winrt::to_hstring(subtitle));
     if (!metadata_ready_ || art_path_ != art) {
       if (!art.empty()) {
-      try {
-        std::wstring uri = L"file:///";
-        for (const auto c : winrt::to_hstring(art)) {
-          if (c == L'\\') uri += L'/';
-          else if (c == L'#') uri += L"%23";
-          else if (c == L'%') uri += L"%25";
-          else uri += c;
+        try {
+          if (const auto uri = LocalPathToFileUri(art)) {
+            updater.Thumbnail(
+                winrt::Windows::Storage::Streams::RandomAccessStreamReference::CreateFromUri(
+                    winrt::Windows::Foundation::Uri(*uri)));
+          } else {
+            updater.Thumbnail(nullptr);
+          }
+        } catch (const winrt::hresult_error&) {
+          updater.Thumbnail(nullptr);
         }
-        updater.Thumbnail(winrt::Windows::Storage::Streams::RandomAccessStreamReference::CreateFromUri(
-            winrt::Windows::Foundation::Uri(uri)));
-      } catch (const winrt::hresult_error&) { updater.Thumbnail(nullptr); }
-      } else { updater.Thumbnail(nullptr); }
+      } else {
+        updater.Thumbnail(nullptr);
+      }
     }
     updater.Update();
     title_ = title; subtitle_ = subtitle; art_path_ = art; metadata_ready_ = true;

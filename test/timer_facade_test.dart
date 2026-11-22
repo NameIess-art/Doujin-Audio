@@ -865,6 +865,41 @@ void main() {
         }
       },
     );
+
+    test(
+      'detachRuntime clears setNativeTrackStop callback so detached handler is never invoked',
+      () async {
+        final service = TimerService();
+        final platform = _RecordingPowerPlatformService();
+        final timer = TimerFacade.create(
+          service: service,
+          powerPlatformService: platform,
+        );
+        addTearDown(timer.dispose);
+        final calls = <(String, bool)>[];
+        final session = _TestSession('s1')..requested = true;
+        _attachNoopRuntime(
+          timer,
+          sessions: () => [session],
+          setNativeTrackStop: (id, enabled) async {
+            calls.add((id, enabled));
+            return true;
+          },
+        );
+
+        timer.setStopAfterCurrentTrack(true);
+        await timer.armTrackStopBeforePlayback(session);
+        expect(calls, isEmpty);
+
+        timer.detachRuntime();
+        await timer.pendingTrackStopSync;
+        final callsBefore = calls.length;
+
+        // Re-arming after detach must use the noop callback, not the detached one.
+        await timer.releaseTrackStopTarget('s1');
+        expect(calls.length, callsBefore);
+      },
+    );
   });
 }
 

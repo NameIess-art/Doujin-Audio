@@ -5,14 +5,15 @@ import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/cache/app_cache_service.dart';
 import '../../../core/media/music_track.dart';
+import '../../../core/media/path_matcher.dart';
 import '../../../core/media/subtitle_parser.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/persistence/app_preferences.dart';
 import '../../../core/translation/text_translation_service.dart';
@@ -73,7 +74,13 @@ class PlaybackSubtitleService extends ChangeNotifier {
            remoteSubtitlesDirectoryResolver ?? _defaultRemoteSubtitlesDirectory,
        _aiEngine = aiEngine ?? SubtitleAiEngine(),
        _now = now ?? DateTime.now {
-    if (initialOffsets != null) _offsets.addAll(initialOffsets);
+    if (initialOffsets != null) {
+      for (final entry in initialOffsets.entries) {
+        final key = _trackKey(entry.key);
+        _offsets[key] = entry.value;
+        _offsetRawPaths[key] = entry.key;
+      }
+    }
     _settingsReady = _loadPersistedSettings();
   }
 
@@ -85,6 +92,8 @@ class PlaybackSubtitleService extends ChangeNotifier {
   final Future<Directory> Function() _remoteSubtitlesDirectoryResolver;
   final SubtitleAiEngine _aiEngine;
   final DateTime Function() _now;
+  WorkTextService? _remoteTextService;
+  bool _disposed = false;
   static const _automaticRetryInterval = Duration(seconds: 30);
   static const _persistOffsetsDebounce = Duration(milliseconds: 350);
   final Map<String, ({_SubtitleSource source, DateTime retryAt})>
@@ -150,6 +159,12 @@ class PlaybackSubtitleService extends ChangeNotifier {
     onApplied,
   );
 
+  void _notifyIfActive() {
+    if (!_disposed) notifyListeners();
+  }
+
+  String _trackKey(String trackPath) => PathMatcher.equivalenceKey(trackPath);
+
   bool _startGeneration(
     String trackPath,
     SubtitleDraftKind kind,
@@ -161,6 +176,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
     prepare,
     VoidCallback? onApplied,
   ) {
+    if (_disposed) return false;
     final existing = _generationJob;
     if (existing?.status == SubtitleGenerationStatus.running) {
       return false;
@@ -169,7 +185,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
     _generationJob = job;
     _retryLastGeneration = () =>
         _startGeneration(trackPath, kind, prepare, onApplied);
-    notifyListeners();
+    _notifyIfActive();
     unawaited(_runGeneration(job, prepare, onApplied));
     return true;
   }
@@ -187,25 +203,33 @@ class PlaybackSubtitleService extends ChangeNotifier {
     try {
       final draft = await prepare(
         (progress) {
-          if (!identical(_generationJob, job) || job._cancelRequested) return;
+          if (_disposed ||
+              !identical(_generationJob, job) ||
+              job._cancelRequested) {
+            return;
+          }
           job._progress = progress;
-          notifyListeners();
+          _notifyIfActive();
         },
-        () => job._cancelRequested,
+        () => _disposed || job._cancelRequested,
         job._cancellation.future,
       );
-      if (job._cancelRequested) {
+      if (_disposed || job._cancelRequested) {
         job._status = SubtitleGenerationStatus.cancelled;
       } else if (draft == null || draft.cues.isEmpty) {
         job._status = SubtitleGenerationStatus.noMatch;
       } else {
         job._progress = const SubtitleTaskProgress('saving', 0, '');
-        notifyListeners();
+        _notifyIfActive();
         await saveDraft(
           job.trackPath,
           draft,
-          isCancelled: () => job._cancelRequested,
+          isCancelled: () => _disposed || job._cancelRequested,
         );
+        if (_disposed || job._cancelRequested) {
+          job._status = SubtitleGenerationStatus.cancelled;
+          return;
+        }
         job._status = SubtitleGenerationStatus.completed;
         try {
           onApplied?.call();
@@ -223,7 +247,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
       job._errorMessageKey = 'subtitle_alignment_too_large';
       job._status = SubtitleGenerationStatus.failed;
     } on TextTranslationFailure catch (failure) {
-      if (job._cancelRequested) {
+      if (_disposed || job._cancelRequested) {
         job._status = SubtitleGenerationStatus.cancelled;
       } else {
         job._errorMessageKey = switch (failure) {
@@ -238,7 +262,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
         job._status = SubtitleGenerationStatus.failed;
       }
     } catch (error, stackTrace) {
-      if (job._cancelRequested) {
+      if (_disposed || job._cancelRequested) {
         job._status = SubtitleGenerationStatus.cancelled;
       } else {
         job._errorMessage = error.toString();
@@ -250,11 +274,12 @@ class PlaybackSubtitleService extends ChangeNotifier {
         job._status = SubtitleGenerationStatus.failed;
       }
     } finally {
-      if (identical(_generationJob, job)) notifyListeners();
+      if (!_disposed && identical(_generationJob, job)) _notifyIfActive();
     }
   }
 
   void cancelGeneration() {
+    if (_disposed) return;
     final job = _generationJob;
     if (job == null ||
         job.status != SubtitleGenerationStatus.running ||
@@ -264,15 +289,16 @@ class PlaybackSubtitleService extends ChangeNotifier {
     }
     job._cancelRequested = true;
     if (!job._cancellation.isCompleted) job._cancellation.complete();
-    notifyListeners();
+    _notifyIfActive();
   }
 
   void clearGenerationJob() {
+    if (_disposed) return;
     final job = _generationJob;
     if (job == null || job.status == SubtitleGenerationStatus.running) return;
     _generationJob = null;
     _retryLastGeneration = null;
-    notifyListeners();
+    _notifyIfActive();
   }
 
   final Map<String, Future<SubtitleTrack?>> _loading =
@@ -283,10 +309,12 @@ class PlaybackSubtitleService extends ChangeNotifier {
   final Map<String, _SubtitleSource> _resultSources = {};
   final Map<String, _SubtitleSource> _loadingSources = {};
   final Map<String, Duration> _offsets = <String, Duration>{};
+  final Map<String, String> _offsetRawPaths = <String, String>{};
   final Map<String, String> _customPaths = <String, String>{};
+  final Map<String, String> _customRawPaths = <String, String>{};
   final Map<String, int> _trackRevisions = <String, int>{};
   int _generation = 0;
-  String? _mostRecentTrackPath;
+  String? _mostRecentTrackKey;
   static final RegExp _assEventsHeaderPattern = RegExp(
     r'^\[events\]',
     caseSensitive: false,
@@ -298,12 +326,12 @@ class PlaybackSubtitleService extends ChangeNotifier {
 
   bool hasResult(String trackPath) {
     _refreshSubtitleSource(trackPath);
-    return _tracks.containsKey(trackPath);
+    return _tracks.containsKey(_trackKey(trackPath));
   }
 
   bool isLoading(String trackPath) {
     _refreshSubtitleSource(trackPath);
-    return _loading.containsKey(trackPath);
+    return _loading.containsKey(_trackKey(trackPath));
   }
 
   bool hasKnownSubtitle(String trackPath) {
@@ -311,7 +339,8 @@ class PlaybackSubtitleService extends ChangeNotifier {
         _hasRemoteSubtitleUrl(_trackResolver(trackPath));
   }
 
-  Duration getOffset(String trackPath) => _offsets[trackPath] ?? Duration.zero;
+  Duration getOffset(String trackPath) =>
+      _offsets[_trackKey(trackPath)] ?? Duration.zero;
 
   bool _isRemote(String trackPath) =>
       trackPath.startsWith('https://') || trackPath.startsWith('http://');
@@ -321,15 +350,15 @@ class PlaybackSubtitleService extends ChangeNotifier {
     bool includeImported = false,
   }) async {
     await _settingsReady;
-    final customPath = _customPaths[trackPath];
+    final key = _trackKey(trackPath);
+    final customPath = _customPaths[key];
     if (includeImported &&
         customPath != null &&
         await _loadFromFile(customPath) != null) {
       return true;
     }
     if (_isRemote(trackPath)) {
-      return _customPaths.containsKey(trackPath) ||
-          trackSync(trackPath) != null;
+      return _customPaths.containsKey(key) || trackSync(trackPath) != null;
     }
     if (trackPath.startsWith('content://')) {
       return await _fileCacheGateway.resolveTrackSubtitle(
@@ -563,8 +592,8 @@ class PlaybackSubtitleService extends ChangeNotifier {
         files[file.sourcePath] = file;
       }
     }
-    final currentPath =
-        _customPaths[trackPath] ?? trackSync(trackPath)?.sourcePath;
+    final key = _trackKey(trackPath);
+    final currentPath = _customPaths[key] ?? trackSync(trackPath)?.sourcePath;
     if (currentPath != null &&
         !files.containsKey(currentPath) &&
         await _fileCacheGateway.readDocumentBytes(currentPath) != null) {
@@ -602,16 +631,23 @@ class PlaybackSubtitleService extends ChangeNotifier {
     bool Function()? isCancelled,
   }) async {
     if (isCancelled?.call() == true) throw const SubtitleTaskCancelled();
-    final previousPath = _customPaths[trackPath];
-    _customPaths[trackPath] = subtitle.sourcePath;
+    final key = _trackKey(trackPath);
+    final previousPath = _customPaths[key];
+    final previousRawPath = _customRawPaths[key];
+    _customPaths[key] = subtitle.sourcePath;
+    _customRawPaths[key] = trackPath;
     try {
       await _persistCustomPaths(throwOnFailure: true);
       if (isCancelled?.call() == true) throw const SubtitleTaskCancelled();
     } catch (_) {
       if (previousPath == null) {
-        _customPaths.remove(trackPath);
+        _customPaths.remove(key);
+        _customRawPaths.remove(key);
       } else {
-        _customPaths[trackPath] = previousPath;
+        _customPaths[key] = previousPath;
+        if (previousRawPath != null) {
+          _customRawPaths[key] = previousRawPath;
+        }
       }
       await _persistCustomPaths();
       rethrow;
@@ -620,20 +656,23 @@ class PlaybackSubtitleService extends ChangeNotifier {
   }
 
   Future<void> setTrackOffset(String trackPath, Duration offset) async {
+    final key = _trackKey(trackPath);
     if (offset == Duration.zero) {
-      _offsets.remove(trackPath);
+      _offsets.remove(key);
+      _offsetRawPaths.remove(key);
     } else {
-      _offsets[trackPath] = offset;
+      _offsets[key] = offset;
+      _offsetRawPaths[key] = trackPath;
     }
     _schedulePersistOffsets();
     final currentTrack = trackSync(trackPath);
     if (currentTrack != null) {
       final updatedTrack = currentTrack.withOffset(offset);
-      _tracks[trackPath] = updatedTrack;
-      _results[trackPath] = SynchronousFuture<SubtitleTrack?>(updatedTrack);
+      _tracks[key] = updatedTrack;
+      _results[key] = SynchronousFuture<SubtitleTrack?>(updatedTrack);
       _onTrackLoaded?.call(trackPath, updatedTrack);
     }
-    notifyListeners();
+    _notifyIfActive();
   }
 
   Future<SubtitleTrack?> importSubtitle(
@@ -645,7 +684,9 @@ class PlaybackSubtitleService extends ChangeNotifier {
     await _settingsReady;
     final bytes = await _fileCacheGateway.readDocumentBytes(filePath);
     if (bytes == null) return null;
-    final previousPath = _customPaths[trackPath];
+    final key = _trackKey(trackPath);
+    final previousPath = _customPaths[key];
+    final previousRawPath = _customRawPaths[key];
     try {
       final extension = path.extension(fileName ?? filePath).toLowerCase();
       final parsed = await _parseSubtitleBytes(
@@ -688,9 +729,13 @@ class PlaybackSubtitleService extends ChangeNotifier {
       return await _rememberAndApplySubtitle(trackPath, saved);
     } catch (error, stackTrace) {
       if (previousPath == null) {
-        _customPaths.remove(trackPath);
+        _customPaths.remove(key);
+        _customRawPaths.remove(key);
       } else {
-        _customPaths[trackPath] = previousPath;
+        _customPaths[key] = previousPath;
+        if (previousRawPath != null) {
+          _customRawPaths[key] = previousRawPath;
+        }
       }
       AppLogService.warning(
         'import_subtitle_failed',
@@ -802,12 +847,13 @@ class PlaybackSubtitleService extends ChangeNotifier {
   }
 
   SubtitleTrack _applySubtitle(String trackPath, SubtitleTrack subtitle) {
-    _automaticRetries.remove(trackPath);
+    final key = _trackKey(trackPath);
+    _automaticRetries.remove(key);
     final edited = subtitle.withOffset(getOffset(trackPath));
-    _trackRevisions[trackPath] = (_trackRevisions[trackPath] ?? 0) + 1;
-    _putCachedTrack(trackPath, edited, _subtitleSource(trackPath));
+    _trackRevisions[key] = (_trackRevisions[key] ?? 0) + 1;
+    _putCachedTrack(key, edited, _subtitleSource(trackPath));
     _onTrackLoaded?.call(trackPath, edited);
-    notifyListeners();
+    _notifyIfActive();
 
     return edited;
   }
@@ -1077,10 +1123,14 @@ class PlaybackSubtitleService extends ChangeNotifier {
         for (final item in rawOffsets) {
           final idx = item.lastIndexOf('|');
           if (idx > 0) {
-            final trackKey = item.substring(0, idx);
+            final rawTrackKey = item.substring(0, idx);
             final ms = int.tryParse(item.substring(idx + 1));
-            if (ms != null && trackKey.isNotEmpty) {
-              _offsets.putIfAbsent(trackKey, () => Duration(milliseconds: ms));
+            if (ms != null && rawTrackKey.isNotEmpty) {
+              final key = _trackKey(rawTrackKey);
+              if (!_offsets.containsKey(key)) {
+                _offsets[key] = Duration(milliseconds: ms);
+                _offsetRawPaths[key] = rawTrackKey;
+              }
             }
           }
         }
@@ -1092,10 +1142,14 @@ class PlaybackSubtitleService extends ChangeNotifier {
         for (final item in rawCustom) {
           final idx = item.lastIndexOf('|');
           if (idx > 0) {
-            final trackKey = item.substring(0, idx);
+            final rawTrackKey = item.substring(0, idx);
             final customPath = item.substring(idx + 1);
-            if (trackKey.isNotEmpty && customPath.isNotEmpty) {
-              _customPaths.putIfAbsent(trackKey, () => customPath);
+            if (rawTrackKey.isNotEmpty && customPath.isNotEmpty) {
+              final key = _trackKey(rawTrackKey);
+              if (!_customPaths.containsKey(key)) {
+                _customPaths[key] = customPath;
+                _customRawPaths[key] = rawTrackKey;
+              }
             }
           }
         }
@@ -1127,7 +1181,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
 
   Future<void> _persistOffsets() async {
     final list = _offsets.entries
-        .map((e) => '${e.key}|${e.value.inMilliseconds}')
+        .map((e) => '${_offsetRawPaths[e.key] ?? e.key}|${e.value.inMilliseconds}')
         .toList(growable: false);
     await AppPreferences.setStringList('subtitle_track_offsets', list);
   }
@@ -1135,7 +1189,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
   Future<void> _persistCustomPaths({bool throwOnFailure = false}) async {
     await _flushPendingOffsets();
     final list = _customPaths.entries
-        .map((e) => '${e.key}|${e.value}')
+        .map((e) => '${_customRawPaths[e.key] ?? e.key}|${e.value}')
         .toList(growable: false);
     final saved = await AppPreferences.setStringList(
       'subtitle_custom_paths',
@@ -1148,11 +1202,24 @@ class PlaybackSubtitleService extends ChangeNotifier {
 
   @override
   void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    _generation++;
+    final job = _generationJob;
+    if (job != null && job.status == SubtitleGenerationStatus.running) {
+      job._cancelRequested = true;
+      if (!job._cancellation.isCompleted) job._cancellation.complete();
+    }
     final timer = _persistOffsetsTimer;
     if (timer != null) {
       timer.cancel();
       _persistOffsetsTimer = null;
       unawaited(_persistOffsets());
+    }
+    final remoteTextService = _remoteTextService;
+    _remoteTextService = null;
+    if (remoteTextService != null) {
+      unawaited(remoteTextService.dispose());
     }
     super.dispose();
   }
@@ -1172,33 +1239,36 @@ class PlaybackSubtitleService extends ChangeNotifier {
     _SubtitleSource? validatedSource,
     bool reload = false,
   }) {
+    if (_disposed) return SynchronousFuture<SubtitleTrack?>(null);
+    final key = _trackKey(trackPath);
     var source = validatedSource ?? _refreshSubtitleSource(trackPath);
-    if (!reload && _tracks.containsKey(trackPath)) {
-      _touchCachedTrack(trackPath);
+    if (!reload && _tracks.containsKey(key)) {
+      _touchCachedTrack(key);
       return _results.putIfAbsent(
-        trackPath,
-        () => SynchronousFuture<SubtitleTrack?>(_tracks[trackPath]),
+        key,
+        () => SynchronousFuture<SubtitleTrack?>(_tracks[key]),
       );
     }
-    final existing = _loading[trackPath];
+    final existing = _loading[key];
     if (existing != null) return existing;
-    final retry = _automaticRetries[trackPath];
+    final retry = _automaticRetries[key];
     if (automatic &&
         retry != null &&
         retry.source == source &&
         _now().isBefore(retry.retryAt)) {
       return SynchronousFuture<SubtitleTrack?>(null);
     }
-    _automaticRetries.remove(trackPath);
+    _automaticRetries.remove(key);
     final requestGeneration = _generation;
-    final requestRevision = _trackRevisions[trackPath] ?? 0;
+    final requestRevision = _trackRevisions[key] ?? 0;
     late final Future<SubtitleTrack?> task;
     task = () async {
       try {
         await _settingsReady;
+        if (_disposed) return null;
         source = _subtitleSource(trackPath);
-        if (identical(_loading[trackPath], task)) {
-          _loadingSources[trackPath] = source;
+        if (identical(_loading[key], task)) {
+          _loadingSources[key] = source;
         }
         final track = _trackResolver(trackPath);
         final subtitleTrack =
@@ -1208,32 +1278,34 @@ class PlaybackSubtitleService extends ChangeNotifier {
                   track,
                   source: source,
                   isCurrent: () =>
+                      !_disposed &&
                       requestGeneration == _generation &&
-                      identical(_loading[trackPath], task) &&
+                      identical(_loading[key], task) &&
                       source == _subtitleSource(trackPath),
                   onMissingCustomPath: () {
                     source = (source.$1, source.$2, source.$3, source.$4, null);
-                    if (identical(_loading[trackPath], task)) {
-                      _loadingSources[trackPath] = source;
+                    if (identical(_loading[key], task)) {
+                      _loadingSources[key] = source;
                     }
                   },
                 ));
-        if (requestRevision != (_trackRevisions[trackPath] ?? 0)) {
+        if (_disposed) return subtitleTrack;
+        if (requestRevision != (_trackRevisions[key] ?? 0)) {
           return trackSync(trackPath);
         }
         if (source != _subtitleSource(trackPath)) {
           return trackSync(trackPath);
         }
         if (requestGeneration != _generation ||
-            !identical(_loading[trackPath], task)) {
+            !identical(_loading[key], task)) {
           return subtitleTrack;
         }
         if (subtitleTrack != null || !_hasRemoteSubtitleUrl(track)) {
-          _putCachedTrack(trackPath, subtitleTrack, source);
+          _putCachedTrack(key, subtitleTrack, source);
         } else {
           // Progress-driven consumers may revisit a failed URL every tick.
           // Explicit loads bypass this temporary cooldown.
-          _automaticRetries[trackPath] = (
+          _automaticRetries[key] = (
             source: source,
             retryAt: _now().add(_automaticRetryInterval),
           );
@@ -1242,40 +1314,40 @@ class PlaybackSubtitleService extends ChangeNotifier {
           }
         }
         _onTrackLoaded?.call(trackPath, subtitleTrack);
-        notifyListeners();
+        _notifyIfActive();
         return subtitleTrack;
       } finally {
-        if (identical(_loading[trackPath], task)) {
-          unawaited(_loading.remove(trackPath));
-          _loadingSources.remove(trackPath);
+        if (identical(_loading[key], task)) {
+          unawaited(_loading.remove(key));
+          _loadingSources.remove(key);
         }
       }
     }();
-    _loading[trackPath] = task;
-    _loadingSources[trackPath] = source;
+    _loading[key] = task;
+    _loadingSources[key] = source;
     return task;
   }
 
   SubtitleTrack? trackSync(String trackPath) {
+    final key = _trackKey(trackPath);
     _refreshSubtitleSource(trackPath);
-    if (!_tracks.containsKey(trackPath)) return null;
-    _touchCachedTrack(trackPath);
-    return _tracks[trackPath];
+    if (!_tracks.containsKey(key)) return null;
+    _touchCachedTrack(key);
+    return _tracks[key];
   }
 
   _SubtitleSource _refreshSubtitleSource(String trackPath) {
+    final key = _trackKey(trackPath);
     final source = _subtitleSource(trackPath);
-    if (_resultSources.containsKey(trackPath) &&
-        _resultSources[trackPath] != source) {
-      _tracks.remove(trackPath);
-      unawaited(_results.remove(trackPath));
-      _resultSources.remove(trackPath);
-      if (_mostRecentTrackPath == trackPath) _mostRecentTrackPath = null;
+    if (_resultSources.containsKey(key) && _resultSources[key] != source) {
+      _tracks.remove(key);
+      unawaited(_results.remove(key));
+      _resultSources.remove(key);
+      if (_mostRecentTrackKey == key) _mostRecentTrackKey = null;
     }
-    if (_loadingSources.containsKey(trackPath) &&
-        _loadingSources[trackPath] != source) {
-      unawaited(_loading.remove(trackPath));
-      _loadingSources.remove(trackPath);
+    if (_loadingSources.containsKey(key) && _loadingSources[key] != source) {
+      unawaited(_loading.remove(key));
+      _loadingSources.remove(key);
     }
     return source;
   }
@@ -1287,7 +1359,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
       metadata?['subtitleExtension']?.toString(),
       metadata?['subtitleSourcePath']?.toString(),
       metadata?['subtitleTitle']?.toString(),
-      _customPaths[trackPath],
+      _customPaths[_trackKey(trackPath)],
     );
   }
 
@@ -1307,14 +1379,15 @@ class PlaybackSubtitleService extends ChangeNotifier {
     bool loadOnTrackChange = false,
     bool automatic = true,
   }) {
+    final key = _trackKey(trackPath);
     final source = _refreshSubtitleSource(trackPath);
-    final hasCached = _tracks.containsKey(trackPath);
-    if (hasCached) _touchCachedTrack(trackPath);
-    final track = hasCached ? _tracks[trackPath] : null;
+    final hasCached = _tracks.containsKey(key);
+    if (hasCached) _touchCachedTrack(key);
+    final track = hasCached ? _tracks[key] : null;
     final shouldLoad =
         loadIfMissing &&
         (loadOnTrackChange ||
-            (track == null && !hasCached && !_loading.containsKey(trackPath)));
+            (track == null && !hasCached && !_loading.containsKey(key)));
     return (
       text: _textAt(track, position, false),
       loading: shouldLoad
@@ -1353,11 +1426,11 @@ class PlaybackSubtitleService extends ChangeNotifier {
     _resultSources.clear();
     _loadingSources.clear();
     _automaticRetries.clear();
-    _mostRecentTrackPath = null;
+    _mostRecentTrackKey = null;
     _cachedTextTrack = null;
     _cachedTextCue = null;
     _cachedTextValue = null;
-    notifyListeners();
+    _notifyIfActive();
   }
 
   Future<SubtitleTrack?> _loadTrack(
@@ -1368,11 +1441,13 @@ class PlaybackSubtitleService extends ChangeNotifier {
     required void Function() onMissingCustomPath,
   }) async {
     SubtitleTrack? loaded;
-    final customPath = _customPaths[trackPath];
+    final key = _trackKey(trackPath);
+    final customPath = _customPaths[key];
     if (customPath != null) {
       loaded = await _loadFromFile(customPath);
-      if (loaded == null && _customPaths[trackPath] == customPath) {
-        _customPaths.remove(trackPath);
+      if (loaded == null && _customPaths[key] == customPath) {
+        _customPaths.remove(key);
+        _customRawPaths.remove(key);
         onMissingCustomPath();
         await _persistCustomPaths();
       }
@@ -1476,25 +1551,25 @@ class PlaybackSubtitleService extends ChangeNotifier {
   }
 
   void _putCachedTrack(
-    String trackPath,
+    String trackKey,
     SubtitleTrack? track,
     _SubtitleSource source,
   ) {
-    _tracks.remove(trackPath);
-    _tracks[trackPath] = track;
-    _mostRecentTrackPath = trackPath;
-    _resultSources[trackPath] = source;
-    _results[trackPath] = SynchronousFuture<SubtitleTrack?>(track);
+    _tracks.remove(trackKey);
+    _tracks[trackKey] = track;
+    _mostRecentTrackKey = trackKey;
+    _resultSources[trackKey] = source;
+    _results[trackKey] = SynchronousFuture<SubtitleTrack?>(track);
     _trimResults();
   }
 
-  void _touchCachedTrack(String trackPath) {
-    if (_mostRecentTrackPath == trackPath || !_tracks.containsKey(trackPath)) {
+  void _touchCachedTrack(String trackKey) {
+    if (_mostRecentTrackKey == trackKey || !_tracks.containsKey(trackKey)) {
       return;
     }
-    final track = _tracks.remove(trackPath);
-    _tracks[trackPath] = track;
-    _mostRecentTrackPath = trackPath;
+    final track = _tracks.remove(trackKey);
+    _tracks[trackKey] = track;
+    _mostRecentTrackKey = trackKey;
   }
 
   void _trimResults() {
@@ -1503,8 +1578,8 @@ class PlaybackSubtitleService extends ChangeNotifier {
       _tracks.remove(oldestKey);
       _resultSources.remove(oldestKey);
       unawaited(_results.remove(oldestKey));
-      if (_mostRecentTrackPath == oldestKey) {
-        _mostRecentTrackPath = null;
+      if (_mostRecentTrackKey == oldestKey) {
+        _mostRecentTrackKey = null;
       }
     }
   }
@@ -1513,6 +1588,10 @@ class PlaybackSubtitleService extends ChangeNotifier {
     String trackPath,
     MusicTrack? track,
   ) async {
+    if (identical(_fileCacheGateway, FileCachePlatformGateway.instance) &&
+        !AppPlatform.isAndroid) {
+      return null;
+    }
     try {
       final raw = await _fileCacheGateway.resolveTrackSubtitle(
         path: trackPath,
@@ -1541,8 +1620,6 @@ class PlaybackSubtitleService extends ChangeNotifier {
         raw: text,
         extension: extension,
       );
-    } on MissingPluginException {
-      return null;
     } catch (error, stackTrace) {
       AppLogService.warning(
         'content_subtitle_load_failed',
@@ -1602,14 +1679,17 @@ class PlaybackSubtitleService extends ChangeNotifier {
           await localFile.setLastModified(DateTime.now());
           return isCurrent() ? cached : null;
         }
-        final bytes = await WorkTextService(platformGateway: _fileCacheGateway)
-            .readDocumentBytes(
-              WorkTextFile(
-                name: metadata['subtitleTitle']?.toString() ?? 'subtitle',
-                relativePath: metadata['subtitleSourcePath']?.toString() ?? '',
-                path: subtitleUrl,
-              ),
-            );
+        if (_disposed) return null;
+        final textService = _remoteTextService ??= WorkTextService(
+          platformGateway: _fileCacheGateway,
+        );
+        final bytes = await textService.readDocumentBytes(
+          WorkTextFile(
+            name: metadata['subtitleTitle']?.toString() ?? 'subtitle',
+            relativePath: metadata['subtitleSourcePath']?.toString() ?? '',
+            path: subtitleUrl,
+          ),
+        );
         if (bytes == null || bytes.isEmpty || !isCurrent()) return null;
         final decoded = await _decodeAndParseSubtitleBytes(
           sourcePath: localFile.path,

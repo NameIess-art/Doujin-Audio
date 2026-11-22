@@ -3,6 +3,27 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+/// Awaits a cancellable socket connection and destroys any socket that races
+/// past [cancel] after [timeout] fires.
+Future<Socket> awaitCancellableSocket(
+  Future<Socket> socket, {
+  required void Function() cancel,
+  required Duration timeout,
+  required String timeoutMessage,
+}) => socket.timeout(
+  timeout,
+  onTimeout: () {
+    cancel();
+    unawaited(
+      socket.then<void>(
+        (lateSocket) => lateSocket.destroy(),
+        onError: (Object _, StackTrace _) {},
+      ),
+    );
+    throw TimeoutException(timeoutMessage, timeout);
+  },
+);
+
 /// Keeps handshake bytes and payload in one subscription. TLS stays end-to-end
 /// between the consumer and the origin, including through SOCKS tunnels.
 class NetworkSocket {

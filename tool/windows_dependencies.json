@@ -15,8 +15,16 @@
     "sha256": "e2aaeaa0fdbc397d4794828086424d4aaa2102cef1fb6874f6ffd29c0b88b673"
   },
   "nativeArchives": [
-    {"name": "mpv-dev-x86_64-20230924-git-652a1dd.7z", "sha256": "dce982222d7a23e4a1c6f0fb6cc39f6e899a6714624b95ea49cff6558ee97572"},
-    {"name": "ANGLE.7z", "sha256": "cc5911bb15d596fd5a2b362613ad35b7093b427117269a7359054a65746a5f9a"}
+    {
+      "name": "mpv-dev-x86_64-20230924-git-652a1dd.7z",
+      "url": "https://github.com/media-kit/libmpv-win32-video-build/releases/download/2023-09-24/mpv-dev-x86_64-20230924-git-652a1dd.7z",
+      "sha256": "dce982222d7a23e4a1c6f0fb6cc39f6e899a6714624b95ea49cff6558ee97572"
+    },
+    {
+      "name": "ANGLE.7z",
+      "url": "https://github.com/alexmercerind/flutter-windows-ANGLE-OpenGL-ES/releases/download/v1.0.1/ANGLE.7z",
+      "sha256": "cc5911bb15d596fd5a2b362613ad35b7093b427117269a7359054a65746a5f9a"
+    }
   ],
   "inno": {
     "version": "6.7.3",

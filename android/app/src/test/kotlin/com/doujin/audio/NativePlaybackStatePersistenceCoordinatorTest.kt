@@ -360,6 +360,37 @@ class NativePlaybackStatePersistenceCoordinatorTest {
         assertEquals(7_000L, environment.storedDefinitions.first { it.sessionId == b.sessionId }.positionMs)
     }
 
+    @Test
+    fun `removeSession and persistSession bump generation to supersede queued persistNow`() {
+        val environment = FakeStatePersistenceEnvironment()
+        val a = storedSession(1_000L).copy(sessionId = "gen-A")
+        val coordinator = coordinator(environment, storedSessions = { listOf(a) })
+
+        // Queued persistNow must be skipped once removeSession runs before background drains.
+        coordinator.persistNow()
+        coordinator.removeSession(a.sessionId)
+        environment.runBackgroundTasks()
+        assertTrue(environment.savedSessions.isEmpty())
+
+        // Queued persistNow must also be skipped once persistSession supersedes it.
+        val retired = a.copy(positionMs = 9_000L)
+        coordinator.persistNow()
+        coordinator.persistSession(retired, NativePlaybackStateStore.sessionRevision(a.sessionId))
+        environment.runBackgroundTasks()
+        assertEquals(listOf(listOf(retired)), environment.savedSessions)
+    }
+
+    @Test
+    fun `shutdown awaits bounded persistence termination`() {
+        val environment = FakeStatePersistenceEnvironment()
+        val coordinator = coordinator(environment, storedSessions = { listOf(storedSession(100L)) })
+
+        coordinator.shutdown()
+
+        assertTrue(environment.shutdownCalled)
+        assertEquals(listOf(NativePlaybackStatePersistenceCoordinator.SHUTDOWN_AWAIT_TIMEOUT_MS), environment.awaitTimeouts)
+    }
+
     private fun coordinator(
         environment: FakeStatePersistenceEnvironment,
         hasSessions: () -> Boolean = { true },
@@ -382,6 +413,7 @@ private class FakeStatePersistenceEnvironment(private val filterRevisions: Boole
     val savedProgress = mutableListOf<List<StoredNativePlaybackProgress>>()
     var clearCount = 0
     var shutdownCalled = false
+    val awaitTimeouts = mutableListOf<Long>()
     var storedDefinitions = emptyList<StoredNativePlaybackSession>()
 
     override fun postDelayed(runnable: Runnable, delayMs: Long) {
@@ -422,6 +454,11 @@ private class FakeStatePersistenceEnvironment(private val filterRevisions: Boole
 
     override fun shutdown() {
         shutdownCalled = true
+    }
+
+    override fun awaitTermination(timeoutMs: Long): Boolean {
+        awaitTimeouts += timeoutMs
+        return true
     }
 
     fun runBackgroundTasks() {

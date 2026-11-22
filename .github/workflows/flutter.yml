@@ -401,7 +401,22 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - name: Test Windows adapters
-        run: flutter test test/windows_playback_bridge_test.dart test/windows_media_tools_test.dart test/windows_library_scan_merge_test.dart test/swipe_reveal_card_test.dart test/app_orientation_controller_test.dart
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tests = @(
+            Get-ChildItem -Recurse -Path test -Filter '*windows*test.dart' |
+              Sort-Object FullName |
+              ForEach-Object { $_.FullName.Substring((Get-Location).Path.Length + 1).Replace('\', '/') }
+          ) + @(
+            'test/desktop_main_navigation_test.dart',
+            'test/subtitle_native_build_cache_test.dart',
+            'test/swipe_reveal_card_test.dart',
+            'test/app_orientation_controller_test.dart'
+          )
+          Write-Host "Running $($tests.Count) Windows unit/widget test files:"
+          $tests | ForEach-Object { Write-Host "  $_" }
+          flutter test @tests
       - name: Cache verified Windows dependency downloads
         uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
@@ -421,6 +436,24 @@ jobs:
       - name: Build Windows installer and checksum
         shell: cmd
         run: tool\build_windows.bat
+      - name: Verify Windows installer checksum
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $checksumFiles = @(Get-ChildItem -LiteralPath dist/windows -Filter '*-setup.exe.sha256')
+          if ($checksumFiles.Count -ne 1) {
+            throw "Expected 1 Windows installer checksum file, found $($checksumFiles.Count)."
+          }
+          $entry = (Get-Content -LiteralPath $checksumFiles[0].FullName -Raw).Trim()
+          $parts = $entry -split '\s+', 2
+          if ($parts.Count -ne 2) { throw "Invalid checksum format: $entry" }
+          $installerPath = Join-Path 'dist/windows' $parts[1]
+          if (!(Test-Path -LiteralPath $installerPath)) { throw "Missing installer: $installerPath" }
+          $actual = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $parts[0].ToLowerInvariant()) {
+            throw "Windows installer SHA256 mismatch: expected $($parts[0]), got $actual"
+          }
+          Write-Host "Verified Windows installer checksum: $($parts[1])"
       - name: Store Windows installer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:

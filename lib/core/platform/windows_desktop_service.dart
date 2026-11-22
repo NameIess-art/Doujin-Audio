@@ -8,7 +8,7 @@ import 'platform_channels.dart';
 /// Windows shell events enter the existing application runtime through this gateway.
 class WindowsDesktopService {
   WindowsDesktopService({MethodChannel? channel})
-    : _channel = channel ?? const MethodChannel('doujin_audio/windows_desktop');
+    : _channel = channel ?? const MethodChannel(WindowsDesktopChannel.name);
 
   static final instance = WindowsDesktopService();
   final MethodChannel _channel;

@@ -11,7 +11,7 @@ class AppLifecycleMethodHandlerTest {
     @Test
     fun `pending restore termination acknowledges before invoking termination`() {
         val events = mutableListOf<String>()
-        val handler = AppLifecycleMethodHandler { events += "terminate" }
+        val handler = AppLifecycleMethodHandler(terminateForPendingRestore = { events += "terminate" })
         val result = RecordingAppLifecycleResult { events += "success" }
         handler.onMethodCall(MethodCall(AppLifecycleMethods.TERMINATE_FOR_PENDING_RESTORE, null), result)
         assertEquals(listOf("success", "terminate"), events)
@@ -20,7 +20,7 @@ class AppLifecycleMethodHandlerTest {
 
     @Test
     fun `unknown lifecycle method is not implemented`() {
-        val handler = AppLifecycleMethodHandler {}
+        val handler = AppLifecycleMethodHandler(terminateForPendingRestore = {})
         val result = RecordingAppLifecycleResult()
         handler.onMethodCall(MethodCall("unknown", null), result)
         assertEquals(1, result.notImplementedCalls)
@@ -32,7 +32,7 @@ class AppLifecycleMethodHandlerTest {
         var receivedMode: String? = null
         val handler = AppLifecycleMethodHandler(
             terminateForPendingRestore = {},
-            syncAppTheme = { preset, mode ->
+            syncAppTheme = { preset, mode, _ ->
                 receivedPreset = preset
                 receivedMode = mode
             },
@@ -113,6 +113,36 @@ class AppLifecycleMethodHandlerTest {
         val response = result.successValue as Map<*, *>
         assertEquals(false, response["ok"])
         assertEquals(ChannelErrorCodes.INVALID_ARGUMENT, response["errorCode"])
+    }
+
+    @Test
+    fun `unexpected lifecycle failures return structured platform error envelope`() {
+        val handler = AppLifecycleMethodHandler(
+            terminateForPendingRestore = {},
+            syncAppTheme = { _, _, _ -> throw IllegalStateException("window detached") },
+            getSystemAccentColor = { throw RuntimeException("accent lookup failed") },
+        )
+
+        val themeResult = RecordingAppLifecycleResult()
+        handler.onMethodCall(
+            MethodCall(
+                AppLifecycleMethods.SYNC_APP_THEME,
+                mapOf("preset" to "mint", "themeMode" to "dark"),
+            ),
+            themeResult,
+        )
+        val themeResponse = themeResult.successValue as Map<*, *>
+        assertEquals(false, themeResponse["ok"])
+        assertEquals(ChannelErrorCodes.PLATFORM_ERROR, themeResponse["errorCode"])
+
+        val accentResult = RecordingAppLifecycleResult()
+        handler.onMethodCall(
+            MethodCall(AppLifecycleMethods.GET_SYSTEM_ACCENT_COLOR, null),
+            accentResult,
+        )
+        val accentResponse = accentResult.successValue as Map<*, *>
+        assertEquals(false, accentResponse["ok"])
+        assertEquals(ChannelErrorCodes.PLATFORM_ERROR, accentResponse["errorCode"])
     }
 }
 

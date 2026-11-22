@@ -1,4 +1,4 @@
-import 'package:flutter/painting.dart';
+import 'package:flutter/foundation.dart' show VoidCallback;
 
 import '../../library/application/cover_image_cache_policy.dart';
 import '../../library/application/library_facade.dart';
@@ -17,11 +17,13 @@ final class SettingsCommandController {
     Future<int> Function()? clearApplicationCacheFiles,
     Future<void> Function()? clearBrowseCaches,
     Future<void> Function()? waitForRuntime,
+    VoidCallback? clearImageCache,
   }) : _settings = settings,
        _playback = playback,
        _library = library,
        _clearBrowseCaches = clearBrowseCaches,
        _waitForRuntime = waitForRuntime,
+       _clearImageCache = clearImageCache,
        _clearApplicationCacheFiles =
            clearApplicationCacheFiles ?? AppCacheService.clearTemporaryCaches;
 
@@ -31,6 +33,7 @@ final class SettingsCommandController {
   final Future<int> Function() _clearApplicationCacheFiles;
   final Future<void> Function()? _clearBrowseCaches;
   final Future<void> Function()? _waitForRuntime;
+  final VoidCallback? _clearImageCache;
 
   SettingsRepository get settings => _settings;
 
@@ -71,7 +74,7 @@ final class SettingsCommandController {
             clearTemporaryCaches: _clearApplicationCacheFiles,
           );
     applyCoverImageCachePolicy(_settings.coverImageResolution, clear: true);
-    PaintingBinding.instance.imageCache.clearLiveImages();
+    _clearImageCache?.call();
     _library?.invalidateCoverArtwork();
     return deletedBytes;
   }

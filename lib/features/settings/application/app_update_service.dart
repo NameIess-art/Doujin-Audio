@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
@@ -14,6 +15,7 @@ import '../../../core/errors/native_result.dart';
 import '../../../core/immutable_collections.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/path_display.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/platform/update_platform_service.dart';
 
 export 'app_update_models.dart';
@@ -29,13 +31,17 @@ class AppUpdateService {
     Future<Directory> Function()? temporaryDirectoryProvider,
     DateTime Function()? clock,
     bool? isWindows,
-  }) : _platform = platform ?? UpdatePlatformService(),
+    bool? isAndroid,
+    int maxDownloadBytes = defaultMaxDownloadBytes,
+  }) : assert(maxDownloadBytes > 0),
+       _platform = platform ?? UpdatePlatformService(),
        _httpClientFactory = httpClientFactory ?? (() => HttpClient()),
        _temporaryDirectoryProvider =
            temporaryDirectoryProvider ?? getTemporaryDirectory,
        _clock = clock ?? DateTime.now,
-       _isWindows =
-           isWindows ?? (defaultTargetPlatform == TargetPlatform.windows);
+       _isWindows = isWindows ?? AppPlatform.isWindows,
+       _isAndroid = isAndroid ?? AppPlatform.isAndroid,
+       _maxDownloadBytes = maxDownloadBytes;
 
   static const String owner = 'NameIess-art';
   static const String repo = 'doujin-audio';
@@ -47,6 +53,8 @@ class AppUpdateService {
       'https://github.com/$owner/$repo/releases/latest';
   static const String repositoryPage = 'https://github.com/$owner/$repo';
   static const String releasesPage = 'https://github.com/$owner/$repo/releases';
+  static const int defaultMaxDownloadBytes = 512 * 1024 * 1024;
+  static const int _maxChecksumBytes = 64 * 1024;
   static const Duration _requestTimeout = Duration(seconds: 15);
   static const Duration _downloadIdleTimeout = Duration(seconds: 30);
   static const Duration _downloadProgressInterval = Duration(milliseconds: 75);
@@ -55,6 +63,8 @@ class AppUpdateService {
   final Future<Directory> Function() _temporaryDirectoryProvider;
   final DateTime Function() _clock;
   final bool _isWindows;
+  final bool _isAndroid;
+  final int _maxDownloadBytes;
   ({String path, String checksum, CachePathLease lease})? _verifiedDownload;
   HttpClient? _downloadClient;
   String? _downloadWritePath;
@@ -276,6 +286,9 @@ class AppUpdateService {
         Uri.parse(latestReleasePage).resolve(location),
       );
       if (tagName != null) return tagName;
+      throw const HttpException(
+        'GitHub latest release redirected to an unexpected location.',
+      );
     }
     if (response.statusCode >= 200 && response.statusCode < 300) {
       final tagName = _tagNameFromReleaseHtml(body);
@@ -506,6 +519,12 @@ class AppUpdateService {
       }
 
       final total = response.contentLength;
+      if (total > _maxDownloadBytes) {
+        await response.listen(null).cancel();
+        throw const HttpException(
+          'Update download exceeds maximum allowed size.',
+        );
+      }
       var received = 0;
       final progressTimer = Stopwatch();
       final sink = partialFile.openWrite();
@@ -513,6 +532,11 @@ class AppUpdateService {
         if (total <= 0) onProgress(null);
         await for (final chunk in response.timeout(_downloadIdleTimeout)) {
           received += chunk.length;
+          if (received > _maxDownloadBytes) {
+            throw const HttpException(
+              'Update download exceeds maximum allowed size.',
+            );
+          }
           sink.add(chunk);
           if (total > 0 &&
               received < total &&
@@ -579,10 +603,18 @@ class AppUpdateService {
         .timeout(_requestTimeout);
     request.headers.set(HttpHeaders.userAgentHeader, 'Doujin Audio updater');
     final response = await request.close().timeout(_requestTimeout);
-    final body = await response
-        .transform(utf8.decoder)
-        .join()
-        .timeout(_downloadIdleTimeout);
+    if (response.contentLength > _maxChecksumBytes) {
+      await response.listen(null).cancel();
+      throw const FormatException('Update checksum file is too large.');
+    }
+    final chunks = BytesBuilder(copy: false);
+    await for (final chunk in response.timeout(_downloadIdleTimeout)) {
+      if (chunks.length + chunk.length > _maxChecksumBytes) {
+        throw const FormatException('Update checksum file is too large.');
+      }
+      chunks.add(chunk);
+    }
+    final body = utf8.decode(chunks.takeBytes());
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw const HttpException('Update checksum download failed.');
     }
@@ -609,14 +641,14 @@ class AppUpdateService {
   }
 
   Future<bool> canInstallUnknownApps() async {
-    if (!Platform.isAndroid) return true;
+    if (!_isAndroid) return true;
     final result = await _platform.canInstallUnknownApps();
     _logNativeFailure('canInstallUnknownApps', result);
-    return result.valueOrNull ?? true;
+    return result.valueOrNull ?? false;
   }
 
   Future<bool> openInstallPermissionSettings() async {
-    if (!Platform.isAndroid) return false;
+    if (!_isAndroid) return false;
     final result = await _platform.openInstallPermissionSettings();
     _logNativeFailure('openInstallPermissionSettings', result);
     return result.valueOrNull ?? false;
@@ -800,21 +832,42 @@ class AppUpdateService {
       r'<link[^>]+rel="canonical"[^>]+href="([^"]+)"',
     ).firstMatch(html);
     if (canonical != null) {
-      final tagName = _tagNameFromReleaseUri(Uri.parse(canonical.group(1)!));
-      if (tagName != null) return tagName;
+      final canonicalUri = Uri.tryParse(canonical.group(1)!);
+      if (canonicalUri != null) {
+        final tagName = _tagNameFromReleaseUri(canonicalUri);
+        if (tagName != null) return tagName;
+      }
     }
     final releaseLink = RegExp(
-      r'''/releases/tag/([^"'<>\s]+)''',
+      '/${RegExp.escape(owner)}/${RegExp.escape(repo)}/releases/tag/([^"\'<>\\s/?#]+)',
+      caseSensitive: false,
     ).firstMatch(html);
     if (releaseLink == null) return null;
-    return Uri.decodeComponent(releaseLink.group(1)!).trim();
+    try {
+      final tagName = Uri.decodeComponent(releaseLink.group(1)!).trim();
+      return tagName.isEmpty ? null : tagName;
+    } on ArgumentError {
+      return null;
+    }
   }
 
   static String? _tagNameFromReleaseUri(Uri uri) {
-    final segments = uri.pathSegments;
-    final tagIndex = segments.indexOf('tag');
-    if (tagIndex < 0 || tagIndex + 1 >= segments.length) return null;
-    final tagName = Uri.decodeComponent(segments[tagIndex + 1]).trim();
+    if (uri.scheme != 'https' ||
+        uri.host.toLowerCase() != 'github.com' ||
+        uri.userInfo.isNotEmpty) {
+      return null;
+    }
+    final segments = uri.pathSegments
+        .where((segment) => segment.isNotEmpty)
+        .toList(growable: false);
+    if (segments.length != 5 ||
+        segments[0].toLowerCase() != owner.toLowerCase() ||
+        segments[1].toLowerCase() != repo.toLowerCase() ||
+        segments[2] != 'releases' ||
+        segments[3] != 'tag') {
+      return null;
+    }
+    final tagName = segments[4].trim();
     return tagName.isEmpty ? null : tagName;
   }
 

@@ -388,4 +388,18 @@ extension AppDatabaseAsmr on AppDatabase {
       });
     });
   }
+
+  @visibleForTesting
+  Future<void> clearAsmrTablesForTest() async {
+    await _runDatabaseWrite((db) async {
+      final batch = db.batch();
+      batch.delete('asmr_sync_operations');
+      batch.delete('asmr_visible_categories');
+      batch.delete('asmr_work_lists');
+      batch.delete('asmr_work_tags');
+      batch.delete('asmr_work_voice_actors');
+      batch.delete('asmr_works');
+      await batch.commit(noResult: true);
+    });
+  }
 }

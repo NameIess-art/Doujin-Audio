@@ -134,12 +134,16 @@ void main() {
               .every((s) => !s.effectivePlaying),
           'native playback did not pause',
         );
-        // Paused sessions retain their state in Dart and release the native
-        // runtime, so a service snapshot no longer contains their definition.
+        // Pausing the focused audio session while the UI is attached retains
+        // the native player warm during the idle grace window for fast seek
+        // and resume.
         var retainedSession = _retainedSession(playback, sessionId);
         expect(retainedSession.playbackRequested, isFalse);
-        expect(retainedSession.loadedPath, isNull);
+        expect(retainedSession.loadedPath, wav.path);
         expect(retainedSession.audioEffects.frontBack, 0.75);
+        final pausedNativeSession = await _nativeSession(playback, sessionId);
+        expect(pausedNativeSession.playWhenReady, isFalse);
+        expect(pausedNativeSession.audioEffects.frontBack, 0.75);
 
         const seekPosition = Duration(seconds: 2);
         await playback.seekSession(sessionId, seekPosition);
@@ -250,6 +254,7 @@ void main() {
           () => !_retainedSession(playback, sessionId).playbackRequested,
           'first session did not pause independently',
         );
+        expect(_retainedSession(playback, sessionId).loadedPath, isNull);
         await playback.seekSession(sessionId, const Duration(seconds: 5));
         expect(
           _retainedSession(playback, sessionId).position.inMilliseconds,

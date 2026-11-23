@@ -22,7 +22,7 @@ void registerAsmrAccountSyncTests({
       );
       await service.initialize();
       const pageUrl = 'https://japaneseasmr.com/work/1';
-      final jp = AsmrWork.fromJson({
+      final jp = AsmrWork.fromJson(const {
         'id': 1,
         'title': 'Local Japanese ASMR',
         'sourceId': 'RJ000001',
